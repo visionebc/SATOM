@@ -115,3 +115,22 @@
 .wiki-comment-actions .btn-link { font-size: 12px; text-decoration: none; }
 .wiki-comment-form { margin-top: 6px; }
 .wiki-comment:target { border-color: #EF5424; }
+
+/* The article list: title on the left, Follow / Confluence on the right. */
+.wiki-list-title { display: flex; align-items: flex-start; gap: 8px; }
+.wiki-list-title h3 { flex: 1 1 auto; min-width: 0; }
+.wiki-list-actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; flex: 0 0 auto; }
+.wiki-list-actions .btn { padding: 1px 8px; font-size: 12px; }
+.wiki-follow-menu { min-width: 260px; max-height: 70vh; overflow-y: auto; }
+
+/* Publish to Confluence: the space's page tree (js/wiki_confluence.js). */
+.wiki-cf-tree { max-height: 320px; overflow-y: auto; border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius); padding: 6px 8px; background: var(--fw-surface); font-size: 13px; }
+.wiki-cf-row { display: flex; align-items: center; gap: 2px; }
+.wiki-cf-twisty { border: 0; background: none; padding: 0 4px; color: var(--fw-text-secondary); line-height: 1; }
+.wiki-cf-pick { border: 0; background: none; padding: 2px 6px; border-radius: 4px; text-align: left;
+  color: var(--fw-text-primary); min-width: 0; overflow-wrap: anywhere; }
+.wiki-cf-pick:hover { background: var(--fw-surface-alt); }
+.wiki-cf-pick.active { background: var(--fw-accent-light); color: var(--fw-accent); font-weight: 600; }
+.wiki-cf-path { display: block; font-size: 11px; color: var(--fw-text-secondary); font-weight: 400; }
+.wiki-cf-children { padding-left: 16px; }

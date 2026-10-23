@@ -1,5 +1,6 @@
 """Settings → Integrations — the one page where SATOM is wired to systems it
-does not own: NetBox (maintenance windows) and the operator's own Python hooks
+does not own: NetBox (maintenance windows), the issue tracker, the Confluence
+connections the Wiki publishes through, and the operator's own Python hooks
 (their CRM, their ticketing, whatever they run).
 
 Everything on this page is OUTBOUND and optional. The product must install and
@@ -93,6 +94,7 @@ def index():
         nb_max_per_round=netbox.MAX_PER_ROUND,
         nb_default_time=NB_DEFAULT_TIME,
         nb_task_name=NB_TASK_NAME,
+        **_confluence_context(),
     )
 
 
@@ -467,3 +469,110 @@ def hook_status(request_id):
     if res is None:
         return jsonify({"ok": False, "detail": "unknown request"}), 404
     return jsonify({"ok": True, **res})
+
+
+# --------------------------------------------------------------------------- #
+#  Confluence (the Wiki publishes through these; services/wiki_confluence.py)  #
+# --------------------------------------------------------------------------- #
+# A connection is an address, a flavour and an account; the space and the
+# parent page are picked by whoever publishes an article (wiki/
+# _confluence_modal.html). The credential is write-only on this page.
+
+def _confluence_context() -> dict:
+    from ..extensions import db
+    from ..models_wiki import WikiConfluenceLink, WikiConfluenceTarget
+    from ..services import wiki_confluence as WC
+    edit_id = request.args.get("confluence", type=int)
+    return {
+        "cf_targets": WC.targets(),
+        "cf_edit": db.session.get(WikiConfluenceTarget, edit_id) if edit_id else None,
+        "cf_has_secret": WC.has_secret,
+        "cf_counts": dict(db.session.query(WikiConfluenceLink.target_id,
+                                           db.func.count(WikiConfluenceLink.id))
+                          .group_by(WikiConfluenceLink.target_id).all()),
+    }
+
+
+def _cf_back(target_id=None):
+    return (url_for("integrations.index", confluence=target_id) if target_id
+            else url_for("integrations.index")) + "#confluence"
+
+
+@bp.route("/confluence", methods=["POST"])
+@bp.route("/confluence/<int:target_id>", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def confluence_save(target_id=None):
+    from ..extensions import db
+    from ..models_wiki import WikiConfluenceTarget
+    from ..services import wiki_confluence as WC
+    from ..services.audit import log_action
+    t = None
+    if target_id:
+        t = db.session.get(WikiConfluenceTarget, target_id)
+        if t is None:
+            flash("That Confluence connection no longer exists.", "danger")
+            return redirect(_cf_back())
+    f = request.form
+    form = {"name": f.get("name", ""), "flavor": f.get("flavor", "cloud"),
+            "base_url": f.get("base_url", ""), "auth": f.get("auth", "basic"),
+            "username": f.get("username", ""), "verify_tls": f.get("verify_tls") == "1",
+            "enabled": f.get("enabled") == "1"}
+    secret = f.get("secret", "")
+    try:
+        t, dropped = WC.save_target(t, form, _who())
+        if secret:
+            WC.set_secret(t, secret)
+    except WC.ConfluenceError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+        return redirect(_cf_back(target_id))
+    log_action("wiki.confluence.target", target=t.name,
+               extra={"target_id": t.id, "flavor": t.flavor, "base_url": t.base_url,
+                      "secret_set": bool(secret), "secret_dropped": dropped})
+    if dropped and not secret:
+        flash("Connection saved. Its address or account changed, so the stored credential "
+              "was removed: enter it again.", "warning")
+    else:
+        flash("Confluence connection saved.", "success")
+    return redirect(_cf_back(t.id))
+
+
+@bp.route("/confluence/<int:target_id>/test", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def confluence_test(target_id):
+    from ..extensions import db
+    from ..models_wiki import WikiConfluenceTarget
+    from ..services import wiki_confluence as WC
+    t = db.session.get(WikiConfluenceTarget, target_id)
+    if t is None:
+        flash("That Confluence connection no longer exists.", "danger")
+        return redirect(_cf_back())
+    try:
+        n = WC.check(t)
+    except WC.ConfluenceError as exc:
+        flash("Test failed: %s" % exc, "danger")
+    else:
+        flash("Reached %s: the account sees %d space%s." % (t.name, n, "" if n == 1 else "s"),
+              "success" if n else "warning")
+    return redirect(_cf_back(t.id))
+
+
+@bp.route("/confluence/<int:target_id>/delete", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def confluence_delete(target_id):
+    from ..extensions import db
+    from ..models_wiki import WikiConfluenceTarget
+    from ..services import wiki_confluence as WC
+    from ..services.audit import log_action
+    t = db.session.get(WikiConfluenceTarget, target_id)
+    if t is None:
+        return redirect(_cf_back())
+    name = t.name
+    WC.delete_target(t)
+    log_action("wiki.confluence.target_delete", target=name, extra={"target_id": target_id})
+    flash("Connection deleted. Its pages stay in Confluence; SATOM no longer updates them.",
+          "success")
+    return redirect(_cf_back())

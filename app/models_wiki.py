@@ -221,10 +221,11 @@ class WikiSubscription(db.Model):
 
 
 class WikiConfluenceTarget(db.Model):
-    """A Confluence space articles are published to (services/
-    wiki_confluence.py). One way: SATOM writes the page, Confluence never
-    writes back, and an edit made in Confluence is replaced by the next
-    publication. The credential is not here: ``wiki.confluence.secret.<id>``
+    """A Confluence connection articles are published through (services/
+    wiki_confluence.py; Settings › Integrations › Confluence). The space and
+    the parent page are chosen at each publication (``WikiConfluenceLink``).
+    One way: SATOM writes the page, Confluence never writes back, and an
+    edit made in Confluence is replaced by the next publication. The credential is not here: ``wiki.confluence.secret.<id>``
     (Fernet) or the vault, like every SATOM secret."""
     __tablename__ = "wiki_confluence_targets"
 
@@ -237,8 +238,9 @@ class WikiConfluenceTarget(db.Model):
     #: ``datacenter`` = Server / Data Center REST API (/rest/api/content).
     flavor = db.Column(db.String(16), nullable=False, default="cloud")
     base_url = db.Column(db.String(500), nullable=False, default="")
+    #: Unused since wiki07 (the space and parent are picked per publication);
+    #: kept so a downgrade finds its columns.
     space_key = db.Column(db.String(64), nullable=False, default="")
-    #: Pages are created under this page when set (Confluence page id).
     parent_page_id = db.Column(db.String(32), nullable=False, default="", server_default="")
     #: ``basic`` = e-mail + API token (Cloud) or user + password;
     #: ``bearer`` = a personal access token (Data Center).
@@ -253,9 +255,11 @@ class WikiConfluenceTarget(db.Model):
 
 class WikiConfluenceLink(db.Model):
     """Which Confluence page an article was published to, and which version
-    it holds. The page id is what later publications update."""
+    it holds: one per article, connection and space. The page id is what
+    later publications to that space update."""
     __tablename__ = "wiki_confluence_links"
-    __table_args__ = (db.UniqueConstraint("article_id", "target_id", name="uq_wiki_confluence_link"),)
+    __table_args__ = (db.UniqueConstraint("article_id", "target_id", "space_key",
+                                          name="uq_wiki_confluence_link_space"),)
 
     id = db.Column(db.Integer, primary_key=True)
     article_id = db.Column(db.Integer, db.ForeignKey("wiki_articles.id", ondelete="CASCADE"),
@@ -263,6 +267,10 @@ class WikiConfluenceLink(db.Model):
     target_id = db.Column(db.Integer,
                           db.ForeignKey("wiki_confluence_targets.id", ondelete="CASCADE"),
                           nullable=False, index=True)
+    #: The space the page was created in, and the page it was created under
+    #: ('' = the space's top level). The page may have moved since.
+    space_key = db.Column(db.String(64), nullable=False, default="", server_default="")
+    parent_page_id = db.Column(db.String(32), nullable=False, default="", server_default="")
     page_id = db.Column(db.String(32), nullable=False)
     page_url = db.Column(db.String(1000), nullable=False, default="")
     published_revision = db.Column(db.Integer, nullable=False, default=0)

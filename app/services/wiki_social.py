@@ -236,6 +236,55 @@ def set_subscription(user, kind: str, ref, *, on: bool, email: bool = False):
     return row
 
 
+def scope_follows(user) -> set[str]:
+    """What the list page's Follow menu shows ticked: ``"all"`` for
+    everything, ``"global"`` and the ADOM keys the user follows."""
+    rows = (WikiSubscription.query.filter_by(user_id=getattr(user, "id", None))
+            .filter(WikiSubscription.kind.in_(("all", "adom"))).all())
+    return {"all" if r.kind == "all" else r.ref for r in rows}
+
+
+def set_scope_follows(user, picked) -> tuple[int, int]:
+    """The list page's Follow menu: follow exactly ``picked`` (``"all"``,
+    ``"global"``, ADOM keys) among everything and the ADOMs. A row that
+    stays keeps its e-mail choice; articles, topics and tags are not
+    touched. ``(added, removed)``."""
+    want = set()
+    for raw in picked or ():
+        key = str(raw or "").strip().lower()
+        want.add("all" if key == "all" else normalise_ref("adom", key))
+    uid = getattr(user, "id", None)
+    added = removed = 0
+    rows = (WikiSubscription.query.filter_by(user_id=uid)
+            .filter(WikiSubscription.kind.in_(("all", "adom"))).all())
+    have = set()
+    for r in rows:
+        key = "all" if r.kind == "all" else r.ref
+        if key in want:
+            have.add(key)
+        else:
+            db.session.delete(r)
+            removed += 1
+    for key in sorted(want - have):
+        kind, ref = ("all", "") if key == "all" else ("adom", key)
+        db.session.add(WikiSubscription(user_id=uid, kind=kind, ref=ref,
+                                        created_at=datetime.utcnow()))
+        added += 1
+    db.session.commit()
+    return added, removed
+
+
+def article_follows(user, article_ids) -> dict[int, WikiSubscription]:
+    """``{article_id: subscription}`` for the articles of a list page."""
+    refs = [str(int(i)) for i in article_ids]
+    if not refs:
+        return {}
+    rows = WikiSubscription.query.filter(WikiSubscription.user_id == getattr(user, "id", None),
+                                         WikiSubscription.kind == "article",
+                                         WikiSubscription.ref.in_(refs)).all()
+    return {int(r.ref): r for r in rows}
+
+
 def my_subscriptions(user) -> list[dict]:
     """The user's subscriptions with a label each. An article they can no
     longer read is labelled as such, never by its title."""

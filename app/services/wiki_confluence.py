@@ -1,9 +1,14 @@
 """Operations › Wiki — publish an article to Confluence, one way.
 
-SATOM writes the page; Confluence never writes back. The first publication
-creates a page in the target's space (under its parent page when one is set)
-and remembers its id (``WikiConfluenceLink``); later publications UPDATE that
-page id with the next Confluence version number, whatever its title became.
+SATOM writes the page; Confluence never writes back. A *connection*
+(``WikiConfluenceTarget``: address, flavour, account, credential) is set up
+in Settings › Integrations › Confluence. Whoever publishes an article picks
+the space and, optionally, the parent page there, from what that connection
+can see (:func:`spaces`, :func:`pages`, :func:`search_pages`). The first
+publication to a space creates the page and remembers its id
+(``WikiConfluenceLink``, one per article, connection and space); later
+publications to that space UPDATE that page id with the next Confluence
+version number, wherever it was moved and whatever its title became.
 An edit made in Confluence is replaced by the next publication, and the page
 says so in its last line.
 
@@ -33,7 +38,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 from ..extensions import db
 from ..models_wiki import WikiArticle, WikiConfluenceLink, WikiConfluenceTarget
@@ -103,12 +108,6 @@ def save_target(t: WikiConfluenceTarget | None, form: dict, by: str) -> tuple:
     auth = form.get("auth") or "basic"
     if auth not in WikiConfluenceTarget.AUTHS:
         raise ConfluenceError("Unknown authentication.")
-    space = str(form.get("space_key") or "").strip()
-    if not re.fullmatch(r"[A-Za-z0-9~_-]{1,64}", space):
-        raise ConfluenceError("The space key is letters, digits, ~, _ or -.")
-    parent = str(form.get("parent_page_id") or "").strip()
-    if parent and not parent.isdigit():
-        raise ConfluenceError("The parent page id is a number (it is in the page's URL).")
     clash = WikiConfluenceTarget.query.filter(db.func.lower(WikiConfluenceTarget.name)
                                               == name.lower())
     if t is not None:
@@ -121,7 +120,6 @@ def save_target(t: WikiConfluenceTarget | None, form: dict, by: str) -> tuple:
         t = WikiConfluenceTarget(created_by=by, created_at=datetime.utcnow())
         db.session.add(t)
     t.name, t.flavor, t.auth, t.base_url = name, flavor, auth, base
-    t.space_key, t.parent_page_id = space, parent
     t.username = str(form.get("username") or "").strip()[:255]
     t.verify_tls = bool(form.get("verify_tls"))
     t.enabled = bool(form.get("enabled"))
@@ -203,20 +201,148 @@ def _call(t: WikiConfluenceTarget, method: str, path: str, *, query=None, body=N
     return res
 
 
-def space(t: WikiConfluenceTarget) -> dict:
-    """``{"id", "name"}`` of the target's space; the Test button."""
-    if t.flavor == "cloud":
-        res = _call(t, "GET", "/api/v2/spaces", query={"keys": t.space_key})
-        results = (res.get("json") or {}).get("results") if res["ok"] else None
-        if not results:
-            raise ConfluenceError("Space %s not found (HTTP %d). %s"
-                                  % (t.space_key, res["status"], _why(res)))
-        return {"id": str(results[0].get("id")), "name": results[0].get("name") or t.space_key}
-    res = _call(t, "GET", "/rest/api/space/%s" % t.space_key)
+#: Browsing limits: what one picker can list, and one search.
+MAX_SPACES = 1000
+MAX_CHILDREN = 250
+MAX_HITS = 50
+_SPACE_RE = re.compile(r"[A-Za-z0-9~_-]{1,64}")
+
+
+def clean_space_key(raw) -> str:
+    key = str(raw or "").strip()
+    if not _SPACE_RE.fullmatch(key):
+        raise ConfluenceError("Pick a space (its key is letters, digits, ~, _ or -).")
+    return key
+
+
+def clean_page_id(raw) -> str:
+    """'' (the space's top level) or a Confluence page id."""
+    pid = str(raw or "").strip()
+    if pid and not (pid.isdigit() and len(pid) <= 32):
+        raise ConfluenceError("A Confluence page id is a number.")
+    return pid
+
+
+def _results(res: dict, what: str) -> list:
     if not res["ok"] or not isinstance(res.get("json"), dict):
+        raise ConfluenceError("Confluence answered HTTP %d listing %s. %s"
+                              % (res["status"], what, _why(res)))
+    out = res["json"].get("results")
+    return out if isinstance(out, list) else []
+
+
+def _space_row(s) -> dict | None:
+    if not isinstance(s, dict):
+        return None
+    key = str(s.get("key") or "")
+    if not _SPACE_RE.fullmatch(key):
+        return None
+    return {"key": key, "id": str(s.get("id") or ""), "name": str(s.get("name") or key)[:200]}
+
+
+def _page_row(p) -> dict | None:
+    if not isinstance(p, dict):
+        return None
+    pid = str(p.get("id") or "")
+    if not pid.isdigit():
+        return None
+    row = {"id": pid, "title": str(p.get("title") or pid)[:255]}
+    anc = p.get("ancestors")
+    if isinstance(anc, list):
+        row["path"] = [str(a.get("title") or "")[:255] for a in anc if isinstance(a, dict)]
+    return row
+
+
+def spaces(t: WikiConfluenceTarget) -> list[dict]:
+    """Every space the connection's account can see, by name:
+    ``[{"key", "id", "name"}]``. Follows Confluence's paging up to
+    :data:`MAX_SPACES`."""
+    rows, query = [], {"limit": 250}
+    if t.flavor != "cloud":
+        query["start"] = 0
+    while len(rows) < MAX_SPACES:
+        path = "/api/v2/spaces" if t.flavor == "cloud" else "/rest/api/space"
+        res = _call(t, "GET", path, query=query)
+        batch = _results(res, "the spaces")
+        rows += [r for r in map(_space_row, batch) if r]
+        nxt = str(((res.get("json") or {}).get("_links") or {}).get("next") or "")
+        if not batch or not nxt:
+            break
+        if t.flavor == "cloud":
+            m = re.search(r"[?&]cursor=([^&]+)", nxt)
+            if not m:
+                break
+            query = {"limit": 250, "cursor": unquote(m.group(1))}
+        else:
+            query = {"limit": 250, "start": query["start"] + len(batch)}
+    rows.sort(key=lambda r: (r["name"].lower(), r["key"]))
+    return rows[:MAX_SPACES]
+
+
+def space(t: WikiConfluenceTarget, key: str) -> dict:
+    """``{"key", "id", "name"}`` of one space, or :class:`ConfluenceError`."""
+    key = clean_space_key(key)
+    if t.flavor == "cloud":
+        res = _call(t, "GET", "/api/v2/spaces", query={"keys": key})
+        results = (res.get("json") or {}).get("results") if res["ok"] else None
+        row = _space_row(results[0]) if results else None
+    else:
+        res = _call(t, "GET", "/rest/api/space/%s" % key)
+        row = _space_row(res.get("json")) if res["ok"] else None
+    if not row or row["key"] != key:
         raise ConfluenceError("Space %s not found (HTTP %d). %s"
-                              % (t.space_key, res["status"], _why(res)))
-    return {"id": str(res["json"].get("id") or ""), "name": res["json"].get("name") or t.space_key}
+                              % (key, res["status"], _why(res)))
+    return row
+
+
+def check(t: WikiConfluenceTarget) -> int:
+    """The Test button: how many spaces the account sees (0 is an answer)."""
+    return len(spaces(t))
+
+
+def pages(t: WikiConfluenceTarget, key: str, parent_id: str = "") -> list[dict]:
+    """One level of the space's page tree: its top-level pages, or the
+    pages directly under ``parent_id``. ``[{"id", "title"}]``."""
+    key, parent_id = clean_space_key(key), clean_page_id(parent_id)
+    q = {"limit": MAX_CHILDREN}
+    if t.flavor == "cloud":
+        if parent_id:
+            res = _call(t, "GET", "/api/v2/pages/%s/children" % parent_id, query=q)
+        else:
+            res = _call(t, "GET", "/api/v2/spaces/%s/pages" % space(t, key)["id"],
+                        query=dict(q, depth="root", status="current"))
+    elif parent_id:
+        res = _call(t, "GET", "/rest/api/content/%s/child/page" % parent_id, query=q)
+    else:
+        res = _call(t, "GET", "/rest/api/space/%s/content/page" % key,
+                    query=dict(q, depth="root"))
+    rows = [r for r in map(_page_row, _results(res, "the pages")) if r]
+    rows.sort(key=lambda r: r["title"].lower())
+    return rows
+
+
+def cql_title(text: str) -> str:
+    """A CQL ``title ~`` clause for what the user typed. Only words reach
+    CQL (letters, digits, ``.``, ``_``, ``-``); the last one matches as a
+    prefix. '' when nothing is left."""
+    words = re.findall(r"[\w.-]+", str(text or ""), re.UNICODE)[:8]
+    words = [w.strip(".-") for w in words if w.strip(".-")]
+    if not words:
+        return ""
+    return 'title ~ "%s*"' % " ".join(words)[:100]
+
+
+def search_pages(t: WikiConfluenceTarget, key: str, text: str) -> list[dict]:
+    """Pages of the space whose title matches, with the titles above each
+    one (``path``) so the picker can show where it sits."""
+    key = clean_space_key(key)
+    clause = cql_title(text)
+    if not clause:
+        return []
+    cql = 'space = "%s" and type = page and %s' % (key, clause)
+    res = _call(t, "GET", "/rest/api/content/search",
+                query={"cql": cql, "limit": MAX_HITS, "expand": "ancestors"})
+    return [r for r in map(_page_row, _results(res, "the search")) if r]
 
 
 # ── storage format ───────────────────────────────────────────────────────────
@@ -331,17 +457,23 @@ def _current_version(t: WikiConfluenceTarget, page_id: str) -> int | None:
     return int(((res.get("json") or {}).get("version") or {}).get("number") or 1)
 
 
-def publish(t: WikiConfluenceTarget, article: WikiArticle, user, *, acknowledged=False,
-            override_scan=False, source_url: str = "") -> tuple:
-    """``(link, created)``. Raises :class:`ConfluenceError`."""
+def publish(t: WikiConfluenceTarget, article: WikiArticle, user, *, space_key: str,
+            parent_page_id: str = "", acknowledged=False, override_scan=False,
+            source_url: str = "") -> tuple:
+    """``(link, created)``. Raises :class:`ConfluenceError`.
+
+    ``space_key`` and ``parent_page_id`` are where a NEW page goes. Once the
+    article has a page in that space, publishing again updates that page
+    where it is: the parent is not used to move it."""
     if not t.enabled:
-        raise ConfluenceError("The target %s is disabled." % t.name)
+        raise ConfluenceError("The Confluence connection %s is disabled." % t.name)
     if not can_publish(user, article):
         raise ConfluenceError("Only the author or a moderator publishes a published article "
                               "to Confluence.")
+    key, parent = clean_space_key(space_key), clean_page_id(parent_page_id)
     if is_narrow(article) and not acknowledged:
         raise ConfluenceError("This article is not for everyone in SATOM. Confirm that the "
-                              "readers of the Confluence space %s may read it." % t.space_key,
+                              "readers of the Confluence space %s may read it." % key,
                               needs_ack=True)
     findings = scan(article)
     if findings and not (override_scan and wiki_access.is_moderator(user)):
@@ -350,7 +482,8 @@ def publish(t: WikiConfluenceTarget, article: WikiArticle, user, *, acknowledged
                               findings=findings)
     rev = version_of(article)
     body = storage(article, rev, source_url=source_url)
-    link = WikiConfluenceLink.query.filter_by(article_id=article.id, target_id=t.id).first()
+    link = WikiConfluenceLink.query.filter_by(article_id=article.id, target_id=t.id,
+                                              space_key=key).first()
     number = _current_version(t, link.page_id) if link is not None else None
     if link is not None and number is None:
         db.session.delete(link)          # deleted in Confluence: publish a new page
@@ -359,16 +492,16 @@ def publish(t: WikiConfluenceTarget, article: WikiArticle, user, *, acknowledged
     created = link is None
     if created:
         if t.flavor == "cloud":
-            payload = {"spaceId": space(t)["id"], "status": "current", "title": rev.title,
+            payload = {"spaceId": space(t, key)["id"], "status": "current", "title": rev.title,
                        "body": {"representation": "storage", "value": body}}
-            if t.parent_page_id:
-                payload["parentId"] = t.parent_page_id
+            if parent:
+                payload["parentId"] = parent
             res = _call(t, "POST", "/api/v2/pages", body=payload)
         else:
-            payload = {"type": "page", "title": rev.title, "space": {"key": t.space_key},
+            payload = {"type": "page", "title": rev.title, "space": {"key": key},
                        "body": {"storage": {"value": body, "representation": "storage"}}}
-            if t.parent_page_id:
-                payload["ancestors"] = [{"id": t.parent_page_id}]
+            if parent:
+                payload["ancestors"] = [{"id": parent}]
             res = _call(t, "POST", "/rest/api/content", body=payload)
     else:
         message = "SATOM Wiki version %d" % rev.number
@@ -379,7 +512,7 @@ def publish(t: WikiConfluenceTarget, article: WikiArticle, user, *, acknowledged
             res = _call(t, "PUT", "/api/v2/pages/%s" % link.page_id, body=payload)
         else:
             payload = {"id": link.page_id, "type": "page", "title": rev.title,
-                       "space": {"key": t.space_key},
+                       "space": {"key": key},
                        "body": {"storage": {"value": body, "representation": "storage"}},
                        "version": {"number": number + 1, "message": message}}
             res = _call(t, "PUT", "/rest/api/content/%s" % link.page_id, body=payload)
@@ -393,7 +526,8 @@ def publish(t: WikiConfluenceTarget, article: WikiArticle, user, *, acknowledged
     if not page_id.isdigit():
         raise ConfluenceError("Confluence did not say which page it wrote.")
     if link is None:
-        link = WikiConfluenceLink(article_id=article.id, target_id=t.id, page_id=page_id)
+        link = WikiConfluenceLink(article_id=article.id, target_id=t.id, page_id=page_id,
+                                  space_key=key, parent_page_id=parent)
         db.session.add(link)
     link.page_url = _page_url(t, j)[:1000]
     link.published_revision = rev.number
@@ -406,6 +540,17 @@ def publish(t: WikiConfluenceTarget, article: WikiArticle, user, *, acknowledged
 def links(article: WikiArticle) -> list[WikiConfluenceLink]:
     return (WikiConfluenceLink.query.filter_by(article_id=article.id)
             .order_by(WikiConfluenceLink.id).all())
+
+
+def link_counts(article_ids) -> dict[int, int]:
+    """``{article_id: pages in Confluence}`` for a list page, in one query."""
+    ids = [int(i) for i in article_ids]
+    if not ids:
+        return {}
+    return dict(db.session.query(WikiConfluenceLink.article_id,
+                                 db.func.count(WikiConfluenceLink.id))
+                .filter(WikiConfluenceLink.article_id.in_(ids))
+                .group_by(WikiConfluenceLink.article_id).all())
 
 
 def targets(enabled_only: bool = False) -> list[WikiConfluenceTarget]:

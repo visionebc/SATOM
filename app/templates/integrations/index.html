@@ -15,7 +15,7 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-plug me-2 text-accent"></i>{{ _('Integrations') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-    {{ _('Outbound links to systems SATOM does not own: NetBox for maintenance windows, an issue tracker (Jira, OpenProject or Vikunja) for change tickets, and your own Python hooks for anything else. Every integration here is optional — with all of them off, change requests and upgrades work exactly as before. Nothing on this page is contacted while the page renders.') }}
+    {{ _('Outbound links to systems SATOM does not own: NetBox for maintenance windows, an issue tracker (Jira, OpenProject or Vikunja) for change tickets, Confluence for Wiki articles, and your own Python hooks for anything else. Every integration here is optional — with all of them off, change requests and upgrades work exactly as before. Nothing on this page is contacted while the page renders.') }}
     </p>
   </div>
 </div>
@@ -164,6 +164,94 @@
           <i class="bi bi-broadcast me-1"></i>{{ _('Test connection') }}
         </button>
         <span id="tk-test-result" class="small align-self-center"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+{#  Confluence connections (views/integrations.confluence_*). The Wiki's
+    Confluence button publishes through them; the space and the parent page
+    are picked there, per article. The credential is write-only here.     #}
+<div class="fw-card mb-3" id="confluence">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-box-arrow-up-right me-2 text-accent"></i>{{ _('Confluence') }}</span>
+    <span class="small text-muted">{{ _('Where Wiki articles can be published') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-muted mb-3">{{ _('One way: SATOM writes the page and replaces it on every publication; nothing comes back from Confluence. Whoever publishes an article picks the space and the parent page with the Confluence button on the article.') }}</p>
+    <table class="fw-table table mb-3">
+      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Address') }}</th><th>{{ _('Credential') }}</th><th>{{ _('Pages') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
+      <tbody>
+      {% for t in cf_targets %}
+      <tr>
+        <td><a href="{{ url_for('integrations.index', confluence=t.id) }}#confluence">{{ t.name }}</a>
+          {% if not t.enabled %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('disabled') }}</span>{% endif %}</td>
+        <td class="small">{{ t.base_url }} <span class="text-muted">({{ 'Cloud' if t.flavor == 'cloud' else 'Data Center' }})</span></td>
+        <td>{% if cf_has_secret(t) %}<span class="fw-badge fw-badge-success">{{ _('stored') }}</span>{% else %}<span class="fw-badge fw-badge-warning">{{ _('missing') }}</span>{% endif %}</td>
+        <td>{{ cf_counts.get(t.id, 0) }}</td>
+        <td class="actions-col text-nowrap">
+          <form method="post" action="{{ url_for('integrations.confluence_test', target_id=t.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-secondary">{{ _('Test') }}</button>
+          </form>
+          <form method="post" action="{{ url_for('integrations.confluence_delete', target_id=t.id) }}" class="d-inline"
+                data-cf-confirm="{{ _('Delete this connection? Its pages stay in Confluence; SATOM stops updating them.') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger" title="{{ _('Delete') }}"><i class="bi bi-trash"></i></button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted">{{ _('No Confluence connection yet.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    {% set t = cf_edit %}
+    <form method="post" action="{{ url_for('integrations.confluence_save', target_id=t.id) if t else url_for('integrations.confluence_save') }}" class="row g-2" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-12 d-flex align-items-center">
+        <h6 class="me-auto mb-0">{{ _('Edit %(name)s', name=t.name) if t else _('New connection') }}</h6>
+        {% if t %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('integrations.index') }}#confluence">{{ _('New connection') }}</a>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small mb-1" for="cf-name">{{ _('Name') }}</label>
+        <input class="form-control form-control-sm" id="cf-name" name="name" maxlength="80" required value="{{ t.name if t else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1" for="cf-flavor">{{ _('Confluence') }}</label>
+        <select class="form-select form-select-sm" id="cf-flavor" name="flavor">
+          <option value="cloud" {{ 'selected' if not t or t.flavor == 'cloud' }}>Cloud (REST API v2)</option>
+          <option value="datacenter" {{ 'selected' if t and t.flavor == 'datacenter' }}>Data Center / Server</option>
+        </select>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small mb-1" for="cf-url">{{ _('Address') }}</label>
+        <input class="form-control form-control-sm" id="cf-url" name="base_url" maxlength="500" required placeholder="https://example.atlassian.net/wiki" value="{{ t.base_url if t else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1" for="cf-auth">{{ _('Authentication') }}</label>
+        <select class="form-select form-select-sm" id="cf-auth" name="auth">
+          <option value="basic" {{ 'selected' if not t or t.auth == 'basic' }}>{{ _('User + API token') }}</option>
+          <option value="bearer" {{ 'selected' if t and t.auth == 'bearer' }}>{{ _('Personal access token') }}</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small mb-1" for="cf-user">{{ _('User (e-mail on Cloud)') }}</label>
+        <input class="form-control form-control-sm" id="cf-user" name="username" maxlength="255" value="{{ t.username if t else '' }}">
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small mb-1" for="cf-secret">{{ _('API token / password') }}</label>
+        <input class="form-control form-control-sm" id="cf-secret" name="secret" type="password" maxlength="8192" autocomplete="new-password"
+               placeholder="{{ _('Stored — leave empty to keep it') if t and cf_has_secret(t) else '' }}">
+        <div class="form-text">{{ _('Never shown again. Kept in the vault when one is configured, else encrypted. Changing the address, the flavour, the authentication or the user removes it.') }}</div>
+      </div>
+      <div class="col-12 d-flex flex-wrap gap-3 align-items-center">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="verify_tls" value="1" id="cf-tls" {{ 'checked' if not t or t.verify_tls }}>
+          <label class="form-check-label small" for="cf-tls">{{ _('Verify the TLS certificate (trust store)') }}</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="enabled" value="1" id="cf-on" {{ 'checked' if not t or t.enabled }}>
+          <label class="form-check-label small" for="cf-on">{{ _('Enabled') }}</label></div>
+        <button class="btn btn-fw-primary btn-sm ms-auto"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
       </div>
     </form>
   </div>
@@ -372,6 +460,12 @@
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
+// Confluence connections: confirm a delete (inline handlers are blocked by the CSP).
+document.querySelectorAll('form[data-cf-confirm]').forEach(function (f) {
+  f.addEventListener('submit', function (ev) {
+    if (!window.confirm(f.getAttribute('data-cf-confirm'))) { ev.preventDefault(); }
+  });
+});
 (function () {
   // Only ONE of the two schedule shapes is meaningful at a time; both stay in
   // the DOM so the posted field names match the Automation editor exactly.

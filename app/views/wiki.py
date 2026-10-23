@@ -24,7 +24,7 @@ from sqlalchemy import or_
 from ..auth.decorators import require_permission
 from ..branding import PRODUCTS
 from ..extensions import db
-from ..models import Permission, Profile
+from ..models import Profile
 from ..models_wiki import (STATUSES, UserGroup, WikiArticle, WikiComment,
                            WikiConfluenceLink, WikiConfluenceTarget, WikiRevision, WikiTag,
                            WikiTopic, wiki_article_adoms, wiki_article_tags)
@@ -162,6 +162,10 @@ def index():
                        if k not in ("page", "format", "adom")}, adoms=f["picked"]),
         follow_topic=wiki_social.subscription(current_user, "topic", topic.id) if topic else None,
         follow_tag=wiki_social.subscription(current_user, "tag", tag) if tag else None,
+        follow_scope=wiki_social.scope_follows(current_user),
+        follows=wiki_social.article_follows(current_user, [a.id for a in pagination.items]),
+        cf_pages=wiki_confluence.link_counts([a.id for a in pagination.items]),
+        **_confluence_ready(),
         **_nav_context(topic_id=topic.id if topic else None, tag=tag))
 
 
@@ -190,8 +194,7 @@ def _nav_context(*, topic_id=None, tag="") -> dict:
            "nav_total": sum(counts.values()), "nav_untopiced": int(counts.get(None, 0)),
            "nav_tag": tag, "tag_counts": _tag_counts(),
            "may_write": may_write,
-           "may_moderate": wiki_access.is_moderator(current_user),
-           "may_groups": current_user.can(Permission.USER_MANAGE)}
+           "may_moderate": wiki_access.is_moderator(current_user)}
     if may_write:
         ctx["new_editor"] = _editor_context()
         ctx["new_editor"]["default_topic"] = topic_id
@@ -227,7 +230,8 @@ def article(article_id, slug=None):
         may_change=lambda c: wiki_social.can_change_comment(current_user, c),
         may_delete=lambda c: wiki_social.can_delete_comment(current_user, c, art),
         watching=wiki_social.subscription(current_user, "article", art.id),
-        **_confluence_context(art),
+        cf_count=len(wiki_confluence.links(art)),
+        **_confluence_ready(),
         **_nav_context(topic_id=art.topic_id))
 
 
@@ -552,6 +556,23 @@ def subscribe():
     return redirect(_safe_next(url_for("wiki.subscriptions")))
 
 
+@bp.route("/subscribe/scope", methods=["POST"])
+@login_required
+@require_permission("wiki.view")
+def subscribe_scope():
+    """The Follow menu above the article list: follow exactly the ticked
+    ones among Everything, Global and the ADOMs."""
+    try:
+        added, removed = wiki_social.set_scope_follows(current_user,
+                                                       request.form.getlist("scope"))
+    except wiki_social.SocialError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    else:
+        flash("Following updated." if added or removed else "Nothing changed.", "success")
+    return redirect(_safe_next(url_for("wiki.index")))
+
+
 @bp.route("/subscriptions")
 @login_required
 @require_permission("wiki.view")
@@ -632,54 +653,138 @@ def export_zip():
 
 
 # ── Confluence ───────────────────────────────────────────────────────────────
+#
+# The connections are Settings › Integrations › Confluence (views/
+# integrations.py). Here: the Confluence button on each article (list and
+# article page) opens wiki/_confluence_modal.html, which reads the article's
+# state and browses the chosen connection's spaces and pages through the
+# JSON feeds below. Every feed asks can_publish first: browsing a space is
+# part of publishing, not something any reader may do.
 
-def _confluence_context(art) -> dict:
-    """The article page's Confluence block: shown to whoever may publish it
-    (its author and the moderators) once a target exists."""
+def _confluence_ready() -> dict:
+    """Whether the Confluence button may appear at all (an enabled
+    connection exists) and who may press it on which article."""
+    return {"cf_ready": bool(wiki_confluence.targets(enabled_only=True)),
+            "may_publish": lambda a: wiki_confluence.can_publish(current_user, a)}
+
+
+def _publishable_or_404(article_id: int) -> WikiArticle:
+    art = _article_or_404(article_id)
     if not wiki_confluence.can_publish(current_user, art):
-        return {"confluence": None}
-    tgts = wiki_confluence.targets(enabled_only=True)
-    lnks = wiki_confluence.links(art)
-    if not tgts and not lnks:
-        return {"confluence": None}
+        abort(403)
+    return art
+
+
+def _connection_or_404(raw) -> WikiConfluenceTarget:
+    t = db.session.get(WikiConfluenceTarget, int(raw) if str(raw or "").isdigit() else 0)
+    if t is None or not t.enabled:
+        abort(404)
+    return t
+
+
+def _feed_error(exc) -> tuple:
+    return jsonify({"ok": False, "error": str(exc)}), 200
+
+
+@bp.route("/a/<int:article_id>/confluence/state")
+@login_required
+@require_permission("wiki.view")
+def confluence_state(article_id):
+    """What the dialog needs before anything is asked of Confluence."""
+    art = _publishable_or_404(article_id)
     try:
         findings = wiki_confluence.scan(art)
     except wiki_export.ExportError:
         findings = []
-    return {"confluence": {"targets": tgts, "links": lnks, "findings": findings,
-                           "narrow": wiki_confluence.is_narrow(art),
-                           "may_override": wiki_access.is_moderator(current_user)}}
+    return jsonify({
+        "ok": True, "title": art.title, "revision": art.revision,
+        "narrow": wiki_confluence.is_narrow(art),
+        "findings": [{"kind": f["kind"], "line": f["line"]} for f in findings],
+        "may_override": wiki_access.is_moderator(current_user),
+        "connections": [{"id": t.id, "name": t.name}
+                        for t in wiki_confluence.targets(enabled_only=True)],
+        "links": [{"id": l.id, "connection": l.target_id, "connection_name": l.target.name,
+                   "space": l.space_key, "page_id": l.page_id, "page_url": l.page_url,
+                   "revision": l.published_revision,
+                   "current": l.published_revision == art.revision,
+                   "at": l.published_at.strftime("%Y-%m-%d %H:%M") if l.published_at else "",
+                   "by": l.published_by,
+                   "forget": url_for("wiki.confluence_forget", article_id=art.id,
+                                     link_id=l.id)}
+                  for l in wiki_confluence.links(art)],
+    })
+
+
+@bp.route("/a/<int:article_id>/confluence/spaces")
+@login_required
+@require_permission("wiki.view")
+def confluence_spaces(article_id):
+    _publishable_or_404(article_id)
+    t = _connection_or_404(request.args.get("connection"))
+    try:
+        rows = wiki_confluence.spaces(t)
+    except wiki_confluence.ConfluenceError as exc:
+        return _feed_error(exc)
+    return jsonify({"ok": True, "spaces": rows,
+                    "truncated": len(rows) >= wiki_confluence.MAX_SPACES})
+
+
+@bp.route("/a/<int:article_id>/confluence/pages")
+@login_required
+@require_permission("wiki.view")
+def confluence_pages(article_id):
+    """One level of the space's tree (``parent`` = '' for the top level),
+    or the pages whose title matches ``q``."""
+    _publishable_or_404(article_id)
+    t = _connection_or_404(request.args.get("connection"))
+    args = request.args
+    try:
+        if (args.get("q") or "").strip():
+            rows = wiki_confluence.search_pages(t, args.get("space"), args.get("q"))
+            return jsonify({"ok": True, "search": True, "pages": rows})
+        rows = wiki_confluence.pages(t, args.get("space"), args.get("parent", ""))
+    except wiki_confluence.ConfluenceError as exc:
+        return _feed_error(exc)
+    return jsonify({"ok": True, "search": False, "pages": rows})
+
+
+def _back_from_dialog(art) -> str:
+    nxt = request.form.get("next") or ""
+    if nxt.startswith("/wiki/") and not nxt.startswith("//"):
+        return nxt
+    return url_for("wiki.article", article_id=art.id, slug=art.slug)
 
 
 @bp.route("/a/<int:article_id>/confluence", methods=["POST"])
 @login_required
 @require_permission("wiki.view")
 def confluence_publish(article_id):
-    art = _article_or_404(article_id)
-    if not wiki_confluence.can_publish(current_user, art):
-        abort(403)
-    t = db.session.get(WikiConfluenceTarget, request.form.get("target_id", type=int) or 0)
-    if t is None:
-        abort(404)
-    back = url_for("wiki.article", article_id=art.id, slug=art.slug) + "#confluence"
+    art = _publishable_or_404(article_id)
+    t = _connection_or_404(request.form.get("connection") or request.form.get("target_id"))
+    back = _back_from_dialog(art)
     override = request.form.get("override_scan") == "1"
+    space_key = request.form.get("space", "")
+    parent = request.form.get("parent", "")
     try:
         link, created = wiki_confluence.publish(
-            t, art, current_user, acknowledged=request.form.get("acknowledge") == "1",
+            t, art, current_user, space_key=space_key, parent_page_id=parent,
+            acknowledged=request.form.get("acknowledge") == "1",
             override_scan=override, source_url=_source_url(art))
     except wiki_confluence.ConfluenceError as exc:
         db.session.rollback()
         log_action("wiki.confluence.refused", target=art.slug,
-                   extra={"article_id": art.id, "target": t.name, "reason": str(exc)[:300],
+                   extra={"article_id": art.id, "connection": t.name,
+                          "space": str(space_key)[:64], "reason": str(exc)[:300],
                           "findings": exc.findings})
         flash(str(exc), "danger")
         return redirect(back)
     log_action("wiki.confluence.publish", target=art.slug,
-               extra={"article_id": art.id, "target": t.name, "page_id": link.page_id,
+               extra={"article_id": art.id, "connection": t.name, "space": link.space_key,
+                      "parent_page_id": link.parent_page_id, "page_id": link.page_id,
                       "version": link.published_revision, "created": created,
                       "scan_overridden": override and bool(wiki_confluence.scan(art))})
-    flash(("Published to %s as a new page." if created else "Updated the page in %s.")
-          % t.name, "success")
+    flash(("“%s” published to the %s space as a new page." if created
+           else "“%s” updated in the %s space.") % (art.title, link.space_key), "success")
     return redirect(back)
 
 
@@ -700,74 +805,14 @@ def confluence_forget(article_id, link_id):
     log_action("wiki.confluence.forget", target=art.slug,
                extra={"article_id": art.id, "page_url": url})
     flash("SATOM no longer updates that page. It is still in Confluence.", "success")
-    return redirect(url_for("wiki.article", article_id=art.id, slug=art.slug) + "#confluence")
+    return redirect(_back_from_dialog(art))
 
 
-def _target_form() -> dict:
-    f = request.form
-    return {"name": f.get("name", ""), "flavor": f.get("flavor", "cloud"),
-            "base_url": f.get("base_url", ""), "space_key": f.get("space_key", ""),
-            "parent_page_id": f.get("parent_page_id", ""), "auth": f.get("auth", "basic"),
-            "username": f.get("username", ""), "verify_tls": f.get("verify_tls") == "1",
-            "enabled": f.get("enabled") == "1"}
-
-
-@bp.route("/confluence", methods=["GET", "POST"])
-@bp.route("/confluence/<int:target_id>", methods=["GET", "POST"])
+@bp.route("/confluence")
+@bp.route("/confluence/<int:target_id>")
 @login_required
-@require_permission("wiki.moderate")
+@require_permission("wiki.view")
 def confluence_targets(target_id=None):
-    t = (db.session.get(WikiConfluenceTarget, target_id) or abort(404)) if target_id else None
-    if request.method == "POST":
-        try:
-            t, dropped = wiki_confluence.save_target(t, _target_form(), current_user.username)
-            secret = request.form.get("secret", "")
-            if secret:
-                wiki_confluence.set_secret(t, secret)
-        except wiki_confluence.ConfluenceError as exc:
-            db.session.rollback()
-            flash(str(exc), "danger")
-            return redirect(url_for("wiki.confluence_targets", target_id=target_id)
-                            if target_id else url_for("wiki.confluence_targets"))
-        log_action("wiki.confluence.target", target=t.name,
-                   extra={"target_id": t.id, "flavor": t.flavor, "base_url": t.base_url,
-                          "space": t.space_key, "secret_set": bool(secret),
-                          "secret_dropped": dropped})
-        flash("Target saved." + (" Its address or account changed, so the stored credential "
-                                 "was removed: enter it again." if dropped and not secret
-                                 else ""), "warning" if dropped and not secret else "success")
-        return redirect(url_for("wiki.confluence_targets", target_id=t.id))
-    return render_template("wiki/confluence.html", target=t,
-                           targets=wiki_confluence.targets(),
-                           has_secret=wiki_confluence.has_secret,
-                           counts=dict(db.session.query(WikiConfluenceLink.target_id,
-                                                        db.func.count(WikiConfluenceLink.id))
-                                       .group_by(WikiConfluenceLink.target_id).all()),
-                           **_nav_context())
-
-
-@bp.route("/confluence/<int:target_id>/test", methods=["POST"])
-@login_required
-@require_permission("wiki.moderate")
-def confluence_test(target_id):
-    t = db.session.get(WikiConfluenceTarget, target_id) or abort(404)
-    try:
-        sp = wiki_confluence.space(t)
-    except wiki_confluence.ConfluenceError as exc:
-        flash("Test failed: %s" % exc, "danger")
-    else:
-        flash("Reached space %s (%s)." % (sp["name"], t.space_key), "success")
-    return redirect(url_for("wiki.confluence_targets", target_id=t.id))
-
-
-@bp.route("/confluence/<int:target_id>/delete", methods=["POST"])
-@login_required
-@require_permission("wiki.moderate")
-def confluence_delete(target_id):
-    t = db.session.get(WikiConfluenceTarget, target_id) or abort(404)
-    name = t.name
-    wiki_confluence.delete_target(t)
-    log_action("wiki.confluence.target_delete", target=name, extra={"target_id": target_id})
-    flash("Target deleted. Its pages stay in Confluence; SATOM no longer updates them.",
-          "success")
-    return redirect(url_for("wiki.confluence_targets"))
+    """The connections moved to Settings › Integrations › Confluence."""
+    return redirect(url_for("integrations.index", confluence=target_id) + "#confluence"
+                    if target_id else url_for("integrations.index") + "#confluence")

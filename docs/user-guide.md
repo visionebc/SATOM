@@ -8534,6 +8534,29 @@ happen. Nothing external — NetBox down, a hook erroring, SMTP refusing — can
 change the recorded outcome of the change itself.
 
 
+### 35.5 Confluence (Wiki publishing)
+
+The connections the Wiki publishes articles through (§46.8). One row per
+Confluence site and account; the space and the parent page are not set here —
+whoever publishes an article picks them in its Confluence dialog.
+
+| Field | |
+|---|---|
+| **Name** | how the publishing dialog names it when there are several |
+| **Confluence** | *Cloud* (REST API v2, `https://<site>.atlassian.net/wiki` — `/wiki` is added for an `atlassian.net` address) or *Data Center / Server* (`/rest/api/content`) |
+| **Address** | `https://` only: the credential travels with every call |
+| **Authentication** | *User + API token* (Cloud: your Atlassian e-mail and an API token) or *Personal access token* (Data Center) |
+| **API token / password** | write-only; kept in the vault when one is configured, else encrypted. Changing the address, the flavour, the authentication or the user removes it, so a stored credential is never sent somewhere new by an edit |
+| **Verify the TLS certificate** | against the trust store (Settings › Certificates & Trust) |
+| **Enabled** | a disabled connection is not offered and its pages are not updated |
+
+**Test** lists the spaces the account can see and says how many; 0 is an
+answer (the account reaches Confluence but sees no space), not a success.
+**Delete** leaves the pages in Confluence; SATOM stops updating them. The
+table shows how many pages each connection keeps up to date. Until
+2026-10-23 this was *Wiki › Confluence* (moderators), with one space and
+parent page per entry; old links to it land here.
+
 ## 36. Putting any appliance under change control
 
 A Change Request covers **every product**: FortiWeb, FortiADC,
@@ -9177,7 +9200,7 @@ discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
    the console is either **on the map** (129 today) or **excluded with a written
-   reason** (174 today — JSON feeds, downloads, redirects and fragments that
+   reason** (176 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the
@@ -10607,7 +10630,7 @@ dropped files are not stored: link an image by its `https://` address.
 |---|---|
 | `wiki.view` (*Read the Wiki*) | open the Wiki and read the articles whose audience includes you |
 | `wiki.write` (*Write Wiki articles*) | create articles; edit the text, topic and tags of any article you can read |
-| `wiki.moderate` (*Moderate the Wiki*, admin) | read, edit and delete every article; manage **Topics** and the **Confluence** spaces; publish to Confluence despite a credential warning |
+| `wiki.moderate` (*Moderate the Wiki*, admin) | read, edit and delete every article; manage **Topics**; publish to Confluence despite a credential warning |
 
 Who can read an article, archiving it and deleting it stay with its author
 and the moderators; other editors see the audience fields disabled.
@@ -10619,7 +10642,7 @@ administrator adds them under **Profiles**.
 **Groups** name people across profiles — a team, an on-call rota. They are
 **Administrator › Access › Groups** (§23.7), the same groups Plugin Studio
 apps are shared with, and are managed by whoever manages users
-(`user_manage`); the Wiki menu links there. A group grants nothing by itself:
+(`user_manage`). A group grants nothing by itself:
 it is a name an article's audience or an app's access can use. The Access ›
 Groups page says how many Wiki articles name each group, and deleting one
 leaves those articles closed (author and moderators only), never open. Until
@@ -10649,9 +10672,14 @@ same rules as articles: raw HTML is text, unsafe links are removed.
 
 ### 46.6 Following and notices
 
-**Follow** (on an article, on a topic's list, on a tag's list) or
-**Wiki › Following** puts a notice in your bell when something you follow
-changes:
+**Follow** puts a notice in your bell when something you follow changes. It
+is on each article's card in the list and on the article page, on a topic's
+list and on a tag's list. ADOMs, Global and everything are followed from the
+**Follow** button above the article list: it unfolds one box per ADOM plus
+**Global** and **Everything**; tick the ones you want and press **Save** (the
+button then reads **Following** with how many you follow). The link at its
+bottom, **All I follow and e-mail**, opens the page that lists everything you
+follow and turns the e-mail copy on or off per subscription.
 
 | You follow | You hear about |
 |---|---|
@@ -10674,7 +10702,7 @@ changes:
 - The notice lands in the bell of an ADOM where you can read the article
   (for a Global article, your own ADOM).
 - **E-mail** (per subscription) also sends a message to your **recovery
-  e-mail address** (Settings › Security), one message per person, when
+  e-mail address** (your Profile › Security), one message per person, when
   e-mail is enabled under Settings › Email. It carries the title, the
   description or the start of the comment and the link — never the article
   text. Unlike the bell, a sent e-mail cannot be taken back when the
@@ -10706,47 +10734,54 @@ open answers *not found*.
 
 ### 46.8 Publishing to Confluence
 
-An article's author or a moderator can publish its published version to a
-Confluence space. It is **one way**: SATOM writes the page, nothing comes
-back, and an edit made in Confluence is replaced at the next publication (the
-page says so in its last line).
+An article's author or a moderator can publish its published version to
+Confluence. It is **one way**: SATOM writes the page, nothing comes back, and
+an edit made in Confluence is replaced at the next publication (the page says
+so in its last line). The connection — address, account and credential — is
+set up once by an administrator in **Settings › Integrations › Confluence**
+(§35.5); the space and the place in it are chosen at each publication.
 
-**Setting up a space (moderators): Wiki › Confluence.**
+**Publishing.** Each article's card in the list and the article page carry a
+**Confluence** button (with the number of pages it already has there) for its
+author and the moderators, once a connection is enabled. It opens a dialog:
 
-| Field | |
-|---|---|
-| **Confluence** | *Cloud* (REST API v2, `https://<site>.atlassian.net/wiki` — `/wiki` is added for an `atlassian.net` address) or *Data Center / Server* (`/rest/api/content`) |
-| **Address** | `https://` only: the credential travels with every call |
-| **Space key** | the space pages are created in |
-| **Parent page id** | optional; new pages go under it (the number in the page's address) |
-| **Authentication** | *User + API token* (Cloud: your Atlassian e-mail and an API token) or *Personal access token* (Data Center) |
-| **API token / password** | write-only; kept in the vault when one is configured, else encrypted. Changing the address, the flavour, the authentication or the user removes it, so a stored credential is never sent somewhere new by an edit |
+1. **Connection** — only shown when there are several.
+2. **Space** — every space the connection's account can see, by name; the box
+   above filters the list.
+3. **Parent page** — appears once a space is picked: the space's page tree
+   (open a page's arrow to see the pages under it) or **Search the pages of
+   this space** by title, each hit shown with the pages above it. Click the
+   page the new one goes under; **Top level of the space** is the default.
+4. **Publish version N**.
 
-**Test** reads the space and shows its name.
-
-**Publishing (article page › Confluence).** Pick the space and press
-**Publish version N**:
-
-- the first publication creates a page and SATOM remembers its id; later
-  ones update **that page** with the next Confluence version, even if its
-  title changed; a page deleted in Confluence is created again;
-- an article published to some ADOMs or limited to profiles or groups needs
+- The first publication to a space creates a page and SATOM remembers its id;
+  later ones to the **same space** update **that page** with the next
+  Confluence version (the button reads **Update to version N**), even if its
+  title changed or it was moved — the parent is not used to move it, and the
+  dialog says so. A page deleted in Confluence is created again. Publishing
+  to another space creates a second page there; each is kept up to date
+  separately.
+- An article published to some ADOMs or limited to profiles or groups needs
   the box *The readers of that Confluence space may read it* — Confluence
-  does not know SATOM's audience;
-- **credential check**: the title, description and text are scanned for what
+  does not know SATOM's audience.
+- **Credential check**: the title, description and text are scanned for what
   looks like a credential (private keys, cloud and Git tokens, JSON Web
   Tokens, FortiOS `set … ENC …` lines, `user:password@` in a URL,
   `Authorization:` headers, `password: …`-style values that are not
   placeholders such as `<password>` or `${VAR}`). A finding is listed by kind
   and line, never by value, and stops the publication. A moderator may tick
-  *these are not credentials* and publish; that is audited;
-- the block shows each page, the version it holds and whether it is up to
-  date; **Forget** stops updating a page and leaves it in Confluence.
-  Deleting the article or the space in SATOM also leaves the pages there.
+  *these are not credentials* and publish; that is audited.
+- **Already in Confluence** at the top of the dialog lists each page, its
+  space, the version it holds and whether it is up to date; **Forget** stops
+  updating a page and leaves it in Confluence. Deleting the article or the
+  connection in SATOM also leaves the pages there.
+- Browsing spaces and pages is part of publishing: only the article's author
+  and the moderators can do it, and only through an enabled connection.
 
 The call goes through the same checked path as Plugin Studio connections:
 no address of the node itself, its HA peer, loopback or link-local; no
-redirect followed; the credential removed from every error message. Every
+redirect followed; the credential removed from every error message. Only
+words of a search reach Confluence's query language (CQL). Every
 publication, refusal and setting change is in the audit log
 (`wiki.confluence.*`).
 

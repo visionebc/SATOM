@@ -75,6 +75,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed
 
+- **Wiki: Follow and Confluence move onto the articles.** Each article's card
+  in the list now has its own **Follow** button (as the article page does),
+  and ADOMs, Global and everything are followed from one **Follow** button
+  above the article list that unfolds one box per ADOM; the *Following* link
+  left the Wiki menu (the full list, with the e-mail choice, is linked from
+  that button). The *Groups* link left the Wiki menu too (groups stay in
+  Administrator › Access › Groups). **Confluence connections moved to
+  Settings › Integrations › Confluence** (administrators) and no longer fix
+  a space or parent page: the new **Confluence** button on each card and on
+  the article page opens a dialog where the publisher picks the space from
+  the ones the connection sees and, once a space is picked, the parent page
+  from its page tree or by searching its titles. An article can now have a
+  page in several spaces; publishing again to a space updates its page where
+  it is. Old *Wiki › Confluence* links land on the new card. Requested by the
+  operator: "Following should be above where the articles start, just a
+  button that unfolds to pick which ADOM; a follow button on each article's
+  card and inside the article; remove the Groups button; the Confluence
+  integration belongs in Settings › Integrations, with a button like the
+  subscription one on the card and in the article so that article is the one
+  that goes to Confluence; the user only picks the space, and the parent
+  appears once the space is picked, with a search and the tree".
 - **Settings menu regrouped, one level deeper.** *System › General* is now a
   sub-menu holding General, Node TLS, Email & Alerts and Thresholds;
   **Integrations** is a group of its own (Integrations, DNS Records,

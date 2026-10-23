@@ -393,10 +393,12 @@ SEND_INLINE = False
 
 def _links(article: WikiArticle, anchor: str = "") -> tuple[str, str]:
     from flask import url_for
+
+    from .link_host import external_url
     path = url_for("wiki.article", article_id=article.id, slug=article.slug) + anchor
-    try:
-        ext = url_for("wiki.article", article_id=article.id, slug=article.slug,
-                      _external=True) + anchor
+    try:   # mailed to other users: never on a host the request made up
+        ext = external_url("wiki.article", article_id=article.id,
+                           slug=article.slug) + anchor
     except Exception:  # noqa: BLE001
         ext = path
     return path, ext

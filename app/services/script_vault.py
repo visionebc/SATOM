@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from . import secret_backend as sb
@@ -131,6 +132,9 @@ def _vault_info(cfg: dict) -> dict:
 def _wrapped_read(cfg: dict, tok: str, kv_path: str) -> str | None:
     """Single-use wrapping token for one KV v2 path, or None if absent."""
     url = "%s/v1/%s/data/%s" % (cfg["addr"], cfg["mount"], kv_path)
+    # Same rule as secret_backend._request: urllib also opens file://.
+    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+        raise ScriptError("the vault address must be an http(s) URL")
     req = urllib.request.Request(url, method="GET")
     req.add_header("X-Vault-Token", tok)
     req.add_header("X-Vault-Wrap-TTL", str(WRAP_TTL))

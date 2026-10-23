@@ -578,7 +578,8 @@ def _download(data, name: str, kind: str) -> Response:
 
 
 def _source_url(art) -> str:
-    return url_for("wiki.article", article_id=art.id, slug=art.slug, _external=True)
+    from ..services.link_host import external_url
+    return external_url("wiki.article", article_id=art.id, slug=art.slug)
 
 
 @bp.route("/a/<int:article_id>/export.<fmt>")

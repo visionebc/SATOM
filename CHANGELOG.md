@@ -142,6 +142,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   reused when the device has it; removed by the rollback only when this run
   created it).
 
+### Security
+
+- **certifi 2026.10.19** (pinned in `requirements.txt`, was unpinned and
+  2026.6.17 on installed nodes): earlier bundles trust the `emSign ECC Root CA
+  - G3`, under which eight intermediates with compromised keys were issued
+  (PYSEC-2026-4320 / GHSA-6q48-6c7w-9gw2). SATOM's trust store starts from
+  that bundle, so every outbound TLS check trusted them.
+- **Wiki e-mail links followed the request's Host header**: the absolute link
+  in a follower's notification (and the source line of an export) was built
+  from whatever Host the author's request carried, so it could point other
+  users at another server. It now uses the same rule as the password-reset
+  link: the request's host only when it is one of the node's own names or in
+  `LINK_HOSTS`, otherwise the node's FQDN (`services/link_host.py`).
+- **`/api/v1/metrics/query` accepted `start`/`end` = `nan` or `inf`**: NaN
+  fails every comparison, so it slipped past the range check into the store.
+  Both must now be finite unix seconds (400 otherwise).
+- Defence in depth: the script vault's wrapped read and the Gitea probe of the
+  infrastructure health page only open `http(s)` URLs (urllib also opens
+  `file://`).
+
 ## [3.4.8] - 2026-10-22
 
 Integration hooks can make HTTP requests again (broken since 3.4.2), and

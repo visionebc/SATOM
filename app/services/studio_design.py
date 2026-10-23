@@ -691,7 +691,7 @@ def render_result(design: dict, *, graph: dict | None = None, editing: bool = Fa
                            editing=editing, titles=output_titles(graph or {}), a=app,
                            D=sys.modules[__name__],
                            stamp=hashlib.sha1(json.dumps(design.get("result"), sort_keys=True)
-                                              .encode()).hexdigest()[:12])
+                                              .encode(), usedforsecurity=False).hexdigest()[:12])
 
 
 # --------------------------------------------------------------------------- #

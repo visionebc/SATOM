@@ -117,6 +117,8 @@ def _git() -> dict:
         if u.scheme and u.netloc:
             base = "%s://%s" % (u.scheme, u.netloc)
             out["base"] = base
+            if u.scheme not in ("http", "https"):
+                raise ValueError("not an http(s) remote")   # ssh://; urllib would open file://
             try:  # Gitea answers /api/v1/version unauthenticated
                 from . import trust_store
                 with urllib.request.urlopen(base + "/api/v1/version",

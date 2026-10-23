@@ -258,6 +258,26 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   created it).</p>
 </li>
 </ul>
+<h3 id="security">Security</h3>
+<ul>
+<li><strong>certifi 2026.10.19</strong> (pinned in <code>requirements.txt</code>, was unpinned and
+  2026.6.17 on installed nodes): earlier bundles trust the `emSign ECC Root CA</li>
+<li>G3`, under which eight intermediates with compromised keys were issued
+  (PYSEC-2026-4320 / GHSA-6q48-6c7w-9gw2). SATOM's trust store starts from
+  that bundle, so every outbound TLS check trusted them.</li>
+<li><strong>Wiki e-mail links followed the request's Host header</strong>: the absolute link
+  in a follower's notification (and the source line of an export) was built
+  from whatever Host the author's request carried, so it could point other
+  users at another server. It now uses the same rule as the password-reset
+  link: the request's host only when it is one of the node's own names or in
+  <code>LINK_HOSTS</code>, otherwise the node's FQDN (<code>services/link_host.py</code>).</li>
+<li><strong><code>/api/v1/metrics/query</code> accepted <code>start</code>/<code>end</code> = <code>nan</code> or <code>inf</code></strong>: NaN
+  fails every comparison, so it slipped past the range check into the store.
+  Both must now be finite unix seconds (400 otherwise).</li>
+<li>Defence in depth: the script vault's wrapped read and the Gitea probe of the
+  infrastructure health page only open <code>http(s)</code> URLs (urllib also opens
+  <code>file://</code>).</li>
+</ul>
 <h2 id="348---2026-10-22">[3.4.8] - 2026-10-22</h2>
 <p>Integration hooks can make HTTP requests again (broken since 3.4.2), and
 the triggers, automations and API Catalog pages are translated into German,
@@ -973,7 +993,7 @@ whose scripts need more raises them in a systemd drop-in.</p>
   files and a restore puts them back next to the theme rows. A bundle made
   before this change has no such folder and leaves the node's files alone.</li>
 </ul>
-<h3 id="security">Security</h3>
+<h3 id="security_1">Security</h3>
 <ul>
 <li><strong>Python Studio security review</strong> (asked for as "a security test, verify as
   well as you can that these scripts do not interfere with the
@@ -10162,7 +10182,7 @@ an opaque <code>-651</code> at deploy time.</p>
   unspecified space did not. Each class is now named separately so a future
   edit cannot drop one silently. Found by mutation, with the guards green.</li>
 </ul>
-<h3 id="security_1">Security</h3>
+<h3 id="security_2">Security</h3>
 <ul>
 <li>
 <p>The feed answers <strong>without a login</strong>, because a threat-feed connector cannot
@@ -11260,7 +11280,7 @@ missing half was the half that writes.</strong></p>
 </li>
 </ul>
 <h2 id="1100---2026-08-17">[1.10.0] - 2026-08-17</h2>
-<h3 id="security_2">Security</h3>
+<h3 id="security_3">Security</h3>
 <ul>
 <li><strong>A saved link bookmark can no longer carry a <code>javascript:</code> URL.</strong> The only
   check on the field was that it was non-empty, so any account able to save a
@@ -15847,7 +15867,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   standby — one of them deleted the node-written HA units and stopped
   replication.</li>
 </ul>
-<h3 id="security_3">Security</h3>
+<h3 id="security_4">Security</h3>
 <ul>
 <li>SSRF blocklist in the device API proxy now also refuses loopback targets.</li>
 <li>Triaged an internal AI security audit (14 findings): 1 real and fixed, 13

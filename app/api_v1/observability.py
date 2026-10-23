@@ -23,6 +23,7 @@ Snapshots are recorded with device secrets and runtime noise already stripped
 """
 from __future__ import annotations
 
+import math
 import re
 import time
 
@@ -331,6 +332,10 @@ def metrics_query():
         try:
             s, e = float(start), float(end)
         except (TypeError, ValueError):
+            return _err(400, "bad_request", "'start' and 'end' must be unix seconds.")
+        # float() also parses "nan" and "inf": NaN fails every comparison
+        # below, so it would slip past the range check into the store.
+        if not (math.isfinite(s) and math.isfinite(e)):
             return _err(400, "bad_request", "'start' and 'end' must be unix seconds.")
         if e <= s or (e - s) > MAX_RANGE_S:
             return _err(400, "bad_request",

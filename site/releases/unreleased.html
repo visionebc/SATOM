@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · Security · 23 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · Security · 23 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,11 +59,16 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · Security · 23 entries</span>
+        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
+        <ul class="rel-leads"></ul>
+      </a>
+      <a class="rel-nav-item" href="v3.5.0.html" data-rel-version="3.5.0">
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 3.5.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-meta">2026-10-23 · Added · Changed · Fixed · Security · 23 entries</span>
         <ul class="rel-leads"><li>Plugin packages</li><li>Code plugins</li><li>Plugins menu</li><li class="rel-more">… and 20 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.4.8.html" data-rel-version="3.4.8">
-        <span class="rel-nav-head"><span class="rel-nav-v">Version 3.4.8</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 3.4.8</span></span>
         <span class="rel-nav-meta">2026-10-22 · Fixed · 5 entries</span>
         <ul class="rel-leads"><li>Integration hooks could not make a single HTTP request</li><li>API manual:</li><li class="rel-more">… and 3 more</li></ul>
       </a>
@@ -465,173 +470,8 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="added">Added</h3>
-<ul>
-<li><strong>Plugin packages</strong> (<code>.satomplugin</code>, format <code>satom.plugin/1</code>): Report Studio
-  can <strong>export</strong> a view or widget and <strong>import</strong> a package from another server,
-  without an update package. Every file is checked against the manifest's
-  sha256 and a signature must be trusted and valid; signed imports land in
-  <em>testing</em>, unsigned in <em>draft</em>, a known slug updates in place (no silent
-  downgrade, the publish gate re-runs for a published view).</li>
-<li><strong>Code plugins</strong>: a signed package can carry a Flask blueprint, installed
-  under <code>data/plugins/code/</code> and mounted at <code>/x/&lt;slug&gt;/</code> behind sign-in at the
-  next <code>satom execute restart-all</code>. Unsigned code is refused; every start
-  re-verifies the signature and every file on disk, and a failing plugin is
-  skipped, never stopping the app. Report Studio lists them with their state,
-  Enable/Disable and Remove. Database: <code>plugins.pkg_version</code>,
-  <code>plugins.pkg_signer</code> (migration <code>plgpkg01</code>).</li>
-<li>
-<p><strong>Plugins menu</strong> (operator request): Operations → Automation → <em>Scripts</em> is
-  now <strong>Plugins</strong>, a submenu with <strong>All plugins</strong> (the page) and one entry per
-  published plugin the user may run, by name — the same access rule as the
-  page. In the Global ADOM the published apps are listed there too, so the
-  sidebar has one Plugins toggle.</p>
-</li>
-<li>
-<p><strong>SATOM steps in Plugin Studio apps</strong> (operator request, FA-0007): <em>Render
-  names</em>, <em>DDI: reserve an address</em> / <em>reserve by rules</em> / <em>release</em>, <em>Pick a
-  FortiWeb by capacity</em>, <em>Certificate (issue or reuse)</em>, <em>FortiWeb: create the
-  server policy</em> / <em>remove a created policy</em>. An existing DDI record is reused
-  and never deleted; the record read back decides an allocation; a step that
-  fails half-way undoes its own writes; only what a run created is undone on
-  an error arrow; device writes need <code>config_write</code>; a rehearsal returns
-  values of the real shape.</p>
-</li>
-<li><strong>Diagram analysis and run overlay</strong>: <strong>Analyze</strong> explains every step (what
-  it saves and reads, where its error goes, which undo steps that path
-  reaches) and warns about unreachable steps, unsaved variables and a write
-  without an error arrow after another write; <strong>Last run</strong> colours the steps
-  by how they ended. An armed app run that writes is also a <strong>job</strong> with one
-  log line per step.</li>
-<li><strong>App packages</strong>: a Plugin Studio app exports and imports as a
-  <code>satom.plugin/1</code> package of kind <em>app</em> — its data stores, its HTTP
-  connections without secrets and their API Catalog versions travel with it;
-  an import never overwrites this server's rows, connections or secrets.</li>
-<li><strong>Session-login connections</strong>: user + password posted to a login path under
-  the base URL, the session cookie reused, one new login on a 401 (the DDI API).</li>
-<li><strong>SATOM list form fields</strong>: FortiWebs, approved WPP templates, Certificate
-  Manager certificates, certificate providers, classification and segments.</li>
-<li>
-<p><strong>New FortiWeb server policy app, round 2</strong> (operator request): the form can
-  take <strong>typed addresses</strong> instead of a DDI reservation (<em>DDI: reserve by
-  rules</em> mode <em>given</em>: the DDI is not called, nothing typed is an error), the
-  <strong>VIP interface</strong> per FortiWeb role (a list of the fleet's interfaces; empty
-  = the FortiWeb rule's), and an <strong>existing server pool</strong> (a list of the
-  fleet's pools; bound, never written or removed, checked on the device before
-  any write). New lists: FortiWeb server pools and interfaces (local cache).</p>
-</li>
-<li>
-<p><strong>Certificate providers</strong> (operator request): the person issuing picks the
-  provider (seed: <em>Class E</em>, internal only; <em>Class C</em>); the certificate
-  remembers it for its renewal and revocation. Database:
-  <code>managed_certificate.provider</code>, <code>studio_apps.pkg_version</code>,
-  <code>studio_apps.pkg_signer</code> (migration <code>spoflow01</code>).</p>
-</li>
-<li>
-<p><strong>App actions</strong> in Plugin Studio → Apps (operator request): <strong>Disable /
-  Enable</strong> (out of every menu, no run starts — operator runs, event
-  automations, <em>Run another app</em>, <em>Run a script</em> steps; a saved script
-  schedule is skipped, not paused), <strong>Download data</strong> (zip: runs and a CSV per
-  data store), <strong>Reset</strong> (deletes the app's data from the database: its runs
-  and the rows of the data stores only it uses; shared stores are kept and
-  listed) and <strong>Delete</strong> (the app, its runs and the stores only it uses; a
-  script app takes its script, versions, saved runs and credentials).
-  Database: <code>studio_apps.kind</code>, <code>studio_apps.script_slug</code>,
-  <code>studio_apps.enabled</code> (migration <code>appkind01</code>).</p>
-</li>
-<li><strong>App designer</strong> (operator request: apps with "more style", cards and
-  colours, "a web designer"): Plugin Studio → app → <strong>Design</strong> lays out the
-  app's <strong>page</strong> (where each form field, the Run button and the result go,
-  among headings, Markdown text, cards, columns, tabs, banners, callouts,
-  images and link buttons) and its <strong>result</strong> (the run status, each Output
-  step where the author wants it, number tiles, the action buttons and the
-  steps), with drag and drop, an outline, undo/redo and a live preview drawn
-  by the server. Styles: any hex colour (background, gradient, text, border)
-  and fixed presets for spacing, corners, shadow, border, text size, weight,
-  alignment and width; an app <strong>theme</strong> recolours the app's own area only.
-  Blocks are drawn with SATOM's classes and there is no author HTML or CSS:
-  Markdown without raw HTML, hex colours and presets re-checked when drawn.
-  Images (PNG/JPEG/GIF/WebP sniffed from the bytes, no SVG, 512 KiB, 12 per
-  app) are served <code>nosniff</code> with <code>default-src 'none'</code> to the app's users and
-  travel in the app package. Publish freezes the design; a field placed twice
-  or a block naming a missing field, Output step or image blocks it; hard to
-  read colours only warn. An app without a design is unchanged. Run outputs
-  now carry their step key. Database: <code>studio_apps.design_json</code>,
-  <code>studio_app_assets</code> (migration <code>appdesign01</code>).</li>
-<li><strong>Templates</strong>: what Plugin Studio → Examples installs is a template — it
-  can be edited, disabled, reset and downloaded, never deleted. The Examples
-  <em>Remove</em> button and route are gone, and every delete (app, script, data
-  store, connection) refuses a template with the reason.</li>
-</ul>
-<h3 id="changed">Changed</h3>
-<ul>
-<li><strong>Every plugin is an app</strong> (operator request: "everything created should
-  be an app, even if it is only a script"): <strong>New app</strong> asks for the type,
-  <em>Flow</em> (form + diagram) or <em>Script</em> (Python code with a form, run in the
-  sandbox). A script app is the entry of its script — code, form, versions and
-  audience stay in the script editor and on disk for the sandbox runner, which
-  never holds a database connection. The <em>Scripts</em> pane is gone; scripts are
-  listed in <strong>Apps</strong> with their type, and existing scripts get their app the
-  first time an author opens Plugin Studio. The Plugins menu and <em>All plugins</em>
-  page list flow and script apps alike.</li>
-<li><strong>Plugin Studio on the first level of the sidebar</strong> (operator request): it
-  left Administrator → Studio and is an entry of its own, just above
-  Administrator, in every ADOM. The <em>Studio</em> section is gone; <strong>Report
-  Studio</strong> and <strong>Lua Studio</strong> are in <strong>Plugins</strong> in the Global ADOM too.</li>
-<li><strong>Automation sits right above Plugins, its entries alphabetical</strong> (operator
-  request): in a device ADOM the Automation sub-menu moved from below WAF to
-  Operations, just above Plugins (below Template Library); in the Global ADOM
-  Plugins is no longer a sub-menu <em>inside</em> Automation but the one right below
-  it, with the same entries for the same users. The Automation entries (API,
-  Automations, Certificate Manager, Change Requests, Device Provisioning,
-  Migration Report, System Provisioning, Upgrade Flow…) are sorted from their
-  rendered labels, so the order is alphabetical in every console language and
-  a new entry lands in its place by itself — the rule the Administrator
-  sections already follow.</li>
-<li><strong>Studios renamed</strong> (operator request): <em>Python Studio</em> is now <strong>Plugin
-  Studio</strong> and says it accepts Python code only; the custom-view studio that
-  had that name is now <strong>Report Studio</strong>. Labels only — URLs and permission
-  keys are unchanged. The plugin-package and code-plugin strings of the
-  Report Studio page are translated into German, Spanish, French and Italian.</li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li>
-<p><strong>Report Studio and Lua Studio links did not pin their ADOM</strong>: in the
-  Plugins menu (device ADOMs and Global) they were the only sidebar links
-  without <code>_adom=</code>, so a new tab opened them in whichever ADOM another tab
-  chose last. They pin it now, like every other entry.</p>
-</li>
-<li>
-<p><strong>The port of a Plugin Studio server policy was only a name</strong>: <em>FortiWeb:
-  create the server policy</em> always bound the predefined HTTPS (443) or the
-  default HTTP service, so a policy asked for 8443 listened on 443. A port
-  that is not the predefined one now gets a custom service (created, or
-  reused when the device has it; removed by the rollback only when this run
-  created it).</p>
-</li>
-</ul>
-<h3 id="security">Security</h3>
-<ul>
-<li><strong>certifi 2026.10.19</strong> (pinned in <code>requirements.txt</code>, was unpinned and
-  2026.6.17 on installed nodes): earlier bundles trust the `emSign ECC Root CA</li>
-<li>G3`, under which eight intermediates with compromised keys were issued
-  (PYSEC-2026-4320 / GHSA-6q48-6c7w-9gw2). SATOM's trust store starts from
-  that bundle, so every outbound TLS check trusted them.</li>
-<li><strong>Wiki e-mail links followed the request's Host header</strong>: the absolute link
-  in a follower's notification (and the source line of an export) was built
-  from whatever Host the author's request carried, so it could point other
-  users at another server. It now uses the same rule as the password-reset
-  link: the request's host only when it is one of the node's own names or in
-  <code>LINK_HOSTS</code>, otherwise the node's FQDN (<code>services/link_host.py</code>).</li>
-<li><strong><code>/api/v1/metrics/query</code> accepted <code>start</code>/<code>end</code> = <code>nan</code> or <code>inf</code></strong>: NaN
-  fails every comparison, so it slipped past the range check into the store.
-  Both must now be finite unix seconds (400 otherwise).</li>
-<li>Defence in depth: the script vault's wrapped read and the Gitea probe of the
-  infrastructure health page only open <code>http(s)</code> URLs (urllib also opens
-  <code>file://</code>).</li>
-</ul>
-<p class="rel-prevnext"><a href="v3.4.8.html">Version 3.4.8 →</a></p>
+
+<p class="rel-prevnext"><a href="v3.5.0.html">Version 3.5.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-10-23
+
+Plugin Studio becomes the place where everything SATOM automates lives:
+every plugin is an app (a flow or a script), apps get a page and result
+designer, SATOM steps (DDI, capacity, certificates, FortiWeb server policy),
+diagram analysis, actions and signed packages; code plugins and Report Studio
+packages move between servers without an update package. Plugin Studio is on
+the first level of the sidebar, Automation sits right above Plugins, and this
+release carries the fixes of the 2026-10-23 security review (certifi CA
+bundle, Wiki mail links, metrics range).
+
 ### Added
 
 - **Plugin packages** (`.satomplugin`, format `satom.plugin/1`): Report Studio

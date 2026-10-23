@@ -63,10 +63,13 @@ class Plan:
     """Everything one apply needs, computed once for preview and for start."""
 
     def __init__(self, row: Template, device_ids, *, secrets: dict | None = None,
-                 respect_pins: bool = False):
+                 respect_pins: bool = False, fleet: bool | None = None):
         self.row = row
         self.device_ids = [int(d) for d in device_ids]
-        self.fleet = len(self.device_ids) > 1
+        # A fleet rollout needs an approval validated for every target build.
+        # The library's single-device apply is the "try it on one box" path and
+        # is exempt; Mass Deploy passes ``fleet=True`` even for one device.
+        self.fleet = len(self.device_ids) > 1 if fleet is None else bool(fleet)
         visible = {a.id: a for a in visible_appliances()
                    .filter(Appliance.id.in_(self.device_ids)).all()} if self.device_ids else {}
         self.unknown = [d for d in self.device_ids if d not in visible]

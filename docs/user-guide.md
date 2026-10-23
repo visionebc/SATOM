@@ -3306,8 +3306,10 @@ and the canary job are the same engine the Template Library's **Apply** uses
    devices that will be bound. **Deploy** is enabled only by a preview of the
    same selection: change a device, a secret or the *limit* box and you
    preview again. The deploy runs as a background job in the job dock. The first
-   device is the canary, and the rest run only if it succeeds. An approver
-   can override a firmware refusal with a reason (audited). A pinned device, a
+   device is the canary, and the rest run only if it succeeds. Even for one
+   device the approval must be validated for its build (the Template Library
+   asks this only of a rollout to several). An approver can override a firmware
+   refusal with a reason (audited). A pinned device, a
    missing variable or a device of another ADOM cannot be overridden.
 5. **Deploy history.** Every deploy made from this page in this ADOM: when, who,
    the template version, the devices, the result per device (with the device's

@@ -74,7 +74,9 @@ def _plan(template_id: int):
     ids = ta.parse_ids(request.form.getlist('device_ids'))
     if not ids:
         return None, (jsonify({'ok': False, 'error': 'Select at least one device.'}), 400)
-    plan = ta.Plan(row, ids, secrets=_secrets_from_form(), respect_pins=True)
+    # fleet=True even for one device: Mass Deploy is a rollout, so the approval
+    # must be validated for each target's build (an approver may override).
+    plan = ta.Plan(row, ids, secrets=_secrets_from_form(), respect_pins=True, fleet=True)
     # visible_appliances() is the ADOM's devices: another ADOM's id is unknown.
     if plan.unknown:
         return None, (jsonify({'ok': False, 'error': 'Unknown appliance.'}), 404)

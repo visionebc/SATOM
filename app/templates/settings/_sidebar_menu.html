@@ -3,7 +3,9 @@
    merged: one row per entry, submenu and group, wherever it appears. A row
    left unticked is taken out of the sidebar of every user in every ADOM.
    Each row posts its key in `k` (so the server knows which keys this form
-   spoke for) and, when ticked, in `show`. #}
+   spoke for) and, when ticked, in `show`. One key can have several rows
+   (Architecture under Global and under Operations): ticking one moves its
+   twins, and the server hides a key when any of its rows is unticked. #}
 <div class="fw-card mt-3" id="card-sidebar-menu">
   <div class="fw-card-header">
     <span class="fw-card-title"><i class="bi bi-layout-sidebar-inset me-2 text-accent"></i>{{ _('Sidebar menu') }} <span class="text-muted" style="font-size:12px;font-weight:400;">{{ _('(every ADOM, every user)') }}</span></span>
@@ -56,11 +58,19 @@
   // An unticked group or submenu hides everything in it: its rows fade so the
   // ticks inside do not read as "still shown". They keep their state (and are
   // still posted) for the day the group comes back.
+  // The same key drawn in several rows (one per place it appears) moves as
+  // one: unticking Architecture under Global unticks it under Operations.
   document.addEventListener('change', function (ev) {
     var box = ev.target;
-    if (!box || !box.matches || !box.matches('[data-nav-menu-parent]')) return;
-    var li = box.closest('li');
-    var sub = li && li.querySelector(':scope > ul');
-    if (sub) sub.classList.toggle('fw-navmenu-off', !box.checked);
+    if (!box || !box.matches || !box.matches('[data-nav-menu-form] input[name="show"]')) return;
+    var form = box.closest('form');
+    form.querySelectorAll('input[name="show"]').forEach(function (twin) {
+      if (twin.value !== box.value) return;
+      twin.checked = box.checked;
+      if (!twin.matches('[data-nav-menu-parent]')) return;
+      var li = twin.closest('li');
+      var sub = li && li.querySelector(':scope > ul');
+      if (sub) sub.classList.toggle('fw-navmenu-off', !twin.checked);
+    });
   });
 </script>

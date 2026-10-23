@@ -1025,15 +1025,23 @@ def save_nav_menu():
     """Which sidebar entries, submenus and groups stay out of every user's
     sidebar in every ADOM (app/nav_hide.py). The form posts every key it drew
     in ``k`` and the ticked ones in ``show``; a hidden key the form did not
-    draw (an entry this administrator's sidebar does not have today) is kept."""
+    draw (an entry this administrator's sidebar does not have today) is kept.
+
+    One key can be drawn in several rows (Architecture sits under Global and
+    under Operations): it is hidden when ANY of its rows is unticked, i.e.
+    when it is ticked fewer times than it is listed. Comparing sets instead
+    made one ticked twin outvote the row the operator unticked, and nothing
+    was ever hidden (operator report, 2026-10-23)."""
+    from collections import Counter
     from .. import nav_hide
     if request.form.get('reset') == '1':
         stored = nav_hide.save([])
     else:
-        listed = set(request.form.getlist('k'))
-        shown = set(request.form.getlist('show'))
+        rows = Counter(request.form.getlist('k'))
+        ticked = Counter(request.form.getlist('show'))
+        listed = set(rows)
         kept = {k for k in nav_hide.hidden() if k not in listed}
-        wanted = listed - shown
+        wanted = {k for k, n in rows.items() if ticked[k] < n}
         stored = nav_hide.save(kept | wanted)
         refused = sorted(wanted - set(stored))
         if refused:

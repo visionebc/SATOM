@@ -2474,9 +2474,9 @@ against what the devices say.</p>
   The FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs list only the
   Transaction Tracer and Scout from this set, because the other three work on
   FortiWeb and FortiADC objects. <strong>Diagnose Log Collection</strong> is also in
-  Troubleshooting, in all five device ADOMs (§27.1). Path Diagnostics is
-  drawn only while it is switched on for the site, and Scout only while it is
-  configured (§33.1); neither is ever drawn disabled.
+  Troubleshooting, in all five device ADOMs (§27.1). Scout is drawn only
+  while it is configured (§33.1); Path Diagnostics does not depend on that,
+  and switched off for the site it is drawn disabled with the reason.
 - <strong>Backend Reachability</strong> — paste or upload a list of
   <code>source;policy;destination</code> lines and ask one question per line: <em>do the real
   servers behind this policy answer, on the source box and then on the
@@ -5965,7 +5965,7 @@ under Fleet &amp; Devices, which copies configuration from one appliance to anot
 Scout's walk, configured next to Scout's AI providers — but it does not use
 them. The ladder is deterministic, so Path Diagnostics works, and stays in the
 menu, with no provider; its menu entry follows only its own <strong>Path Diagnostics
-is available</strong> switch (off, the entry is not drawn). Its panel holds only
+is available</strong> switch (off, the entry is drawn disabled with the reason). Its panel holds only
 <em>where to look and how long to wait</em> — the default look-back window, the
 FortiAnalyzer ADOM and device selector the border rung queries, the two
 timeouts. What a verdict <strong>means</strong> is on the same panel as a read-only table:

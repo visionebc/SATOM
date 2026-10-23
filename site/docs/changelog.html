@@ -206,18 +206,16 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   by the operator: "if Scout is not configured it should not appear in the
   menu, even if it is active in Settings › Appearance".</li>
 <li>
-<p><strong>Path Diagnostics and Sentinel follow the same rule: not configured, not in
-  the menu.</strong> Path Diagnostics switched off (Settings › AI › Scout › Path
-  Diagnostics › Availability) is no longer drawn disabled with the reason: it
-  is not drawn at all, and <code>/scout/</code> still answers 503 by URL. It does not
-  follow Scout's AI providers — the ladder is deterministic and walks without
-  one, so it stays in the menu while the AI assistant is unconfigured.
+<p><strong>Sentinel follows the same rule: not configured, not in the menu.</strong>
   Monitoring › Sentinel (Global ADOM) is offered only while Sentinel is
   configured: switched on AND at least one FortiWeb you can see that is not
   retired (host <code>*.invalid</code>), because the FortiWeb attack log is all its sweep
-  ingests; a FortiWeb in maintenance still counts. Requested by the operator:
-  "if Scout is not configured, the things related to it such as Path
-  Diagnostics must disappear from the menu, and the same for Sentinel".</p>
+  ingests; a FortiWeb in maintenance still counts. Path Diagnostics does not
+  follow Scout's gate: it does not use Scout's AI (the ladder is deterministic),
+  so it stays in the menu while Scout is unconfigured, and switched off it is
+  still drawn disabled with the reason. Requested by the operator: "if Scout is
+  not configured, the things related to it must disappear from the menu, and
+  the same for Sentinel", then "if it is not included in Scout, show it".</p>
 </li>
 <li>
 <p><strong>Monitoring › Device health: devices grouped by ADOM, problems on the card.</strong>

@@ -228,6 +228,9 @@ class StudioApp(db.Model):
     pkg_version = db.Column(db.String(32), nullable=True)
     pkg_signer = db.Column(db.String(64), nullable=True)
     actions_json = db.Column(db.Text, nullable=False, default="[]")
+    #: The look of the app (services.studio_design): {theme, page, result}.
+    #: "{}" = SATOM's standard layout. 2026-10-23.
+    design_json = db.Column(db.Text, nullable=False, default="{}", server_default="{}")
     #: "flow" (form + diagram, run here) or "script" (the entry of a Script
     #: Library script: the code, its form and its versions stay in
     #: data/scripts/<script_slug>, run by the sandbox runner). 2026-10-23.
@@ -272,6 +275,30 @@ class StudioApp(db.Model):
     @property
     def published(self) -> dict:
         return _loads(self.published_json, {})
+
+    @property
+    def design(self) -> dict:
+        d = _loads(self.design_json, {})
+        return d if isinstance(d, dict) else {}
+
+
+class StudioAppAsset(db.Model):
+    """An image uploaded to an app's design (services.studio_design): kept in
+    the database so it replicates with the app and travels in its package.
+    The type is sniffed from the bytes at upload (PNG/JPEG/GIF/WebP only)."""
+    __tablename__ = "studio_app_assets"
+    __table_args__ = (db.UniqueConstraint("app_id", "sha256", name="uq_studio_app_asset"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    app_id = db.Column(db.Integer, db.ForeignKey("studio_apps.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    sha256 = db.Column(db.String(64), nullable=False)
+    mime = db.Column(db.String(32), nullable=False)
+    name = db.Column(db.String(120), nullable=False, default="")
+    size = db.Column(db.Integer, nullable=False, default=0)
+    data = db.Column(db.LargeBinary, nullable=False)
+    created_by = db.Column(db.String(64), nullable=False, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
 class StudioAppRun(db.Model):

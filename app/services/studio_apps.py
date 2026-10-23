@@ -473,9 +473,11 @@ def save_settings(a: StudioApp, form: dict, adom_keys, by: str) -> None:
     db.session.commit()
 
 
-def save_draft(a: StudioApp, *, fields=None, graph=None, actions=None, by: str) -> list[str]:
+def save_draft(a: StudioApp, *, fields=None, graph=None, actions=None, design=None,
+               by: str) -> list[str]:
     """Save what was sent. Returns the diagram problems (a draft with problems
     is saved -- half-built work is never lost -- but cannot be published)."""
+    from . import studio_design as D
     ch = choices()
     if fields is not None:
         a.fields_json = json.dumps(clean_fields(fields, ch))
@@ -485,6 +487,11 @@ def save_draft(a: StudioApp, *, fields=None, graph=None, actions=None, by: str) 
         a.graph_json = json.dumps({"nodes": graph.get("nodes") or [], "edges": graph.get("edges") or []})
     if actions is not None:
         a.actions_json = json.dumps(clean_actions(actions, ch))
+    if design is not None:
+        try:
+            a.design_json = json.dumps(D.clean(design))
+        except D.DesignError as exc:
+            raise AppError("design: %s" % exc) from None
     a.updated_by = by
     db.session.commit()
     return F.validate_graph(a.graph, ch)
@@ -502,6 +509,11 @@ def problems(a: StudioApp) -> list[str]:
     for m in re.finditer(r"form\.([a-z_][a-z0-9_]*)", a.graph_json or ""):
         if m.group(1) not in names:
             errs.append("the diagram reads form.%s, which is not a field of the form" % m.group(1))
+    from . import studio_design as D
+    try:
+        errs += D.problems(D.clean(a.design), a.fields, a.graph, D.asset_keys(a.id))
+    except D.DesignError as exc:
+        errs.append("design: %s" % exc)
     return sorted(set(errs))
 
 
@@ -511,7 +523,7 @@ def publish(a: StudioApp, note: str, by: str) -> int:
         raise AppError("not published: " + " · ".join(errs))
     a.version = (a.version or 0) + 1
     a.published_json = json.dumps({"version": a.version, "fields": a.fields, "graph": a.graph,
-                                   "actions": a.actions, "at": datetime.utcnow().isoformat(timespec="seconds"),
+                                   "actions": a.actions, "design": a.design, "at": datetime.utcnow().isoformat(timespec="seconds"),
                                    "by": by, "note": (note or "")[:200]})
     a.status = "published"
     a.published_at = datetime.utcnow()
@@ -527,6 +539,8 @@ def unpublish(a: StudioApp, by: str) -> None:
 
 
 def delete(a: StudioApp) -> None:
+    from . import studio_design as D
+    D.delete_assets(a.id)  # SQLite (tests) does not cascade
     db.session.delete(a)
     db.session.commit()
 
@@ -757,7 +771,9 @@ def remove(a: StudioApp) -> dict:
     from . import studio_store as SS
     from ..models_studio import StudioRow
     own, shared = stores_of(a)
+    from . import studio_design as D
     runs = StudioAppRun.query.filter_by(app_id=a.id).delete(synchronize_session=False)
+    D.delete_assets(a.id)
     db.session.delete(a)
     db.session.flush()
     gone = []
@@ -846,7 +862,8 @@ def menu(user, product_key: str) -> list[dict]:
 # --------------------------------------------------------------------------- #
 def definition(a: StudioApp, draft: bool) -> dict:
     if draft:
-        return {"version": 0, "fields": a.fields, "graph": a.graph, "actions": a.actions}
+        return {"version": 0, "fields": a.fields, "graph": a.graph, "actions": a.actions,
+                "design": a.design}
     pub = a.published
     if not pub:
         raise AppError("%s is not published" % a.slug)
@@ -1071,6 +1088,7 @@ def run_json(run: StudioAppRun, a: StudioApp, user) -> dict:
          "finished_at": run.finished_at.isoformat(timespec="seconds") + "Z" if run.finished_at else None}
     if author:
         d["vars"] = run.vars
+    d["layout"] = result_layout(a, run.version)
     if run.status == "done" and run.armed:
         try:
             acts = definition(a, run.version == 0).get("actions") or []
@@ -1079,6 +1097,25 @@ def run_json(run: StudioAppRun, a: StudioApp, user) -> dict:
         d["actions"] = [{"key": x["key"], "label": x["label"], "kind": x["kind"],
                          "confirm": x.get("confirm", False)} for x in acts]
     return d
+
+
+def result_layout(a: StudioApp, version: int) -> str:
+    """The designed result of the version a run used ("" = the standard
+    one). A run of an older published version keeps the layout it was
+    published with only while it is the current one: older snapshots are not
+    kept, so it falls back to the current published design."""
+    from . import studio_design as D
+    try:
+        d = definition(a, version == 0)
+    except AppError:
+        return ""
+    design = d.get("design") or {}
+    if D.is_empty(design, "result"):
+        return ""
+    try:
+        return D.render_result(D.clean(design), graph=d.get("graph") or {}, app=a)
+    except D.DesignError:
+        return ""
 
 
 def operator_steps(steps: list) -> list[dict]:

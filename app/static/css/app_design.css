@@ -1,0 +1,56 @@
+/* Plugin Studio app designer (services/studio_design.py, templates/apps/_design.html).
+ * Only spacing and structure live here: colours come from SATOM's own tokens
+ * (--fw-*), which a design's theme overrides inside .sapp alone, and from the
+ * per-block inline style that studio_design.css() builds from hex colours and
+ * fixed presets. Nothing here reaches outside .sapp. */
+.sapp {
+  background: var(--sapp-page-bg, transparent);
+  padding: var(--sapp-pad, 0);
+  border-radius: var(--fw-radius-lg);
+  color: var(--fw-text-primary);
+}
+.sapp .sapp-kids > .sapp-blk { margin-bottom: 12px; }
+.sapp .sapp-kids > .sapp-blk:last-child { margin-bottom: 0; }
+.sapp .fw-card { color: var(--fw-text-primary); }
+.sapp .sapp-section-title { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+.sapp h2.sapp-blk { font-size: 24px; font-weight: 700; }
+.sapp h3.sapp-blk { font-size: 19px; font-weight: 600; }
+.sapp h4.sapp-blk { font-size: 16px; font-weight: 600; }
+.sapp h5.sapp-blk { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.sapp .sapp-md > :last-child { margin-bottom: 0; }
+.sapp .sapp-md { font-size: 13.5px; }
+.sapp .sapp-banner {
+  display: flex; align-items: center; gap: 16px;
+  padding: 22px 24px; border-radius: var(--fw-radius-lg);
+  background: var(--fw-gradient-brand); color: #FFFFFF;
+}
+.sapp .sapp-banner-icon { font-size: 34px; line-height: 1; }
+.sapp .sapp-banner-title { font-size: 21px; font-weight: 700; }
+.sapp .sapp-banner-sub { font-size: 13.5px; opacity: .92; white-space: pre-line; }
+.sapp .sapp-stat .fw-card-body { padding: 14px 16px; }
+.sapp .sapp-stat-label { font-size: 12px; color: var(--fw-text-secondary); text-transform: uppercase; letter-spacing: .03em; }
+.sapp .sapp-stat-value { font-size: 28px; font-weight: 700; line-height: 1.2; color: var(--fw-text-primary); }
+.sapp .sapp-stat-unit { font-size: 14px; font-weight: 500; color: var(--fw-text-secondary); }
+.sapp .sapp-image img { display: block; }
+.sapp .sapp-result { font-size: 13px; }
+.sapp hr.sapp-blk { border-color: var(--fw-border); opacity: 1; }
+
+/* the editor's canvas (static/js/studio_design.js) */
+.sapp-editing .sapp-blk { position: relative; outline: 1px dashed transparent; outline-offset: 2px; cursor: grab; }
+.sapp-editing .sapp-blk:hover { outline-color: var(--fw-border); }
+.sapp-editing .sapp-blk.sapp-sel { outline: 2px solid var(--fw-accent); }
+.sapp-editing .sapp-blk.sapp-dragging { opacity: .45; }
+.sapp-editing input, .sapp-editing select, .sapp-editing textarea, .sapp-editing a,
+.sapp-editing button:not(.nav-link) { pointer-events: none; }
+.sapp-editing .sapp-kids { min-height: 28px; border-radius: 6px; }
+.sapp-editing .sapp-kids.sapp-over { background: var(--fw-accent-light); }
+.sapp-empty { padding: 10px; text-align: center; font-size: 12px; color: var(--fw-text-secondary);
+  border: 1px dashed var(--fw-border); border-radius: 6px; }
+.sapp-drop-line { height: 3px; background: var(--fw-accent); border-radius: 2px; margin: 2px 0; }
+.sapp-palette .btn { font-size: 12px; }
+.sapp-tree { font-size: 12.5px; }
+.sapp-tree .sapp-node { display: flex; align-items: center; gap: 4px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.sapp-tree .sapp-node:hover { background: var(--fw-surface-alt); }
+.sapp-tree .sapp-node.sapp-sel { background: var(--fw-accent-light); font-weight: 600; }
+.sapp-tree .sapp-slot { font-size: 11px; color: var(--fw-text-secondary); padding-left: 4px; }
+.sapp-swatch { width: 34px; height: 30px; padding: 2px; }

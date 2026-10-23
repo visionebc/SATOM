@@ -38,6 +38,7 @@ KINDS = ("view", "widget", "code", "app")
 #: connections (never their secrets) and API Catalog versions it uses
 #: (``services.studio_app_package``).
 APP_FILE = "app.json"
+ASSET_RE = re.compile(r"^assets/[0-9a-f]{64}\.(?:png|jpg|gif|webp)$")
 CONTENT_FILES = ("body.jinja", "style.css", "script.js")
 CODE_SUFFIXES = (".py", ".html", ".jinja", ".css", ".js", ".json", ".txt",
                  ".md", ".svg")
@@ -110,7 +111,9 @@ def _member_ok(name: str, kind: str, entry: str) -> bool:
     if kind in ("view", "widget"):
         return name in CONTENT_FILES
     if kind == "app":
-        return name == APP_FILE
+        # app.json, plus the images of its design (studio_design: sniffed
+        # again at install, named by their SHA-256)
+        return name == APP_FILE or bool(ASSET_RE.match(name))
     return (len(parts) >= 3 and parts[0] == "code" and parts[1] == entry
             and name.endswith(CODE_SUFFIXES) and "__pycache__" not in parts)
 

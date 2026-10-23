@@ -27011,3 +27011,69 @@ msgstr "ein Formular und ein Schrittdiagramm, mit der Maus gebaut"
 
 msgid "script missing"
 msgstr "Skript fehlt"
+
+msgid "Action buttons"
+msgstr "Aktionsschaltflächen"
+
+msgid "As users see it"
+msgstr "Wie Benutzer es sehen"
+
+msgid "Banner"
+msgstr "Banner"
+
+msgid "Design"
+msgstr "Design"
+
+msgid "Drop blocks here"
+msgstr "Blöcke hier ablegen"
+
+msgid "Empty this surface: it falls back to the standard layout"
+msgstr "Diese Fläche leeren: sie kehrt zum Standardlayout zurück"
+
+msgid "Field %(name)s is not in the form"
+msgstr "Feld %(name)s ist nicht im Formular"
+
+msgid "Heading"
+msgstr "Überschrift"
+
+msgid "How the app looks: drag blocks onto the page (where each field, the Run button and the result go) and onto the result (where each Output step, number tiles and the action buttons go), then colour and space them. SATOM draws every block with its own styles; an app without a design keeps the standard layout. Saved with the draft and frozen by Publish."
+msgstr "Wie die App aussieht: Ziehen Sie Blöcke auf die Seite (wo jedes Feld, die Ausführen-Schaltfläche und das Ergebnis stehen) und auf das Ergebnis (wo jeder Output-Schritt, Zahlenkacheln und die Aktionsschaltflächen stehen), dann färben und verteilen Sie sie. SATOM zeichnet jeden Block mit seinen eigenen Stilen; eine App ohne Design behält das Standardlayout. Mit dem Entwurf gespeichert und durch Veröffentlichen eingefroren."
+
+msgid "Images"
+msgstr "Bilder"
+
+msgid "Outline"
+msgstr "Gliederung"
+
+msgid "Outputs not placed above"
+msgstr "Nicht oben platzierte Ausgaben"
+
+msgid "Output step %(key)s"
+msgstr "Output-Schritt %(key)s"
+
+msgid "Pick an image"
+msgstr "Bild auswählen"
+
+msgid "PNG, JPEG, GIF or WebP, up to 512 KiB; at most 12 per app. They travel in the app package."
+msgstr "PNG, JPEG, GIF oder WebP, bis 512 KiB; höchstens 12 pro App. Sie reisen im App-Paket mit."
+
+msgid "Redo"
+msgstr "Wiederholen"
+
+msgid "Replace this surface with the standard layout, as blocks"
+msgstr "Diese Fläche durch das Standardlayout als Blöcke ersetzen"
+
+msgid "Run status and error"
+msgstr "Ausführungsstatus und Fehler"
+
+msgid "Save design"
+msgstr "Design speichern"
+
+msgid "Start from the standard layout"
+msgstr "Vom Standardlayout ausgehen"
+
+msgid "Surface"
+msgstr "Fläche"
+
+msgid "The app description (Settings)"
+msgstr "Die App-Beschreibung (Einstellungen)"

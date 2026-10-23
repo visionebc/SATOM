@@ -4657,7 +4657,7 @@ the *Template* badge, can be edited, disabled, reset and downloaded, and is
 **never deleted** — no Delete button, and every delete route (app, script,
 data store, connection) refuses it with the reason.
 
-The editor has six tabs:
+The editor has seven tabs:
 
 - **Settings** — name and icon of the menu entry, description, **where** it
   appears (the ADOMs you tick, or every ADOM) and **who** may use it (the
@@ -4690,6 +4690,8 @@ The editor has six tabs:
   place). **Last run** colours every step by how it ended in the newest run
   (a test run is laid over the diagram as it finishes); click a step for its
   detail.
+- **Design** — how the app looks: its page and its result, laid out with
+  blocks and coloured (below).
 - **Actions** — buttons under the output of a finished run: *Save to a data
   store*, *Download* (CSV or JSON), *Send to a connection*, *Run another app
   with the output*, *Raise a change request*. Each can ask for confirmation.
@@ -4698,6 +4700,55 @@ The editor has six tabs:
   the SATOM steps that reserve, issue or create) are described, not executed.
 - **Publish** — lists what must be fixed first, freezes the draft as version
   N, and **Unpublish** removes the entry from the menu.
+
+**Design: the page designer** (operator request, 2026-10-23). The Design tab
+lays out two surfaces of the app — switch with **Page** / **Result**:
+
+- **Page** — what the user opens: where each **form field**, the **Run
+  button** and the **result area** go, among headings, text, cards, columns,
+  tabs, images, banners, callouts and link buttons, plus the app description
+  and the recent runs.
+- **Result** — how a finished run is shown: the **run status**, each
+  **Output** step of the diagram where you want it (title and *Show as* can be
+  overridden, with or without a card), **number tiles** (a value inside an
+  output — a dotted path such as `summary.total`; a list shows how many items
+  it holds), the **action buttons**, the **steps** and *Other outputs*.
+
+Drag a block from the palette onto the canvas (or click it: it goes into the
+selected card / column / tab, or after the selected block), drag blocks to
+move them, and pick one on the canvas or in the **Outline** (up, down,
+duplicate, delete; `Delete` key, `Ctrl+Z` / `Ctrl+Y`). The inspector edits
+the block's settings and its **style**: background (a second colour makes a
+gradient), text and border colour — **any hex colour** — and padding, space
+below, corners, shadow, border, text size, weight, alignment and width from
+fixed presets. **Theme** (nothing selected) colours the whole app: accent
+(buttons, links), page background, text, card surface, borders, corners and
+page padding — only inside the app; the sidebar and the top bar keep SATOM's
+colours. **Images** are uploaded to the app (PNG, JPEG, GIF or WebP, up to
+512 KiB, at most 12; SVG is refused) and used by Image blocks. **As users see
+it** shows the page exactly as users get it and the result filled with the
+newest run. **Start from the standard layout** turns the usual layout into
+blocks to edit; **Clear** goes back to it.
+
+What the designer guarantees:
+
+- **SATOM's styles stay.** Every block is drawn with SATOM's own classes
+  (cards, buttons, tables, badges); a design only recolours and spaces them.
+  There is no HTML or CSS of your own: text is Markdown (raw HTML is shown as
+  text, `javascript:` links are dropped), a colour is a hex value and every
+  other style is one of the presets — so an app cannot run code or read what
+  a user types.
+- **Nothing is lost.** A field the page does not place is added before the
+  Run button; a page without a Run button or a result area gets them at the
+  end; a result without the status, *Other outputs*, the actions or the steps
+  gets them at the end.
+- **Publish freezes it.** The design is saved with the draft (**Save
+  design**) and users see it only after **Publish**. Publish is refused while
+  a field is placed twice, or a block names a field, an Output step or an
+  image that is not there. A colour pair that is hard to read (contrast under
+  4.5:1, or white on an accent under 3:1) is listed as a warning — allowed,
+  since colours are free.
+- An app with no design keeps the standard layout, exactly as before.
 
 **Templates.** Text parameters are templates rendered in a sandbox:
 `{{ form.host }}`, `{{ rows }}`, `{{ rows | length }}`,
@@ -4741,7 +4792,9 @@ render. An armed run whose diagram writes is also a **job** (Jobs page and
 toast) with one log line per step: which step failed and why.
 
 **App packages.** **Export package** (Publish tab) writes the app as a
-`satom.plugin/1` package of kind *app*: its form, diagram and actions, the
+`satom.plugin/1` package of kind *app*: its form, diagram, actions and
+design (with its images, each named by its SHA-256 and checked again at
+install), the
 data stores it uses (columns and rows), its HTTP connections **without their
 secrets**, and the API Catalog versions they are pinned to. **Import app
 package** (Apps pane; or the Report Studio import) installs one: missing API

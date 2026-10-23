@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ a.name }} — App{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ asset('css/app_design.css') }}">{% endblock %}
 {% block content %}
 {# Plugin Studio > Apps > editor (views.studio.app_edit). Settings, the form,
    the diagram (process_editor.js with the app step kinds), the output
@@ -21,7 +22,7 @@
 </div>
 
 <ul class="nav nav-tabs mb-3" role="tablist">
-  {% for id, icon, label in [('settings', 'bi-sliders', _('Settings')), ('form', 'bi-ui-checks', _('Form')), ('diagram', 'bi-diagram-3', _('Diagram')),
+  {% for id, icon, label in [('settings', 'bi-sliders', _('Settings')), ('form', 'bi-ui-checks', _('Form')), ('diagram', 'bi-diagram-3', _('Diagram')), ('design', 'bi-palette', _('Design')),
                              ('actions', 'bi-lightning', _('Actions')), ('test', 'bi-play-circle', _('Test')), ('publish', 'bi-rocket-takeoff', _('Publish'))] %}
   <li class="nav-item"><button class="nav-link {{ 'active' if loop.first }}" data-bs-toggle="tab" data-bs-target="#ap-tab-{{ id }}" type="button"><i class="bi {{ icon }} me-1"></i>{{ label }}</button></li>
   {% endfor %}
@@ -113,6 +114,57 @@
     <div class="text-muted" style="font-size:12px;">{{ _('Arrows: a step ends ok or error, a decision yes or no. An error follows only an error arrow: with none, the run stops there as failed. Templates: {{ form.field }}, {{ rows }}, {{ rows | length }}; a value that is exactly one {{ expression }} keeps its type.') }}</div>
   </div>
 
+  {# -------------------------------------------------------------- design #}
+  <div class="tab-pane fade" id="ap-tab-design">
+    <p class="text-muted" style="font-size:12px;">{{ _('How the app looks: drag blocks onto the page (where each field, the Run button and the result go) and onto the result (where each Output step, number tiles and the action buttons go), then colour and space them. SATOM draws every block with its own styles; an app without a design keeps the standard layout. Saved with the draft and frozen by Publish.') }}</p>
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-2" style="font-size:12px;">
+      <div class="btn-group btn-group-sm" role="group" aria-label="{{ _('Surface') }}">
+        <button type="button" class="btn btn-outline-primary active" data-sd-surface="page"><i class="bi bi-window me-1"></i>{{ _('Page') }}</button>
+        <button type="button" class="btn btn-outline-primary" data-sd-surface="result"><i class="bi bi-card-checklist me-1"></i>{{ _('Result') }}</button>
+      </div>
+      <div class="btn-group btn-group-sm" role="group" aria-label="{{ _('Mode') }}">
+        <button type="button" class="btn btn-outline-secondary active" data-sd-mode="edit"><i class="bi bi-pencil me-1"></i>{{ _('Edit') }}</button>
+        <button type="button" class="btn btn-outline-secondary" data-sd-mode="view"><i class="bi bi-eye me-1"></i>{{ _('As users see it') }}</button>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="sd-undo" title="{{ _('Undo') }} (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i></button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="sd-redo" title="{{ _('Redo') }} (Ctrl+Y)"><i class="bi bi-arrow-clockwise"></i></button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="sd-starter" title="{{ _('Replace this surface with the standard layout, as blocks') }}"><i class="bi bi-magic me-1"></i>{{ _('Start from the standard layout') }}</button>
+      <button type="button" class="btn btn-sm btn-outline-danger" id="sd-clear" title="{{ _('Empty this surface: it falls back to the standard layout') }}"><i class="bi bi-eraser me-1"></i>{{ _('Clear') }}</button>
+      <span id="sd-state" class="text-muted ms-auto"></span>
+      <button type="button" class="btn btn-sm btn-primary" id="sd-save"><i class="bi bi-save me-1"></i>{{ _('Save design') }}</button>
+    </div>
+    <div class="row g-2">
+      <div class="col-xl-2 col-lg-3">
+        <div class="fw-card mb-2"><div class="fw-card-body p-2 sapp-palette" id="sd-palette"></div></div>
+        <div class="fw-card"><div class="fw-card-body p-2">
+          <div class="text-muted mb-1" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">{{ _('Outline') }}</div>
+          <div id="sd-tree" class="sapp-tree"></div>
+        </div></div>
+      </div>
+      <div class="col-xl-7 col-lg-9">
+        <div class="fw-card"><div class="fw-card-body" style="background:var(--fw-content-bg);min-height:420px;">
+          <div id="sd-canvas" style="font-size:13px;"></div>
+        </div></div>
+        <div id="sd-notes" class="mt-2" style="font-size:12px;"></div>
+      </div>
+      <div class="col-xl-3 col-lg-12">
+        <div class="fw-card mb-2"><div class="fw-card-body p-2" style="font-size:12.5px;">
+          <div class="d-flex align-items-center mb-2">
+            <span class="text-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;" id="sd-insp-title">{{ _('Theme') }}</span>
+            <button type="button" class="btn btn-sm btn-link ms-auto p-0" id="sd-theme-btn"><i class="bi bi-palette me-1"></i>{{ _('Theme') }}</button>
+          </div>
+          <div id="sd-inspector"></div>
+        </div></div>
+        <div class="fw-card"><div class="fw-card-body p-2" style="font-size:12.5px;">
+          <div class="text-muted mb-1" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">{{ _('Images') }}</div>
+          <div id="sd-assets" class="d-flex flex-wrap gap-2 mb-2"></div>
+          <input type="file" class="form-control form-control-sm" id="sd-upload" accept="image/png,image/jpeg,image/gif,image/webp">
+          <div class="form-text">{{ _('PNG, JPEG, GIF or WebP, up to 512 KiB; at most 12 per app. They travel in the app package.') }}</div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
   {# ------------------------------------------------------------- actions #}
   <div class="tab-pane fade" id="ap-tab-actions">
     <div class="fw-card"><div class="fw-card-body" style="font-size:13px;">
@@ -177,6 +229,12 @@
   'csrf': csrf_token(), 'actions': [], 'hooks': [], 'kinds': kinds_json, 'branches': branches,
   'branchNote': 'ok/error after a step, yes/no after a decision. always is followed for any outcome except error.'
 } | tojson }}</script>
+<script type="application/json" id="sd-config">{{ {
+  'schema': design_schema, 'design': design, 'assets': assets, 'fields': a.fields, 'outputs': output_titles,
+  'urls': {'save': url_for('studio.app_design', slug=a.slug), 'preview': url_for('studio.app_design_preview', slug=a.slug),
+           'starter': url_for('studio.app_design_starter', slug=a.slug), 'upload': url_for('studio.app_asset_upload', slug=a.slug),
+           'assetDelete': url_for('studio.app_asset_delete', slug=a.slug, sha='SHA')}
+}|tojson }}</script>
 <script type="application/json" id="ap-config">{{ {
   'slug': a.slug, 'fields': a.fields, 'actions': a.actions, 'fieldTypes': field_types,
   'actionSchema': action_schema, 'choices': choices,
@@ -189,4 +247,5 @@
 <script src="{{ url_for('static', filename='js/process_editor.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/apps_run.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/studio_app.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/studio_design.js') }}" nonce="{{ csp_nonce }}"></script>
 {% endblock %}

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ a.name }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ asset('css/app_design.css') }}">{% endblock %}
 {% block content %}
 {# A Plugin Studio app, the operator's side (views.apps.page). #}
 <div class="fw-page-header d-flex align-items-start">
@@ -14,6 +15,10 @@
 </div>
 {% if unpublished %}
 <div class="alert alert-warning" style="font-size:13px;">{{ _('This app has no published version yet.') }}</div>
+{% elif tree %}
+{# a designed page (Plugin Studio > Design): the form wraps the whole layout #}
+<form id="app-form" class="sapp-form">{% include "apps/_design_page.html" %}</form>
+{% if a.status != 'published' %}<div class="form-text">{{ _('Not in the menu: unpublished. Authors can still run the last published version.') }}</div>{% endif %}
 {% else %}
 <div class="row g-3">
   <div class="col-lg-4">

@@ -33,6 +33,7 @@ connection's secret is never in the package, in either direction.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 
@@ -43,6 +44,7 @@ MAX_SEED_ROWS = 500
 
 class AppPackageError(P.PackageError):
     pass
+
 
 
 def _refs(a) -> dict:
@@ -95,7 +97,7 @@ def build_body(a) -> dict:
         conns.append(d)
     return {"app": {"slug": a.slug, "name": a.name, "icon": a.icon,
                     "description": a.description, "fields": a.fields,
-                    "graph": a.graph, "actions": a.actions},
+                    "graph": a.graph, "actions": a.actions, "design": a.design},
             "stores": stores, "connections": conns, "apis": list(apis.values())}
 
 
@@ -108,9 +110,12 @@ def export_app(a, satom_version: str = "") -> tuple[str, bytes]:
                 "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     if P.VERSION_RE.match(satom_version or ""):
         manifest["min_satom"] = satom_version
+    from . import studio_design as D
     body = json.dumps(build_body(a), indent=1, sort_keys=True, ensure_ascii=False)
-    return "%s-%s%s" % (slug, version, P.EXT), P.write_package(
-        manifest, {P.APP_FILE: body.encode("utf-8")})
+    files = {P.APP_FILE: body.encode("utf-8")}
+    for row in D.assets_of(a.id):
+        files["assets/%s.%s" % (row.sha256, D.EXT[row.mime])] = bytes(row.data)
+    return "%s-%s%s" % (slug, version, P.EXT), P.write_package(manifest, files)
 
 
 def _body(pk) -> dict:
@@ -126,6 +131,7 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
     from . import studio_apis as SAPI
     from . import studio_apps as SA
     from . import studio_connections as SC
+    from . import studio_design as D
     from . import studio_store as SS
     if pk.kind != "app":
         raise AppPackageError("not an app package")
@@ -208,10 +214,21 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
             a.icon = icon
         a.pkg_version = pk.version
         a.pkg_signer = pk.signer or ""
+        db.session.flush()
+        for fname, data in sorted(pk.files.items()):
+            if fname.startswith("assets/"):
+                sha = fname.split("/", 1)[1].split(".", 1)[0]
+                if hashlib.sha256(data).hexdigest() != sha:
+                    raise SA.AppError("%s does not match its SHA-256 name" % fname)
+                if D.get_asset(a.id, sha) is None:
+                    D.add_asset(a.id, fname.split("/", 1)[1], data, by)
+                    created.append("image %s" % fname.split("/", 1)[1])
         problems = SA.save_draft(a, fields=spec.get("fields") or [],
                                  graph=spec.get("graph") or {},
-                                 actions=spec.get("actions") or [], by=by)
-    except (SA.AppError, SS.StoreError, SC.ConnectionError_, SAPI.ApiError, KeyError) as exc:
+                                 actions=spec.get("actions") or [],
+                                 design=spec.get("design") or {}, by=by)
+    except (SA.AppError, SS.StoreError, SC.ConnectionError_, SAPI.ApiError, KeyError,
+            D.DesignError) as exc:
         db.session.rollback()
         raise AppPackageError("the app package could not be installed: %s" % exc) from None
     if a.status != "published":

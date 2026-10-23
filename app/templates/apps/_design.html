@@ -1,0 +1,132 @@
+{# The blocks of an app design (services.studio_design). Every value reaching
+   the markup was checked by studio_design.clean; colours and spacing go
+   through D.css (hex + presets only), text through D.md (Markdown without
+   raw HTML). Drawn with SATOM's own classes so the stylesheet keeps ruling.
+   C = {a, D, fields: {name: field view}, prefix, editing, runs, titles}.
+   In the editor (C.editing) each block carries data-sapp-id and each list of
+   blocks a data-sapp-drop target (static/js/studio_design.js). #}
+{% from "apps/_field.html" import field %}
+
+{% macro kids(owner, slot, list, C) %}
+<div class="sapp-kids{{ ' sapp-drop' if C.editing }}"{% if C.editing %} data-sapp-drop="{{ owner }}:{{ slot }}"{% endif %}>
+  {% for b in list %}{{ block(b, C) }}{% endfor %}
+  {% if C.editing and not list %}<div class="sapp-empty">{{ _('Drop blocks here') }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro attrs(b, C, cls='') -%}
+class="sapp-blk sapp-{{ b.type }} {{ cls }}" style="{{ C.D.css(b.style) }}"{% if C.editing %} data-sapp-id="{{ b.id }}" data-sapp-type="{{ b.type }}" draggable="true"{% endif %}
+{%- endmacro %}
+
+{% macro icon(name, extra='me-2') %}{% if name %}<i class="bi {{ name }} {{ extra }}"></i>{% endif %}{% endmacro %}
+
+{% macro block(b, C) %}
+{% set p = b.props %}
+{% if b.type == 'section' %}
+<section {{ attrs(b, C) }}>
+  {% if p.title %}<h3 class="sapp-section-title">{{ icon(p.icon) }}{{ p.title }}</h3>{% endif %}
+  {{ kids(b.id, 'children', b.children, C) }}
+</section>
+{% elif b.type == 'card' %}
+<div {{ attrs(b, C, 'fw-card') }}>
+  {% if p.title %}<div class="fw-card-header"><span class="fw-card-title" style="font-size:14px;">{{ icon(p.icon, 'me-2 text-accent') }}{{ p.title }}</span></div>{% endif %}
+  <div class="fw-card-body">{{ kids(b.id, 'children', b.children, C) }}</div>
+</div>
+{% elif b.type == 'row' %}
+<div {{ attrs(b, C, 'row ' ~ {'none': 'g-0', 'sm': 'g-2', 'md': 'g-3', 'lg': 'g-4'}.get(p.gap, 'g-3')) }}>
+  {% for c in b.columns %}<div class="col-md-{{ c.w }}">{{ kids(b.id, 'col%d' % loop.index0, c.children, C) }}</div>{% endfor %}
+</div>
+{% elif b.type == 'tabs' %}
+<div {{ attrs(b, C) }}>
+  <ul class="nav nav-tabs mb-2" role="tablist">
+    {% for t in b.tabs %}<li class="nav-item"><button class="nav-link{{ ' active' if loop.first }}" type="button" data-bs-toggle="tab" data-bs-target="#sapp-tab-{{ C.prefix }}{{ b.id }}-{{ loop.index0 }}">{{ t.label }}</button></li>{% endfor %}
+  </ul>
+  <div class="tab-content">
+    {% for t in b.tabs %}<div class="tab-pane fade{{ ' show active' if loop.first }}" id="sapp-tab-{{ C.prefix }}{{ b.id }}-{{ loop.index0 }}">{{ kids(b.id, 'tab%d' % loop.index0, t.children, C) }}</div>{% endfor %}
+  </div>
+</div>
+{% elif b.type == 'banner' %}
+<div {{ attrs(b, C) }}>
+  {% if p.icon %}<i class="bi {{ p.icon }} sapp-banner-icon"></i>{% endif %}
+  <div>{% if p.title %}<div class="sapp-banner-title">{{ p.title }}</div>{% endif %}
+    {% if p.subtitle %}<div class="sapp-banner-sub">{{ p.subtitle }}</div>{% endif %}
+    {% if C.editing and not p.title and not p.subtitle %}<div class="sapp-banner-title">{{ _('Banner') }}</div>{% endif %}</div>
+</div>
+{% elif b.type == 'heading' %}
+{% set tag = {'1': 'h2', '2': 'h3', '3': 'h4', '4': 'h5'}.get(p.level, 'h3') %}
+<{{ tag }} {{ attrs(b, C, 'sapp-h' ~ p.level) }}>{{ icon(p.icon) }}{{ p.text or (_('Heading') if C.editing else '') }}</{{ tag }}>
+{% elif b.type == 'text' %}
+<div {{ attrs(b, C, 'sapp-md') }}>{% if p.md %}{{ C.D.md(p.md) }}{% elif C.editing %}<p class="text-muted">{{ _('Text') }}</p>{% endif %}</div>
+{% elif b.type == 'callout' %}
+<div {{ attrs(b, C, 'alert alert-' ~ {'neutral': 'secondary'}.get(p.tone, p.tone)) }} role="note">
+  {% if p.title %}<div class="fw-bold mb-1">{{ icon(p.icon) }}{{ p.title }}</div>{% elif p.icon %}{{ icon(p.icon) }}{% endif %}
+  {% if p.md %}<div class="sapp-md">{{ C.D.md(p.md) }}</div>{% endif %}
+</div>
+{% elif b.type == 'image' %}
+<div {{ attrs(b, C) }}>
+  {% if p.asset %}<img src="{{ url_for('apps.asset', slug=C.a.slug, sha=p.asset) }}" alt="{{ p.alt }}" loading="lazy"
+    style="max-width:100%;{% if p.height %}height:{{ p.height }}px;{% endif %}{% if p.fit == 'cover' %}width:100%;object-fit:cover;{% endif %}border-radius:inherit;">
+  {% elif C.editing %}<div class="sapp-empty"><i class="bi bi-image me-1"></i>{{ _('Pick an image') }}</div>{% endif %}
+</div>
+{% elif b.type == 'link' %}
+{% set href = C.D.safe_href(p.url) %}
+<div {{ attrs(b, C) }}>
+  <a class="btn btn-sm {{ {'primary': 'btn-fw-primary', 'outline': 'btn-outline-primary', 'link': 'btn-link'}.get(p.variant, 'btn-outline-primary') }}"
+     {% if href %}href="{{ href }}"{% if href.startswith('http') %} target="_blank"{% endif %} rel="noopener noreferrer"{% endif %}>{{ icon(p.icon, 'me-1') }}{{ p.label or href or _('Link') }}</a>
+</div>
+{% elif b.type == 'divider' %}
+<hr {{ attrs(b, C) }}>
+{% elif b.type == 'spacer' %}
+<div {{ attrs(b, C) }} aria-hidden="true"><div style="height:{{ {'sm': 8, 'md': 16, 'lg': 32, 'xl': 56}.get(p.size, 16) }}px;"></div></div>
+{% elif b.type == 'description' %}
+<p {{ attrs(b, C, 'text-muted') }}>{{ C.a.description or (_('The app description (Settings)') if C.editing else '') }}</p>
+{% elif b.type == 'field' %}
+<div {{ attrs(b, C) }}>
+  {% set f = C.fields.get(p.name) %}
+  {% if f %}{{ field(f, C.prefix) }}
+  {% elif C.editing %}<div class="sapp-empty text-danger">{{ _('Field %(name)s is not in the form', name=p.name or '?') }}</div>{% endif %}
+</div>
+{% elif b.type == 'run_button' %}
+<div {{ attrs(b, C) }}>
+  <button type="button" class="btn btn-fw-primary btn-sm{{ ' w-100' if p.full }}"{% if not C.editing %} id="app-run"{% endif %}>{{ icon(p.icon or 'bi-play-fill', 'me-1') }}{{ p.label or _('Run') }}</button>
+</div>
+{% elif b.type == 'result' %}
+<div {{ attrs(b, C, 'text-muted') }}{% if not C.editing %} id="app-out"{% endif %}>{{ p.placeholder or _('Fill in the form and press Run. The result appears here.') }}</div>
+{% elif b.type == 'recent_runs' %}
+<div {{ attrs(b, C, 'fw-card') }}>
+  <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Recent runs') }}</span></div>
+  <ul class="list-unstyled mb-0 p-2" style="font-size:12px;">
+    {% for r in (C.runs or [])[:p.limit] %}
+    <li class="py-1"><a href="{{ url_for('apps.run_page', rid=r.id) }}">#{{ r.id }}</a>
+      <span class="fw-badge fw-badge-{{ {'done': 'success', 'failed': 'danger'}.get(r.status, 'info') }}">{{ r.status }}</span>
+      <span class="text-muted">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }} · {{ r.user }}{% if r.version == 0 %} · draft{% endif %}</span></li>
+    {% else %}<li class="py-1 text-muted">{{ _('No runs yet.') }}</li>{% endfor %}
+  </ul>
+</div>
+{% elif b.type == 'status' %}
+<div {{ attrs(b, C) }} data-sapp-slot="status">{% if C.editing %}<span class="fw-badge fw-badge-success">done</span> <span class="text-muted small">{{ _('Run status and error') }}</span>{% endif %}</div>
+{% elif b.type == 'output' %}
+<div {{ attrs(b, C, '' if p.bare else 'fw-card') }} data-sapp-output="{{ p.key }}" data-view="{{ p.view }}" data-title="{{ p.title }}" data-bare="{{ '1' if p.bare }}">
+  {% if C.editing %}<div class="{{ '' if p.bare else 'fw-card-body' }}"><div class="fw-card-title mb-1" style="font-size:14px;">{{ p.title or C.titles.get(p.key) or p.key or _('Output') }}</div><div class="text-muted small"><i class="bi bi-table me-1"></i>{{ _('Output step %(key)s', key=p.key or '?') }}</div></div>{% endif %}
+</div>
+{% elif b.type == 'stat' %}
+<div {{ attrs(b, C, 'fw-card') }} data-sapp-stat="{{ p.key }}" data-path="{{ p.path }}">
+  <div class="fw-card-body">
+    <div class="sapp-stat-label">{{ icon(p.icon) }}{{ p.label or C.titles.get(p.key) or p.key }}</div>
+    <div class="sapp-stat-value"><span data-v>{{ '123' if C.editing else '—' }}</span>{% if p.unit %} <span class="sapp-stat-unit">{{ p.unit }}</span>{% endif %}</div>
+  </div>
+</div>
+{% elif b.type == 'outputs' %}
+<div {{ attrs(b, C) }} data-sapp-slot="outputs">{% if C.editing %}<div class="sapp-empty"><i class="bi bi-collection me-1"></i>{{ _('Outputs not placed above') }}</div>{% endif %}</div>
+{% elif b.type == 'actions' %}
+<div {{ attrs(b, C) }} data-sapp-slot="actions">{% if C.editing %}<span class="btn btn-sm btn-outline-primary disabled">{{ _('Action buttons') }}</span>{% endif %}</div>
+{% elif b.type == 'steps' %}
+<div {{ attrs(b, C) }} data-sapp-slot="steps" data-open="{{ '1' if p.open }}">{% if C.editing %}<span class="text-muted small">{{ _('Steps') }} (…)</span>{% endif %}</div>
+{% endif %}
+{% endmacro %}
+
+{% macro surface(tree, C, stamp='') %}
+<div class="sapp{{ ' sapp-editing' if C.editing }}" style="{{ C.D.theme_css(C.theme) }}"{% if stamp %} data-sapp-layout="{{ stamp }}"{% endif %}>
+  {{ kids('root', 'root', tree, C) }}
+</div>
+{% endmacro %}

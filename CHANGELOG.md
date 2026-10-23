@@ -73,6 +73,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   script app takes its script, versions, saved runs and credentials).
   Database: `studio_apps.kind`, `studio_apps.script_slug`,
   `studio_apps.enabled` (migration `appkind01`).
+- **App designer** (operator request: apps with "more style", cards and
+  colours, "a web designer"): Plugin Studio → app → **Design** lays out the
+  app's **page** (where each form field, the Run button and the result go,
+  among headings, Markdown text, cards, columns, tabs, banners, callouts,
+  images and link buttons) and its **result** (the run status, each Output
+  step where the author wants it, number tiles, the action buttons and the
+  steps), with drag and drop, an outline, undo/redo and a live preview drawn
+  by the server. Styles: any hex colour (background, gradient, text, border)
+  and fixed presets for spacing, corners, shadow, border, text size, weight,
+  alignment and width; an app **theme** recolours the app's own area only.
+  Blocks are drawn with SATOM's classes and there is no author HTML or CSS:
+  Markdown without raw HTML, hex colours and presets re-checked when drawn.
+  Images (PNG/JPEG/GIF/WebP sniffed from the bytes, no SVG, 512 KiB, 12 per
+  app) are served `nosniff` with `default-src 'none'` to the app's users and
+  travel in the app package. Publish freezes the design; a field placed twice
+  or a block naming a missing field, Output step or image blocks it; hard to
+  read colours only warn. An app without a design is unchanged. Run outputs
+  now carry their step key. Database: `studio_apps.design_json`,
+  `studio_app_assets` (migration `appdesign01`).
 - **Templates**: what Plugin Studio → Examples installs is a template — it
   can be edited, disabled, reset and downloaded, never deleted. The Examples
   *Remove* button and route are gone, and every delete (app, script, data

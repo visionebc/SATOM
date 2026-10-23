@@ -714,6 +714,7 @@ def app_edit(slug):
     from ..models import User
     from ..models_studio import UserGroup
     from ..services import studio_apps as SA
+    from ..services import studio_design as D
     from ..services import studio_flow as F
     a = _app_or_404(slug)
     if a.kind == "script":  # its form, code and versions live in the script editor
@@ -726,7 +727,9 @@ def app_edit(slug):
         groups=UserGroup.query.order_by(UserGroup.name).all(),
         users=User.query.filter_by(is_active=True).order_by(User.username).all(),
         runs=SA.recent_runs(a, current_user), used_by=SA.used_by("app", slug),
-        template=SA.is_template(a))
+        template=SA.is_template(a), design_schema=D.schema(), design=a.design or D.empty(),
+        assets=[_asset_json(a, r) for r in D.assets_of(a.id)],
+        output_titles=D.output_titles(a.graph))
 
 
 @bp.route("/apps/<slug>/settings", methods=["POST"])
@@ -825,6 +828,114 @@ def app_graph(slug):
     log_action("studio.app.graph", target=slug, extra={"nodes": len(g["nodes"]), "edges": len(g["edges"])})
     return jsonify({"ok": True, "nodes": len(g["nodes"]), "edges": len(g["edges"]),
                     "problems": SA.problems(a)})
+
+
+@bp.route("/apps/<slug>/design", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_design(slug):
+    """The Design tab saves the whole design (theme, page, result)."""
+    from ..extensions import db
+    from ..services import studio_apps as SA
+    from ..services import studio_design as D
+    a = _app_or_404(slug)
+    if a.kind != "flow":
+        return _err("a script app is designed in the Script Library")
+    try:
+        SA.save_draft(a, design=(request.get_json(silent=True) or {}).get("design") or {}, by=_who())
+    except SA.AppError as exc:
+        db.session.rollback()
+        return _err(exc)
+    d = a.design
+    log_action("studio.app.design", target=slug,
+               extra={s: sum(1 for _ in D.walk(d.get(s))) for s in D.SURFACES})
+    return jsonify({"ok": True, "problems": SA.problems(a), "warnings": D.warnings(d)})
+
+
+@bp.route("/apps/<slug>/design/preview", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_design_preview(slug):
+    """The design being edited, drawn: ``mode`` "edit" = exactly the blocks,
+    with the editor's handles; "view" = what users get (fields left out and
+    a missing Run button / result area added). Nothing is saved."""
+    from ..services import studio_apps as SA
+    from ..services import studio_design as D
+    a = _app_or_404(slug)
+    body = request.get_json(silent=True) or {}
+    surface = body.get("surface") if body.get("surface") in D.SURFACES else "page"
+    editing = body.get("mode") != "view"
+    try:
+        design = D.clean(body.get("design") or {})
+    except D.DesignError as exc:
+        return _err(exc)
+    fields = SA.form_view(a.fields)
+    if surface == "page":
+        tree = design["page"] if editing else D.page_tree(design, fields)
+        html = render_template("apps/_design_page.html", tree=tree or [], D=D, a=a, editing=editing,
+                               theme=design["theme"], prefix="d-",
+                               fields_by_name={f["name"]: f for f in fields},
+                               all_runs=SA.recent_runs(a, current_user)) if tree is not None else ""
+        sample = None
+    else:
+        html = D.render_result(design, graph=a.graph, editing=editing, app=a)
+        runs = SA.recent_runs(a, current_user)
+        sample = SA.run_json(runs[0], a, current_user) if runs else None
+        if sample:
+            sample.pop("layout", None)
+    return jsonify({"ok": True, "html": html, "sample": sample, "warnings": D.warnings(design),
+                    "problems": D.problems(design, a.fields, a.graph, D.asset_keys(a.id))})
+
+
+@bp.route("/apps/<slug>/design/starter")
+@login_required
+@require_permission(LIBRARY)
+def app_design_starter(slug):
+    """SATOM's standard layout as a design, to start from."""
+    from ..services import studio_design as D
+    a = _app_or_404(slug)
+    return jsonify({"ok": True, "design": D.starter(a.fields, a.graph)})
+
+
+@bp.route("/apps/<slug>/assets", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_asset_upload(slug):
+    from ..extensions import db
+    from ..services import studio_design as D
+    a = _app_or_404(slug)
+    f = request.files.get("file")
+    if f is None:
+        return _err("no file")
+    data = f.read(D.ASSET_MAX + 1)
+    try:
+        row = D.add_asset(a.id, f.filename or "", data, _who())
+    except D.DesignError as exc:
+        db.session.rollback()
+        return _err(exc)
+    log_action("studio.app.asset", target=slug, extra={"sha256": row.sha256, "size": row.size})
+    return jsonify({"ok": True, "asset": _asset_json(a, row)})
+
+
+@bp.route("/apps/<slug>/assets/<sha>/delete", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_asset_delete(slug, sha):
+    from ..extensions import db
+    from ..services import studio_design as D
+    a = _app_or_404(slug)
+    try:
+        D.remove_asset(a, sha)
+    except D.DesignError as exc:
+        db.session.rollback()
+        return _err(exc)
+    log_action("studio.app.asset.delete", target=slug, extra={"sha256": sha})
+    return jsonify({"ok": True})
+
+
+def _asset_json(a, row) -> dict:
+    return {"sha": row.sha256, "name": row.name, "size": row.size, "mime": row.mime,
+            "url": url_for("apps.asset", slug=a.slug, sha=row.sha256)}
 
 
 @bp.route("/apps/<slug>/form")

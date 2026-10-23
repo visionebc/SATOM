@@ -1,0 +1,5 @@
+{# The designed page of an app (studio_design.page_tree), inside the form
+   apps_run.js reads: fields, the Run button and the result area are blocks
+   of the design. #}
+{% from "apps/_design.html" import surface %}
+{{ surface(tree, {'D': D, 'theme': theme, 'editing': editing|default(False), 'titles': {}, 'fields': fields_by_name, 'prefix': prefix|default('f-'), 'a': a, 'runs': all_runs|default(runs|default([]))}) }}

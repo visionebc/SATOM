@@ -80,49 +80,117 @@
   var BADGE = { done: 'success', failed: 'danger', running: 'info' };
   var OUT = { ok: 'success', yes: 'success', no: 'warning', error: 'danger' };
 
-  function draw(box, d) {
+  function statusHtml(d) {
     var h = '<div class="d-flex align-items-center gap-2 mb-2" style="font-size:13px;">' +
       '<span class="fw-badge fw-badge-' + (BADGE[d.status] || 'secondary') + '">' + esc(d.status) + '</span>' +
       '<span class="text-muted">run #' + d.id + (d.version ? ' · v' + d.version : ' · draft') +
       (d.armed ? '' : ' · rehearsal: nothing was written') + ' · ' + esc(d.user) + '</span>' +
       (d.status === 'running' ? '<span class="spinner-border spinner-border-sm text-secondary"></span>' : '') + '</div>';
     if (d.error) h += '<div class="alert alert-danger py-2" style="font-size:13px;">' + esc(d.error) + '</div>';
-    (d.outputs || []).forEach(function (o) {
-      h += '<div class="fw-card mb-2"><div class="fw-card-body">' +
-        (o.title ? '<div class="fw-card-title mb-2" style="font-size:14px;">' + esc(o.title) + '</div>' : '') + view(o) + '</div></div>';
-    });
-    if (d.actions && d.actions.length) {
-      h += '<div class="d-flex flex-wrap gap-2 my-2" data-actions>' + d.actions.map(function (a) {
-        return '<button type="button" class="btn btn-sm btn-outline-primary" data-act="' + esc(a.key) + '" data-kind="' + esc(a.kind) +
-          '" data-confirm="' + (a.confirm ? '1' : '') + '" data-label="' + esc(a.label) + '">' + esc(a.label) + '</button>';
-      }).join('') + '</div><div data-act-msg style="font-size:12px;"></div>';
-    }
-    h += '<details class="mt-2"><summary class="text-muted" style="font-size:12px;cursor:pointer;">Steps (' + (d.steps || []).length + ')</summary>' +
+    return h;
+  }
+  function outputCard(o, title, kind, bare) {
+    var t = title || o.title, body = view({ value: o.value, view: kind || o.view });
+    var head = t ? '<div class="fw-card-title mb-2" style="font-size:14px;">' + esc(t) + '</div>' : '';
+    return bare ? head + body : '<div class="fw-card-body">' + head + body + '</div>';
+  }
+  function actionsHtml(d) {
+    if (!d.actions || !d.actions.length) return '';
+    return '<div class="d-flex flex-wrap gap-2 my-2" data-actions>' + d.actions.map(function (a) {
+      return '<button type="button" class="btn btn-sm btn-outline-primary" data-act="' + esc(a.key) + '" data-kind="' + esc(a.kind) +
+        '" data-confirm="' + (a.confirm ? '1' : '') + '" data-label="' + esc(a.label) + '">' + esc(a.label) + '</button>';
+    }).join('') + '</div><div data-act-msg style="font-size:12px;"></div>';
+  }
+  function stepsHtml(d, open) {
+    return '<details class="mt-2"' + (open ? ' open' : '') + '><summary class="text-muted" style="font-size:12px;cursor:pointer;">Steps (' + (d.steps || []).length + ')</summary>' +
       '<table class="table table-sm mt-1" style="font-size:12px;"><tbody>' + (d.steps || []).map(function (s) {
         return '<tr><td><code>' + esc(s.key) + '</code></td><td>' + esc(s.label) + '</td><td><span class="fw-badge fw-badge-' + (OUT[s.outcome] || 'secondary') +
           '">' + esc(s.outcome) + '</span></td><td>' + esc(s.detail) + '</td><td class="text-muted">' + (s.ms || 0) + ' ms</td></tr>';
       }).join('') + '</tbody></table>' +
       (d.vars ? '<div class="text-muted small">Variables (authors only)</div><pre class="p-2" style="max-height:30vh;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;">' +
         esc(JSON.stringify(d.vars, null, 2)) + '</pre>' : '') + '</details>';
-    box.innerHTML = h;
+  }
+  /* A number tile: the value at a dotted path inside an output; a list or an
+     object shows how many items it holds. */
+  function statValue(v, path) {
+    (path ? String(path).split('.') : []).forEach(function (k) {
+      if (v === null || v === undefined || k === '') return;
+      v = Array.isArray(v) && /^\d+$/.test(k) ? v[+k] : (typeof v === 'object' ? v[k] : undefined);
+    });
+    if (Array.isArray(v)) return v.length.toLocaleString();
+    if (v && typeof v === 'object') return Object.keys(v).length.toLocaleString();
+    if (typeof v === 'number') return v.toLocaleString();
+    if (v === null || v === undefined || v === '') return '—';
+    return String(v);
+  }
+  function byKey(d) {
+    var m = {};
+    (d.outputs || []).forEach(function (o) { if (o.key && !m[o.key]) m[o.key] = o; });
+    return m;
+  }
+  /* Fill the slots of a designed result (templates/apps/_design.html). */
+  function fill(root, d) {
+    var outs = byKey(d), placed = {};
+    Array.prototype.forEach.call(root.querySelectorAll('[data-sapp-output]'), function (el) {
+      var k = el.getAttribute('data-sapp-output'), o = outs[k];
+      placed[k] = true;
+      el.hidden = !o;
+      el.innerHTML = o ? outputCard(o, el.getAttribute('data-title'), el.getAttribute('data-view'), el.getAttribute('data-bare') === '1') : '';
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('[data-sapp-stat]'), function (el) {
+      var o = outs[el.getAttribute('data-sapp-stat')], v = el.querySelector('[data-v]');
+      if (v) v.textContent = o ? statValue(o.value, el.getAttribute('data-path')) : (d.status === 'running' ? '…' : '—');
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('[data-sapp-slot]'), function (el) {
+      var slot = el.getAttribute('data-sapp-slot');
+      if (slot === 'status') el.innerHTML = statusHtml(d);
+      else if (slot === 'outputs') {
+        el.innerHTML = (d.outputs || []).filter(function (o) { return !(o.key && placed[o.key]); }).map(function (o) {
+          return '<div class="fw-card mb-2">' + outputCard(o) + '</div>';
+        }).join('');
+      } else if (slot === 'actions') el.innerHTML = actionsHtml(d);
+      else if (slot === 'steps') el.innerHTML = stepsHtml(d, el.getAttribute('data-open') === '1');
+    });
+  }
+
+  function draw(box, d) {
+    if (d.layout) {
+      var tmp = document.createElement('div');
+      tmp.innerHTML = d.layout;
+      var fresh = tmp.querySelector('[data-sapp-layout]'), cur = box.querySelector('[data-sapp-layout]');
+      /* keep the layout already drawn (an open tab, a scrolled table) while
+         the run is followed; only its slots are refilled */
+      if (fresh && (!cur || cur.getAttribute('data-sapp-layout') !== fresh.getAttribute('data-sapp-layout'))) {
+        box.innerHTML = '';
+        box.appendChild(fresh);
+      }
+      fill(box, d);
+    } else {
+      var h = statusHtml(d);
+      (d.outputs || []).forEach(function (o) { h += '<div class="fw-card mb-2">' + outputCard(o) + '</div>'; });
+      h += actionsHtml(d) + stepsHtml(d, false);
+      box.innerHTML = h;
+    }
+    box._sappRun = d;
     /* In the app editor, the same run is laid over the diagram: each step
        coloured by how it ended, its detail in the inspector. */
     if (window.SatomProcEditor && d.steps) window.SatomProcEditor.overlay(d.steps);
-    var actBox = box.querySelector('[data-actions]');
-    if (actBox) actBox.addEventListener('click', function (e) {
-      var b = e.target.closest('[data-act]'); if (!b) return;
-      var key = b.getAttribute('data-act'), msg = box.querySelector('[data-act-msg]');
+    if (box._sappWired) return;
+    box._sappWired = true;
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-act]'); if (!b || !box.contains(b)) return;
+      var run = box._sappRun, key = b.getAttribute('data-act'), msg = box.querySelector('[data-act-msg]');
       if (b.getAttribute('data-confirm') && !window.confirm(b.getAttribute('data-label') + '?')) return;
       if (b.getAttribute('data-kind') === 'download') {
-        window.location = '/apps/runs/' + d.id + '/download/' + encodeURIComponent(key);
+        window.location = '/apps/runs/' + run.id + '/download/' + encodeURIComponent(key);
         return;
       }
       b.disabled = true;
-      post('/apps/runs/' + d.id + '/action/' + encodeURIComponent(key), {}).then(function (r) {
+      post('/apps/runs/' + run.id + '/action/' + encodeURIComponent(key), {}).then(function (r) {
         b.disabled = false;
-        msg.innerHTML = '<span style="color:#15692A;">' + esc(r.message) + '</span>' +
+        if (msg) msg.innerHTML = '<span style="color:#15692A;">' + esc(r.message) + '</span>' +
           (r.url ? ' <a href="' + esc(r.url) + '">Open</a>' : '');
-      }).catch(function (err) { b.disabled = false; msg.innerHTML = '<span style="color:#8B1C2A;">' + esc(err.message) + '</span>'; });
+      }).catch(function (err) { b.disabled = false; if (msg) msg.innerHTML = '<span style="color:#8B1C2A;">' + esc(err.message) + '</span>'; });
     });
   }
 
@@ -160,7 +228,7 @@
       });
     });
   }
-  window.AppRun = { mount: mount, draw: draw, follow: follow };
+  window.AppRun = { mount: mount, draw: draw, follow: follow, fill: fill };
 
   var cfgEl = document.getElementById('app-run-config');
   if (cfgEl) {

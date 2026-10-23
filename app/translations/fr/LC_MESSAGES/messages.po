@@ -27013,3 +27013,69 @@ msgstr "un formulaire et un diagramme d'étapes, construit à la souris"
 
 msgid "script missing"
 msgstr "script manquant"
+
+msgid "Action buttons"
+msgstr "Boutons d'action"
+
+msgid "As users see it"
+msgstr "Tel que les utilisateurs le voient"
+
+msgid "Banner"
+msgstr "Bannière"
+
+msgid "Design"
+msgstr "Design"
+
+msgid "Drop blocks here"
+msgstr "Déposez des blocs ici"
+
+msgid "Empty this surface: it falls back to the standard layout"
+msgstr "Vider cette surface : elle revient à la mise en page standard"
+
+msgid "Field %(name)s is not in the form"
+msgstr "Le champ %(name)s n'est pas dans le formulaire"
+
+msgid "Heading"
+msgstr "Titre"
+
+msgid "How the app looks: drag blocks onto the page (where each field, the Run button and the result go) and onto the result (where each Output step, number tiles and the action buttons go), then colour and space them. SATOM draws every block with its own styles; an app without a design keeps the standard layout. Saved with the draft and frozen by Publish."
+msgstr "L'apparence de l'application : faites glisser des blocs sur la page (où vont chaque champ, le bouton Exécuter et le résultat) et sur le résultat (où vont chaque étape Output, les tuiles de chiffres et les boutons d'action), puis colorez-les et espacez-les. SATOM dessine chaque bloc avec ses propres styles ; une application sans design garde la mise en page standard. Enregistré avec le brouillon et figé par Publier."
+
+msgid "Images"
+msgstr "Images"
+
+msgid "Outline"
+msgstr "Plan"
+
+msgid "Outputs not placed above"
+msgstr "Sorties non placées ci-dessus"
+
+msgid "Output step %(key)s"
+msgstr "Étape Output %(key)s"
+
+msgid "Pick an image"
+msgstr "Choisissez une image"
+
+msgid "PNG, JPEG, GIF or WebP, up to 512 KiB; at most 12 per app. They travel in the app package."
+msgstr "PNG, JPEG, GIF ou WebP, jusqu'à 512 Kio ; 12 au plus par application. Elles voyagent dans le paquet de l'application."
+
+msgid "Redo"
+msgstr "Rétablir"
+
+msgid "Replace this surface with the standard layout, as blocks"
+msgstr "Remplacer cette surface par la mise en page standard, en blocs"
+
+msgid "Run status and error"
+msgstr "État de l'exécution et erreur"
+
+msgid "Save design"
+msgstr "Enregistrer le design"
+
+msgid "Start from the standard layout"
+msgstr "Partir de la mise en page standard"
+
+msgid "Surface"
+msgstr "Surface"
+
+msgid "The app description (Settings)"
+msgstr "La description de l'application (Paramètres)"

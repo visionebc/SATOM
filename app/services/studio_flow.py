@@ -561,7 +561,8 @@ def _run_step(node: dict, ctx: Ctx):
     if kind == "output":
         value = render(_p(node, "value"), scope)
         _size_ok(value)
-        ctx.outputs.append({"title": str(render(_p(node, "title"), scope) or ""),
+        ctx.outputs.append({"key": node.get("key") or "",
+                            "title": str(render(_p(node, "title"), scope) or ""),
                             "view": _p(node, "view", "auto") or "auto", "value": value})
         return "ok", None, ""
     if not ctx.armed and step_writes(node):

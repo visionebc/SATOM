@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ a.name }} — run #{{ run.id }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ asset('css/app_design.css') }}">{% endblock %}
 {% block content %}
 <div class="fw-page-header d-flex align-items-start">
   <div>

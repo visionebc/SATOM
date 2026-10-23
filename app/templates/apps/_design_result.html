@@ -1,0 +1,5 @@
+{# The designed result of an app run (studio_design.render_result): the layout
+   with empty slots; static/js/apps_run.js fills the status, outputs, tiles,
+   actions and steps from the run's JSON. #}
+{% from "apps/_design.html" import surface %}
+{{ surface(tree, {'D': D, 'theme': theme, 'editing': editing, 'titles': titles, 'fields': {}, 'prefix': 'r-', 'a': a, 'runs': []}, stamp) }}

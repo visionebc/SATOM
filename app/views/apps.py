@@ -69,9 +69,39 @@ def page(slug):
     a = _usable_or_404(slug)
     if not a.published:
         return render_template("apps/page.html", a=a, fields=[], runs=[], unpublished=True)
-    return render_template("apps/page.html", a=a, unpublished=False,
-                           fields=SA.form_view(a.published.get("fields") or []),
-                           runs=SA.recent_runs(a, current_user, limit=10))
+    from ..services import studio_design as D
+    pub = a.published
+    fields = SA.form_view(pub.get("fields") or [])
+    design = {}
+    try:
+        design = D.clean(pub.get("design") or {})
+    except D.DesignError:  # a stored design the vocabulary no longer takes
+        design = {}
+    runs = SA.recent_runs(a, current_user, limit=15)
+    return render_template("apps/page.html", a=a, unpublished=False, fields=fields,
+                           runs=runs[:10], tree=D.page_tree(design, fields), D=D,
+                           theme=design.get("theme") or {},
+                           fields_by_name={f["name"]: f for f in fields}, all_runs=runs)
+
+
+@bp.route("/<slug>/assets/<sha>")
+@login_required
+def asset(slug, sha):
+    """An image of the app's design, to whoever may open the app (and its
+    authors, for the editor). The type was sniffed at upload; the response
+    may not be read as anything else (nosniff: the app-wide security
+    headers), nor run anything (its own policy below)."""
+    a = SA.get(slug)
+    if a is None or not SA.can_use(current_user, a):
+        abort(404)
+    from ..services import studio_design as D
+    row = D.get_asset(a.id, sha)
+    if row is None:
+        abort(404)
+    return Response(row.data, mimetype=row.mime, headers={
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "Cache-Control": "private, max-age=86400, immutable",
+        "Content-Disposition": "inline; filename=%s.%s" % (row.sha256[:12], D.EXT.get(row.mime, "bin"))})
 
 
 @bp.route("/<slug>/run", methods=["POST"])

@@ -2108,6 +2108,8 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('kind', "VARCHAR(16) DEFAULT 'flow'"),
                 ('script_slug', 'VARCHAR(48)'),
                 ('enabled', 'BOOLEAN DEFAULT TRUE'),
+                # --- app designer (appdesign01) ---
+                ('design_json', "TEXT DEFAULT '{}'"),
             ],
             # --- Analytics: dashboard variables (one board, whole fleet) ---
             'monitor_dashboard': [

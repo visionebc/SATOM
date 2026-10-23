@@ -27048,3 +27048,69 @@ msgstr "un modulo e un diagramma di passi, costruito con il mouse"
 
 msgid "script missing"
 msgstr "script mancante"
+
+msgid "Action buttons"
+msgstr "Pulsanti delle azioni"
+
+msgid "As users see it"
+msgstr "Come lo vedono gli utenti"
+
+msgid "Banner"
+msgstr "Banner"
+
+msgid "Design"
+msgstr "Design"
+
+msgid "Drop blocks here"
+msgstr "Trascina qui i blocchi"
+
+msgid "Empty this surface: it falls back to the standard layout"
+msgstr "Svuota questa superficie: torna al layout standard"
+
+msgid "Field %(name)s is not in the form"
+msgstr "Il campo %(name)s non è nel modulo"
+
+msgid "Heading"
+msgstr "Titolo"
+
+msgid "How the app looks: drag blocks onto the page (where each field, the Run button and the result go) and onto the result (where each Output step, number tiles and the action buttons go), then colour and space them. SATOM draws every block with its own styles; an app without a design keeps the standard layout. Saved with the draft and frozen by Publish."
+msgstr "L'aspetto dell'app: trascina i blocchi sulla pagina (dove vanno ogni campo, il pulsante Esegui e il risultato) e sul risultato (dove vanno ogni passo Output, i riquadri numerici e i pulsanti delle azioni), poi colorali e spaziali. SATOM disegna ogni blocco con i propri stili; un'app senza design mantiene il layout standard. Salvato con la bozza e congelato da Pubblica."
+
+msgid "Images"
+msgstr "Immagini"
+
+msgid "Outline"
+msgstr "Struttura"
+
+msgid "Outputs not placed above"
+msgstr "Output non posizionati sopra"
+
+msgid "Output step %(key)s"
+msgstr "Passo Output %(key)s"
+
+msgid "Pick an image"
+msgstr "Scegli un'immagine"
+
+msgid "PNG, JPEG, GIF or WebP, up to 512 KiB; at most 12 per app. They travel in the app package."
+msgstr "PNG, JPEG, GIF o WebP, fino a 512 KiB; al massimo 12 per app. Viaggiano nel pacchetto dell'app."
+
+msgid "Redo"
+msgstr "Ripeti"
+
+msgid "Replace this surface with the standard layout, as blocks"
+msgstr "Sostituisci questa superficie con il layout standard, a blocchi"
+
+msgid "Run status and error"
+msgstr "Stato dell'esecuzione ed errore"
+
+msgid "Save design"
+msgstr "Salva il design"
+
+msgid "Start from the standard layout"
+msgstr "Parti dal layout standard"
+
+msgid "Surface"
+msgstr "Superficie"
+
+msgid "The app description (Settings)"
+msgstr "La descrizione dell'app (Impostazioni)"

@@ -252,6 +252,8 @@
           <div class="fw-card-header d-flex justify-content-between align-items-center">
             <span class="fw-card-title"><i class="bi bi-stack me-2 text-accent"></i>{{ _('Installed software') }}</span>
             <span class="d-flex gap-2">
+              <button type="button" class="btn btn-sm btn-outline-primary" id="swinv-check"
+                      style="font-size:12px;padding:2px 10px;"><i class="bi bi-cloud-arrow-down me-1"></i>{{ _('Check for updates') }}</button>
               <a class="btn btn-sm btn-outline-secondary" id="swinv-download" href="{{ url_for('settings.software_inventory', download=1) }}"
                  style="font-size:12px;padding:2px 10px;"><i class="bi bi-download me-1"></i>{{ _('Download JSON') }}</a>
               <button type="button" class="btn btn-sm btn-primary" id="swinv-refresh"
@@ -261,6 +263,7 @@
           <div class="fw-card-body">
             <div class="text-muted mb-2" style="font-size:11px;">{{ _('Every package this installation runs on and the version installed, on every node. The first version is what the program reports; the line under it is what the distribution package manager has on record, the one security advisories name.') }}</div>
             <div id="swinv-meta" class="text-muted mb-2" style="font-size:11px;"></div>
+            <pre id="swinv-out" class="mb-2 p-2" style="display:none;max-height:240px;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;"></pre>
 
             <div class="fw-card-header px-0 pt-0 pb-1">
               <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-hdd-rack me-2 text-accent"></i>{{ _('Platform components') }}</span>
@@ -5681,7 +5684,73 @@ function swinvCompCell(st, n) {
   var ver = st.version ? '<code>' + sysEsc(st.version) + '</code>' : '<span class="text-muted">version not reported</span>';
   var pkg = st.package ? '<div class="text-muted" style="font-size:10px;">' + sysEsc(st.package) + ' ' + sysEsc(st.package_version) + '</div>'
                        : '<div class="text-muted" style="font-size:10px;">no distro package</div>';
-  return '<span title="' + sysEsc(st.detail || '') + '">' + ver + '</span>' + pkg;
+  var upd = '';
+  if (st.update && st.update.available) {
+    var to = Object.keys(st.update.packages || {}).map(function (k) { return k + ' ' + st.update.packages[k]; }).join(', ');
+    upd = '<div><span class="fw-badge fw-badge-warning" title="' + sysEsc(to) + '">update: ' + sysEsc(to.length > 60 ? to.slice(0, 60) + '…' : to) + '</span></div>';
+  } else if (st.update) {
+    upd = '<div class="text-muted" style="font-size:10px;">up to date</div>';
+  }
+  return '<span title="' + sysEsc(st.detail || '') + '">' + ver + '</span>' + pkg + upd;
+}
+function swinvAction(c, nodes) {
+  if (!c.upgradable) {
+    return c.key === 'kernel' ? '<span class="text-muted" style="font-size:10px;">updates with the host</span>' : '';
+  }
+  var any = nodes.some(function (n) { var v = c.nodes[n.name]; return n.reachable && v && v.update && v.update.available; });
+  return '<button type="button" class="btn btn-sm ' + (any ? 'btn-primary' : 'btn-outline-secondary') + ' swinv-upgrade" data-key="'
+    + sysEsc(c.key) + '" data-label="' + sysEsc(c.label) + '" data-impact="' + sysEsc(c.impact || '')
+    + '" style="font-size:11px;padding:1px 8px;">Upgrade</button>';
+}
+function swinvPollJob(jobId) {
+  var pre = document.getElementById('swinv-out');
+  fetch('/jobs/' + encodeURIComponent(jobId), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+    .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
+    .then(function (job) {
+      sysRenderJob(pre, job);
+      if (['pending', 'running'].indexOf(job.status) >= 0) {
+        setTimeout(function () { swinvPollJob(jobId); }, 2000);
+      } else {
+        setTimeout(function () { swinvLoad(true); }, 1000);
+      }
+    })
+    .catch(function () { setTimeout(function () { swinvPollJob(jobId); }, 3000); });
+}
+function swinvPost(url, body, label) {
+  var pre = document.getElementById('swinv-out');
+  pre.style.display = '';
+  pre.textContent = label + ' …';
+  fetch(url, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': libCsrf() },
+    body: JSON.stringify(body)
+  })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+      if (!res.ok) { pre.textContent = 'Error: ' + (res.d.error || 'request rejected'); return; }
+      pre.textContent = 'job ' + res.d.job_id + ' queued on ' + res.d.node + ' …';
+      swinvPollJob(res.d.job_id);
+    })
+    .catch(function (e) { pre.textContent = 'Error: ' + e.message; });
+}
+function swinvCheck() {
+  var nodes = (swinvData && swinvData.nodes) || [];
+  var alsoPeer = nodes.length > 1;
+  swinvPost('/settings/system-packages/check', { also_peer: alsoPeer },
+            'Checking for updates on ' + (alsoPeer ? 'every node' : 'this node'));
+}
+function swinvUpgrade(key, label, impact) {
+  var nodes = (swinvData && swinvData.nodes) || [];
+  var self = nodes.filter(function (n) { return n.self; })[0] || {};
+  var alsoPeer = false;
+  var order = self.role === 'primary' ? 'the standby first, then this node once it succeeded'
+                                      : 'this node first, then the peer once it succeeded';
+  if (nodes.length > 1) {
+    alsoPeer = window.confirm('Upgrade ' + label + ' on ALL nodes?\n\n' + impact + '\n\nOrder: ' + order
+      + '.\n\nOK = all nodes\nCancel = choose this node only');
+    if (!alsoPeer && !window.confirm('Upgrade ' + label + ' on THIS node only?\n\n' + impact)) { return; }
+  } else if (!window.confirm('Upgrade ' + label + ' on this node?\n\n' + impact)) { return; }
+  swinvPost('/settings/system-packages/upgrade', { package: key, also_peer: alsoPeer }, 'Queuing the upgrade of ' + label);
 }
 function swinvDiffBadge(row) {
   return row.differs ? ' <span class="fw-badge fw-badge-warning" title="The nodes do not run the same version">differs</span>' : '';
@@ -5721,13 +5790,25 @@ function swinvLoad(refresh) {
         return '<strong>' + sysEsc(n.name) + '</strong>: ' + (n.reachable
           ? sysEsc(n.os) + ' (' + sysEsc(n.machine) + ', ' + sysEsc(n.package_manager) + ')'
           : '<span class="text-danger">unreachable — ' + sysEsc(n.error || '') + '</span>');
-      }).join(' · ') + ' · measured ' + sysEsc(d.generated_at);
-      document.getElementById('swinv-comp-head').innerHTML = '<tr><th>Component</th>' + swinvNodeHead(nodes) + '</tr>';
+      }).join(' · ') + ' · measured ' + sysEsc(d.generated_at)
+        + '<br>' + nodes.map(function (n) {
+          if (!n.reachable) { return ''; }
+          return sysEsc(n.name) + ': ' + (n.checked_at
+            ? 'updates checked ' + sysEsc(n.checked_at) + (n.index_refreshed ? '' : ' <span class="text-danger">(package index NOT refreshed: answered from the cached index)</span>')
+            : 'updates not checked yet');
+        }).filter(Boolean).join(' · ');
+      document.getElementById('swinv-comp-head').innerHTML = '<tr><th>Component</th>' + swinvNodeHead(nodes) + '<th></th></tr>';
       body.innerHTML = (d.components || []).map(function (c) {
         return '<tr><td><strong>' + sysEsc(c.label) + '</strong>' + swinvDiffBadge(c)
           + '<div class="text-muted" style="font-size:10px;">' + sysEsc(c.purpose) + '</div></td>'
-          + nodes.map(function (n) { return '<td>' + swinvCompCell(c.nodes[n.name], n) + '</td>'; }).join('') + '</tr>';
+          + nodes.map(function (n) { return '<td>' + swinvCompCell(c.nodes[n.name], n) + '</td>'; }).join('')
+          + '<td class="text-end">' + swinvAction(c, nodes) + '</td></tr>';
       }).join('');
+      body.querySelectorAll('.swinv-upgrade').forEach(function (b) {
+        b.addEventListener('click', function () {
+          swinvUpgrade(b.getAttribute('data-key'), b.getAttribute('data-label'), b.getAttribute('data-impact'));
+        });
+      });
       document.getElementById('swinv-py-head').innerHTML = '<tr><th>Package</th>' + swinvNodeHead(nodes) + '</tr>';
       swinvRenderPython();
       document.getElementById('swinv-assets-body').innerHTML = (d.assets || []).map(function (a) {
@@ -5741,6 +5822,7 @@ function swinvLoad(refresh) {
 document.addEventListener('DOMContentLoaded', function () {
   if (!document.getElementById('swinv-card')) { return; }
   document.getElementById('swinv-refresh').addEventListener('click', function () { swinvLoad(true); });
+  document.getElementById('swinv-check').addEventListener('click', swinvCheck);
   document.getElementById('swinv-py-filter').addEventListener('input', swinvRenderPython);
   document.getElementById('swinv-py-direct').addEventListener('change', swinvRenderPython);
   swinvLoad(false);

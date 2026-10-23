@@ -696,6 +696,60 @@ def system_packages_install():
                     'node': su.this_node_name(), 'also_peer': also_peer})
 
 
+@bp.route('/system-packages/upgrade', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def system_packages_upgrade():
+    """Enqueue the upgrade of ONE Installed software component as a job.
+
+    With ``also_peer`` the standby goes FIRST when this node is the primary:
+    a package that breaks a node breaks the one without traffic, and this
+    node is not touched unless every peer succeeded (``library_jobs``)."""
+    from ..services import library_jobs
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    key = str(payload.get('package') or '').strip()
+    also_peer = bool(payload.get('also_peer'))
+    who = getattr(current_user, 'username', '?')
+    try:
+        job = library_jobs.start_upgrade(key, also_peer=also_peer, by=who)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.system_package',
+               detail='upgrade %s on %s%s (job %s)' % (
+                   key, su.this_node_name(),
+                   ' + peers (%s first)' % job['meta'].get('order', 'local')
+                   if also_peer else '', job['id']))
+    return jsonify({'job_id': job['id'], 'node': su.this_node_name(),
+                    'also_peer': also_peer, 'order': job['meta'].get('order')})
+
+
+@bp.route('/system-packages/check', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def system_packages_check():
+    """Enqueue an update check (package index refresh + compare) as a job,
+    on this node and, with ``also_peer``, on the peers after it. Changes no
+    package."""
+    from ..services import library_jobs
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    also_peer = bool(payload.get('also_peer'))
+    who = getattr(current_user, 'username', '?')
+    try:
+        job = library_jobs.start_check(also_peer=also_peer, by=who)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.system_package',
+               detail='check for updates on %s%s (job %s)' % (
+                   su.this_node_name(), ' + peers' if also_peer else '', job['id']))
+    return jsonify({'job_id': job['id'], 'node': su.this_node_name()})
+
+
 @bp.route('/software-inventory')
 @login_required
 @require_permission(Permission.USER_MANAGE)
@@ -727,8 +781,10 @@ def peer_software_inventory():
         return denied
     from ..services import self_update as su
     from ..services import software_inventory as inv
+    from ..services import system_packages as sp
     return jsonify({'node': su.this_node_name(), 'role': su.node_role(),
-                    'inventory': inv.local_inventory()})
+                    'inventory': inv.local_inventory(),
+                    'updates': sp.latest_check()})
 
 
 @bp.route('/peer/system-packages')
@@ -756,17 +812,20 @@ def peer_system_package_install():
     from ..services import self_update as su
     from ..services import system_packages as sp
     payload = request.get_json(silent=True) or {}
-    key = (payload.get('package') or '').strip()
+    key = str(payload.get('package') or '').strip()
+    # An older peer sends no action: that is the install it always meant.
+    action = str(payload.get('action') or 'install').strip()
     by = '%s@%s' % ((str(payload.get('requested_by') or 'peer').strip() or 'peer')[:40],
                     (str(payload.get('origin_node') or 'peer').strip() or 'peer')[:40])
     try:
-        uid = sp.request_install(key, by=by, origin='peer-push')
+        uid = sp.request_on_peer_node(action, key, by=by, origin='peer-push')
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
         return jsonify({'error': 'could not queue: %s' % exc}), 500
     log_action('settings.system_package.peer',
-               detail='install %s enqueued on %s for %s' % (key, su.this_node_name(), by))
+               detail='%s %s enqueued on %s for %s' % (action, key or '(all)',
+                                                        su.this_node_name(), by))
     return jsonify({'uid': uid, 'node': su.this_node_name()})
 
 

@@ -44,6 +44,33 @@ PACKAGES: dict[str, dict] = {
 }
 
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]{0,63}$")
+ACTIONS = ("install", "upgrade", "check")
+
+# Settings > General > Installed software: every component but the kernel
+# (which belongs to the host) can be UPGRADED -- only what is already
+# installed, with the node's own package manager. The runner keeps the
+# package-name globs per manager ([SATOM-RUNNER-NO-APP-IMPORT]); this side
+# only knows the keys and what an upgrade costs, for the confirmation.
+# tests/test_system_package_upgrade.py asserts the three key sets agree.
+UPGRADABLE: dict[str, str] = {
+    "python": "Restarts SATOM on each node (web, scheduler, reconciler).",
+    "postgresql": "The database restarts: SATOM is unavailable for a few seconds on each node.",
+    "postgresql-client": "No restart.",
+    "nginx": "nginx restarts: open browser sessions reconnect.",
+    "victoria-metrics": "Installs the version this SATOM release pins (sha256 verified); the metrics store restarts.",
+    "redis": "Redis restarts: rate-limit counters start again.",
+    "openssl": "No restart. Services that load the library are listed if they still run the old copy.",
+    "openssl-python": "Restarts SATOM on each node so the app loads the new library.",
+    "ca-certificates": "No restart.",
+    "openssh": "The SSH server restarts; open SSH sessions stay up.",
+    "git": "No restart.",
+    "rsync": "No restart.",
+    "curl": "No restart.",
+    "sudo": "No restart.",
+    "bubblewrap": "No restart; the sandbox is tested again.",
+    "lua": "No restart.",
+    "systemd": "systemd re-executes itself; services keep running.",
+}
 PEER_STATE_PATH = "/settings/peer/system-packages"
 PEER_INSTALL_PATH = "/settings/peer/system-package-install"
 
@@ -94,24 +121,43 @@ def local_state() -> dict[str, dict]:
 
 def request_install(key: str, by: str, *, origin: str = "system-packages-card") -> str:
     """Enqueue an install of a CURATED package on this node. Returns the id."""
+    key = (key or "").strip()
+    if not _KEY_RE.match(key) or key not in PACKAGES:
+        raise ValueError("%r is not a curated system package" % key)
+    return _enqueue("install", key, by, origin)
+
+
+def request_upgrade(key: str, by: str, *, origin: str = "installed-software-card") -> str:
+    """Enqueue the upgrade of ONE component's installed packages on this node."""
+    key = (key or "").strip()
+    if not _KEY_RE.match(key) or key not in UPGRADABLE:
+        raise ValueError("%r is not an upgradable component" % key)
+    return _enqueue("upgrade", key, by, origin)
+
+
+def request_check(by: str, *, origin: str = "installed-software-card") -> str:
+    """Enqueue an update check (index refresh + compare) on this node."""
+    return _enqueue("check", "", by, origin)
+
+
+def _enqueue(action: str, key: str, by: str, origin: str) -> str:
     from .. import runtime
     runtime.require("self_update")
     if runtime.is_container_runtime():
         raise runtime.CapabilityUnavailable("self_update",
                                             runtime.CONTAINER_UPDATE_REDIRECT)
-    key = (key or "").strip()
-    if not _KEY_RE.match(key) or key not in PACKAGES:
-        raise ValueError("%r is not a curated system package" % key)
+    if action not in ACTIONS:
+        raise ValueError("%r is not a system package action" % action)
     su.REQ_DIR.mkdir(parents=True, exist_ok=True)
     su.STATUS_DIR.mkdir(parents=True, exist_ok=True)
     uid = datetime.utcnow().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
     now = datetime.utcnow().isoformat() + "Z"
-    req = {"id": uid, "kind": "syspkg", "package": key, "action": "install",
+    req = {"id": uid, "kind": "syspkg", "package": key, "action": action,
            "requested_by": by, "requested_at": now,
            "node": su.this_node_name(), "role": su.node_role(), "origin": origin}
     (su.STATUS_DIR / (uid + ".json")).write_text(json.dumps({
         "id": uid, "state": "queued", "steps": [], "kind": "syspkg",
-        "package": key, "action": "install", "requested_by": by,
+        "package": key, "action": action, "requested_by": by,
         "node": req["node"], "role": req["role"], "origin": origin,
         "updated_at": now}))
     tmp = su.REQ_DIR / ("." + uid + ".tmp")
@@ -120,13 +166,54 @@ def request_install(key: str, by: str, *, origin: str = "system-packages-card") 
     return uid
 
 
+def request_on_peer_node(action: str, key: str, by: str, *, origin: str = "peer-push") -> str:
+    """What the peer endpoint calls: the same validation as a local click."""
+    if action == "install":
+        return request_install(key, by=by, origin=origin)
+    if action == "upgrade":
+        return request_upgrade(key, by=by, origin=origin)
+    if action == "check":
+        return request_check(by=by, origin=origin)
+    raise ValueError("%r is not a system package action" % action)
+
+
+def latest_check() -> dict | None:
+    """The newest SUCCESSFUL update check on this node, or None.
+
+    Read from the runner's status files (newest first by id, which starts
+    with the UTC timestamp); a check that failed says nothing about what is
+    available, so it is skipped rather than shown as "up to date"."""
+    try:
+        files = sorted(su.STATUS_DIR.glob("*.json"), reverse=True)
+    except OSError:
+        return None
+    for f in files[:400]:
+        try:
+            d = json.loads(f.read_text())
+        except (OSError, ValueError):
+            continue
+        if d.get("kind") != "syspkg" or d.get("action") != "check" \
+                or d.get("state") != "success" or not isinstance(d.get("available"), dict):
+            continue
+        return {"checked_at": d.get("checked_at") or d.get("updated_at"),
+                "index_refreshed": bool(d.get("index_refreshed")),
+                "package_manager": d.get("package_manager"),
+                "available": d["available"]}
+    return None
+
+
 def request_install_on_peers(key: str, by: str) -> list[dict]:
-    """Ask every peer to enqueue the same install on itself.
+    """Ask every peer to enqueue the same install on itself."""
+    return request_on_peers(key, by, action="install")
+
+
+def request_on_peers(key: str, by: str, *, action: str = "install") -> list[dict]:
+    """Ask every peer to enqueue the same install / upgrade / check on itself.
 
     ``queued`` / ``rejected`` / ``unreachable`` per peer, exactly as the
     Libraries fan-out: not knowing is never shown as done."""
     from . import node_security as nsec
-    body = json.dumps({"package": key, "requested_by": by,
+    body = json.dumps({"package": key, "action": action, "requested_by": by,
                        "origin_node": su.this_node_name()}).encode()
     out: list[dict] = []
     for n in su.peer_nodes():

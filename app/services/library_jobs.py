@@ -22,6 +22,10 @@ Phases, in ``meta.phase``:
   driver died during the request, so whether the peer got it is unknown: the
   job fails and says so instead of asking twice.
 * ``peer``        -- each peer's runner applies it; polled over the node channel.
+* ``peer_first``  -- an OS package UPGRADE started on the primary with "all
+  nodes": the standby goes first (a package that breaks a node should break
+  the one without traffic) and ``then_local`` queues this node only once every
+  peer succeeded. A peer that fails leaves this node untouched.
 
 Every terminal state is a verdict about BOTH nodes: a peer that refused, could
 not be reached or failed is an error, never a quiet success.
@@ -114,18 +118,51 @@ def start_install(key: str, *, also_peer: bool, by: str) -> dict:
                  {"package": key, "action": "install"})
 
 
-def _open(type_: str, what: str, uid: str, by: str, also_peer: bool,
-          extra: dict) -> dict:
+def start_upgrade(key: str, *, also_peer: bool, by: str) -> dict:
+    """Upgrade ONE Installed software component (OS packages of this node).
+
+    "All nodes" from the PRIMARY runs the standby first and this node only
+    after every peer succeeded; from a standby (or with no peer) it is the
+    usual this-node-then-peer order -- which is also standby first."""
+    from . import self_update as su
+    from . import system_packages as sp
+    key = (key or "").strip()
+    if key not in sp.UPGRADABLE:
+        raise ValueError("%r is not an upgradable component" % key)
+    peer_first = bool(also_peer and su.node_role() == "primary" and su.peer_nodes())
+    if peer_first:
+        return _open(SYSPKG_TYPE, "Upgrade %s" % key, None, by, True,
+                     {"package": key, "action": "upgrade", "order": "peer",
+                      "then_local": True}, phase="peer_first")
+    uid = sp.request_upgrade(key, by=by)
+    return _open(SYSPKG_TYPE, "Upgrade %s" % key, uid, by, also_peer,
+                 {"package": key, "action": "upgrade", "order": "local"})
+
+
+def start_check(*, also_peer: bool, by: str) -> dict:
+    """Check every node for OS package updates (changes nothing)."""
+    from . import system_packages as sp
+    uid = sp.request_check(by=by)
+    return _open(SYSPKG_TYPE, "Check for updates", uid, by, also_peer,
+                 {"package": "", "action": "check", "order": "local"})
+
+
+def _open(type_: str, what: str, uid: str | None, by: str, also_peer: bool,
+          extra: dict, *, phase: str = "local") -> dict:
     from . import self_update as su
     node = su.this_node_name()
     scope = "%s + peer" % node if also_peer else node
+    if extra.get("order") == "peer":
+        scope = "peer first, then %s" % node
     job = jobs.create_job(
         type_, "%s (%s)" % (what, scope), by=by,
         meta=dict(extra, also_peer=bool(also_peer), node=node, local_uid=uid,
-                  phase="local", peers=[], steps=[], phase_since=_iso()),
+                  phase=phase, peers=[], steps=[], phase_since=_iso()),
         cancelable=False, durable=True)
     jobs.update_job(job["id"], status=jobs.RUNNING,
-                    message="queued on %s — waiting for its updater" % node)
+                    message=("asking the peer first — %s waits for it" % node)
+                    if phase == "peer_first"
+                    else "queued on %s — waiting for its updater" % node)
     (_markers() / job["id"]).touch()
     return jobs.get_job(job["id"]) or job
 
@@ -173,6 +210,8 @@ def advance(job_id: str) -> dict | None:
         phase = meta.get("phase")
         if phase == "local":
             _advance_local(job_id, meta)
+        elif phase == "peer_first":
+            _dispatch(job_id, meta)
         elif phase == "dispatching":
             _fail(job_id, "The driver stopped while asking the peer, so it is "
                           "unknown whether the peer received the change. Check "
@@ -213,11 +252,13 @@ def _advance_local(job_id: str, meta: dict) -> None:
     run = su.update_status(meta.get("local_uid") or "")
     state = (run or {}).get("state") or "queued"
     hi = 50 if meta.get("also_peer") else 100
+    lo = 50 if meta.get("peers_done") else 0
+    keep = list(meta.get("peer_done_steps") or [])
 
     def _mirror(s):
         s["meta"]["local_state"] = state
-        s["meta"]["steps"] = _run_steps(node, run)
-        s["percent"] = _percent(run, 0, hi, _EXPECTED_STEPS.get(s.get("type"), 9))
+        s["meta"]["steps"] = keep + _run_steps(node, run)
+        s["percent"] = _percent(run, lo, hi, _EXPECTED_STEPS.get(s.get("type"), 9))
     jobs.mutate_job(job_id, _mirror)
 
     if state in ("queued", "running"):
@@ -247,11 +288,18 @@ def _advance_local(job_id: str, meta: dict) -> None:
         why = (run or {}).get("error") or state
         rolled = " It was rolled back there." if (run or {}).get("rolled_back") else ""
         peer = " The peer was NOT touched." if meta.get("also_peer") else ""
+        if meta.get("peers_done"):
+            peer = (" %s already had it, so the pair now differs."
+                    % ", ".join(p.get("node") or "?" for p in meta.get("peers") or []))
         _fail(job_id, "Failed on %s: %s.%s%s" % (node, why, rolled, peer))
         return
 
     if not meta.get("also_peer"):
-        _succeed(job_id, "Applied on %s." % node)
+        if meta.get("peers_done"):
+            _succeed(job_id, "Applied on %s, then on %s." % (
+                ", ".join(p.get("node") or "?" for p in meta.get("peers") or []), node))
+        else:
+            _succeed(job_id, "Applied on %s." % node)
         return
     _dispatch(job_id, meta)
 
@@ -267,7 +315,8 @@ def _dispatch(job_id: str, meta: dict) -> None:
     try:
         if syspkg:
             from . import system_packages as sp
-            peers = sp.request_install_on_peers(meta["package"], by=_by(job_id))
+            peers = sp.request_on_peers(meta.get("package") or "", by=_by(job_id),
+                                        action=meta.get("action") or "install")
         else:
             peers = su.request_pip_change_on_peers(
                 meta["package"], meta["version"],
@@ -281,9 +330,10 @@ def _dispatch(job_id: str, meta: dict) -> None:
                  run_state=None)
     try:
         log_action("settings.system_package" if syspkg else "settings.library_pip",
-                   detail="%s %s%s on peers after %s succeeded (job %s): %s" % (
-                       meta.get("action"), meta["package"],
+                   detail="%s %s%s on peers %s %s (job %s): %s" % (
+                       meta.get("action"), meta.get("package") or "(all)",
                        "" if syspkg else "==%s" % meta["version"],
+                       "before" if meta.get("then_local") else "after",
                        meta.get("node"), job_id,
                        ", ".join("%s=%s" % (p.get("node"), p.get("state")) for p in peers)
                        or "none registered"))
@@ -296,15 +346,28 @@ def _dispatch(job_id: str, meta: dict) -> None:
             {"at": now[:19], "label": "%s · ask %s" % (meta.get("node"), p.get("node")),
              "outcome": p.get("state") + (" — %s" % p["error"] if p.get("error") else ""),
              "ok": p.get("state") == "queued"} for p in peers]
-        s["percent"] = 50
+        s["percent"] = 0 if meta.get("then_local") else 50
     jobs.mutate_job(job_id, _apply)
+    first = bool(meta.get("then_local"))
     if not peers:
+        if first:
+            _start_local_after_peers(job_id, meta, [])
+            return
         _succeed(job_id, "Applied on %s. No peer is registered." % meta.get("node"))
         return
     bad = [p for p in peers if p.get("state") != "queued"]
     if bad:
+        if first:
+            _fail(job_id, "%s did not take the change (%s); %s was NOT touched."
+                  % (", ".join(p.get("node") or "?" for p in bad), _describe(bad),
+                     meta.get("node")))
+            return
         _fail(job_id, "Applied on %s, but NOT on %s. The pair now differs; "
                       "retry on the peer." % (meta.get("node"), _describe(bad)))
+        return
+    if first:
+        jobs.update_job(job_id, message="%s applying it first — %s waits"
+                        % (", ".join(p["node"] for p in peers), meta.get("node")))
         return
     jobs.update_job(job_id, message="applied on %s — %s applying it"
                     % (meta.get("node"), ", ".join(p["node"] for p in peers)))
@@ -338,13 +401,34 @@ def _advance_peer(job_id: str, meta: dict) -> None:
                          steps=own + [x for p in peers
                                       for x in peer_steps.get(p.get("node"), [])])
         n = max([int(p.get("steps_done") or 0) for p in peers] or [0])
-        s["percent"] = 50 + min(49, int(50 * n / _EXPECTED_STEPS.get(s.get("type"), 9)))
+        base = 0 if meta.get("then_local") else 50
+        s["percent"] = base + min(49, int(50 * n / _EXPECTED_STEPS.get(s.get("type"), 9)))
     jobs.mutate_job(job_id, _apply)
 
     failed = [p for p in peers if p.get("run_state") == "failed"]
     silent = [p for p in peers if int(p.get("silent_s") or 0) > PEER_SILENT_FAIL_S]
     stuck = [p for p in peers if p.get("run_state") not in _TERMINAL_RUN
              and _age(meta) > RUNNING_FAIL_S]
+    if meta.get("then_local"):
+        untouched = " %s was NOT touched." % meta.get("node")
+        if failed:
+            _fail(job_id, "FAILED on %s.%s" % (", ".join(
+                "%s (%s)" % (p["node"], p.get("error") or "failed") for p in failed),
+                untouched))
+        elif silent:
+            _fail(job_id, "%s stopped answering for %d min, so its result is "
+                          "unknown.%s" % (", ".join(p["node"] for p in silent),
+                                          PEER_SILENT_FAIL_S // 60, untouched))
+        elif stuck:
+            _fail(job_id, "No final state from %s after %d min.%s"
+                  % (", ".join(p["node"] for p in stuck), RUNNING_FAIL_S // 60, untouched))
+        elif all(p.get("run_state") == "success" for p in peers):
+            _start_local_after_peers(job_id, meta, peers)
+        else:
+            jobs.update_job(job_id, message="%s first — %s waits" % (", ".join(
+                "%s: %s" % (p["node"], p.get("run_state") or p.get("note") or "queued")
+                for p in peers), meta.get("node")))
+        return
     if failed:
         _fail(job_id, "Applied on %s, but it FAILED on %s. The pair now differs."
               % (meta.get("node"), ", ".join(
@@ -368,6 +452,29 @@ def _advance_peer(job_id: str, meta: dict) -> None:
             meta.get("node"), ", ".join(
                 "%s: %s" % (p["node"], p.get("run_state") or p.get("note") or "queued")
                 for p in peers if p.get("run_state") != "success")))
+
+
+def _start_local_after_peers(job_id: str, meta: dict, peers: list[dict]) -> None:
+    """Every peer succeeded (or none is registered): now this node."""
+    from . import system_packages as sp
+    try:
+        uid = sp.request_upgrade(meta["package"], by=_by(job_id))
+    except Exception as exc:  # noqa: BLE001
+        _fail(job_id, "Applied on %s, but could not queue it on %s: %s. The pair "
+                      "now differs." % (", ".join(p.get("node") or "?" for p in peers)
+                                        or "no peer", meta.get("node"), exc))
+        return
+    now = _iso()
+
+    def _apply(s):
+        s["meta"].update(phase="local", local_uid=uid, also_peer=False,
+                         then_local=False, peers_done=True, phase_since=now,
+                         peer_done_steps=list(s["meta"].get("steps") or []))
+        s["percent"] = 50
+    jobs.mutate_job(job_id, _apply)
+    jobs.update_job(job_id, message="%s — now %s" % (
+        ("applied on %s" % ", ".join(p["node"] for p in peers)) if peers
+        else "no peer registered", meta.get("node")))
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────

@@ -20,6 +20,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   silent peer shows as *unreachable*. Read-only and admin-only, with a JSON
   download. Requested by the operator: "a section with all the packages the
   system uses and the installed version, for example nginx".
+- **Installed software: check for and apply OS updates** for every component
+  except the kernel (it belongs to the host). **Check for updates** refreshes
+  each node's package index and lists what is newer; **Upgrade** runs the
+  node's own package manager on the installed packages only (`apt-get
+  install --only-upgrade` keeping local config, `dnf upgrade`, `yum update`,
+  `zypper update`; Arch is refused, it does not support partial upgrades).
+  From the primary, "all nodes" upgrades the standby first and this node only
+  after it succeeded. Restarts follow the component (SATOM for Python and its
+  OpenSSL, nginx after `nginx -t`, health checks after PostgreSQL and Redis),
+  nothing restarts when nothing changed, and services still on a replaced
+  library are reported. VictoriaMetrics goes to the version the signed
+  release pins, never "latest". Requested by the operator: "can those
+  packages also be upgraded? Leave only the kernel out; remember the command
+  depends on the OS".
 
 ## [3.5.0] - 2026-10-23
 

@@ -5447,8 +5447,9 @@ directories. All of them are mounted read-only.
 
 **Installed software**, under System Information, lists everything this
 installation runs on and the version installed, with one column per
-registered node. It is read-only: it changes nothing, and Libraries and
-System packages remain the places that install.
+registered node. It can also **check for and apply operating-system
+updates** for every component except the kernel (System packages remains the
+place that installs a missing package).
 
 - **Platform components** are the operating-system packages the installer
   puts down (Python, PostgreSQL server and client, nginx, OpenSSL, CA
@@ -5473,6 +5474,41 @@ System packages remain the places that install.
   every node that answered, including one that is missing on one node. A
   standby that has not taken an update yet shows up here. A node that did not
   answer shows **unreachable**, and the comparison does not count it.
+- **Check for updates** asks every node's own package manager what is newer,
+  first on this node and then on the peer. It refreshes the package index
+  (`apt-get update`, `dnf makecache`, `yum makecache` or `zypper refresh`) and
+  compares the installed packages with what the repositories offer. Nothing
+  is installed. A component with a newer version shows **update:** and the
+  version it would go to. A node that cannot reach its repositories still
+  answers from its cached index, and the card says *package index NOT
+  refreshed* instead of claiming the node is up to date.
+- **Upgrade** upgrades one component with the node's own package manager:
+  `apt-get install --only-upgrade` (keeping the local configuration files)
+  on Debian/Ubuntu, `dnf upgrade` or `yum update` on RHEL and its rebuilds,
+  `zypper update` on SLES/openSUSE. Only packages already installed are named,
+  so an upgrade never installs anything new and never removes anything. Arch
+  Linux is refused, because it does not support upgrading single packages; run
+  `pacman -Syu` on the host there.
+- With more than one node, **Upgrade** asks whether to run on all nodes or on
+  this one only. **All nodes, started on the primary, runs on the standby
+  first**, and on this node only once the standby succeeded. If the standby
+  fails, this node is not touched. Started on a standby, the standby
+  (this node) goes first. Each upgrade is a job in the job dock, driven by
+  the server, so closing the page does not stop it.
+- What an upgrade restarts depends on the component, and the confirmation
+  says so: Python and the OpenSSL that Python links restart SATOM and prove
+  it serves again (the same check a code update uses); nginx is tested with
+  `nginx -t` and restarted; PostgreSQL and Redis are restarted by their own
+  packages and SATOM's health is checked afterwards; bubblewrap re-runs the
+  sandbox test. When nothing changed, nothing is restarted. Services that
+  still run a replaced library are listed as a warning in the job log.
+- **VictoriaMetrics** is not a distribution package. **Upgrade** installs
+  the version this SATOM release pins, with its sha256, from the signed
+  release, the same script a code update runs. It never downloads "the
+  latest" from the internet. A newer VictoriaMetrics arrives with a newer
+  SATOM release.
+- **The kernel** belongs to the host (in a container it is the hypervisor's)
+  and is updated there, not from SATOM.
 - **Refresh** measures this node again (results are kept for a minute).
   **Download JSON** saves the same data as a file, for an audit or a support
   case.

@@ -13,7 +13,9 @@ web app does not kill the update mid-flight. It is DB-free: progress is written
 to a status JSON the web UI polls.
 
 Scope: git app code + pip requirements + migrations. OS packages ONLY from
-the curated ``_SYSPKG`` table (install, never remove) -- see syspkg_install.
+the curated ``_SYSPKG`` table (install, never remove) -- see syspkg_install --
+and from ``_SYSPKG_UPGRADE`` (upgrade what is ALREADY installed, never install
+or remove) -- see _syspkg_upgrade.
 """
 import glob
 import json
@@ -2611,10 +2613,20 @@ def syspkg_install(req_path):
         pass
     key = req.get("package")
     key = key.strip() if isinstance(key, str) else ""
+    action = req.get("action") or "install"
     st.d["kind"] = "syspkg"
     st.d["package"] = key
-    st.d["action"] = "install"
+    st.d["action"] = action if action in ("install", "upgrade", "check") else "install"
     st.flush()
+
+    # Upgrade and check have their own table (every Installed software
+    # component but the kernel); install keeps the short curated one.
+    if action == "check":
+        _syspkg_check(st)
+        return
+    if action == "upgrade":
+        _syspkg_upgrade(st, key)
+        return
 
     if not _SYSPKG_KEY_RE.match(key) or key not in _SYSPKG:
         st.step("validate package", False, "%r is not a curated system package" % key)
@@ -2661,6 +2673,422 @@ def syspkg_install(req_path):
             st.finish("failed", error="installed, but %s cannot create namespaces: %s"
                       % (APP_USER, detail[:200]))
             return
+    st.finish("success", package=key)
+
+
+# ---------------------------------------------------------------------------
+# OS package UPGRADE and update CHECK (kind "syspkg", action "upgrade"|"check")
+# -- Settings > General > Installed software
+# ---------------------------------------------------------------------------
+# [SATOM-RUNNER-NO-APP-IMPORT] Keys are a COPY of
+# app/services/system_packages.UPGRADABLE (asserted equal by
+# tests/test_system_package_upgrade.py, and equal to every Installed software
+# component except the kernel, which belongs to the host). The web side sends
+# a KEY; the package NAMES are globs per package manager, resolved here
+# against what is INSTALLED, so an upgrade can never install something new.
+# "after" = what must happen once the packages changed:
+#   app     -- the interpreter or the TLS library the app maps: restart the
+#              SATOM units and prove the new process serves (same check as a
+#              code update)
+#   nginx   -- config test, restart (a reload keeps the old libssl), health
+#   health  -- the package's own postinst restarted a service SATOM needs
+#   bwrap   -- the sandbox must still work for the app user
+#   release -- not a distro package: the version the SIGNED release pins
+_SYSPKG_UPGRADE = {
+    "python": {"after": "app", "names": {
+        "apt": ["python3", "python3.[0-9]*", "libpython3.[0-9]*"],
+        "dnf": ["python3.11", "python3.11-libs", "python3"],
+        "yum": ["python3.11", "python3.11-libs", "python3"],
+        "zypper": ["python311", "python311-base", "libpython3_11*"]}},
+    "postgresql": {"after": "health", "names": {
+        "apt": ["postgresql-[0-9]*"],
+        "dnf": ["postgresql-server", "postgresql*-server"],
+        "yum": ["postgresql-server", "postgresql*-server"],
+        "zypper": ["postgresql*-server"]}},
+    "postgresql-client": {"after": None, "names": {
+        "apt": ["postgresql-client-[0-9]*"],
+        "dnf": ["postgresql", "postgresql[0-9][0-9]"],
+        "yum": ["postgresql", "postgresql[0-9][0-9]"],
+        "zypper": ["postgresql", "postgresql[0-9][0-9]"]}},
+    "nginx": {"after": "nginx", "names": {
+        "apt": ["nginx", "nginx-common", "libnginx-mod-*"],
+        "dnf": ["nginx", "nginx-core", "nginx-filesystem"],
+        "yum": ["nginx", "nginx-filesystem"],
+        "zypper": ["nginx"]}},
+    "victoria-metrics": {"after": "release", "names": {}},
+    "redis": {"after": "health", "names": {
+        "apt": ["redis-server", "redis-tools"],
+        "dnf": ["redis", "redis7"], "yum": ["redis"],
+        "zypper": ["redis", "redis7"]}},
+    "openssl": {"after": None, "names": {
+        "apt": ["openssl"], "dnf": ["openssl"], "yum": ["openssl"],
+        "zypper": ["openssl", "openssl-3"]}},
+    "openssl-python": {"after": "app", "names": {
+        "apt": ["libssl3*"], "dnf": ["openssl-libs"], "yum": ["openssl-libs"],
+        "zypper": ["libopenssl3"]}},
+    "ca-certificates": {"after": None, "names": {
+        "apt": ["ca-certificates"], "dnf": ["ca-certificates"],
+        "yum": ["ca-certificates"],
+        "zypper": ["ca-certificates", "ca-certificates-mozilla"]}},
+    "openssh": {"after": None, "names": {
+        "apt": ["openssh-client", "openssh-server", "openssh-sftp-server"],
+        "dnf": ["openssh", "openssh-clients", "openssh-server"],
+        "yum": ["openssh", "openssh-clients", "openssh-server"],
+        "zypper": ["openssh", "openssh-clients", "openssh-server", "openssh-common"]}},
+    "git": {"after": None, "names": {
+        "apt": ["git", "git-man"], "dnf": ["git", "git-core"],
+        "yum": ["git", "git-core"], "zypper": ["git", "git-core"]}},
+    "rsync": {"after": None, "names": {
+        "apt": ["rsync"], "dnf": ["rsync"], "yum": ["rsync"], "zypper": ["rsync"]}},
+    "curl": {"after": None, "names": {
+        "apt": ["curl", "libcurl4*"], "dnf": ["curl", "curl-minimal", "libcurl", "libcurl-minimal"],
+        "yum": ["curl", "libcurl"], "zypper": ["curl", "libcurl4"]}},
+    "sudo": {"after": None, "names": {
+        "apt": ["sudo"], "dnf": ["sudo"], "yum": ["sudo"], "zypper": ["sudo"]}},
+    "bubblewrap": {"after": "bwrap", "names": {
+        "apt": ["bubblewrap"], "dnf": ["bubblewrap"], "yum": ["bubblewrap"],
+        "zypper": ["bubblewrap"]}},
+    "lua": {"after": None, "names": {
+        "apt": ["lua5.4", "liblua5.4-*", "lua5.3"], "dnf": ["lua", "lua-libs"],
+        "yum": ["lua", "lua-libs"], "zypper": ["lua54", "liblua5_4*"]}},
+    "systemd": {"after": None, "names": {
+        "apt": ["systemd", "systemd-sysv", "libsystemd0", "libudev1", "udev"],
+        "dnf": ["systemd", "systemd-libs", "systemd-pam", "systemd-udev"],
+        "yum": ["systemd", "systemd-libs"],
+        "zypper": ["systemd", "libsystemd0", "libudev1", "udev"]}},
+}
+_PKG_FAMILY = {"apt": "deb", "dnf": "rpm", "yum": "rpm", "zypper": "rpm"}
+
+
+def _installed_matching(mgr, globs):
+    """{name: version} of the INSTALLED packages matching any glob."""
+    import fnmatch
+    if not globs:
+        return {}
+    if _PKG_FAMILY.get(mgr) == "deb":
+        p = run(["dpkg-query", "-W", "-f=${db:Status-Abbrev}|${Package}|${Version}\n"]
+                + list(globs), timeout=60)
+        rows = [ln.split("|") for ln in (p.stdout or "").splitlines()]
+        found = {r[1]: r[2] for r in rows if len(r) == 3 and r[0].startswith("ii")}
+    else:
+        p = run(["rpm", "-qa", "--qf", "%{NAME}|%{VERSION}-%{RELEASE}\n"] + list(globs),
+                timeout=60)
+        rows = [ln.split("|") for ln in (p.stdout or "").splitlines()]
+        found = {r[0]: r[1] for r in rows if len(r) == 2}
+    # dpkg/rpm already matched; re-check so a tool quirk cannot widen the set
+    return {n: v for n, v in found.items() if n and v
+            and any(fnmatch.fnmatchcase(n, g) for g in globs)}
+
+
+def _pkg_refresh_cmd(mgr):
+    return {"apt": ["apt-get", "update", "-q"],
+            "dnf": ["dnf", "makecache", "-q"],
+            "yum": ["yum", "makecache", "-q"],
+            "zypper": ["zypper", "--non-interactive", "--quiet", "refresh"]}[mgr]
+
+
+def _pkg_upgrade_cmd(mgr, names):
+    """Upgrade ONLY installed packages, never install a new one, keep the
+    local config files (a node's nginx.conf is SATOM's, not the vendor's)."""
+    names = sorted(names)
+    return {
+        "apt": ["apt-get", "install", "-y", "-q", "--only-upgrade",
+                "-o", "Dpkg::Options::=--force-confdef",
+                "-o", "Dpkg::Options::=--force-confold"] + names,
+        "dnf": ["dnf", "upgrade", "-y", "-q"] + names,
+        "yum": ["yum", "update", "-y", "-q"] + names,
+        "zypper": ["zypper", "--non-interactive", "--quiet", "update"] + names,
+    }[mgr]
+
+
+def _parse_apt_policy(out):
+    """{name: (installed, candidate)} from ``apt-cache policy n1 n2 ...``."""
+    res, cur, inst = {}, None, None
+    for line in (out or "").splitlines():
+        if line and not line.startswith(" ") and line.rstrip().endswith(":"):
+            cur, inst = line.rstrip()[:-1], None
+            continue
+        s = line.strip()
+        if cur and s.startswith("Installed:"):
+            inst = s.split(":", 1)[1].strip()
+        elif cur and s.startswith("Candidate:"):
+            res[cur] = (inst or "", s.split(":", 1)[1].strip())
+    return res
+
+
+def _parse_dnf_upgrades(out, names):
+    """{name: candidate} from ``dnf -q list --upgrades`` (name.arch ver repo)."""
+    res = {}
+    for line in (out or "").splitlines():
+        parts = line.split()
+        if len(parts) < 2 or "." not in parts[0]:
+            continue
+        name = parts[0].rsplit(".", 1)[0]
+        if name in names:
+            res[name] = parts[1]
+    return res
+
+
+def _parse_zypper_updates(xml_text, names):
+    """{name: candidate} from ``zypper --xmlout list-updates``."""
+    import xml.etree.ElementTree as ET
+    res = {}
+    try:
+        root = ET.fromstring(xml_text or "")
+    except ET.ParseError:
+        return res
+    for u in root.iter("update"):
+        n = u.get("name")
+        if n in names and u.get("kind", "package") == "package":
+            res[n] = u.get("edition") or ""
+    return res
+
+
+def _candidates(mgr, installed):
+    """{name: candidate} for the installed names that have a newer version."""
+    names = sorted(installed)
+    if not names:
+        return {}
+    if mgr == "apt":
+        p = run(["apt-cache", "policy"] + names, timeout=120)
+        pol = _parse_apt_policy(p.stdout)
+        return {n: c for n, (i, c) in pol.items()
+                if n in installed and c and c != "(none)" and c != i}
+    if mgr in ("dnf", "yum"):
+        p = run((["dnf", "-q", "list", "--upgrades"] if mgr == "dnf"
+                 else ["yum", "-q", "list", "updates"]) + names, timeout=300)
+        return _parse_dnf_upgrades(p.stdout, set(names))
+    if mgr == "zypper":
+        p = run(["zypper", "--non-interactive", "--xmlout", "list-updates"], timeout=300)
+        return _parse_zypper_updates(p.stdout, set(names))
+    return {}
+
+
+def _vm_pin():
+    """VM_VERSION of the release on disk ('' when unknown)."""
+    try:
+        for line in (APP / "deploy" / "metrics-store.env").read_text().splitlines():
+            m = re.match(r'^\s*VM_VERSION="?([0-9][0-9A-Za-z.+-]*)"?\s*$', line)
+            if m:
+                return m.group(1)
+    except OSError:
+        pass
+    return ""
+
+
+def _vm_installed():
+    p = run(["/usr/local/bin/victoria-metrics", "-version"], timeout=20) \
+        if os.path.exists("/usr/local/bin/victoria-metrics") else None
+    m = re.search(r"v(\d+(?:\.\d+)+)", (p.stdout or p.stderr) if p else "")
+    return m.group(1) if m else ""
+
+
+def _syspkg_check(st):
+    """Refresh the package index (root) and record, per component, which
+    installed packages have a newer version. Changes no package."""
+    mgr = _pkg_manager()
+    st.d["available"] = {}
+    st.d["package_manager"] = mgr or "none"
+    if mgr == "pacman":
+        st.step("package manager", False, "Arch Linux does not support upgrading "
+                "single packages (partial upgrades); run 'pacman -Syu' on the host")
+        st.finish("failed", error="partial upgrades are not supported on Arch Linux")
+        return
+    if mgr not in _PKG_FAMILY:
+        st.step("package manager", False, "no apt-get/dnf/yum/zypper found")
+        st.finish("failed", error="unsupported distribution")
+        return
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    cmd = _pkg_refresh_cmd(mgr)
+    st.begin(" ".join(cmd))
+    u = run(cmd, timeout=600, env=env)
+    # Offline / mirror down: the check is still answered from the cached
+    # index, and SAYS so -- it never reports "up to date" as if it had looked.
+    st.d["index_refreshed"] = u.returncode == 0
+    st.step(" ".join(cmd), True, ((u.stderr or u.stdout) or "")[-300:],
+            warn=u.returncode != 0)
+    st.begin("compare installed with available")
+    avail = {}
+    for key, spec in _SYSPKG_UPGRADE.items():
+        if spec["after"] == "release":
+            pin, have = _vm_pin(), _vm_installed()
+            avail[key] = {"packages": {"victoria-metrics": {"installed": have,
+                                                            "candidate": pin}},
+                          "upgradable": bool(pin and have and pin != have),
+                          "source": "release pin"}
+            continue
+        installed = _installed_matching(mgr, spec["names"].get(mgr) or [])
+        newer = _candidates(mgr, installed)
+        avail[key] = {"packages": {n: {"installed": installed[n],
+                                       "candidate": newer.get(n, "")}
+                                   for n in sorted(installed)},
+                      "upgradable": bool(newer)}
+    st.d["available"] = avail
+    n = sum(1 for v in avail.values() if v["upgradable"])
+    st.step("compare installed with available", True,
+            "%d component(s) with an update%s" % (
+                n, "" if st.d["index_refreshed"]
+                else " (package index NOT refreshed: answered from the cached index)"))
+    st.finish("success", checked_at=now())
+
+
+def _after_upgrade(st, after):
+    """Restart / verify what the changed packages require. Raises on failure."""
+    if after == "app":
+        is_standby = pg_in_recovery()
+        restart_and_validate(st, is_standby, _svc_active(SERVICE) == "active",
+                             "the upgraded runtime")
+    elif after == "nginx":
+        st.begin("nginx -t")
+        t = run(["nginx", "-t"], timeout=60)
+        st.step("nginx -t", t.returncode == 0, (t.stderr or t.stdout)[-300:])
+        if t.returncode != 0:
+            raise RuntimeError("nginx configuration test failed after the upgrade")
+        if _svc_active("nginx.service") == "active":
+            st.begin("restart nginx")
+            subprocess.run(["systemctl", "restart", "nginx.service"], timeout=120)
+            st.step("restart nginx", _svc_active("nginx.service") == "active",
+                    "restarted (a reload keeps the old binary and libraries)")
+        if _svc_active(SERVICE) == "active":
+            st.begin("health check")
+            if not health_ok():
+                raise RuntimeError("health check did not return 200 within %ds"
+                                   % HEALTH_TIMEOUT)
+            st.step("health check", True, "200 OK through nginx")
+    elif after == "health":
+        if _svc_active(SERVICE) == "active":
+            st.begin("health check")
+            if not health_ok():
+                raise RuntimeError("health check did not return 200 within %ds"
+                                   % HEALTH_TIMEOUT)
+            st.step("health check", True, "200 OK after the service restarted")
+    elif after == "bwrap":
+        ok, detail = _bwrap_works_for_app_user()
+        st.step("sandbox works for %s" % APP_USER, ok,
+                detail or "namespaces created and torn down")
+        if not ok:
+            raise RuntimeError("upgraded, but %s cannot create namespaces: %s"
+                               % (APP_USER, detail[:200]))
+
+
+def _stale_library_units():
+    """Units whose processes still map a library the upgrade replaced."""
+    units = set()
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open("/proc/%s/maps" % pid, encoding="utf-8", errors="replace") as fh:
+                if not any(".so" in ln and ln.rstrip().endswith("(deleted)") for ln in fh):
+                    continue
+            with open("/proc/%s/cgroup" % pid, encoding="utf-8", errors="replace") as fh:
+                for ln in fh:
+                    m = re.search(r"/([^/]+\.service)\s*$", ln)
+                    if m:
+                        units.add(m.group(1))
+        except OSError:
+            continue
+    return sorted(units)
+
+
+def _syspkg_release_component(st, key):
+    """VictoriaMetrics: (re)install the version the newest SIGNED release
+    pins, with the same staging a code update uses -- never a download of
+    'the latest' from the internet, which would bypass the pinned sha256."""
+    trust = _release_trust()
+    stage_root = None
+    try:
+        if trust is None:
+            deploy_dir, env = APP / "deploy", None
+            st.step("release signature enforcement", True,
+                    "OFF (no root trust anchor at %s)" % TRUST_ANCHOR)
+        else:
+            target = git("rev-parse", "HEAD").stdout.strip()
+            rel = _resolve_release(target, trust, st)
+            if rel["mode"] == "held":
+                st.finish("failed", error="the root-side refresh is held (deploy/ "
+                          "has unsigned changes): sign the release first")
+                return
+            stage_root = _staged_deploy_dir(rel["signed"])
+            deploy_dir = stage_root / "deploy"
+            env = dict(os.environ, FM_APP_DIR=str(APP), SATOM_DEPLOY_SRC=str(deploy_dir))
+        before = _vm_installed()
+        st.begin("install-metrics-store.sh")
+        p = subprocess.run(["bash", str(deploy_dir / "install-metrics-store.sh")],
+                           capture_output=True, text=True, timeout=600, env=env)
+        st.step("install-metrics-store.sh", p.returncode == 0,
+                (p.stdout or p.stderr or "").strip()[-400:])
+        after = _vm_installed()
+        st.step("versions", True, "victoria-metrics %s → %s" % (before or "?", after or "?"))
+        if p.returncode != 0:
+            st.finish("failed", error="install-metrics-store.sh exited %s" % p.returncode)
+            return
+        st.finish("success", package=key)
+    finally:
+        if stage_root is not None:
+            import shutil as _sh
+            _sh.rmtree(stage_root, ignore_errors=True)
+
+
+def _syspkg_upgrade(st, key):
+    """Upgrade the INSTALLED packages of ONE component to the newest version
+    the node's repositories offer, with the node's own package manager."""
+    if not _SYSPKG_KEY_RE.match(key) or key not in _SYSPKG_UPGRADE:
+        st.step("validate package", False,
+                "%r is not an upgradable component (the kernel belongs to the host)" % key)
+        st.finish("failed", error="package not allowed")
+        return
+    spec = _SYSPKG_UPGRADE[key]
+    if spec["after"] == "release":
+        _syspkg_release_component(st, key)
+        return
+    mgr = _pkg_manager()
+    if mgr == "pacman":
+        st.step("package manager", False, "Arch Linux does not support upgrading "
+                "single packages (partial upgrades); run 'pacman -Syu' on the host")
+        st.finish("failed", error="partial upgrades are not supported on Arch Linux")
+        return
+    if mgr not in _PKG_FAMILY:
+        st.step("package manager", False, "no apt-get/dnf/yum/zypper found")
+        st.finish("failed", error="unsupported distribution")
+        return
+    before = _installed_matching(mgr, spec["names"].get(mgr) or [])
+    if not before:
+        st.step("installed packages", False, "%s is not installed on this node" % key)
+        st.finish("failed", error="not installed on this node")
+        return
+    st.step("validate", True, "%s via %s: %s" % (key, mgr, ", ".join(sorted(before))))
+
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    cmd = _pkg_refresh_cmd(mgr)
+    st.begin(" ".join(cmd))
+    u = run(cmd, timeout=600, env=env)
+    st.step(" ".join(cmd), True, ((u.stderr or u.stdout) or "")[-300:],
+            warn=u.returncode != 0)
+    cmd = _pkg_upgrade_cmd(mgr, before)
+    st.begin(" ".join(cmd))
+    p = run(cmd, timeout=1500, env=env)
+    st.step(" ".join(cmd), p.returncode == 0, ((p.stderr or p.stdout) or "")[-500:])
+    after = _installed_matching(mgr, spec["names"].get(mgr) or [])
+    changed = ["%s %s → %s" % (n, before[n], after.get(n, "removed?"))
+               for n in sorted(before) if after.get(n) != before[n]]
+    st.d["changed"] = changed
+    st.step("versions", True, "; ".join(changed) if changed
+            else "already the newest version the repositories offer")
+    if p.returncode != 0:
+        st.finish("failed", error="%s exited %s" % (cmd[0], p.returncode))
+        return
+    if changed:
+        try:
+            _after_upgrade(st, spec["after"])
+        except Exception as exc:  # noqa: BLE001
+            st.finish("failed", error=str(exc)[:300])
+            return
+        stale = _stale_library_units()
+        if stale:
+            st.step("services on replaced libraries", True,
+                    "still running the old copy until restarted: %s" % ", ".join(stale),
+                    warn=True)
     st.finish("success", package=key)
 
 

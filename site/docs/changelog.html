@@ -126,6 +126,20 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   silent peer shows as <em>unreachable</em>. Read-only and admin-only, with a JSON
   download. Requested by the operator: "a section with all the packages the
   system uses and the installed version, for example nginx".</li>
+<li><strong>Installed software: check for and apply OS updates</strong> for every component
+  except the kernel (it belongs to the host). <strong>Check for updates</strong> refreshes
+  each node's package index and lists what is newer; <strong>Upgrade</strong> runs the
+  node's own package manager on the installed packages only (<code>apt-get
+  install --only-upgrade</code> keeping local config, <code>dnf upgrade</code>, <code>yum update</code>,
+  <code>zypper update</code>; Arch is refused, it does not support partial upgrades).
+  From the primary, "all nodes" upgrades the standby first and this node only
+  after it succeeded. Restarts follow the component (SATOM for Python and its
+  OpenSSL, nginx after <code>nginx -t</code>, health checks after PostgreSQL and Redis),
+  nothing restarts when nothing changed, and services still on a replaced
+  library are reported. VictoriaMetrics goes to the version the signed
+  release pins, never "latest". Requested by the operator: "can those
+  packages also be upgraded? Leave only the kernel out; remember the command
+  depends on the OS".</li>
 </ul>
 <h2 id="350---2026-10-23">[3.5.0] - 2026-10-23</h2>
 <p>Plugin Studio becomes the place where everything SATOM automates lives:

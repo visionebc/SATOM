@@ -307,8 +307,9 @@ def _peer_inventory(host: str) -> dict:
             or not isinstance(inv.get("components"), list) \
             or not isinstance(inv.get("python"), list):
         return {"reachable": False, "error": "HTTP %s" % st}
+    upd = ans.get("updates")
     return {"reachable": True, "error": None, "role": ans.get("role"),
-            "inventory": inv}
+            "inventory": inv, "updates": upd if isinstance(upd, dict) else None}
 
 
 _UNKNOWN = object()
@@ -323,15 +324,18 @@ def _differs(values: list) -> bool:
 
 def overview(refresh: bool = False) -> dict:
     """Every node x every component and Python package, for the card."""
+    from . import system_packages as sp
     nodes = [{"name": su.this_node_name(), "self": True, "role": su.node_role(),
               "reachable": True, "error": None,
-              "inventory": local_inventory(refresh=refresh)}]
+              "inventory": local_inventory(refresh=refresh),
+              "updates": sp.latest_check()}]
     for n in su.peer_nodes():
         rep = _peer_inventory(n["host"])
         nodes.append({"name": n.get("name"), "self": False,
                       "role": rep.get("role"), "reachable": rep["reachable"],
                       "error": rep.get("error"),
-                      "inventory": rep.get("inventory") or {}})
+                      "inventory": rep.get("inventory") or {},
+                      "updates": rep.get("updates")})
 
     by_node_comp = {nd["name"]: {c.get("key"): c for c in
                                  (nd["inventory"].get("components") or [])
@@ -346,13 +350,22 @@ def overview(refresh: bool = False) -> dict:
                 per[nd["name"]] = None
                 vals.append(_UNKNOWN)
                 continue
-            row = by_node_comp[nd["name"]].get(comp["key"]) or {"found": False}
+            row = dict(by_node_comp[nd["name"]].get(comp["key"]) or {"found": False})
+            avail = ((nd.get("updates") or {}).get("available") or {}).get(comp["key"])
+            if isinstance(avail, dict):
+                newer = {n: v.get("candidate") for n, v in
+                         (avail.get("packages") or {}).items()
+                         if isinstance(v, dict) and v.get("candidate")}
+                row["update"] = {"available": bool(avail.get("upgradable")),
+                                 "packages": newer}
             per[nd["name"]] = row
             vals.append((row.get("version") or "", row.get("package_version") or "")
                         if row.get("found") else None)
         components.append({"key": comp["key"], "label": comp["label"],
                            "purpose": comp["purpose"], "nodes": per,
-                           "differs": _differs(vals)})
+                           "differs": _differs(vals),
+                           "upgradable": comp["key"] in sp.UPGRADABLE,
+                           "impact": sp.UPGRADABLE.get(comp["key"], "")})
 
     by_node_py = {nd["name"]: {_norm(p.get("name", "")): p for p in
                                (nd["inventory"].get("python") or [])
@@ -383,7 +396,9 @@ def overview(refresh: bool = False) -> dict:
                    "reachable": nd["reachable"], "error": nd["error"],
                    "os": nd["inventory"].get("os", ""),
                    "machine": nd["inventory"].get("machine", ""),
-                   "package_manager": nd["inventory"].get("package_manager", "")}
+                   "package_manager": nd["inventory"].get("package_manager", ""),
+                   "checked_at": (nd.get("updates") or {}).get("checked_at"),
+                   "index_refreshed": (nd.get("updates") or {}).get("index_refreshed")}
                   for nd in nodes],
         "components": components,
         "python": python,

@@ -27128,3 +27128,31 @@ msgstr "Se guardan antes de cada actualización: los paquetes reemplazados en su
 
 msgid "AI"
 msgstr "IA"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Sidebar menu"
+msgstr "Menú lateral"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Hidden:"
+msgstr "Ocultos:"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "(always shown)"
+msgstr "(siempre visible)"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "device menu: hidden as a whole"
+msgstr "menú del equipo: solo se oculta completo"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Show everything"
+msgstr "Mostrar todo"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Untick an entry, a submenu or a whole group to take it out of the sidebar. It goes from every ADOM it appears in, for every user. Hiding is not a permission: the page still opens from a direct link, a bookmark or a search, and a profile still needs its permission to open it. Settings, the ADOM switcher and the device picker cannot be hidden; a device menu can only be hidden as a whole."
+msgstr "Desmarque una entrada, un submenú o un grupo entero para quitarlo del menú lateral. Desaparece de todos los ADOMs en los que aparece, para todos los usuarios. Ocultar no es un permiso: la página se sigue abriendo desde un enlace directo, un marcador o una búsqueda, y un perfil sigue necesitando su permiso para abrirla. No se pueden ocultar la Configuración, el selector de ADOM ni el selector de equipo; un menú de equipo solo puede ocultarse completo."
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "The sidebar could not be read. Nothing is hidden by this page until it can."
+msgstr "No se pudo leer el menú lateral. Esta página no oculta nada hasta que se pueda."

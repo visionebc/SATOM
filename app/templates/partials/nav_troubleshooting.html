@@ -48,21 +48,21 @@
     {% if not _ts_dev or _m.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'reach_batch' else '' }}" href="{{ url_for('reach_batch.index') }}">
       <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Backend Reachability') }}</span></a>
-    {% else %}{{ nav_off('bi-diagram-3', _('Backend Reachability'), _m.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-diagram-3', _('Backend Reachability'), _m.reason, ep='reach_batch.index') }}{% endif %}
     {% endif %}
     {% if _ts_two and may_open('config_compare.index') %}
     {% set _m = adom_menu('config_compare', product) if _ts_dev else none %}
     {% if not _ts_dev or _m.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'config_compare' else '' }}" href="{{ url_for('config_compare.index') }}">
       <i class="bi bi-file-diff fw-nav-icon"></i><span>{{ _('Config Compare') }}</span></a>
-    {% else %}{{ nav_off('bi-file-diff', _('Config Compare'), _m.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-file-diff', _('Config Compare'), _m.reason, ep='config_compare.index') }}{% endif %}
     {% endif %}
     {% if _ts_two and may_open('observatory.index') %}
     {% set _m = adom_menu('observatory', product) if _ts_dev else none %}
     {% if not _ts_dev or _m.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'observatory' else '' }}" href="{{ url_for('observatory.index') }}">
       <i class="bi bi-clipboard2-pulse fw-nav-icon"></i><span>{{ _('HTTP Observatory') }}</span></a>
-    {% else %}{{ nav_off('bi-clipboard2-pulse', _('HTTP Observatory'), _m.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-clipboard2-pulse', _('HTTP Observatory'), _m.reason, ep='observatory.index') }}{% endif %}
     {% endif %}
     {% if scout_on and may_open('scout.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
@@ -82,7 +82,7 @@
     {% if not _ts_dev or _m.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'txn_trace' else '' }}" href="{{ url_for('txn_trace.index') }}">
       <i class="bi bi-arrow-left-right fw-nav-icon"></i><span>{{ _('Transaction Tracer') }}</span></a>
-    {% else %}{{ nav_off('bi-arrow-left-right', _('Transaction Tracer'), _m.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-arrow-left-right', _('Transaction Tracer'), _m.reason, ep='txn_trace.index') }}{% endif %}
     {% endif %}
     {% include 'partials/nav_advisor.html' %}
     {% if _ts_dev and current_user.can('config_write') and may_open('logs.index') %}
@@ -90,7 +90,7 @@
     {% if _m.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'logs' else '' }}" href="{{ url_for('logs.index', _adom=product.key) }}">
       <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Diagnose Log Collection') }}</span></a>
-    {% else %}{{ nav_off('bi-journal-text', _('Diagnose Log Collection'), _m.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-journal-text', _('Diagnose Log Collection'), _m.reason, ep='logs.index') }}{% endif %}
     {% endif %}
   </div>
 </div>

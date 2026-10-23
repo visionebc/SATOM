@@ -1,0 +1,66 @@
+{# Settings › Appearance › Sidebar menu (app/nav_hide.py).
+   The tree is the sidebar of every ADOM rendered for this administrator and
+   merged: one row per entry, submenu and group, wherever it appears. A row
+   left unticked is taken out of the sidebar of every user in every ADOM.
+   Each row posts its key in `k` (so the server knows which keys this form
+   spoke for) and, when ticked, in `show`. #}
+<div class="fw-card mt-3" id="card-sidebar-menu">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-layout-sidebar-inset me-2 text-accent"></i>{{ _('Sidebar menu') }} <span class="text-muted" style="font-size:12px;font-weight:400;">{{ _('(every ADOM, every user)') }}</span></span>
+    <span class="text-muted" style="font-size:12px;" data-nav-hidden-count>{{ _('Hidden:') }} <strong>{{ nav_hidden|length }}</strong></span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('Untick an entry, a submenu or a whole group to take it out of the sidebar. It goes from every ADOM it appears in, for every user. Hiding is not a permission: the page still opens from a direct link, a bookmark or a search, and a profile still needs its permission to open it. Settings, the ADOM switcher and the device picker cannot be hidden; a device menu can only be hidden as a whole.') }}
+    </p>
+    {% if not nav_menu_tree %}
+    <div class="text-muted" style="font-size:13px;">{{ _('The sidebar could not be read. Nothing is hidden by this page until it can.') }}</div>
+    {% else %}
+    <form method="POST" action="{{ url_for('settings.save_nav_menu') }}" data-nav-menu-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% set _all = nav_menu_adoms|length %}{% set _ns = namespace(i=0) %}
+      <ul class="list-unstyled mb-3 fw-navmenu-tree">
+        {% for n in nav_menu_tree recursive %}
+        <li class="fw-navmenu-{{ n.kind }}">
+          {% if n.kind == 'context' %}
+          <div class="fw-navmenu-head text-muted"><i class="bi bi-globe2 me-1"></i>{{ n.label }} <span style="font-size:11px;">{{ _('(always shown)') }}</span></div>
+          {% else %}
+          <div class="form-check" data-nav-menu-key="{{ n.key }}">
+            <input type="hidden" name="k" value="{{ n.key }}">
+            {% set _ns.i = _ns.i + 1 %}
+            <input class="form-check-input" type="checkbox" name="show" value="{{ n.key }}" id="navm-{{ _ns.i }}"
+                   {{ 'checked' if n.key not in nav_hidden }} {% if n.children %}data-nav-menu-parent{% endif %}>
+            <label class="form-check-label {{ 'fw-semibold' if n.kind != 'entry' }}" for="navm-{{ _ns.i }}">{{ n.label or n.key }}</label>
+            {% if n.device %}<span class="text-muted ms-1" style="font-size:11px;">{{ _('device menu: hidden as a whole') }}</span>{% endif %}
+            {% if n.adoms|length < _all %}<span class="text-muted ms-1" style="font-size:11px;">· {% for a in n.adoms %}{{ nav_menu_adoms.get(a, a) }}{{ ', ' if not loop.last }}{% endfor %}</span>{% endif %}
+          </div>
+          {% endif %}
+          {% if n.children and not n.device %}
+          <ul class="list-unstyled ms-4 mb-1{{ ' fw-navmenu-off' if n.kind != 'context' and n.key in nav_hidden }}">{{ loop(n.children) }}</ul>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+      <button type="submit" class="btn btn-fw-secondary btn-sm" name="reset" value="1" {{ 'disabled' if not nav_hidden }}>{{ _('Show everything') }}</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+<style nonce="{{ csp_nonce }}">
+  .fw-navmenu-tree .form-check { margin-bottom: 2px; font-size: 13px; }
+  .fw-navmenu-tree .fw-navmenu-head { font-size: 12px; font-weight: 600; margin: 6px 0 2px; }
+  .fw-navmenu-off { opacity: .45; }
+</style>
+<script nonce="{{ csp_nonce }}">
+  // An unticked group or submenu hides everything in it: its rows fade so the
+  // ticks inside do not read as "still shown". They keep their state (and are
+  // still posted) for the day the group comes back.
+  document.addEventListener('change', function (ev) {
+    var box = ev.target;
+    if (!box || !box.matches || !box.matches('[data-nav-menu-parent]')) return;
+    var li = box.closest('li');
+    var sub = li && li.querySelector(':scope > ul');
+    if (sub) sub.classList.toggle('fw-navmenu-off', !box.checked);
+  });
+</script>

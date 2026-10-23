@@ -114,6 +114,16 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>Settings › Appearance › Sidebar menu: hide entries, submenus and
+  groups.</strong> A tree of everything the sidebar draws in every ADOM; an
+  unticked row leaves the sidebar of every user in every ADOM it appears
+  in (Architecture is one row, not one per ADOM), live and disabled
+  alike, and a group or submenu left empty goes with it. Hiding is not a
+  permission: the page still opens by link and still needs its own
+  permission. Settings, the ADOM switcher and the device picker cannot be
+  hidden; a device's own menu only as a whole. Requested by the operator:
+  "in Settings, Appearance, add the option to remove menu and submenu
+  entries, for example the Architecture menu when it is not needed".</li>
 <li><strong>Plugin Studio › Apps: certificates already on the FortiWebs.</strong> A new
   SATOM list, <em>FortiWeb local certificates</em>, offers the local certificates
   of every FortiWeb from the local cache, each naming the FortiWebs that hold
@@ -184,6 +194,27 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>Wiki: Follow and Confluence move onto the articles.</strong> Each article's card
+  in the list now has its own <strong>Follow</strong> button (as the article page does),
+  and ADOMs, Global and everything are followed from one <strong>Follow</strong> button
+  above the article list that unfolds one box per ADOM; the <em>Following</em> link
+  left the Wiki menu (the full list, with the e-mail choice, is linked from
+  that button). The <em>Groups</em> link left the Wiki menu too (groups stay in
+  Administrator › Access › Groups). <strong>Confluence connections moved to
+  Settings › Integrations › Confluence</strong> (administrators) and no longer fix
+  a space or parent page: the new <strong>Confluence</strong> button on each card and on
+  the article page opens a dialog where the publisher picks the space from
+  the ones the connection sees and, once a space is picked, the parent page
+  from its page tree or by searching its titles. An article can now have a
+  page in several spaces; publishing again to a space updates its page where
+  it is. Old <em>Wiki › Confluence</em> links land on the new card. Requested by the
+  operator: "Following should be above where the articles start, just a
+  button that unfolds to pick which ADOM; a follow button on each article's
+  card and inside the article; remove the Groups button; the Confluence
+  integration belongs in Settings › Integrations, with a button like the
+  subscription one on the card and in the article so that article is the one
+  that goes to Confluence; the user only picks the space, and the parent
+  appears once the space is picked, with a search and the tree".</li>
 <li><strong>Calendar: System Automations are off by default, and the bands are
   checkboxes saved to your profile.</strong> <em>Show</em> is now a row of checkboxes —
   Planned changes, Automations, System Automations, What already ran — and

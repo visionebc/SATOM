@@ -27144,3 +27144,31 @@ msgstr "Salvati prima di ogni aggiornamento: i pacchetti sostituiti nella versio
 
 msgid "AI"
 msgstr "IA"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Sidebar menu"
+msgstr "Menu laterale"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Hidden:"
+msgstr "Nascosti:"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "(always shown)"
+msgstr "(sempre visibile)"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "device menu: hidden as a whole"
+msgstr "menu del dispositivo: si nasconde solo per intero"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Show everything"
+msgstr "Mostra tutto"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Untick an entry, a submenu or a whole group to take it out of the sidebar. It goes from every ADOM it appears in, for every user. Hiding is not a permission: the page still opens from a direct link, a bookmark or a search, and a profile still needs its permission to open it. Settings, the ADOM switcher and the device picker cannot be hidden; a device menu can only be hidden as a whole."
+msgstr "Togli la spunta a una voce, a un sottomenu o a un intero gruppo per toglierlo dalla barra laterale. Sparisce da ogni ADOM in cui compare, per tutti gli utenti. Nascondere non è un permesso: la pagina si apre ancora da un link diretto, un segnalibro o una ricerca, e un profilo ha ancora bisogno del suo permesso per aprirla. Impostazioni, il selettore di ADOM e il selettore di dispositivo non possono essere nascosti; un menu di dispositivo solo per intero."
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "The sidebar could not be read. Nothing is hidden by this page until it can."
+msgstr "Non è stato possibile leggere la barra laterale. Questa pagina non nasconde nulla finché non sarà possibile."

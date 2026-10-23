@@ -248,6 +248,7 @@ def index():
         lang_malformed=(lang_policy.malformed() if _is_admin() else False),
         lang_source=lang_registry.DEFAULT,
         adom_menu_hidden=(sorted(gui_pages.hidden_kinds()) if _is_admin() else []),
+        **_nav_menu_context(),
         adom_menu_counts=(_adom_menu_counts() if _is_admin() else {}),
         vault_config=(secret_backend.config() if _is_admin() else None),
         vault_modes=[(m, secret_backend.MODE_LABELS[m])
@@ -1001,6 +1002,42 @@ def _adom_menu_counts() -> dict:
         return {}
     return {k: ' · '.join(f'{gui_products.label(p)} {c[k]}' for p, c in per.items() if c[k])
             for k in gui_pages.KINDS}
+
+
+def _nav_menu_context():
+    """Settings › Appearance › Sidebar menu: the hideable tree of every ADOM
+    this administrator may enter, merged (app/nav_hide.py)."""
+    if not _is_admin():
+        return {'nav_menu_tree': [], 'nav_menu_adoms': {}, 'nav_hidden': []}
+    from .. import nav_hide
+    from ..branding import PRODUCTS
+    from ..services.product_scope import adom_allowed
+    adoms = {k: p.get('name', k) for k, p in PRODUCTS.items() if adom_allowed(k)}
+    return {'nav_menu_tree': nav_hide.catalog(adoms),
+            'nav_menu_adoms': adoms,
+            'nav_hidden': sorted(nav_hide.hidden())}
+
+
+@bp.route('/appearance/sidebar-menu', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_nav_menu():
+    """Which sidebar entries, submenus and groups stay out of every user's
+    sidebar in every ADOM (app/nav_hide.py). The form posts every key it drew
+    in ``k`` and the ticked ones in ``show``; a hidden key the form did not
+    draw (an entry this administrator's sidebar does not have today) is kept."""
+    from .. import nav_hide
+    if request.form.get('reset') == '1':
+        stored = nav_hide.save([])
+    else:
+        listed = set(request.form.getlist('k'))
+        shown = set(request.form.getlist('show'))
+        kept = {k for k in nav_hide.hidden() if k not in listed}
+        stored = nav_hide.save(kept | (listed - shown))
+    log_action('settings.nav_menu',
+               detail='Hidden from the sidebar: ' + (', '.join(stored) or 'nothing'))
+    flash('Sidebar menu saved: %d hidden.' % len(stored), 'success')
+    return redirect(url_for('settings.index') + '#card-sidebar-menu')
 
 
 @bp.route('/adom-menus', methods=['POST'])

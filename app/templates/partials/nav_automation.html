@@ -74,7 +74,7 @@
     {% if _m_uf.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'upgrade_flow' else '' }}" href="{{ url_for('upgrade_flow.index', _adom=product.key) }}">
       <i class="bi bi-arrow-up-circle fw-nav-icon"></i><span>{{ _('Upgrade Flow') }}</span></a>
-    {% else %}{{ nav_off('bi-arrow-up-circle', _('Upgrade Flow'), _m_uf.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-arrow-up-circle', _('Upgrade Flow'), _m_uf.reason, ep='upgrade_flow.index') }}{% endif %}
     {% endif %}
     {# Migration report: the upgrade flow's pre-check, readable on its own.
        Same gate as the flow (BACKUP), same reason. #}
@@ -82,7 +82,7 @@
     {% if _m_mr.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'migration_report' else '' }}" href="{{ url_for('migration_report.index', _adom=product.key) }}">
       <i class="bi bi-signpost-split fw-nav-icon"></i><span>{{ _('Migration Report') }}</span></a>
-    {% else %}{{ nav_off('bi-signpost-split', _('Migration Report'), _m_mr.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-signpost-split', _('Migration Report'), _m_mr.reason, ep='migration_report.index') }}{% endif %}
     {% endif %}
     {% endif %}
     {# 'Automations' is fleet work an operator plans (a cutover, a drained
@@ -108,7 +108,7 @@
     {% if product.key == 'global' or _m_au.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint in ('automations', 'event_automations') else '' }}" href="{{ url_for('automations.index', _adom=product.key) }}">
       <i class="bi bi-calendar2-check fw-nav-icon"></i><span>{{ _('Automations') }}</span></a>
-    {% else %}{{ nav_off('bi-calendar2-check', _('Automations'), _m_au.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-calendar2-check', _('Automations'), _m_au.reason, ep='automations.index') }}{% endif %}
     {% endif %}
     {% endif %}
     {% if may_open('device_provision.index') %}
@@ -120,7 +120,7 @@
     {% if _m_pr.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'provisioning' else '' }}" href="{{ url_for('provisioning.index', _adom=product.key) }}">
       <i class="bi bi-rocket-takeoff fw-nav-icon"></i><span>{{ _('System Provisioning') }}</span></a>
-    {% else %}{{ nav_off('bi-rocket-takeoff', _('System Provisioning'), _m_pr.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-rocket-takeoff', _('System Provisioning'), _m_pr.reason, ep='provisioning.index') }}{% endif %}
     {% endif %}
     {% endif %}
     {% if current_user.can('user_manage') %}
@@ -140,7 +140,7 @@
     {% if product.key == 'global' or _m_cm.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index', _adom=product.key) }}">
       <i class="bi bi-shield-lock fw-nav-icon"></i><span>{{ _('Certificate Manager') }}</span></a>
-    {% else %}{{ nav_off('bi-shield-lock', _('Certificate Manager'), _m_cm.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-shield-lock', _('Certificate Manager'), _m_cm.reason, ep='cert_manager.index') }}{% endif %}
     {% endif %}
     {# Device Console needs config_write, but its entry lives in the
        Administrator group, which only user_manage holders see. Operators

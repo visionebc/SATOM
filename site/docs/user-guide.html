@@ -4027,6 +4027,32 @@ are parsed structurally.</p>
   of light. The public documentation site does offer one.</li>
 </ul>
 <p>Full reference: <a href="theming.html">docs/theming.md</a>.</p>
+<h3 id="sidebar-menu-hide-entries-submenus-and-groups">Sidebar menu: hide entries, submenus and groups</h3>
+<p><code>Settings → User Interface → Appearance → Sidebar menu</code> (administrators) lists
+everything the sidebar draws, in every ADOM you may enter, as one tree: each
+group, each submenu and each entry, with the ADOMs it appears in when it is not
+in all of them. <strong>Untick</strong> a row and <strong>Save</strong> to take it out of the sidebar.</p>
+<ul>
+<li><strong>One setting for the whole console.</strong> A hidden row leaves the sidebar of
+  every user, in every ADOM it appears in. <em>Architecture</em> is one row, not one
+  per ADOM.</li>
+<li><strong>A hidden entry goes live and disabled alike.</strong> An entry an ADOM draws
+  greyed out (the page does not work for that kind of device) is hidden with
+  it.</li>
+<li><strong>A group or submenu hides everything in it.</strong> Its rows fade in the tree and
+  keep their ticks for the day it comes back. A group or submenu whose every
+  entry is hidden disappears too, so no empty toggle is left behind.</li>
+<li><strong>Hiding is not a permission.</strong> The page still opens from a direct link, a
+  bookmark, a search result or a link on another page, and a profile still
+  needs the page's own permission to open it. To keep someone out of a page,
+  change their profile.</li>
+<li><strong>What cannot be hidden:</strong> Settings (where this is undone), the ADOM back-link
+  and the ADOM list, and the device picker. A device's own menu (FortiWeb,
+  FortiGate, … built from the measured GUI pages) can be hidden only as a
+  whole; to hide kinds of pages inside it, use <strong>ADOM Menus</strong> (§26.12).</li>
+<li><strong>Show everything</strong> clears the list. An entry hidden earlier that your own
+  sidebar does not draw today is kept when you save.</li>
+</ul>
 <h2 id="20-the-operator-console">20. The operator console</h2>
 <p>Some failures cannot be fixed from the web interface, because the web interface
 is the thing that failed. Every node ships a local command-line tool, <code>satom</code>,
@@ -6070,7 +6096,7 @@ because the setting is meaningless without it. They are not repeated here:</p>
 </tr>
 <tr>
 <td><strong>Appearance</strong></td>
-<td>§19 — themes, tokens, logo and favicon</td>
+<td>§19 — themes, tokens, logo and favicon, and which sidebar entries are hidden</td>
 </tr>
 <tr>
 <td><strong>Sentinel</strong></td>

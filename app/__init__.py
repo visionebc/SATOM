@@ -1020,8 +1020,9 @@ def create_app(config_override: object | None = None) -> Flask:
     # already drifted for five blueprints.
     @app.template_filter('nav_autoopen')
     def _nav_autoopen(html):  # noqa: ANN001
+        from .nav_hide import apply as _hide
         from .nav_state import autoopen
-        return autoopen(str(html))
+        return autoopen(_hide(str(html)))
 
     # -- sidebar: Administrator sections, sorted by their RENDERED labels so
     # the order is alphabetical in every console language (app/nav_sections.py).

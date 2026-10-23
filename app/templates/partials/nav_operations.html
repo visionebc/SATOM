@@ -56,13 +56,13 @@
     {% if _m_bak.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'backups' else '' }}" href="{{ url_for('backups.index') }}">
       <i class="bi bi-cloud-arrow-down fw-nav-icon"></i><span>{{ _('Device Backups') }}</span></a>
-    {% else %}{{ nav_off('bi-cloud-arrow-down', _('Device Backups'), _m_bak.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-cloud-arrow-down', _('Device Backups'), _m_bak.reason, ep='backups.index') }}{% endif %}
     {% endif %}
     {% if current_user.can('backups.restore') and may_open('import_backup.index') %}
     {% if _m_imp.on %}
     <a class="fw-nav-item" href="{{ url_for('import_backup.index') }}">
       <i class="bi bi-file-earmark-arrow-up fw-nav-icon"></i><span>{{ _('Import Backup') }}</span></a>
-    {% else %}{{ nav_off('bi-file-earmark-arrow-up', _('Import Backup'), _m_imp.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-file-earmark-arrow-up', _('Import Backup'), _m_imp.reason, ep='import_backup.index') }}{% endif %}
     {% endif %}
     {# Template Library needs only operations.view; administrators reach it
        under Administrator, everyone else who may open it finds it here. #}
@@ -70,7 +70,7 @@
     {% if _m_tpl.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}" href="{{ url_for('templates.index') }}">
       <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
-    {% else %}{{ nav_off('bi-collection', _('Template Library'), _m_tpl.reason) }}{% endif %}
+    {% else %}{{ nav_off('bi-collection', _('Template Library'), _m_tpl.reason, ep='templates.index') }}{% endif %}
     {% endif %}
     {# Automation ▸ right above Plugins (operator, 2026-10-23; below WAF
        until then, from partials/nav_fleet.html). config_write-gated inside. #}

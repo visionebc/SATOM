@@ -308,8 +308,11 @@
   <aside id="fw-sidebar" class="fw-sidebar">
     {# The section holding the active item is opened by the filter, from this
        markup — NOT by the per-group blueprint lists below, which cannot be
-       kept in sync by hand and had already drifted. See app/nav_state.py. #}
-    {% filter nav_autoopen %}
+       kept in sync by hand and had already drifted. See app/nav_state.py.
+       The same filter first takes out what the administrator hid in
+       Settings › Appearance › Sidebar menu (app/nav_hide.py), which renders
+       the sidebar_menu block on its own, per ADOM, to list what can be hidden. #}
+    {% filter nav_autoopen %}{% block sidebar_menu %}
     <nav class="fw-nav">
       <div class="fw-nav-top">
 
@@ -595,7 +598,7 @@
       </div>
 
     </nav>
-    {% endfilter %}
+    {% endblock %}{% endfilter %}
   </aside>
 
   <!-- MAIN CONTENT -->

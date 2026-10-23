@@ -22,7 +22,7 @@
 {% set _waf_why = '' if _waf_on else _waf_state.reason %}
 {% macro _w(on, why, ep, icon, label, active, href, flat=false) -%}
 {% if may_open(ep) %}{% if on %}<a class="fw-nav-item {{ 'fw-so-nav-flat' if flat }} {{ 'active' if active else '' }}" href="{{ href }}">
-  <i class="bi {{ icon }} fw-nav-icon"></i><span>{{ label }}</span></a>{% else %}{{ nav_off(icon, label, why, flat) }}{% endif %}{% endif %}
+  <i class="bi {{ icon }} fw-nav-icon"></i><span>{{ label }}</span></a>{% else %}{{ nav_off(icon, label, why, flat, ep=ep) }}{% endif %}{% endif %}
 {%- endmacro %}
 <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['waf','attack_search','exceptions','artifacts'] }}" data-nav-subgroup="WAF">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-shield-shaded fw-nav-icon"></i><span>{{ _('WAF') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>

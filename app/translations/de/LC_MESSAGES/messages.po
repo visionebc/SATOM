@@ -27107,3 +27107,31 @@ msgstr "Vor jeder Aktualisierung gespeichert: die ersetzten Pakete in ihrer vorh
 
 msgid "AI"
 msgstr "KI"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Sidebar menu"
+msgstr "Seitenleistenmenü"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Hidden:"
+msgstr "Ausgeblendet:"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "(always shown)"
+msgstr "(immer sichtbar)"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "device menu: hidden as a whole"
+msgstr "Gerätemenü: nur als Ganzes ausblendbar"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Show everything"
+msgstr "Alles anzeigen"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Untick an entry, a submenu or a whole group to take it out of the sidebar. It goes from every ADOM it appears in, for every user. Hiding is not a permission: the page still opens from a direct link, a bookmark or a search, and a profile still needs its permission to open it. Settings, the ADOM switcher and the device picker cannot be hidden; a device menu can only be hidden as a whole."
+msgstr "Entfernen Sie das Häkchen bei einem Eintrag, einem Untermenü oder einer ganzen Gruppe, um sie aus der Seitenleiste zu nehmen. Sie verschwindet aus jeder ADOM, in der sie erscheint, für alle Benutzer. Ausblenden ist keine Berechtigung: Die Seite öffnet sich weiterhin über einen direkten Link, ein Lesezeichen oder eine Suche, und ein Profil braucht weiterhin seine Berechtigung, um sie zu öffnen. Einstellungen, der ADOM-Wechsler und die Geräteauswahl können nicht ausgeblendet werden; ein Gerätemenü nur als Ganzes."
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "The sidebar could not be read. Nothing is hidden by this page until it can."
+msgstr "Die Seitenleiste konnte nicht gelesen werden. Diese Seite blendet nichts aus, bis das wieder möglich ist."

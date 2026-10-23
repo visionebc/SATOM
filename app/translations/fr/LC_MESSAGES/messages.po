@@ -27109,3 +27109,31 @@ msgstr "Enregistrés avant chaque mise à jour : les paquets remplacés dans leu
 
 msgid "AI"
 msgstr "IA"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Sidebar menu"
+msgstr "Menu latéral"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Hidden:"
+msgstr "Masqués :"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "(always shown)"
+msgstr "(toujours affiché)"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "device menu: hidden as a whole"
+msgstr "menu de l'équipement : masqué en entier uniquement"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Show everything"
+msgstr "Tout afficher"
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "Untick an entry, a submenu or a whole group to take it out of the sidebar. It goes from every ADOM it appears in, for every user. Hiding is not a permission: the page still opens from a direct link, a bookmark or a search, and a profile still needs its permission to open it. Settings, the ADOM switcher and the device picker cannot be hidden; a device menu can only be hidden as a whole."
+msgstr "Décochez une entrée, un sous-menu ou un groupe entier pour le retirer du menu latéral. Il disparaît de chaque ADOM où il apparaît, pour tous les utilisateurs. Masquer n'est pas une permission : la page s'ouvre toujours depuis un lien direct, un favori ou une recherche, et un profil a toujours besoin de sa permission pour l'ouvrir. Les paramètres, le sélecteur d'ADOM et le sélecteur d'équipement ne peuvent pas être masqués ; un menu d'équipement ne peut l'être qu'en entier."
+
+#: app/templates/settings/_sidebar_menu.html
+msgid "The sidebar could not be read. Nothing is hidden by this page until it can."
+msgstr "Le menu latéral n'a pas pu être lu. Cette page ne masque rien tant que ce n'est pas possible."

@@ -8,6 +8,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Settings › Appearance › Sidebar menu: hide entries, submenus and
+  groups.** A tree of everything the sidebar draws in every ADOM; an
+  unticked row leaves the sidebar of every user in every ADOM it appears
+  in (Architecture is one row, not one per ADOM), live and disabled
+  alike, and a group or submenu left empty goes with it. Hiding is not a
+  permission: the page still opens by link and still needs its own
+  permission. Settings, the ADOM switcher and the device picker cannot be
+  hidden; a device's own menu only as a whole. Requested by the operator:
+  "in Settings, Appearance, add the option to remove menu and submenu
+  entries, for example the Architecture menu when it is not needed".
 - **Plugin Studio › Apps: certificates already on the FortiWebs.** A new
   SATOM list, *FortiWeb local certificates*, offers the local certificates
   of every FortiWeb from the local cache, each naming the FortiWebs that hold

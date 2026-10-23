@@ -3620,6 +3620,33 @@ Practical notes:
 
 Full reference: [docs/theming.md](theming.md).
 
+### Sidebar menu: hide entries, submenus and groups
+
+`Settings → User Interface → Appearance → Sidebar menu` (administrators) lists
+everything the sidebar draws, in every ADOM you may enter, as one tree: each
+group, each submenu and each entry, with the ADOMs it appears in when it is not
+in all of them. **Untick** a row and **Save** to take it out of the sidebar.
+
+- **One setting for the whole console.** A hidden row leaves the sidebar of
+  every user, in every ADOM it appears in. *Architecture* is one row, not one
+  per ADOM.
+- **A hidden entry goes live and disabled alike.** An entry an ADOM draws
+  greyed out (the page does not work for that kind of device) is hidden with
+  it.
+- **A group or submenu hides everything in it.** Its rows fade in the tree and
+  keep their ticks for the day it comes back. A group or submenu whose every
+  entry is hidden disappears too, so no empty toggle is left behind.
+- **Hiding is not a permission.** The page still opens from a direct link, a
+  bookmark, a search result or a link on another page, and a profile still
+  needs the page's own permission to open it. To keep someone out of a page,
+  change their profile.
+- **What cannot be hidden:** Settings (where this is undone), the ADOM back-link
+  and the ADOM list, and the device picker. A device's own menu (FortiWeb,
+  FortiGate, … built from the measured GUI pages) can be hidden only as a
+  whole; to hide kinds of pages inside it, use **ADOM Menus** (§26.12).
+- **Show everything** clears the list. An entry hidden earlier that your own
+  sidebar does not draw today is kept when you save.
+
 ## 20. The operator console
 
 Some failures cannot be fixed from the web interface, because the web interface
@@ -5401,7 +5428,7 @@ because the setting is meaningless without it. They are not repeated here:
 | **Certificate Manager** | §10 — issuance protocol, lifecycle policy, and the ACME provider registry |
 | **Hypervisors** | §21.1 — the Proxmox / ESXi endpoints provisioning may build on |
 | **Clone / Migrate** | §6 — dummy-VIP rewrite rules and the copy-WPP default |
-| **Appearance** | §19 — themes, tokens, logo and favicon |
+| **Appearance** | §19 — themes, tokens, logo and favicon, and which sidebar entries are hidden |
 | **Sentinel** | `Settings → AI → Sentinel → Settings` — every knob next to the pipeline it configures, the live scoring weights, and ten demonstrations runnable against the real engine, all **rendered in the pane itself**. The same section is also served standalone at `/settings/sentinel` — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. **Context**, **Response policy**, **Architecture** and **Incidents console** are panes beside it, rendered from the same files as `/sentinel/context`, `/sentinel/policies`, `/sentinel/docs` and `/sentinel/`. The incidents console's own Architecture and Context buttons went away in the same change that made those two menu entries — a duplicate control, not a door. Every element of that pane — each knob, each group heading, each of the four health chips and each link out — carries a **?**; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes. |
 
 The rest follow.

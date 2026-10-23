@@ -175,14 +175,14 @@ codebase is assumed. For architecture and internals see the
   (<code>--admin-password=…</code> / <code>SATOM_ADMIN_PASSWORD</code>) or a random one the installer
   writes to <code>initial-admin-password</code> in the install directory (root-only,
   <code>0600</code>; the installer prints its path). <strong>Change it on first login</strong>
-  (Profile → password) and delete that file.</li>
+  (Profile → Change Password, §1.1) and delete that file.</li>
 <li><strong>Account protection:</strong> 10 consecutive failed logins lock the account for
   15 minutes. Login attempts are rate-limited per IP (5/min).</li>
 <li><strong>2FA:</strong> TOTP can be enabled per account, with QR enrollment on
-  <code>Settings → Security</code>. Enabling it issues <strong>backup codes that are shown
+  <code>Profile → Security</code>. Enabling it issues <strong>backup codes that are shown
   exactly once</strong> — save them then; you can regenerate a fresh set later, which
-  immediately invalidates the old one. Set a <strong>recovery email</strong> on the same tab
-  if you want <em>Forgot password</em> to be able to reach you (§26.13).</li>
+  immediately invalidates the old one. Set a <strong>recovery email</strong> on the same card
+  if you want <em>Forgot password</em> to be able to reach you (§1.1).</li>
 <li><strong>Directory auth:</strong> LDAP and RADIUS backends are configured at
   <code>Settings → Authentication</code> (§26.7), alongside local accounts. That tab also
   <strong>tests</strong> the connection against unsaved form values, and <strong>syncs directory
@@ -209,6 +209,37 @@ codebase is assumed. For architecture and internals see the
 - <strong>Documentation</strong> and <strong>API documentation</strong>, under the sign-in form, open
   the manual this node serves itself — no internet needed, no sign-in
   needed (§47).</p>
+<h3 id="11-your-profile--security-and-change-password-for-every-account">1.1 Your Profile — Security and Change Password, for every account</h3>
+<p>Open it from the user menu (top right) → <strong>Profile</strong>. The <strong>Security</strong> and
+<strong>Change Password</strong> cards sit at the top, above your bookmarks order,
+language, calendar and banner preferences. They belong to your account, not
+to the installation, so they are not in Settings: until 3.5.0 they were the
+<em>My Account</em> group there, and links to <code>/settings/#tab-security</code> or
+<code>#tab-password</code> now land on the same cards here.</p>
+<ul>
+<li><strong>Two-factor authentication (TOTP).</strong> Scan the QR with an authenticator app and
+  confirm one code to enable it. Enabling generates <strong>backup codes shown exactly
+  once</strong> — save them then. <em>Regenerate backup codes</em> issues a fresh set and
+  immediately invalidates the old one. <strong>Setting up 2FA, enabling it and
+  regenerating codes all ask for your current password first</strong> (and a current
+  code once 2FA is on), exactly as disabling 2FA does; you cannot set up a new
+  authenticator over one that is already enabled — disable it first.</li>
+<li><strong>Recovery email</strong> — used by <em>Forgot password</em> on the sign-in page to send a
+  reset link. Changing it also asks for your current password (and a code when
+  2FA is on). It needs server email (§26.6) configured to be worth anything.
+  A reset link is single-use and stops working as soon as the password changes.</li>
+<li>Your <strong>active session</strong>, with a clean sign-out. (The hard-coded "Security
+  status" checklist that sat here was removed: it computed nothing. The live
+  checks are on Monitoring → SATOM health.)</li>
+<li><strong>Change Password</strong> — current, new, confirm; 12 to 1024 characters.</li>
+</ul>
+<p>Directory-backed accounts see an explicit note instead of these controls: they
+manage password and MFA at the directory.</p>
+<p>Sign-in protections that apply to every account: after the password, the 2FA
+code must be entered within <strong>5 minutes</strong>; wrong codes count toward the same
+lockout as wrong passwords (10 failures lock the account for 15 minutes) and
+are audited as <code>login.2fa_fail</code>. <em>Remember me</em> keeps a session for <strong>14 days</strong>.
+The page you are sent to after signing in must be a page of this console.</p>
 <h2 id="2-core-concepts">2. Core concepts</h2>
 <p><strong>DB-first pages.</strong> The app keeps a local, queryable copy of each device's
 whole configuration (populated by <em>Rediscovery</em> and <em>Deep Capture</em>). Pages
@@ -5802,10 +5833,11 @@ deletes its bindings, and says so.</p>
 <p>The assignment picker spans both FortiWeb and FortiADC appliances — the catalog
 is a single <strong>global</strong> one, not per-ADOM.</p>
 <h2 id="26-settings-tab-by-tab">26. Settings, tab by tab</h2>
-<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>11 groups, 40 panels</strong>.
-Ten of the groups (38 panels) are admin-only (<code>user_manage</code>); the remaining
-one — <strong>My Account</strong>, holding <strong>Security</strong> and <strong>Change Password</strong> — is
-self-service and is the only group a non-admin sees. A group with nothing you may see is not
+<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>10 groups, 38 panels</strong>.
+All ten of the groups (38 panels) are admin-only (<code>user_manage</code>). Your own
+<strong>Security</strong> and <strong>Change Password</strong> are on your <strong>Profile</strong> (§1.1), not here;
+a non-admin who opens <code>/settings/</code> is sent there, and the sidebar offers
+Settings only to administrators. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.</p>
 <table>
 <thead>
@@ -5842,10 +5874,6 @@ rendered at all, so the menu never offers a section that is not there.</p>
 <tr>
 <td><strong>User Interface</strong></td>
 <td>Appearance · Languages · ADOM Menus</td>
-</tr>
-<tr>
-<td><strong>My Account</strong></td>
-<td>Security · Change Password</td>
 </tr>
 <tr>
 <td><strong>Monitoring &amp; Alerts</strong></td>
@@ -7271,33 +7299,7 @@ must have a translation in <code>es</code>, <code>de</code>, <code>fr</code> and
 and markup as the English, or the build is red. (Until 3.1.0 nothing checked it,
 and about 2,700 strings added since the previous translation sweep rendered in
 English in every other language.)</p>
-<h3 id="2613-security-and-change-password--self-service-for-every-account">26.13 Security and Change Password — self-service, for every account</h3>
-<p>The two tabs any signed-in user gets.</p>
-<ul>
-<li><strong>Two-factor authentication (TOTP).</strong> Scan the QR with an authenticator app and
-  confirm one code to enable it. Enabling generates <strong>backup codes shown exactly
-  once</strong> — save them then. <em>Regenerate backup codes</em> issues a fresh set and
-  immediately invalidates the old one. <strong>Setting up 2FA, enabling it and
-  regenerating codes all ask for your current password first</strong> (and a current
-  code once 2FA is on), exactly as disabling 2FA does; you cannot set up a new
-  authenticator over one that is already enabled — disable it first.</li>
-<li><strong>Recovery email</strong> — used by <em>Forgot password</em> on the sign-in page to send a
-  reset link. Changing it also asks for your current password (and a code when
-  2FA is on). It needs server email (§26.6) configured to be worth anything.
-  A reset link is single-use and stops working as soon as the password changes.</li>
-<li>Your <strong>active session</strong>, with a clean sign-out. (The hard-coded "Security
-  status" checklist that sat here was removed: it computed nothing. The live
-  checks are on Monitoring → SATOM health.)</li>
-<li><strong>Change Password</strong> — current, new, confirm; 12 to 1024 characters.</li>
-</ul>
-<p>Directory-backed accounts see an explicit note instead of these controls: they
-manage password and MFA at the directory.</p>
-<p>Sign-in protections that apply to every account: after the password, the 2FA
-code must be entered within <strong>5 minutes</strong>; wrong codes count toward the same
-lockout as wrong passwords (10 failures lock the account for 15 minutes) and
-are audited as <code>login.2fa_fail</code>. <em>Remember me</em> keeps a session for <strong>14 days</strong>.
-The page you are sent to after signing in must be a page of this console.</p>
-<h3 id="2614-settings-endpoints-owned-by-other-pages">26.14 Settings endpoints owned by other pages</h3>
+<h3 id="2613-settings-endpoints-owned-by-other-pages">26.13 Settings endpoints owned by other pages</h3>
 <p>A few settings are <em>stored</em> by this blueprint but <em>edited</em> elsewhere, so looking
 for them among the tabs is a dead end:</p>
 <ul>

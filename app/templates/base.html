@@ -581,7 +581,10 @@
         {% endif %}
         {% endif %}
         <div class="fw-nav-divider"></div>
-        {% if may_open('settings.index') %}
+        {# Admin-only since My Account moved to the Profile: for anybody else
+           /settings/ is only a redirect to the Profile, which the user menu
+           already offers. #}
+        {% if may_open('settings.index') and current_user and current_user.can('user_manage') %}
         {# Pages filed under Settings (its menu's `ep` entries) light it too. #}
         <a class="fw-nav-item {{ 'active' if request.endpoint and (request.endpoint.startswith('settings.') or request.blueprint in ('integrations', 'self_update', 'ha', 'scheduled_actions', 'system_backup')) else '' }}"
            href="{{ url_for('settings.index') }}">

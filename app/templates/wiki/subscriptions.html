@@ -32,7 +32,7 @@
 
 {% if not has_mail %}
 <div class="wiki-draft-note mb-3"><i class="bi bi-envelope me-1"></i>{{ _('E-mail copies go to your recovery e-mail address, and you have none.') }}
-  <a href="{{ url_for('settings.index') }}#tab-security">{{ _('Add one in your account settings') }}</a></div>
+  <a href="{{ url_for('auth.profile') }}#security">{{ _('Add one in your account settings') }}</a></div>
 {% endif %}
 
 <div class="fw-card mb-3"><div class="fw-card-body p-0">

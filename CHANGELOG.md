@@ -56,6 +56,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   upgradable; what matters is that a rollback is possible, even from the
   console, so that if something fails it can always be repaired".
 
+### Changed
+
+- **Security and Change Password moved from Settings to your Profile.** The
+  two-factor authentication, recovery email, active session and password
+  cards are now at the top of *Profile* (user menu, top right); Settings no
+  longer has a *My Account* group, so every Settings group is admin-only. A
+  non-admin who opens `/settings/` is sent to the Profile, the sidebar offers
+  Settings only to administrators, and old links to `#tab-security` /
+  `#tab-password` land on the same cards. The form URLs are unchanged.
+  Requested by the operator: "put My Account in the profile so it is not in
+  Settings".
+
 ## [3.5.0] - 2026-10-23
 
 Plugin Studio becomes the place where everything SATOM automates lives:

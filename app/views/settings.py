@@ -81,6 +81,17 @@ def _is_admin() -> bool:
     return bool(current_user and current_user.can(Permission.USER_MANAGE))
 
 
+# The self-service account routes (2FA, recovery email, password) still live in
+# this blueprint -- their URLs are what the forms post to -- but the cards they
+# serve are on the Profile now, so that is where every one of them returns.
+def _account_security_url() -> str:
+    return url_for('auth.profile') + '#security'
+
+
+def _account_password_url() -> str:
+    return url_for('auth.profile') + '#password'
+
+
 def _language_rows() -> list:
     """One row per language the product speaks, for the Languages tab.
 
@@ -127,6 +138,11 @@ def _acme_creds_state() -> dict:
 @login_required
 def index():
     from ..services import product_scope
+    # Every Settings group is admin-only since My Account moved to the Profile
+    # (2026-10-23): a non-admin would be drawn a console with no menu at all.
+    # What such a user CAN change about their own account is on the Profile.
+    if not _is_admin():
+        return redirect(url_for('auth.profile'))
     # Built before the render so the metrics-store health it contains is
     # computed ONCE and handed to all three Sentinel sections. Three
     # independent calls would triple this page's round-trips to the store for
@@ -189,13 +205,6 @@ def index():
         auth_backends=auth_store.BACKENDS,
         fac_appliances=(visible_appliances(Appliance.query.filter_by(kind='fortiauthenticator'))
                         .order_by(Appliance.name).all() if _is_admin() else []),
-        twofa_status={
-            'enabled': bool(getattr(current_user, 'totp_enabled', False)),
-            'is_local': bool(getattr(current_user, 'is_local', True)),
-            'recovery_email': getattr(current_user, 'recovery_email', '') or '',
-            'remaining_codes': twofa.remaining_backup_codes(getattr(current_user, 'backup_codes', None)),
-        },
-        backup_codes_once=session.pop('twofa_backup_codes_once', None),
         cert_adcs=(store.cert_manager_adcs() if _is_admin() else None),
         cert_classes=([(c, store.CERT_CLASS_LABELS[c], store.cert_class_config(c))
                        for c in store.CERT_CLASSES] if _is_admin() else []),
@@ -1516,7 +1525,7 @@ def change_password():
         db.session.commit()
         log_action('settings.change_password', detail='Changed own password')
         flash('Password changed successfully.', 'success')
-    return redirect(url_for('settings.index') + '#tab-password')
+    return redirect(_account_password_url())
 
 
 # ── Git ───────────────────────────────────────────────────────────────────────
@@ -2115,23 +2124,23 @@ def twofa_setup():
 def twofa_enable():
     if not current_user.is_local:
         flash('Directory accounts manage MFA at the directory.', 'danger')
-        return redirect(url_for('settings.index') + '#tab-security')
+        return redirect(_account_security_url())
     # Re-enrolment must go through disable first: silently overwriting a live
     # secret would let a hijacked session swap the authenticator out from under
     # the owner, who still holds working codes for the old one.
     if current_user.totp_enabled:
         flash('Two-factor authentication is already enabled — disable it first '
               'to re-enroll.', 'danger')
-        return redirect(url_for('settings.index') + '#tab-security')
+        return redirect(_account_security_url())
     err = _reauth_problem()
     if err:
         flash(err, 'danger')
-        return redirect(url_for('settings.index') + '#tab-security')
+        return redirect(_account_security_url())
     secret = session.get('twofa_setup_secret')
     code = (request.form.get('code', '') or '').strip()
     if not secret or not twofa.verify_totp(secret, code):
         flash('Invalid code — 2FA was not enabled. Re-scan the QR and try again.', 'danger')
-        return redirect(url_for('settings.index') + '#tab-security')
+        return redirect(_account_security_url())
     codes = twofa.generate_backup_codes()
     current_user.totp_secret = twofa.encrypt_secret(secret)
     current_user.totp_enabled = True
@@ -2141,25 +2150,25 @@ def twofa_enable():
     session['twofa_backup_codes_once'] = codes
     log_action('settings.2fa_enable', target=current_user.username)
     flash('Two-factor authentication enabled. Save your backup codes now — they are shown only once.', 'success')
-    return redirect(url_for('settings.index') + '#tab-security')
+    return redirect(_account_security_url())
 
 
 @bp.route('/2fa/disable', methods=['POST'])
 @login_required
 def twofa_disable():
     if not current_user.totp_enabled:
-        return redirect(url_for('settings.index') + '#tab-security')
+        return redirect(_account_security_url())
     pw = request.form.get('current_password', '')
     if current_user.is_local and not current_user.check_password(pw):
         flash('Password incorrect — 2FA was not disabled.', 'danger')
-        return redirect(url_for('settings.index') + '#tab-security')
+        return redirect(_account_security_url())
     current_user.totp_enabled = False
     current_user.totp_secret = None
     current_user.backup_codes = None
     db.session.commit()
     log_action('settings.2fa_disable', target=current_user.username)
     flash('Two-factor authentication disabled.', 'warning')
-    return redirect(url_for('settings.index') + '#tab-security')
+    return redirect(_account_security_url())
 
 
 @bp.route('/2fa/backup-codes', methods=['POST'])
@@ -2167,18 +2176,18 @@ def twofa_disable():
 def twofa_regen_codes():
     if not (current_user.is_local and current_user.totp_enabled):
         flash('Enable two-factor authentication first.', 'danger')
-        return redirect(url_for('settings.index') + '#tab-security')
+        return redirect(_account_security_url())
     err = _reauth_problem()
     if err:
         flash(err, 'danger')
-        return redirect(url_for('settings.index') + '#tab-security')
+        return redirect(_account_security_url())
     codes = twofa.generate_backup_codes()
     current_user.backup_codes = twofa.encode_codes(codes)
     db.session.commit()
     session['twofa_backup_codes_once'] = codes
     log_action('settings.2fa_backup_regen', target=current_user.username)
     flash('New backup codes generated. Save them now — the old ones no longer work.', 'success')
-    return redirect(url_for('settings.index') + '#tab-security')
+    return redirect(_account_security_url())
 
 
 @bp.route('/recovery-email', methods=['POST'])
@@ -2187,16 +2196,16 @@ def recovery_email():
     err = _reauth_problem()
     if err:
         flash(err, 'danger')
-        return redirect(url_for('settings.index') + '#tab-security')
+        return redirect(_account_security_url())
     addr = (request.form.get('recovery_email', '') or '').strip()
     if addr and ('@' not in addr or '.' not in addr.split('@')[-1]):
         flash('Enter a valid email address.', 'danger')
-        return redirect(url_for('settings.index') + '#tab-security')
+        return redirect(_account_security_url())
     current_user.recovery_email = addr or None
     db.session.commit()
     log_action('settings.recovery_email', target=current_user.username)
     flash('Recovery email updated.' if addr else 'Recovery email cleared.', 'success')
-    return redirect(url_for('settings.index') + '#tab-security')
+    return redirect(_account_security_url())
 @bp.route('/dns-tool', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)

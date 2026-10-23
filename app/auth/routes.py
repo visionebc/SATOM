@@ -428,9 +428,11 @@ def reset_password(token):
 @bp.route('/profile')
 @login_required
 def profile():
-    """Show the profile page. GET only: the password is changed in
-    Settings -> My Account (``settings.change_password``); each preference on
-    this page posts to its own small route below."""
+    """Show the profile page. GET only: each card posts to its own small
+    route. Security (2FA, recovery email) and Change Password live here since
+    2026-10-23 -- they belong to this user, not to the installation -- but
+    their POST routes stay in the settings blueprint, which sends each one
+    back here (``#security`` / ``#password``)."""
     from ..services import cr_document, lang_policy, langs as lang_registry
     from ..services import bookmarks as bookmarks_svc
     is_admin = bool(current_user and current_user.can(Permission.USER_MANAGE))
@@ -465,6 +467,16 @@ def profile():
         banners=user_store.all_banners(current_user.id),
         banner_products=[(k, _BRAND_PRODUCTS[k]['name'])
                          for k in store.BANNER_PRODUCTS],
+        twofa_status={
+            'enabled': bool(getattr(current_user, 'totp_enabled', False)),
+            'is_local': bool(getattr(current_user, 'is_local', True)),
+            'recovery_email': getattr(current_user, 'recovery_email', '') or '',
+            'remaining_codes': twofa.remaining_backup_codes(
+                getattr(current_user, 'backup_codes', None)),
+        },
+        # Popped, not read: the codes are shown exactly once, on the page the
+        # enable / regenerate routes redirect to -- which is this one.
+        backup_codes_once=session.pop('twofa_backup_codes_once', None),
     )
 
 

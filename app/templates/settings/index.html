@@ -4981,169 +4981,6 @@
 
   {% endif %}
 
-  <!-- SECURITY TAB -->
-  <div class="tab-pane fade {{ 'show active' if not is_admin else '' }}" id="tab-security">
-    <div class="row g-3 mb-1">
-      <div class="col-lg-7">
-        <div class="fw-card">
-          <div class="fw-card-header">
-            <span class="fw-card-title"><i class="bi bi-phone me-2 text-accent"></i>{{ _('Two-Factor Authentication (TOTP)') }}</span>
-          </div>
-          <div class="fw-card-body">
-            {% if not twofa_status.is_local %}
-              <p class="text-muted mb-0" style="font-size:13px;"><i class="bi bi-info-circle me-1"></i>{{ _('Your account authenticates against a directory — manage multi-factor authentication there.') }}</p>
-            {% elif twofa_status.enabled %}
-              <div class="alert alert-success py-2" style="font-size:13px;"><i class="bi bi-shield-check me-1"></i>{{ _('Two-factor authentication is') }} <strong>{{ _('enabled') }}</strong>{{ _('. Backup codes remaining:') }} <strong>{{ twofa_status.remaining_codes }}</strong>.</div>
-              {% if backup_codes_once %}
-              <div class="alert alert-warning" style="font-size:13px;">
-                <div class="mb-2"><i class="bi bi-exclamation-triangle me-1"></i><strong>{{ _('Save these backup codes now — shown only once.') }}</strong> {{ _('Each works one time if you lose your authenticator.') }}</div>
-                <div class="font-monospace" style="columns:2; font-size:15px; letter-spacing:1px;">{% for c in backup_codes_once %}<div>{{ c }}</div>{% endfor %}</div>
-              </div>
-              {% endif %}
-              <form method="POST" action="{{ url_for('settings.twofa_regen_codes') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="input-group input-group-sm" style="max-width:420px;">
-                  <input type="password" name="current_password" class="form-control" placeholder="{{ _('Current Password') }}" autocomplete="current-password">
-                  <input type="text" name="totp_code" class="form-control" inputmode="numeric" placeholder="{{ _('Authentication code') }}" autocomplete="one-time-code">
-                  <button class="btn btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Regenerate backup codes') }}</button>
-                </div>
-              </form>
-              <form method="POST" action="{{ url_for('settings.twofa_disable') }}" class="mt-2" data-js="twofa-disable-form">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="input-group input-group-sm" style="max-width:360px;">
-                  <input type="password" name="current_password" class="form-control" placeholder="{{ _('Confirm password to disable') }}" autocomplete="current-password">
-                  <button class="btn btn-outline-danger"><i class="bi bi-shield-x me-1"></i>{{ _('Disable 2FA') }}</button>
-                </div>
-              </form>
-            {% else %}
-              <p class="text-muted" style="font-size:13px;">{{ _('Add a second factor with an authenticator app (Google Authenticator, Authy, FreeOTP…).') }}</p>
-              <div class="input-group input-group-sm mb-2" style="max-width:360px;">
-                <input type="password" id="tf-setup-pw" class="form-control" placeholder="{{ _('Current Password') }}" autocomplete="current-password">
-                <button class="btn fw-btn-primary" id="tf-setup-btn"><i class="bi bi-qr-code me-1"></i>{{ _('Set up 2FA') }}</button>
-              </div>
-              <div id="tf-setup-area" style="display:none;" class="mt-3">
-                <div class="row g-3">
-                  <div class="col-auto"><div id="tf-qr" style="width:180px;height:180px;"></div></div>
-                  <div class="col">
-                    <p style="font-size:13px;" class="mb-1">{{ _('1. Scan the QR (or enter this secret manually):') }}</p>
-                    <code id="tf-secret" class="d-block mb-3" style="word-break:break-all;"></code>
-                    <form method="POST" action="{{ url_for('settings.twofa_enable') }}">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <p style="font-size:13px;" class="mb-1">{{ _('2. Enter the 6-digit code to confirm:') }}</p>
-                      <input type="password" name="current_password" class="form-control form-control-sm mb-2" style="max-width:260px;" placeholder="{{ _('Current Password') }}" autocomplete="current-password" required>
-                      <div class="input-group input-group-sm" style="max-width:260px;">
-                        <input type="text" name="code" class="form-control" inputmode="numeric" placeholder="000000" autocomplete="one-time-code" required>
-                        <button class="btn fw-btn-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Enable') }}</button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              </div>
-            {% endif %}
-          </div>
-        </div>
-
-        <div class="fw-card mt-3">
-          <div class="fw-card-header">
-            <span class="fw-card-title"><i class="bi bi-envelope-at me-2 text-accent"></i>{{ _('Account Recovery') }}</span>
-          </div>
-          <div class="fw-card-body">
-            {% if twofa_status.is_local %}
-            <form method="POST" action="{{ url_for('settings.recovery_email') }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <label class="fw-form-label">{{ _('Recovery email') }}</label>
-              <div class="input-group input-group-sm" style="max-width:440px;">
-                <input type="email" name="recovery_email" class="form-control" value="{{ twofa_status.recovery_email }}" placeholder="{{ _('you@example.com') }}">
-                <button class="btn fw-btn-primary"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
-              </div>
-              <div class="input-group input-group-sm mt-2" style="max-width:440px;">
-                <input type="password" name="current_password" class="form-control" placeholder="{{ _('Current Password') }}" autocomplete="current-password">
-                {% if twofa_status.enabled %}
-                <input type="text" name="totp_code" class="form-control" inputmode="numeric" placeholder="{{ _('Authentication code') }}" autocomplete="one-time-code">
-                {% endif %}
-              </div>
-              <div class="form-text">{{ _('Used by "Forgot password" on the sign-in page to email a reset link. Requires server email to be configured.') }}</div>
-            </form>
-            {% else %}
-            <p class="text-muted mb-0" style="font-size:13px;">{{ _('Directory accounts recover their password at the directory.') }}</p>
-            {% endif %}
-          </div>
-        </div>
-      </div>
-      <div class="col-lg-5"></div>
-    </div>
-
-    <div class="row g-3">
-      {# The hard-coded, all-green "Security Status" card was removed in the
-         2026-10-03 audit (AD-60): it computed nothing and claimed things that
-         were not true (e.g. "all user actions logged"). The live checks are on
-         Monitoring -> SATOM health. #}
-      <div class="col-lg-5">
-        <div class="fw-card">
-          <div class="fw-card-header">
-            <span class="fw-card-title"><i class="bi bi-lock me-2 text-accent"></i>{{ _('Active Sessions') }}</span>
-          </div>
-          <div class="fw-card-body">
-            <p class="text-muted" style="font-size:13px;">{{ _('Your current session. Use Sign Out to end it securely.') }}</p>
-            <div class="d-flex align-items-center gap-3 p-3" style="background:#F4F5F7; border-radius:8px;">
-              <div class="fw-avatar">{{ current_user.username[0].upper() if current_user and current_user.username else 'U' }}</div>
-              <div>
-                <div style="font-size:13.5px; font-weight:500;">{{ current_user.username if current_user else '—' }}</div>
-                <div class="text-muted" style="font-size:12px;">{{ _('Current session') }}</div>
-              </div>
-              <div class="ms-auto">
-                <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>{{ _('Active') }}</span>
-              </div>
-            </div>
-            <div class="mt-3">
-              <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-danger btn-sm">
-                <i class="bi bi-box-arrow-right me-1"></i>{{ _('Sign Out') }}
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- CHANGE PASSWORD TAB -->
-  <div class="tab-pane fade" id="tab-password">
-    <div class="row justify-content-center">
-      <div class="col-lg-5">
-        <div class="fw-card">
-          <div class="fw-card-header">
-            <span class="fw-card-title"><i class="bi bi-key me-2 text-accent"></i>{{ _('Change Password') }}</span>
-          </div>
-          <div class="fw-card-body">
-            <form method="POST" action="{{ url_for('settings.change_password') }}" id="changePasswordForm">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <div class="mb-3">
-                <label class="fw-form-label">{{ _('Current Password') }} <span class="text-danger">*</span></label>
-                <input type="password" name="current_password" class="form-control fw-form-control"
-                       placeholder="{{ _('Your current password') }}" required autocomplete="current-password">
-              </div>
-              <div class="mb-3">
-                <label class="fw-form-label">{{ _('New Password') }} <span class="text-danger">*</span></label>
-                <input type="password" name="new_password" class="form-control fw-form-control"
-                       id="newPwd" placeholder="{{ _('At least 12 characters') }}" required minlength="12" maxlength="1024" autocomplete="new-password">
-                <div class="mt-2" id="pwd-strength-bar" style="height:4px; border-radius:2px; background:#E9ECEF; overflow:hidden;">
-                  <div id="pwd-strength-fill" style="height:100%; width:0; transition:width 0.3s, background 0.3s;"></div>
-                </div>
-                <small id="pwd-strength-text" class="text-muted"></small>
-              </div>
-              <div class="mb-4">
-                <label class="fw-form-label">{{ _('Confirm New Password') }} <span class="text-danger">*</span></label>
-                <input type="password" name="confirm_password" class="form-control fw-form-control"
-                       placeholder="{{ _('Repeat new password') }}" required autocomplete="new-password">
-              </div>
-              <button type="submit" class="btn btn-fw-primary w-100"><i class="bi bi-check-lg me-1"></i>{{ _('Update Password') }}</button>
-            </form>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
 </div><!-- /.tab-content -->
   </div><!-- /.fw-settings-main -->
 </div><!-- /.fw-settings-layout -->
@@ -5899,6 +5736,13 @@ document.addEventListener('DOMContentLoaded', function () {
 // --- activate the tab named in the URL hash (after a save redirect) ---
 (function () {
   var hash = window.location.hash;
+  // Security and Change Password moved to the Profile (2026-10-23); a link or
+  // bookmark still naming the old panes lands on the same cards there.
+  var moved = {'#tab-security': '#security', '#tab-password': '#password'};
+  if (moved[hash]) {
+    window.location.replace({{ url_for('auth.profile') | tojson }} + moved[hash]);
+    return;
+  }
   if (hash) {
     var btn = document.querySelector('[data-bs-target="' + hash + '"]');
     if (btn && window.bootstrap) { new bootstrap.Tab(btn).show(); }
@@ -5966,26 +5810,6 @@ function addPolicyLinkRow() {
     '<td class="text-center"><input type="checkbox" class="form-check-input" name="link_enabled" value="' + tok + '" checked></td>' +
     '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>';
   body.appendChild(tr);
-}
-
-// --- password strength meter (Change Password tab) ---
-function checkStrength(pwd) {
-  var fill = document.getElementById('pwd-strength-fill');
-  var text = document.getElementById('pwd-strength-text');
-  if (!fill || !text) return;
-  var score = 0;
-  if (pwd.length >= 8) score++;
-  if (pwd.length >= 12) score++;
-  if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) score++;
-  if (/\d/.test(pwd)) score++;
-  if (/[^A-Za-z0-9]/.test(pwd)) score++;
-  var pcts = [0, 25, 50, 75, 100];
-  var colors = ['transparent', '#DC3545', '#FFC107', '#17A2B8', '#28A745'];
-  var labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
-  fill.style.width = pcts[score] + '%';
-  fill.style.background = colors[score];
-  text.textContent = score > 0 ? 'Password strength: ' + labels[score] : '';
-  text.style.color = colors[score];
 }
 
 
@@ -6281,28 +6105,6 @@ function authTest() {
     .catch(function(e){ msg.innerHTML = '<div class="alert alert-danger py-2 mb-0" style="font-size:13px;">Error: ' + e.message + '</div>'; })
     .finally(function(){ btn.disabled = false; btn.innerHTML = '<i class="bi bi-plug me-1"></i>Test connection'; });
 }
-// --- 2FA self-service setup ---
-function tfSetup() {
-  var btn = document.getElementById('tf-setup-btn');
-  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>...';
-  var csrfMeta = document.querySelector('meta[name=csrf-token]');
-  var csrf = csrfMeta ? csrfMeta.content : '';
-  var pwEl = document.getElementById('tf-setup-pw');
-  var body = new URLSearchParams();
-  body.set('current_password', pwEl ? pwEl.value : '');
-  fetch('/settings/2fa/setup', {method: 'POST',
-        headers: {'X-CSRFToken': csrf, 'Content-Type': 'application/x-www-form-urlencoded'},
-        body: body.toString()})
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if (!d.ok) { alert(d.error || 'Failed to start 2FA setup'); btn.disabled = false; btn.innerHTML = '<i class="bi bi-qr-code me-1"></i>Set up 2FA'; return; }
-      document.getElementById('tf-secret').textContent = d.secret;
-      document.getElementById('tf-qr').innerHTML = d.qr || '<span class="text-muted">Scan the secret manually.</span>';
-      document.getElementById('tf-setup-area').style.display = '';
-      btn.style.display = 'none';
-    })
-    .catch(function(e){ alert('Error: ' + e.message); btn.disabled = false; btn.innerHTML = '<i class="bi bi-qr-code me-1"></i>Set up 2FA'; });
-}
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('auth-src-radius')) { authToggle(); }
 });
@@ -6348,11 +6150,6 @@ document.addEventListener('DOMContentLoaded', function() {
     addAuthGroupRow(btn.dataset.target, btn.dataset.prefix);
   });
   on('auth-test-btn', 'click', function (event) { authTest(); });
-  on('tf-setup-btn', 'click', function (event) { tfSetup(); });
-  onJs('twofa-disable-form', 'submit', function (event) {
-    if (!confirm('Disable two-factor authentication?')) event.preventDefault();
-  });
-  on('newPwd', 'input', function (event) { checkStrength(event.target.value); });
   {% if is_admin %}
   on('lib-check-btn', 'click', function (event) { checkLibraryUpdates(true); });
 

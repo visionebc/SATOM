@@ -73,7 +73,14 @@
    NOT "Clone / Migrate" under Fleet & Devices, which copies configuration
    between appliances -- the two labels must never converge.
 
-   Its six entries are ordered by what they are, not by when they were added:
+   There is no "My Account" group: Security (2FA, recovery email, session) and
+   Change Password moved to the user's own Profile page on 2026-10-23 at the
+   operator's request.  Every group here is therefore admin-only, and
+   settings.index sends a non-admin to the Profile instead of drawing an empty
+   console.  Do not add a self-service group back: what belongs to ONE user
+   lives on that user's Profile, and this menu configures the installation.
+
+   Sentinel's six entries are ordered by what they are, not by when they were added:
    the four CONFIGURATION surfaces first (Settings, Context, Response policy,
    Border blocklist -- and Context is configuration, however little it looks
    like it: it is the -35-point trusted-source weight, the largest single
@@ -91,7 +98,7 @@
 #}
 {% set nav_mode = nav_mode | default('panes') %}
 {% set nav_is_admin = is_admin | default(false) %}
-{% set nav_active = nav_active | default('tab-general' if nav_is_admin else 'tab-security') %}
+{% set nav_active = nav_active | default('tab-general') %}
 {% set nav_groups = [
   {'key': 'system', 'label': _('System'), 'icon': 'bi-hdd-rack', 'admin': true, 'items': [
     {'t': 'tab-general',     'icon': 'bi-sliders',          'label': _('General')},
@@ -135,9 +142,6 @@
     {'t': 'tab-appearance',  'icon': 'bi-palette',          'label': _('Appearance')},
     {'t': 'tab-languages',   'icon': 'bi-translate',        'label': _('Languages')},
     {'t': 'tab-adommenus',   'icon': 'bi-eye-slash',        'label': _('ADOM Menus')}]},
-  {'key': 'account', 'label': _('My Account'), 'icon': 'bi-person-circle', 'admin': false, 'items': [
-    {'t': 'tab-security',    'icon': 'bi-shield-lock',      'label': _('Security')},
-    {'t': 'tab-password',    'icon': 'bi-key',              'label': _('Change Password')}]},
   {'key': 'monitoring', 'label': _('Monitoring & Alerts'), 'icon': 'bi-activity', 'admin': true, 'items': [
     {'t': 'tab-email',       'icon': 'bi-envelope',         'label': 'Email & Alerts'},
     {'t': 'tab-thresholds',  'icon': 'bi-sliders',          'label': _('Thresholds')}]},

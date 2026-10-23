@@ -68,14 +68,14 @@
   (`--admin-password=…` / `SATOM_ADMIN_PASSWORD`) or a random one the installer
   writes to `initial-admin-password` in the install directory (root-only,
   `0600`; the installer prints its path). **Change it on first login**
-  (Profile → password) and delete that file.
+  (Profile → Change Password, §1.1) and delete that file.
 - **Account protection:** 10 consecutive failed logins lock the account for
   15 minutes. Login attempts are rate-limited per IP (5/min).
 - **2FA:** TOTP can be enabled per account, with QR enrollment on
-  `Settings → Security`. Enabling it issues **backup codes that are shown
+  `Profile → Security`. Enabling it issues **backup codes that are shown
   exactly once** — save them then; you can regenerate a fresh set later, which
-  immediately invalidates the old one. Set a **recovery email** on the same tab
-  if you want *Forgot password* to be able to reach you (§26.13).
+  immediately invalidates the old one. Set a **recovery email** on the same card
+  if you want *Forgot password* to be able to reach you (§1.1).
 - **Directory auth:** LDAP and RADIUS backends are configured at
   `Settings → Authentication` (§26.7), alongside local accounts. That tab also
   **tests** the connection against unsaved form values, and **syncs directory
@@ -102,6 +102,40 @@
 - **Documentation** and **API documentation**, under the sign-in form, open
   the manual this node serves itself — no internet needed, no sign-in
   needed (§47).
+
+### 1.1 Your Profile — Security and Change Password, for every account
+
+Open it from the user menu (top right) → **Profile**. The **Security** and
+**Change Password** cards sit at the top, above your bookmarks order,
+language, calendar and banner preferences. They belong to your account, not
+to the installation, so they are not in Settings: until 3.5.0 they were the
+*My Account* group there, and links to `/settings/#tab-security` or
+`#tab-password` now land on the same cards here.
+
+- **Two-factor authentication (TOTP).** Scan the QR with an authenticator app and
+  confirm one code to enable it. Enabling generates **backup codes shown exactly
+  once** — save them then. *Regenerate backup codes* issues a fresh set and
+  immediately invalidates the old one. **Setting up 2FA, enabling it and
+  regenerating codes all ask for your current password first** (and a current
+  code once 2FA is on), exactly as disabling 2FA does; you cannot set up a new
+  authenticator over one that is already enabled — disable it first.
+- **Recovery email** — used by *Forgot password* on the sign-in page to send a
+  reset link. Changing it also asks for your current password (and a code when
+  2FA is on). It needs server email (§26.6) configured to be worth anything.
+  A reset link is single-use and stops working as soon as the password changes.
+- Your **active session**, with a clean sign-out. (The hard-coded "Security
+  status" checklist that sat here was removed: it computed nothing. The live
+  checks are on Monitoring → SATOM health.)
+- **Change Password** — current, new, confirm; 12 to 1024 characters.
+
+Directory-backed accounts see an explicit note instead of these controls: they
+manage password and MFA at the directory.
+
+Sign-in protections that apply to every account: after the password, the 2FA
+code must be entered within **5 minutes**; wrong codes count toward the same
+lockout as wrong passwords (10 failures lock the account for 15 minutes) and
+are audited as `login.2fa_fail`. *Remember me* keeps a session for **14 days**.
+The page you are sent to after signing in must be a page of this console.
 
 ## 2. Core concepts
 
@@ -5184,10 +5218,11 @@ is a single **global** one, not per-ADOM.
 
 ## 26. Settings, tab by tab
 
-`Settings` is one page with a **grouped sidebar**: **11 groups, 40 panels**.
-Ten of the groups (38 panels) are admin-only (`user_manage`); the remaining
-one — **My Account**, holding **Security** and **Change Password** — is
-self-service and is the only group a non-admin sees. A group with nothing you may see is not
+`Settings` is one page with a **grouped sidebar**: **10 groups, 38 panels**.
+All ten of the groups (38 panels) are admin-only (`user_manage`). Your own
+**Security** and **Change Password** are on your **Profile** (§1.1), not here;
+a non-admin who opens `/settings/` is sent there, and the sidebar offers
+Settings only to administrators. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.
 
 | Group | Panels |
@@ -5199,7 +5234,6 @@ rendered at all, so the menu never offers a section that is not there.
 | **Network & DNS** | DNS Lookup · DNS Records |
 | **Fleet & Devices** | Hypervisors · ADOMs · Policy Links · Clone / Migrate |
 | **User Interface** | Appearance · Languages · ADOM Menus |
-| **My Account** | Security · Change Password |
 | **Monitoring & Alerts** | Email & Alerts · Thresholds |
 | **Sentinel** | Settings · Context · Response policy · Border blocklist · Architecture · Incidents console |
 | **Path Diagnostics** | Settings · Architecture |
@@ -6490,36 +6524,7 @@ and markup as the English, or the build is red. (Until 3.1.0 nothing checked it,
 and about 2,700 strings added since the previous translation sweep rendered in
 English in every other language.)
 
-### 26.13 Security and Change Password — self-service, for every account
-
-The two tabs any signed-in user gets.
-
-- **Two-factor authentication (TOTP).** Scan the QR with an authenticator app and
-  confirm one code to enable it. Enabling generates **backup codes shown exactly
-  once** — save them then. *Regenerate backup codes* issues a fresh set and
-  immediately invalidates the old one. **Setting up 2FA, enabling it and
-  regenerating codes all ask for your current password first** (and a current
-  code once 2FA is on), exactly as disabling 2FA does; you cannot set up a new
-  authenticator over one that is already enabled — disable it first.
-- **Recovery email** — used by *Forgot password* on the sign-in page to send a
-  reset link. Changing it also asks for your current password (and a code when
-  2FA is on). It needs server email (§26.6) configured to be worth anything.
-  A reset link is single-use and stops working as soon as the password changes.
-- Your **active session**, with a clean sign-out. (The hard-coded "Security
-  status" checklist that sat here was removed: it computed nothing. The live
-  checks are on Monitoring → SATOM health.)
-- **Change Password** — current, new, confirm; 12 to 1024 characters.
-
-Directory-backed accounts see an explicit note instead of these controls: they
-manage password and MFA at the directory.
-
-Sign-in protections that apply to every account: after the password, the 2FA
-code must be entered within **5 minutes**; wrong codes count toward the same
-lockout as wrong passwords (10 failures lock the account for 15 minutes) and
-are audited as `login.2fa_fail`. *Remember me* keeps a session for **14 days**.
-The page you are sent to after signing in must be a page of this console.
-
-### 26.14 Settings endpoints owned by other pages
+### 26.13 Settings endpoints owned by other pages
 
 A few settings are *stored* by this blueprint but *edited* elsewhere, so looking
 for them among the tabs is a dead end:

@@ -64,17 +64,15 @@
       <i class="bi bi-clipboard2-pulse fw-nav-icon"></i><span>{{ _('HTTP Observatory') }}</span></a>
     {% else %}{{ nav_off('bi-clipboard2-pulse', _('HTTP Observatory'), _m.reason, ep='observatory.index') }}{% endif %}
     {% endif %}
+    {# Path Diagnostics only while it is switched on (Settings › AI › Scout ›
+       Path Diagnostics › Availability). Off, the entry is ABSENT, not drawn
+       disabled (operator, 2026-10-23: "if it is not configured it should
+       disappear from the menu", as Scout and Sentinel do); the switch stays in
+       Settings and /scout/ still answers 503 by URL. It does not depend on
+       Scout's AI provider: the ladder is deterministic and walks without one. #}
     {% if scout_on and may_open('scout.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
       <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Path Diagnostics') }}</span></a>
-    {% elif not scout_on %}{# Switched off: shown, disabled, with the reason. An ABSENT entry
-       reads as 'this product has no Path Diagnostics' and sends the operator
-       looking for an installer instead of for the checkbox. Switched on but not
-       permitted is hidden like every other entry: "switched off" would be false. #}
-    <span class="fw-nav-item disabled text-muted" style="cursor:not-allowed;opacity:.55;"
-          title="{{ _('Path Diagnostics is switched off for this site (Settings → Path Diagnostics → Availability).') }}">
-      <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Path Diagnostics') }}</span>
-      <i class="bi bi-slash-circle ms-1 small"></i></span>
     {% endif %}
     {% endif %}
     {% if may_open('txn_trace.index') %}

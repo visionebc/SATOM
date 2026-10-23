@@ -194,8 +194,7 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
-<li>
-<p><strong>Scout leaves the sidebar until it is configured.</strong> The Scout entry
+<li><strong>Scout leaves the sidebar until it is configured.</strong> The Scout entry
   (Operations › Troubleshooting, every ADOM) is drawn only when Scout is
   switched on in Settings › Scout ▸ Providers AND at least one provider can
   take a message (not disabled; inside the LAN unless external providers are
@@ -205,7 +204,20 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   before. The WAF exception advice uses the same test, so a switched-on Scout
   whose only provider is disabled no longer counts as available. Requested
   by the operator: "if Scout is not configured it should not appear in the
-  menu, even if it is active in Settings › Appearance".</p>
+  menu, even if it is active in Settings › Appearance".</li>
+<li>
+<p><strong>Path Diagnostics and Sentinel follow the same rule: not configured, not in
+  the menu.</strong> Path Diagnostics switched off (Settings › AI › Scout › Path
+  Diagnostics › Availability) is no longer drawn disabled with the reason: it
+  is not drawn at all, and <code>/scout/</code> still answers 503 by URL. It does not
+  follow Scout's AI providers — the ladder is deterministic and walks without
+  one, so it stays in the menu while the AI assistant is unconfigured.
+  Monitoring › Sentinel (Global ADOM) is offered only while Sentinel is
+  configured: switched on AND at least one FortiWeb you can see that is not
+  retired (host <code>*.invalid</code>), because the FortiWeb attack log is all its sweep
+  ingests; a FortiWeb in maintenance still counts. Requested by the operator:
+  "if Scout is not configured, the things related to it such as Path
+  Diagnostics must disappear from the menu, and the same for Sentinel".</p>
 </li>
 <li>
 <p><strong>Monitoring › Device health: devices grouped by ADOM, problems on the card.</strong>
@@ -224,12 +236,11 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   Each page has a <strong>Which page?</strong> button in its header that opens the same
   comparison: the question each page answers, how it measures, and when to use
   it, with the page you are on marked and links to the other two.</li>
-<li><strong>Monitoring › Sentinel: clearer health cards; entry only while Sentinel is on.</strong>
+<li><strong>Monitoring › Sentinel: clearer health cards.</strong>
   The four cards (Pipeline, Behavioural baseline, CVE mirror, Response engine)
   carry their state as a coloured edge, an icon and a badge, the heartbeat
-  age reads in s/min/h, and the baseline shows a meter. The Monitoring ›
-  Sentinel entry is offered only while Sentinel is enabled (Settings ›
-  Sentinel, where it is switched on and off); the pages still answer by URL.</li>
+  age reads in s/min/h, and the baseline shows a meter. (When the Monitoring ›
+  Sentinel entry is offered: see <em>Changed</em> above.)</li>
 <li><strong>Wiki: Follow and Confluence move onto the articles.</strong> Each article's card
   in the list now has its own <strong>Follow</strong> button (as the article page does),
   and ADOMs, Global and everything are followed from one <strong>Follow</strong> button

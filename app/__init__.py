@@ -825,10 +825,16 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @app.template_global()
     def sentinel_active():
-        """Whether Monitoring > Sentinel is offered: the master switch
-        ``sentinel.enabled`` (Settings > Sentinel). Off, the console can only
-        say "disabled", so the entry goes (operator, 2026-10-23); the switch
-        itself stays in Settings, and the routes still answer by URL.
+        """Whether Monitoring > Sentinel is offered: Sentinel is CONFIGURED.
+
+        That is the master switch ``sentinel.enabled`` (Settings > Sentinel)
+        AND at least one FortiWeb this session can see that is not retired
+        (host ``*.invalid``): the FortiWeb attack log is the only thing the
+        sweep ingests, so without one the console can only ever be empty.
+        Unconfigured, the entry goes (operator, 2026-10-23, "if it is not
+        configured it should disappear from the menu"); Settings > Sentinel
+        stays, and the routes still answer by URL. A FortiWeb in maintenance
+        still counts: maintenance is temporary, and the entry must not blink.
         Read once per request; an unreadable setting keeps the entry."""
         from flask import g as _g
         cached = getattr(_g, "_sentinel_active", None)
@@ -836,6 +842,11 @@ def create_app(config_override: object | None = None) -> Flask:
             try:
                 from .services.sentinel import config as _sn_config
                 cached = bool(_sn_config.get("enabled"))
+                if cached:
+                    from .models import Appliance, visible_appliances
+                    cached = visible_appliances().filter(
+                        Appliance.kind == "fortiweb",
+                        ~Appliance.host.like("%.invalid")).first() is not None
             except Exception:  # noqa: BLE001 -- a menu must never 500 the page
                 cached = True
             _g._sentinel_active = cached

@@ -96,6 +96,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   whose only provider is disabled no longer counts as available. Requested
   by the operator: "if Scout is not configured it should not appear in the
   menu, even if it is active in Settings › Appearance".
+- **Path Diagnostics and Sentinel follow the same rule: not configured, not in
+  the menu.** Path Diagnostics switched off (Settings › AI › Scout › Path
+  Diagnostics › Availability) is no longer drawn disabled with the reason: it
+  is not drawn at all, and `/scout/` still answers 503 by URL. It does not
+  follow Scout's AI providers — the ladder is deterministic and walks without
+  one, so it stays in the menu while the AI assistant is unconfigured.
+  Monitoring › Sentinel (Global ADOM) is offered only while Sentinel is
+  configured: switched on AND at least one FortiWeb you can see that is not
+  retired (host `*.invalid`), because the FortiWeb attack log is all its sweep
+  ingests; a FortiWeb in maintenance still counts. Requested by the operator:
+  "if Scout is not configured, the things related to it such as Path
+  Diagnostics must disappear from the menu, and the same for Sentinel".
 
 - **Monitoring › Device health: devices grouped by ADOM, problems on the card.**
   The cards are now grouped in one collapsible section per ADOM (FortiWeb,
@@ -112,12 +124,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Each page has a **Which page?** button in its header that opens the same
   comparison: the question each page answers, how it measures, and when to use
   it, with the page you are on marked and links to the other two.
-- **Monitoring › Sentinel: clearer health cards; entry only while Sentinel is on.**
+- **Monitoring › Sentinel: clearer health cards.**
   The four cards (Pipeline, Behavioural baseline, CVE mirror, Response engine)
   carry their state as a coloured edge, an icon and a badge, the heartbeat
-  age reads in s/min/h, and the baseline shows a meter. The Monitoring ›
-  Sentinel entry is offered only while Sentinel is enabled (Settings ›
-  Sentinel, where it is switched on and off); the pages still answer by URL.
+  age reads in s/min/h, and the baseline shows a meter. (When the Monitoring ›
+  Sentinel entry is offered: see *Changed* above.)
 - **Wiki: Follow and Confluence move onto the articles.** Each article's card
   in the list now has its own **Follow** button (as the article page does),
   and ADOMs, Global and everything are followed from one **Follow** button

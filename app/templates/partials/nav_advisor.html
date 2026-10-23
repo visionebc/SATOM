@@ -12,9 +12,10 @@
    Also gated on ``advisor_on`` (app/__init__.py, services/advisor.configured):
    switched off in Settings › Scout, or with no usable provider, the entry is
    not drawn at all (operator, 2026-10-23) — even if Settings › Appearance ›
-   Sidebar menu has it ticked. Unlike Path Diagnostics it is not drawn
-   disabled: the operator asked for it to disappear. Settings › Scout is
-   still where it is configured, and /advisor/ still opens by URL.
+   Sidebar menu has it ticked. It is not drawn disabled: the operator asked
+   for it to disappear (Path Diagnostics and Sentinel follow the same rule).
+   Settings › Scout is still where it is configured, and /advisor/ still
+   opens by URL.
    ========================================================================= #}
 {% if current_user.is_authenticated and current_user.can('advisor.use') and advisor_on %}
 {% if may_open('advisor.index') %}

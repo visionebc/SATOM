@@ -46,8 +46,9 @@
        displaying one measurement. Global ADOM only — the console spans
        every product's devices, and a per-ADOM copy would show a partial
        picture under a name that promises the whole one.
-       2026-10-23: only while Sentinel is switched on (Settings > Sentinel);
-       off, the console has nothing to show but "disabled". #}
+       2026-10-23: only while Sentinel is configured (sentinel_active():
+       switched on in Settings > Sentinel AND a FortiWeb to sweep); otherwise
+       the console has nothing to show but "disabled" or an empty list. #}
     {% if product.key == 'global' %}
     {% if may_open('sentinel.index') and sentinel_active() %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'sentinel' else '' }}" href="{{ url_for('sentinel.index', _adom=product.key) }}">

@@ -33,12 +33,9 @@
 {%- if d %}{% set _ = parts.append('d=' ~ d.isoformat()) %}{% endif -%}
 {%- if y %}{% set _ = parts.append('y=' ~ y) %}{% endif -%}
 {%- if m %}{% set _ = parts.append('m=' ~ m) %}{% endif -%}
-{%- for b in bands|sort %}{% set _ = parts.append('show=' ~ b) %}{% endfor -%}
-{#- The marker is what separates "I widened the filter back to everything"
-    from "I arrived with no query string": normalised they are the same URL,
-    and without it the first would restore the saved filter the user just
-    widened. -#}
-{%- set _ = parts.append('f=1') -%}
+{#- NO FILTER IN NAVIGATION LINKS. Every tick of the bar is saved to the
+    profile, so a bare link already lands on the user's filter; carrying it
+    here as well would be a second author of the same state. -#}
 {{ '?' ~ parts|join('&') }}
 {%- endmacro %}
 
@@ -154,66 +151,55 @@
       <a class="btn btn-outline-secondary" href="{{ url_for('calendar_plan.index') }}{{ qs(view=view) }}">{{ _('Today') }}</a>
       <a class="btn btn-outline-secondary" href="{{ url_for('calendar_plan.index') }}{{ qs(view=view, d=next) }}"><i class="bi bi-chevron-right"></i></a>
     </div>
+    <button type="button" class="btn btn-primary btn-sm" id="calPlanOpen"
+            data-bs-toggle="modal" data-bs-target="#calPlanModal">
+      <i class="bi bi-calendar-plus me-1"></i>{{ _('Plan a change') }}</button>
   </div>
 </div>
 
 {# ---- filters + legend ------------------------------------------------- #}
 <div class="fw-card mb-3">
-  <div class="fw-card-body py-2 d-flex flex-wrap gap-3 align-items-center">
+  {#- CHECKBOXES, AND EVERY TICK IS SAVED to this user's profile (no separate
+      Remember step). System Automations start unticked; an unticked band says
+      what it is holding back, because a hidden automation still fires.
+      WHICH BOX MAY BE UNTICKED IS NOT THIS TEMPLATE'S RULE: ``band_toggle``
+      is [] for the last band that carries the grid, and that box is locked —
+      a locked box is not submitted, so a hidden input carries its value. -#}
+  <form method="get" action="{{ url_for('calendar_plan.index') }}" id="calFilter"
+        class="fw-card-body py-2 d-flex flex-wrap gap-3 align-items-center">
+    <input type="hidden" name="view" value="{{ view }}">
+    <input type="hidden" name="d" value="{{ anchor.isoformat() }}">
+    <input type="hidden" name="f" value="1">
     <span class="text-muted" style="font-size:12px;">{{ _('Show') }}:</span>
     {%- for b in all_bands %}
       {% set on = b in bands %}
-      {#- WHICH BAND TOGGLES IS NOT THIS TEMPLATE'S RULE. ``toggled`` returns []
-          for the last band that carries the grid, because turning it off leaves
-          an empty month that looks like a quiet fleet rather than a filter —
-          and the same rule is what the resolver enforces for a hand-typed URL.
-          Deciding it in two places is how a bar and its page start disagreeing.
-          A chip that cannot be switched off is drawn as text, not as a link
-          that would resolve to the state it is refusing. -#}
-      {% set other = band_toggle[b] %}
-      {% if other %}
-      <a class="fw-badge fw-badge-{{ 'primary' if on else 'secondary' }} text-decoration-none" data-band="{{ b }}"
-         href="{{ url_for('calendar_plan.index', view=view, d=anchor.isoformat(), show=other, f=1) }}">
-        <i class="bi bi-{{ BAND_ICON[b] }} me-1"></i>{{ BAND_LABEL[b] }}
-        {% if not on %}<i class="bi bi-eye-slash ms-1"></i>{% endif %}
-      </a>
-      {% else %}
-      <span class="fw-badge fw-badge-primary" data-band="{{ b }}"
-            title="{{ _('The calendar always draws at least one of these.') }}">
-        <i class="bi bi-{{ BAND_ICON[b] }} me-1"></i>{{ BAND_LABEL[b] }}
-      </span>
-      {% endif %}
-      {#- The history switch belongs to the two bands before it, not beside
-          them: it decides whether the past is painted, and the past it paints
-          is the past of whichever automation bands are on. The separator says
-          so; ``history_orphan_note`` says it in words when both are off. -#}
+      {% set locked = on and not band_toggle[b] %}
+      <div class="form-check form-check-inline mb-0 me-0" data-band="{{ b }}">
+        <input class="form-check-input" type="checkbox" name="show" value="{{ b }}"
+               id="calBand_{{ b }}" {{ 'checked' if on }} {{ 'disabled' if locked }}>
+        {% if locked %}<input type="hidden" name="show" value="{{ b }}">{% endif %}
+        <label class="form-check-label" for="calBand_{{ b }}" style="font-size:12.5px;"
+               {% if locked %}title="{{ _('The calendar always draws at least one of these.') }}"{% endif %}>
+          <i class="bi bi-{{ BAND_ICON[b] }} me-1"></i>{{ BAND_LABEL[b] }}
+          {% if not on and band_hidden.get(b) %}<span class="text-muted" data-band-hidden="{{ b }}"
+                title="{{ _('Not drawn while unticked — they still run.') }}">({{ band_hidden[b] }})</span>{% endif %}
+        </label>
+      </div>
+      {#- The history switch belongs to the two bands before it: the past it
+          paints is the past of whichever automation bands are on. -#}
       {%- if b == 'system' %}<span class="text-muted" style="font-size:12px;">·</span>{% endif %}
     {%- endfor %}
-
-    {#- Remember / forget. ``save`` writes the RESOLVED filter to this user's
-        profile; ``clear`` forgets it. Only a strict subset is stored, so
-        "remember" while everything is shown stores nothing rather than freezing
-        today's vocabulary against a family that has not shipped yet. -#}
-    {% if flt is defined %}
-      {% if flt.active %}
-      <a class="fw-badge fw-badge-info text-decoration-none"
-         href="{{ url_for('calendar_plan.index', view=view, d=anchor.isoformat(), show=(bands|sort), f=1, save=1) }}">
-        <i class="bi bi-bookmark-plus me-1"></i>{{ _('Remember for me') }}</a>
-      {% endif %}
-      {% if flt.saved %}
-      <span class="fw-badge fw-badge-success"><i class="bi bi-bookmark-check me-1"></i>{{ _('Saved filter') }}</span>
-      {% endif %}
-      {% if flt.active or flt.saved %}
-      <a class="fw-badge fw-badge-secondary text-decoration-none"
-         href="{{ url_for('calendar_plan.index', view=view, d=anchor.isoformat(), clear=1) }}">
-        <i class="bi bi-x-circle me-1"></i>{{ _('Clear') }}</a>
-      {% endif %}
+    <noscript><button type="submit" class="btn btn-sm btn-outline-secondary">{{ _('Apply') }}</button></noscript>
+    {% if flt is defined and flt.active %}
+    <a class="fw-badge fw-badge-secondary text-decoration-none"
+       href="{{ url_for('calendar_plan.index', view=view, d=anchor.isoformat(), clear=1) }}">
+      <i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Reset to default') }}</a>
     {% endif %}
 
     <span class="ms-auto text-muted" style="font-size:11.5px;">
-      {{ day_from.isoformat() }} → {{ day_to.isoformat() }} · {{ events|length }} {{ _('items') }}
+      <i class="bi bi-person-check me-1" title="{{ _('Saved to your profile') }}"></i>{{ day_from.isoformat() }} → {{ day_to.isoformat() }} · {{ events|length }} {{ _('items') }}
     </span>
-  </div>
+  </form>
 </div>
 
 {# ---- things that need saying before the grid -------------------------- #}
@@ -265,13 +251,13 @@
   <i class="bi bi-exclamation-triangle me-1"></i>
   {{ _('Part of your saved filter no longer exists and was not applied') }}:
   {% for label, value in flt.stale %}<strong>{{ label }}{% if value %} “{{ value }}”{% endif %}</strong>{% if not loop.last %}, {% endif %}{% endfor %}.
-  {{ _('Everything in that group is being drawn.') }}
+  {{ _('The default view is being drawn.') }}
 </div>
 {%- endif %}
 {%- if flt is defined and flt.unreadable %}
 <div class="fw-alert fw-alert-warning mb-2" style="font-size:12px;">
   <i class="bi bi-exclamation-triangle me-1"></i>
-  {{ _('Your saved calendar filter could not be read and was ignored. Everything is being drawn.') }}
+  {{ _('Your saved calendar filter could not be read and was ignored. The default view is being drawn.') }}
 </div>
 {%- endif %}
 
@@ -361,7 +347,7 @@
     </div>
   </div>
 
-  {# ================= SIDE: day detail + planner ================= #}
+  {# ================= SIDE: day detail (the planner is a modal) ======== #}
   <div class="col-xl-4">
 
     {% if selected %}
@@ -378,9 +364,34 @@
     </div>
     {% endif %}
 
-    <div class="fw-card">
-      <div class="fw-card-header"><i class="bi bi-plus-circle me-1"></i>{{ _('Plan a change') }}</div>
-      <div class="fw-card-body">
+  </div>
+</div>
+
+
+{#  Every day the page can open without a round trip. Bounded by
+    MAX_PANEL_EVENTS in the view: a day outside the budget is NOT lost, its
+    cell falls back to its own href and the server renders the identical panel
+    one page load later.                                                     #}
+<div id="calPanels" hidden>
+  {% for d in panel_days %}
+  <div data-cal-panel="{{ d.isoformat() }}" data-cal-label="{{ d.strftime('%A %d %B %Y') }}">
+    {{ daypanel(buckets.get(d, [])) }}
+  </div>
+  {% endfor %}
+</div>
+
+{#  PLAN A CHANGE — a modal opened from the header button. The same form and
+    the same POST as when it sat beside the grid; the dates still follow the
+    picked day (``reanchor`` below), so opening it after clicking a day plans
+    that day.                                                               #}
+<div class="modal fade" id="calPlanModal" tabindex="-1" aria-hidden="true" aria-labelledby="calPlanLabel">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="calPlanLabel"><i class="bi bi-plus-circle me-2"></i>{{ _('Plan a change') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
         <p class="text-muted" style="font-size:11.5px;">
           {{ _('This raises a Change Request in') }} <strong>{{ _('draft') }}</strong>.
           {{ _('It runs only once it is approved and scheduled — planning something here never executes it.') }}
@@ -494,19 +505,6 @@
   </div>
 </div>
 
-
-{#  Every day the page can open without a round trip. Bounded by
-    MAX_PANEL_EVENTS in the view: a day outside the budget is NOT lost, its
-    cell falls back to its own href and the server renders the identical panel
-    one page load later.                                                     #}
-<div id="calPanels" hidden>
-  {% for d in panel_days %}
-  <div data-cal-panel="{{ d.isoformat() }}" data-cal-label="{{ d.strftime('%A %d %B %Y') }}">
-    {{ daypanel(buckets.get(d, [])) }}
-  </div>
-  {% endfor %}
-</div>
-
 <div class="modal fade" id="calDayModal" tabindex="-1" aria-hidden="true" aria-labelledby="calModalLabel">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
@@ -584,8 +582,8 @@
    without it the grid looks like a table that happens to have links in it. */
 .fw-cal-cell[data-day] { cursor:pointer; }
 /* Compact (side card) vs full (modal): ONE markup, two containers. The side
-   card is also height-capped — a day with sixty runs must not push the planner
-   off the bottom of the page, which is the form the panel sits next to. */
+   card is also height-capped — a day with sixty runs must not stretch the page
+   far below the grid it sits next to. */
 .fw-cal-clip { max-height:560px; overflow-y:auto; }
 .fw-cal-clip .fw-cal-more-only { display:none; }
 .fw-cal-full .fw-cal-brief-only { display:none; }
@@ -627,6 +625,14 @@
   }
 
   if (mode) { mode.addEventListener('change', sync); sync(); }
+
+  // Every tick is saved: the change submits the bar, the server stores it.
+  var filter = document.getElementById('calFilter');
+  if (filter) {
+    filter.addEventListener('change', function (ev) {
+      if (ev.target && ev.target.name === 'show') { filter.submit(); }
+    });
+  }
   if (gfield) { gfield.addEventListener('change', syncGroupValues); }
 
   var form = document.getElementById('calPlanForm');

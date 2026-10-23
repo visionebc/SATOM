@@ -238,11 +238,11 @@ def _collect(view: str, anchor: date, flt) -> dict:
 
     Every band is COUNTED whether or not it is drawn. A band the filter
     switched off is the one case where the grid has nothing to show and a
-    reason for it, so the reason has to reach ``band_notes``; counting only
-    what survives makes "you hid these" and "there are none" the same picture.
+    reason for it, so the reason reaches ``band_hidden`` (printed next to the
+    band's checkbox); counting only what survives makes "you hid these" and
+    "there are none" the same picture.
     """
     owners = flt.owners
-    band_counts: dict = {}
     tz = settings_store.tz_name()
     day_from, day_to = _range_for(view, anchor)
     start, end = cal.to_utc_bounds(day_from, day_to, tz)
@@ -263,14 +263,9 @@ def _collect(view: str, anchor: date, flt) -> dict:
     from ..services.product_scope import scope_query
     every = (scope_query(ScheduledAction.query, ScheduledAction.product)
              .order_by(ScheduledAction.name).all())
-    # COUNTED BEFORE THE FILTER IS APPLIED, and counted even when BOTH
-    # automation bands are off: a narrowed band and an empty one are one pixel
-    # apart on a month grid and an order of magnitude apart in consequence,
-    # because a hidden automation still fires.
     scope_of = _scope_of()
     actions = [a for a in every
                if calf.owner_of(a, scope_of=scope_of) in owners]
-    band_counts["automation"] = (len(actions), len(every))
     if actions:
         # PROJECTION IS FUTURE-ONLY: a computed dot on a past day would assert a
         # run nobody observed. The past comes from ScheduledActionRun below.
@@ -298,17 +293,39 @@ def _collect(view: str, anchor: date, flt) -> dict:
 
     # Runs of THIS ADOM's actions only -- the same scope_query cut as the
     # automation band above; the run table itself carries no product.
-    q = (ScheduledActionRun.query
-         .filter(ScheduledActionRun.action_id.in_([a.id for a in every] or [-1]),
-                 ScheduledActionRun.started_at >= start,
-                 ScheduledActionRun.started_at < end)
-         .order_by(ScheduledActionRun.started_at.desc()))
-    if not flt.draws_runs:
-        # Not fetched, still counted: MAX_RUNS caps the drawn list, so the
-        # denominator has to be the same cap or the note would compare a
-        # filtered count against an unfiltered total and overstate the hiding.
-        band_counts["run"] = (0, min(q.count(), MAX_RUNS))
-    else:
+    base = ScheduledActionRun.query.filter(
+        ScheduledActionRun.action_id.in_([a.id for a in every] or [-1]),
+        ScheduledActionRun.started_at >= start,
+        ScheduledActionRun.started_at < end)
+    q = base.order_by(ScheduledActionRun.started_at.desc())
+
+    # COUNTED BEFORE THE FILTER IS APPLIED, per owner band: a narrowed band and
+    # an empty one are one pixel apart on a month grid and an order of
+    # magnitude apart in consequence, because a hidden automation still fires.
+    # One grouped query, not one per action. No ORDER BY: Postgres refuses an
+    # ordered column that is not in the GROUP BY.
+    from sqlalchemy import func
+    runs_per_action = dict(
+        base.with_entities(ScheduledActionRun.action_id,
+                           func.count(ScheduledActionRun.id))
+        .group_by(ScheduledActionRun.action_id).all())
+    acts_by_owner: dict = {}
+    runs_by_owner: dict = {}
+    for a in every:
+        o = calf.owner_of(a, scope_of=scope_of)
+        acts_by_owner[o] = acts_by_owner.get(o, 0) + 1
+        runs_by_owner[o] = runs_by_owner.get(o, 0) + runs_per_action.get(a.id, 0)
+    band_hidden: dict = {}
+    for band, owner in calf.OWNER_OF_BAND.items():
+        if band not in flt.bands:
+            band_hidden[band] = calf.hidden_label(
+                acts_by_owner.get(owner, 0),
+                runs_by_owner.get(owner, 0) if calf.HISTORY in flt.bands else 0)
+    if calf.HISTORY not in flt.bands:
+        band_hidden[calf.HISTORY] = calf.hidden_label(
+            0, sum(runs_by_owner.get(o, 0) for o in owners))
+
+    if flt.draws_runs:
         total = q.count()
         runs = q.limit(MAX_RUNS).all()
         if total > len(runs):
@@ -320,11 +337,9 @@ def _collect(view: str, anchor: date, flt) -> dict:
         # filtering to one band does not leave that band's history behind in
         # the other. Applied AFTER the MAX_RUNS note, which is about the read
         # cap and would otherwise start counting the filter.
-        drawn = [r for r in runs
-                 if calf.owner_of(rows_by_id.get(r.action_id),
-                                  scope_of=_scope_of()) in owners]
-        band_counts["run"] = (len(drawn), len(runs))
-        runs = drawn
+        runs = [r for r in runs
+                if calf.owner_of(rows_by_id.get(r.action_id),
+                                 scope_of=scope_of) in owners]
         names = {i: (a.name or a.action) for i, a in rows_by_id.items()}
         events += cal.run_events(
             runs, tz,
@@ -353,18 +368,8 @@ def _collect(view: str, anchor: date, flt) -> dict:
         # rule expressed as links so the bar cannot offer the state the
         # resolver would refuse. One author for both.
         "band_toggle": {b: calf.toggled(flt.bands, b) for b in calf.BANDS},
-        "band_counts": band_counts,
-        "band_notes": [n for n in (
-            calf.counts_note(*band_counts.get("automation", (0, 0)),
-                             "automations"),
-            # PAST TENSE ON PURPOSE. The default tail ("they still fire") is
-            # true of a hidden schedule and false of a hidden run: a run is
-            # over, and telling an operator that last week's runs are still
-            # firing is a worse sentence than no sentence.
-            calf.counts_note(*band_counts.get("run", (0, 0)), "runs",
-                             tail="and they still happened."),
-            calf.history_orphan_note(flt.bands),
-        ) if n],
+        "band_hidden": {b: n for b, n in band_hidden.items() if n},
+        "band_notes": [n for n in (calf.history_orphan_note(flt.bands),) if n],
         "day_from": day_from,
         "day_to": day_to,
     }
@@ -402,6 +407,9 @@ def index():
     # THE FILTER IS A VIEW PREFERENCE, saved on the profile under this
     # blueprint's own key (``automation_filters.pref_key`` — one author for
     # "where a surface saves its filter", so no two pages write one row).
+    # EVERY SUBMISSION IS SAVED: the bar is a row of checkboxes and the user
+    # asked for what they tick to stick, with no separate Remember step.
+    # Navigation links carry no filter at all, so the store is the one source.
     # It changes what the grid DRAWS and nothing about what anyone may do:
     # every event still links to the page that owns it, and that page still
     # answers with its own permission.
@@ -414,17 +422,12 @@ def index():
     if uid is not None:
         if request.args.get("clear"):
             UserSetting.set(uid, key, "{}")
-        elif flt.saved:
+        elif flt.from_query:
             # Written from the RESOLVED filter, never from the query string:
             # a value the resolver dropped must not survive into the store,
             # or it hides a band on every future visit with nothing on screen
             # to un-tick.
             UserSetting.set(uid, key, calf.to_json(flt.bands))
-        elif flt.from_query and saved_raw:
-            # Filtered with "Remember" unticked while a saved filter existed.
-            # Leaving it stored resurrects it next visit and contradicts the
-            # choice just made.
-            UserSetting.set(uid, key, "{}")
 
     ctx = _collect(view, anchor, flt)
     ctx["flt"] = flt

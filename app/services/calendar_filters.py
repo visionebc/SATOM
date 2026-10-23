@@ -41,22 +41,32 @@ An automation keeps FIRING whether or not a calendar draws it, so a day cell
 blank because of a filter and a day cell blank because nothing is scheduled are
 one pixel apart and an order of magnitude apart in consequence. Three rules:
 
-* At least one :data:`PRIMARY` band is always on — the caller refuses to draw
-  the link that would turn the last one off, and :func:`resolve` widens back to
-  everything if a request arrives with none. A wholly empty grid is therefore
+* At least one :data:`PRIMARY` band is always on — the caller locks the
+  checkbox of the last one, and :func:`resolve` falls back to the default view
+  if a request arrives with none. A wholly empty grid is therefore
   not reachable through this filter at all.
-* A facet that validates down to NOTHING falls back to everything and says so
+* A facet that validates down to NOTHING falls back to the default and says so
   (:attr:`Resolved.stale`) — never to an empty set.
-* The caller renders the counts (:func:`counts_note`), so "3 of 11 drawn" is on
-  screen whenever anything is hidden.
+* The caller prints what each unticked band holds back (:func:`hidden_label`)
+  next to its checkbox, so a hidden band is never a silent one.
 
-ONLY A STRICT SUBSET IS STORED
-------------------------------
-Pressing *Remember* while everything is shown writes ``{}``, not the four bands
-spelled out. A stored explicit list freezes the vocabulary: ship a fifth band
-and every user who ever pressed Remember would have it hidden forever, with no
-clue on screen and no chip to un-tick. Absent means "all", today and after the
-vocabulary grows.
+SYSTEM AUTOMATIONS ARE OFF BY DEFAULT (2026-10-23)
+--------------------------------------------------
+The product's own housekeeping (backups, sweeps, scrapes) fires every few
+minutes and buried the fleet work an operator opens the calendar to plan. The
+default view is therefore :data:`DEFAULT_OFF` hidden, and the band is switched
+on with its checkbox. Hidden is not absent: the bar prints how many automations
+and runs each unticked band is holding back (``band_hidden`` in the view), so a
+quiet grid still says what it is not drawing.
+
+EVERY CHANGE IS SAVED — AND WHAT IS STORED IS WHAT IS HIDDEN
+------------------------------------------------------------
+The bar is a row of checkboxes and every tick is written to the profile; there
+is no separate *Remember* step. The store holds ``{"hide": [...]}`` relative to
+the full vocabulary, or ``{}`` for the default. Storing the HIDDEN list, never
+the shown one, is what keeps the vocabulary open: ship a fifth band and every
+user sees it, because nobody ever hid it. A stored explicit "show" list (the
+pre-2026-10-23 shape) is still read.
 """
 from __future__ import annotations
 
@@ -109,10 +119,21 @@ _LEGACY_KIND = {'change': 'change', 'run': 'run'}
 _LEGACY_OWNER = {'user': 'automation', 'admin': 'system'}
 
 
+#: Bands a user who never touched the bar does not see. See the module
+#: docstring; the bar still counts what these hold back.
+DEFAULT_OFF: tuple[str, ...] = ('system',)
+
+
 def all_bands() -> set:
     """A NEW set every call — a shared constant would be mutated by the first
     caller that edits its own selection and leak into every later request."""
     return set(BANDS)
+
+
+def default_bands() -> set:
+    """What a bare visit with nothing stored draws. A new set every call, for
+    the same reason as :func:`all_bands`."""
+    return set(BANDS) - set(DEFAULT_OFF)
 
 
 def owners_for(bands) -> set:
@@ -125,26 +146,25 @@ def owners_for(bands) -> set:
 class Resolved:
     """The outcome of resolving the calendar filter for one request."""
 
-    bands: set = field(default_factory=all_bands)
-    #: True when the ACTIVE filter is the one stored on the user's profile.
+    bands: set = field(default_factory=default_bands)
+    #: True when the ACTIVE filter is stored on the user's profile — read from
+    #: it, or submitted this request (every submission is saved).
     saved: bool = False
     #: ``(facet_label, value)`` for every value dropped because the vocabulary
     #: no longer offers it, plus ``(facet_label, '')`` when the facet validated
-    #: down to nothing and was widened back to all.
+    #: down to nothing and fell back to the default.
     stale: list = field(default_factory=list)
     #: The saved blob existed and could not be read at all.
     unreadable: bool = False
-    #: This filter came from the query string, not the store. The caller needs
-    #: it to FORGET a stored filter when the user filters without Remember:
-    #: leaving it stored resurrects it on the next visit and contradicts the
-    #: choice just made.
+    #: This filter came from the query string, not the store — the caller
+    #: writes it to the profile.
     from_query: bool = False
 
     @property
     def active(self) -> bool:
-        """Is anything being hidden? Computed from the values, never carried as
-        a flag a future band could forget to set."""
-        return self.bands != all_bands()
+        """Does this differ from the default view? Computed from the values,
+        never carried as a flag a future band could forget to set."""
+        return self.bands != default_bands()
 
     @property
     def owners(self) -> set:
@@ -232,33 +252,39 @@ def _resolve_bands(raw, legacy, *, empty_is_all: bool) -> tuple:
     if not named and legacy is not None and (legacy[0] or legacy[1]):
         named = True
         bands = _from_legacy(legacy[0], legacy[1], stale)
+    return _guard(bands, stale, named=named, empty_is_default=empty_is_all)
+
+
+def _guard(bands: set, stale: list, *, named: bool,
+           empty_is_default: bool) -> tuple:
+    """The invariant every path ends in: at least one PRIMARY band is on."""
     if not bands:
         # Named and validated down to nothing: the user's choice really was
-        # dropped, the grid really is wider than they asked for, and nothing
-        # else on screen says so. A facet that was never named just means all.
-        if named and not empty_is_all:
+        # dropped, the grid is not what they asked for, and nothing else on
+        # screen says so. A facet that was never named just means the default.
+        if named and not empty_is_default:
             stale.append((FACET_LABEL, ''))
-        return all_bands(), stale
+        return default_bands(), stale
     if not (bands & set(PRIMARY)):
         # Only the history switch survived. Drawing that alone is an empty
-        # month; widen to everything and say so rather than paint the fleet
-        # idle. Unreachable from the bar (it refuses the last primary link),
-        # so this is for hand-typed URLs and blobs from another vocabulary.
+        # month; fall back to the default and say so rather than paint the
+        # fleet idle. Unreachable from the bar (the last primary checkbox is
+        # locked), so this is for hand-typed URLs and blobs from elsewhere.
         stale.append((FACET_LABEL, ''))
-        return all_bands(), stale
+        return default_bands(), stale
     return bands, stale
 
 
 def resolve(args, saved_raw) -> Resolved:
     """Resolve the calendar filter for one request.
 
-    Precedence, matching ``automation_filters.resolve`` so the product has ONE
-    protocol for "a filter you can save":
+    Precedence:
 
-    * ``clear``            -> forget the saved filter, draw everything;
+    * ``clear``            -> forget the saved filter, draw the default;
     * :data:`MARKER`, ``save`` or the facet in the query string -> the query
-      string IS the filter, and ``save`` writes it to the profile;
-    * otherwise            -> the saved filter, if any.
+      string IS the filter, and the caller writes it to the profile (every
+      submission is saved — the bar has no separate *Remember* step);
+    * otherwise            -> the saved filter, or the default.
 
     ``args`` is anything with ``get`` and ``getlist`` (Flask's MultiDict, or a
     plain double). ``saved_raw`` is the raw ``UserSetting`` value or None.
@@ -274,11 +300,7 @@ def resolve(args, saved_raw) -> Resolved:
     legacy = (list(args.getlist('kind')), list(args.getlist('owner')))
     if raw or legacy[0] or legacy[1] or _one(MARKER) or _one('save'):
         bands, stale = _resolve_bands(raw or None, legacy, empty_is_all=True)
-        # A filter typed THIS request is not "saved" merely because it equals
-        # the stored one: ``saved`` describes the store, and it is what the
-        # badge and the Remember control claim.
-        return Resolved(bands=bands, saved=bool(_one('save')), stale=stale,
-                        from_query=True)
+        return Resolved(bands=bands, saved=True, stale=stale, from_query=True)
 
     if not saved_raw:
         return Resolved(saved=False)
@@ -288,6 +310,19 @@ def resolve(args, saved_raw) -> Resolved:
         return Resolved(saved=False, unreadable=True)
     if not isinstance(data, dict):
         return Resolved(saved=False, unreadable=True)
+
+    if 'hide' in data:
+        # The current shape. A hidden value the vocabulary no longer offers
+        # hides nothing, so it is dropped in silence — there is no band on
+        # screen it could be wrongly hiding.
+        hide = data.get('hide')
+        if not isinstance(hide, list):
+            return Resolved(saved=False, unreadable=True)
+        bands, stale = _guard(all_bands() - {str(h) for h in hide}, [],
+                              named=True, empty_is_default=False)
+        got = Resolved(bands=bands, stale=stale)
+        got.saved = got.active
+        return got
 
     # ``data.get('show')`` is passed through UNNORMALISED on purpose: ``None``
     # (this blob predates the facet, or stores nothing) and ``[]`` (this blob
@@ -308,14 +343,16 @@ def resolve(args, saved_raw) -> Resolved:
 
 
 def to_json(bands) -> str:
-    """Serialise for the store, keeping only STRICT SUBSETS. See the module
-    docstring: an explicit "all" freezes the vocabulary against its own future.
+    """Serialise for the store: ``{}`` for the default view, otherwise the
+    HIDDEN bands. See the module docstring: storing what is shown would freeze
+    the vocabulary and hide every band shipped after the user's last click.
+    ``{"hide": []}`` is a real value — "show everything, System Automations
+    included" — and must not collapse into ``{}``, which means the default.
     """
-    blob: dict = {}
-    bands = set(bands or ())
-    if bands and bands != all_bands():
-        blob['show'] = sorted(bands)
-    return json.dumps(blob, sort_keys=True)
+    bands = set(bands or ()) & all_bands()
+    if not bands or bands == default_bands():
+        return json.dumps({}, sort_keys=True)
+    return json.dumps({'hide': sorted(all_bands() - bands)}, sort_keys=True)
 
 
 def toggled(bands, band: str) -> list:
@@ -345,21 +382,20 @@ def owner_of(action, *, scope_of) -> str:
     return got if got in set(OWNER_OF_BAND.values()) else ORPHAN_OWNER
 
 
-def counts_note(drawn: int, total: int, noun: str,
-                *, tail: str = 'and they still fire.') -> str:
-    """The sentence that keeps a filtered band from reading as an empty one.
+def hidden_label(automations: int, runs: int) -> str:
+    """What an unticked band is holding back, printed next to its checkbox.
 
-    Returns '' when nothing is hidden — a page that says "showing 8 of 8" on
-    every visit trains the eye to skip the line that matters.
-
-    ``tail`` is a parameter because the default is a claim about the FUTURE and
-    only the schedule band has one. A hidden run is over; telling an operator
-    that last week's runs "still fire" is worse than saying nothing.
+    Replaces the old "N of M drawn" banners: with System Automations hidden by
+    default a banner would print on every visit, and a line that is always
+    there teaches the eye to skip it. Next to the checkbox it is where the eye
+    already is. '' when the band holds nothing back.
     """
-    if total <= drawn:
-        return ''
-    return (f'{drawn} of {total} {noun} drawn — {total - drawn} hidden by the '
-            f'filter, {tail}')
+    parts = []
+    if automations:
+        parts.append(f'{automations} hidden')
+    if runs:
+        parts.append(f'{runs} run{"s" if runs != 1 else ""}')
+    return ' · '.join(parts)
 
 
 def history_orphan_note(bands) -> str:

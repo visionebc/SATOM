@@ -96,6 +96,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   subscription one on the card and in the article so that article is the one
   that goes to Confluence; the user only picks the space, and the parent
   appears once the space is picked, with a search and the tree".
+- **Calendar: System Automations are off by default, and the bands are
+  checkboxes saved to your profile.** *Show* is now a row of checkboxes —
+  Planned changes, Automations, System Automations, What already ran — and
+  every tick is saved on your profile at once (the *Remember for me* step is
+  gone; **Reset to default** goes back to the default view). System
+  Automations start unticked. An unticked band says what it is holding back
+  next to its box, for example *(14 hidden · 230 runs)*, instead of the old
+  "N of M drawn" banners. The last band that carries the grid stays ticked
+  and locked. Requested by the operator: "remove all the system automations
+  by default, only enabled through a checkbox; make the other filters
+  checkboxes too and save in the profile what the user wants".
+- **Calendar: Plan a change opens in a modal** from a **Plan a change** button
+  at the top right of the page, instead of a card under the day panel. The
+  form and the process are the same, and its window still follows the day you
+  pick. Requested by the operator.
+
 - **Settings menu regrouped, one level deeper.** *System › General* is now a
   sub-menu holding General, Node TLS, Email & Alerts and Thresholds;
   **Integrations** is a group of its own (Integrations, DNS Records,

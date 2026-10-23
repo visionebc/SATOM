@@ -85,6 +85,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed
 
+- **Sidebar: menus and submenus share one size and typeface; the current
+  page and its path stay highlighted.** First-level heads (Operations,
+  Administrator, Device, Plugin Studio) were 10px uppercase while every entry
+  below them is 13.5px; they now use the same 13.5px type, 14px icon and
+  37px row, told apart by weight. The current page had the sidebar's own blue
+  as its background, so only the thin amber rail marked it: it now gets a
+  white wash and a bold label, and every menu and submenu that holds it keeps
+  a bold label and an amber icon, folded or not. A label too long for the
+  rail now ends in an ellipsis instead of being cut mid-letter at the edge,
+  and the favourites star no longer takes room from the label it sits on.
+  Requested by the operator:
+  "check the size of the menus and submenus, make sure they are the same size
+  and typeface, and keep the active menu or submenu highlighted so it is
+  easier to see".
+- **The console now ships its typeface: Inter 4.1.** The stylesheets asked
+  for Inter but no copy of it shipped, so every browser drew its own system
+  font (Segoe UI on Windows, San Francisco on macOS, DejaVu on Linux) and the
+  console looked and measured different on every workstation. The variable
+  Inter (roman and italic, `app/static/vendor/inter/`, SIL Open Font License
+  1.1, byte-identical to the upstream release) is now served locally like
+  every other vendored asset, so offline installs get it too.
 - **Scout leaves the sidebar until it is configured.** The Scout entry
   (Operations › Troubleshooting, every ADOM) is drawn only when Scout is
   switched on in Settings › Scout ▸ Providers AND at least one provider can

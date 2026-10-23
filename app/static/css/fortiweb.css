@@ -2,6 +2,26 @@
    SATOM Web — FortiWeb 7.6 Style Sheet
    ============================================================ */
 
+/* The console typeface, served from vendor/inter/ (SIL OFL 1.1, see
+   vendor/MANIFEST.json). Declared under the family name the stylesheets
+   already ask for, so every page that names 'Inter' — base, sign-in, error
+   pages, the SVG maps — gets the same font on every workstation instead of
+   whatever system font the browser falls back to. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../vendor/inter/InterVariable.woff2") format("woff2");
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../vendor/inter/InterVariable-Italic.woff2") format("woff2");
+}
+
 /* CSS Custom Properties */
 :root {
   /* enable height:0 -> auto transition for the sub-menu accordion (2026-07-06) */
@@ -364,6 +384,20 @@ details:has(.fw-nav-item.active) > summary.fw-nav-item:not(.active) {
 .fw-nav-item img.fw-nav-icon { height: 16px; margin: 2.5px 0; object-fit: contain; }
 /* smaller inline text (the device row's "· change") must not grow the 21px line */
 .fw-nav-item small { line-height: 1; }
+/* A label longer than the rail (Agentless VPN Personal Bookmarks, a long
+   Plugin Studio app name) was cut mid-letter at the sidebar edge: it now ends
+   in an ellipsis. A plain entry may run to 4px from the edge, as it visibly
+   did before (the 16px right padding only mattered for the caret, which
+   keeps it), so no label that used to fit gains an ellipsis. */
+.fw-nav-item > span:not(.fw-nav-star),
+.fw-nav-section > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fw-nav-item { padding-right: 4px; }
+.fw-nav-subtoggle,
+summary.fw-nav-item { padding-right: 16px; }
 
 /* FortiWeb config sections — indented sub-items under "Configuration" */
 .fw-nav-subitem {
@@ -389,8 +423,13 @@ details:has(.fw-nav-item.active) > summary.fw-nav-item:not(.active) {
    labels; a starred entry keeps its filled star in the sidebar's active
    amber. Devices with no hover show the outline faintly, or it could never
    be reached. */
+/* Out of the flow: the star sits over the row's right end, so a hidden star
+   never takes the room of the label it decorates (it is on every link). */
 .fw-nav-item .fw-nav-star {
-  margin-left: auto;
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
   padding: 0 2px;
   font-size: 12px;
   line-height: 1;

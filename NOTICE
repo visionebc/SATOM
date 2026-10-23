@@ -38,10 +38,13 @@ renders correctly:
     The Wiki's rich-text editor. Its self-contained build bundles
     ProseMirror (MIT License) and DOMPurify 2.3.3 (Apache License 2.0 or
     Mozilla Public License 2.0, at the user's choice).
+  Inter               https://rsms.me/inter/              SIL Open Font License 1.1
+    The console typeface (variable roman and italic).
+    Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter).
 
 The exact versions, the URL each file was taken from and its SHA-256 are in
-app/static/vendor/MANIFEST.json; Bootstrap Icons ships its own LICENSE file
-next to it.
+app/static/vendor/MANIFEST.json; Bootstrap Icons and Inter ship their own
+LICENSE files next to them.
 
 Rules adapted, not redistributed:
 

@@ -3534,6 +3534,13 @@ def _rb_save_venv(point):
     src = _venv_dir()
     if not (src / "bin" / "python").exists():
         raise RollbackUnavailable("no virtual environment at %s" % src)
+    # The restore swaps directories with rename(2), staged INSIDE the point
+    # (root, 0700): nothing root writes ever passes through a path the
+    # service account controls. That needs one filesystem; refuse NOW rather
+    # than save a copy that could not be put back.
+    if os.stat(str(point)).st_dev != os.stat(str(APP)).st_dev:
+        raise RollbackUnavailable("different filesystems (%s, %s): the venv copy "
+                                  "could not be swapped back atomically" % (RB_DIR, APP))
     free = os.statvfs(str(point)).f_bavail * os.statvfs(str(point)).f_frsize
     du = run(["du", "-sb", str(src)], timeout=300)
     try:
@@ -3560,8 +3567,11 @@ def _rb_restore_python(d, man, st):
     if not (snap / "bin" / "python").exists():
         return False, "the point holds no venv copy"
     live = _venv_dir()
-    stage = APP / (".venv-restore-%s" % d.name)
-    aside = APP / (".venv-replaced-%s" % d.name)
+    # [SATOM-RUNNER-NOFOLLOW] Both working directories live in the point
+    # (root, 0700). A name under the app tree could be pre-planted by the
+    # service account as a link, and cp -a as root would write through it.
+    stage = d / "restore-stage"
+    aside = d / "replaced-venv"
     _sh.rmtree(stage, ignore_errors=True)
     st.begin("restore the venv copy")
     p = subprocess.run(["cp", "-a", str(snap), str(stage)],
@@ -3570,7 +3580,7 @@ def _rb_restore_python(d, man, st):
         st.step("restore the venv copy", False, (p.stderr or "")[-300:])
         return False, "copying the saved venv back failed"
     _sh.rmtree(aside, ignore_errors=True)
-    if live.exists():
+    if live.exists() or live.is_symlink():
         os.rename(live, aside)
     os.rename(stage, live)
     st.step("restore the venv copy", True, "venv from %s (the replaced one is kept at "

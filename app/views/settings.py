@@ -1033,7 +1033,13 @@ def save_nav_menu():
         listed = set(request.form.getlist('k'))
         shown = set(request.form.getlist('show'))
         kept = {k for k in nav_hide.hidden() if k not in listed}
-        stored = nav_hide.save(kept | (listed - shown))
+        wanted = listed - shown
+        stored = nav_hide.save(kept | wanted)
+        refused = sorted(wanted - set(stored))
+        if refused:
+            # Never drop a row silently: the operator unticked it and must be
+            # told it is still in the sidebar, and which one.
+            flash('Not hidden (these rows cannot be hidden): %s' % ', '.join(refused), 'warning')
     log_action('settings.nav_menu',
                detail='Hidden from the sidebar: ' + (', '.join(stored) or 'nothing'))
     flash('Sidebar menu saved: %d hidden.' % len(stored), 'success')

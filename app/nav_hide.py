@@ -52,7 +52,12 @@ PROTECTED = frozenset({"g:ADOMs", "c:ADOM", "c:Device"})
 
 #: At most this many keys are stored (the catalog has well under 200).
 MAX_KEYS = 600
-_KEY_RE = re.compile(r"^[egs]:[^\s<>\"']{1,200}$")
+#: A key is the prefix and the name the markup gives: an endpoint, or a group
+#: or submenu name -- which may hold spaces ("Plugin Studio", "Change
+#: Management"). Refusing whitespace here made those rows unsaveable while the
+#: card still offered them (2026-10-23); tests/test_nav_hide.py now checks
+#: every key the card draws against this rule.
+_KEY_RE = re.compile(r"^[egs]:[^\x00-\x1f<>\"']{1,200}$")
 
 _TAG = re.compile(r"<(/?)(div|a|span)\b([^>]*)>", re.I)
 _ATTR = re.compile(r'([\w:-]+)\s*=\s*"([^"]*)"')
@@ -62,7 +67,7 @@ _LABEL = re.compile(r"<span\b[^>]*>([^<]+)</span>")
 # -- the setting ---------------------------------------------------------
 
 def valid_key(key) -> bool:
-    if not isinstance(key, str) or not _KEY_RE.match(key):
+    if not isinstance(key, str) or not _KEY_RE.match(key) or key[2:] != key[2:].strip():
         return False
     if key in PROTECTED:
         return False

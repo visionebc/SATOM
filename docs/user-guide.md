@@ -3646,6 +3646,8 @@ in all of them. **Untick** a row and **Save** to take it out of the sidebar.
   whole; to hide kinds of pages inside it, use **ADOM Menus** (§26.12).
 - **Show everything** clears the list. An entry hidden earlier that your own
   sidebar does not draw today is kept when you save.
+- A row that cannot be hidden is never dropped silently: after **Save** the
+  page names it in a warning and it stays in the sidebar.
 
 ## 20. The operator console
 

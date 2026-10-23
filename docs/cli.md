@@ -408,7 +408,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*127 commands in 47 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*129 commands in 48 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -505,6 +505,8 @@ Everything that changes state. **Root required.** Without it each command refuse
 
 | Command | Root | ! | What it does |
 |---|:--:|:--:|---|
+| `satom execute rollback list` | yes | — | Rollback points saved on this node, newest first. |
+| `satom execute rollback apply <point-id> [--yes]` | yes | ! | Restore one point. Dry run unless --yes. |
 | `satom execute seal recovery [--yes]` | yes | ! | Seal FERNET_KEY + internal CA into data/ so the peer and every bundle carry them. Passphrase shown once, never stored. |
 | `satom execute unseal recovery [--yes]` | yes | ! | Print FERNET_KEY + internal CA from the sealed envelope. |
 | `satom execute export recovery-key [--out PATH] [--yes]` | yes | ! | Print FERNET_KEY + the internal CA key so a rebuild is possible. |

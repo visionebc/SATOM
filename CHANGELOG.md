@@ -34,6 +34,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   release pins, never "latest". Requested by the operator: "can those
   packages also be upgraded? Leave only the kernel out; remember the command
   depends on the OS".
+- **Rollback for every upgrade, from the web and from the console.** Before
+  an OS package upgrade, SATOM simulates the transaction and saves every
+  package it replaces (dependencies included) at its current version, from
+  the repositories or rebuilt with `dpkg-repack`; before a Python change it
+  saves a full copy of the venv. **No copy, no change.** A failed upgrade or
+  health check puts the copy back by itself. **Installed software › Rollback
+  points** restores any saved point, and `satom execute rollback list` /
+  `satom execute rollback apply <id> --yes` do the same from the console
+  with the web, the database, the network and the venv down (they run the
+  signed root-owned runner with the system Python). Ten OS and three Python
+  points are kept per node in `/var/lib/satom-rollback`.
+- **Upgrade any Python package from Installed software.** Check for updates
+  also lists newer versions of every package in the venv (against the index
+  of Update sources; an unusable index is reported, never replaced by
+  pypi.org), and each can be upgraded on its own, protected by the venv
+  copy. Only installed packages; direct requirements keep their pin in
+  sync, transitive ones are not pinned. Libraries changes now roll back
+  from the venv copy too instead of reinstalling the old version from the
+  index. Requested by the operator: "Python packages should also be
+  upgradable; what matters is that a rollback is possible, even from the
+  console, so that if something fails it can always be repaired".
 
 ## [3.5.0] - 2026-10-23
 

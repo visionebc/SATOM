@@ -24,6 +24,7 @@ from . import cmd_ha as ha
 from . import cmd_knowledge as kn
 from . import cmd_migration as mg
 from . import cmd_release as rl
+from . import cmd_rollback as rb
 from . import cmd_get as g
 from . import cmd_ops as o
 from . import cmd_show as s
@@ -226,6 +227,13 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
     ),
 
     _group("execute", "Change state. Requires root.",
+        _group("rollback", "Put back an OS package upgrade or a Python change. "
+                           "Works with the web and the venv down.",
+            _n("list", "Rollback points saved on this node, newest first.",
+               run=rb.rollback_list, needs_root=True, usage=rb.LIST_USAGE),
+            _n("apply", "Restore one point. Dry run unless --yes.",
+               run=rb.rollback_apply, needs_root=True, danger=True, usage=rb.APPLY_USAGE),
+        ),
         _group("seal", "Wrap the unreplicated secrets so every copy can carry them.",
             _n("recovery",
                "Seal FERNET_KEY + internal CA into data/ so the peer and every "

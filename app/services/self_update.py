@@ -485,7 +485,8 @@ def _pip_index() -> dict:
 def request_pip_change(package: str, version: str, by: str, *,
                        action: str = "upgrade",
                        bump_requirements: bool = True,
-                       origin: str = "libraries-card") -> str:
+                       origin: str = "libraries-card",
+                       scope: str = "curated") -> str:
     """Enqueue a curated-only per-package pip change for the privileged runner.
 
     Validates against THIS node's curated allowlist and THIS node's regexes
@@ -504,7 +505,14 @@ def request_pip_change(package: str, version: str, by: str, *,
 
     package = (package or "").strip()
     version = (version or "").strip()
-    if not _PKG_RE.match(package) or package not in _pip_allowlist():
+    if scope not in ("curated", "installed"):
+        raise ValueError("scope must be 'curated' or 'installed'")
+    if scope == "installed":
+        # Installed software: any distribution ALREADY in this venv -- never
+        # a name that is not installed here (the runner re-checks).
+        if not _PKG_RE.match(package) or not _installed_here(package):
+            raise ValueError("package %r is not installed in this node's venv" % package)
+    elif not _PKG_RE.match(package) or package not in _pip_allowlist():
         raise ValueError("package %r is not in the curated allowlist" % package)
     if action not in ("upgrade", "rollback"):
         raise ValueError("action must be 'upgrade' or 'rollback'")
@@ -537,6 +545,7 @@ def request_pip_change(package: str, version: str, by: str, *,
         "node": this_node_name(),
         "role": node_role(),
         "origin": origin,
+        "scope": scope,
     }
     if index["custom"]:
         req["index_url"] = index["url"]
@@ -596,8 +605,33 @@ def _peer_answer(raw: bytes) -> dict | None:
     return d if isinstance(d, dict) else None
 
 
+def _installed_here(package: str) -> bool:
+    from importlib import metadata as _m
+    try:
+        return bool(_m.version(package))
+    except _m.PackageNotFoundError:
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def attach_pip_index(req: dict) -> str:
+    """Put the configured package index (Update sources) into a runner
+    request, exactly as a pip change carries it. Returns a problem, or ''."""
+    index = _pip_index()
+    if index["problem"]:
+        return index["problem"]
+    if index["custom"]:
+        req["index_url"] = index["url"]
+        if index["auth"]:
+            req["index_user"], req["index_token"] = index["auth"][1], index["auth"][2]
+        _add_index_trust(req)
+    return ""
+
+
 def request_pip_change_on_peers(package: str, version: str, by: str, *,
-                                action: str = "upgrade") -> list[dict]:
+                                action: str = "upgrade",
+                                scope: str = "curated") -> list[dict]:
     """Ask every registered PEER to enqueue the same pip change on itself.
 
     One row per peer, with an explicit ``state``:
@@ -612,7 +646,7 @@ def request_pip_change_on_peers(package: str, version: str, by: str, *,
     """
     from . import node_security as nsec
     body = json.dumps({"package": package, "version": version,
-                       "action": action, "requested_by": by,
+                       "action": action, "requested_by": by, "scope": scope,
                        "origin_node": this_node_name()}).encode()
     out: list[dict] = []
     for n in peer_nodes():

@@ -27100,3 +27100,9 @@ msgstr "Ressources du navigateur"
 
 msgid "License"
 msgstr "Licence"
+
+msgid "Rollback points"
+msgstr "Points de restauration"
+
+msgid "Saved before every upgrade: the replaced packages at their previous version, or a full copy of the Python environment. From the console of a node, even with the web down: satom execute rollback list, then satom execute rollback apply <id> --yes."
+msgstr "Enregistrés avant chaque mise à jour : les paquets remplacés dans leur version précédente, ou une copie complète de l’environnement Python. Depuis la console d’un nœud, même sans l’interface web : satom execute rollback list, puis satom execute rollback apply <id> --yes."

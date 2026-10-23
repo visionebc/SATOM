@@ -94,7 +94,7 @@ def _locks() -> Path:
 
 
 def start(package: str, version: str, *, action: str, also_peer: bool,
-          by: str) -> dict:
+          by: str, scope: str = "curated") -> dict:
     """Queue the change on THIS node and open the job that carries it through.
 
     Raises ValueError for a request the allowlist/regexes refuse (nothing is
@@ -103,11 +103,23 @@ def start(package: str, version: str, *, action: str, also_peer: bool,
     un-advanced, which ``jobs.sweep_orphans`` fails after a while (durable rule).
     """
     from . import self_update as su
-    uid = su.request_pip_change(package, version, by=by, action=action)
+    uid = su.request_pip_change(package, version, by=by, action=action,
+                                origin="installed-software-card"
+                                if scope == "installed" else "libraries-card",
+                                scope=scope)
     verb = "Roll back" if action == "rollback" else "Upgrade"
     return _open(JOB_TYPE, "%s %s → %s" % (verb, package, version), uid, by,
                  also_peer, {"package": package, "version": version,
-                             "action": action})
+                             "action": action, "scope": scope})
+
+
+def start_rollback(point: str, *, by: str) -> dict:
+    """Put one rollback point of THIS node back (points are node-local)."""
+    from . import system_packages as sp
+    uid = sp.request_rollback(point, by=by)
+    return _open(SYSPKG_TYPE, "Roll back %s" % point, uid, by, False,
+                 {"package": "", "point": point, "action": "rollback",
+                  "order": "local"})
 
 
 def start_install(key: str, *, also_peer: bool, by: str) -> dict:
@@ -320,7 +332,8 @@ def _dispatch(job_id: str, meta: dict) -> None:
         else:
             peers = su.request_pip_change_on_peers(
                 meta["package"], meta["version"],
-                by=_by(job_id), action=meta.get("action") or "upgrade")
+                by=_by(job_id), action=meta.get("action") or "upgrade",
+                scope=meta.get("scope") or "curated")
     except Exception as exc:  # noqa: BLE001
         peers = [{"node": "?", "host": "", "uid": None,
                   "state": "unreachable", "error": str(exc)}]

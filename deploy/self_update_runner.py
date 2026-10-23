@@ -1445,6 +1445,15 @@ def _git_commit_push_requirements(pkg, version, by):
     return (p.returncode == 0), (p.stderr or p.stdout or "").strip()[-200:]
 
 
+def _is_direct_requirement(pkg):
+    try:
+        lines = _read_requirements()
+    except Exception:  # noqa: BLE001
+        return False
+    rx = _req_line_re(pkg)
+    return any(rx.match(ln) and not ln.lstrip().startswith("#") for ln in lines)
+
+
 def pip_change(req_path):
     """Per-package pip upgrade/rollback (root-triggered, curated-only).
 
@@ -1473,8 +1482,15 @@ def pip_change(req_path):
     st.flush()
 
     # ---- hard guardrails (defense in depth; the web side validates too) ----
-    if not _PKG_RE.match(pkg) or pkg not in _pip_allowlist():
-        st.step("validate package", False, "%r not in curated allowlist" % pkg)
+    # Libraries: the curated allowlist. Installed software ("scope":
+    # "installed"): any distribution ALREADY in this venv -- an upgrade can
+    # move what is there, never bring in a name that is not.
+    scope = req.get("scope") or "curated"
+    if not _PKG_RE.match(pkg) or (
+            pkg not in _pip_allowlist() if scope != "installed"
+            else not _installed_version(pkg)):
+        st.step("validate package", False, "%r not in curated allowlist" % pkg
+                if scope != "installed" else "%r is not installed in this venv" % pkg)
         st.finish("failed", error="package not allowed")
         return
     if not _VER_RE.match(version):
@@ -1505,7 +1521,28 @@ def pip_change(req_path):
     # this version come from?" reads it here.
     st.step("package index", True, where)
 
+    # [SATOM-ROLLBACK-FIRST] A full copy of the venv before pip touches it:
+    # pip moves dependencies too, and an index (or an offline node) may not
+    # serve the old version back. No copy, no change.
+    point = None
+    try:
+        point = _rb_create(uid, "python", "%s %s → %s" % (pkg, previous or "?", version),
+                           by, {"package": pkg, "from": previous, "to": version})
+        st.begin("save rollback copy")
+        files = _rb_save_venv(point)
+        _rb_mark(point, "ready", files=files)
+        st.step("save rollback copy", True, "full copy of the venv in %s" % point)
+    except Exception as exc:  # noqa: BLE001 -- fail closed: nothing changed yet
+        if point is not None:
+            _rb_discard(point)
+        st.step("save rollback copy", False, str(exc)[:300])
+        st.finish("failed", error="no rollback copy could be saved, so nothing was "
+                  "changed: %s" % str(exc)[:200])
+        return
+    st.d["rollback_point"] = point.name
+
     extras = _req_extras(pkg)
+    direct = bool(extras) or _is_direct_requirement(pkg)
     try:
         p = _pip_install("%s%s==%s" % (pkg, extras, version), env=pip_env)
         st.step("pip install %s%s==%s" % (pkg, extras, version), p.returncode == 0,
@@ -1528,10 +1565,17 @@ def pip_change(req_path):
                              "%s==%s" % (pkg, version))
 
         _record_lib_version(pkg, previous, version, action, by)
+        _rb_mark(point, "applied")
+        _rb_prune()
 
         # Keep requirements.txt honest so the next code update doesn't revert us
-        # (primary only — single git writer). Non-fatal.
-        if bump and role == "primary":
+        # (primary only — single git writer). Non-fatal. A transitive package
+        # (Installed software) is not pinned: requirements.txt lists what the
+        # product asks for, and the next update does not downgrade it.
+        if bump and scope == "installed" and not direct:
+            st.step("bump requirements.txt", True,
+                    "skipped (%s is a dependency of a dependency, not pinned)" % pkg)
+        elif bump and role == "primary":
             ch, d1 = _bump_requirements(pkg, version)
             st.step("bump requirements.txt", ch, d1)
             gok, d2 = _git_commit_push_requirements(pkg, version, by)
@@ -1546,7 +1590,15 @@ def pip_change(req_path):
 
     except Exception as e:
         st.step("ERROR", False, _redact(str(e), secret))
-        # ---- auto-rollback to the previously-installed version ----
+        # ---- auto-rollback: the venv copy saved above ----
+        ok, detail = _rb_restore(point, st)
+        if ok:
+            st.finish("failed", package=pkg, previous_version=previous,
+                      new_version=previous, rolled_back=True, recovered=True,
+                      error=_redact(str(e), secret))
+            return
+        # The copy could not be put back: fall back to reinstalling the old
+        # version from the index (the historical way back).
         try:
             if previous:
                 rb = _pip_install("%s%s==%s" % (pkg, extras, previous), env=pip_env)
@@ -2622,7 +2674,7 @@ def syspkg_install(req_path):
     # Upgrade and check have their own table (every Installed software
     # component but the kernel); install keeps the short curated one.
     if action == "check":
-        _syspkg_check(st)
+        _syspkg_check(st, req)
         return
     if action == "upgrade":
         _syspkg_upgrade(st, key)
@@ -2883,7 +2935,7 @@ def _vm_installed():
     return m.group(1) if m else ""
 
 
-def _syspkg_check(st):
+def _syspkg_check(st, req=None):
     """Refresh the package index (root) and record, per component, which
     installed packages have a newer version. Changes no package."""
     mgr = _pkg_manager()
@@ -2924,6 +2976,33 @@ def _syspkg_check(st):
                                    for n in sorted(installed)},
                       "upgradable": bool(newer)}
     st.d["available"] = avail
+    # Python: every package of the venv, against the configured index (as
+    # the app user, like every pip call). A failure says so; it is never an
+    # empty "nothing to upgrade".
+    st.begin("pip list --outdated")
+    try:
+        if (req or {}).get("pip_index_problem"):
+            raise ValueError("the package index in Update sources cannot be used: %s"
+                             % str(req["pip_index_problem"])[:200])
+        pip_env, where, secret = _pip_index_env(req or {})
+        pp = run([str(_venv_dir() / "bin" / "pip"), "list", "--outdated",
+                  "--format", "json", "--disable-pip-version-check"],
+                 timeout=600, user=APP_USER, env=pip_env)
+        rows = json.loads(pp.stdout or "[]") if pp.returncode == 0 else None
+    except Exception as exc:  # noqa: BLE001
+        rows, where, secret, pp = None, "?", "", None
+        st.d["python_error"] = str(exc)[:200]
+    if rows is None:
+        err = st.d.get("python_error") or _redact(
+            ((pp.stderr or pp.stdout) if pp else "") or "", secret)[-200:]
+        st.d["python_error"] = err
+        st.step("pip list --outdated", True, "could not ask the index (%s): %s"
+                % (where, err), warn=True)
+    else:
+        st.d["python_available"] = {r["name"]: r.get("latest_version", "")
+                                    for r in rows if isinstance(r, dict) and r.get("name")}
+        st.step("pip list --outdated", True, "%d Python package(s) with a newer "
+                "version on %s" % (len(st.d["python_available"]), where))
     n = sum(1 for v in avail.values() if v["upgradable"])
     st.step("compare installed with available", True,
             "%d component(s) with an update%s" % (
@@ -3065,6 +3144,51 @@ def _syspkg_upgrade(st, key):
     u = run(cmd, timeout=600, env=env)
     st.step(" ".join(cmd), True, ((u.stderr or u.stdout) or "")[-300:],
             warn=u.returncode != 0)
+
+    # [SATOM-ROLLBACK-FIRST] What the transaction will replace, and a copy of
+    # every one of those packages AT ITS CURRENT VERSION, before anything
+    # changes. No copy, no upgrade: a repository that has moved on (Debian
+    # security keeps only the newest) must not turn a failed upgrade into a
+    # node nobody can put back.
+    st.begin("simulate the upgrade")
+    try:
+        changes, added = _pkg_simulate(mgr, before, env)
+    except RollbackUnavailable as exc:
+        st.step("simulate the upgrade", False, str(exc))
+        st.finish("failed", error="cannot tell what the upgrade would change; "
+                  "nothing was changed")
+        return
+    if not changes:
+        st.step("simulate the upgrade", True,
+                "already the newest version the repositories offer")
+        st.d["changed"] = []
+        st.finish("success", package=key)
+        return
+    st.step("simulate the upgrade", True, "; ".join(
+        "%s %s → %s" % (n, o, nw) for n, (o, nw) in sorted(changes.items()))
+        + ("; new: %s" % ", ".join(added) if added else ""))
+    point = None
+    try:
+        point = _rb_create(st.d["id"], "os", "%s (%s)" % (key, mgr),
+                           st.d.get("requested_by") or "?",
+                           {"component": key, "manager": mgr,
+                            "packages": {n: {"from": o, "to": nw}
+                                         for n, (o, nw) in changes.items()},
+                            "added": added})
+        st.begin("save rollback copy")
+        files = _rb_save_os(point, mgr, {n: o for n, (o, _nw) in changes.items()}, env)
+        _rb_mark(point, "ready", files=files)
+        st.step("save rollback copy", True, "%d package(s) at their current version in %s"
+                % (len(files), point))
+    except Exception as exc:  # noqa: BLE001 -- fail closed: nothing changed yet
+        if point is not None:
+            _rb_discard(point)
+        st.step("save rollback copy", False, str(exc)[:400])
+        st.finish("failed", error="no rollback copy could be saved, so nothing was "
+                  "changed: %s" % str(exc)[:200])
+        return
+    st.d["rollback_point"] = point.name
+
     cmd = _pkg_upgrade_cmd(mgr, before)
     st.begin(" ".join(cmd))
     p = run(cmd, timeout=1500, env=env)
@@ -3075,21 +3199,451 @@ def _syspkg_upgrade(st, key):
     st.d["changed"] = changed
     st.step("versions", True, "; ".join(changed) if changed
             else "already the newest version the repositories offer")
+    failure = None
     if p.returncode != 0:
-        st.finish("failed", error="%s exited %s" % (cmd[0], p.returncode))
-        return
-    if changed:
+        failure = "%s exited %s" % (cmd[0], p.returncode)
+    elif changed:
         try:
             _after_upgrade(st, spec["after"])
         except Exception as exc:  # noqa: BLE001
-            st.finish("failed", error=str(exc)[:300])
-            return
+            failure = str(exc)[:300]
+    if failure:
+        # Automatic way back: the copy saved above, the same restore the
+        # console and 'satom execute rollback apply' run.
+        ok, detail = _rb_restore(point, st)
+        st.finish("failed", error=failure, rolled_back=True, recovered=ok,
+                  rollback_detail=detail)
+        return
+    _rb_mark(point, "applied")
+    if changed:
         stale = _stale_library_units()
         if stale:
             st.step("services on replaced libraries", True,
                     "still running the old copy until restarted: %s" % ", ".join(stale),
                     warn=True)
+    _rb_prune()
     st.finish("success", package=key)
+
+
+# ---------------------------------------------------------------------------
+# Rollback points -- Installed software, Libraries, 'satom execute rollback'
+# ---------------------------------------------------------------------------
+# One directory per change under RB_DIR (root, 0700, node-local: never under
+# data/, which the standby pulls from the primary). A point holds what the
+# change REPLACED, saved before it ran:
+#   kind "os"     -- pkgs/: the exact packages at their previous version
+#   kind "python" -- venv/: a full copy of the virtual environment, plus the
+#                    requirements.txt of that moment
+# Restoring needs neither the network nor the web application nor the venv:
+# the operator CLI loads THIS file (the root-owned, signed copy) with the
+# system Python and calls rollback_apply(). The web reads only the index
+# below, which carries no path a request could use.
+RB_DIR = Path(os.environ.get("SATOM_ROLLBACK_DIR", "/var/lib/satom-rollback"))
+RB_INDEX = "_rollback-points.idx"
+_RB_KEEP = {"os": 10, "python": 3}
+_ZYPP_CACHE = "/var/cache/zypp/packages"
+
+
+class RollbackUnavailable(RuntimeError):
+    """A way back could not be secured; the change must not run."""
+
+
+def _rb_root():
+    RB_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(RB_DIR, 0o700)
+    return RB_DIR
+
+
+def _rb_point_dir(point_id):
+    if not isinstance(point_id, str) or not UID_RE.fullmatch(point_id):
+        raise ValueError("refusing rollback point id %r" % (point_id,))
+    d = _rb_root() / point_id
+    if not (d / "manifest.json").is_file() or d.is_symlink():
+        raise ValueError("no rollback point %s on this node" % point_id)
+    return d
+
+
+def _rb_manifest(d):
+    return json.loads((d / "manifest.json").read_text())
+
+
+def _rb_save_manifest(d, man):
+    tmp = d / (".manifest.%s.tmp" % secrets.token_hex(4))
+    tmp.write_text(json.dumps(man, indent=2))
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, d / "manifest.json")
+    _rb_publish()
+
+
+def _rb_create(uid, kind, label, by, extra):
+    if not UID_RE.fullmatch(uid or ""):
+        raise ValueError("refusing rollback point id %r" % (uid,))
+    d = _rb_root() / uid
+    d.mkdir(mode=0o700)
+    man = dict(extra, id=uid, kind=kind, label=label, by=by,
+               node=socket.gethostname(), created_at=now(), state="preparing")
+    _rb_save_manifest(d, man)
+    return d
+
+
+def _rb_mark(d, state, **extra):
+    man = _rb_manifest(d)
+    man.update(extra, state=state, updated_at=now())
+    _rb_save_manifest(d, man)
+
+
+def _rb_discard(d):
+    import shutil as _sh
+    _sh.rmtree(d, ignore_errors=True)
+    _rb_publish()
+
+
+def rollback_points():
+    """Every point on this node, newest first (manifests, no file paths)."""
+    out = []
+    try:
+        dirs = sorted((p for p in RB_DIR.iterdir() if p.is_dir() and not p.is_symlink()),
+                      reverse=True)
+    except OSError:
+        return out
+    for d in dirs:
+        try:
+            man = _rb_manifest(d)
+        except (OSError, ValueError):
+            continue
+        man.pop("files", None)
+        out.append(man)
+    return out
+
+
+def _rb_publish():
+    """The index the web reads (update-status/ is node-local, never synced)."""
+    try:
+        _write_nofollow(STA, RB_INDEX, json.dumps(
+            {"updated_at": now(), "points": rollback_points()}, indent=2))
+    except Exception:  # noqa: BLE001 -- the index is a view; the points are the truth
+        pass
+
+
+def _rb_prune():
+    """Keep the newest N points per kind; a point being prepared is kept."""
+    import shutil as _sh
+    seen = {}
+    for man in rollback_points():
+        k = man.get("kind")
+        if man.get("state") == "preparing":
+            continue
+        seen[k] = seen.get(k, 0) + 1
+        if seen[k] > _RB_KEEP.get(k, 5):
+            _sh.rmtree(RB_DIR / man["id"], ignore_errors=True)
+    _rb_publish()
+
+
+# ---- what an OS upgrade would change ---------------------------------------
+_APT_INST_OLD = re.compile(r"^Inst (\S+) \[([^\]]+)\] \((\S+) ")
+_APT_INST_NEW = re.compile(r"^Inst (\S+) \((\S+) ")
+_RPM_ARCHES = {"x86_64", "noarch", "aarch64", "i686", "ppc64le", "s390x"}
+
+
+def _parse_apt_simulation(out):
+    """({name: (old, new)}, [newly installed]) from ``apt-get -s``."""
+    changes, added = {}, []
+    for line in (out or "").splitlines():
+        m = _APT_INST_OLD.match(line)
+        if m:
+            changes[m.group(1)] = (m.group(2), m.group(3))
+            continue
+        m = _APT_INST_NEW.match(line)
+        if m:
+            added.append(m.group(1))
+    return changes, added
+
+
+def _parse_dnf_simulation(out):
+    """{name: new} for 'Upgrading' rows and [installed] for new packages,
+    from ``dnf upgrade --assumeno``'s transaction table."""
+    upgrading, added, section = {}, [], ""
+    for line in (out or "").splitlines():
+        s = line.strip()
+        if s.endswith(":") and not line.startswith("  "):
+            section = s[:-1].lower()
+            continue
+        parts = s.split()
+        if len(parts) >= 4 and parts[1] in _RPM_ARCHES:
+            if section.startswith("upgrading"):
+                upgrading[parts[0]] = parts[2]
+            elif section.startswith("installing"):
+                added.append(parts[0])
+    return upgrading, added
+
+
+def _parse_zypper_simulation(xml_text):
+    """({name: (old, new)}, [new]) from ``zypper --xmlout update --dry-run``."""
+    import xml.etree.ElementTree as ET
+    changes, added = {}, []
+    try:
+        root = ET.fromstring(xml_text or "")
+    except ET.ParseError:
+        raise RollbackUnavailable("zypper's dry run could not be read")
+    for sect in root.iter():
+        if sect.tag not in ("to-upgrade", "to-install"):
+            continue
+        for s in sect.iter("solvable"):
+            if s.get("kind", "package") != "package" or not s.get("name"):
+                continue
+            if sect.tag == "to-upgrade":
+                changes[s.get("name")] = (s.get("edition-old") or "", s.get("edition") or "")
+            else:
+                added.append(s.get("name"))
+    return changes, added
+
+
+def _pkg_simulate(mgr, before, env):
+    """What upgrading ``before`` would replace: {name: (old, new)}, [new]."""
+    names = sorted(before)
+    if mgr == "apt":
+        p = run(["apt" + "-get", "-s", "install", "--only-upgrade"] + names,
+                timeout=300, env=env)
+        if p.returncode != 0:
+            raise RollbackUnavailable("apt simulation failed: %s"
+                                      % (p.stderr or p.stdout)[-200:])
+        return _parse_apt_simulation(p.stdout)
+    if mgr in ("dnf", "yum"):
+        p = run([mgr, "upgrade", "--assumeno"] + names, timeout=300, env=env)
+        upgrading, added = _parse_dnf_simulation(p.stdout)
+        installed = _installed_matching(mgr, sorted(upgrading)) if upgrading else {}
+        missing = [n for n in upgrading if n not in installed]
+        if missing:
+            raise RollbackUnavailable("cannot read the installed version of %s"
+                                      % ", ".join(missing))
+        return {n: (installed[n], v) for n, v in upgrading.items()}, added
+    if mgr == "zypper":
+        p = run(["zypper", "--non-interactive", "--xmlout", "update", "--dry-run"] + names,
+                timeout=300, env=env)
+        return _parse_zypper_simulation(p.stdout)
+    raise RollbackUnavailable("no simulation for %s" % mgr)
+
+
+def _deb_version(path):
+    p = run(["dpkg-deb", "-f", str(path), "Package", "Version"], timeout=60)
+    f = dict(ln.split(": ", 1) for ln in (p.stdout or "").splitlines() if ": " in ln)
+    return f.get("Package", ""), f.get("Version", "")
+
+
+def _rpm_version(path):
+    p = run(["rpm", "-qp", "--qf", "%{NAME}|%{VERSION}-%{RELEASE}", str(path)], timeout=60)
+    parts = (p.stdout or "").split("|")
+    return (parts[0], parts[1]) if len(parts) == 2 else ("", "")
+
+
+def _rb_save_os(point, mgr, olds, env):
+    """Save every package in ``olds`` ({name: version}) at that version.
+    Returns the file names; raises RollbackUnavailable on any gap."""
+    import glob as _glob
+    import shutil as _sh
+    pkgs = point / "pkgs"
+    pkgs.mkdir(mode=0o700, exist_ok=True)
+    saved = []
+    for name, ver in sorted(olds.items()):
+        got = None
+        if mgr == "apt":
+            # The repository first; dpkg-repack (rebuilds the INSTALLED files)
+            # when the mirror no longer carries that version.
+            run(["apt" + "-get", "download", "%s=%s" % (name, ver)],
+                timeout=300, env=env, cwd=str(pkgs))
+            for f in _glob.glob(str(pkgs / ("%s_*.deb" % name))):
+                if _deb_version(f) == (name, ver):
+                    got = f
+            if not got and _sh.which("dpkg-repack"):
+                run(["dpkg-repack", name], timeout=300, cwd=str(pkgs))
+                for f in _glob.glob(str(pkgs / ("%s_*.deb" % name))):
+                    if _deb_version(f) == (name, ver):
+                        got = f
+        elif mgr in ("dnf", "yum"):
+            tool = ["dnf", "download"] if mgr == "dnf" or _sh.which("dnf") else \
+                (["yumdownloader"] if _sh.which("yumdownloader") else None)
+            if tool:
+                run(tool + ["--destdir", str(pkgs), "%s-%s" % (name, ver)],
+                    timeout=300, env=env)
+            for f in _glob.glob(str(pkgs / ("%s-*.rpm" % name))):
+                if _rpm_version(f) == (name, ver):
+                    got = f
+        elif mgr == "zypper":
+            run(["zypper", "--non-interactive", "download", "%s=%s" % (name, ver)],
+                timeout=300, env=env)
+            for f in _glob.glob(os.path.join(_ZYPP_CACHE, "*", "*", "%s-*.rpm" % name)):
+                if _rpm_version(f) == (name, ver):
+                    dest = pkgs / os.path.basename(f)
+                    _sh.copy2(f, dest)
+                    got = str(dest)
+        if not got:
+            raise RollbackUnavailable(
+                "%s %s is no longer offered by the repositories%s" % (
+                    name, ver, " and dpkg-repack is not installed (install it from "
+                    "System packages to rebuild it from this node)" if mgr == "apt" else ""))
+        saved.append(os.path.basename(got))
+    return saved
+
+
+def _rb_restore_os(d, man, st):
+    files = [str(d / "pkgs" / f) for f in man.get("files") or []]
+    if not files:
+        return False, "the point holds no package"
+    mgr = man.get("manager")
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    if mgr == "apt":
+        cmd = ["apt" + "-get", "install", "-y", "-q", "--allow-downgrades",
+               "-o", "Dpkg::Options::=--force-confdef",
+               "-o", "Dpkg::Options::=--force-confold"] + files
+    elif mgr == "zypper":
+        cmd = ["zypper", "--non-interactive", "install", "--oldpackage"] + files
+    else:
+        cmd = ["rpm", "-Uvh", "--oldpackage"] + files
+    st.begin("reinstall the saved packages")
+    p = run(cmd, timeout=1500, env=env)
+    st.step("reinstall the saved packages", p.returncode == 0,
+            ((p.stderr or p.stdout) or "")[-400:])
+    if p.returncode != 0:
+        return False, "%s exited %s" % (cmd[0], p.returncode)
+    want = {n: v["from"] for n, v in (man.get("packages") or {}).items()}
+    now_ = _installed_matching(mgr, sorted(want)) if mgr in _PKG_FAMILY else {}
+    wrong = ["%s is %s, expected %s" % (n, now_.get(n, "absent"), v)
+             for n, v in want.items() if now_.get(n) != v]
+    st.step("versions restored", not wrong, "; ".join(wrong) if wrong else
+            ", ".join("%s %s" % kv for kv in sorted(want.items())))
+    if wrong:
+        return False, "; ".join(wrong)
+    after = (_SYSPKG_UPGRADE.get(man.get("component")) or {}).get("after")
+    try:
+        _after_upgrade(st, after)
+    except Exception as exc:  # noqa: BLE001
+        return False, "restored, but %s" % str(exc)[:200]
+    if man.get("added"):
+        st.step("packages the upgrade added", True, "left installed (nothing older "
+                "depends on them): %s" % ", ".join(man["added"]), warn=True)
+    return True, "restored %d package(s)" % len(files)
+
+
+# ---- Python: a full copy of the venv -----------------------------------------
+def _venv_dir():
+    return APP / "venv"
+
+
+def _rb_save_venv(point):
+    """Copy the whole venv (owner, modes, links kept) and requirements.txt."""
+    src = _venv_dir()
+    if not (src / "bin" / "python").exists():
+        raise RollbackUnavailable("no virtual environment at %s" % src)
+    free = os.statvfs(str(point)).f_bavail * os.statvfs(str(point)).f_frsize
+    du = run(["du", "-sb", str(src)], timeout=300)
+    try:
+        need = int((du.stdout or "0").split()[0])
+    except (ValueError, IndexError):
+        need = 0
+    if need and free < need * 2:
+        raise RollbackUnavailable("not enough disk for a copy of the venv "
+                                  "(%d MB needed, %d MB free)" % (need * 2 >> 20, free >> 20))
+    p = subprocess.run(["cp", "-a", str(src), str(point / "venv")],
+                       capture_output=True, text=True, timeout=900)
+    if p.returncode != 0:
+        raise RollbackUnavailable("copying the venv failed: %s" % (p.stderr or "")[-200:])
+    try:
+        (point / "requirements.txt").write_text("\n".join(_read_requirements()) + "\n")
+    except Exception:  # noqa: BLE001 -- the venv copy is the part that matters
+        pass
+    return ["venv/"]
+
+
+def _rb_restore_python(d, man, st):
+    import shutil as _sh
+    snap = d / "venv"
+    if not (snap / "bin" / "python").exists():
+        return False, "the point holds no venv copy"
+    live = _venv_dir()
+    stage = APP / (".venv-restore-%s" % d.name)
+    aside = APP / (".venv-replaced-%s" % d.name)
+    _sh.rmtree(stage, ignore_errors=True)
+    st.begin("restore the venv copy")
+    p = subprocess.run(["cp", "-a", str(snap), str(stage)],
+                       capture_output=True, text=True, timeout=900)
+    if p.returncode != 0:
+        st.step("restore the venv copy", False, (p.stderr or "")[-300:])
+        return False, "copying the saved venv back failed"
+    _sh.rmtree(aside, ignore_errors=True)
+    if live.exists():
+        os.rename(live, aside)
+    os.rename(stage, live)
+    st.step("restore the venv copy", True, "venv from %s (the replaced one is kept at "
+            "%s until the restore is healthy)" % (man.get("created_at"), aside))
+    req = d / "requirements.txt"
+    if req.is_file():
+        try:
+            _write_nofollow(APP, "requirements.txt", req.read_text())
+            st.step("restore requirements.txt", True, "pins of %s" % man.get("created_at"))
+        except Exception as exc:  # noqa: BLE001
+            st.step("restore requirements.txt", False, str(exc)[:200])
+    try:
+        restart_and_validate(st, pg_in_recovery(), _svc_active(SERVICE) == "active",
+                             "the restored venv")
+    except Exception as exc:  # noqa: BLE001
+        return False, "venv restored, but %s (the replaced venv is at %s)" % (
+            str(exc)[:200], aside)
+    _sh.rmtree(aside, ignore_errors=True)
+    return True, "venv restored to %s" % man.get("created_at")
+
+
+def _rb_restore(d, st):
+    """Put one point back. Returns (ok, detail); never raises."""
+    try:
+        man = _rb_manifest(d)
+        if man.get("state") not in ("ready", "applied", "restored", "restore-failed"):
+            return False, "point %s is %s, not restorable" % (d.name, man.get("state"))
+        fn = _rb_restore_python if man.get("kind") == "python" else _rb_restore_os
+        ok, detail = fn(d, man, st)
+    except Exception as exc:  # noqa: BLE001
+        ok, detail = False, str(exc)[:300]
+    try:
+        _rb_mark(d, "restored" if ok else "restore-failed", restore_detail=detail,
+                 restored_at=now())
+    except Exception:  # noqa: BLE001
+        pass
+    st.step("rollback", ok, detail)
+    return ok, detail
+
+
+def rollback_apply(point_id, req=None):
+    """Restore one point and record it as a status file. Used by the queued
+    request (kind "rollback") and by 'satom execute rollback apply'."""
+    d = _rb_point_dir(point_id)
+    # A queued request is followed by its id (the console's job watches that
+    # status file); the CLI gets a fresh one.
+    uid = (req or {}).get("id") if UID_RE.fullmatch(str((req or {}).get("id") or "")) \
+        else "rb-%s-%s" % (datetime.utcnow().strftime("%Y%m%d-%H%M%S"), secrets.token_hex(3))
+    st = Status(uid, dict(req or {}, origin=(req or {}).get("origin") or "cli"))
+    st.d.update(kind="rollback", point=point_id, label=_rb_manifest(d).get("label"))
+    st.flush()
+    ok, detail = _rb_restore(d, st)
+    st.finish("success" if ok else "failed", recovered=ok,
+              **({} if ok else {"error": detail}))
+    return ok, detail, uid
+
+
+def rollback_job(req_path):
+    """kind "rollback": the console asked to put a point back."""
+    req = _read_request(req_path)
+    try:
+        os.remove(req_path)
+    except OSError:
+        pass
+    point = req.get("point")
+    try:
+        rollback_apply(point if isinstance(point, str) else "", req)
+    except ValueError as exc:
+        uid = req.get("id") or Path(req_path).stem
+        st = Status(uid, req)
+        st.d.update(kind="rollback", point=str(point)[:80])
+        st.step("validate rollback point", False, str(exc))
+        st.finish("failed", error=str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -3264,6 +3818,7 @@ _HANDLERS = {
     "service": "service_action",
     "pg_ssl": "pg_ssl_apply",
     "syspkg": "syspkg_install",
+    "rollback": "rollback_job",
 }
 
 

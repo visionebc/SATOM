@@ -640,11 +640,13 @@ def peer_library_pip():
     package = (payload.get('package') or '').strip()
     version = (payload.get('version') or '').strip()
     action = (payload.get('action') or 'upgrade').strip()
+    # An older peer sends no scope: the curated change it always meant.
+    scope = str(payload.get('scope') or 'curated').strip()
     by = '%s@%s' % ((str(payload.get('requested_by') or 'peer').strip() or 'peer')[:40],
                     (str(payload.get('origin_node') or 'peer').strip() or 'peer')[:40])
     try:
         uid = su.request_pip_change(package, version, by=by, action=action,
-                                    origin='peer-push')
+                                    origin='peer-push', scope=scope)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
@@ -726,6 +728,56 @@ def system_packages_upgrade():
                     'also_peer': also_peer, 'order': job['meta'].get('order')})
 
 
+@bp.route('/python-packages/upgrade', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def python_packages_upgrade():
+    """Upgrade ONE Python package already installed in the venv (Installed
+    software), as a job: a full copy of the venv is saved first, a failed
+    health check puts it back, and the point stays for a later rollback."""
+    from ..services import library_jobs
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    package = str(payload.get('package') or '').strip()
+    version = str(payload.get('version') or '').strip()
+    also_peer = bool(payload.get('also_peer'))
+    who = getattr(current_user, 'username', '?')
+    try:
+        job = library_jobs.start(package, version, action='upgrade',
+                                 also_peer=also_peer, by=who, scope='installed')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.library_pip',
+               detail='upgrade %s==%s (installed software) on %s%s (job %s)' % (
+                   package, version, su.this_node_name(),
+                   ' + peer' if also_peer else '', job['id']))
+    return jsonify({'job_id': job['id'], 'node': su.this_node_name()})
+
+
+@bp.route('/rollback', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def rollback_point_apply():
+    """Put ONE rollback point of THIS node back, as a job. The same restore
+    runs from the console: 'satom execute rollback apply <id>'."""
+    from ..services import library_jobs
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    point = str(payload.get('point') or '').strip()
+    who = getattr(current_user, 'username', '?')
+    try:
+        job = library_jobs.start_rollback(point, by=who)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.rollback', detail='roll back %s on %s (job %s)'
+               % (point, su.this_node_name(), job['id']))
+    return jsonify({'job_id': job['id'], 'node': su.this_node_name()})
+
+
 @bp.route('/system-packages/check', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
@@ -784,7 +836,8 @@ def peer_software_inventory():
     from ..services import system_packages as sp
     return jsonify({'node': su.this_node_name(), 'role': su.node_role(),
                     'inventory': inv.local_inventory(),
-                    'updates': sp.latest_check()})
+                    'updates': sp.latest_check(),
+                    'rollback_points': sp.rollback_points()})
 
 
 @bp.route('/peer/system-packages')

@@ -293,6 +293,17 @@
             </div>
 
             <div class="fw-card-header px-0 pt-0 pb-1">
+              <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-arrow-counterclockwise me-2 text-accent"></i>{{ _('Rollback points') }}</span>
+            </div>
+            <div class="text-muted mb-1" style="font-size:11px;">{{ _('Saved before every upgrade: the replaced packages at their previous version, or a full copy of the Python environment. From the console of a node, even with the web down: satom execute rollback list, then satom execute rollback apply <id> --yes.') }}</div>
+            <div class="table-responsive mb-3">
+              <table class="table table-sm mb-0" style="font-size:12px;">
+                <thead><tr><th>{{ _('Node') }}</th><th>{{ _('Saved') }}</th><th>{{ _('Change') }}</th><th>{{ _('State') }}</th><th></th></tr></thead>
+                <tbody id="swinv-rb-body"></tbody>
+              </table>
+            </div>
+
+            <div class="fw-card-header px-0 pt-0 pb-1">
               <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-browser-chrome me-2 text-accent"></i>{{ _('Browser assets') }}</span>
             </div>
             <table class="table table-sm mb-0" style="font-size:12px;">
@@ -5772,9 +5783,63 @@ function swinvRenderPython() {
       var v = p.nodes[n.name];
       return '<td>' + (v ? '<code>' + sysEsc(v) + '</code>' : '<span class="text-muted">not installed</span>') + '</td>';
     }).join('');
+    var latest = p.latest || {};
+    var to = Object.keys(latest).map(function (k) { return latest[k]; });
+    var upd = to.length
+      ? '<span class="fw-badge fw-badge-warning">update: ' + sysEsc(to[0]) + '</span> '
+        + '<button type="button" class="btn btn-sm btn-primary swinv-py-upgrade" data-pkg="' + sysEsc(p.name)
+        + '" data-ver="' + sysEsc(to[0]) + '" style="font-size:11px;padding:1px 8px;">Upgrade</button>'
+      : '';
     return '<tr><td>' + sysEsc(p.name) + (p.direct ? ' <span class="fw-badge fw-badge-primary" title="Listed in requirements.txt">direct</span>' : '')
-      + swinvDiffBadge(p) + '</td>' + cells + '</tr>';
-  }).join('') || '<tr><td class="text-muted" colspan="' + (d.nodes.length + 1) + '">No package matches.</td></tr>';
+      + swinvDiffBadge(p) + '</td>' + cells + '<td class="text-end">' + upd + '</td></tr>';
+  }).join('') || '<tr><td class="text-muted" colspan="' + (d.nodes.length + 2) + '">No package matches.</td></tr>';
+  document.querySelectorAll('.swinv-py-upgrade').forEach(function (b) {
+    b.addEventListener('click', function () { swinvPyUpgrade(b.getAttribute('data-pkg'), b.getAttribute('data-ver')); });
+  });
+}
+function swinvPyUpgrade(pkg, ver) {
+  var nodes = (swinvData && swinvData.nodes) || [];
+  var msg = 'Upgrade the Python package ' + pkg + ' to ' + ver + '?\n\n'
+    + 'A full copy of the virtual environment is saved first. SATOM restarts; if it does not come back healthy, '
+    + 'the copy is put back automatically. The copy stays as a rollback point.';
+  var alsoPeer = false;
+  if (nodes.length > 1) {
+    alsoPeer = window.confirm(msg + '\n\nOK = this node, then the peer once it succeeded\nCancel = choose this node only');
+    if (!alsoPeer && !window.confirm('Upgrade ' + pkg + ' to ' + ver + ' on THIS node only?')) { return; }
+  } else if (!window.confirm(msg)) { return; }
+  swinvPost('/settings/python-packages/upgrade', { package: pkg, version: ver, also_peer: alsoPeer },
+            'Queuing the upgrade of ' + pkg);
+}
+function swinvRenderRollback(d) {
+  var rows = [];
+  (d.nodes || []).forEach(function (n) {
+    if (!n.reachable) { return; }
+    (n.rollback_points || []).forEach(function (pt) {
+      var restorable = ['ready', 'applied', 'restored', 'restore-failed'].indexOf(pt.state) >= 0;
+      var act = !restorable ? '' : n.self
+        ? '<button type="button" class="btn btn-sm btn-outline-danger swinv-rb" data-point="' + sysEsc(pt.id)
+          + '" data-label="' + sysEsc(pt.label || '') + '" data-kind="' + sysEsc(pt.kind || '')
+          + '" style="font-size:11px;padding:1px 8px;">Rollback</button>'
+        : '<code style="font-size:10px;">satom execute rollback apply ' + sysEsc(pt.id) + ' --yes</code>';
+      var st = pt.state === 'restore-failed'
+        ? '<span class="fw-badge fw-badge-danger" title="' + sysEsc(pt.restore_detail || '') + '">restore failed</span>'
+        : pt.state === 'restored' ? '<span class="fw-badge fw-badge-secondary">restored</span>'
+        : '<span class="fw-badge fw-badge-success">' + sysEsc(pt.state) + '</span>';
+      rows.push('<tr><td>' + sysEsc(n.name) + '</td><td>' + sysEsc((pt.created_at || '').slice(0, 19).replace('T', ' '))
+        + '</td><td>' + sysEsc(pt.kind) + ': ' + sysEsc(pt.label || '') + '</td><td>' + st + '</td><td class="text-end">' + act + '</td></tr>');
+    });
+  });
+  var body = document.getElementById('swinv-rb-body');
+  body.innerHTML = rows.join('') || '<tr><td class="text-muted" colspan="5">No rollback point yet: one is saved before every upgrade.</td></tr>';
+  body.querySelectorAll('.swinv-rb').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var what = b.getAttribute('data-kind') === 'python'
+        ? 'The whole Python environment goes back to that moment and SATOM restarts.'
+        : 'Those packages are reinstalled at their saved versions and the services they need are restarted and checked.';
+      if (!window.confirm('Roll back "' + b.getAttribute('data-label') + '" on this node?\n\n' + what)) { return; }
+      swinvPost('/settings/rollback', { point: b.getAttribute('data-point') }, 'Queuing the rollback');
+    });
+  });
 }
 function swinvLoad(refresh) {
   var body = document.getElementById('swinv-comp-body');
@@ -5795,6 +5860,7 @@ function swinvLoad(refresh) {
           if (!n.reachable) { return ''; }
           return sysEsc(n.name) + ': ' + (n.checked_at
             ? 'updates checked ' + sysEsc(n.checked_at) + (n.index_refreshed ? '' : ' <span class="text-danger">(package index NOT refreshed: answered from the cached index)</span>')
+              + (n.python_error ? ' <span class="text-danger">(Python index not reachable: ' + sysEsc(n.python_error) + ')</span>' : '')
             : 'updates not checked yet');
         }).filter(Boolean).join(' · ');
       document.getElementById('swinv-comp-head').innerHTML = '<tr><th>Component</th>' + swinvNodeHead(nodes) + '<th></th></tr>';
@@ -5809,8 +5875,9 @@ function swinvLoad(refresh) {
           swinvUpgrade(b.getAttribute('data-key'), b.getAttribute('data-label'), b.getAttribute('data-impact'));
         });
       });
-      document.getElementById('swinv-py-head').innerHTML = '<tr><th>Package</th>' + swinvNodeHead(nodes) + '</tr>';
+      document.getElementById('swinv-py-head').innerHTML = '<tr><th>Package</th>' + swinvNodeHead(nodes) + '<th></th></tr>';
       swinvRenderPython();
+      swinvRenderRollback(d);
       document.getElementById('swinv-assets-body').innerHTML = (d.assets || []).map(function (a) {
         return '<tr><td>' + sysEsc(a.name) + '</td><td><code>' + sysEsc(a.version) + '</code></td><td class="text-muted">' + sysEsc(a.license) + '</td></tr>';
       }).join('');

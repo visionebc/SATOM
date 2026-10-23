@@ -21,6 +21,7 @@ re-checks against its own table.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -45,6 +46,8 @@ PACKAGES: dict[str, dict] = {
 
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]{0,63}$")
 ACTIONS = ("install", "upgrade", "check")
+ROLLBACK_INDEX = "_rollback-points.idx"
+_POINT_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 
 # Settings > General > Installed software: every component but the kernel
 # (which belongs to the host) can be UPGRADED -- only what is already
@@ -155,11 +158,61 @@ def _enqueue(action: str, key: str, by: str, origin: str) -> str:
     req = {"id": uid, "kind": "syspkg", "package": key, "action": action,
            "requested_by": by, "requested_at": now,
            "node": su.this_node_name(), "role": su.node_role(), "origin": origin}
+    if action == "check":
+        # The Python half asks the index of Update sources, like a pip change.
+        try:
+            problem = su.attach_pip_index(req)
+        except Exception as exc:  # noqa: BLE001 -- settings unreadable here
+            problem = "the Update sources settings could not be read: %s" % exc
+        if problem:
+            # The runner then says so for Python instead of asking pypi.org
+            # behind the operator's back.
+            req["pip_index_problem"] = str(problem)[:300]
     (su.STATUS_DIR / (uid + ".json")).write_text(json.dumps({
         "id": uid, "state": "queued", "steps": [], "kind": "syspkg",
         "package": key, "action": action, "requested_by": by,
         "node": req["node"], "role": req["role"], "origin": origin,
         "updated_at": now}))
+    # 0600 from the first byte: a check may carry the index token, and the
+    # queue directory is world-listable (same rule as a pip change).
+    tmp = su.REQ_DIR / ("." + uid + ".tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(req))
+    tmp.rename(su.REQ_DIR / (uid + ".json"))
+    return uid
+
+
+def rollback_points() -> list[dict]:
+    """THIS node's rollback points, newest first, as the runner published
+    them (``update-status/`` is node-local, never synced to the peer)."""
+    try:
+        d = json.loads((su.STATUS_DIR / ROLLBACK_INDEX).read_text())
+    except (OSError, ValueError):
+        return []
+    pts = d.get("points") if isinstance(d, dict) else None
+    return [p for p in (pts or []) if isinstance(p, dict) and p.get("id")]
+
+
+def request_rollback(point: str, by: str, *, origin: str = "installed-software-card") -> str:
+    """Enqueue putting ONE rollback point of this node back."""
+    from .. import runtime
+    runtime.require("self_update")
+    point = (point or "").strip()
+    if not _POINT_RE.match(point):
+        raise ValueError("%r is not a rollback point" % point)
+    known = {p["id"]: p for p in rollback_points()}
+    if point not in known:
+        raise ValueError("no rollback point %s on this node" % point)
+    if known[point].get("state") not in ("ready", "applied", "restored", "restore-failed"):
+        raise ValueError("rollback point %s is %s" % (point, known[point].get("state")))
+    su.REQ_DIR.mkdir(parents=True, exist_ok=True)
+    su.STATUS_DIR.mkdir(parents=True, exist_ok=True)
+    uid = datetime.utcnow().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+    now = datetime.utcnow().isoformat() + "Z"
+    req = {"id": uid, "kind": "rollback", "point": point, "requested_by": by,
+           "requested_at": now, "node": su.this_node_name(),
+           "role": su.node_role(), "origin": origin}
     tmp = su.REQ_DIR / ("." + uid + ".tmp")
     tmp.write_text(json.dumps(req))
     tmp.rename(su.REQ_DIR / (uid + ".json"))
@@ -195,10 +248,13 @@ def latest_check() -> dict | None:
         if d.get("kind") != "syspkg" or d.get("action") != "check" \
                 or d.get("state") != "success" or not isinstance(d.get("available"), dict):
             continue
+        py = d.get("python_available")
         return {"checked_at": d.get("checked_at") or d.get("updated_at"),
                 "index_refreshed": bool(d.get("index_refreshed")),
                 "package_manager": d.get("package_manager"),
-                "available": d["available"]}
+                "available": d["available"],
+                "python_available": py if isinstance(py, dict) else None,
+                "python_error": d.get("python_error") or ""}
     return None
 
 

@@ -5502,6 +5502,40 @@ place that installs a missing package).
   packages and SATOM's health is checked afterwards; bubblewrap re-runs the
   sandbox test. When nothing changed, nothing is restarted. Services that
   still run a replaced library are listed as a warning in the job log.
+- **Every upgrade saves its way back first.** Before an operating-system
+  upgrade runs, SATOM simulates it to learn every package the transaction
+  replaces (dependencies included, such as `libssl3` for OpenSSL) and saves
+  each one at its **current** version: downloaded from the repositories,
+  or rebuilt from the installed files with `dpkg-repack` when the mirror no
+  longer carries that version (Debian security keeps only the newest; install
+  `dpkg-repack` from System packages if a node needs it). If any package
+  cannot be saved, **the upgrade does not run** and the job says which one.
+  Python changes save a full copy of the virtual environment. If the upgrade
+  or the health check after it fails, the copy is put back automatically.
+- **Rollback points** lists what was saved on every node: when, what, by
+  whom and whether it has been restored. **Rollback** puts one point of this
+  node back: an OS point reinstalls those packages at their saved versions
+  (`AG install --allow-downgrades` keeping the local configuration on
+  Debian/Ubuntu, `rpm -Uvh --oldpackage` on RHEL, `zypper install
+  --oldpackage` on SLES) and restarts and checks what the component needs; a
+  Python point puts the whole venv back and restarts SATOM. Packages an
+  upgrade *added* stay installed (nothing older depends on them) and the log
+  says so. SATOM keeps the newest 10 OS points and 3 Python points per node,
+  in `/var/lib/satom-rollback` (root only, never copied to the peer).
+- **From the console, even with the web down**, as root on that node:
+  `satom execute rollback list` shows the points and
+  `satom execute rollback apply <id> --yes` restores one (without `--yes` it
+  shows what it would restore). It runs the root-owned, signed copy of the
+  update runner with the system Python, so it works without the web
+  application, the database, the network or a working venv.
+- **Python packages** can be upgraded too, one at a time: **Check for
+  updates** also asks the package index of Update sources which packages of
+  the venv have a newer version, and those rows show **update:** with an
+  **Upgrade** button. Only packages already installed can be upgraded. A
+  package `requirements.txt` asks for has its pin updated (as from
+  Libraries); a dependency of a dependency is not pinned. If the index of
+  Update sources cannot be used, the card says so instead of asking pypi.org.
+  Libraries changes now save the same venv copy and restore it on failure.
 - **VictoriaMetrics** is not a distribution package. **Upgrade** installs
   the version this SATOM release pins, with its sha256, from the signed
   release, the same script a code update runs. It never downloads "the

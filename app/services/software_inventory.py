@@ -308,8 +308,10 @@ def _peer_inventory(host: str) -> dict:
             or not isinstance(inv.get("python"), list):
         return {"reachable": False, "error": "HTTP %s" % st}
     upd = ans.get("updates")
+    pts = ans.get("rollback_points")
     return {"reachable": True, "error": None, "role": ans.get("role"),
-            "inventory": inv, "updates": upd if isinstance(upd, dict) else None}
+            "inventory": inv, "updates": upd if isinstance(upd, dict) else None,
+            "rollback_points": pts if isinstance(pts, list) else []}
 
 
 _UNKNOWN = object()
@@ -328,14 +330,16 @@ def overview(refresh: bool = False) -> dict:
     nodes = [{"name": su.this_node_name(), "self": True, "role": su.node_role(),
               "reachable": True, "error": None,
               "inventory": local_inventory(refresh=refresh),
-              "updates": sp.latest_check()}]
+              "updates": sp.latest_check(),
+              "rollback_points": sp.rollback_points()}]
     for n in su.peer_nodes():
         rep = _peer_inventory(n["host"])
         nodes.append({"name": n.get("name"), "self": False,
                       "role": rep.get("role"), "reachable": rep["reachable"],
                       "error": rep.get("error"),
                       "inventory": rep.get("inventory") or {},
-                      "updates": rep.get("updates")})
+                      "updates": rep.get("updates"),
+                      "rollback_points": rep.get("rollback_points") or []})
 
     by_node_comp = {nd["name"]: {c.get("key"): c for c in
                                  (nd["inventory"].get("components") or [])
@@ -388,8 +392,14 @@ def overview(refresh: bool = False) -> dict:
             p = by_node_py[nd["name"]].get(key)
             per[nd["name"]] = p.get("version") if p else ""
             vals.append(p.get("version") if p else None)
+        latest = {}
+        for nd in nodes:
+            pa = (nd.get("updates") or {}).get("python_available") or {}
+            hit = next((v for n, v in pa.items() if _norm(n) == key), "")
+            if nd["reachable"] and hit and per.get(nd["name"]) and hit != per[nd["name"]]:
+                latest[nd["name"]] = hit
         python.append({"name": names[key], "direct": key in direct,
-                       "nodes": per, "differs": _differs(vals)})
+                       "nodes": per, "differs": _differs(vals), "latest": latest})
 
     return {
         "nodes": [{"name": nd["name"], "self": nd["self"], "role": nd["role"],
@@ -398,7 +408,14 @@ def overview(refresh: bool = False) -> dict:
                    "machine": nd["inventory"].get("machine", ""),
                    "package_manager": nd["inventory"].get("package_manager", ""),
                    "checked_at": (nd.get("updates") or {}).get("checked_at"),
-                   "index_refreshed": (nd.get("updates") or {}).get("index_refreshed")}
+                   "index_refreshed": (nd.get("updates") or {}).get("index_refreshed"),
+                   "python_checked": (nd.get("updates") or {}).get("python_available")
+                   is not None,
+                   "python_error": (nd.get("updates") or {}).get("python_error") or "",
+                   "rollback_points": [
+                       {k: p.get(k) for k in ("id", "kind", "label", "state", "created_at",
+                                               "by", "restored_at", "restore_detail")}
+                       for p in (nd.get("rollback_points") or []) if isinstance(p, dict)]}
                   for nd in nodes],
         "components": components,
         "python": python,

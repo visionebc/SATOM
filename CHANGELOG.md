@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **Settings › General › Installed software**: every package this installation
+  runs on and its installed version, per node. **Platform components**
+  (Python, PostgreSQL server and client, nginx, VictoriaMetrics, Redis,
+  OpenSSL, CA certificates, OpenSSH, Git, rsync, curl, sudo, bubblewrap, Lua,
+  systemd, kernel) show the version the program reports and the distribution
+  package version (dpkg/rpm) that security advisories name. **Python
+  packages** lists the whole interpreter, with `requirements.txt` entries
+  marked *direct*. **Browser assets** come from the vendor manifest.
+  Versions that are not the same on every node are marked *differs*, and a
+  silent peer shows as *unreachable*. Read-only and admin-only, with a JSON
+  download. Requested by the operator: "a section with all the packages the
+  system uses and the installed version, for example nginx".
+
 ## [3.5.0] - 2026-10-23
 
 Plugin Studio becomes the place where everything SATOM automates lives:

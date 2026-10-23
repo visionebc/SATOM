@@ -27077,3 +27077,24 @@ msgstr "Fläche"
 
 msgid "The app description (Settings)"
 msgstr "Die App-Beschreibung (Einstellungen)"
+
+msgid "Installed software"
+msgstr "Installierte Software"
+
+msgid "Every package this installation runs on and the version installed, on every node. The first version is what the program reports; the line under it is what the distribution package manager has on record, the one security advisories name."
+msgstr "Jedes Paket, auf dem diese Installation läuft, und die installierte Version, auf jedem Knoten. Die erste Version meldet das Programm selbst; die Zeile darunter ist der Stand im Paketmanager der Distribution, auf den sich Sicherheitshinweise beziehen."
+
+msgid "Platform components"
+msgstr "Plattformkomponenten"
+
+msgid "Python packages"
+msgstr "Python-Pakete"
+
+msgid "Direct dependencies only"
+msgstr "Nur direkte Abhängigkeiten"
+
+msgid "Browser assets"
+msgstr "Browser-Ressourcen"
+
+msgid "License"
+msgstr "Lizenz"

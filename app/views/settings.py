@@ -696,6 +696,41 @@ def system_packages_install():
                     'node': su.this_node_name(), 'also_peer': also_peer})
 
 
+@bp.route('/software-inventory')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def software_inventory():
+    """Every node x every installed platform component and Python package,
+    plus the browser assets. Read-only. ``?refresh=1`` re-measures this node;
+    ``?download=1`` returns the same JSON as an attachment (an inventory to
+    hand to an auditor). A silent peer is unreachable, never "same as here"."""
+    from ..services import software_inventory as inv
+    data = inv.overview(refresh=request.args.get('refresh') == '1')
+    resp = jsonify(data)
+    if request.args.get('download') == '1':
+        import re
+        from ..services import self_update as su
+        node = re.sub(r'[^A-Za-z0-9._-]', '_', su.this_node_name() or 'node')
+        resp.headers['Content-Disposition'] = (
+            'attachment; filename="satom-software-%s-%s.json"'
+            % (node, data['generated_at'][:10]))
+        log_action('settings.software_inventory', detail='downloaded')
+    return resp
+
+
+@bp.route('/peer/software-inventory')
+@csrf.exempt
+def peer_software_inventory():
+    """THIS node's installed software, for the peer's card. Read-only."""
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    from ..services import software_inventory as inv
+    return jsonify({'node': su.this_node_name(), 'role': su.node_role(),
+                    'inventory': inv.local_inventory()})
+
+
 @bp.route('/peer/system-packages')
 @csrf.exempt
 def peer_system_packages():

@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · 1 entry.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · 1 entry.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
-        <ul class="rel-leads"></ul>
+        <span class="rel-nav-meta">unreleased · Added · 1 entry</span>
+        <ul class="rel-leads"><li>Settings › General › Installed software</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.5.0.html" data-rel-version="3.5.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.5.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -470,7 +470,21 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>Settings › General › Installed software</strong>: every package this installation
+  runs on and its installed version, per node. <strong>Platform components</strong>
+  (Python, PostgreSQL server and client, nginx, VictoriaMetrics, Redis,
+  OpenSSL, CA certificates, OpenSSH, Git, rsync, curl, sudo, bubblewrap, Lua,
+  systemd, kernel) show the version the program reports and the distribution
+  package version (dpkg/rpm) that security advisories name. <strong>Python
+  packages</strong> lists the whole interpreter, with <code>requirements.txt</code> entries
+  marked <em>direct</em>. <strong>Browser assets</strong> come from the vendor manifest.
+  Versions that are not the same on every node are marked <em>differs</em>, and a
+  silent peer shows as <em>unreachable</em>. Read-only and admin-only, with a JSON
+  download. Requested by the operator: "a section with all the packages the
+  system uses and the installed version, for example nginx".</li>
+</ul>
 <p class="rel-prevnext"><a href="v3.5.0.html">Version 3.5.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">

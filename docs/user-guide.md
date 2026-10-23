@@ -5445,6 +5445,42 @@ directories. All of them are mounted read-only.
 - New installs bring `bubblewrap` with them (online and offline bundles). This
   card is how a node installed before that gets it.
 
+**Installed software**, under System Information, lists everything this
+installation runs on and the version installed, with one column per
+registered node. It is read-only: it changes nothing, and Libraries and
+System packages remain the places that install.
+
+- **Platform components** are the operating-system packages the installer
+  puts down (Python, PostgreSQL server and client, nginx, OpenSSL, CA
+  certificates, OpenSSH, Git, rsync, curl, sudo, bubblewrap), what SATOM
+  installs itself (VictoriaMetrics) or uses when present (Redis, Lua), plus
+  systemd and the kernel. Each cell shows two versions. The first is what the
+  program itself reports (`nginx -v`, `SELECT version()`, the OpenSSL that
+  Python links). The line under it is the distribution package and the
+  version the package manager (dpkg or rpm) has on record, such as
+  `nginx 1.22.1-9+deb12u9`. That one is the version security advisories name.
+  VictoriaMetrics says *no distro package* because SATOM installs the binary
+  itself. A component the node does not have says **not installed**, never a
+  guessed version.
+- **Python packages** lists every package in the interpreter that runs the
+  app, including the dependencies of dependencies, not only the curated
+  Libraries list. **direct** marks the ones `requirements.txt` asks for.
+  *Filter* searches by name, and *Direct dependencies only* hides the rest.
+- **Browser assets** are the third-party files the console serves (Bootstrap,
+  Bootstrap Icons, Chart.js, Toast UI Editor), with version and license, read
+  from `app/static/vendor/MANIFEST.json`.
+- **differs** marks a component or package whose version is not the same on
+  every node that answered, including one that is missing on one node. A
+  standby that has not taken an update yet shows up here. A node that did not
+  answer shows **unreachable**, and the comparison does not count it.
+- **Refresh** measures this node again (results are kept for a minute).
+  **Download JSON** saves the same data as a file, for an audit or a support
+  case.
+- Only administrators see the card. A list of installed versions is useful to
+  an attacker, so it gets the same restriction as the rest of the General tab.
+  The peer answers over the authenticated node-to-node channel, the same one
+  Libraries uses.
+
 **Update sources**, under System Information, says where this installation
 looks for updates. There are two sources, and each is set on its own: leave
 either on **Default**, or point one or both at an internal pipeline or mirror.

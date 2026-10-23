@@ -112,6 +112,21 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>Settings › General › Installed software</strong>: every package this installation
+  runs on and its installed version, per node. <strong>Platform components</strong>
+  (Python, PostgreSQL server and client, nginx, VictoriaMetrics, Redis,
+  OpenSSL, CA certificates, OpenSSH, Git, rsync, curl, sudo, bubblewrap, Lua,
+  systemd, kernel) show the version the program reports and the distribution
+  package version (dpkg/rpm) that security advisories name. <strong>Python
+  packages</strong> lists the whole interpreter, with <code>requirements.txt</code> entries
+  marked <em>direct</em>. <strong>Browser assets</strong> come from the vendor manifest.
+  Versions that are not the same on every node are marked <em>differs</em>, and a
+  silent peer shows as <em>unreachable</em>. Read-only and admin-only, with a JSON
+  download. Requested by the operator: "a section with all the packages the
+  system uses and the installed version, for example nginx".</li>
+</ul>
 <h2 id="350---2026-10-23">[3.5.0] - 2026-10-23</h2>
 <p>Plugin Studio becomes the place where everything SATOM automates lives:
 every plugin is an app (a flow or a script), apps get a page and result
@@ -121,7 +136,7 @@ packages move between servers without an update package. Plugin Studio is on
 the first level of the sidebar, Automation sits right above Plugins, and this
 release carries the fixes of the 2026-10-23 security review (certifi CA
 bundle, Wiki mail links, metrics range).</p>
-<h3 id="added">Added</h3>
+<h3 id="added_1">Added</h3>
 <ul>
 <li><strong>Plugin packages</strong> (<code>.satomplugin</code>, format <code>satom.plugin/1</code>): Report Studio
   can <strong>export</strong> a view or widget and <strong>import</strong> a package from another server,
@@ -332,7 +347,7 @@ process page shows what starts it.</p>
 Python Studio app or script, call an API Catalog endpoint, query or write
 data, run a hook or a scheduled action, or notify — chained on each
 other's outcome, and started by outside systems through the API.</p>
-<h3 id="added_1">Added</h3>
+<h3 id="added_2">Added</h3>
 <ul>
 <li><strong>Triggers and automations on a trigger — SATOM as an orchestrator.</strong> The
   operator asked for triggers on alerts, created under Administrator and
@@ -371,7 +386,7 @@ other's outcome, and started by outside systems through the API.</p>
 <p>Python Studio gets an <strong>API Catalog</strong>: the versions of an API someone publishes,
 called by endpoint from app steps and scripts. Four System pages move into
 Settings, and an update feed that answers 404 says who answered and why.</p>
-<h3 id="added_2">Added</h3>
+<h3 id="added_3">Added</h3>
 <ul>
 <li><strong>API Catalog: the versions of an API someone publishes</strong> (FA-0006). Python
   Studio has a new <strong>API Catalog</strong> pane. Register an API (owner, link to its
@@ -426,7 +441,7 @@ package is about four times smaller.</p>
   node imports only the newest; the update package drops from about 96 MB to
   about 22 MB. Older packs stay attached to their own releases.</li>
 </ul>
-<h3 id="added_3">Added</h3>
+<h3 id="added_4">Added</h3>
 <ul>
 <li><strong>A feed link that never changes, and updates through a mirror of GitHub</strong>
   (SA-0006). Every release now also carries its update feed as the asset
@@ -544,7 +559,7 @@ no existing API token gains the new <code>template_draft</code>, <code>template_
 <code>process_arm</code> capabilities. The one check that is on by default is <em>intent
 deviation</em> (Settings → Alerts), which compares a bound device with its
 template and never writes.</p>
-<h3 id="added_4">Added</h3>
+<h3 id="added_5">Added</h3>
 <ul>
 <li><strong>The API describes itself, and reads and writes intent and observations</strong>
   — part of "do every phase of the NAF alignment plan". Three things the
@@ -843,7 +858,7 @@ or newer. A node on 3.3.2 or older applies <code>satom-update-3.3.3.tar.gz</code
 new versions of <code>satom-scripts.service</code> and <code>satom-integrations.service</code>, which
 now carry resource limits (memory, tasks, CPU, a memory-backed <code>/tmp</code>). A site
 whose scripts need more raises them in a systemd drop-in.</p>
-<h3 id="added_5">Added</h3>
+<h3 id="added_6">Added</h3>
 <ul>
 <li><strong>Python Studio → Examples</strong>: working examples of every Studio piece,
   installed with one click, as asked: "put examples of everything in that
@@ -1136,7 +1151,7 @@ before that date has to be cloned again.</p>
 <p>Upgrade path unchanged from 3.3.5: the update package accepts a node on 3.3.3
 or newer. A node on 3.3.2 or older applies <code>satom-update-3.3.3.tar.gz</code>
 (release v3.3.3) first, then this one.</p>
-<h3 id="added_6">Added</h3>
+<h3 id="added_7">Added</h3>
 <ul>
 <li><strong>Settings → General → Update sources</strong>: point the update packages and the
   Python libraries at another URL, such as an internal pipeline or mirror.
@@ -1202,7 +1217,7 @@ or newer. A node on 3.3.2 or older applies <code>satom-update-3.3.3.tar.gz</code
   or Enter opens it. Guard: <code>tests/test_row_select_click.py</code>.</li>
 </ul>
 <h2 id="334---2026-10-19">[3.3.4] - 2026-10-19</h2>
-<h3 id="added_7">Added</h3>
+<h3 id="added_8">Added</h3>
 <ul>
 <li>Naming variables and site tokens (FA-0001). Requested as: "you have
   variables like NAME; it would be useful to add others such as the port and
@@ -1284,7 +1299,7 @@ or newer. A node on 3.3.2 or older applies <code>satom-update-3.3.3.tar.gz</code
   alert is still delivered: an alert beats a signature.</li>
 </ul>
 <h2 id="333---2026-10-18">[3.3.3] - 2026-10-18</h2>
-<h3 id="added_8">Added</h3>
+<h3 id="added_9">Added</h3>
 <ul>
 <li>Deploy clones: copy one installation's configuration into another
   (<code>satom execute clone export</code>, <code>clone import</code>, <code>clone release</code>,
@@ -1381,7 +1396,7 @@ or newer. A node on 3.3.2 or older applies <code>satom-update-3.3.3.tar.gz</code
   The manual <code>satom execute seed actions --yes</code> after updating from 2.x is no
   longer needed.</li>
 </ul>
-<h3 id="added_9">Added</h3>
+<h3 id="added_10">Added</h3>
 <ul>
 <li><code>satom execute seed actions --upgrade</code> creates only the scheduled actions
   introduced after 2.11.0, so an action of the 2.x set that the operator
@@ -9833,7 +9848,7 @@ an opaque <code>-651</code> at deploy time.</p>
   one that never narrowed.</p>
 </li>
 </ul>
-<h3 id="added_10">Added</h3>
+<h3 id="added_11">Added</h3>
 <ul>
 <li><strong><code>/artifacts/inventory</code> says WHERE, and a save can no longer change a file
   for devices nobody named.</strong> Four changes, one round.</li>
@@ -10050,7 +10065,7 @@ an opaque <code>-651</code> at deploy time.</p>
 </li>
 </ul>
 <h2 id="1200---2026-08-24">[1.20.0] - 2026-08-24</h2>
-<h3 id="added_11">Added</h3>
+<h3 id="added_12">Added</h3>
 <ul>
 <li><strong>The "?" reached the pages.</strong> Settings → Sentinel has explained every knob
   since 1.16; the four operational pages explained nothing. 27 explanations now
@@ -10095,7 +10110,7 @@ an opaque <code>-651</code> at deploy time.</p>
   shipped here.</li>
 </ul>
 <h2 id="1190---2026-08-23">[1.19.0] - 2026-08-23</h2>
-<h3 id="added_12">Added</h3>
+<h3 id="added_13">Added</h3>
 <ul>
 <li><strong>The border blocklist — a list SATOM publishes, never a write it performs.</strong>
   Sentinel can now put a source address on a text feed a FortiGate reads as an
@@ -10222,7 +10237,7 @@ an opaque <code>-651</code> at deploy time.</p>
 </li>
 </ul>
 <h2 id="1180---2026-08-23">[1.18.0] - 2026-08-23</h2>
-<h3 id="added_13">Added</h3>
+<h3 id="added_14">Added</h3>
 <ul>
 <li><strong>Border corroboration — Sentinel can ask the firewall in front whether a
   source is a real peer.</strong> A new operator-entered map (Sentinel → Context →
@@ -10315,7 +10330,7 @@ an opaque <code>-651</code> at deploy time.</p>
 <h2 id="1170---2026-08-23">[1.17.0] - 2026-08-23</h2>
 <p>Sentinel's four surfaces are now panes of the Admin Console, autonomy has four
 named modes, and the on-demand sweep is a job over the devices you pick.</p>
-<h3 id="added_14">Added</h3>
+<h3 id="added_15">Added</h3>
 <ul>
 <li><strong>Context and Response policy are panes of the Admin Console</strong>
   (<code>Settings → Sentinel → Context</code> / <code>Response policy</code>), each rendered from the
@@ -10380,7 +10395,7 @@ dropped by the browser, silently.</p>
   of the change-request form and the concept map (<code>style-src-elem</code> names a
   nonce too, so those styles never applied).</li>
 </ul>
-<h3 id="added_15">Added</h3>
+<h3 id="added_16">Added</h3>
 <ul>
 <li><strong><code>tests/test_csp_nonce.py</code> (safeguards §108)</strong> — every inline script and
   style in every template must carry the nonce; the rendered Settings surfaces
@@ -10392,7 +10407,7 @@ dropped by the browser, silently.</p>
 </ul>
 <h2 id="1160---2026-08-23">[1.16.0] - 2026-08-23</h2>
 <p>Every control in the Sentinel settings section explains itself, on hover.</p>
-<h3 id="added_16">Added</h3>
+<h3 id="added_17">Added</h3>
 <ul>
 <li><strong>A "?" beside every element of <code>Settings → Sentinel → Settings</code></strong> — all 25
   knobs, the five group headings, the four health chips and the three links
@@ -10437,7 +10452,7 @@ dropped by the browser, silently.</p>
 <h2 id="1150---2026-08-23">[1.15.0] - 2026-08-23</h2>
 <p>Sentinel's Architecture and Incidents console are rendered in the Admin
 Console, beside its settings.</p>
-<h3 id="added_17">Added</h3>
+<h3 id="added_18">Added</h3>
 <ul>
 <li><strong><code>Settings → Sentinel → Architecture</code></strong> and <strong><code>Settings → Sentinel →
   Incidents console</code></strong> are now <strong>panes</strong>, not links out. Both render the same
@@ -10479,7 +10494,7 @@ Console, beside its settings.</p>
 </ul>
 <h2 id="1140---2026-08-23">[1.14.0] - 2026-08-23</h2>
 <p>The Admin Console menu is defined once and included everywhere.</p>
-<h3 id="added_18">Added</h3>
+<h3 id="added_19">Added</h3>
 <ul>
 <li><strong><code>app/templates/settings/_nav.html</code> — the menu, in one file.</strong> The group
   list, the render loop and the accordion script now live together in a single
@@ -10522,7 +10537,7 @@ Console, beside its settings.</p>
 </ul>
 <h2 id="1130---2026-08-23">[1.13.0] - 2026-08-23</h2>
 <p>Settings → Sentinel is now a full section, not a form in a pane.</p>
-<h3 id="added_19">Added</h3>
+<h3 id="added_20">Added</h3>
 <ul>
 <li><strong><code>/settings/sentinel</code> — the whole Sentinel section.</strong> The pane held the
   form and nothing else, so "what will this thing actually DO?" was answered
@@ -10573,7 +10588,7 @@ Console, beside its settings.</p>
 block. This release documents all of it, and repairs the one defect that
 auditing it uncovered: <strong>a declined section was only half declined, and the
 missing half was the half that writes.</strong></p>
-<h3 id="added_20">Added</h3>
+<h3 id="added_21">Added</h3>
 <ul>
 <li><strong>An SNI policy is cloned at all.</strong> <code>clone._CERT_URNS</code> held
   <code>system/certificate.sni</code>, so the object was classified <code>cert</code> — "SSH-only,
@@ -10728,7 +10743,7 @@ missing half was the half that writes.</strong></p>
   Both are guarded, both had drifted since the pages were added.</li>
 </ul>
 <h2 id="1110---2026-08-20">[1.11.0] - 2026-08-20</h2>
-<h3 id="added_21">Added</h3>
+<h3 id="added_22">Added</h3>
 <ul>
 <li><strong>Sentinel: the remaining device transports, captured rather than specified.</strong>
   <code>block_country</code> and <code>raise_protection</code> were run against a live FortiWeb 7.6.8
@@ -10812,7 +10827,7 @@ missing half was the half that writes.</strong></p>
   accepts. Widened to 64 on both the event and the incident; the existing
   boot-time widener applies it in place.</li>
 </ul>
-<h3 id="added_22">Added</h3>
+<h3 id="added_23">Added</h3>
 <ul>
 <li><strong>Sentinel phase 7 — a response that can actually execute, for exactly one
   action.</strong> <code>block_ip</code>'s transport was captured from a live FortiWeb 7.6.8
@@ -11033,7 +11048,7 @@ missing half was the half that writes.</strong></p>
   unreachable from the entire UI.</p>
 </li>
 </ul>
-<h3 id="added_23">Added</h3>
+<h3 id="added_24">Added</h3>
 <ul>
 <li>
 <p><strong>The appliance roster folds the ADOMs of one chassis under their device,
@@ -11206,7 +11221,7 @@ missing half was the half that writes.</strong></p>
   radius.</li>
 </ul>
 <h2 id="1101---2026-08-17">[1.10.1] - 2026-08-17</h2>
-<h3 id="added_24">Added</h3>
+<h3 id="added_25">Added</h3>
 <ul>
 <li><strong>Sharded test runner</strong> — <code>scripts/run_test_shards.sh</code> splits the suite
   across 2-4 parallel shards (by file, never within a file) and
@@ -11311,7 +11326,7 @@ missing half was the half that writes.</strong></p>
   only at write time trusts every row the process did not write. A refused link
   keeps its row and states why rather than silently losing its <code>href</code>, which
   would read as a UI bug and leave the bad URL in place.</p>
-<h3 id="added_25">Added</h3>
+<h3 id="added_26">Added</h3>
 <ul>
 <li><strong>Three tools that know something a browser tab does not: a certificate
   inspector, a false-positive explainer and a three-leg transaction tracer.</strong>
@@ -12374,7 +12389,7 @@ missing half was the half that writes.</strong></p>
 </li>
 </ul>
 <h2 id="193---2026-08-10">[1.9.3] - 2026-08-10</h2>
-<h3 id="added_26">Added</h3>
+<h3 id="added_27">Added</h3>
 <ul>
 <li><strong>The interface itself is translated — Spanish, German, French and Italian,
   chosen from your profile.</strong> Until now only the change <em>document</em> could change
@@ -13144,7 +13159,7 @@ missing half was the half that writes.</strong></p>
   could not be proven were deliberately left unmapped — a wrong mapping would
   populate the dropdown from the wrong collection and reject valid values.</li>
 </ul>
-<h3 id="added_27">Added</h3>
+<h3 id="added_28">Added</h3>
 <ul>
 <li><strong>Reference fields are checked against the appliance before the write.</strong> Every
   operator-facing save and create resolves each submitted field to the cmdb
@@ -13217,7 +13232,7 @@ missing half was the half that writes.</strong></p>
   such a duplicate visible at all.</p>
 </li>
 </ul>
-<h3 id="added_28">Added</h3>
+<h3 id="added_29">Added</h3>
 <ul>
 <li>
 <p><strong>The clone says what it cannot copy, before it writes.</strong> Three things are
@@ -13385,7 +13400,7 @@ missing half was the half that writes.</strong></p>
   it from. A device that cannot be read answers <em>unknown</em>, never <em>no one</em>.
   Enforced hardest at the push, which is where the leak physically happens.</li>
 </ul>
-<h3 id="added_29">Added</h3>
+<h3 id="added_30">Added</h3>
 <ul>
 <li>
 <p><strong>The results table shows the Web Protection Profile behind each policy, and
@@ -13505,7 +13520,7 @@ missing half was the half that writes.</strong></p>
   wiring the peer status poll.</p>
 </li>
 </ul>
-<h3 id="added_30">Added</h3>
+<h3 id="added_31">Added</h3>
 <ul>
 <li><strong>The chat streams, shows that it is working, and can be stopped.</strong> The
   reply now appears as it is generated, with an animated indicator, a live
@@ -13682,7 +13697,7 @@ that it carries the defect.</p>
   <code>reset theme</code> — the anti-lockout command. A guard now walks the AST of
   every CLI module rather than the two known call sites.</li>
 </ul>
-<h3 id="added_31">Added</h3>
+<h3 id="added_32">Added</h3>
 <ul>
 <li><strong>The operator manual now documents recovery custody.</strong> 1.7.0 shipped two CLI
   verbs, a diagnostic and a passphrase the operator must store outside the fleet,
@@ -13702,7 +13717,7 @@ that it carries the defect.</p>
   deleting it everywhere.</li>
 </ul>
 <h2 id="170---2026-08-07">[1.7.0] - 2026-08-07</h2>
-<h3 id="added_32">Added</h3>
+<h3 id="added_33">Added</h3>
 <ul>
 <li><code>tests/test_no_pem_literals.py</code> - no source file may carry a literal PEM
   private-key header. The publisher scans every blob of the sanitised mirror
@@ -13839,7 +13854,7 @@ that it carries the defect.</p>
   frozen into an old bundle.</li>
 </ul>
 <h2 id="160---2026-08-07">[1.6.0] - 2026-08-07</h2>
-<h3 id="added_33">Added</h3>
+<h3 id="added_34">Added</h3>
 <ul>
 <li>Monitoring is provisioned from <strong>one seam</strong>. Saving an appliance now creates
   both its scrape targets and its threshold probes; until now <code>ensure_baseline</code>
@@ -13999,7 +14014,7 @@ that it carries the defect.</p>
 </li>
 </ul>
 <h2 id="150---2026-08-06">[1.5.0] - 2026-08-06</h2>
-<h3 id="added_34">Added</h3>
+<h3 id="added_35">Added</h3>
 <ul>
 <li><strong>Settings &gt; Thresholds</strong> — a 22nd tab, and the first place in this product
   where a limit can be stated once instead of once per probe. Six scopes: the
@@ -14428,7 +14443,7 @@ that it carries the defect.</p>
   column, which nothing else writes and which was empty on the whole fleet.</li>
 </ul>
 <h2 id="140---2026-08-05">[1.4.0] - 2026-08-05</h2>
-<h3 id="added_35">Added</h3>
+<h3 id="added_36">Added</h3>
 <ul>
 <li>
 <p><strong>SATOM health and Device health are two pages.</strong> Fleet health carried the
@@ -15067,7 +15082,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   published copy.</li>
 </ul>
 <h2 id="13---2026-08-02">[1.3] - 2026-08-02</h2>
-<h3 id="added_36">Added</h3>
+<h3 id="added_37">Added</h3>
 <ul>
 <li><strong>The manual is reachable from the sign-in screen.</strong> The login page offered a
   link to the API manual and nothing else. The person who cannot get in is
@@ -15754,7 +15769,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   Certificate Manager endpoints raised on import, and the cert alert degraded
   to reporting the import error instead of the certificate's real state.</li>
 </ul>
-<h3 id="added_37">Added</h3>
+<h3 id="added_38">Added</h3>
 <ul>
 <li><strong><code>tests/test_every_module_imports.py</code></strong> — every shipped module under <code>app/</code>
   and <code>deploy/</code> must compile, and the modules that callers import <em>lazily</em>
@@ -15766,7 +15781,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
 <h2 id="121---2026-07-27">[1.2.1] - 2026-07-27</h2>
 <p>Documentation release. No application code changed; the offline bundles were
 rebuilt so that the shipped tree matches the documentation set.</p>
-<h3 id="added_38">Added</h3>
+<h3 id="added_39">Added</h3>
 <ul>
 <li><strong><code>docs/safeguards.md</code></strong> — single catalog of every protection in the product:
   what it prevents, where it lives, and <strong>how to verify it is armed</strong>. Covers
@@ -15832,7 +15847,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   with <code>from=</code>, <code>restrict</code> and a forced command that can only serve
   <code>rsync --sender</code> over the data directory.</li>
 </ul>
-<h3 id="added_39">Added</h3>
+<h3 id="added_40">Added</h3>
 <ul>
 <li><strong>ACME / Let's Encrypt certificate issuance</strong> with a DNS-provider catalog
   (30 providers seeded as data, editable by the operator) and per-provider
@@ -15900,7 +15915,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   server (appliance-side push config points at it), and <code>FM_*</code> env var names.</li>
 </ul>
 <h2 id="10---2026-07-14">[1.0] - 2026-07-14</h2>
-<h3 id="added_40">Added</h3>
+<h3 id="added_41">Added</h3>
 <ul>
 <li><strong>DNS Records management (IPAM/DDI)</strong>: "+DNS Records" CRUD in the DNS &amp; LB
   lookup tool, backed by pluggable providers (EfficientIP SOLIDserver,
@@ -15924,14 +15939,14 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   of raw UTC.</li>
 </ul>
 <h2 id="09---2026-07-13">[0.9] - 2026-07-13</h2>
-<h3 id="added_41">Added</h3>
+<h3 id="added_42">Added</h3>
 <ul>
 <li><strong>Node TLS + node-to-node encryption</strong>: internal CA, per-node leaf certs,
   mutually-authenticated Postgres replication, HTTPS peer probes, and
   "encryption in transit" monitoring cards (every badge backed by a live probe).</li>
 </ul>
 <h2 id="08---2026-07-12">[0.8] - 2026-07-12</h2>
-<h3 id="added_42">Added</h3>
+<h3 id="added_43">Added</h3>
 <ul>
 <li><strong>FortiAnalyzer</strong> integration (JSON-RPC, dual dialect) as a full ADOM, with
   its endpoints in the DB registry and a git source-of-truth harvest.</li>

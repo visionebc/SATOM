@@ -6131,6 +6131,42 @@ directories. All of them are mounted read-only.</p>
 <li>New installs bring <code>bubblewrap</code> with them (online and offline bundles). This
   card is how a node installed before that gets it.</li>
 </ul>
+<p><strong>Installed software</strong>, under System Information, lists everything this
+installation runs on and the version installed, with one column per
+registered node. It is read-only: it changes nothing, and Libraries and
+System packages remain the places that install.</p>
+<ul>
+<li><strong>Platform components</strong> are the operating-system packages the installer
+  puts down (Python, PostgreSQL server and client, nginx, OpenSSL, CA
+  certificates, OpenSSH, Git, rsync, curl, sudo, bubblewrap), what SATOM
+  installs itself (VictoriaMetrics) or uses when present (Redis, Lua), plus
+  systemd and the kernel. Each cell shows two versions. The first is what the
+  program itself reports (<code>nginx -v</code>, <code>SELECT version()</code>, the OpenSSL that
+  Python links). The line under it is the distribution package and the
+  version the package manager (dpkg or rpm) has on record, such as
+  <code>nginx 1.22.1-9+deb12u9</code>. That one is the version security advisories name.
+  VictoriaMetrics says <em>no distro package</em> because SATOM installs the binary
+  itself. A component the node does not have says <strong>not installed</strong>, never a
+  guessed version.</li>
+<li><strong>Python packages</strong> lists every package in the interpreter that runs the
+  app, including the dependencies of dependencies, not only the curated
+  Libraries list. <strong>direct</strong> marks the ones <code>requirements.txt</code> asks for.
+  <em>Filter</em> searches by name, and <em>Direct dependencies only</em> hides the rest.</li>
+<li><strong>Browser assets</strong> are the third-party files the console serves (Bootstrap,
+  Bootstrap Icons, Chart.js, Toast UI Editor), with version and license, read
+  from <code>app/static/vendor/MANIFEST.json</code>.</li>
+<li><strong>differs</strong> marks a component or package whose version is not the same on
+  every node that answered, including one that is missing on one node. A
+  standby that has not taken an update yet shows up here. A node that did not
+  answer shows <strong>unreachable</strong>, and the comparison does not count it.</li>
+<li><strong>Refresh</strong> measures this node again (results are kept for a minute).
+  <strong>Download JSON</strong> saves the same data as a file, for an audit or a support
+  case.</li>
+<li>Only administrators see the card. A list of installed versions is useful to
+  an attacker, so it gets the same restriction as the rest of the General tab.
+  The peer answers over the authenticated node-to-node channel, the same one
+  Libraries uses.</li>
+</ul>
 <p><strong>Update sources</strong>, under System Information, says where this installation
 looks for updates. There are two sources, and each is set on its own: leave
 either on <strong>Default</strong>, or point one or both at an internal pipeline or mirror.</p>

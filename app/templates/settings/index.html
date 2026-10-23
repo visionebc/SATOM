@@ -240,6 +240,67 @@
       </div>
     </div>
 
+    <!-- INSTALLED SOFTWARE  [SATOM-SOFTWARE-INVENTORY]
+         Everything SATOM runs on, with the installed version, per node:
+         platform components (binary + distro package), every Python
+         package of the app's interpreter, and the browser assets.
+         Read-only; admin-only because a version list is reconnaissance
+         (the whole General tab sits inside the is_admin block above). -->
+    <div class="row g-3 mt-1" id="swinv-card">
+      <div class="col-12">
+        <div class="fw-card">
+          <div class="fw-card-header d-flex justify-content-between align-items-center">
+            <span class="fw-card-title"><i class="bi bi-stack me-2 text-accent"></i>{{ _('Installed software') }}</span>
+            <span class="d-flex gap-2">
+              <a class="btn btn-sm btn-outline-secondary" id="swinv-download" href="{{ url_for('settings.software_inventory', download=1) }}"
+                 style="font-size:12px;padding:2px 10px;"><i class="bi bi-download me-1"></i>{{ _('Download JSON') }}</a>
+              <button type="button" class="btn btn-sm btn-primary" id="swinv-refresh"
+                      style="font-size:12px;padding:2px 10px;"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Refresh') }}</button>
+            </span>
+          </div>
+          <div class="fw-card-body">
+            <div class="text-muted mb-2" style="font-size:11px;">{{ _('Every package this installation runs on and the version installed, on every node. The first version is what the program reports; the line under it is what the distribution package manager has on record, the one security advisories name.') }}</div>
+            <div id="swinv-meta" class="text-muted mb-2" style="font-size:11px;"></div>
+
+            <div class="fw-card-header px-0 pt-0 pb-1">
+              <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-hdd-rack me-2 text-accent"></i>{{ _('Platform components') }}</span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm mb-3" style="font-size:12px;">
+                <thead id="swinv-comp-head"></thead>
+                <tbody id="swinv-comp-body"><tr><td class="text-muted">{{ _('Loading…') }}</td></tr></tbody>
+              </table>
+            </div>
+
+            <div class="fw-card-header px-0 pt-0 pb-1 d-flex justify-content-between align-items-center gap-2 flex-wrap">
+              <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-filetype-py me-2 text-accent"></i>{{ _('Python packages') }} <span class="text-muted" id="swinv-py-count"></span></span>
+              <span class="d-flex align-items-center gap-2" style="font-size:12px;">
+                <input type="search" class="form-control form-control-sm" id="swinv-py-filter" placeholder="{{ _('Filter') }}" style="width:180px;font-size:12px;">
+                <label class="d-inline-flex align-items-center gap-1 mb-0" for="swinv-py-direct">
+                  <input class="form-check-input mt-0" type="checkbox" id="swinv-py-direct">
+                  <span>{{ _('Direct dependencies only') }}</span>
+                </label>
+              </span>
+            </div>
+            <div class="table-responsive" style="max-height:360px;overflow:auto;">
+              <table class="table table-sm mb-3" style="font-size:12px;">
+                <thead id="swinv-py-head"></thead>
+                <tbody id="swinv-py-body"></tbody>
+              </table>
+            </div>
+
+            <div class="fw-card-header px-0 pt-0 pb-1">
+              <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-browser-chrome me-2 text-accent"></i>{{ _('Browser assets') }}</span>
+            </div>
+            <table class="table table-sm mb-0" style="font-size:12px;">
+              <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Version') }}</th><th>{{ _('License') }}</th></tr></thead>
+              <tbody id="swinv-assets-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- UPDATE SOURCES  [SATOM-UPDATE-SOURCES]
          Where Software Update finds packages and where Libraries checks and
          installs from. Each source on its own; the token is write-only. -->
@@ -5601,6 +5662,88 @@ document.addEventListener('DOMContentLoaded', function () {
   var r = document.getElementById('syspkg-refresh');
   if (r) { r.addEventListener('click', sysLoad); }
   sysLoad(); sysResumeJob();
+});
+
+// --- Installed software [SATOM-SOFTWARE-INVENTORY] -------------------------
+var swinvData = null;
+function swinvNodeHead(nodes) {
+  return nodes.map(function (n) {
+    return '<th>' + sysEsc(n.name) + (n.self ? ' <span class="text-muted">(this)</span>' : '')
+      + (n.role ? '<div class="text-muted" style="font-size:10px;font-weight:normal;">' + sysEsc(n.role) + '</div>' : '') + '</th>';
+  }).join('');
+}
+function swinvUnreachable(n) {
+  return '<span class="fw-badge fw-badge-secondary" title="' + sysEsc(n.error || '') + '">unreachable</span>';
+}
+function swinvCompCell(st, n) {
+  if (!n.reachable) { return swinvUnreachable(n); }
+  if (!st || !st.found) { return '<span class="text-muted">not installed</span>'; }
+  var ver = st.version ? '<code>' + sysEsc(st.version) + '</code>' : '<span class="text-muted">version not reported</span>';
+  var pkg = st.package ? '<div class="text-muted" style="font-size:10px;">' + sysEsc(st.package) + ' ' + sysEsc(st.package_version) + '</div>'
+                       : '<div class="text-muted" style="font-size:10px;">no distro package</div>';
+  return '<span title="' + sysEsc(st.detail || '') + '">' + ver + '</span>' + pkg;
+}
+function swinvDiffBadge(row) {
+  return row.differs ? ' <span class="fw-badge fw-badge-warning" title="The nodes do not run the same version">differs</span>' : '';
+}
+function swinvRenderPython() {
+  var d = swinvData; if (!d) { return; }
+  var q = (document.getElementById('swinv-py-filter').value || '').trim().toLowerCase();
+  var directOnly = document.getElementById('swinv-py-direct').checked;
+  var rows = (d.python || []).filter(function (p) {
+    return (!directOnly || p.direct) && (!q || p.name.toLowerCase().indexOf(q) >= 0);
+  });
+  var total = (d.python || []).length;
+  var direct = (d.python || []).filter(function (p) { return p.direct; }).length;
+  document.getElementById('swinv-py-count').textContent =
+    '(' + total + ', ' + direct + ' direct' + (rows.length !== total ? ', ' + rows.length + ' shown' : '') + ')';
+  document.getElementById('swinv-py-body').innerHTML = rows.map(function (p) {
+    var cells = d.nodes.map(function (n) {
+      if (!n.reachable) { return '<td>' + swinvUnreachable(n) + '</td>'; }
+      var v = p.nodes[n.name];
+      return '<td>' + (v ? '<code>' + sysEsc(v) + '</code>' : '<span class="text-muted">not installed</span>') + '</td>';
+    }).join('');
+    return '<tr><td>' + sysEsc(p.name) + (p.direct ? ' <span class="fw-badge fw-badge-primary" title="Listed in requirements.txt">direct</span>' : '')
+      + swinvDiffBadge(p) + '</td>' + cells + '</tr>';
+  }).join('') || '<tr><td class="text-muted" colspan="' + (d.nodes.length + 1) + '">No package matches.</td></tr>';
+}
+function swinvLoad(refresh) {
+  var body = document.getElementById('swinv-comp-body');
+  if (!body) { return; }
+  if (refresh) { body.innerHTML = '<tr><td class="text-muted">Measuring…</td></tr>'; }
+  fetch('/settings/software-inventory' + (refresh ? '?refresh=1' : ''),
+        { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+    .then(function (d) {
+      swinvData = d;
+      var nodes = d.nodes || [];
+      document.getElementById('swinv-meta').innerHTML = nodes.map(function (n) {
+        return '<strong>' + sysEsc(n.name) + '</strong>: ' + (n.reachable
+          ? sysEsc(n.os) + ' (' + sysEsc(n.machine) + ', ' + sysEsc(n.package_manager) + ')'
+          : '<span class="text-danger">unreachable — ' + sysEsc(n.error || '') + '</span>');
+      }).join(' · ') + ' · measured ' + sysEsc(d.generated_at);
+      document.getElementById('swinv-comp-head').innerHTML = '<tr><th>Component</th>' + swinvNodeHead(nodes) + '</tr>';
+      body.innerHTML = (d.components || []).map(function (c) {
+        return '<tr><td><strong>' + sysEsc(c.label) + '</strong>' + swinvDiffBadge(c)
+          + '<div class="text-muted" style="font-size:10px;">' + sysEsc(c.purpose) + '</div></td>'
+          + nodes.map(function (n) { return '<td>' + swinvCompCell(c.nodes[n.name], n) + '</td>'; }).join('') + '</tr>';
+      }).join('');
+      document.getElementById('swinv-py-head').innerHTML = '<tr><th>Package</th>' + swinvNodeHead(nodes) + '</tr>';
+      swinvRenderPython();
+      document.getElementById('swinv-assets-body').innerHTML = (d.assets || []).map(function (a) {
+        return '<tr><td>' + sysEsc(a.name) + '</td><td><code>' + sysEsc(a.version) + '</code></td><td class="text-muted">' + sysEsc(a.license) + '</td></tr>';
+      }).join('');
+    })
+    .catch(function (e) {
+      body.innerHTML = '<tr><td class="text-danger">Could not read the installed software: ' + sysEsc(e.message) + '</td></tr>';
+    });
+}
+document.addEventListener('DOMContentLoaded', function () {
+  if (!document.getElementById('swinv-card')) { return; }
+  document.getElementById('swinv-refresh').addEventListener('click', function () { swinvLoad(true); });
+  document.getElementById('swinv-py-filter').addEventListener('input', swinvRenderPython);
+  document.getElementById('swinv-py-direct').addEventListener('change', swinvRenderPython);
+  swinvLoad(false);
 });
 {% endif %}
 

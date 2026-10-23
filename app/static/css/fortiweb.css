@@ -264,19 +264,23 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
 
 .fw-nav { padding: 12px 0; }
 
+/* First-level menu heads (Operations, Administrator, Device, Plugin Studio):
+   the same 13.5px type, 14px icon and 37px row as every entry below them —
+   they were 10px uppercase, so a menu read smaller than its own submenus.
+   The head is told apart by weight alone (and the gap above it). */
 .fw-nav-section {
-  padding: 16px 16px 4px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--fw-sidebar-section);
+  margin-top: 6px;
+  padding: 8px 16px;
+  font-size: 13.5px;
+  line-height: 21px;
+  font-weight: 600;
+  color: var(--fw-sidebar-text);
   white-space: nowrap;
 }
 .fw-nav-section-icon {
-  width: 16px;
+  width: 18px;
   text-align: center;
-  font-size: 13px;
+  font-size: 14px;
   flex-shrink: 0;
   margin-right: 4px;
   opacity: 0.9;
@@ -313,11 +317,36 @@ div.fw-nav-section.fw-nav-context-label {
   border-left-color: color-mix(in srgb, var(--fw-sidebar-active) 40%, transparent);
 }
 
+/* The current page. The old background (accent at 15 %) was the sidebar's
+   own blue, so only the 3px rail marked it: a white wash reads on any
+   sidebar colour, and the label goes bold. */
 .fw-nav-item.active {
-  background: color-mix(in srgb, var(--fw-accent) 15%, transparent);
+  background: rgba(255, 255, 255, 0.16);
   color: #FFFFFF;
   border-left-color: var(--fw-sidebar-active);
-  font-weight: 500;
+  font-weight: 600;
+}
+.fw-nav-item.active:hover { background: rgba(255, 255, 255, 0.20); }
+
+/* Every menu and submenu that holds the current page stays marked too, so
+   the path to it reads at a glance even with the branch folded. */
+.fw-nav-group:has(.fw-nav-item.active) > .fw-nav-toggle,
+.fw-nav-context:has(.fw-nav-item.active) > .fw-nav-context-label,
+.fw-nav-subgroup:has(.fw-nav-item.active) > .fw-nav-subtoggle,
+details:has(.fw-nav-item.active) > summary.fw-nav-item,
+.fw-so-nav-group:has(.fw-nav-item.active) > .fw-so-nav-head {
+  color: #FFFFFF;
+  font-weight: 600;
+}
+.fw-nav-group:has(.fw-nav-item.active) > .fw-nav-toggle .fw-nav-section-icon,
+.fw-nav-subgroup:has(.fw-nav-item.active) > .fw-nav-subtoggle .fw-nav-icon,
+.fw-so-nav-group:has(.fw-nav-item.active) > .fw-so-nav-head .fw-so-nav-gicon {
+  opacity: 1;
+  color: var(--fw-sidebar-active) !important;
+}
+.fw-nav-subgroup:has(.fw-nav-item.active) > .fw-nav-subtoggle,
+details:has(.fw-nav-item.active) > summary.fw-nav-item:not(.active) {
+  border-left-color: color-mix(in srgb, var(--fw-sidebar-active) 55%, transparent);
 }
 
 .fw-nav-item .fw-nav-icon {
@@ -1300,6 +1329,7 @@ div.fw-nav-section.fw-nav-context-label {
 button.fw-nav-section.fw-nav-toggle {
   display: flex;
   align-items: center;
+  gap: 6px;
   justify-content: space-between;
   width: 100%;
   background: none;
@@ -1317,12 +1347,14 @@ button.fw-nav-section.fw-nav-toggle > span { flex: 1 1 auto; text-align: left; }
 a.fw-nav-section.fw-nav-toplink {
   display: flex;
   align-items: center;
+  gap: 6px;
   width: 100%;
   text-decoration: none;
 }
 a.fw-nav-section.fw-nav-toplink:hover { color: var(--fw-sidebar-text-hover); text-decoration: none; }
 a.fw-nav-section.fw-nav-toplink.active {
   color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.16);
   /* inset, not a border: a border would shift the icon off the column */
   box-shadow: inset 3px 0 0 var(--fw-sidebar-active);
 }

@@ -95,6 +95,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   a bold label and an amber icon, folded or not. A label too long for the
   rail now ends in an ellipsis instead of being cut mid-letter at the edge,
   and the favourites star no longer takes room from the label it sits on.
+  Settings gets the same treatment: its group heads (System, Integrations,
+  AI...) were 11px capitals over 13px entries and now share their size, and
+  the group and sub-menu holding the open pane stay marked.
   Requested by the operator:
   "check the size of the menus and submenus, make sure they are the same size
   and typeface, and keep the active menu or submenu highlighted so it is

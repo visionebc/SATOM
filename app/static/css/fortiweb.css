@@ -1870,7 +1870,7 @@ body.fw-entering-page {
    ============================================================ */
 .fw-settings-layout {
   display: grid;
-  grid-template-columns: 258px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);  /* "Source of Truth & Backup" on one line at 13px */
   gap: 20px;
   align-items: start;
   margin-bottom: 24px;
@@ -1896,17 +1896,18 @@ body.fw-entering-page {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 9px 10px;
+  padding: 7px 10px;
   background: none;
   border: 0;
   border-radius: var(--fw-radius);
-  color: var(--fw-text-secondary);
+  color: var(--fw-text-primary);
   font-family: var(--fw-font);
-  font-size: 11px;
+  /* The size and line of the entries under it (13px / 1.3): the heads were
+     11px capitals, so a group read smaller than its own entries. A head is
+     told apart by weight and its accent icon. */
+  font-size: 13px;
   font-weight: 700;
-  line-height: 1;
-  letter-spacing: .035em;
-  text-transform: uppercase;
+  line-height: 1.3;
   text-align: left;
   cursor: pointer;
   transition: background var(--fw-transition), color var(--fw-transition);
@@ -2014,6 +2015,15 @@ body.fw-entering-page {
 .fw-set-nav-icon { flex: none; width: 16px; text-align: center; font-size: 13px; color: var(--fw-text-secondary); }
 .fw-settings-nav .nav-link:hover .fw-set-nav-icon { color: var(--fw-accent); }
 .fw-settings-nav .nav-link.active .fw-set-nav-icon { color: #FFFFFF; }
+/* The group and sub-menu holding the open pane stay marked (accent label and
+   a 3px bar), so the path to it reads at a glance, folded or not — the same
+   rule as the sidebar. Bootstrap's tab script moves .active, :has follows. */
+.fw-set-nav-group:has(.nav-link.active) > .fw-set-nav-toggle,
+.fw-set-nav-sub:has(.nav-link.active) > .fw-set-nav-subtoggle {
+  color: var(--fw-accent);
+  box-shadow: inset 3px 0 0 var(--fw-accent);
+}
+.fw-set-nav-sub:has(.nav-link.active) > .fw-set-nav-subtoggle { background: var(--fw-accent-light); }
 /* A menu row that LEAVES the console carries the arrow, pushed to the far
    edge so it reads as a property of the row and not as a second icon. */
 .fw-set-nav-out { flex: none; margin-left: auto; font-size: 10px;

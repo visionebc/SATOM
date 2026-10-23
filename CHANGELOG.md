@@ -234,6 +234,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **Sidebar: a long Plugin Studio app name is readable and can be starred.**
+  An app is named by its author (up to 120 characters), and on one line
+  "New FortiWeb server policy (DDI + certificate)" showed about half its
+  name, with the favourite star drawn over the last letters. App entries
+  now wrap to up to three lines before the ellipsis, the link tooltip
+  carries the whole name, and the label stops short of the star.
+
 - **Jobs: the table fits the screen at every resolution.** It needed
   1470 px and scrolled sideways below a ~1830 px window. The job ID now
   sits under the job type, duration under the start time, long owners and

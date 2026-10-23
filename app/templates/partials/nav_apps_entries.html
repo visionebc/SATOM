@@ -1,8 +1,10 @@
 {# One entry per enabled, published Plugin Studio app this user may open in
    this ADOM (services.studio_apps.menu). Needs `_apps` =
    studio_apps_menu(product.key). A flow app opens apps.page, a script app
-   its script's run page (endpoint / target come from the menu). #}
+   its script's run page (endpoint / target come from the menu). An app
+   name is the author's and can run to 120 characters: .fw-nav-app wraps
+   it (fortiweb.css) and the title carries it whole. #}
 {% for _ap in _apps %}
-<a class="fw-nav-item {{ 'active' if request.endpoint == _ap.endpoint and request.view_args and request.view_args.get('slug') == _ap.target else '' }}" href="{{ url_for(_ap.endpoint, slug=_ap.target) }}">
+<a class="fw-nav-item fw-nav-app {{ 'active' if request.endpoint == _ap.endpoint and request.view_args and request.view_args.get('slug') == _ap.target else '' }}" href="{{ url_for(_ap.endpoint, slug=_ap.target) }}" title="{{ _ap.name }}">
   <i class="bi {{ _ap.icon }} fw-nav-icon"></i><span>{{ _ap.name }}</span></a>
 {% endfor %}

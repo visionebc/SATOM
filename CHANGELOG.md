@@ -196,6 +196,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **Jobs: the table fits the screen at every resolution.** It needed
+  1470 px and scrolled sideways below a ~1830 px window. The job ID now
+  sits under the job type, duration under the start time, long owners and
+  messages wrap (messages clamp to two lines); below 1400 px Owner and
+  Where fold into the job cell as chips, below 1200 px Started does too
+  and Pause/Resume/Stop become icon buttons. Status badges use the
+  light-theme colours (yellow/green on white were barely legible).
+  Reported by the operator: "the jobs table does not fit the screen at
+  some resolutions".
+
 - **Deep monitors / Service Monitor: closing a chart left the screen dimmed.**
   Every visit to the page added another copy of its click handlers, so from
   the second visit one click opened the chart (and the history, policy, edit

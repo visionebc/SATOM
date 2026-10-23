@@ -57,19 +57,17 @@
       <table class="table fw-table mb-0" id="jm-table">
         <thead>
           <tr>
-            <th style="width:150px;">ID</th>
-            <th style="width:110px;">{{ _('Status') }}</th>
+            <th style="width:112px;">{{ _('Status') }}</th>
             <th>{{ _('Job') }}</th>
-            <th style="width:170px;">{{ _('Progress') }}</th>
-            <th style="width:110px;">{{ _('Owner') }}</th>
-            <th style="width:180px;">{{ _('Where') }}</th>
-            <th style="width:150px;">{{ _('Started') }}</th>
-            <th style="width:90px;">{{ _('Duration') }}</th>
-            <th style="width:190px;" class="text-end">{{ _('Actions') }}</th>
+            <th style="width:150px;" class="jm-c-progress">{{ _('Progress') }}</th>
+            <th style="width:120px;" class="jm-c-owner">{{ _('Owner') }}</th>
+            <th style="width:170px;" class="jm-c-where">{{ _('Where') }}</th>
+            <th style="width:120px;" class="jm-c-started">{{ _('Started') }}</th>
+            <th style="width:1%;" class="text-end">{{ _('Actions') }}</th>
           </tr>
         </thead>
         <tbody id="jm-body">
-          <tr><td colspan="9" class="text-center text-muted py-5">{{ _('Loading…') }}</td></tr>
+          <tr><td colspan="7" class="text-center text-muted py-5">{{ _('Loading…') }}</td></tr>
         </tbody>
       </table>
     </div>
@@ -81,30 +79,33 @@
 .jm-badge { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600;
   padding:3px 9px; border-radius:20px; white-space:nowrap; }
 .jm-badge .dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
-.jm-st-running    { color:#3b82f6; background:rgba(59,130,246,.12); }
-.jm-st-pending    { color:#94a3b8; background:rgba(148,163,184,.12); }
-.jm-st-pausing, .jm-st-paused { color:#fbbf24; background:rgba(251,191,36,.12); }
-.jm-st-cancelling { color:#f97316; background:rgba(249,115,22,.12); }
-.jm-st-cancelled  { color:#fbbf24; background:rgba(251,191,36,.10); }
-.jm-st-success    { color:#10b981; background:rgba(16,185,129,.12); }
-.jm-st-error      { color:#ef4444; background:rgba(239,68,68,.12); }
+.jm-st-running    { color:#1D4ED8; background:rgba(59,130,246,.12); }
+.jm-st-pending    { color:#3D4550; background:rgba(148,163,184,.16); }
+.jm-st-pausing, .jm-st-paused { color:#7A5700; background:rgba(251,191,36,.16); }
+.jm-st-cancelling { color:#9A3412; background:rgba(249,115,22,.14); }
+.jm-st-cancelled  { color:#7A5700; background:rgba(251,191,36,.12); }
+.jm-st-success    { color:#15692A; background:rgba(16,185,129,.14); }
+.jm-st-error      { color:#8B1C2A; background:rgba(239,68,68,.12); }
 .jm-st-running .dot { animation: jmPulse 1.4s ease infinite; }
 @keyframes jmPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-.jm-title { font-weight:600; }
-.jm-type  { font-size:11px; color:#64748b; }
+/* Nothing in a cell may force the table wider than the card: long tokens
+   (job IDs, api-token owners, error messages) wrap or clamp instead. */
+.jm-title { font-weight:600; overflow-wrap:anywhere; }
+.jm-type  { font-size:11px; color:#64748b; overflow-wrap:anywhere; }
 .jm-id    { font-family:var(--bs-font-monospace,ui-monospace,monospace); font-size:11px;
-  color:#94a3b8; cursor:pointer; white-space:nowrap; }
+  color:#64748b; cursor:pointer; }
 .jm-id:hover { color:#3b82f6; text-decoration:underline; }
-.jm-msg   { font-size:11px; color:#94a3b8; max-width:420px; overflow:hidden;
-  text-overflow:ellipsis; white-space:nowrap; }
+.jm-msg   { font-size:11px; color:#64748b; overflow:hidden; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
 .jm-track { height:6px; background:rgba(148,163,184,.15); border-radius:6px; overflow:hidden; }
 .jm-bar   { height:100%; border-radius:6px; transition:width .3s ease;
   background:linear-gradient(90deg,#3b82f6,#8b5cf6); }
 .jm-bar.ok{ background:#10b981; } .jm-bar.err{ background:#ef4444; } .jm-bar.warn{ background:#fbbf24; }
-.jm-pct   { font-size:11px; color:#94a3b8; margin-top:2px; }
-.jm-chip  { display:inline-block; font-size:11px; color:#94a3b8; background:rgba(148,163,184,.10);
-  border:1px solid rgba(148,163,184,.15); border-radius:6px; padding:1px 7px; margin:1px 2px 1px 0; }
-.jm-btn   { font-size:11px; font-weight:600; padding:3px 9px; border-radius:7px;
+.jm-pct   { font-size:11px; color:#64748b; margin-top:2px; white-space:nowrap; }
+.jm-chip  { display:inline-block; font-size:11px; color:#3D4550; background:rgba(148,163,184,.10);
+  border:1px solid rgba(148,163,184,.25); border-radius:6px; padding:1px 7px; margin:1px 2px 1px 0;
+  max-width:100%; overflow-wrap:anywhere; }
+.jm-btn   { font-size:11px; font-weight:600; padding:3px 9px; border-radius:7px; white-space:nowrap;
   border:1px solid rgba(148,163,184,.35); background:rgba(148,163,184,.08); color:inherit; }
 .jm-btn:hover { background:rgba(148,163,184,.18); }
 .jm-btn.stop:hover { background:rgba(239,68,68,.18); border-color:#ef4444; }
@@ -120,6 +121,21 @@
 .jm-detail pre { font-size:11px; max-height:280px; overflow:auto; margin:0;
   white-space:pre-wrap; word-break:break-word; }
 tr.jm-row { cursor:pointer; }
+.jm-act   { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; }
+/* Narrow screens: Owner/Where (<1400) and Started (<1200) fold into the Job
+   cell as chips instead of squeezing the Job column to a sliver. */
+.jm-inline { display:none; margin-top:4px; }
+.jm-inline .jm-i-started { display:none; }
+@media (max-width: 1399.98px) {
+  #jm-table .jm-c-owner, #jm-table .jm-c-where { display:none; }
+  .jm-inline { display:block; }
+}
+@media (max-width: 1199.98px) {
+  #jm-table .jm-c-started { display:none; }
+  .jm-inline .jm-i-started { display:inline-block; }
+  #jm-table th.jm-c-progress { width:110px !important; }
+  .jm-btn .jm-lbl { display:none; }   /* icon-only Pause/Resume/Stop; title keeps the word */
+}
 </style>
 
 <script nonce="{{ csp_nonce }}">
@@ -166,7 +182,10 @@ tr.jm-row { cursor:pointer; }
     if (s < 3600) return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
     return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
   }
-  function whereChips(j) {
+  function ownerChip(j) {
+    return j.by ? '<span class="jm-chip"><i class="bi bi-person"></i> ' + esc(j.by) + '</span>' : '—';
+  }
+  function whereChips(j, inline) {
     var out = [], m = j.meta || {};
     if (m.device) out.push('<span class="jm-chip"><i class="bi bi-hdd"></i> ' + esc(m.device) + '</span>');
     else if (m.appliance) out.push('<span class="jm-chip"><i class="bi bi-hdd"></i> ' + esc(m.appliance) + '</span>');
@@ -174,23 +193,23 @@ tr.jm-row { cursor:pointer; }
     if (m.filename) out.push('<span class="jm-chip">' + esc(m.filename) + '</span>');
     if (j.host) out.push('<span class="jm-chip" title="Server process running this job">'
       + esc(j.host) + (j.pid ? ' · pid ' + esc(j.pid) : '') + '</span>');
-    return out.join('') || '<span class="text-muted">—</span>';
+    return out.join('') || (inline ? '' : '<span class="text-muted">—</span>');
   }
   function actionBtns(j) {
     var b = [];
     var canCtl = j.cancelable !== false;
     if (ACTIVE[j.status]) {
       if (canCtl && (j.status === 'running' || j.status === 'pending'))
-        b.push('<button class="jm-btn pause" data-act="pause" data-id="' + esc(j.id) + '"><i class="bi bi-pause-fill"></i> Pause</button>');
+        b.push('<button class="jm-btn pause" data-act="pause" data-id="' + esc(j.id) + '" title="Pause"><i class="bi bi-pause-fill"></i><span class="jm-lbl"> Pause</span></button>');
       if (j.status === 'pausing' || j.status === 'paused')
-        b.push('<button class="jm-btn resume" data-act="resume" data-id="' + esc(j.id) + '"><i class="bi bi-play-fill"></i> Resume</button>');
+        b.push('<button class="jm-btn resume" data-act="resume" data-id="' + esc(j.id) + '" title="Resume"><i class="bi bi-play-fill"></i><span class="jm-lbl"> Resume</span></button>');
       if (canCtl && j.status !== 'cancelling')
-        b.push('<button class="jm-btn stop" data-act="cancel" data-id="' + esc(j.id) + '"><i class="bi bi-stop-fill"></i> Stop</button>');
+        b.push('<button class="jm-btn stop" data-act="cancel" data-id="' + esc(j.id) + '" title="Stop"><i class="bi bi-stop-fill"></i><span class="jm-lbl"> Stop</span></button>');
       if (!canCtl)
         b.push('<span class="jm-chip" title="This task cannot be interrupted once started">locked</span>');
     }
     b.push('<button class="jm-btn" data-act="detail" data-id="' + esc(j.id) + '" title="Details"><i class="bi bi-chevron-expand"></i></button>');
-    return b.join(' ');
+    return '<div class="jm-act">' + b.join('') + '</div>';
   }
   function barClass(st) {
     if (st === 'success') return 'ok';
@@ -202,17 +221,18 @@ tr.jm-row { cursor:pointer; }
     var st = j.status || 'pending';
     var html =
       '<tr class="jm-row" data-id="' + esc(j.id) + '">' +
-      '<td><span class="jm-id" data-act="copy" data-id="' + esc(j.id) + '" title="Click to copy job ID">' + esc(j.id) + '</span></td>' +
       '<td><span class="jm-badge jm-st-' + esc(st) + '"><span class="dot"></span>' + (LABEL[st] || esc(st)) + '</span></td>' +
       '<td><div class="jm-title">' + esc(j.title || j.type) + '</div>' +
-      '<div class="jm-type">' + esc(j.type || '') + '</div>' +
-      (j.message ? '<div class="jm-msg" title="' + esc(j.message) + '">' + esc(j.message) + '</div>' : '') + '</td>' +
-      '<td><div class="jm-track"><div class="jm-bar ' + barClass(st) + '" style="width:' + (j.percent || 0) + '%"></div></div>' +
+      '<div class="jm-type">' + esc(j.type || '') + ' · <span class="jm-id" data-act="copy" data-id="' + esc(j.id) + '" title="Click to copy job ID">' + esc(j.id) + '</span></div>' +
+      (j.message ? '<div class="jm-msg" title="' + esc(j.message) + '">' + esc(j.message) + '</div>' : '') +
+      '<div class="jm-inline">' + (j.by ? ownerChip(j) : '') + whereChips(j, true) +
+      '<span class="jm-chip jm-i-started" title="Started · duration"><i class="bi bi-clock"></i> ' +
+      fmtTime(j.created) + ' · ' + fmtDur(j) + '</span></div></td>' +
+      '<td class="jm-c-progress"><div class="jm-track"><div class="jm-bar ' + barClass(st) + '" style="width:' + (j.percent || 0) + '%"></div></div>' +
       '<div class="jm-pct">' + (j.percent || 0) + '%</div></td>' +
-      '<td>' + (j.by ? '<span class="jm-chip"><i class="bi bi-person"></i> ' + esc(j.by) + '</span>' : '—') + '</td>' +
-      '<td>' + whereChips(j) + '</td>' +
-      '<td>' + fmtTime(j.created) + '</td>' +
-      '<td>' + fmtDur(j) + '</td>' +
+      '<td class="jm-c-owner">' + ownerChip(j) + '</td>' +
+      '<td class="jm-c-where">' + whereChips(j) + '</td>' +
+      '<td class="jm-c-started">' + fmtTime(j.created) + '<div class="jm-pct" title="Duration">' + fmtDur(j) + '</div></td>' +
       '<td class="text-end">' + actionBtns(j) + '</td></tr>';
     if (open[j.id]) {
       // Device jobs log one step per device call: show them as a list, not
@@ -234,7 +254,7 @@ tr.jm-row { cursor:pointer; }
                   cancel_requested: j.cancel_requested, pause_requested: j.pause_requested,
                   host: j.host, pid: j.pid, created: j.created, updated: j.updated,
                   finished: j.finished };
-      html += '<tr class="jm-detail" data-detail="' + esc(j.id) + '"><td colspan="9">' +
+      html += '<tr class="jm-detail" data-detail="' + esc(j.id) + '"><td colspan="7">' +
         '<div class="d-flex justify-content-end mb-1"><button class="jm-btn" data-act="copydetail" data-id="' + esc(j.id) + '"><i class="bi bi-clipboard me-1"></i>Copy</button></div>' +
         stepsHtml + '<pre>' + esc(JSON.stringify(det, null, 2)) + '</pre></td></tr>';
     }
@@ -252,7 +272,7 @@ tr.jm-row { cursor:pointer; }
     });
     countEl.textContent = rows.length;
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-5">' +
+      body.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-5">' +
         '<i class="bi bi-list-task" style="font-size:30px;opacity:.4;"></i>' +
         '<p class="mb-0 mt-2" style="font-size:13px;">No jobs match.</p></td></tr>';
       return;

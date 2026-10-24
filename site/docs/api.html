@@ -323,14 +323,14 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td><code>GET</code></td>
 <td><code>/system/nodes</code></td>
 <td>read</td>
-<td><code>monitoring</code>, only on a capability-restricted token</td>
+<td><code>metrics</code>, only on a capability-restricted token</td>
 <td>CPU, memory and disk of every SATOM node now, graded (§9). <strong>Global</strong> token only</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
 <td><code>/system/nodes/history</code></td>
 <td>read</td>
-<td><code>monitoring</code>, only on a capability-restricted token</td>
+<td><code>metrics</code>, only on a capability-restricted token</td>
 <td>The same readings over time (§9). <strong>Global</strong> token only</td>
 </tr>
 <tr>
@@ -463,28 +463,28 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td><code>GET</code></td>
 <td><code>/appliances/&lt;id&gt;/config-history</code></td>
 <td>read</td>
-<td>—</td>
+<td><code>config_history</code>, only on a capability-restricted token</td>
 <td>Recorded configuration versions of one device (§13)</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
 <td><code>/appliances/&lt;id&gt;/config-diff</code></td>
 <td>read</td>
-<td>—</td>
+<td><code>config_history</code>, only on a capability-restricted token</td>
 <td>What changed between two versions, <code>?from=&amp;to=</code> (§13)</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
 <td><code>/findings</code></td>
 <td>read</td>
-<td><code>monitoring</code>, only on a capability-restricted token</td>
+<td><code>findings</code>, only on a capability-restricted token</td>
 <td>What the alert engine finds right now (§13)</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
 <td><code>/metrics/query</code></td>
 <td>read</td>
-<td><code>monitoring</code>, only on a capability-restricted token</td>
+<td><code>metrics</code>, only on a capability-restricted token</td>
 <td>A read-only MetricsQL query over SATOM's own series (§13)</td>
 </tr>
 <tr>
@@ -701,6 +701,41 @@ earlier gained anything. Destructive actions (<code>upgrade</code>, <code>upgrad
 <code>reboot</code>, <code>ha_failover</code>, <code>cert_lifecycle</code>, <code>custom_rest</code>) are never runnable
 through the API, whatever the token holds. System Automations also need an
 owner with user management rights.</p>
+<p><strong>Reading recorded data.</strong> Three capabilities gate what a token may <em>read</em>,
+not run:</p>
+<table>
+<thead>
+<tr>
+<th>capability</th>
+<th>routes</th>
+<th>empty list grants it?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>metrics</code></td>
+<td><code>GET /metrics/query</code>, <code>GET /system/nodes</code>, <code>GET /system/nodes/history</code></td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>findings</code></td>
+<td><code>GET /findings</code></td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>config_history</code></td>
+<td><code>GET /appliances/&lt;id&gt;/config-history</code>, <code>GET /appliances/&lt;id&gt;/config-diff</code></td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<p>An empty list reads all three, as before. A restricted list must name the
+surface: a dashboard token can hold <code>metrics</code> alone and run nothing.
+<code>monitoring</code> still implies <code>metrics</code> and <code>findings</code>, which it granted before
+these existed (2026-10-24), so no token issued earlier lost them. Before that
+date the configuration history had no capability at all, so a token restricted
+to, say, <code>backend_edit</code> could read every recorded configuration of its ADOM;
+such a token now needs <code>config_history</code> too.</p>
 <pre><code class="language-json">{
   &quot;ok&quot;: true,
   &quot;run_id&quot;: 99,
@@ -1069,7 +1104,7 @@ charts, for an outside monitoring system.</p>
 <p><strong>Access.</strong> A <code>read</code> token bound to the <strong>global</strong> ADOM. A token bound to a
 product gets <code>403 wrong_product</code>, because SATOM health is Global-only and the
 API gives no more than a session gets. A token restricted to named
-capabilities also needs <code>monitoring</code> (<code>403 capability_denied</code> otherwise). An
+capabilities also needs <code>metrics</code> (<code>403 capability_denied</code> otherwise). An
 empty capability list is enough, as for every other <code>GET</code>. Rate-limited to
 60/min. Node addresses are never in the answer.</p>
 <h3 id="get-systemnodes"><code>GET /system/nodes</code></h3>
@@ -1334,7 +1369,7 @@ call costs a check cycle and is rate-limited to 6/min. Each finding: <code>key</
 and, for a device finding, <code>product</code>. A token bound to a product receives
 that product's findings only; the installation's own (certificates, host,
 backups, code) need a <code>global</code> token. A token restricted to named
-capabilities must hold <code>monitoring</code> (<code>403 capability_denied</code>).</p>
+capabilities must hold <code>findings</code> (<code>403 capability_denied</code>).</p>
 <h3 id="get-metricsqueryexpr"><code>GET /metrics/query?expr=…</code></h3>
 <p>A read-only <strong>MetricsQL</strong> query over SATOM's metrics store. Instant query by
 default; a range query with <code>start</code> and <code>end</code> (unix seconds, at most 90 days
@@ -1352,7 +1387,7 @@ store's own (<code>status</code>, <code>data.resultType</code>, <code>data.resul
   receives everything.</li>
 <li>The store itself stays on loopback with no account of its own; this route
   is the only way in from outside. A token restricted to named capabilities
-  must hold <code>monitoring</code>.</li>
+  must hold <code>metrics</code>.</li>
 </ul>
 <pre><code class="language-bash">curl -s -H &quot;Authorization: Bearer $TOKEN&quot; --get \
   --data-urlencode 'expr=max by (device) (satom_box_cpu_pct)' \

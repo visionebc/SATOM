@@ -114,6 +114,17 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>API tokens: read capabilities <code>metrics</code>, <code>findings</code> and
+  <code>config_history</code>.</strong> A token can now be handed exactly "read the metrics"
+  and nothing else: <code>metrics</code> covers <code>GET /metrics/query</code> and the SATOM node
+  readings (<code>/system/nodes</code>, <code>/system/nodes/history</code>), <code>findings</code> covers
+  <code>GET /findings</code>, and <code>config_history</code> covers the configuration history and
+  diffs. Until now metrics and findings answered to <code>monitoring</code>, the
+  capability that also runs sweeps and scrapes. A token with no capability
+  ticked reads all three, as before, and <code>monitoring</code> still implies <code>metrics</code>
+  and <code>findings</code>, so no token issued earlier loses access. Requested by the
+  operator (translated from Spanish): "SATOM has, for example, metrics that
+  could be delivered via the API".</li>
 <li><strong>Operations › Automation › Mass Deploy.</strong> The newest approved version of
   every template of the ADOM, pushed to one or many of its devices in one
   canary-gated job: an SMTP server change, an NTP or DNS change, a Web
@@ -404,6 +415,16 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <li>
 <p><strong>Lua Studio: Delete did nothing.</strong> Its form was nested inside the editor
   form, so the browser dropped it; it is now its own form.</p>
+</li>
+<li>
+<p><strong>A capability-restricted API token could read every recorded
+  configuration of its ADOM.</strong> <code>GET /appliances/&lt;id&gt;/config-history</code> and
+  <code>config-diff</code> checked the scope and the ADOM but no capability, so a token
+  restricted to, say, <code>backend_edit</code> read the whole configuration history.
+  Such a token now needs <code>config_history</code> (<code>403 capability_denied</code>
+  otherwise), and the check answers before the device lookup, so a
+  restricted token cannot probe which device ids exist. A token with no
+  capability ticked is unchanged.</p>
 </li>
 <li>
 <p><strong>Sidebar: a long Plugin Studio app name is readable and can be starred.</strong>

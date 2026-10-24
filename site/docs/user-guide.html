@@ -4035,6 +4035,13 @@ is reachable by any token. The API also exposes what SATOM has recorded
 (configuration history and diffs, findings, a read-only metrics query) and
 describes itself as an OpenAPI document at <code>/api/v1/openapi.json</code>, built
 from the live routes. Full reference: <a href="api.html">docs/api_v1.md</a>.</p>
+<p><strong>Capabilities</strong> narrow what a token may do. Most name a kind of action
+(<code>backend_edit</code>, <code>maintenance</code>, <code>template_apply</code> …). Three name what it may
+<strong>read</strong>: <code>metrics</code> (the metrics query and the SATOM node readings),
+<code>findings</code> (the alert engine's findings) and <code>config_history</code> (configuration
+history and diffs). With nothing ticked a token reads all three; with a list
+it reads only what the list names, so a dashboard token can hold <code>metrics</code>
+alone and run nothing. <code>monitoring</code> still reads metrics and findings.</p>
 <h2 id="19-appearance-logo-colours--themes">19. Appearance: logo, colours &amp; themes</h2>
 <p><code>Settings → Appearance</code> (administrators). Four palettes ship — <strong>SATOM Aurora</strong>
 (the default), <strong>Slate</strong>, <strong>Graphite</strong> and the original <strong>Classic</strong> — and you

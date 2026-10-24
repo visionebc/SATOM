@@ -130,6 +130,75 @@ def _i(node_params: dict, name: str, default: int = 0) -> int:
 
 
 # ---------------------------------------------------------------------------
+# templates over the run's appliance
+# ---------------------------------------------------------------------------
+#
+# A recovery plan is written ONCE for a hundred appliances (FA-0008): "open
+# https://<the box>/", "TCP to its SSH port". Without a way to say "the
+# appliance this run is pointed at", every step carried a literal address and
+# the plan had to be copied per device -- a hundred copies of one procedure that
+# drift the day one of them is fixed.
+#
+# The text params of the kinds below may say ``{{ appliance.host }}``. The
+# renderer is ``studio_flow.render`` (the sandbox the automations already use),
+# not a second template language.
+
+#: Kinds whose text params are rendered. Reads, and the words a person or a
+#: mailbox sees -- NEVER the CLI of ``ssh_check``/``console_script`` or a hook
+#: payload: an inventory value spliced into a command line is a command nobody
+#: reviewed, and those steps are guarded by what their text says.
+TEMPLATED_KINDS = frozenset({"http_check", "tcp_check", "dns_check", "manual_gate",
+                             "end", "notify"})
+
+_APPLIANCE_REF = re.compile(r"\{\{[^}]*\bappliance\b")
+
+
+class TemplateProblem(Exception):
+    """A param could not be rendered; the step answers ``unknown``."""
+
+
+def references_appliance(params: dict) -> bool:
+    return any(isinstance(v, str) and _APPLIANCE_REF.search(v)
+               for v in (params or {}).values())
+
+
+def appliance_scope(appliance) -> dict | None:
+    """What ``{{ appliance.* }}`` may read. Never a credential."""
+    if appliance is None:
+        return None
+    return {k: getattr(appliance, k, None) for k in
+            ("id", "name", "kind", "host", "port", "ssh_port", "model", "hw_type",
+             "firmware", "zone", "department", "line", "ha_vip")}
+
+
+def expand(node: dict, ctx) -> dict:
+    """``node`` with its text params rendered against the run.
+
+    Raises :class:`TemplateProblem`. A param that names the appliance on a run
+    pointed at none is refused HERE, in words: rendered, it would become an
+    empty host and the step would report the network instead of the plan.
+    """
+    params = dict(node.get("params") or {})
+    if not any(isinstance(v, str) and "{{" in v for v in params.values()):
+        return node
+    if ctx.appliance is None and references_appliance(params):
+        raise TemplateProblem("this step names the appliance and none was chosen")
+    from .studio_flow import FlowError, render
+    scope = {"appliance": appliance_scope(ctx.appliance),
+             "run": {"id": ctx.run_id, "armed": bool(ctx.armed), "user": ctx.user}}
+    out = {}
+    for name, value in params.items():
+        if isinstance(value, str) and "{{" in value:
+            try:
+                rv = render(value, scope)
+            except FlowError as exc:
+                raise TemplateProblem("%s: %s" % (name, exc)) from None
+            value = "" if rv is None else str(rv)
+        out[name] = value
+    return dict(node, params=out)
+
+
+# ---------------------------------------------------------------------------
 # flow
 # ---------------------------------------------------------------------------
 
@@ -355,6 +424,35 @@ def _run_device_health(node, ctx) -> StepResult:
                       reasons)
 
 
+#: What an ``appliance_fact`` step may read: inventory columns SATOM already
+#: keeps. The step never dials the box, so it answers on exactly the path a
+#: recovery plan needs it -- the one where nothing can reach the device.
+FACT_FIELDS = ("hw_type", "kind", "model", "ha_mode", "is_cluster", "zone",
+               "department", "line")
+
+
+def _run_appliance_fact(node, ctx) -> StepResult:
+    p = node.get("params", {})
+    field_name, want = _s(p, "field", "hw_type"), _s(p, "equals")
+    if ctx.appliance is None:
+        return StepResult(UNKNOWN, "this step needs an appliance and none was chosen")
+    if field_name not in FACT_FIELDS:
+        return StepResult(UNKNOWN, "%r is not an inventory field this step reads"
+                          % field_name)
+    got = getattr(ctx.appliance, field_name, None)
+    if isinstance(got, bool):
+        got = "true" if got else "false"
+    got = "" if got is None else str(got).strip()
+    # 'unknown' is what discovery writes when it could not tell: a fact SATOM
+    # does not have is not a 'no'.
+    if not got or got.lower() == "unknown":
+        return StepResult(UNKNOWN, "SATOM does not know this appliance's %s"
+                          % field_name)
+    ok = got.lower() == want.lower()
+    return StepResult(PASS if ok else FAIL,
+                      "%s is %r (expected %r)" % (field_name, got, want))
+
+
 def _run_logs_collect(node, ctx) -> StepResult:
     """Run the device ADOM's diagnostic battery and save it.
 
@@ -429,6 +527,52 @@ def _run_action(node, ctx) -> StepResult:
     return StepResult(PASS if res.get("ok") else FAIL,
                       prefix + (res.get("summary") or key), res.get("log") or "",
                       undo=undo if isinstance(undo, dict) else None)
+
+
+def _run_notify(node, ctx) -> StepResult:
+    """Tell people, through the channels the alerts already use.
+
+    Not a write: nothing on an appliance changes, so arming means nothing here
+    and an unarmed run SENDS -- with ``[rehearsal]`` in front of the title, so
+    the Communications Lead who receives "escalation" from a rehearsal knows
+    it is one. A rehearsal that told nobody would not rehearse the part of an
+    escalation that is a person reading a message.
+
+    A channel that does not deliver is ``unknown``, never ``fail``: a mail
+    server that refused says nothing about the appliance the plan is about.
+    """
+    from . import email_service
+    from . import notifications as notify
+    from .alerts import _admin_ids, recipients
+    p = node.get("params", {})
+    title = ("" if ctx.armed else "[rehearsal] ") + (_s(p, "title") or "Process step")
+    body = str(p.get("body") or "").strip()
+    if ctx.run_id:
+        body = (body + "\n\n" if body else "") + "Process run #%d." % ctx.run_id
+    sent, failed = [], []
+    if _s(p, "bell", "1") == "1":
+        ids = _admin_ids()
+        if ids:
+            notify.push_many(ids, title[:200], kind=notify.Notification.KIND_INFO,
+                             body=body[:1500])
+            sent.append("bell (%d)" % len(ids))
+        else:
+            failed.append("bell: no administrator to notify")
+    to = [a.strip() for a in re.split(r"[,;\s]+", _s(p, "email_to")) if a.strip()]
+    if _s(p, "email_alerts", "0") == "1":
+        to += recipients()
+    if to:
+        res = email_service.send_email(sorted(set(to)), title[:200], body[:4000])
+        if (res or {}).get("ok"):
+            sent.append("e-mail (%d)" % len(set(to)))
+        else:
+            failed.append("e-mail: %s" % ((res or {}).get("detail") or "send failed"))
+    if not sent:
+        return StepResult(UNKNOWN, "nobody was notified: %s"
+                          % ("; ".join(failed) or "no channel is set on this step"))
+    return StepResult(PASS, "notified %s%s" % (", ".join(sent),
+                                              ("; " + "; ".join(failed)) if failed else ""),
+                      "%s\n\n%s" % (title, body))
 
 
 def _plan_text(plan: list) -> str:
@@ -816,7 +960,14 @@ _KINDS: tuple[NodeKind, ...] = (
              "'escalate' are both endings.",
              params=(Param("note", "Closing note", "text",
                            help="Printed on the run as the reason this ending "
-                                "was reached."),),
+                                "was reached."),
+                     Param("verdict", "Run verdict", "select", default="computed",
+                           choices=("computed", "ok", "failed"),
+                           help="computed: judged from the steps (one failed step "
+                                "fails the run). ok / failed: reaching THIS ending "
+                                "is the verdict -- for runbooks whose checks are "
+                                "expected to fail on the way and whose arrows "
+                                "route around them.")),
              terminal=True, colour="#3D4550"),
     NodeKind("decision", "Decision", "flow",
              "Branch on the outcome of an earlier step, not just the previous one.",
@@ -828,7 +979,12 @@ _KINDS: tuple[NodeKind, ...] = (
     NodeKind("manual_gate", "Manual gate", "flow",
              "Stop and wait for a person. The run is saved and can be answered "
              "later; it does not hold a worker open.",
-             params=(Param("prompt", "Ask the operator", "textarea", required=True),),
+             params=(Param("prompt", "Ask the operator", "textarea", required=True),
+                     Param("pass_label", "Pass button", "text", default="Passed",
+                           help="What the button that follows the pass arrow says "
+                                "-- 'Yes' when the gate is a question."),
+                     Param("fail_label", "Fail button", "text", default="Failed",
+                           help="The button that follows the fail arrow -- 'No'.")),
              colour="#7A5700"),
 
     NodeKind("http_check", "HTTP check", "check",
@@ -869,6 +1025,31 @@ _KINDS: tuple[NodeKind, ...] = (
              "node. Nothing is written to the appliance.",
              params=(Param("label", "Label", "text", default="process"),),
              needs_appliance=True),
+    NodeKind("appliance_fact", "Appliance fact", "check",
+             "Compare one field SATOM keeps about the chosen appliance (VM or "
+             "hardware, product, model, HA mode…) with a value. Reads the "
+             "inventory only, so it answers when the device does not.",
+             params=(Param("field", "Field", "select", default="hw_type",
+                           choices=FACT_FIELDS, required=True),
+                     Param("equals", "Equals", "text", required=True,
+                           help="hw_type is hardware or vm; is_cluster is true or "
+                                "false. Case is ignored. A field SATOM does not "
+                                "know ends unknown, not fail.")),
+             needs_appliance=True),
+    NodeKind("notify", "Notify", "act",
+             "Tell people — the bell of every administrator and/or e-mail. "
+             "Changes nothing on an appliance, so it also sends on an unarmed "
+             "run, with [rehearsal] in the title.",
+             params=(Param("title", "Title", "text", required=True),
+                     Param("body", "Message", "textarea"),
+                     Param("bell", "Bell", "select", default="1", choices=("1", "0"),
+                           help="1 rings the bell of every administrator."),
+                     Param("email_to", "E-mail to", "text",
+                           help="Addresses, comma separated."),
+                     Param("email_alerts", "Alert recipients", "select", default="0",
+                           choices=("0", "1"),
+                           help="1 also mails the alert recipients from Settings.")),
+             colour="#4C2A85"),
 
     NodeKind("action", "Catalogue action", "act",
              "Invoke an automation from the Scheduled Actions catalogue. Runs as "
@@ -920,7 +1101,8 @@ _RUNNERS = {
     "ssh_check": _run_ssh_check, "device_health": _run_device_health,
     "logs_collect": _run_logs_collect, "action": _run_action,
     "console_script": _run_console_script, "hook": _run_hook,
-    "compensate": _run_compensate,
+    "compensate": _run_compensate, "appliance_fact": _run_appliance_fact,
+    "notify": _run_notify,
 }
 
 KIND_KEYS = tuple(k.key for k in _KINDS)
@@ -946,6 +1128,8 @@ def needs_appliance(graph: dict) -> bool:
     for n in graph.get("nodes", []):
         k = get_kind(n.get("kind", ""))
         if k and k.needs_appliance:
+            return True
+        if n.get("kind") in TEMPLATED_KINDS and references_appliance(n.get("params")):
             return True
         if n.get("kind") == "action":
             from .scheduled_actions import get_spec
@@ -983,6 +1167,11 @@ def execute(node: dict, ctx) -> StepResult:
     if runner is None:
         return StepResult(UNKNOWN, "unknown step kind %r" % node.get("kind"))
     try:
+        if node.get("kind") in TEMPLATED_KINDS:
+            try:
+                node = expand(node, ctx)
+            except TemplateProblem as exc:
+                return StepResult(UNKNOWN, "template: %s" % exc)
         return runner(node, ctx)
     except Exception as exc:  # noqa: BLE001
         return StepResult(UNKNOWN, "the step raised: %s: %s"
@@ -1081,6 +1270,22 @@ def validate_graph(graph: dict) -> list[str]:
             if ref and ref not in known:
                 errs.append("Step %r tests %r, which is not a step."
                             % (n.get("key"), ref))
+        if kind.key == "appliance_fact":
+            fld = str(p.get("field") or "").strip()
+            if fld and fld not in FACT_FIELDS:
+                errs.append("Step %r reads %r, which is not an inventory field "
+                            "(%s)." % (n.get("key"), fld, ", ".join(FACT_FIELDS)))
+        if kind.key == "notify" and not (
+                str(p.get("bell", "1") or "1").strip() == "1"
+                or str(p.get("email_to") or "").strip()
+                or str(p.get("email_alerts") or "0").strip() == "1"):
+            errs.append("Step %r notifies nobody: turn the bell on or name an "
+                        "e-mail recipient." % n.get("key"))
+        if kind.key == "end":
+            verdict = str(p.get("verdict") or "computed").strip()
+            if verdict not in ("computed", "ok", "failed"):
+                errs.append("Step %r: the run verdict must be computed, ok or "
+                            "failed." % n.get("key"))
         if kind.key == "console_script":
             errs.extend(_console_script_errors(n, p))
         if kind.key == "hook":

@@ -66,7 +66,7 @@
 <div class="fw-card mb-3 border-warning">
   <div class="fw-card-header"><i class="bi bi-hand-index me-2"></i>{{ _('This run is waiting for you') }}</div>
   <div class="fw-card-body">
-    <p style="font-size:13px;">{{ gate_prompt or _('Answer the gate to continue.') }}</p>
+    <p style="font-size:13px;white-space:pre-line;">{{ gate_prompt or _('Answer the gate to continue.') }}</p>
     <form method="post" action="{{ url_for('process.run_resume', rid=run.id) }}" class="row g-2 align-items-end">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-md-7">
@@ -77,9 +77,9 @@
         {#  The answer is an OUTCOME, not a yes/no, so it routes through the
             same arrows every machine step uses. #}
         <button class="btn btn-success btn-sm" name="answer" value="pass">
-          <i class="bi bi-check-lg me-1"></i>{{ _('Passed') }}</button>
+          <i class="bi bi-check-lg me-1"></i>{{ gate_labels.pass or _('Passed') }}</button>
         <button class="btn btn-danger btn-sm" name="answer" value="fail">
-          <i class="bi bi-x-lg me-1"></i>{{ _('Failed') }}</button>
+          <i class="bi bi-x-lg me-1"></i>{{ gate_labels.fail or _('Failed') }}</button>
       </div>
     </form>
   </div>

@@ -8,6 +8,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Process: runbooks that work for every appliance** (operator request,
+  FA-0008: a recovery runbook as a process). The text of HTTP / TCP / DNS
+  checks, Manual gate prompts, End notes and the new Notify step may name the
+  run's appliance (`{{ appliance.host }}`, `{{ appliance.ssh_port }}`…), so one
+  plan serves every device; console commands and hook payloads are never
+  rendered. New steps: **Appliance fact** (compare an inventory field such as
+  VM or hardware, without contacting the device) and **Notify** (bell and/or
+  e-mail, also on rehearsals, marked `[rehearsal]`). A Manual gate can label its
+  buttons (*Yes* / *No*), and an End step can set the run verdict (*ok* /
+  *failed*), so a runbook whose checks fail on the way by design is judged by
+  the ending it reached. Example process: *Appliance recovery (restart
+  activities)*, started by a trigger on unreachable devices.
+
 - **Capacity Limits: one default limit for every row.** A *Default limit*
   card on Administrator → Capacity Limits takes one percent of the Fortinet
   limit per product (for example `80`). Every row without a number or

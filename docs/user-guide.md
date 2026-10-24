@@ -10167,10 +10167,12 @@ into five consoles at once.
 | Console read | one read-only CLI command on the chosen appliance, asserted on its output | no |
 | Appliance health | the same grade Monitoring shows — sync, cache, probe, capacity | no |
 | Collect diagnostics | runs the read-only battery over SSH and saves the transcript **on this node** | no |
+| Appliance fact | compares one field SATOM keeps about the appliance (VM or hardware, product, model, HA mode…) with a value; reads the inventory only, so it answers when the device does not | no |
 | Catalogue action | invokes an automation from the Scheduled Actions catalogue | **yes, when armed** |
 | Console script | sends CLI lines to the chosen appliance | **yes, when armed** |
 | Integration hook | queues one integration hook on this node and waits for its verdict | **yes, when armed** |
 | Compensate | undoes what the walk wrote before it, newest change first — only the steps that recorded an inverse; the rest are named as `unknown` | **yes, when armed** |
+| Notify | rings the bell of every administrator and/or sends e-mail; also on an unarmed run, with `[rehearsal]` in the title | no |
 
 No step reimplements a question the product already answers somewhere else.
 That is deliberate: two authors for "is this backend reachable" is how a page
@@ -10186,6 +10188,39 @@ gate be answered hours later instead of holding a worker open.
 
 A retry loop is allowed. An endless one is stopped after 200 steps and the run
 says so, rather than reporting a verdict about a walk that never finished.
+
+### Runbooks: one plan for every appliance
+
+A recovery runbook is written once and pointed at whichever appliance is down.
+Three things make that work:
+
+* **Templates.** The text of an HTTP, TCP or DNS check, a Manual gate prompt,
+  an End note and a Notify message may name the appliance of the run:
+  `https://{{ appliance.host }}/`, port `{{ appliance.ssh_port }}`,
+  `{{ appliance.name }}`, also `port`, `kind`, `model`, `hw_type`, `firmware`,
+  `zone`, `department`, `line`, `ha_vip`, and `{{ run.id }}`. A step that names
+  the appliance on a run pointed at none ends `unknown` and says why; it never
+  probes an empty address. Console reads, console scripts and hook payloads
+  are **never** rendered — inventory text spliced into a CLI line would be a
+  command nobody reviewed.
+* **Questions.** A Manual gate takes its own button labels (*Pass button*,
+  *Fail button*), so "Is the console server OK?" is answered **Yes** / **No**;
+  the answer still follows the `pass` / `fail` arrows.
+* **The ending decides.** A runbook's first checks are expected to fail — that
+  is why it was opened. On an End step, *Run verdict* `ok` or `failed` makes
+  reaching that ending the verdict of the run (for example *Documentation* =
+  `ok`, *Escalated* = `failed`); the summary still counts the steps that failed
+  or could not be looked at on the way. `computed` (the default) keeps the
+  step-by-step verdict. Only an ending the walk actually stopped on counts: a
+  path that runs out of arrows half way is judged step by step.
+
+The bundled example is **Appliance recovery (restart activities)**: connectivity
+tests (HTTPS, TCP to the SSH port, SSH login), the firewall/routing, VM,
+console and power questions, the escalations to the network/firewall, console
+and data-centre teams, admin login, diagnostics, L3 support, restore or
+solution, and the stability check, ending in *Documentation* or *Escalated*.
+SATOM cannot send ICMP from the node, so "ping" is a TCP handshake to the SSH
+port — a refusal still proves the host is up.
 
 ### Rehearsal and arming
 

@@ -376,12 +376,22 @@ def run(pid):
 @require_permission("view")
 def run_detail(rid):
     row = _run_or_404(rid)
-    gate = ""
+    gate, labels = "", {}
     if row.status == WAITING:
         for n in (row.graph or {}).get("nodes", []):
             if str(n.get("key")) == row.waiting_node:
-                gate = str((n.get("params") or {}).get("prompt") or "")
+                params = n.get("params") or {}
+                gate = str(params.get("prompt") or "")
+                labels = {"pass": str(params.get("pass_label") or "").strip(),
+                          "fail": str(params.get("fail_label") or "").strip()}
+        # The step row holds the prompt AS RENDERED for this run's appliance
+        # ("open https://192.0.2.20/"); the graph holds the template.
+        parked = next((s for s in reversed(row.steps)
+                       if s.node_key == row.waiting_node), None)
+        if parked is not None and parked.detail:
+            gate = parked.detail
     return render_template("process/run.html", run=row, gate_prompt=gate,
+                           gate_labels=labels,
                            can_edit=current_user.can("config_write"))
 
 

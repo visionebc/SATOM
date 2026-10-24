@@ -287,7 +287,13 @@ def advance(run: ProcessRun, *, appliance=None, resume_from: str = "",
         cursor = nxt
 
     _mark_skipped(run, graph, stop_points, executed, seq)
-    return _finish(run, DONE, "")
+    # Only an End step the walk actually STOPPED on may speak for the run. A
+    # path that ran out of arrows half way reached no ending, and its verdict
+    # stays the computed one.
+    ending = nodes.get(stop_points[-1]) if stop_points else None
+    if not ending or str(ending.get("kind") or "") != "end":
+        ending = None
+    return _finish(run, DONE, "", ending=ending)
 
 
 def _mark_skipped(run, graph, stop_points, executed, seq):
@@ -318,7 +324,7 @@ def _mark_skipped(run, graph, stop_points, executed, seq):
         ))
 
 
-def _finish(run, status: str, note: str) -> ProcessRun:
+def _finish(run, status: str, note: str, ending: dict | None = None) -> ProcessRun:
     from ..models import db
 
     run.status = status
@@ -333,9 +339,25 @@ def _finish(run, status: str, note: str) -> ProcessRun:
         if st.status in counts:
             counts[st.status] += 1
 
+    planned = str(((ending or {}).get("params") or {}).get("verdict") or "")
     if status == ABORTED:
         run.verdict = FAILED
         run.summary = note
+    elif planned in (OK, FAILED):
+        # A runbook's checks are EXPECTED to fail on the way -- "HTTPS down?"
+        # is why it was opened -- and its arrows route around them (FA-0008).
+        # Judged step by step, every recovery would read 'failed', including
+        # the ones that recovered. The author said which ending means what;
+        # the summary still counts what failed and what could not be looked
+        # at, so nothing is hidden behind the badge.
+        run.verdict = planned
+        label = str(ending.get("label") or ending.get("key") or "end")
+        run.summary = ("Reached the ending %r, which the plan marks %s. On the way "
+                       "%d step(s) failed and %d could not be looked at; the plan "
+                       "routed them." % (label, planned, counts[FAIL], counts[UNKNOWN])
+                       if counts[FAIL] or counts[UNKNOWN] else
+                       "Reached the ending %r, which the plan marks %s; every step "
+                       "on the way passed." % (label, planned))
     elif counts[FAIL]:
         run.verdict = FAILED
         run.summary = ("%d step(s) failed. The first failure is where the plan "

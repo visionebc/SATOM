@@ -23,6 +23,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   general too, add an extra filter like 80% that automatically puts the
   number on everything, so it's easier".
 
+- **Plugin Studio: the FortiWeb pick honours the form.** *Pick a FortiWeb by
+  capacity* takes **Objects the device must have** (`requires`):
+  `certificate`, `server_pool`, `interface`, `web_protection_profile` (a
+  template id or a name). A FortiWeb with room that lacks one is skipped —
+  read on the device when it answers, else the local cache — so a diagram
+  no longer picks a FortiWeb by capacity alone and then fails on it at the
+  certificate or the policy. Capacity is checked first (a database count);
+  an empty value does not constrain; an unknown key is an error. When
+  nothing qualifies, the error names, per FortiWeb, the limit or the
+  missing object. The `spo-fortiweb` app plugin (1.2.0) uses it. Requested
+  by the operator (translated from Spanish): "the FortiWeb must be chosen
+  automatically from the variables entered, whether it is internal, and
+  the capacities".
+- **`GET /api/v1/apps` says how to fill each field**: `help`, `default`
+  (never a password field's), the `options` a `select` accepts and the
+  console list a `satom_select` draws from (`source`). A caller had only
+  the name, label and type.
 - **API tokens: grants per Process and per Plugin Studio app.** A token can
   now be handed exactly "run THIS process" or "run THIS app" — Access →
   Tokens → *Processes it may run* / *Apps it may run*, one box per object.

@@ -1030,9 +1030,18 @@ Rate-limited to 30/min.
 ```json
 {"apps": [{"slug": "ip-owner", "name": "IP owner", "description": "",
            "version": 3, "enabled": true, "published": true,
-           "fields": [{"name": "ip", "label": "IP address", "type": "text", "required": true}],
+           "fields": [{"name": "ip", "label": "IP address", "type": "text", "required": true,
+                       "help": "e.g. 192.0.2.7", "default": ""},
+                      {"name": "mode", "label": "Mode", "type": "select", "required": true,
+                       "help": "", "default": "new", "options": ["new", "existing"]}],
            "granted": "yes"}]}
 ```
+
+Each field carries what a caller needs to fill it: `help`, `default` (never
+for a `password` field), the only values a `select` accepts (`options`), and
+for a `satom_select` the console list it draws from (`source`, e.g.
+`certificates`, `wpp_templates`: pass the value that list holds — an id for
+templates and Certificate Manager certificates, a name for FortiWeb objects).
 
 ### `POST /apps/<slug>/run`
 

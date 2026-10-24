@@ -146,6 +146,12 @@ def kinds(ch: dict | None = None) -> list:
            P("needed", "Objects to create", default="1"),
            P("exclude", "Exclude appliance (id or name)",
              help="e.g. {{ fwb_internal.id }} -- for a second, different device."),
+           P("requires", "Objects the device must have (JSON)", "json",
+             help='JSON object; a device without one of them is skipped, an empty value '
+                  'is ignored. Keys: certificate, server_pool, interface, '
+                  'web_protection_profile (a template id or a name), e.g. '
+                  '{"certificate": "{{ form.device_cert }}", '
+                  '"server_pool": "{{ form.existing_pool }}"}'),
            F._save_as("fortiweb")]),
         K("certificate", "Certificate (issue or reuse)", GROUP,
           "Issue a certificate with the chosen provider and deploy it to the "
@@ -579,10 +585,16 @@ def fleet_order(kind: str = "fortiweb") -> list:
 
 
 def pick_fortiweb(*, zone="", line="", department="", obj="server_policy", needed=1,
-                  exclude="", headroom=None, appliances=None) -> tuple[dict, list]:
-    """``(choice, skipped)``: the first matching appliance with room."""
+                  exclude="", requires=None, headroom=None, has=None,
+                  appliances=None) -> tuple[dict, list]:
+    """``(choice, skipped)``: the first matching appliance with room that also
+    holds every object in ``requires`` (``{kind: name}``, see REQUIRE_KINDS;
+    an empty name is ignored). Capacity is checked first: it is a database
+    count, the objects are read on the device."""
     from . import capacity
     hr = headroom or capacity.headroom
+    holds = has or device_has
+    need = clean_requires(requires)
     rows = appliances if appliances is not None else fleet_order("fortiweb")
     ex = str(exclude or "").strip()
     skipped = []
@@ -598,13 +610,63 @@ def pick_fortiweb(*, zone="", line="", department="", obj="server_policy", neede
         if not h.ok:
             skipped.append("%s: %d used of %s" % (a.name, h.used, h.effective_cap))
             continue
+        missing = []
+        for kind, name in need.items():
+            ok, src = holds(a, kind, name)
+            if not ok:
+                missing.append("no %s %s (%s)" % (kind.replace("_", " "), name, src))
+        if missing:
+            skipped.append("%s: %s" % (a.name, ", ".join(missing)))
+            continue
         return ({"id": a.id, "name": a.name, "zone": a.zone or "", "line": a.line or "",
                  "department": a.department or "", "used": h.used,
-                 "cap": h.effective_cap, "free": h.free, "limit_known": h.known}, skipped)
+                 "cap": h.effective_cap, "free": h.free, "limit_known": h.known,
+                 "requires": need}, skipped)
     want = ", ".join("%s=%s" % (k, v) for k, v in (("zone", zone), ("line", line),
                                                    ("department", department)) if v) or "any"
-    raise F.FlowError("no FortiWeb (%s) has room for %s more %s%s"
-                      % (want, needed, obj, (" -- " + "; ".join(skipped)) if skipped else ""))
+    also = (" holding " + ", ".join("%s %s" % (k.replace("_", " "), v) for k, v in need.items())
+            if need else "")
+    raise F.FlowError("no FortiWeb (%s) has room for %s more %s%s%s"
+                      % (want, needed, obj, also, (" -- " + "; ".join(skipped)) if skipped else ""))
+
+
+#: What ``fortiweb_pick`` can require on a device (the collection it reads).
+REQUIRE_KINDS = ("certificate", "server_pool", "interface", "web_protection_profile")
+EP_WPP = "/api/v2.0/cmdb/waf/web-protection-profile.inline-protection"
+EP_INTERFACE = "/api/v2.0/cmdb/system/interface"
+
+
+def clean_requires(raw) -> dict:
+    """``{kind: name}`` without empty names; an unknown kind or a non-object
+    is an ERROR (a typo must not silently stop constraining the pick)."""
+    if raw in (None, "", {}):
+        return {}
+    if not isinstance(raw, dict):
+        raise F.FlowError("requires is a JSON object, e.g. {\"certificate\": \"...\"}")
+    out = {}
+    for k, v in raw.items():
+        k = str(k).strip()
+        if k not in REQUIRE_KINDS:
+            raise F.FlowError("requires: unknown kind %r (one of %s)" % (k, ", ".join(REQUIRE_KINDS)))
+        v = "" if v is None else str(v).strip()
+        if v:
+            out[k] = v
+    return out
+
+
+def device_has(appliance, kind: str, name: str) -> tuple[bool, str]:
+    """``(present, where from)``: read on the device when it answers, else the
+    local cache (``device_names``; interfaces: also the interface cache)."""
+    if kind == "web_protection_profile":
+        name = _wpp_name(name)
+    ep = {"certificate": EP_CERT_LOCAL, "server_pool": EP_POOL, "interface": EP_INTERFACE,
+          "web_protection_profile": EP_WPP}[kind]
+    names, src = device_names(appliance, ep)
+    if kind == "interface" and name not in names and src != "read on the device":
+        from .interface_inventory import cached_interfaces
+        names = [str(i.get("name") or "") for i in cached_interfaces(appliance)]
+        src = "interface cache: the device did not answer"
+    return name in names, src
 
 
 def _may_write_device(ctx) -> None:
@@ -929,7 +991,8 @@ def run(node: dict, ctx) -> tuple:
             zone=_s(node, ctx, "zone"), line=_s(node, ctx, "line"),
             department=_s(node, ctx, "department"),
             obj=F._p(node, "object", "server_policy") or "server_policy",
-            needed=int(_s(node, ctx, "needed", "1") or 1), exclude=_s(node, ctx, "exclude"))
+            needed=int(_s(node, ctx, "needed", "1") or 1), exclude=_s(node, ctx, "exclude"),
+            requires=F._json(node, ctx, "requires", "Objects the device must have"))
         return "ok", choice, "%s (%s used of %s)%s" % (
             choice["name"], choice["used"], choice["cap"] if choice["cap"] is not None else "no limit",
             (" -- skipped " + "; ".join(skipped)) if skipped else "")

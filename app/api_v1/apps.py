@@ -58,10 +58,24 @@ def _grant_state(a) -> str:
     return "yes" if ok else ("paused" if code == "grant_paused" else "no")
 
 
+def _field(f: dict) -> dict:
+    """What a caller needs to fill one input: ``options`` of a ``select`` (the
+    only values accepted), the console list a ``satom_select`` draws from
+    (``source``), the help text and the default -- never a password's."""
+    kind = f.get("type") or "text"
+    out = {"name": f.get("name"), "label": f.get("label") or f.get("name"),
+           "type": kind, "required": bool(f.get("required")), "help": f.get("help") or ""}
+    if kind != "password":
+        out["default"] = f.get("default") if f.get("default") is not None else ""
+    if kind == "select":
+        out["options"] = [o.strip() for o in str(f.get("options") or "").splitlines() if o.strip()]
+    if kind == "satom_select":
+        out["source"] = f.get("source") or ""
+    return out
+
+
 def _fields(a) -> list[dict]:
-    return [{"name": f.get("name"), "label": f.get("label") or f.get("name"),
-             "type": f.get("type") or "text", "required": bool(f.get("required"))}
-            for f in (a.published or {}).get("fields") or []]
+    return [_field(f) for f in (a.published or {}).get("fields") or []]
 
 
 def _app_json(a) -> dict:

@@ -595,6 +595,8 @@ def pick_fortiweb(*, zone="", line="", department="", obj="server_policy", neede
     hr = headroom or capacity.headroom
     holds = has or device_has
     need = clean_requires(requires)
+    if "web_protection_profile" in need:  # a template id -> the profile name it deploys
+        need["web_protection_profile"] = _wpp_name(need["web_protection_profile"])
     rows = appliances if appliances is not None else fleet_order("fortiweb")
     ex = str(exclude or "").strip()
     skipped = []

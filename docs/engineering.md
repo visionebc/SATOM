@@ -419,6 +419,21 @@ the full naming table):
 - **Per-tab ADOM:** `sessionStorage.fmAdom` + `X-ADOM` header stamping in
   `turbo-boot.js` / the global fetch wrapper (§3).
 
+- **Tables fit their box** (`main.js`, "Tables fit their container"; CSS
+  `.fw-fit-*` in `fortiweb.css`): one opt-out pass over every visible
+  `<table>` in `#fw-main` at ≥ 769 px — wrap text, clip pathological values
+  (one token > 40 chars or > 300 chars) to 320 px with `title`, hide
+  low-priority columns from the right behind a *Show all* toggle, and finally
+  break long words. New tables need nothing; to steer it, mark headers:
+  `th[data-priority="1..5"]` (1 = hidden last, 5 = first, unmarked = 3),
+  `th[data-keep]` (never hidden; the checkbox, first identifying column,
+  Status and `.actions-col` are kept anyway), `[data-fit="off"]` on the table
+  or an ancestor to opt out. Cells are hidden with a class, never removed, so
+  `td[i]` indexing keeps working. Row actions: at most 2–3 visible buttons in
+  `.fw-row-actions`, the rest in a `.dropdown.fw-row-more` with
+  `data-bs-popper-config='{"strategy":"fixed"}'` so the menu escapes the
+  table's scroll box.
+
 ### 9.1 Third-party browser assets (vendored, never a CDN)
 
 The console **never loads a script, stylesheet or font from another origin**.

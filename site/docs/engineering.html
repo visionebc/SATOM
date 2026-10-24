@@ -471,8 +471,26 @@ the full naming table):</p>
   create→edit, write back to the opening dropdown), the fleet map renderer
   (<code>fleet_map.js</code>, pure SVG), the ER diagram (<code>er_diagram.js</code>), the report
   builder wizard (<code>report_builder.js</code>).</li>
-<li><strong>Per-tab ADOM:</strong> <code>sessionStorage.fmAdom</code> + <code>X-ADOM</code> header stamping in
-  <code>turbo-boot.js</code> / the global fetch wrapper (§3).</li>
+<li>
+<p><strong>Per-tab ADOM:</strong> <code>sessionStorage.fmAdom</code> + <code>X-ADOM</code> header stamping in
+  <code>turbo-boot.js</code> / the global fetch wrapper (§3).</p>
+</li>
+<li>
+<p><strong>Tables fit their box</strong> (<code>main.js</code>, "Tables fit their container"; CSS
+  <code>.fw-fit-*</code> in <code>fortiweb.css</code>): one opt-out pass over every visible
+  <code>&lt;table&gt;</code> in <code>#fw-main</code> at ≥ 769 px — wrap text, clip pathological values
+  (one token &gt; 40 chars or &gt; 300 chars) to 320 px with <code>title</code>, hide
+  low-priority columns from the right behind a <em>Show all</em> toggle, and finally
+  break long words. New tables need nothing; to steer it, mark headers:
+  <code>th[data-priority="1..5"]</code> (1 = hidden last, 5 = first, unmarked = 3),
+  <code>th[data-keep]</code> (never hidden; the checkbox, first identifying column,
+  Status and <code>.actions-col</code> are kept anyway), <code>[data-fit="off"]</code> on the table
+  or an ancestor to opt out. Cells are hidden with a class, never removed, so
+  <code>td[i]</code> indexing keeps working. Row actions: at most 2–3 visible buttons in
+  <code>.fw-row-actions</code>, the rest in a <code>.dropdown.fw-row-more</code> with
+  <code>data-bs-popper-config='{"strategy":"fixed"}'</code> so the menu escapes the
+  table's scroll box.</p>
+</li>
 </ul>
 <h3 id="91-third-party-browser-assets-vendored-never-a-cdn">9.1 Third-party browser assets (vendored, never a CDN)</h3>
 <p>The console <strong>never loads a script, stylesheet or font from another origin</strong>.

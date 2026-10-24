@@ -164,6 +164,18 @@ screen tracks progress and survives page navigation; the **Jobs** page (Global
 be minimised to one line (**−**) and restored (**□**, or a click on its title);
 the choice lasts for the browser session.
 
+**Wide tables.** Tables use the full width of the page and are fitted to it
+at every desktop width (from 769 px). A table wider than the screen first lets
+headers and text wrap between words (names, badges, numbers, dates and actions
+stay on one line), then shows very long values (a certificate, an image, a
+message body) on one line with an ellipsis and the full value on hover, and
+only then hides its least useful columns from the right. The name column, the
+checkbox, **Status** and **Actions** are never hidden, nor more than half of the
+columns; *N columns hidden · Show all* above the table brings them back (the
+table then scrolls inside its own box) and *Fit to width* hides them again.
+Rows show their main two or three actions as buttons and the rest in a **…**
+menu (**More actions**); toolbars stay on one line.
+
 **Notifications.** The bell in the top bar collects job results and system
 notices, scoped to the product you are working in. The bell's *Clear* only marks
 them read; **Clear all** on the Notifications page deletes them (after a
@@ -9370,7 +9382,7 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (129 today) or **excluded with a written
+   the console is either **on the map** (131 today) or **excluded with a written
    reason** (176 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.

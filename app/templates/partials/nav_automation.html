@@ -114,7 +114,7 @@
     {% if (product.key == 'global' or _dev) and current_user.can('config_write') %}
     {% if may_open('automations.index') %}
     {% if product.key == 'global' or _m_au.on %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint in ('automations', 'event_automations') else '' }}" href="{{ url_for('automations.index', _adom=product.key) }}">
+    <a class="fw-nav-item {{ 'active' if request.blueprint in ('automations', 'event_automations', 'triggers') else '' }}" href="{{ url_for('automations.index', _adom=product.key) }}">
       <i class="bi bi-calendar2-check fw-nav-icon"></i><span>{{ _('Automations') }}</span></a>
     {% else %}{{ nav_off('bi-calendar2-check', _('Automations'), _m_au.reason, ep='automations.index') }}{% endif %}
     {% endif %}

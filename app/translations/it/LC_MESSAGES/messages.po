@@ -27593,3 +27593,18 @@ msgstr "Il monitoraggio avvisa al %(w)s %% del limite effettivo, cioè al %(x)s 
 
 msgid "default (%(pct)s %%)"
 msgstr "predefinito (%(pct)s %%)"
+
+msgid "Change Management Types"
+msgstr "Tipi di gestione delle modifiche"
+
+msgid "“documentary” types have no executor — they record a plan, they do not run. Add or edit types under Administrator → Change Management Types."
+msgstr "I tipi “documentali” non hanno un esecutore: registrano un piano, non lo eseguono. Aggiungi o modifica i tipi in Amministratore → Tipi di gestione delle modifiche."
+
+msgid "The change type this flow raises is disabled in Administrator → Change Management Types, so no change can be raised from here. Re-enable it there."
+msgstr "Il tipo di modifica che questa procedura solleva è disabilitato in Amministrazione → Tipi di gestione delle modifiche, quindi nessuna modifica può essere sollevata da qui. Riattivarlo lì."
+
+msgid "There is no trigger yet. An administrator creates one under Automations › Triggers; then it can be bound here."
+msgstr "Non c'è ancora nessun trigger. Un amministratore ne crea uno in Automazioni › Trigger; poi può essere collegato qui."
+
+msgid "Automations › Triggers"
+msgstr "Automazioni › Trigger"

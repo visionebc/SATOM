@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Change Types — Administration{% endblock %}
+{% block title %}{{ _('Change Management Types') }} — {{ _('Administrator') }}{% endblock %}
 {% block content %}
 <style nonce="{{ csp_nonce }}">
   .ct-table { table-layout: fixed; }
@@ -7,7 +7,7 @@
   .ct-table th { vertical-align: bottom; }
 </style>
 <div class="fw-page-header">
-  <h4 class="mb-1"><i class="bi bi-ui-checks-grid me-2"></i>{{ _('Change types') }}</h4>
+  <h4 class="mb-1"><i class="bi bi-ui-checks-grid me-2"></i>{{ _('Change Management Types') }}</h4>
   <p class="text-muted mb-0" style="font-size:13px;">
     {{ _('The options in the Change Request form\'s') }} <em>{{ _('type of change') }}</em> {{ _('picker, and the text each one proposes and prints. Built-in types come with the product and can be') }} <strong>{{ _('reworded') }}</strong>{{ _('; types you add here are') }} <strong>{{ _('documentary') }}</strong> {{ _('— they raise and print a change request, but there is no automation behind them, so the work is performed by hand.') }}
   </p>

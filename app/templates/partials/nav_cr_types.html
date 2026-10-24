@@ -14,5 +14,5 @@
    ========================================================================= #}
 {% if may_open('cr_types.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'cr_types' else '' }}" href="{{ url_for('cr_types.index', _adom=product.key) }}">
-  <i class="bi bi-ui-checks-grid fw-nav-icon"></i><span>{{ _('Change Types') }}</span></a>
+  <i class="bi bi-ui-checks-grid fw-nav-icon"></i><span>{{ _('Change Management Types') }}</span></a>
 {% endif %}

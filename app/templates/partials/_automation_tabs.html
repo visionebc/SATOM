@@ -1,10 +1,16 @@
-{# Automation > Automations: two tabs, one page in the menu (2026-10-22).
+{# Automation > Automations: one page in the menu (2026-10-22).
    "Scheduled" is the clock (views/scheduled_actions.py, automations surface);
-   "On a trigger" is the event side (views/event_automations.py), the
-   implementation of the triggers created under Administrator > Triggers. #}
+   "On a trigger" is the event side (views/event_automations.py); "Triggers"
+   (views/triggers.py) is the condition those automations hang off -- it left
+   Administrator > Change Management on 2026-10-25 (operator). The tab is drawn
+   only for the profiles that may open it (user_manage). #}
 <ul class="nav nav-tabs mb-3">
   <li class="nav-item"><a class="nav-link {{ 'active' if request.blueprint == 'automations' }}"
       href="{{ url_for('automations.index', _adom=product.key) }}"><i class="bi bi-calendar2-check me-1"></i>{{ _('Scheduled') }}</a></li>
   <li class="nav-item"><a class="nav-link {{ 'active' if request.blueprint == 'event_automations' }}"
       href="{{ url_for('event_automations.index', _adom=product.key) }}"><i class="bi bi-lightning-charge me-1"></i>{{ _('On a trigger') }}</a></li>
+  {% if may_open('triggers.index') %}
+  <li class="nav-item"><a class="nav-link {{ 'active' if request.blueprint == 'triggers' }}"
+      href="{{ url_for('triggers.index', _adom=product.key) }}"><i class="bi bi-funnel me-1"></i>{{ _('Triggers') }}</a></li>
+  {% endif %}
 </ul>

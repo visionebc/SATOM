@@ -27558,3 +27558,18 @@ msgstr "La surveillance avertit à %(w)s %% de la limite effective, soit à %(x)
 
 msgid "default (%(pct)s %%)"
 msgstr "par défaut (%(pct)s %%)"
+
+msgid "Change Management Types"
+msgstr "Types de gestion des changements"
+
+msgid "“documentary” types have no executor — they record a plan, they do not run. Add or edit types under Administrator → Change Management Types."
+msgstr "Les types « documentaires » n'ont pas d'exécuteur — ils enregistrent un plan, ils ne l'exécutent pas. Ajoutez ou modifiez des types sous Administrateur → Types de gestion des changements."
+
+msgid "The change type this flow raises is disabled in Administrator → Change Management Types, so no change can be raised from here. Re-enable it there."
+msgstr "Le type de changement levé par ce flux est désactivé dans Administration → Types de gestion des changements, donc aucun changement ne peut être levé à partir d'ici. Réactivez-le là-bas."
+
+msgid "There is no trigger yet. An administrator creates one under Automations › Triggers; then it can be bound here."
+msgstr "Il n'y a encore aucun déclencheur. Un administrateur en crée un sous Automatisations › Déclencheurs ; il peut ensuite être lié ici."
+
+msgid "Automations › Triggers"
+msgstr "Automatisations › Déclencheurs"

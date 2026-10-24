@@ -27556,3 +27556,18 @@ msgstr "Die Überwachung warnt bei %(w)s %% des effektiven Limits, also bei %(x)
 
 msgid "default (%(pct)s %%)"
 msgstr "Standard (%(pct)s %%)"
+
+msgid "Change Management Types"
+msgstr "Change-Management-Typen"
+
+msgid "“documentary” types have no executor — they record a plan, they do not run. Add or edit types under Administrator → Change Management Types."
+msgstr "„Dokumentarische“ Typen haben keinen Executor – sie halten einen Plan fest, führen ihn aber nicht aus. Typen hinzufügen oder bearbeiten unter Administrator → Change-Management-Typen."
+
+msgid "The change type this flow raises is disabled in Administrator → Change Management Types, so no change can be raised from here. Re-enable it there."
+msgstr "Der von diesem Workflow ausgelöste Änderungstyp ist in der Verwaltung → Change-Management-Typen deaktiviert, daher kann hier keine Änderung angefordert werden. Aktivieren Sie ihn dort erneut."
+
+msgid "There is no trigger yet. An administrator creates one under Automations › Triggers; then it can be bound here."
+msgstr "Es gibt noch keinen Trigger. Ein Administrator legt einen unter Automatisierungen › Trigger an; danach kann er hier gebunden werden."
+
+msgid "Automations › Triggers"
+msgstr "Automatisierungen › Trigger"

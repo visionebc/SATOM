@@ -339,9 +339,11 @@ Automation keeps **Automations**, the work operators schedule (§15).
 Administrator; **Certificate Manager** is under Automation (Certificate Manager in every
 ADOM: live in Global, FortiWeb and FortiADC, drawn disabled with the reason in
 FortiGate, FortiAnalyzer and FortiAuthenticator). **Administrator** is split
-into sections — Access, Change Management, Devices, Objects and System — and
-both the sections and their entries are alphabetical in the console's
-language; a section with no entry you may open is not drawn. **Plugin Studio**
+into sections — Access, Change Management, Devices, Objects and System — plus
+one entry of its own, **Change Management Types** (the change types the
+Change Request form offers, renamed from *Change Management Types* on 2026-10-25); the
+sections, that entry and the entries of each section are alphabetical in the
+console's language, and a section with no entry you may open is not drawn. **Plugin Studio**
 (apps and the Python console in one page, §23) is an entry of its own on the
 **first level** of the sidebar, just above Administrator, in every ADOM;
 **Report Studio** and **Lua Studio** are in **Plugins** (Operations → Plugins
@@ -3214,8 +3216,9 @@ boot.
 Scheduled work starts on a clock. Work that should start **when something
 happens** is split in two halves, on purpose:
 
-- **Triggers** — the *condition*. Administrator → Change Management →
-  **Triggers** (`/administration/triggers/`, administrators only). A trigger
+- **Triggers** — the *condition*. Operations → Automation → **Automations**,
+  tab **Triggers** (`/administration/triggers/`, administrators only; the tab
+  is drawn only for them). A trigger
   names one event and narrows which occurrences count.
 - **Automations → On a trigger** — the *implementation*. Operations →
   Automation → **Automations**, tab **On a trigger**
@@ -8769,7 +8772,7 @@ on (no automated action runs on FortiGate); a documentary type keeps every
 device, or only the products it is offered for. SATOM ships one documentary
 type, **Manual change (performed by hand)**, offered for every product: use
 it for work done by hand on any device, FortiGate included. It is an ordinary
-change type under **Administrator → Change Types → Your change types**, so you
+change type under **Administrator → Change Management Types → Your change types**, so you
 can reword, hide or delete it; once deleted it is not recreated.
 
 **Choosing the action.** The Action dropdown lists every automation that
@@ -9688,7 +9691,7 @@ Two details that are not cosmetic:
   would freeze the wording for the rest of the session and claim text is yours
   that you never wrote.
 
-**The proposal is on the page before any script runs.** Title, reason and rollback arrive filled in by the server with the wording set for the `upgrade` type under **Administration → Change Types**, so with scripting off you still read, and can submit, the administrator's words. Until a script runs, the place where the appliances are named reads as the change type's *no appliances* text. With scripting on, the fields follow your ticks and your document language as they did before. **Edit this wording**, beside **Restore proposal**, opens that change type.
+**The proposal is on the page before any script runs.** Title, reason and rollback arrive filled in by the server with the wording set for the `upgrade` type under **Administrator → Change Management Types**, so with scripting off you still read, and can submit, the administrator's words. Until a script runs, the place where the appliances are named reads as the change type's *no appliances* text. With scripting on, the fields follow your ticks and your document language as they did before. **Edit this wording**, beside **Restore proposal**, opens that change type.
 
 **Or split the same selection into waves.** Below the form, stage 2 can raise the ticked appliances as several changes instead of one. You set the appliances per wave (default 5), the first window's start, each window's length in minutes (default 120) and the gap between windows (default 30). The appliances are chunked in name order, and each wave is an ordinary change request with its own window and its own approval, titled like the form's title with *— wave k/N* appended. Windows follow one another and never overlap. Leave the start empty to raise the waves now and schedule them later. The number of waves is capped (§40.2).
 
@@ -10384,7 +10387,7 @@ that looks like your plan and cannot execute a single check.
 
 ### Starting a process from an event
 
-A process is started by an **event** through **Administrator → Triggers** and
+A process is started by an **event** through **Automations → Triggers** and
 an automation **Walk a process** on that trigger (§15.1). The process form
 shows **Started by** (the automations that walk it) and **Start it on a
 trigger**, which opens the automation form with the process chosen. Until

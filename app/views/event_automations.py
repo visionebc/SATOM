@@ -134,7 +134,7 @@ def _apply(a: EventAutomation) -> list[str]:
         tid = 0
     trig = db.session.get(Trigger, tid) if tid else None
     if trig is None:
-        problems.append('choose a trigger (Administrator › Triggers)')
+        problems.append('choose a trigger (Automations › Triggers)')
     else:
         a.trigger_id = trig.id
     kind = (f.get('kind') or '').strip()

@@ -3,7 +3,8 @@
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
   <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
-  <span>{{ _('Administrator') }}</span><span class="separator">/</span>
+  <span>{{ _('Automation') }}</span><span class="separator">/</span>
+  <a href="{{ url_for('automations.index', _adom=product.key) }}">{{ _('Automations') }}</a><span class="separator">/</span>
   <a href="{{ url_for('.index') }}">{{ _('Triggers') }}</a><span class="separator">/</span>
   <span>{{ trig.name if trig else _('New') }}</span>
 </div>

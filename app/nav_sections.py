@@ -68,7 +68,15 @@ def sections(specs) -> list[dict]:
     out = []
     for title, icon, key, html in specs:
         entries = sorted(split_entries(html), key=lambda e: sort_key(label_of(e)))
-        if entries:
-            out.append({"title": title, "icon": icon, "key": key,
-                        "items": [Markup(e) for e in entries]})
+        if not entries:
+            continue
+        if icon is None:
+            # A single entry drawn at section level (Change Management Types,
+            # operator 2026-10-25): sorted among the sections by its own label,
+            # never wrapped in a toggle of one.
+            out.append({"title": label_of(entries[0]) or title, "icon": None,
+                        "key": key, "entry": Markup(entries[0]), "items": []})
+            continue
+        out.append({"title": title, "icon": icon, "key": key,
+                    "items": [Markup(e) for e in entries]})
     return sorted(out, key=lambda s: sort_key(str(s["title"])))

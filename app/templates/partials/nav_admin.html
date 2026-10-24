@@ -48,11 +48,15 @@
 {% endset %}
 
 {% set _s_change %}
-    {% include "partials/nav_cr_types.html" %}
     {% include "partials/nav_process.html" %}
-    {# Triggers (2026-10-22): the condition half of the orchestrator; the
-       implementation is Automation > Automations > On a trigger. #}
-    {% include "partials/nav_triggers.html" %}
+{% endset %}
+
+{# Change Management Types: an entry of the Administrator group itself, not
+   of a section (operator, 2026-10-25: "one level up, renamed Change
+   Management Types"). Triggers left for Automation > Automations, where it is
+   the third tab next to Scheduled and On a trigger. #}
+{% set _e_cmt %}
+    {% include "partials/nav_cr_types.html" %}
 {% endset %}
 
 {% set _s_devices %}
@@ -174,11 +178,15 @@
   <div class="fw-nav-group-body">
     {% for s in nav_sections([
          (_('Access'), 'bi-person-lock', 'Access', _s_access),
+         (_('Change Management Types'), None, 'Change Management Types', _e_cmt),
          (_('Change Management'), 'bi-clipboard2-check', 'Change Management', _s_change),
          (_('Devices'), 'bi-hdd-rack', 'Devices', _s_devices),
          (_('Objects'), 'bi-tags', 'Objects', _s_objects),
          (_('System'), 'bi-gear', 'System', _s_system),
        ]) %}
+    {% if s.entry %}
+    {{ s.entry }}
+    {% else %}
     <div class="fw-nav-subgroup" data-nav-subgroup="{{ s.key }}">
       <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi {{ s.icon }} fw-nav-icon"></i><span>{{ s.title }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
       <div class="fw-nav-subgroup-body">
@@ -186,6 +194,7 @@
         {% endfor %}
       </div>
     </div>
+    {% endif %}
     {% endfor %}
   </div>
 </div>

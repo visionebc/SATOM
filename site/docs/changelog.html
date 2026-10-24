@@ -115,6 +115,17 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h3 id="added">Added</h3>
 <ul>
 <li>
+<p><strong>Runbooks as Plugin Studio apps.</strong> New app steps: <strong>Ask a person</strong> (the
+  run waits and is answered on the run page, Yes / No or one button for a
+  task), <strong>Load an appliance</strong>, <strong>HTTP check</strong>, <strong>TCP check</strong>, <strong>Console
+  read</strong>, <strong>Appliance fact</strong>, <strong>Collect diagnostics</strong> and <strong>Activity</strong>; every
+  step carries <em>Instructions</em>, <em>Responsible</em> and <em>Estimated time</em>. A check
+  that could not look takes the error arrow, never <em>no</em>. The app editor has
+  <strong>Simulate</strong>: the whole draft as a rehearsal, questions answered in place
+  or <em>Yes to every question</em>, the path coloured on the diagram. App forms
+  can list every appliance (<em>Appliances (every product)</em>).</p>
+</li>
+<li>
 <p><strong>Process: runbooks that work for every appliance</strong> (operator request,
   FA-0008: a recovery runbook as a process). The text of HTTP / TCP / DNS
   checks, Manual gate prompts, End notes and the new Notify step may name the
@@ -125,8 +136,13 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   e-mail, also on rehearsals, marked <code>[rehearsal]</code>). A Manual gate can label its
   buttons (<em>Yes</em> / <em>No</em>), and an End step can set the run verdict (<em>ok</em> /
   <em>failed</em>), so a runbook whose checks fail on the way by design is judged by
-  the ending it reached. Example process: <em>Appliance recovery (restart
-  activities)</em>, started by a trigger on unreachable devices.</p>
+  the ending it reached. Every step also carries the procedure's own text
+  (<em>Instructions</em>, <em>Responsible</em>, <em>Estimated time</em>), shown on the run page; a
+  new <strong>Activity</strong> step is a documented box that passes at once; a gate can
+  show a single button (<em>Done</em>) for a task. The diagram editor draws sideways
+  arrows from the side, wraps labels onto two lines and writes a gate's own
+  answers (<em>Ja</em> / <em>Nein</em>) on its arrows. Example process: <em>Appliance recovery
+  (restart activities)</em>, started by a trigger on unreachable devices.</p>
 </li>
 <li>
 <p><strong>Capacity Limits: one default limit for every row.</strong> A <em>Default limit</em>
@@ -358,6 +374,15 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
+<li>
+<p><strong>Menu: Change Management Types and Triggers moved</strong> (operator request).
+  <em>Change Types</em> is now <strong>Change Mgt Types</strong> (page title <em>Change Management
+  Types</em>), an entry of <strong>Administrator → Objects</strong> instead of the Change
+  Management section.
+  <strong>Triggers</strong> left Administrator for <strong>Automation → Automations</strong>, where it
+  is a third tab next to <em>Scheduled</em> and <em>On a trigger</em> (administrators only;
+  the address <code>/administration/triggers/</code> is unchanged).</p>
+</li>
 <li>
 <p><strong>A Process walk from <code>/api/v1</code> needs a grant for that process.</strong> Until
   now every <code>write</code>-scope token could rehearse every process its ADOM saw
@@ -616,6 +641,17 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   FortiWeb that refuses the REST call (HTTP 423, <code>-20010</code>: the license of the HA peer is not
   valid) as <em>online with 0 certificates</em>. The box is now marked unreachable, with the
   device's own message.</li>
+</ul>
+<h3 id="removed">Removed</h3>
+<ul>
+<li><strong>The Process section is gone</strong> (operator request: "this belongs in Plugin
+  Studio, as an app that does the whole process"). Administrator → Process,
+  its diagrams and runs, <code>/api/v1/processes</code>, the <em>Walk a process</em> scheduled
+  action, automation kind and app step, XML import/export and the
+  <code>process_arm</code> token capability were removed; the database tables are
+  dropped on upgrade after every process and run is written to
+  <code>data/process-backup-&lt;date&gt;.json</code>. Runbooks are Plugin Studio apps (see
+  Added). The Change Management section of Administrator went with it.</li>
 </ul>
 <h2 id="350---2026-10-23">[3.5.0] - 2026-10-23</h2>
 <p>Plugin Studio becomes the place where everything SATOM automates lives:
@@ -10148,7 +10184,7 @@ an opaque <code>-651</code> at deploy time.</p>
   the live appliance was empty, so which convention each endpoint accepts could not be
   established. Recorded in <code>UNVERIFIED_SHAPES</code> rather than normalised on a guess.</li>
 </ul>
-<h3 id="removed">Removed</h3>
+<h3 id="removed_1">Removed</h3>
 <ul>
 <li>
 <p><strong><code>/artifacts/manage</code> — it was a second copy of the inventory.</strong> Same rows,
@@ -11341,7 +11377,7 @@ missing half was the half that writes.</strong></p>
   to a policy's protection profile, as an explicit human action recorded in the
   audit log. The response runner will not do this for itself.</li>
 </ul>
-<h3 id="removed_1">Removed</h3>
+<h3 id="removed_2">Removed</h3>
 <ul>
 <li>
 <p><strong>Sentinel action <code>rate_limit_ip</code>.</strong> Probing {device} showed the route its
@@ -13243,7 +13279,7 @@ missing half was the half that writes.</strong></p>
   block and every path are unchanged, so the <code>§</code> citations from <code>README.md</code>,
   <code>cli.md</code>, <code>safeguards.md</code> and this changelog still land where they did.</li>
 </ul>
-<h3 id="removed_2">Removed</h3>
+<h3 id="removed_3">Removed</h3>
 <ul>
 <li><strong>The appearance preset named after the vendor.</strong> <code>LOGIN_BG_PRESETS</code> shipped
   an entry keyed <code>fortinet</code>, labelled "Fortinet", in the vendor's corporate red
@@ -14403,7 +14439,7 @@ that it carries the defect.</p>
   manual harder to read on the machines most operators use. Marketing pages
   stay narrow deliberately.</li>
 </ul>
-<h3 id="removed_3">Removed</h3>
+<h3 id="removed_4">Removed</h3>
 <ul>
 <li><strong>Lua Studio is no longer reachable from the FortiAuthenticator ADOM.</strong> It
   was in the ADOM's blueprint set, but <code>LuaScript.TARGETS</code> is FortiWeb and

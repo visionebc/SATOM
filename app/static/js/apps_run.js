@@ -77,8 +77,8 @@
     }
     return '<div style="white-space:pre-wrap;">' + esc(typeof v === 'string' ? v : JSON.stringify(v)) + '</div>';
   }
-  var BADGE = { done: 'success', failed: 'danger', running: 'info' };
-  var OUT = { ok: 'success', yes: 'success', no: 'warning', error: 'danger' };
+  var BADGE = { done: 'success', failed: 'danger', running: 'info', waiting: 'warning' };
+  var OUT = { ok: 'success', yes: 'success', no: 'warning', error: 'danger', waiting: 'info' };
 
   function statusHtml(d) {
     var h = '<div class="d-flex align-items-center gap-2 mb-2" style="font-size:13px;">' +
@@ -87,7 +87,28 @@
       (d.armed ? '' : ' · rehearsal: nothing was written') + ' · ' + esc(d.user) + '</span>' +
       (d.status === 'running' ? '<span class="spinner-border spinner-border-sm text-secondary"></span>' : '') + '</div>';
     if (d.error) h += '<div class="alert alert-danger py-2" style="font-size:13px;">' + esc(d.error) + '</div>';
+    if (d.waiting) h += waitingHtml(d);
     return h;
+  }
+  /* An "Ask a person" step: the run is parked until somebody answers here. */
+  function waitingHtml(d) {
+    var w = d.waiting, h = '<div class="fw-card mb-2" style="border-left:4px solid #7A5700;"><div class="fw-card-body" style="font-size:13px;">' +
+      '<div class="fw-card-title mb-1" style="font-size:14px;"><i class="bi bi-hand-index me-1"></i>' + esc(w.label) + '</div>' +
+      '<div style="white-space:pre-line;">' + esc(w.prompt) + '</div>';
+    if (w.role || w.time) {
+      h += '<div class="my-2">' + (w.role ? '<span class="fw-badge fw-badge-secondary me-1"><i class="bi bi-person me-1"></i>' + esc(w.role) + '</span>' : '') +
+        (w.time ? '<span class="fw-badge fw-badge-secondary"><i class="bi bi-clock me-1"></i>' + esc(w.time) + '</span>' : '') + '</div>';
+    }
+    if (w.doc) h += '<div class="p-2 my-2" style="white-space:pre-line;font-size:12.5px;background:var(--fw-surface-alt,#F3F6FC);border:1px solid var(--fw-border,#DFE1E6);border-radius:6px;">' + esc(w.doc) + '</div>';
+    if (w.can_answer) {
+      h += '<div class="d-flex flex-wrap gap-2 align-items-center mt-2"><input class="form-control form-control-sm" data-answer-note maxlength="400" placeholder="Note (optional)" style="max-width:320px;">' +
+        '<button type="button" class="btn btn-sm btn-success" data-answer="yes">' + esc(w.pass_label || 'Yes') + '</button>' +
+        (w.buttons === 'one' ? '' : '<button type="button" class="btn btn-sm btn-danger" data-answer="no">' + esc(w.fail_label || 'No') + '</button>') +
+        '<span data-answer-msg class="small"></span></div>';
+    } else {
+      h += '<div class="text-muted small mt-2">Waiting for the person who started the run, or a Plugin Studio author.</div>';
+    }
+    return h + '</div></div>';
   }
   function outputCard(o, title, kind, bare) {
     var t = title || o.title, body = view({ value: o.value, view: kind || o.view });
@@ -104,8 +125,13 @@
   function stepsHtml(d, open) {
     return '<details class="mt-2"' + (open ? ' open' : '') + '><summary class="text-muted" style="font-size:12px;cursor:pointer;">Steps (' + (d.steps || []).length + ')</summary>' +
       '<table class="table table-sm mt-1" style="font-size:12px;"><tbody>' + (d.steps || []).map(function (s) {
-        return '<tr><td><code>' + esc(s.key) + '</code></td><td>' + esc(s.label) + '</td><td><span class="fw-badge fw-badge-' + (OUT[s.outcome] || 'secondary') +
-          '">' + esc(s.outcome) + '</span></td><td>' + esc(s.detail) + '</td><td class="text-muted">' + (s.ms || 0) + ' ms</td></tr>';
+        var doc = (d.docs || {})[s.key], extra = '';
+        if (doc) {
+          extra = '<details><summary class="text-muted">Instructions' + (doc.role ? ' · ' + esc(doc.role) : '') + (doc.time ? ' · ' + esc(doc.time) : '') +
+            '</summary>' + (doc.doc ? '<div style="white-space:pre-line;">' + esc(doc.doc) + '</div>' : '') + '</details>';
+        }
+        return '<tr><td><code>' + esc(s.key) + '</code></td><td>' + esc(s.label) + extra + '</td><td><span class="fw-badge fw-badge-' + (OUT[s.outcome] || 'secondary') +
+          '">' + esc(s.outcome) + '</span></td><td style="white-space:pre-line;">' + esc(s.detail) + '</td><td class="text-muted">' + (s.ms || 0) + ' ms</td></tr>';
       }).join('') + '</tbody></table>' +
       (d.vars ? '<div class="text-muted small">Variables (authors only)</div><pre class="p-2" style="max-height:30vh;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;">' +
         esc(JSON.stringify(d.vars, null, 2)) + '</pre>' : '') + '</details>';
@@ -178,6 +204,16 @@
     if (box._sappWired) return;
     box._sappWired = true;
     box.addEventListener('click', function (e) {
+      var ans = e.target.closest('[data-answer]');
+      if (ans && box.contains(ans)) {
+        var note = box.querySelector('[data-answer-note]'), am = box.querySelector('[data-answer-msg]');
+        Array.prototype.forEach.call(box.querySelectorAll('[data-answer]'), function (x) { x.disabled = true; });
+        answer(box, ans.getAttribute('data-answer'), note ? note.value : '').catch(function (err) {
+          Array.prototype.forEach.call(box.querySelectorAll('[data-answer]'), function (x) { x.disabled = false; });
+          if (am) am.innerHTML = '<span style="color:#8B1C2A;">' + esc(err.message) + '</span>';
+        });
+        return;
+      }
       var b = e.target.closest('[data-act]'); if (!b || !box.contains(b)) return;
       var run = box._sappRun, key = b.getAttribute('data-act'), msg = box.querySelector('[data-act-msg]');
       if (b.getAttribute('data-confirm') && !window.confirm(b.getAttribute('data-label') + '?')) return;
@@ -194,12 +230,25 @@
     });
   }
 
-  function follow(box, url) {
+  function answer(box, value, note) {
+    var run = box._sappRun;
+    return post('/apps/runs/' + run.id + '/answer', { answer: value, note: note || '' }).then(function () {
+      follow(box, box._sappUrl, box._sappAuto);
+    });
+  }
+
+  /* autoYes(): the Simulate panel's "answer Yes to every question" -- each
+     question is answered yes as soon as the walk reaches it. */
+  function follow(box, url, autoYes) {
     var n = 0;
+    box._sappUrl = url; box._sappAuto = autoYes;
     (function tick() {
       getJSON(url).then(function (d) {
         draw(box, d);
         if (d.status === 'running' && n++ < 900) window.setTimeout(tick, n < 10 ? 700 : 2000);
+        else if (d.status === 'waiting' && d.waiting && d.waiting.can_answer && autoYes && autoYes()) {
+          window.setTimeout(function () { answer(box, 'yes', 'simulation: Yes to every question'); }, 400);
+        }
       }).catch(function (err) { box.innerHTML = '<span style="color:#8B1C2A;">' + esc(err.message) + '</span>'; });
     })();
   }
@@ -221,7 +270,7 @@
       o.out.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm"></span> Starting…</span>';
       post(o.runUrl, body).then(function (d) {
         o.runBtn.disabled = false;
-        follow(o.out, d.status_url);
+        follow(o.out, d.status_url, o.autoYes);
       }).catch(function (err) {
         o.runBtn.disabled = false;
         o.out.innerHTML = '<div class="alert alert-danger py-2" style="font-size:13px;">' + esc(err.message) + '</div>';

@@ -84,7 +84,7 @@
         <div class="d-flex" style="min-height:560px;">
           <div style="width:200px;border-right:1px solid var(--fw-border,#DFE1E6);padding:10px;">
             <div class="text-muted mb-1" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">{{ _('Add a step') }}</div>
-            {% for group, title in [('flow', _('Flow')), ('data', _('Data')), ('act', _('Actions')), ('satom', _('SATOM'))] %}
+            {% for group, title in [('flow', _('Flow')), ('check', _('Checks')), ('data', _('Data')), ('act', _('Actions')), ('satom', _('SATOM'))] %}
               <div class="mt-2 mb-1" style="font-size:11px;font-weight:600;color:#5E6C84;">{{ title }}</div>
               {% for k in kinds if k.group == group %}
               <button type="button" class="btn btn-sm btn-outline-secondary w-100 mb-1 text-start proc-add" data-kind="{{ k.key }}" title="{{ k.summary }}" style="font-size:12px;">{{ k.label }}</button>
@@ -98,6 +98,7 @@
               <button type="button" id="proc-fit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrows-fullscreen me-1"></i>{{ _('Fit') }}</button>
               <button type="button" id="ap-analyze" class="btn btn-sm btn-outline-primary" title="{{ _('Explain the diagram step by step and what each failure leaves behind') }}"><i class="bi bi-search me-1"></i>{{ _('Analyze') }}</button>
               <button type="button" id="ap-lastrun" class="btn btn-sm btn-outline-secondary" title="{{ _('Colour each step by how it ended in the newest run') }}"><i class="bi bi-clock-history me-1"></i>{{ _('Last run') }}</button>
+              <button type="button" id="ap-sim-open" class="btn btn-sm btn-success" title="{{ _('Walk the whole process as a rehearsal and answer its questions here') }}"><i class="bi bi-play-fill me-1"></i>{{ _('Simulate') }}</button>
               <span class="text-muted ms-auto" id="proc-hint"></span>
               <button type="button" id="proc-save" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save diagram') }}</button>
             </div>
@@ -109,6 +110,20 @@
           </div>
         </div>
       </div>
+    </div>
+    <div class="fw-card mb-3" id="ap-sim">
+      <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-play-circle me-2 text-accent"></i>{{ _('Simulate the whole process') }}</span></div>
+      <div class="fw-card-body"><div class="row g-3">
+        <div class="col-lg-4">
+          <form id="ap-sim-form"></form>
+          <div class="form-check my-2"><input class="form-check-input" type="checkbox" id="ap-sim-yes">
+            <label class="form-check-label small" for="ap-sim-yes">{{ _('Answer Yes to every question') }}</label></div>
+          <button type="button" class="btn btn-success btn-sm" id="ap-sim-run"><i class="bi bi-play-fill me-1"></i>{{ _('Simulate') }}</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="ap-sim-reload" title="{{ _('Reload the form after saving it') }}"><i class="bi bi-arrow-clockwise"></i></button>
+          <div class="form-text">{{ _('Walks the saved draft as a rehearsal: nothing is written to a device, the checks really look (they only read), each question stops here for your answer, and the path is coloured on the diagram.') }}</div>
+        </div>
+        <div class="col-lg-8"><div id="ap-sim-out" class="text-muted" style="font-size:13px;">{{ _('Save the diagram, then press Simulate.') }}</div></div>
+      </div></div>
     </div>
     <div id="ap-analysis" class="mb-3" style="font-size:12.5px;"></div>
     <div class="text-muted" style="font-size:12px;">{{ _('Arrows: a step ends ok or error, a decision yes or no. An error follows only an error arrow: with none, the run stops there as failed. Templates: {{ form.field }}, {{ rows }}, {{ rows | length }}; a value that is exactly one {{ expression }} keeps its type.') }}</div>

@@ -718,9 +718,12 @@ def _do_app(auto, run, payload, scope, owner):
     inputs = _inputs(auto, scope)
     r = SA.start_run(a, user=owner, product=str(payload.get("product") or auto.product or ""),
                      raw_inputs=inputs, rehearsal=not run.armed, inline=True, event=payload)
-    ok = r.status == "done"
+    # Parked on "Ask a person" is the app working as designed: somebody
+    # answers on the run page.
+    ok = r.status in ("done", "waiting")
     summary = "%sapp %s v%s run #%d: %s%s" % (
-        "" if run.armed else "[rehearsal] ", a.slug, r.version, r.id, r.status,
+        "" if run.armed else "[rehearsal] ", a.slug, r.version, r.id,
+        "waiting for a person" if r.status == "waiting" else r.status,
         (": " + r.error[:300]) if r.error else "")
     return (RUN_OK if ok else RUN_FAILED), summary, "app-run:%d" % r.id
 

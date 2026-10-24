@@ -55,6 +55,7 @@ DEVICE_KINDS = ("certificate", "fortiweb_spo", "fortiweb_spo_remove")
 
 #: ``satom_select`` form-field sources: what a list field may offer.
 SOURCES = (
+    ("appliances", "Appliances (every product)"),
     ("fortiweb", "FortiWeb appliances"),
     ("fortiweb_pools", "FortiWeb server pools (local cache)"),
     ("fortiweb_interfaces", "FortiWeb interfaces (local cache)"),
@@ -1178,6 +1179,12 @@ def source_options(source: str) -> tuple[list[dict], str]:
     if source == "fortiweb":
         return [{"value": str(a.id), "label": "%s (%s / %s)" % (a.name, a.zone or "-", a.line or "-")}
                 for a in fleet_order("fortiweb")], ""
+    if source == "appliances":
+        # Every product: a runbook (FA-0008) is written once for any device.
+        from ..models import Appliance
+        rows = Appliance.query.filter_by(is_cluster=False).order_by(Appliance.name).all()
+        return [{"value": str(a.id), "label": "%s (%s, %s)" % (a.name, a.kind, a.host)}
+                for a in rows], ""
     if source in ("fortiweb_pools", "fortiweb_interfaces", "fortiweb_certificates"):
         return _fleet_objects(source), ""
     if source == "wpp_templates":

@@ -983,17 +983,20 @@ def _capped(obj) -> str:
 
 
 def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=(),
-            event: dict | None = None) -> None:
+            event: dict | None = None, resume: dict | None = None) -> None:
     from ..models import User
     run = db.session.get(StudioAppRun, run_id)
     if run is None:
         return
     user_obj = db.session.get(User, user_id) if user_id else None
     ctx = F.Ctx(form=inputs, armed=run.armed, user=run.user, user_obj=user_obj, run_id=run.id)
+    if resume is not None:
+        ctx.vars = {k: v for k, v in run.vars.items() if k != SEGMENT_VAR}
+        ctx.outputs = list(run.outputs)
     if event is not None:
         ctx.vars["event"] = event
     secrets = _spellings([p for p in passwords if len(p) >= 3])
-    job_id = _job_for(run, d)
+    job_id = _job_for(run, d) if resume is None else ""
     total = max(1, len((d.get("graph") or {}).get("nodes") or []))
 
     def persist(steps, c):
@@ -1006,19 +1009,84 @@ def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=(),
             _job_step(job_id, min(95, int(100 * len(steps) / total)), last)
 
     try:
-        res = F.walk(d.get("graph") or {}, ctx, on_step=persist)
+        res = F.walk(d.get("graph") or {}, ctx, on_step=persist, resume=resume)
     except Exception as exc:  # noqa: BLE001 -- never leave a run "running" forever
         db.session.rollback()
         res = {"status": "failed", "error": "internal error: %s" % exc, "steps": run.steps}
+    _settle(run, res, ctx, secrets)
+    if job_id:
+        _job_end(job_id, run)
+
+
+def _settle(run: StudioAppRun, res: dict, ctx, secrets) -> None:
     run.status = res["status"]
     run.error = _mask(res.get("error") or "", secrets)[:4000]
     run.steps_json = json.dumps(_mask(res.get("steps") or [], secrets), default=str)
     run.outputs_json = json.dumps(_mask(ctx.outputs, secrets), default=str)
     run.vars_json = _capped(_mask(ctx.vars, secrets))
-    run.finished_at = datetime.utcnow()
+    # A run parked on "Ask a person" has not finished.
+    run.finished_at = None if run.status == "waiting" else datetime.utcnow()
     db.session.commit()
-    if job_id:
-        _job_end(job_id, run)
+
+
+#: Where a resumed run records when its current segment started: the run
+#: limit (refresh_stale) counts from there, not from a start hours ago.
+SEGMENT_VAR = "_segment_started"
+
+
+def waiting_step(run: StudioAppRun) -> dict | None:
+    if run.status != "waiting":
+        return None
+    for st in reversed(run.steps):
+        if st.get("outcome") == "waiting":
+            return st
+    return None
+
+
+def answer(a: StudioApp, run: StudioAppRun, value: str, *, user, note: str = "") -> StudioAppRun:
+    """Answer the "Ask a person" step a run waits on and keep walking.
+
+    The walk is rebuilt from what the run SAVED: its form values, its
+    variables and its outputs -- and the definition it started with. A draft
+    run follows the draft as it is now; a published run refuses to continue
+    on a version other than its own (a diagram edited under a waiting run
+    would resume in a step that may no longer exist)."""
+    if value not in ("yes", "no"):
+        raise AppError("the answer is yes or no")
+    st = waiting_step(run)
+    if st is None:
+        raise AppError("run #%d is not waiting for an answer" % run.id)
+    d = definition(a, run.version == 0)
+    if run.version and int(d.get("version") or 0) != int(run.version):
+        raise AppError("%s was published again (v%s) while run #%d waited on v%s; start a "
+                       "new run" % (a.slug, d.get("version"), run.id, run.version))
+    vars_ = run.vars
+    if "_truncated" in vars_:
+        raise AppError("run #%d saved more data than a waiting run can keep; start a new run"
+                       % run.id)
+    run.status = "running"
+    vars_[SEGMENT_VAR] = datetime.utcnow().isoformat(timespec="seconds")
+    run.vars_json = json.dumps(vars_, default=str)
+    db.session.commit()
+    resume = {"steps": run.steps, "key": st.get("key"), "answer": value, "note": note}
+    if RUN_INLINE:
+        execute(run.id, getattr(user, "id", None), run.inputs, d, resume=resume)
+        db.session.refresh(run)
+    else:
+        from flask import current_app
+        flask_app = current_app._get_current_object()
+        threading.Thread(target=_bg_resume, args=(flask_app, run.id, getattr(user, "id", None),
+                                                  run.inputs, d, resume),
+                         name="studio-app-answer-%d" % run.id, daemon=True).start()
+    return run
+
+
+def _bg_resume(flask_app, run_id, user_id, inputs, d, resume):
+    with flask_app.app_context():
+        try:
+            execute(run_id, user_id, inputs, d, resume=resume)
+        finally:
+            db.session.remove()
 
 
 def _job_for(run: StudioAppRun, d: dict) -> str:
@@ -1067,6 +1135,9 @@ def _job_end(job_id: str, run: StudioAppRun) -> None:
         if run.status == "done":
             jobs.finish_success(job_id, message="run #%d done" % run.id,
                                 result={"run_id": run.id, "outputs": len(run.outputs)})
+        elif run.status == "waiting":
+            jobs.finish_success(job_id, message="run #%d waits for a person: answer it on "
+                                "the run page" % run.id, result={"run_id": run.id})
         else:
             jobs.finish_error(job_id, run.error or "run #%d failed" % run.id)
     except Exception:  # noqa: BLE001
@@ -1076,8 +1147,15 @@ def _job_end(job_id: str, run: StudioAppRun) -> None:
 def refresh_stale(run: StudioAppRun) -> StudioAppRun:
     """A run still "running" long after the run limit died with its worker
     (a service restart): say so instead of spinning forever."""
-    if run.status == "running" and run.started_at and \
-            datetime.utcnow() - run.started_at > timedelta(seconds=F.RUN_TIMEOUT + 120):
+    began = run.started_at
+    seg = run.vars.get(SEGMENT_VAR) if run.status == "running" else None
+    if seg:
+        try:
+            began = datetime.fromisoformat(str(seg))
+        except ValueError:
+            pass
+    if run.status == "running" and began and \
+            datetime.utcnow() - began > timedelta(seconds=F.RUN_TIMEOUT + 120):
         run.status = "failed"
         run.error = "interrupted: the worker running it stopped (service restart?)"
         run.finished_at = datetime.utcnow()
@@ -1099,6 +1177,28 @@ def run_json(run: StudioAppRun, a: StudioApp, user) -> dict:
     if author:
         d["vars"] = run.vars
     d["layout"] = result_layout(a, run.version)
+    try:
+        graph = definition(a, run.version == 0).get("graph") or {}
+    except AppError:
+        graph = {}
+    nodes = {n.get("key"): n for n in graph.get("nodes") or []}
+    # The procedure's own text per step (Instructions / Responsible / time).
+    d["docs"] = {}
+    for k, n in nodes.items():
+        p = n.get("params") or {}
+        doc = {f: str(p.get(f) or "").strip() for f in ("doc", "role", "time")}
+        if any(doc.values()):
+            d["docs"][k] = doc
+    st = waiting_step(run)
+    if st is not None:
+        p = (nodes.get(st.get("key")) or {}).get("params") or {}
+        d["waiting"] = {"key": st.get("key"), "label": st.get("label"),
+                        "prompt": str(st.get("detail") or ""),
+                        "pass_label": str(p.get("pass_label") or "Yes"),
+                        "fail_label": str(p.get("fail_label") or "No"),
+                        "buttons": str(p.get("buttons") or "two"),
+                        "can_answer": may_see_run(user, run),
+                        **d["docs"].get(st.get("key"), {})}
     if run.status == "done" and run.armed:
         try:
             acts = definition(a, run.version == 0).get("actions") or []

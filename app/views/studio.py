@@ -945,7 +945,9 @@ def app_form(slug):
     """The draft's form, drawn for the Test tab."""
     from ..services import studio_apps as SA
     a = _app_or_404(slug)
-    return render_template("apps/_form.html", fields=SA.form_view(a.fields), prefix="t-")
+    # Two copies on one page (Test tab, Simulate panel): their ids must differ.
+    prefix = request.args.get("prefix") if request.args.get("prefix") in ("t-", "s-") else "t-"
+    return render_template("apps/_form.html", fields=SA.form_view(a.fields), prefix=prefix)
 
 
 @bp.route("/apps/<slug>/test", methods=["POST"])

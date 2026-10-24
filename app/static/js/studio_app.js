@@ -192,6 +192,28 @@
                           extra: function () { return { rehearsal: $('ap-rehearsal').checked }; } });
   }
 
+  /* ── simulate (Diagram tab) ──────────────────────────────────────────
+     The whole process, end to end, as a rehearsal of the saved draft:
+     nothing is written to a device, the checks really look (they only read),
+     every question stops in this panel for an answer -- or is answered Yes
+     at once -- and the path is coloured on the diagram as it is walked. */
+  function loadSimForm() {
+    fetch(U.form + '?prefix=s-', { credentials: 'same-origin' }).then(function (r) { return r.text(); })
+      .then(function (h) { $('ap-sim-form').innerHTML = h; });
+  }
+  if ($('ap-sim-run')) {
+    loadSimForm();
+    $('ap-sim-reload').addEventListener('click', loadSimForm);
+    $('ap-sim-open').addEventListener('click', function () {
+      $('ap-sim').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    if (window.AppRun) {
+      window.AppRun.mount({ form: $('ap-sim-form'), runBtn: $('ap-sim-run'), out: $('ap-sim-out'), runUrl: U.test,
+                            extra: function () { return { rehearsal: true }; },
+                            autoYes: function () { return $('ap-sim-yes').checked; } });
+    }
+  }
+
   /* ── publish ──────────────────────────────────────────────────────── */
   $('ap-publish').addEventListener('click', function () {
     post(U.publish, { note: $('ap-note').value }).then(function (d) {

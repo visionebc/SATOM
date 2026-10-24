@@ -134,6 +134,27 @@ def run_status(rid):
     return jsonify(SA.run_json(r, a, current_user))
 
 
+@bp.route("/runs/<int:rid>/answer", methods=["POST"])
+@login_required
+@limiter.limit("60 per minute")
+def answer(rid):
+    """Answer the "Ask a person" step a run waits on: the person who started
+    it or a Plugin Studio author (the same people who may see the run)."""
+    r, a = _run_or_404(rid)
+    if not SA.may_see_run(current_user, r):
+        return jsonify({"ok": False, "error": "you may not answer this run"}), 403
+    body = request.get_json(silent=True) or {}
+    value = str(body.get("answer") or "")
+    step = (SA.waiting_step(r) or {}).get("key", "")
+    try:
+        SA.answer(a, r, value, user=current_user, note=str(body.get("note") or "")[:400])
+    except SA.AppError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    log_action("studio.app.answer", target=a.slug, extra={"run": rid, "step": step,
+                                                          "answer": value})
+    return jsonify({"ok": True})
+
+
 @bp.route("/runs/<int:rid>/action/<key>", methods=["POST"])
 @login_required
 def action(rid, key):

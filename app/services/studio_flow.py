@@ -318,7 +318,25 @@ def kinds(choices: dict | None = None) -> list[Kind]:
                     help="e.g. {{ form.device }} or {{ event.appliance_id }}; empty for a "
                          "process that acts on no device."),
               _save_as("process")]),
-    ] + _satom_kinds(ch)
+    ] + _check_kinds() + _satom_kinds(ch)
+
+
+def _check_kinds() -> list:
+    """Runbook steps (checks, Ask a person, Activity): services.studio_checks."""
+    from . import studio_checks as C
+    return C.kinds()
+
+
+#: Every step may carry the text of the procedure it comes from (a runbook is
+#: a document first): shown on the run page and in the editor, never read by
+#: the walk.
+COMMON_PARAMS = (
+    Param("doc", "Instructions", "textarea",
+          help="The full text of this step: what the person does, the commands, "
+               "what to expect. Shown on the run page."),
+    Param("role", "Responsible", help="Who carries it out, e.g. Specialist."),
+    Param("time", "Estimated time", help="Minutes, or free text."),
+)
 
 
 def _satom_kinds(ch) -> list:
@@ -329,17 +347,23 @@ def _satom_kinds(ch) -> list:
 
 
 #: Palette colour per group (the fw-badge palette, readable on white).
-GROUP_COLOURS = {"flow": "#3D4550", "data": "#4C2A85", "act": "#7A5700", "satom": "#EF5424"}
+GROUP_COLOURS = {"flow": "#3D4550", "data": "#4C2A85", "act": "#7A5700", "satom": "#EF5424",
+                 "check": "#15692A"}
 
 
 def kind_map(choices=None) -> dict:
     return {k.key: k for k in kinds(choices)}
 
 
+def _with_common(k):
+    names = {p.name for p in k.params}
+    return k.params + [p for p in COMMON_PARAMS if p.name not in names]
+
+
 def kinds_json(choices=None) -> list[dict]:
     return [{"key": k.key, "label": k.label, "group": k.group, "summary": k.summary,
              "writes": bool(k.writes), "colour": GROUP_COLOURS.get(k.group, "#3D4550"),
-             "params": [p.__dict__ for p in k.params], **k.extra} for k in kinds(choices)]
+             "params": [p.__dict__ for p in _with_common(k)], **k.extra} for k in kinds(choices)]
 
 
 def step_writes(node: dict) -> bool:
@@ -410,6 +434,9 @@ def validate_graph(graph: dict, choices: dict | None = None) -> list[str]:
                     errs.append("%s: %s" % (k, exc))
         if n.get("kind") == "api_call" and choices is not None:
             errs.extend(_catalog_problems(k, p, choices))
+        from . import studio_checks as C
+        if n.get("kind") in C.KIND_KEYS:
+            errs.extend(C.problems(k, n.get("kind"), p))
         target = p.get("name") if n.get("kind") == "set" else p.get("save_as")
         if target not in (None, ""):
             v = str(target)
@@ -435,8 +462,14 @@ def validate_graph(graph: dict, choices: dict | None = None) -> list[str]:
         b = e.get("branch") or "always"
         if src.get("kind") == "decision" and b in ("ok", "error"):
             errs.append("%s is a decision: its arrows are yes, no or always" % src.get("key"))
-        if src.get("kind") not in ("decision", None) and b in ("yes", "no"):
-            errs.append("%s: yes/no arrows leave a decision only" % src.get("key"))
+        from . import studio_checks as C
+        yes_no = ("decision",) + C.YES_NO_KINDS
+        if src.get("kind") not in yes_no + (None,) and b in ("yes", "no"):
+            errs.append("%s: yes/no arrows leave a decision, a check or Ask a person only"
+                        % src.get("key"))
+        if src.get("kind") in C.YES_NO_KINDS and b == "ok":
+            errs.append("%s answers yes or no: its arrows are yes, no, error or always"
+                        % src.get("key"))
         if src.get("kind") in ("end", "fail"):
             errs.append("%s ends the run: it cannot have arrows" % src.get("key"))
     return errs
@@ -565,6 +598,9 @@ def _run_step(node: dict, ctx: Ctx):
                             "title": str(render(_p(node, "title"), scope) or ""),
                             "view": _p(node, "view", "auto") or "auto", "value": value})
         return "ok", None, ""
+    from . import studio_checks as C
+    if kind in C.KIND_KEYS:
+        return C.run(node, ctx)
     if not ctx.armed and step_writes(node):
         from . import studio_satom as S
         if kind in S.KIND_KEYS:
@@ -788,9 +824,16 @@ def _next(edges, key, outcome):
     return by.get((key, "always"))
 
 
-def walk(graph: dict, ctx: Ctx, on_step=None) -> dict:
-    """Run the diagram. ``{status: done|failed, error, steps}``. *on_step*
-    is called after every step (the caller persists progress)."""
+def walk(graph: dict, ctx: Ctx, on_step=None, resume: dict | None = None) -> dict:
+    """Run the diagram. ``{status: done|failed|waiting, error, steps, waiting}``.
+    *on_step* is called after every step (the caller persists progress).
+
+    An *Ask a person* step stops the walk: the result is ``waiting`` with the
+    step's key, and the step is recorded with outcome ``waiting``. *resume*
+    (``{"steps", "key", "answer", "note"}``) continues from that step along
+    the arrow of the answer (``yes`` / ``no``), with ``ctx`` rebuilt from the
+    variables the run saved. The time limit counts from the resume."""
+    from . import studio_checks as C
     nodes = {n.get("key"): n for n in graph.get("nodes") or []}
     edges = graph.get("edges") or []
     start = [k for k, n in nodes.items() if n.get("kind") == "start"]
@@ -799,6 +842,21 @@ def walk(graph: dict, ctx: Ctx, on_step=None) -> dict:
     ctx.deadline = ctx.deadline or time.time() + RUN_TIMEOUT
     steps, key, count = [], start[0], 0
     status, error = "done", ""
+    if resume:
+        steps = list(resume.get("steps") or [])
+        at, answer = resume.get("key"), resume.get("answer")
+        if answer not in ("yes", "no") or at not in nodes:
+            return {"status": "failed", "error": "nothing to answer at %r" % at, "steps": steps}
+        for st in reversed(steps):
+            if st.get("key") == at and st.get("outcome") == "waiting":
+                st["outcome"] = answer
+                note = str(resume.get("note") or "").strip()
+                st["detail"] = (str(st.get("detail") or "") + " — answered %s%s" % (
+                    answer, (": " + note[:400]) if note else ""))[:2000]
+                break
+        if on_step:
+            on_step(steps, ctx)
+        key = _next(edges, at, answer)
     while key:
         count += 1
         if count > MAX_STEPS:
@@ -816,6 +874,10 @@ def walk(graph: dict, ctx: Ctx, on_step=None) -> dict:
             outcome, value, detail = _run_step(node, ctx)
             p = node.get("params") or {}
             target = p.get("name") if node.get("kind") == "set" else p.get("save_as")
+            # A runbook step whose result later steps name by default
+            # ({{ appliance.host }}) saves it even when the draft never set
+            # the field: the default is part of what the step promises.
+            target = target or C.DEFAULT_SAVE_AS.get(node.get("kind"))
             if target and value is not None:
                 if not _VAR_RE.match(str(target)) or target in RESERVED_VARS:
                     raise FlowError("%r is not a usable variable name" % target)
@@ -824,11 +886,15 @@ def walk(graph: dict, ctx: Ctx, on_step=None) -> dict:
         except FlowError as exc:
             outcome, detail = "error", str(exc)
             ctx.vars["last_error"] = {"step": key, "message": detail}
+        waiting = outcome == C.WAIT
         steps.append({"key": key, "label": node.get("label") or key, "kind": node.get("kind"),
-                      "outcome": outcome, "detail": str(detail)[:2000],
+                      "outcome": "waiting" if waiting else outcome,
+                      "detail": str(detail)[:2000],
                       "ms": int((time.monotonic() - t0) * 1000)})
         if on_step:
             on_step(steps, ctx)
+        if waiting:
+            return {"status": "waiting", "error": "", "steps": steps, "waiting": key}
         if node.get("kind") == "fail":
             status, error = "failed", detail
             break

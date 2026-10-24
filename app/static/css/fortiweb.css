@@ -826,6 +826,23 @@ summary.fw-nav-item { padding-right: 16px; }
 .fw-fit-bar .btn-link:hover, .fw-fit-bar .btn-link:focus-visible { color: var(--fw-accent); text-decoration: underline; }
 .fwg-satom .fw-fit-bar { padding: 4px 20px 0; }
 
+/* TABLE EDGES AND FRAME (2026-10-25).
+   Bootstrap's .table-sm pads a cell 4px, so the first column's text sat
+   against the card edge (Change Management Types, Scripts, Triggers...).
+   Every data table gets the .fw-table edge: 14px before the first column
+   and after the last. main.js adds .fw-tbl-frame to a table whose left
+   edge is not on a card or wrapper border (a table floating in a card
+   body, the dashboard's Fleet list): an inset outline, so a scroll box
+   cannot clip it, and border-collapse (the row lines) stays as it is.
+   Opt out with data-frame="off" on the table or an ancestor. */
+#fw-main :is(.table, .an-table, .ana-tbl, .dp-ptbl, table.fw-tbl-frame) > :not(caption) > tr > :first-child { padding-left: 14px; }
+#fw-main :is(.table, .an-table, .ana-tbl, .dp-ptbl, table.fw-tbl-frame) > :not(caption) > tr > :last-child { padding-right: 14px; }
+#fw-main table.fw-tbl-frame {
+  outline: 1px solid var(--fw-border); outline-offset: -1px;
+  border-radius: var(--fw-radius-lg); overflow: hidden;
+}
+#fw-main table.fw-tbl-frame:has(.dropdown-menu.show) { overflow: visible; }
+
 /* ============================================================
    Status Indicators
    ============================================================ */

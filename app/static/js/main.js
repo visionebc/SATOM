@@ -1052,3 +1052,76 @@ document.addEventListener('DOMContentLoaded', function () {
   if (window.FW) window.FW.fitTables = api.run;
   api.schedule(0);
 })();
+
+// ============================================================
+// Tables have a frame — 2026-10-25
+// ------------------------------------------------------------
+// A data table whose left edge does not sit on a bordered box (a card or
+// .fw-table-wrapper it fills) floats in the card body with no outline:
+// it gets .fw-tbl-frame (fortiweb.css "TABLE EDGES AND FRAME"). Skipped:
+// nested tables, .table-borderless, .fwg-table (the FortiWeb GUI grid),
+// layout tables with no row lines, and anything under [data-frame="off"].
+// Once framed a table keeps the class, so a re-run is a no-op. Runs on
+// load, Turbo visits, Bootstrap tab/collapse/modal and DOM changes.
+// ============================================================
+(function () {
+  if (window.__fwTableFrame) return;
+  window.__fwTableFrame = true;
+  var timer = null;
+  function px(v) { return parseFloat(v) || 0; }
+  function edge(cs, side) {
+    var c = cs['border' + side + 'Color'], st = cs['border' + side + 'Style'];
+    return px(cs['border' + side + 'Width']) > 0 && st !== 'none' && st !== 'hidden' &&
+      c !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(c);
+  }
+  function lined(t) {
+    var cs = t.querySelectorAll('tr'), n = 0;
+    for (var i = 0; i < cs.length && n < 4; i++) {
+      if (!cs[i].offsetHeight) continue;
+      n++;
+      if (edge(getComputedStyle(cs[i]), 'Bottom')) return true;
+      var c = cs[i].cells[0];
+      if (c && (edge(getComputedStyle(c), 'Bottom') || edge(getComputedStyle(c), 'Top'))) return true;
+    }
+    return false;
+  }
+  function framed(t, main) {
+    if (edge(getComputedStyle(t), 'Left')) return true;
+    var tl = t.getBoundingClientRect().left;
+    for (var p = t.parentElement; p && p !== main; p = p.parentElement) {
+      var cs = getComputedStyle(p);
+      if (!edge(cs, 'Left') && (!cs.boxShadow || cs.boxShadow === 'none')) continue;
+      return tl - (p.getBoundingClientRect().left + px(cs.borderLeftWidth)) <= 2;
+    }
+    return false;
+  }
+  function run() {
+    timer = null;
+    var main = document.getElementById('fw-main');
+    if (!main) return;
+    var ts = main.querySelectorAll('table:not(.fw-tbl-frame):not(.table-borderless):not(.fwg-table)');
+    for (var i = 0; i < ts.length; i++) {
+      var t = ts[i];
+      try {
+        if (!t.offsetWidth || !t.offsetHeight) continue;
+        if (t.closest('[data-frame="off"], .dropdown-menu')) continue;
+        if (t.parentElement && t.parentElement.closest('table')) continue;
+        if (!lined(t) || framed(t, main)) continue;
+        t.classList.add('fw-tbl-frame');
+      } catch (e) { /* one odd table must not stop the rest */ }
+    }
+  }
+  function schedule(ms) { clearTimeout(timer); timer = setTimeout(run, ms); }
+  if (window.MutationObserver) {
+    new MutationObserver(function (recs) {
+      var main = document.getElementById('fw-main');
+      for (var i = 0; main && i < recs.length; i++) {
+        if (main.contains(recs[i].target)) { schedule(150); return; }
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+  ['turbo:load', 'turbo:render', 'turbo:frame-load', 'shown.bs.tab', 'shown.bs.collapse', 'shown.bs.modal']
+    .forEach(function (ev) { document.addEventListener(ev, function () { schedule(0); }); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
+})();

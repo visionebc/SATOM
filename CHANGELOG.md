@@ -434,6 +434,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **Tables without a frame, text against the edge** (operator request: some
+  tables had no border and the first column's text touched the table edge).
+  Every data table now leaves 14 px before the first column and after the
+  last, and a table that floats inside a card body (the dashboard's Fleet
+  list, Sentinel, System Backup, Settings, Registry…) gets a rounded
+  outline. Measured on the 102 console pages that render a table: 171
+  tables, none under 12 px except the calendar grid; only a table nested in
+  another table stays without a frame.
 - **Lua Studio: Delete did nothing.** Its form was nested inside the editor
   form, so the browser dropped it; it is now its own form.
 - **Capacity counted every object twice.** The device cache keeps an object

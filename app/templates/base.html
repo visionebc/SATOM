@@ -568,10 +568,6 @@
          ADOM, partials/nav_global_studios.html in Global). #}
       {% include 'partials/nav_plugin_studio.html' %}
       {% include 'partials/nav_admin.html' %}
-      {% if product.key == 'global' and not current_user.can('user_manage') %}
-      {# Global draws Process on its own for a profile without Administrator. #}
-      {% include "partials/nav_process_group.html" %}
-      {% endif %}
       {% endif %}
 
       <!-- PROJECT SETTINGS — pinned to the bottom of the sidebar -->

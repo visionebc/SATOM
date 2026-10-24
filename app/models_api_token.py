@@ -74,8 +74,8 @@ CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap",
                 "template_draft", "template_apply",
                 # --- live inventory (see EXPLICIT_ONLY below) -----------------
                 "inventory",
-                # --- Process walks / app runs, ARMED (EXPLICIT_ONLY below) ----
-                "process_arm", "app_arm",
+                # --- Plugin Studio app runs, ARMED (EXPLICIT_ONLY below) -----
+                "app_arm",
                 # --- catalog groups added 2026-10-15 (CATALOG_EXPLICIT below) -
                 "cert_renew", "monitoring", "sentinel", "feeds",
                 "api_library", "netbox",
@@ -110,13 +110,9 @@ EXPLICIT_ONLY_CAPABILITIES = frozenset({
     # a capability an operator grants, not one every pre-existing token inherits
     # the day the feature ships.
     "inventory",
-    # 'process_arm' = POST /api/v1/processes/<id>/run with "armed": true. An
-    # armed walk writes whatever the diagram writes, from outside, with nobody
-    # at the screen. A rehearsal (the default) needs only the write scope.
-    "process_arm",
-    # 'app_arm' = POST /api/v1/apps/<slug>/run with "armed": true: the same
-    # rule for a Plugin Studio app. Unarmed, its write steps are recorded,
-    # not executed.
+    # 'app_arm' = POST /api/v1/apps/<slug>/run with "armed": true. An armed
+    # run writes whatever the diagram writes, from outside, with nobody at the
+    # screen. Unarmed, its write steps are recorded, not executed.
     "app_arm",
 })
 
@@ -179,7 +175,6 @@ CAPABILITY_DESC = {
     "template_draft": "AUTHOR templates, bindings and baselines (desired state only — never touches a device)",
     "template_apply": "APPROVE a template and PUSH it to devices through the canary-gated apply",
     "inventory": "ASK a device its running firmware, live (reads the device, writes only this inventory)",
-    "process_arm": "WALK a granted Process ARMED from the API (its write steps really write); unarmed walks need only the write scope and the grant",
     "app_arm": "RUN a granted Plugin Studio app ARMED from the API (its write steps really write); unarmed runs need only the write scope and the grant",
     "metrics": "READ the metrics store (MetricsQL query) and the SATOM nodes' CPU / memory / disk",
     "findings": "READ what the alert engine finds now",
@@ -197,7 +192,6 @@ CAPABILITY_GROUPS = (
     ("FortiADC objects (always explicit)", ("adc_rule_draft", "adc_rule_apply")),
     ("Templates, bindings & baselines (always explicit)", ("template_draft", "template_apply")),
     ("Live inventory (always explicit)", ("inventory",)),
-    ("Processes (always explicit)", ("process_arm",)),
     ("Plugin Studio apps (always explicit)", ("app_arm",)),
 )
 
@@ -220,9 +214,6 @@ CAPABILITY_PRODUCTS = {
     # derivation as 'inventory', for the same reason.
     "template_draft": tuple(p for p in VALID_PRODUCTS if p != "global"),
     "template_apply": tuple(p for p in VALID_PRODUCTS if p != "global"),
-    # A process is offered per ADOM; the route checks the process's own ADOM
-    # list against the token, so the capability itself binds to every product.
-    "process_arm": tuple(p for p in VALID_PRODUCTS if p != "global"),
     # An app is drawn per ADOM too; the route checks the app's own ADOM list.
     "app_arm": tuple(p for p in VALID_PRODUCTS if p != "global"),
 }
@@ -244,8 +235,10 @@ CAPABILITY_PRODUCTS = {
 # The id AND the key/slug must match, so an id reused after a delete never
 # inherits a grant.
 # ---------------------------------------------------------------------------
-GRANT_KINDS = ("process", "app")
-GRANT_LABEL = {"process": "Process", "app": "Plugin Studio app"}
+#: Processes were a grant kind until 2026-10-25, when the Process section was
+#: removed; ``api_tokens.process_grants`` stays in the schema, unread.
+GRANT_KINDS = ("app",)
+GRANT_LABEL = {"app": "Plugin Studio app"}
 
 # Every runnable catalog action → the capability tag it belongs to. An action
 # missing here has tag None, so a capability-restricted token can never run it
@@ -554,7 +547,6 @@ class ApiToken(db.Model):
             "scopes": self.scope_list,
             "capabilities": self.capability_list,
             "app_ids": self.app_id_list,
-            "process_grants": [g["key"] for g in self.grants("process")],
             "app_grants": [g["key"] for g in self.grants("app")],
             "product": self.product,
             "created_at": self.created_at.isoformat() if self.created_at else None,

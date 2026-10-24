@@ -22,9 +22,10 @@
 
    Studio was a section here until 2026-10-23: Plugin Studio is now a
    first-level entry (partials/nav_plugin_studio.html) and Report Studio and
-   Lua Studio live in Plugins (operator). Without user_manage the group is
-   replaced by the Process entry on its own (partials/nav_process_group.html),
-   as before.
+   Lua Studio live in Plugins (operator). Change Management left on
+   2026-10-25: Change Management Types is an entry of the group itself,
+   Triggers a tab of Automation > Automations, and Process was removed
+   (runbooks are Plugin Studio apps).
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% set _pk = product.key %}
@@ -45,10 +46,6 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'user_groups' else '' }}" href="{{ url_for('user_groups.index') }}">
       <i class="bi bi-people-fill fw-nav-icon"></i><span>{{ _('Groups') }}</span></a>
     {% endif %}
-{% endset %}
-
-{% set _s_change %}
-    {% include "partials/nav_process.html" %}
 {% endset %}
 
 {% set _s_devices %}
@@ -174,7 +171,6 @@
   <div class="fw-nav-group-body">
     {% for s in nav_sections([
          (_('Access'), 'bi-person-lock', 'Access', _s_access),
-         (_('Change Management'), 'bi-clipboard2-check', 'Change Management', _s_change),
          (_('Devices'), 'bi-hdd-rack', 'Devices', _s_devices),
          (_('Objects'), 'bi-tags', 'Objects', _s_objects),
          (_('System'), 'bi-gear', 'System', _s_system),
@@ -193,6 +189,4 @@
     {% endfor %}
   </div>
 </div>
-{% elif _pk != 'global' %}{# Global draws this fallback in base.html #}
-{% include "partials/nav_process_group.html" %}
 {% endif %}

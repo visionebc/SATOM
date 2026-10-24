@@ -9,9 +9,8 @@ and ``POST /api/v1/events`` from an outside system. It finds the enabled
 triggers that name the event, checks each one's conditions, its cooldown per
 subject and its hourly budget, RECORDS the outcome (``trigger_fires``) and
 queues one JOB per enabled automation bound to it. It never runs an automation
-inline: an alert evaluation runs inside the scheduler tick, and a Process walk
-with SSH reads there would stall every scheduled action behind it — the rule
-``process_triggers`` already lives by. ``tests/test_triggers.py`` reads this
+inline: an alert evaluation runs inside the scheduler tick, and an app with SSH
+reads there would stall every scheduled action behind it. ``tests/test_triggers.py`` reads this
 file's source to keep :func:`_perform` reachable only from the job worker.
 
 WHAT AN AUTOMATION CAN DO
@@ -19,9 +18,6 @@ WHAT AN AUTOMATION CAN DO
 Every kind delegates to the runner SATOM already has, so an automation obeys
 the same gates as the page that owns the thing it runs:
 
-* ``process``  — a Process walk (``process_engine``), with the bounds of
-  ``process_triggers``: one running instance per (process, appliance) and the
-  process's own hourly budget. Rehearsal unless the automation is ARMED.
 * ``app``      — a published Python Studio app, run as the automation's owner
   (who must be allowed to use it), with ``{{ event }}`` in its scope.
 * ``script`` / ``api_call`` / ``sql_query`` / ``store_write`` — ONE Studio step
@@ -81,7 +77,7 @@ OWN_EVENTS: dict[str, dict] = {
             "automation": "str — the automation's key",
             "automation_name": "str",
             "trigger": "str — the key of the trigger that started it",
-            "kind": "str — process | app | script | api_call | sql_query | "
+            "kind": "str — app | script | api_call | sql_query | "
                     "store_write | hook | action | notify",
             "status": "str — ok | failed | skipped",
             "summary": "str — one line about what happened",
@@ -94,9 +90,9 @@ OWN_EVENTS: dict[str, dict] = {
         },
         "example": {
             "automation": "collect-diagnostics", "automation_name": "Collect diagnostics",
-            "trigger": "critical-device-alert", "kind": "process", "status": "failed",
-            "summary": "process 'diag' run #41: failed (3 pass, 1 fail)",
-            "ref": "process-run:41", "armed": False, "subject": "device.fortiweb01",
+            "trigger": "critical-device-alert", "kind": "app", "status": "failed",
+            "summary": "app diag v2 run #41: failed",
+            "ref": "app-run:41", "armed": False, "subject": "device.fortiweb01",
             "appliance_id": 3, "product": "fortiweb", "depth": 1,
         },
     },
@@ -280,7 +276,7 @@ def _where_ok(w: dict, payload: dict) -> bool:
 def matches(conditions: dict, payload: dict) -> tuple[bool, str]:
     """Does this occurrence pass the conditions? Empty = any. A condition
     on a field the payload does not carry is NOT met: a filter narrows, it
-    never widens (same rule as ``process_triggers.matches``)."""
+    never widens."""
     c = conditions or {}
     p = payload or {}
     prods = c.get("products") or []
@@ -536,7 +532,6 @@ def _event_of(auto) -> str:
 #  the kinds                                                                   #
 # --------------------------------------------------------------------------- #
 KINDS = {
-    "process": "Walk a process",
     "app": "Run a Plugin Studio app",
     "script": "Run a Script Library script",
     "api_call": "Call an API (HTTP connection / API Catalog)",
@@ -550,7 +545,7 @@ KINDS = {
 FLOW_KINDS = {"script": "script", "api_call": "connection", "sql_query": "connection",
               "store_write": "store"}
 #: Kinds whose ``armed`` switch means something (the others say why not).
-ARMABLE = ("process", "app", "api_call", "sql_query", "store_write", "action")
+ARMABLE = ("app", "api_call", "sql_query", "store_write", "action")
 
 
 def scope_of(payload: dict, trigger_key: str = "", event: str = "") -> dict:
@@ -590,14 +585,7 @@ def problems(auto, *, choices: dict | None = None) -> list[str]:
         return ["unknown kind %r" % auto.kind]
     if auto.kind != "notify" and not str(auto.target or "").strip():
         errs.append("choose what it runs")
-    if auto.kind == "process":
-        from ..models_process import Process
-        proc = Process.query.filter_by(key=auto.target).first()
-        if proc is None:
-            errs.append("process %r does not exist" % auto.target)
-        elif not proc.enabled:
-            errs.append("process %r is disabled" % auto.target)
-    elif auto.kind == "app":
+    if auto.kind == "app":
         from . import studio_apps as SA
         a = SA.get(auto.target)
         if a is None:
@@ -645,57 +633,9 @@ def _perform(auto, run, payload: dict, *, trigger_key: str) -> tuple[str, str, s
         return RUN_SKIPPED, ("the owner %r is missing or disabled; save the automation "
                              "again as an active user" % auto.owner), ""
     scope = scope_of(payload, trigger_key, _event_of(auto))
-    fn = {"process": _do_process, "app": _do_app, "hook": _do_hook,
+    fn = {"app": _do_app, "hook": _do_hook,
           "action": _do_action, "notify": _do_notify}.get(auto.kind, _do_flow)
     return fn(auto, run, payload, scope, owner)
-
-
-def _appliance(auto, payload: dict, scope: dict):
-    from ..models import Appliance, db
-    from . import process_triggers as PT
-    raw = str((auto.params or {}).get("appliance") or "").strip()
-    if raw:
-        val = str(render(raw, scope) or "").strip()
-        if val.isdigit():
-            return db.session.get(Appliance, int(val))
-        return Appliance.query.filter_by(name=val).first() if val else None
-    return PT._resolve_appliance(payload)
-
-
-def _do_process(auto, run, payload, scope, owner):
-    from ..models_process import DONE, TRIGGER_EVENT, WAITING, Process
-    from . import process_engine as engine
-    from . import process_kinds as pk
-    from . import process_triggers as PT
-    proc = Process.query.filter_by(key=auto.target).first()
-    graph = proc.graph()
-    bad = pk.validate_graph(graph)
-    if bad:
-        return RUN_SKIPPED, "process %r cannot run: %s" % (proc.key, bad[0]), ""
-    appliance = _appliance(auto, payload, scope)
-    if pk.needs_appliance(graph) and appliance is None:
-        return RUN_SKIPPED, ("process %r acts on a device and neither the event nor the "
-                             "automation names one" % proc.key), ""
-    busy = PT.running_instance(proc, getattr(appliance, "id", None))
-    if busy is not None:
-        return RUN_SKIPPED, ("run #%d of process %r is still %s"
-                             % (busy.id, proc.key, busy.status)), "process-run:%d" % busy.id
-    if PT.budget_left(proc) <= 0:
-        return RUN_SKIPPED, ("process %r spent its budget of event-triggered runs this "
-                             "hour" % proc.key), ""
-    armed = bool(run.armed) and pk.writes(graph)
-    product = str(payload.get("product") or auto.product or "")
-    r = engine.start_run(proc, appliance=appliance, armed=armed, trigger=TRIGGER_EVENT,
-                         user="automation:%s" % auto.key, product=product,
-                         trigger_key=(subject_of(_event_of(auto), payload)
-                                      or auto.key)[:200])
-    c = r.counts()
-    ok = (r.status == DONE and r.verdict == "ok") or r.status == WAITING
-    summary = ("%sprocess %r run #%d: %s (%d pass, %d fail, %d unknown)"
-               % ("" if armed else "[rehearsal] ", proc.key, r.id,
-                  "parked on a manual gate" if r.status == WAITING else (r.verdict or r.status),
-                  c["pass"], c["fail"], c["unknown"]))
-    return (RUN_OK if ok else RUN_FAILED), summary, "process-run:%d" % r.id
 
 
 def _inputs(auto, scope) -> dict:
@@ -875,10 +815,3 @@ def validate_key(key: str) -> str:
         raise ValueError("the key is 2–48 characters: lowercase letters, digits, - and _")
     return key
 
-
-def embedded_process_triggers():
-    """Processes that carry their OWN trigger (Process › Trigger). Listed on
-    the Triggers page so one page answers "what starts on an alert"."""
-    from ..models_process import Process
-    return (Process.query.filter(Process.trigger_event != "")
-            .order_by(Process.key.asc()).all())

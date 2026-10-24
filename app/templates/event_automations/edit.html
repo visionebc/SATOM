@@ -59,12 +59,6 @@
 
   <p class="small text-muted mt-2 mb-1">{{ _('Text fields are templates over the event: {{ event.title }}, {{ event.appliance_id }}, {{ event.data.ticket }}… and {{ trigger.key }}. An optional value is written {{ x | default(\'\') }}.') }}</p>
 
-  <div class="ea-kind border rounded p-2 mt-2" data-kind="process">
-    <div class="row g-2"><div class="col-md-6">{{ target_sel('process', _('Process')) }}</div>
-      <div class="col-md-6"><label class="form-label">{{ _('Appliance (id or name)') }}</label>
-        <input class="form-control form-control-sm" name="p_process_appliance" value="{{ pv('process', 'appliance') }}" placeholder="{{ _('empty = the appliance the event names') }}"></div></div>
-    <p class="small text-muted mb-0 mt-1">{{ _('One walk at a time per process and appliance, within the process\'s own hourly budget. Unarmed = every write step dry-runs.') }}</p>
-  </div>
   <div class="ea-kind border rounded p-2 mt-2" data-kind="app">
     <div class="row g-2"><div class="col-md-6">{{ target_sel('app', _('Published app')) }}</div>
       <div class="col-md-6"><label class="form-label">{{ _('Form values (JSON)') }}</label>

@@ -103,7 +103,7 @@
         <label class="form-label d-block">{{ _('Apps it may run') }}</label>
         {{ grant_picker('gapp', 'app', [], grant_candidates['app']) }}
       </div>
-      <div class="col-12"><div class="form-text mt-0">{{ _('One box per Process or app, bound to the version you approve: when the diagram is edited or a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs process_arm or app_arm.') }}</div></div>
+      <div class="col-12"><div class="form-text mt-0">{{ _('One box per app, bound to the version you approve: when a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs app_arm.') }}</div></div>
 
       <div class="col-12">
         <button class="btn btn-primary" type="submit">
@@ -259,7 +259,7 @@
               <label class="form-label d-block">{{ _('Apps it may run') }}</label>
               {{ grant_picker('egapp-' ~ t.id, 'app', t.grants('app')|map(attribute='id')|list, grant_candidates['app']) }}
             </div>
-            <div class="col-12"><div class="form-text mt-0">{{ _('One box per Process or app, bound to the version you approve: when the diagram is edited or a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs process_arm or app_arm.') }}</div>
+            <div class="col-12"><div class="form-text mt-0">{{ _('One box per app, bound to the version you approve: when a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs app_arm.') }}</div>
               {% if gs %}
               <table class="table table-sm mb-0 mt-2 tok-grants">
                 <tbody>

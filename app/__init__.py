@@ -458,15 +458,8 @@ def create_app(config_override: object | None = None) -> Flask:
                        'cr_types',
                        # Triggers (Administrator) and their implementation
                        # (Automations > On a trigger): drawn in every ADOM's
-                       # Administrator / Automation menus, like Process.
+                       # Automation menu.
                        'triggers', 'event_automations',
-                       # Process is drawn into EVERY Administrator block by
-                       # partials/nav_process.html, so it must be reachable in
-                       # every ADOM or the entry is a live link that goes
-                       # nowhere. Which processes a console SEES is a separate
-                       # question, answered once by
-                       # process_engine.visible_processes (Process.products).
-                       'process',
                        # Firmware (the image vault) is reachable through
                        # services/adom_menu.py since 2026-10-11: the FortiADC
                        # upgrade on the appliance page flashes vault images
@@ -534,15 +527,8 @@ def create_app(config_override: object | None = None) -> Flask:
                        'cr_types',
                        # Triggers (Administrator) and their implementation
                        # (Automations > On a trigger): drawn in every ADOM's
-                       # Administrator / Automation menus, like Process.
+                       # Automation menu.
                        'triggers', 'event_automations',
-                       # Process is drawn into EVERY Administrator block by
-                       # partials/nav_process.html, so it must be reachable in
-                       # every ADOM or the entry is a live link that goes
-                       # nowhere. Which processes a console SEES is a separate
-                       # question, answered once by
-                       # process_engine.visible_processes (Process.products).
-                       'process',
                        # Scheduled Actions is mirrored into every ADOM
                        # (2026-08-10). Rows carry ScheduledAction.product
                        # and the catalog is cut to the actions whose
@@ -592,15 +578,8 @@ def create_app(config_override: object | None = None) -> Flask:
                        'cr_types',
                        # Triggers (Administrator) and their implementation
                        # (Automations > On a trigger): drawn in every ADOM's
-                       # Administrator / Automation menus, like Process.
+                       # Automation menu.
                        'triggers', 'event_automations',
-                       # Process is drawn into EVERY Administrator block by
-                       # partials/nav_process.html, so it must be reachable in
-                       # every ADOM or the entry is a live link that goes
-                       # nowhere. Which processes a console SEES is a separate
-                       # question, answered once by
-                       # process_engine.visible_processes (Process.products).
-                       'process',
                        # Scheduled Actions is mirrored into every ADOM
                        # (2026-08-10). Rows carry ScheduledAction.product
                        # and the catalog is cut to the actions whose
@@ -2261,20 +2240,6 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('wave_index', 'INTEGER'),
                 ('wave_total', 'INTEGER'),
             ],
-            # --- Process event triggers (orch01, 2026-10-21) ---
-            # Mirrors migrations/versions/orch01_process_triggers.py for the
-            # nodes whose schema came from create-db and never ran Alembic.
-            # Defaults say "Run button only, rehearse, ten per hour": a plan
-            # saved before triggers existed must not start firing on upgrade.
-            'processes': [
-                ('trigger_event', "VARCHAR(64) DEFAULT ''"),
-                ('trigger_filter_json', "TEXT DEFAULT '{}'"),
-                ('armed_on_trigger', 'BOOLEAN DEFAULT FALSE'),
-                ('trigger_rate_limit', 'INTEGER DEFAULT 10'),
-            ],
-            'process_runs': [
-                ('trigger_key', "VARCHAR(200) DEFAULT ''"),
-            ],
         }
         # NOTE: a repeated key in the literal above is a SILENT loss — Python
         # keeps the last one and every column under the earlier copy is never
@@ -2800,7 +2765,6 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.config_compare", "bp"),
         ("app.views.calendar", "bp"),
         ("app.views.console", "bp"),
-        ("app.views.process", "bp"),
         ("app.views.users", "bp"),
         ("app.views.profiles", "bp"),
         ("app.views.metrics", "bp"),

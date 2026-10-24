@@ -30,8 +30,6 @@ from . import system  # noqa: E402,F401
 from . import intent  # noqa: E402,F401
 # NAF Observability: configuration history and diffs, findings, metrics query.
 from . import observability  # noqa: E402,F401
-# Orchestration: walk a Process (rehearsal by default; armed needs process_arm).
-from . import processes  # noqa: E402,F401
 # Orchestration: run a granted Plugin Studio app (unarmed by default; armed
 # needs app_arm).
 from . import apps  # noqa: E402,F401

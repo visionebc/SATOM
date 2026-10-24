@@ -1,10 +1,10 @@
 """Python Studio > Apps -- the diagram: step kinds, validation and the walk.
 
-An app's diagram is the same shape the Process editor draws (nodes with a
-``kind`` and ``params``, arrows with a ``branch``), so the editor is
-``static/js/process_editor.js`` with this module's kinds and branches. What a
-step does is different: Process steps return a health verdict; app steps move
-DATA. Each step reads the form (``form``) and the variables earlier steps
+An app's diagram is nodes with a ``kind`` and ``params`` and arrows with a
+``branch``; the editor is ``static/js/process_editor.js`` (named after the
+Process section it was written for, removed 2026-10-25) with this module's
+kinds and branches. Steps move DATA, look at appliances
+(``studio_checks``) and ask people. Each step reads the form (``form``) and the variables earlier steps
 saved, and may save its own result under a name (``save_as``).
 
 TEMPLATES
@@ -305,19 +305,6 @@ def kinds(choices: dict | None = None) -> list[Kind]:
              [Param("script", "Script", "select", True, tuple(ch.get("scripts", ()))),
               Param("inputs", "Form values (JSON)", "json", help='{"field": "{{ form.x }}"}'),
               _save_as("script")]),
-        # A device runbook inside a data flow (2026-10-22): an app can call an
-        # API, run a script AND walk a Process, so one diagram orchestrates
-        # all three. A rehearsal run walks the process unarmed (its write
-        # steps dry-run); an armed one walks it armed only for a user who
-        # holds config_write -- running an app must not be a way around the
-        # permission every other armed walk asks for.
-        Kind("process", "Walk a process", "act",
-             "Walk a Process (Administrator › Process) and continue on its verdict.",
-             [Param("process", "Process", "select", True, tuple(ch.get("processes", ()))),
-              Param("appliance", "Appliance (id or name)",
-                    help="e.g. {{ form.device }} or {{ event.appliance_id }}; empty for a "
-                         "process that acts on no device."),
-              _save_as("process")]),
     ] + _check_kinds() + _satom_kinds(ch)
 
 
@@ -494,11 +481,9 @@ def _catalog_problems(key: str, p: dict, choices: dict) -> list[str]:
 
 def references(graph: dict) -> dict:
     """{"stores": {...}, "connections": {...}, "scripts": {...}} named by the diagram."""
-    out = {"stores": set(), "connections": set(), "scripts": set(), "processes": set()}
+    out = {"stores": set(), "connections": set(), "scripts": set()}
     for n in (graph or {}).get("nodes") or []:
         p = n.get("params") or {}
-        if n.get("kind") == "process" and p.get("process"):
-            out["processes"].add(p["process"])
         if p.get("store"):
             out["stores"].add(p["store"])
         if p.get("connection"):
@@ -674,60 +659,10 @@ def _run_step(node: dict, ctx: Ctx):
         return "ok", value, "HTTP %d, %d ms" % (r["status"], r["ms"])
     if kind == "script":
         return _run_script(node, ctx)
-    if kind == "process":
-        return _run_process(node, ctx)
     from . import studio_satom as S
     if kind in S.KIND_KEYS:
         return S.run(node, ctx)
     raise FlowError("unknown step kind %r" % kind)
-
-
-def _run_process(node, ctx):
-    """Walk a Process inline (the app run is already off the request). The
-    result is ``{run_id, status, verdict, armed, counts}``; anything but an
-    ``ok`` verdict -- or a run parked on a manual gate -- is an ``error``
-    outcome, so the diagram decides what follows a red walk."""
-    from ..models import Appliance, db
-    from ..models_process import DONE, TRIGGER_EVENT, WAITING, Process
-    from . import process_engine as engine
-    from . import process_kinds as pk
-    key = str(_p(node, "process"))
-    proc = Process.query.filter_by(key=key).first()
-    if proc is None or not proc.enabled:
-        raise FlowError("process %r does not exist or is disabled" % key)
-    graph = proc.graph()
-    bad = pk.validate_graph(graph)
-    if bad:
-        raise FlowError("process %s cannot run: %s" % (key, bad[0]))
-    raw = str(render(_p(node, "appliance"), ctx.scope()) or "").strip()
-    appliance = None
-    if raw:
-        appliance = (db.session.get(Appliance, int(raw)) if raw.isdigit()
-                     else Appliance.query.filter_by(name=raw).first())
-        if appliance is None:
-            raise FlowError("no appliance %r" % raw)
-    if pk.needs_appliance(graph) and appliance is None:
-        raise FlowError("process %s acts on a device: give the appliance" % key)
-    user = ctx.user_obj
-    may_arm = bool(user is not None and getattr(user, "can", None)
-                   and user.can("config_write"))
-    armed = bool(ctx.armed and may_arm and pk.writes(graph))
-    run = engine.start_run(proc, appliance=appliance, armed=armed, trigger=TRIGGER_EVENT,
-                           user=ctx.user or "app", product="",
-                           trigger_key=("studio-app-run:%s" % ctx.run_id)[:200])
-    c = run.counts()
-    value = {"run_id": run.id, "status": run.status, "verdict": run.verdict,
-             "armed": armed, "counts": c}
-    detail = "%sprocess %s run #%d: %s (%d pass, %d fail, %d unknown)" % (
-        "" if armed else "[rehearsal] ", key, run.id,
-        "parked on a manual gate" if run.status == WAITING else (run.verdict or run.status),
-        c["pass"], c["fail"], c["unknown"])
-    if ctx.armed and pk.writes(graph) and not may_arm:
-        detail += " -- walked unarmed: the user running the app lacks config_write"
-    if run.status == DONE and run.verdict == "ok":
-        return "ok", value, detail
-    ctx.vars["last_process"] = value
-    raise FlowError(detail)
 
 
 def _endpoint(node, ctx, c) -> tuple[str, str]:

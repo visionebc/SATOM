@@ -40,10 +40,9 @@ interchangeable:
 3. **Intent** (§12) — templates, bindings and baselines: desired state. Only
    with the `template_draft` / `template_apply` capabilities, and a push to a
    device is the console's own canary-gated job, never a direct write.
-4. **Processes and Plugin Studio apps** (§14, §16) — a walk or a run of one
-   object an administrator **granted** your token, at the version approved.
-   Unarmed (a rehearsal) by default; writing for real needs `process_arm` /
-   `app_arm`.
+4. **Plugin Studio apps** (§16) — a run of one app an administrator
+   **granted** your token, at the version approved. Unarmed (a rehearsal) by
+   default; writing for real needs `app_arm`.
 
 The same page also exposes what SATOM has *recorded* — configuration history
 and diffs, findings, metrics (§13) — and describes itself as an OpenAPI
@@ -152,12 +151,8 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/appliances/<id>/config-diff` | read | `config_history`, only on a capability-restricted token | What changed between two versions, `?from=&to=` (§13) |
 | `GET`  | `/findings` | read | `findings`, only on a capability-restricted token | What the alert engine finds right now (§13) |
 | `GET`  | `/metrics/query` | read | `metrics`, only on a capability-restricted token | A read-only MetricsQL query over SATOM's own series (§13) |
-| `GET`  | `/processes` | read | — | The processes the token's ADOM may see (§14) |
-| `GET`  | `/processes/<id>` | read | — | One process, with its diagram (§14) |
-| `POST` | `/processes/<id>/run` | write | a **grant** for the process; `process_arm` for `"armed": true` | Walk a process — a **rehearsal** unless armed (§14) |
 | `GET`  | `/triggers` | read | — | The triggers and their enabled automations (§15) |
 | `POST` | `/events` | write | — | Post an `api.event`: starts the automations of every matching trigger (§15) |
-| `GET`  | `/process-runs/<id>` | read | — | One walk and its steps; poll a run parked on a manual gate (§14) |
 | `GET`  | `/apps` | read | — | The Plugin Studio apps the token's owner may use in its ADOM, with their form fields (§16) |
 | `POST` | `/apps/<slug>/run` | write | a **grant** for the app; `app_arm` for `"armed": true` | Run an app's published version — **unarmed** unless armed (§16) |
 | `GET`  | `/app-runs/<id>` | read | — | One app run: status, outputs, steps (§16) |
@@ -424,7 +419,7 @@ Every error is JSON with an `error` code (and usually a `message`).
 | 404 | `not_found` | No such action / run (or not visible to this token) |
 | 409 | `disabled` | The action — or the process — is disabled |
 | 409 | `already_running` | The action is already running |
-| 403 | `capability_denied` | `"armed": true` on a process walk without `process_arm`, or on an app run without `app_arm` (§14, §16) |
+| 403 | `capability_denied` | `"armed": true` on an app run without `app_arm` (§16) |
 | 403 | `not_granted` | The token holds no grant for this process / app (§14, §16) |
 | 403 | `grant_paused` | The process / app changed after it was granted; an administrator must re-approve it (§14, §16) |
 | 400 | `appliance_required` / `invalid_diagram` | A process walk needs a device, or its diagram cannot run yet (§14) |
@@ -884,88 +879,17 @@ curl -s -H "Authorization: Bearer $TOKEN" --get \
 
 ---
 
-## 14. Processes — `/api/v1/processes/*`
+## 14. Processes (removed)
 
-Walk a **Process** (Administrator → Process: a diagram of checks, gates and
-actions SATOM walks and judges) from outside, and read what a walk did. This is
-the NAF Orchestrator's "startable by a machine" door, and it is as narrow as
-the Run button.
-
-**Access.** `read` lists and reads; `write` walks. The token's ADOM sees
-exactly the processes the console would show it (a process is offered per
-ADOM; a `global` token sees every one, drafts included). **A walk from the API
-is a rehearsal by default**: every write step dry-runs and the run says so.
-`"armed": true` additionally needs the explicit **`process_arm`** capability on
-the token — tokens minted before this surface existed can rehearse and cannot
-write. Rate-limited to 30/min like the other write endpoints.
-
-### `GET /processes` / `GET /processes/<id>`
-
-**Grants.** A token runs only the processes an administrator **granted** it,
-one by one (Access → Tokens → *Processes it may run*). An empty list means
-**none** — unlike capabilities. A grant approves one **version**: the
-diagram's steps (kind and parameters) and arrows. Moving a step on the canvas
-or renaming it changes nothing; changing what a step does **pauses** the
-grant, and the walk answers 403 `grant_paused` until an administrator clicks
-*Re-approve* on the token. A process that is deleted takes its grants with it
-(audited per token). Until 2026-10-24 any `write` token could rehearse every
-process its ADOM saw; each such token now needs the grant. Each process in
-the list carries `"granted"`: `yes`, `paused` or `no`.
-
-```json
-{"processes": [
-  {"id": 3, "key": "dr-failover-check", "name": "DR failover check",
-   "products": ["fortiweb"], "enabled": true,
-   "needs_appliance": true, "writes": true, "steps": 7,
-   "trigger_event": "alert.fired",
-   "trigger_filter": {"families": ["device"], "min_severity": "critical"},
-   "armed_on_trigger": false, "trigger_rate_limit": 10,
-   "updated_at": "2026-10-21T02:10:00", "granted": "yes"}]}
-```
-
-`GET /processes/<id>` adds `"graph"` (the nodes and arrows, as the editor
-stores them).
-
-### `POST /processes/<id>/run`
-
-Body: `{"appliance_id": 7, "armed": false}` — both optional. `appliance_id` is
-required when `needs_appliance` is true (400 `appliance_required`). The walk
-runs inline and the answer is the finished run (or the run parked on a manual
-gate — `status: "waiting"`, `waiting_node`), with its steps:
-
-```json
-{"id": 41, "process_key": "dr-failover-check", "appliance": "fw-dmz-02",
- "armed": false, "status": "done", "verdict": "ok",
- "summary": "5 step(s) ran and every one of them passed.",
- "trigger": "api", "trigger_key": "api-token:1f3a…", "started_by": "svc-noc",
- "counts": {"pass": 5, "fail": 0, "unknown": 0, "skipped": 0},
- "steps": [{"seq": 1, "key": "start", "kind": "start", "status": "pass",
-            "detail": "process entered", "dry_run": false, "undo_recorded": false}, …]}
-```
-
-Arming a diagram that only reads is dropped silently, as on the Run button.
-A disabled process answers 409 `disabled`; a diagram the editor would refuse
-to run answers 400 `invalid_diagram` with the problems listed.
-
-### `GET /process-runs/<id>`
-
-The same document, for polling. A run whose process has been deleted is shown
-to a `global` token only — the console applies the same rule.
-
-```sh
-# rehearse, then arm once the rehearsal is clean
-curl -s -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
-  -d '{"appliance_id": 7}' https://<your-satom-host>/api/v1/processes/3/run
-curl -s -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
-  -d '{"appliance_id": 7, "armed": true}' https://<your-satom-host>/api/v1/processes/3/run
-#  -> 403 capability_denied unless the token holds process_arm
-```
+`/api/v1/processes/*` and `/api/v1/process-runs/*` were removed on
+2026-10-25 with the Process section, and the `process_arm` capability with
+them. A runbook is a Plugin Studio app: run it through §16.
 
 ## 15. Events and triggers — `/api/v1/events`, `/api/v1/triggers`
 
 An outside system (monitoring, CI, ticketing) starts SATOM's automations by
 posting an event. Every enabled trigger on `api.event` whose conditions match
-it (Administrator → Triggers) starts its automations (Automations → On a
+it (Automations → Triggers) starts its automations (Automations → On a
 trigger), as jobs; the call answers at once with what was queued and never
 waits for a walk. The match is recorded like any other, with the token's id.
 

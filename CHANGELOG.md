@@ -8,6 +8,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Runbooks as Plugin Studio apps.** New app steps: **Ask a person** (the
+  run waits and is answered on the run page, Yes / No or one button for a
+  task), **Load an appliance**, **HTTP check**, **TCP check**, **Console
+  read**, **Appliance fact**, **Collect diagnostics** and **Activity**; every
+  step carries *Instructions*, *Responsible* and *Estimated time*. A check
+  that could not look takes the error arrow, never *no*. The app editor has
+  **Simulate**: the whole draft as a rehearsal, questions answered in place
+  or *Yes to every question*, the path coloured on the diagram. App forms
+  can list every appliance (*Appliances (every product)*).
+
 - **Process: runbooks that work for every appliance** (operator request,
   FA-0008: a recovery runbook as a process). The text of HTTP / TCP / DNS
   checks, Manual gate prompts, End notes and the new Notify step may name the
@@ -484,6 +494,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   FortiWeb that refuses the REST call (HTTP 423, `-20010`: the license of the HA peer is not
   valid) as *online with 0 certificates*. The box is now marked unreachable, with the
   device's own message.
+
+### Removed
+
+- **The Process section is gone** (operator request: "this belongs in Plugin
+  Studio, as an app that does the whole process"). Administrator → Process,
+  its diagrams and runs, `/api/v1/processes`, the *Walk a process* scheduled
+  action, automation kind and app step, XML import/export and the
+  `process_arm` token capability were removed; the database tables are
+  dropped on upgrade after every process and run is written to
+  `data/process-backup-<date>.json`. Runbooks are Plugin Studio apps (see
+  Added). The Change Management section of Administrator went with it.
+
 
 ## [3.5.0] - 2026-10-23
 

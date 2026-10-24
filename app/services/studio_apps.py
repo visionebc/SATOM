@@ -152,12 +152,6 @@ def choices() -> dict:
     out.update(S.choices())
     out["satom_sources"] = [{"key": k, "label": lab} for k, lab in S.SOURCES]
     try:
-        from ..models_process import Process
-        out["processes"] = [p.key for p in Process.query.filter_by(enabled=True)
-                            .order_by(Process.key).all()]
-    except Exception:  # noqa: BLE001 -- the editor must open without the table
-        out["processes"] = []
-    try:
         from ..views.change_requests import cr_type_entries
         out["cr_actions"] = [e["key"] for e in cr_type_entries()]
     except Exception:  # noqa: BLE001

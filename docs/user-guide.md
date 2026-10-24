@@ -52,7 +52,7 @@
 39. [Concept Map: where does X live?](#39-concept-map-where-does-x-live)
 40. [Upgrade Flow: a maintenance window as one workflow](#40-upgrade-flow-a-maintenance-window-as-one-workflow)
 41. [Stored Assets: what each ADOM actually holds](#41-stored-assets-what-each-adom-actually-holds)
-42. [Process: procedures the system walks for you](#42-process-procedures-the-system-walks-for-you)
+42. [Process (removed)](#42-process-removed)
 43. [Upgrading to 2.0](#43-upgrading-to-20)
 44. [Container operations (Docker nodes)](#44-container-operations-docker-nodes)
 45. [Upgrading to 3.0](#45-upgrading-to-30)
@@ -353,8 +353,8 @@ and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances under
 Operations, the API menu (console, Schema builds, Build compatibility) as a
 group of its own in a device ADOM and inside the Global block in Global
-(`registry.view` without `config_write`), and **Process** in a group of
-its own — so the reorder takes no page away from anyone. Each entry keeps its
+(`registry.view` without `config_write`) — so the reorder takes no page
+away from anyone. Each entry keeps its
 own permission; moving it changed where it is drawn, not who sees it.
 
 **The Global ADOM has no device menu.** It is the fleet-wide console. Its
@@ -3261,7 +3261,6 @@ a payload you paste — would match, without firing anything.
 
 | Do | Runs through | Rehearsal (not armed) |
 |---|---|---|
-| Walk a process | the Process engine; one walk at a time per process and appliance, within the process's hourly budget | write steps dry-run |
 | Run a Plugin Studio app | the published version, as the automation's owner; the whole event is `{{ event }}` in the diagram | write steps are recorded, not executed |
 | Run a Script Library script | the published version, through the script runner | — |
 | Call an API | an HTTP connection; on a connection pinned to an API Catalog version, only that version's endpoints | anything but GET is recorded, not sent |
@@ -3307,12 +3306,11 @@ answers `202` with what was queued. The event's ADOM is the token's (a Global
 token may name one). Nothing the caller sends can arm an automation.
 `GET /api/v1/triggers` (`read`) lists the triggers.
 
-Since 3.4.7 this is the **only** way an event starts a process. The trigger
-a process used to carry on its own form (Process → Trigger) was moved here by
-the upgrade: each one became a trigger `process-<key>` on the same event with
-the same filter, plus a *Walk a process* automation armed exactly as the
-process was. The process form now shows **Started by** — the automations that
-walk it — and **Start it on a trigger**.
+A runbook (a Plugin Studio app, §23.7) starts on an event through a *Run a
+Plugin Studio app* automation whose form values name the device, e.g.
+`{"appliance": "{{ event.appliance_id }}"}`. When the app stops on *Ask a
+person*, the automation still ends **ok** ("waiting for a person"): somebody
+answers on the run page.
 
 ### 15.2 Mass Deploy — approved templates to many devices
 
@@ -3682,16 +3680,14 @@ history and diffs). With nothing ticked a token reads all three; with a list
 it reads only what the list names, so a dashboard token can hold `metrics`
 alone and run nothing. `monitoring` still reads metrics and findings.
 
-**Grants** name single objects a token may run: under *Processes it may run*
-and *Apps it may run*, tick one box per Process or Plugin Studio app. Nothing
-ticked means it runs **none** (unlike capabilities). A grant approves the
-version you see: if someone changes what the Process does or publishes a
+**Grants** name single apps a token may run: under *Apps it may run*, tick
+one box per Plugin Studio app. Nothing ticked means it runs **none** (unlike
+capabilities). A grant approves the version you see: if someone publishes a
 different version of the app, the grant shows **paused** on the token and the
 API refuses the run until you open the token and press **Re-approve**.
-Dragging a step on the canvas or republishing the same content does not
-pause it. Deleting the Process or app removes its grants. A run from the API
-is a rehearsal by default; a real (armed) run also needs `process_arm` or
-`app_arm`. Only apps the token's owner may open in that ADOM can be granted.
+Republishing the same content does not pause it. Deleting the app removes its
+grants. A run from the API is a rehearsal by default; a real (armed) run also
+needs `app_arm`. Only apps the token's owner may open in that ADOM can be granted.
 
 ## 19. Appearance: logo, colours & themes
 
@@ -4888,14 +4884,17 @@ The editor has seven tabs:
   must appear in the choice, the counter shows *matches / total*, a choice
   you made yourself stays selected while you search, and Enter in the box
   never runs the app.
-- **Diagram** — the same editor as Process. Steps: *Start*, *End*, *Set a
+- **Diagram** — a diagram editor. Steps: *Start*, *End*, *Activity*, *Set a
   variable*, *Decision* (equals, not equals, contains, greater, less, empty,
   not empty, true → yes / no), *Fail* (stop with a message), *Output* (a value
   shown as a table, list, key/value, text or JSON), *Read a data store*,
   *Write a data store* (insert, update, upsert, delete), *Query a database*,
   *Call an API* (with *Keep only (JSON path)*) and *Run a script* (the
-  published version of a Script Library script, with its form values), plus
-  the **SATOM steps** below. A step saves its result under a name (*Save the
+  published version of a Script Library script, with its form values), the
+  **runbook steps** (*Ask a person*, *Load an appliance*, *HTTP check*, *TCP
+  check*, *Console read*, *Appliance fact*, *Collect diagnostics* — see
+  *Runbooks* below) and the **SATOM steps** below. Every step also has
+  *Instructions*, *Responsible* and *Estimated time*, shown on the run page. A step saves its result under a name (*Save the
   result as*). **Analyze** explains the diagram being edited: what each step
   saves and reads, where its error goes and which undo steps that path
   reaches, and what looks wrong — a step no arrow reaches, a variable no step
@@ -5068,6 +5067,38 @@ that app.
 
 Gated by `studio.script_library` for authors; users need only to be in the
 app's access list.
+
+**Runbooks.** An app can carry a whole recovery procedure (the restart
+activities of an appliance), as automatic as the steps allow:
+
+- **Load an appliance** reads one device from the inventory
+  (`{{ form.appliance }}`, or `{{ event.appliance_id }}` when a trigger
+  started the run) and saves it as `{{ appliance }}`: `{{ appliance.host }}`,
+  `{{ appliance.ssh_port }}`, `{{ appliance.name }}`, `kind`, `model`,
+  `hw_type`, `firmware`… The form field type *SATOM list* → *Appliances
+  (every product)* offers every device.
+- **Checks** answer **yes** or **no**: *HTTP check* (status `0` accepts any
+  answer), *TCP check* (SATOM cannot send ICMP, so this is also the "ping" —
+  a refusal is a no that proves the host is up), *Console read* (one
+  read-only command over SSH, sent exactly as written — no templates; a
+  mutating command cannot be saved), *Appliance fact* (an inventory field
+  such as `hw_type` = `vm`, without contacting the device). *Collect
+  diagnostics* runs the product's battery and saves the transcript (Diagnose
+  › Log Collection). When SATOM **could not look** — SSH refused, no
+  appliance, a target the guard refuses, a fact it does not know — the step
+  takes its **error** arrow, never *no*.
+- **Ask a person** stops the run: it shows **waiting**, and the run page
+  shows the question, the step's instructions, who is responsible and the
+  time, with the step's own buttons (*Ja* / *Nein*, or one button such as
+  *Erledigt* for a task). The person who started the run or a Plugin Studio
+  author answers, minutes or hours later; the run continues along that arrow
+  with everything it had saved. A published run does not continue if the
+  app was published again meanwhile.
+- **Simulate** (Diagram tab) walks the saved draft end to end as a
+  rehearsal: nothing is written to a device, the checks really look (they
+  only read), each question stops in the panel for your answer — or tick
+  *Answer Yes to every question* — and the path is coloured on the diagram
+  as it is walked.
 
 ### 23.8 Examples
 
@@ -9403,8 +9434,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (131 today) or **excluded with a written
-   reason** (176 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (130 today) or **excluded with a written
+   reason** (174 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the
@@ -10134,335 +10165,18 @@ describe, so putting it away would hide the premise of every count below it.
 
 ---
 
-## 42. Process: procedures the system walks for you
+## 42. Process (removed)
 
-**Administrator → Process**, in every ADOM. Users without the user-manage
-permission (read-only, operator) find the same entry under its own
-**Process** group in the sidebar.
-
-A recovery plan that lives in a document is a plan nobody has run. Process is
-where you draw one as a diagram and let SATOM walk it: each step asks a
-question of the running system, and the arrows say where to go depending on the
-answer. The same shape covers a disaster-recovery plan, a post-upgrade
-validation, an onboarding check and an incident runbook, so they are one page
-rather than four.
-
-### The parts
-
-A process is a **key**, a **name**, the **ADOMs it is offered in** and a
-**diagram**. Registration is per-process and can name one ADOM or several — the
-same "fail the standby over and prove the service came back" applies whether the
-box in front of you is a FortiWeb or a FortiADC. Ticking no ADOM leaves the
-process a **draft**: it stays visible in the Global console only. A blank list
-is not read as "everywhere", because that default would publish unfinished plans
-into five consoles at once.
-
-### The steps
-
-| Step | What it asks | Writes? |
-| --- | --- | --- |
-| Start / End | where the walk begins, and each way it can finish | no |
-| Decision | did an **earlier** step end pass / fail / unknown? | no |
-| Manual gate | stops and waits for a person | no |
-| Activity | a documented box that passes at once — a heading such as *1 Connectivity tests*; its instructions show on the run | no |
-| HTTP check | status, latency and body of a URL | no |
-| TCP check | one handshake — and it keeps *refused* apart from *timeout*, because a refusal proves the host is up | no |
-| DNS check | resolve a name on a configured server and assert the answer | no |
-| Console read | one read-only CLI command on the chosen appliance, asserted on its output | no |
-| Appliance health | the same grade Monitoring shows — sync, cache, probe, capacity | no |
-| Collect diagnostics | runs the read-only battery over SSH and saves the transcript **on this node** | no |
-| Appliance fact | compares one field SATOM keeps about the appliance (VM or hardware, product, model, HA mode…) with a value; reads the inventory only, so it answers when the device does not | no |
-| Catalogue action | invokes an automation from the Scheduled Actions catalogue | **yes, when armed** |
-| Console script | sends CLI lines to the chosen appliance | **yes, when armed** |
-| Integration hook | queues one integration hook on this node and waits for its verdict | **yes, when armed** |
-| Compensate | undoes what the walk wrote before it, newest change first — only the steps that recorded an inverse; the rest are named as `unknown` | **yes, when armed** |
-| Notify | rings the bell of every administrator and/or sends e-mail; also on an unarmed run, with `[rehearsal]` in the title | no |
-
-No step reimplements a question the product already answers somewhere else.
-That is deliberate: two authors for "is this backend reachable" is how a page
-and an alert mail start disagreeing.
-
-### Arrows
-
-An arrow carries an outcome: `always`, `pass`, `fail` or `unknown`. An explicit
-outcome always wins over `always`, so a recovery branch is reachable in exactly
-the graphs that need it. **A step may have only one arrow per outcome** — which
-is what keeps a run in one place at a time, and therefore what lets a manual
-gate be answered hours later instead of holding a worker open.
-
-A retry loop is allowed. An endless one is stopped after 200 steps and the run
-says so, rather than reporting a verdict about a walk that never finished.
-
-### Runbooks: one plan for every appliance
-
-A recovery runbook is written once and pointed at whichever appliance is down.
-Three things make that work:
-
-* **Templates.** The text of an HTTP, TCP or DNS check, a Manual gate prompt,
-  an End note and a Notify message may name the appliance of the run:
-  `https://{{ appliance.host }}/`, port `{{ appliance.ssh_port }}`,
-  `{{ appliance.name }}`, also `port`, `kind`, `model`, `hw_type`, `firmware`,
-  `zone`, `department`, `line`, `ha_vip`, and `{{ run.id }}`. A step that names
-  the appliance on a run pointed at none ends `unknown` and says why; it never
-  probes an empty address. Console reads, console scripts and hook payloads
-  are **never** rendered — inventory text spliced into a CLI line would be a
-  command nobody reviewed.
-* **Questions and tasks.** A Manual gate takes its own button labels (*Pass
-  button*, *Fail button*), so "Is the console server OK?" is answered **Yes** /
-  **No**; the answer still follows the `pass` / `fail` arrows, and the arrows
-  in the editor carry those words. *Buttons* `one` shows a single button (for
-  example *Done*) for a task a person carries out rather than a question.
-* **The procedure's own text.** Every step has *Instructions*, *Responsible*
-  and *Estimated time*. The run page shows them on the step that is waiting
-  and, folded, on every step of the run — the detailed description, the
-  commands and who does it travel with the plan instead of living in a second
-  document.
-* **The ending decides.** A runbook's first checks are expected to fail — that
-  is why it was opened. On an End step, *Run verdict* `ok` or `failed` makes
-  reaching that ending the verdict of the run (for example *Documentation* =
-  `ok`, *Escalated* = `failed`); the summary still counts the steps that failed
-  or could not be looked at on the way. `computed` (the default) keeps the
-  step-by-step verdict. Only an ending the walk actually stopped on counts: a
-  path that runs out of arrows half way is judged step by step.
-
-In the editor an arrow leaves from the side when the next step is mostly
-beside it, and from the bottom when it is below, so a diagram laid out left to
-right like the paper original reads the same way. Labels wrap onto two lines;
-the full label is the tooltip.
-
-The bundled example is **Appliance recovery (restart activities)**: connectivity
-tests (HTTPS, TCP to the SSH port, SSH login), the firewall/routing, VM,
-console and power questions, the escalations to the network/firewall, console
-and data-centre teams, admin login, diagnostics, L3 support, restore or
-solution, and the stability check, ending in *Documentation* or *Escalated*.
-SATOM cannot send ICMP from the node, so "ping" is a TCP handshake to the SSH
-port — a refusal still proves the host is up.
-
-### Rehearsal and arming
-
-A run is a **rehearsal** unless you tick *Arm this run*. Unarmed, nothing is
-changed — but the three writing steps say so differently, and the difference is
-not cosmetic:
-
-* a **Catalogue action** runs as a real dry run, because the automation itself
-  has one: it computes what it would do and reports whether that worked. The row
-  says `rehearsed`.
-* a **Console script** and an **Integration hook** are **not sent at all**, and
-  the step ends `unknown`. Neither has a dry run — classifying CLI text is a
-  fact about the text, not about the appliance, and a hook run "with a sample
-  payload" is still the hook, running, holding its real secrets.
-
-So a rehearsal of a repair plan **stops where the repair would have been**,
-rather than walking the "and then it was fixed" branch against a box nobody
-fixed. What a rehearsal proves is that the plan is *sendable* — validated,
-classified, and pointed at an appliance that can be dialled. Not that it works.
-
-Arming is dropped automatically on a diagram that only reads: a run stamped
-"armed" that could never have written anything teaches the wrong thing about
-the badge.
-
-### The write door
-
-**Console script** is the first path in SATOM that sends a configuration line
-to an appliance from a plan rather than from a person at a keyboard. It reuses
-the Device Console's own rules and relaxes none of them:
-
-* abbreviations count as the full command, as on the device CLI: `exe reb`
-  asks for the same acknowledgement as `execute reboot`, `set passw` is a
-  password change, and `exe fa` is refused like `execute factoryreset`;
-* commands that wipe or reformat are **refused outright** — you cannot save a
-  diagram containing one, at any permission level;
-* disruptive commands (reboot, shutdown, restore, HA changes, password changes)
-  require the step to **name the one appliance it may disrupt**. At run time
-  that name must equal the appliance the run is pointed at, or the step refuses
-  and sends nothing. Aiming the same process at another box does not reboot it.
-  This is deliberately stricter than the Console page, where typing the name
-  only proves you read the warning — a process has no human at 3 a.m., so the
-  agreement has to be written into the plan;
-* the whole script is checked **before the session opens**, and a failure stops
-  the rest, because the FortiOS CLI is modal and lines after a failure would run
-  in the wrong context;
-* everything sent is written to the audit trail under the **same** name the
-  Console page uses, marked as having come from a process. Asking "what has
-  been sent over the console" must not require knowing there are two doors.
-
-One thing this step does **not** get you: `delete_guard` cannot see a `delete`
-inside a CLI `config` block, so a shared object the web UI would have refused to
-remove can be removed from here. That is the cost of the level, and it is
-written on the page as well as here.
-
-**Integration hook** queues one hook from *Administrator → Integrations* and
-waits for its verdict. The step never executes anything itself — it writes a
-request file, and a separate privileged unit turns that into a process. The wait
-is bounded by the hook's own timeout and cannot be lengthened from the diagram,
-since a longer wait cannot outlive a job the runner already killed. A request
-still sitting in the queue when the wait runs out ends `unknown` and names the
-unit that did not pick it up — silence there is a fact about this node, not
-about the hook.
-
-Actions that require an approved change request are **not offered**. A process
-is a plan, not an approval — raise the change request and let it schedule the
-action.
-
-### Reading a run
-
-Four outcomes, and the difference between the last two is the whole point:
-
-* **pass** — the step asked and the answer was good.
-* **fail** — the step asked and something is broken.
-* **unknown** — SATOM *could not look*. No appliance chosen, SSH refused, the
-  target denied. It is never rendered as health and it never counts as a
-  failure; it makes the verdict **partial**, and the summary says so in a
-  sentence: *nothing failed, but N steps could not be looked at — this is a
-  partial walk, not a clean bill of health.*
-* **skipped** — **not reached**, because an earlier step stopped that path.
-  Skipped is not a pass. A branch the plan deliberately did not take is not
-  listed at all; only what the plan wanted to reach and could not.
-
-A run keeps its **own copy of the diagram it walked**. Editing a process
-therefore never rewrites its own past, and deleting one keeps its history —
-each run carries the name, the key and the graph it ran.
-
-### Importing and exporting a process (XML)
-
-A procedure is usually written down long before the night it is needed, and
-rarely by the person sitting in this console: it arrives as a customer runbook,
-it is kept in version control beside the rest of the installation's
-documentation, or it was built on the lab install and has to reach production.
-**Process → Import XML** loads one as a file, and any process can be downloaded
-from its own page with **Export XML**. The two are the same format, so a plan
-travels between installations without being drawn twice — which is how two
-installations end up with two different procedures that share a name.
-
-The file is refused **whole or accepted whole**. Nothing at all is written
-unless every check passes, and the graph is handed to the *same validator the
-editor saves through* — a console step carrying a forbidden command is refused
-on import exactly as it is refused when you draw it. The importer is not a
-second door into the appliance.
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<satom-process key="dr-failover-check" name="DR failover check" enabled="yes">
-  <description>Prove the standby answers before anyone is told it does.</description>
-  <adoms>
-    <adom>fortiweb</adom>
-  </adoms>
-  <steps>
-    <step key="start" kind="start" label="Start" x="60" y="40"/>
-    <step key="vip" kind="tcp_check" label="VIP answers" x="60" y="140">
-      <param name="host">192.0.2.249</param>
-      <param name="port">443</param>
-    </step>
-  </steps>
-  <arrows>
-    <arrow from="start" to="vip" branch="always"/>
-  </arrows>
-</satom-process>
-```
-
-Four things are worth knowing before you write one by hand:
-
-* **Every parameter is an element, never an attribute.** XML replaces a literal
-  newline inside an attribute with a space — only an escaped `&#10;` survives —
-  so a console script written as an attribute would arrive as a single line
-  that is no longer the command you wrote. Elements keep it as typed, and a
-  hand-indented script is de-indented as a block, so relative indentation is
-  preserved.
-* **Naming no `<adom>` leaves the process a draft**, visible in the Global
-  console only. An empty list is never read as "everywhere".
-* **An ADOM this installation does not have is an error, not something dropped.**
-  Moving a process between installations is the case the format exists for, so
-  a missing ADOM is the likely mistake and is said out loud rather than
-  silently turning your plan into a draft.
-* **Re-importing an existing key replaces that process** — its steps, its
-  arrows and its settings — and is refused until you type the key in the
-  confirmation box. Run history is kept either way: every run carries its own
-  copy of the diagram it walked, so past reports keep saying what they always
-  said and a run parked on a manual gate resumes through its own snapshot.
-
-draw.io, BPMN and Visio files are **named and refused**, never half-read. A
-drawn box carries a shape and a caption; it does not carry the step kind or the
-parameters that make a step runnable, so importing one would produce a diagram
-that looks like your plan and cannot execute a single check.
-
-### Starting a process from an event
-
-A process is started by an **event** through **Automations → Triggers** and
-an automation **Walk a process** on that trigger (§15.1). The process form
-shows **Started by** (the automations that walk it) and **Start it on a
-trigger**, which opens the automation form with the process chosen. Until
-3.4.7 the trigger lived on the process form; the upgrade moved each one to a
-trigger `process-<key>` and an automation of the same name (migration
-`trig02`), so nothing that fired before stops firing.
-
-The walk is **queued as a job** — visible on the Jobs page — and never runs
-inside the alert evaluation or the change-request bookkeeping that noticed the
-event. For a device finding, the appliance the finding is about is the one the
-walk is pointed at (or the one the automation names); a diagram with device
-steps is skipped, with the reason, when there is none.
-
-What bounds a storm, each refusal recorded with its reason:
-
-* **one running instance per process and appliance** — a second event while a
-  walk is running or parked on a gate is skipped, never queued behind it;
-* **a budget per process per hour** (the process's trigger budget, default 10)
-  — spent means skipped;
-* the trigger's own **cooldown per subject** and **matches per hour**;
-* **rehearsal unless the automation is armed** — armed, SATOM writes to your
-  appliances with nobody at the screen.
-
-A finding that started a walk owes the alert cooldown; one that was refused
-owes nothing. Every triggered run carries the finding or event key
-(*trigger* on the run page) so a walk can be traced back.
-
-### Scheduling a process
-
-**Walk a process** is an action of the Scheduled Actions catalogue (the
-operator catalogue): pick the process by key and the appliances to walk it
-against, and it runs once per target at the scheduled time. It is a
-**rehearsal** unless the action's `armed` parameter is on, and the page's
-preview forces a rehearsal whatever the parameter says. An armed walk of a
-diagram that writes runs **only bound to an approved change request**, like
-every other write action in the catalogue. The run records the schedule that
-fired it. The action is flagged dangerous, so it is never offered through the
-generic `/api/v1/actions` door — the API has its own, below.
-
-### Compensation
-
-**Compensate** is the step that undoes what the walk wrote before it, newest
-change first. It undoes only what a step **recorded an inverse for**: a status a
-Catalogue action flipped (a server policy or a backend enabled or disabled —
-the inverse is the same action the other way), an Observatory fix (reverted
-through the Observatory's own revert) and a provisioning run (rolled back
-through its own rollback). A write with no inverse — a Console script, an
-Integration hook, a backend repointed to an address nobody read first — is
-**named as `unknown`**, never guessed: "SATOM cannot undo this one" is a
-sentence an operator can act on, and a guessed inverse aimed at a load balancer
-is not. A write that failed is never replayed either; what landed is unknown.
-
-Unarmed, Compensate sends nothing and lists what it would undo. Armed, it stops
-at the first inverse that fails, and the step ends `fail` with the rest named.
-The inverse a step recorded is kept with the step, so a walk answered after a
-manual gate still knows what it wrote before the pause.
-
-### Walking a process from the API
-
-`GET /api/v1/processes`, `POST /api/v1/processes/<id>/run` and
-`GET /api/v1/process-runs/<id>` let an outside system list, start and poll a
-walk, under the token's ADOM exactly as the console would show it. A run from
-the API is a **rehearsal by default**; `"armed": true` needs the explicit
-`process_arm` capability on the token, on top of the `write` scope. See the API
-manual, §10.
-
-### Permissions
-
-Reading a process and its runs needs `view` — that includes **Export XML**,
-which hands back the content the page already shows. Drawing, editing,
-importing, running and answering a gate need `config_write` — and so does
-setting a trigger, which is part of the form.
-
-
----
+The Process section (Administrator → Process: diagrams of checks and manual
+gates) was removed on 2026-10-25. A runbook is now a **Plugin Studio app**
+(§23.7, *Runbooks*): the same checks, a question that waits for a person,
+the procedure's own text on every step, and **Simulate** in the editor. An
+event starts one through a *Run a Plugin Studio app* automation (§15). The
+installation's processes and their runs were written to
+`data/process-backup-<date>.json` on the primary before the tables were
+dropped; `/api/v1/processes`, the *Walk a process* scheduled action, the
+*Walk a process* automation and app step, and the `process_arm` token
+capability went with it.
 
 ## 43. Upgrading to 2.0
 

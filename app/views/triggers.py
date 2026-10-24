@@ -105,8 +105,7 @@ def index():
         }
     fires = (TriggerFire.query.order_by(TriggerFire.id.desc()).limit(50).all())
     return render_template('triggers/index.html', rows=rows, counts=counts, fires=fires,
-                           events=TE.events(),
-                           embedded=TE.embedded_process_triggers())
+                           events=TE.events())
 
 
 @bp.route('/new', methods=['GET', 'POST'])

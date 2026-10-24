@@ -78,15 +78,12 @@ def _actions():
 
 
 def _choices() -> dict:
-    from ..models_process import Process
     from ..services import integration_hooks as ih
     from ..services import studio_apps as SA
     from ..services import studio_connections as SC
     from ..services import studio_store as SS
     from ..services import script_library as SL
     out = {
-        'process': [(p.key, '%s — %s' % (p.key, p.name)) for p in
-                    Process.query.filter_by(enabled=True).order_by(Process.key).all()],
         'app': [(a.slug, '%s — %s' % (a.slug, a.name)) for a in
                 SA.StudioApp.query.order_by(SA.StudioApp.slug).all()
                 if a.published and a.kind != 'script'],  # a script app is the 'script' kind

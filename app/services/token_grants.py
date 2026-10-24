@@ -46,15 +46,12 @@ def _canon_graph(graph) -> dict:
 #  the objects                                                                 #
 # --------------------------------------------------------------------------- #
 def _get(kind: str, obj_id):
-    if kind == "process":
-        from ..models_process import Process
-        return db.session.get(Process, obj_id)
     from ..models_studio import StudioApp
     return db.session.get(StudioApp, obj_id)
 
 
 def key_of(kind: str, obj) -> str:
-    return obj.key if kind == "process" else obj.slug
+    return obj.slug
 
 
 def name_of(kind: str, obj) -> str:
@@ -64,8 +61,6 @@ def name_of(kind: str, obj) -> str:
 def fingerprint(kind: str, obj) -> str:
     """The version a grant approves. '' = nothing runnable to approve (an app
     with no published version, a script app)."""
-    if kind == "process":
-        return _hash(_canon_graph(obj.graph()))
     if getattr(obj, "kind", "flow") != "flow":
         return ""
     pub = obj.published or {}
@@ -79,9 +74,6 @@ def grantable(kind: str, obj, tok: ApiToken) -> bool:
     """May *tok* be granted *obj*? The token's ADOM must see it and, for an
     app, the token's OWNER must be allowed to use it: a token never exceeds
     the human behind it."""
-    if kind == "process":
-        from . import process_engine as engine
-        return engine.may_run_here(obj, product=tok.product)
     from . import studio_apps as SA
     return (getattr(obj, "kind", "flow") == "flow" and bool(fingerprint(kind, obj))
             and SA.shown_in(obj, tok.product) and SA.can_use(tok.owner, obj))
@@ -90,9 +82,6 @@ def grantable(kind: str, obj, tok: ApiToken) -> bool:
 def candidates(kind: str) -> list:
     """Every object of *kind* the token form offers (the route re-checks each
     against the token's ADOM and owner on save)."""
-    if kind == "process":
-        from ..models_process import Process
-        return Process.query.order_by(Process.name.asc()).all()
     from ..models_studio import StudioApp
     return [a for a in StudioApp.query.order_by(StudioApp.name.asc()).all()
             if getattr(a, "kind", "flow") == "flow" and fingerprint("app", a)]

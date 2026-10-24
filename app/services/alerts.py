@@ -1342,8 +1342,8 @@ def alert_event_payload(finding: dict, node: str) -> dict:
         "detail": finding.get("detail", ""),
         "product": finding.get("product") or "",
         # The appliance a device finding is about, when the check recorded
-        # one; None for fleet-wide findings. Process triggers resolve the
-        # device from it (services.process_triggers).
+        # one; None for fleet-wide findings. Triggers resolve the device from
+        # it (services.trigger_engine).
         "appliance_id": finding.get("appliance_id"),
         "node": node or "",
         "fired_at": _now().isoformat(),
@@ -1452,28 +1452,14 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
         return result
 
     # ---- orchestration path ------------------------------------------------
-    # Processes whose trigger is ``alert.fired`` get every FRESH finding,
-    # independently of the notification sinks and of the engine master
-    # switch: a trigger is a plan the operator drew, not a channel. The
-    # dispatch QUEUES a job and returns — this evaluation runs inside the
-    # scheduler tick, and a walk with SSH reads must never run here. A
-    # finding that started a walk owes a cooldown exactly like one the hook
-    # subsystem accepted (``queued_keys`` below), or a plan that reports
-    # nothing re-fires every evaluation.
+    # Every FRESH finding reaches the triggers below, independently of the
+    # notification sinks: a trigger is a plan the operator drew, not a
+    # channel. A finding that started an automation owes a cooldown exactly
+    # like one the hook subsystem accepted (``queued_keys`` below).
     triggered_keys: set = set()
-    try:
-        from . import process_triggers
-        proc_rows = process_triggers.on_findings(fresh, node)
-    except Exception as exc:  # noqa: BLE001 — report, do not sink the run
-        proc_rows = []
-        result["delivery_failed"].append("processes: %s" % exc)
-    result["processes"] = {"queued": sum(1 for r in proc_rows if r["status"] == "queued"),
-                           "skipped": sum(1 for r in proc_rows if r["status"] == "skipped"),
-                           "rows": proc_rows}
-    triggered_keys.update(r["key"] for r in proc_rows if r["status"] == "queued")
     # Triggers (Administrator > Triggers) and the event automations bound to
-    # them (Automation > Automations > On a trigger): the same rule as the
-    # process triggers above -- every fresh finding, whatever the sinks say,
+    # them (Automation > Automations > On a trigger): the same rule as
+    # above -- every fresh finding, whatever the sinks say,
     # queued as jobs, and a finding that started an automation owes a cooldown.
     try:
         from . import trigger_engine

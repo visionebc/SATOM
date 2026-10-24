@@ -23,6 +23,10 @@ depends_on = None
 
 
 def upgrade():
+    # The Process section was removed on 2026-10-25 (procdrop01): a database
+    # created since has no process tables, and there is nothing to add to.
+    if not guard.has_table('processes'):
+        return
     guard.add_column('processes',
                      sa.Column('trigger_event', sa.String(64), nullable=False,
                                server_default=''))

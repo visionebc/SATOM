@@ -10172,11 +10172,22 @@ gates) was removed on 2026-10-25. A runbook is now a **Plugin Studio app**
 (§23.7, *Runbooks*): the same checks, a question that waits for a person,
 the procedure's own text on every step, and **Simulate** in the editor. An
 event starts one through a *Run a Plugin Studio app* automation (§15). The
-installation's processes and their runs were written to
-`data/process-backup-<date>.json` on the primary before the tables were
-dropped; `/api/v1/processes`, the *Walk a process* scheduled action, the
-*Walk a process* automation and app step, and the `process_arm` token
-capability went with it.
+installation's processes and their runs are written to
+`data/process-backup-<stamp>.json` (readable by the service user only) by the
+upgrade itself, on the node that runs it, before the tables are dropped; if
+that file cannot be written the upgrade stops and nothing is dropped.
+`/api/v1/processes`, the *Walk a process* scheduled action, the *Walk a
+process* automation and app step, and the `process_arm` token capability went
+with it.
+
+**Upgrading to 4.0.** 4.0 is applied like any update (§22); the major number
+is there because of this removal. Before you upgrade: a script that calls
+`/api/v1/processes` must move to `/api/v1/apps` (§23.7) with a token granted
+that app; an automation of kind *Walk a process* stops existing and must be
+recreated as *Run a Plugin Studio app*. After the upgrade, rebuild each
+runbook you still need as a Plugin Studio app from the JSON backup — nothing
+converts it for you. Rollback is a normal downgrade plus the database backup
+the update took; the Process tables come back only from that backup.
 
 ## 43. Upgrading to 2.0
 

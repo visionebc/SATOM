@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#400---2026-10-25">[4.0.0] - 2026-10-25</a>
       <a href="#350---2026-10-23">[3.5.0] - 2026-10-23</a>
       <a href="#348---2026-10-22">[3.4.8] - 2026-10-22</a>
       <a href="#347---2026-10-22">[3.4.7] - 2026-10-22</a>
@@ -104,7 +105,6 @@
       <a href="#211---2026-09-23">[2.1.1] - 2026-09-23</a>
       <a href="#210---2026-09-22">[2.1.0] - 2026-09-22</a>
       <a href="#200---2026-09-10">[2.0.0] - 2026-09-10</a>
-      <a href="#1200---2026-08-24">[1.20.0] - 2026-08-24</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,6 +112,19 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="400---2026-10-25">[4.0.0] - 2026-10-25</h2>
+<p>A major version because something was removed: the <strong>Process</strong> section,
+<code>/api/v1/processes</code> and their database tables are gone. Runbooks are now
+Plugin Studio apps — a question that waits for a person, HTTP / TCP /
+console / inventory checks, diagnostics collection, the procedure's own text
+on every step and <strong>Simulate</strong> in the editor. On upgrade every process and
+run is written to <code>data/process-backup-&lt;stamp&gt;.json</code> before its table is
+dropped. Also in this release: API tokens granted per app, <code>/api/v1/apps</code>
+and read-only capabilities; Fortinet factory limits in Capacity Limits;
+Mass Deploy of approved templates; Installed software with OS and Python
+upgrades that always keep a rollback; a sidebar you can trim, a regrouped
+Settings menu, Security and Change Password in the Profile, and every table
+fitting its screen.</p>
 <h3 id="added">Added</h3>
 <ul>
 <li>
@@ -124,25 +137,6 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   <strong>Simulate</strong>: the whole draft as a rehearsal, questions answered in place
   or <em>Yes to every question</em>, the path coloured on the diagram. App forms
   can list every appliance (<em>Appliances (every product)</em>).</p>
-</li>
-<li>
-<p><strong>Process: runbooks that work for every appliance</strong> (operator request,
-  FA-0008: a recovery runbook as a process). The text of HTTP / TCP / DNS
-  checks, Manual gate prompts, End notes and the new Notify step may name the
-  run's appliance (<code>{{ appliance.host }}</code>, <code>{{ appliance.ssh_port }}</code>…), so one
-  plan serves every device; console commands and hook payloads are never
-  rendered. New steps: <strong>Appliance fact</strong> (compare an inventory field such as
-  VM or hardware, without contacting the device) and <strong>Notify</strong> (bell and/or
-  e-mail, also on rehearsals, marked <code>[rehearsal]</code>). A Manual gate can label its
-  buttons (<em>Yes</em> / <em>No</em>), and an End step can set the run verdict (<em>ok</em> /
-  <em>failed</em>), so a runbook whose checks fail on the way by design is judged by
-  the ending it reached. Every step also carries the procedure's own text
-  (<em>Instructions</em>, <em>Responsible</em>, <em>Estimated time</em>), shown on the run page; a
-  new <strong>Activity</strong> step is a documented box that passes at once; a gate can
-  show a single button (<em>Done</em>) for a task. The diagram editor draws sideways
-  arrows from the side, wraps labels onto two lines and writes a gate's own
-  answers (<em>Ja</em> / <em>Nein</em>) on its arrows. Example process: <em>Appliance recovery
-  (restart activities)</em>, started by a trigger on unreachable devices.</p>
 </li>
 <li>
 <p><strong>Capacity Limits: one default limit for every row.</strong> A <em>Default limit</em>
@@ -179,20 +173,17 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   (never a password field's), the <code>options</code> a <code>select</code> accepts and the
   console list a <code>satom_select</code> draws from (<code>source</code>). A caller had only
   the name, label and type.</li>
-<li><strong>API tokens: grants per Process and per Plugin Studio app.</strong> A token can
-  now be handed exactly "run THIS process" or "run THIS app" — Access →
-  Tokens → <em>Processes it may run</em> / <em>Apps it may run</em>, one box per object.
-  A grant is bound to the version an administrator approved: the diagram's
-  steps and arrows for a Process (moving or renaming a step changes
-  nothing), the published fields, diagram and actions for an app. Change
-  what it runs and the grant <strong>pauses</strong> (403 <code>grant_paused</code>) until an
-  administrator clicks <em>Re-approve</em> on the token, audited with both
-  fingerprints; ticking the box again does not re-approve it. Deleting the
-  object removes its grants from every token, audited per token, and a
-  grant never follows a reused id to a different object. An empty list
-  grants <strong>none</strong>. Requested by the operator (translated from Spanish):
-  "is there a way to add processes and apps in SATOM and have them create
-  a capability?".</li>
+<li><strong>API tokens: grants per Plugin Studio app.</strong> A token can now be handed
+  exactly "run THIS app" — Access → Tokens → <em>Apps it may run</em>, one box per
+  app. A grant is bound to the version an administrator approved (the
+  published fields, diagram and actions). Change what the app runs and the
+  grant <strong>pauses</strong> (403 <code>grant_paused</code>) until an administrator clicks
+  <em>Re-approve</em> on the token, audited with both fingerprints; ticking the box
+  again does not re-approve it. Deleting the app removes its grants from
+  every token, audited per token, and a grant never follows a reused id to a
+  different app. An empty list grants <strong>none</strong>. Requested by the operator
+  (translated from Spanish): "is there a way to add processes and apps in
+  SATOM and have them create a capability?".</li>
 <li>
 <p><strong><code>/api/v1/apps</code>: run a Plugin Studio app from outside.</strong> <code>GET /apps</code>
   lists the apps the token's owner may use in its ADOM (the console's
@@ -384,14 +375,6 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   the address <code>/administration/triggers/</code> is unchanged).</p>
 </li>
 <li>
-<p><strong>A Process walk from <code>/api/v1</code> needs a grant for that process.</strong> Until
-  now every <code>write</code>-scope token could rehearse every process its ADOM saw
-  (and, with <code>process_arm</code>, walk any of them armed). Each token that walks a
-  process must now be granted it under Access → Tokens; until then the walk
-  answers 403 <code>not_granted</code>. <code>GET /processes</code> still lists what the ADOM
-  sees, and each entry now says <code>"granted": "yes" | "paused" | "no"</code>.</p>
-</li>
-<li>
 <p><strong>Every table fits the screen; row actions stay on one line.</strong> Measured on
   the 690 pages of every ADOM menu and their detail pages at 1280, 1366, 1600
   and 1920 px wide. A table wider than its box now first lets headers and
@@ -571,6 +554,14 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>Tables without a frame, text against the edge</strong> (operator request: some
+  tables had no border and the first column's text touched the table edge).
+  Every data table now leaves 14 px before the first column and after the
+  last, and a table that floats inside a card body (the dashboard's Fleet
+  list, Sentinel, System Backup, Settings, Registry…) gets a rounded
+  outline. Measured on the 102 console pages that render a table: 171
+  tables, none under 12 px except the calendar grid; only a table nested in
+  another table stays without a frame.</li>
 <li><strong>Lua Studio: Delete did nothing.</strong> Its form was nested inside the editor
   form, so the browser dropped it; it is now its own form.</li>
 <li><strong>Capacity counted every object twice.</strong> The device cache keeps an object

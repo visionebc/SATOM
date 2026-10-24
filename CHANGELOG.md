@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-10-25
+
+A major version because something was removed: the **Process** section,
+`/api/v1/processes` and their database tables are gone. Runbooks are now
+Plugin Studio apps — a question that waits for a person, HTTP / TCP /
+console / inventory checks, diagnostics collection, the procedure's own text
+on every step and **Simulate** in the editor. On upgrade every process and
+run is written to `data/process-backup-<stamp>.json` before its table is
+dropped. Also in this release: API tokens granted per app, `/api/v1/apps`
+and read-only capabilities; Fortinet factory limits in Capacity Limits;
+Mass Deploy of approved templates; Installed software with OS and Python
+upgrades that always keep a rollback; a sidebar you can trim, a regrouped
+Settings menu, Security and Change Password in the Profile, and every table
+fitting its screen.
+
 ### Added
 
 - **Runbooks as Plugin Studio apps.** New app steps: **Ask a person** (the
@@ -17,24 +32,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   **Simulate**: the whole draft as a rehearsal, questions answered in place
   or *Yes to every question*, the path coloured on the diagram. App forms
   can list every appliance (*Appliances (every product)*).
-
-- **Process: runbooks that work for every appliance** (operator request,
-  FA-0008: a recovery runbook as a process). The text of HTTP / TCP / DNS
-  checks, Manual gate prompts, End notes and the new Notify step may name the
-  run's appliance (`{{ appliance.host }}`, `{{ appliance.ssh_port }}`…), so one
-  plan serves every device; console commands and hook payloads are never
-  rendered. New steps: **Appliance fact** (compare an inventory field such as
-  VM or hardware, without contacting the device) and **Notify** (bell and/or
-  e-mail, also on rehearsals, marked `[rehearsal]`). A Manual gate can label its
-  buttons (*Yes* / *No*), and an End step can set the run verdict (*ok* /
-  *failed*), so a runbook whose checks fail on the way by design is judged by
-  the ending it reached. Every step also carries the procedure's own text
-  (*Instructions*, *Responsible*, *Estimated time*), shown on the run page; a
-  new **Activity** step is a documented box that passes at once; a gate can
-  show a single button (*Done*) for a task. The diagram editor draws sideways
-  arrows from the side, wraps labels onto two lines and writes a gate's own
-  answers (*Ja* / *Nein*) on its arrows. Example process: *Appliance recovery
-  (restart activities)*, started by a trigger on unreachable devices.
 
 - **Capacity Limits: one default limit for every row.** A *Default limit*
   card on Administrator → Capacity Limits takes one percent of the Fortinet
@@ -68,20 +65,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   (never a password field's), the `options` a `select` accepts and the
   console list a `satom_select` draws from (`source`). A caller had only
   the name, label and type.
-- **API tokens: grants per Process and per Plugin Studio app.** A token can
-  now be handed exactly "run THIS process" or "run THIS app" — Access →
-  Tokens → *Processes it may run* / *Apps it may run*, one box per object.
-  A grant is bound to the version an administrator approved: the diagram's
-  steps and arrows for a Process (moving or renaming a step changes
-  nothing), the published fields, diagram and actions for an app. Change
-  what it runs and the grant **pauses** (403 `grant_paused`) until an
-  administrator clicks *Re-approve* on the token, audited with both
-  fingerprints; ticking the box again does not re-approve it. Deleting the
-  object removes its grants from every token, audited per token, and a
-  grant never follows a reused id to a different object. An empty list
-  grants **none**. Requested by the operator (translated from Spanish):
-  "is there a way to add processes and apps in SATOM and have them create
-  a capability?".
+- **API tokens: grants per Plugin Studio app.** A token can now be handed
+  exactly "run THIS app" — Access → Tokens → *Apps it may run*, one box per
+  app. A grant is bound to the version an administrator approved (the
+  published fields, diagram and actions). Change what the app runs and the
+  grant **pauses** (403 `grant_paused`) until an administrator clicks
+  *Re-approve* on the token, audited with both fingerprints; ticking the box
+  again does not re-approve it. Deleting the app removes its grants from
+  every token, audited per token, and a grant never follows a reused id to a
+  different app. An empty list grants **none**. Requested by the operator
+  (translated from Spanish): "is there a way to add processes and apps in
+  SATOM and have them create a capability?".
 - **`/api/v1/apps`: run a Plugin Studio app from outside.** `GET /apps`
   lists the apps the token's owner may use in its ADOM (the console's
   access list and ADOM rules), with their form fields and whether the token
@@ -258,13 +252,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   **Triggers** left Administrator for **Automation → Automations**, where it
   is a third tab next to *Scheduled* and *On a trigger* (administrators only;
   the address `/administration/triggers/` is unchanged).
-
-- **A Process walk from `/api/v1` needs a grant for that process.** Until
-  now every `write`-scope token could rehearse every process its ADOM saw
-  (and, with `process_arm`, walk any of them armed). Each token that walks a
-  process must now be granted it under Access → Tokens; until then the walk
-  answers 403 `not_granted`. `GET /processes` still lists what the ADOM
-  sees, and each entry now says `"granted": "yes" | "paused" | "no"`.
 
 - **Every table fits the screen; row actions stay on one line.** Measured on
   the 690 pages of every ADOM menu and their detail pages at 1280, 1366, 1600

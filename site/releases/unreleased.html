@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · 4 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · 4 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,11 +59,16 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · 4 entries</span>
-        <ul class="rel-leads"><li>Settings › General › Installed software</li><li>Installed software: check for and apply OS updates</li><li>Rollback for every upgrade, from the web and from the console</li><li class="rel-more">… and 1 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
+        <ul class="rel-leads"></ul>
+      </a>
+      <a class="rel-nav-item" href="v4.0.0.html" data-rel-version="4.0.0">
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 4.0.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-meta">2026-10-25 · Added · Changed · Fixed · Removed · 48 entries</span>
+        <ul class="rel-leads"><li>Runbooks as Plugin Studio apps</li><li>Capacity Limits: one default limit for every row</li><li>Plugin Studio: the FortiWeb pick honours the form</li><li class="rel-more">… and 45 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.5.0.html" data-rel-version="3.5.0">
-        <span class="rel-nav-head"><span class="rel-nav-v">Version 3.5.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 3.5.0</span></span>
         <span class="rel-nav-meta">2026-10-23 · Added · Changed · Fixed · Security · 23 entries</span>
         <ul class="rel-leads"><li>Plugin packages</li><li>Code plugins</li><li>Plugins menu</li><li class="rel-more">… and 20 more</li></ul>
       </a>
@@ -470,57 +475,8 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="added">Added</h3>
-<ul>
-<li><strong>Settings › General › Installed software</strong>: every package this installation
-  runs on and its installed version, per node. <strong>Platform components</strong>
-  (Python, PostgreSQL server and client, nginx, VictoriaMetrics, Redis,
-  OpenSSL, CA certificates, OpenSSH, Git, rsync, curl, sudo, bubblewrap, Lua,
-  systemd, kernel) show the version the program reports and the distribution
-  package version (dpkg/rpm) that security advisories name. <strong>Python
-  packages</strong> lists the whole interpreter, with <code>requirements.txt</code> entries
-  marked <em>direct</em>. <strong>Browser assets</strong> come from the vendor manifest.
-  Versions that are not the same on every node are marked <em>differs</em>, and a
-  silent peer shows as <em>unreachable</em>. Read-only and admin-only, with a JSON
-  download. Requested by the operator: "a section with all the packages the
-  system uses and the installed version, for example nginx".</li>
-<li><strong>Installed software: check for and apply OS updates</strong> for every component
-  except the kernel (it belongs to the host). <strong>Check for updates</strong> refreshes
-  each node's package index and lists what is newer; <strong>Upgrade</strong> runs the
-  node's own package manager on the installed packages only (<code>apt-get
-  install --only-upgrade</code> keeping local config, <code>dnf upgrade</code>, <code>yum update</code>,
-  <code>zypper update</code>; Arch is refused, it does not support partial upgrades).
-  From the primary, "all nodes" upgrades the standby first and this node only
-  after it succeeded. Restarts follow the component (SATOM for Python and its
-  OpenSSL, nginx after <code>nginx -t</code>, health checks after PostgreSQL and Redis),
-  nothing restarts when nothing changed, and services still on a replaced
-  library are reported. VictoriaMetrics goes to the version the signed
-  release pins, never "latest". Requested by the operator: "can those
-  packages also be upgraded? Leave only the kernel out; remember the command
-  depends on the OS".</li>
-<li><strong>Rollback for every upgrade, from the web and from the console.</strong> Before
-  an OS package upgrade, SATOM simulates the transaction and saves every
-  package it replaces (dependencies included) at its current version, from
-  the repositories or rebuilt with <code>dpkg-repack</code>; before a Python change it
-  saves a full copy of the venv. <strong>No copy, no change.</strong> A failed upgrade or
-  health check puts the copy back by itself. <strong>Installed software › Rollback
-  points</strong> restores any saved point, and <code>satom execute rollback list</code> /
-  <code>satom execute rollback apply &lt;id&gt; --yes</code> do the same from the console
-  with the web, the database, the network and the venv down (they run the
-  signed root-owned runner with the system Python). Ten OS and three Python
-  points are kept per node in <code>/var/lib/satom-rollback</code>.</li>
-<li><strong>Upgrade any Python package from Installed software.</strong> Check for updates
-  also lists newer versions of every package in the venv (against the index
-  of Update sources; an unusable index is reported, never replaced by
-  pypi.org), and each can be upgraded on its own, protected by the venv
-  copy. Only installed packages; direct requirements keep their pin in
-  sync, transitive ones are not pinned. Libraries changes now roll back
-  from the venv copy too instead of reinstalling the old version from the
-  index. Requested by the operator: "Python packages should also be
-  upgradable; what matters is that a rollback is possible, even from the
-  console, so that if something fails it can always be repaired".</li>
-</ul>
-<p class="rel-prevnext"><a href="v3.5.0.html">Version 3.5.0 →</a></p>
+
+<p class="rel-prevnext"><a href="v4.0.0.html">Version 4.0.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

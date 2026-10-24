@@ -11420,11 +11420,21 @@ gates) was removed on 2026-10-25. A runbook is now a <strong>Plugin Studio app</
 (§23.7, <em>Runbooks</em>): the same checks, a question that waits for a person,
 the procedure's own text on every step, and <strong>Simulate</strong> in the editor. An
 event starts one through a <em>Run a Plugin Studio app</em> automation (§15). The
-installation's processes and their runs were written to
-<code>data/process-backup-&lt;date&gt;.json</code> on the primary before the tables were
-dropped; <code>/api/v1/processes</code>, the <em>Walk a process</em> scheduled action, the
-<em>Walk a process</em> automation and app step, and the <code>process_arm</code> token
-capability went with it.</p>
+installation's processes and their runs are written to
+<code>data/process-backup-&lt;stamp&gt;.json</code> (readable by the service user only) by the
+upgrade itself, on the node that runs it, before the tables are dropped; if
+that file cannot be written the upgrade stops and nothing is dropped.
+<code>/api/v1/processes</code>, the <em>Walk a process</em> scheduled action, the <em>Walk a
+process</em> automation and app step, and the <code>process_arm</code> token capability went
+with it.</p>
+<p><strong>Upgrading to 4.0.</strong> 4.0 is applied like any update (§22); the major number
+is there because of this removal. Before you upgrade: a script that calls
+<code>/api/v1/processes</code> must move to <code>/api/v1/apps</code> (§23.7) with a token granted
+that app; an automation of kind <em>Walk a process</em> stops existing and must be
+recreated as <em>Run a Plugin Studio app</em>. After the upgrade, rebuild each
+runbook you still need as a Plugin Studio app from the JSON backup — nothing
+converts it for you. Rollback is a normal downgrade plus the database backup
+the update took; the Process tables come back only from that backup.</p>
 <h2 id="43-upgrading-to-20">43. Upgrading to 2.0</h2>
 <p><strong>Read this if you are coming from 1.20.0 or earlier.</strong> The upgrade itself is
 the ordinary one (§22) — enqueue it, watch the steps, roll back from the bundle

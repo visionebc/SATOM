@@ -27200,3 +27200,51 @@ msgstr "Solo los dispositivos que elija en Despliegue masivo"
 #: app/templates/templates/index.html
 msgid "Approve template"
 msgstr "Aprobar plantilla"
+
+#: layout sweep 2026-10-24
+msgid "Common URLs"
+msgstr "URLs habituales"
+
+#: layout sweep 2026-10-24
+msgid "Common paths"
+msgstr "Rutas habituales"
+
+#: layout sweep 2026-10-24
+msgid "Deploy (dry-run): build the plan, send nothing"
+msgstr "Despliegue (simulación): construye el plan, no envía nada"
+
+#: layout sweep 2026-10-24
+msgid "Download data"
+msgstr "Descargar datos"
+
+#: layout sweep 2026-10-24
+msgid "Download package"
+msgstr "Descargar paquete"
+
+#: layout sweep 2026-10-24
+msgid "Dry-run"
+msgstr "Simulación"
+
+#: layout sweep 2026-10-24
+msgid "Edit wording"
+msgstr "Editar redacción"
+
+#: layout sweep 2026-10-24
+msgid "HAR"
+msgstr "HAR"
+
+#: layout sweep 2026-10-24
+msgid "Hide defaults"
+msgstr "Ocultar predeterminados"
+
+#: layout sweep 2026-10-24
+msgid "More"
+msgstr "Más"
+
+#: layout sweep 2026-10-24
+msgid "More actions"
+msgstr "Más acciones"
+
+#: layout sweep 2026-10-24
+msgid "Threshold scope"
+msgstr "Ámbito de umbrales"

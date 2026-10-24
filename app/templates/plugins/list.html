@@ -41,7 +41,7 @@
   {% if plugins %}
   <div class="fw-table-wrapper">
     <table class="fw-table">
-      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Status') }}</th><th>{{ _('Package') }}</th><th>{{ _('Datasets') }}</th><th>{{ _('Updated') }}</th><th></th></tr></thead>
+      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Status') }}</th><th>{{ _('Package') }}</th><th>{{ _('Datasets') }}</th><th>{{ _('Updated') }}</th><th class="actions-col"></th></tr></thead>
       <tbody>
         {% for p in plugins %}
         <tr>
@@ -51,22 +51,33 @@
           <td style="font-size:12px">{% if p.pkg_version %}{{ p.pkg_version }} {% if p.pkg_signer %}<span class="fw-badge fw-badge-success" title="{{ p.pkg_signer }}">{{ _('signed') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('unsigned') }}</span>{% endif %}{% else %}<span class="text-secondary">{{ _('authored here') }}</span>{% endif %}</td>
           <td class="text-secondary" style="font-size:12px">{{ p.datasets|join(', ') or '—' }}</td>
           <td class="text-secondary" style="font-size:12px">{{ p.updated_at.strftime('%Y-%m-%d %H:%M') if p.updated_at }}</td>
-          <td class="text-end">
-            <div class="d-inline-flex gap-1 justify-content-end flex-wrap">
+          <td class="text-end actions-col">
+            {# One line (2026-10-24): Open (+ View when published) stay visible,
+               download / unpublish / delete go behind the "..." menu. #}
+            <div class="fw-row-actions">
               <a class="btn btn-sm btn-fw-outline" href="{{ url_for('plugins.edit', pid=p.id) }}">{{ _('Open') }}</a>
-              <a class="btn btn-sm btn-fw-outline" href="{{ url_for('plugins.export_package', pid=p.id) }}" title="{{ _('Download as a .satomplugin package') }}"><i class="bi bi-download"></i></a>
               {% if p.status == 'published' %}
               <a class="btn btn-sm btn-fw-secondary" href="{{ url_for('plugins.view', slug=p.slug) }}">{{ _('View') }}</a>
-              <form method="post" action="{{ url_for('plugins.set_status', pid=p.id) }}" class="d-inline js-confirm" data-confirm="Disable (unpublish) &ldquo;{{ p.name }}&rdquo;? It will be removed from Custom Views.">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="status" value="draft">
-                <button class="btn btn-sm btn-fw-outline" type="submit"><i class="bi bi-slash-circle me-1"></i>{{ _('Disable') }}</button>
-              </form>
               {% endif %}
-              <form method="post" action="{{ url_for('plugins.delete', pid=p.id) }}" class="d-inline js-confirm" data-confirm="Delete &ldquo;{{ p.name }}&rdquo; permanently? This cannot be undone.">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-sm btn-fw-danger" type="submit"><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
-              </form>
+              <div class="dropdown fw-row-more">
+                <button type="button" class="btn btn-sm btn-fw-outline" data-bs-toggle="dropdown" aria-expanded="false"
+                        data-bs-popper-config='{"strategy":"fixed"}' title="{{ _('More actions') }}"><i class="bi bi-three-dots"></i></button>
+                <div class="dropdown-menu dropdown-menu-end">
+                  <a class="dropdown-item" href="{{ url_for('plugins.export_package', pid=p.id) }}" title="{{ _('Download as a .satomplugin package') }}"><i class="bi bi-download"></i>{{ _('Download package') }}</a>
+                  {% if p.status == 'published' %}
+                  <form method="post" action="{{ url_for('plugins.set_status', pid=p.id) }}" class="js-confirm" data-confirm="Disable (unpublish) &ldquo;{{ p.name }}&rdquo;? It will be removed from Custom Views.">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="status" value="draft">
+                    <button class="dropdown-item" type="submit"><i class="bi bi-slash-circle"></i>{{ _('Disable') }}</button>
+                  </form>
+                  {% endif %}
+                  <div class="dropdown-divider"></div>
+                  <form method="post" action="{{ url_for('plugins.delete', pid=p.id) }}" class="js-confirm" data-confirm="Delete &ldquo;{{ p.name }}&rdquo; permanently? This cannot be undone.">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="dropdown-item text-danger" type="submit"><i class="bi bi-trash"></i>{{ _('Delete') }}</button>
+                  </form>
+                </div>
+              </div>
             </div>
           </td>
         </tr>
@@ -84,7 +95,7 @@
   {% if code_plugins %}
   <div class="fw-table-wrapper">
     <table class="fw-table">
-      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Version') }}</th><th>{{ _('State') }}</th><th>{{ _('Installed') }}</th><th></th></tr></thead>
+      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Version') }}</th><th>{{ _('State') }}</th><th>{{ _('Installed') }}</th><th class="actions-col"></th></tr></thead>
       <tbody>
         {% for c in code_plugins %}
         <tr>
@@ -92,8 +103,8 @@
           <td style="font-size:12px">{{ c.version }}{% if c.signer %} <span class="fw-badge fw-badge-success" title="{{ c.signer }}">{{ _('signed') }}</span>{% endif %}</td>
           <td><span class="fw-badge fw-badge-{{ {'loaded':'success','restart':'warning','disabled':'secondary','error':'danger'}[c.state] }}">{{ {'loaded':_('loaded'),'restart':_('restart required'),'disabled':_('disabled'),'error':_('error')}[c.state] }}</span>{% if c.note %}<div class="text-secondary" style="font-size:12px">{{ c.note }}</div>{% endif %}</td>
           <td class="text-secondary" style="font-size:12px">{{ c.installed_at or '—' }}{% if c.installed_by %} · {{ c.installed_by }}{% endif %}</td>
-          <td class="text-end">
-            <div class="d-inline-flex gap-1 justify-content-end flex-wrap">
+          <td class="text-end actions-col">
+            <div class="fw-row-actions">
               {% if c.state == 'loaded' %}<a class="btn btn-sm btn-fw-secondary" href="{{ c.url }}">{{ _('Open') }}</a>{% endif %}
               {% if c.installed_at %}
               <form method="post" action="{{ url_for('plugins.code_action', slug=c.slug, action='disable' if c.enabled else 'enable') }}" class="d-inline">

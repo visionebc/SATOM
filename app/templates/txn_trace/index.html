@@ -88,11 +88,18 @@
         <div class="form-text mt-2"><i class="bi bi-eye-slash me-1"></i>{{ _('Cookie and credential values are redacted. Seeing them needs the permission') }} <code>{{ reveal_permission }}</code>.</div>
         {% endif %}
 
-        <div class="mt-3 d-flex gap-2 flex-wrap">
-          <button type="button" class="btn btn-sm btn-fw-primary" id="fw-tt-run"><i class="bi bi-play-fill me-1"></i>{{ _('Trace') }}</button>
-          <button type="button" class="btn btn-sm btn-fw-outline" id="fw-tt-curl"><i class="bi bi-terminal me-1"></i>{{ _('Copy curl') }}</button>
-          <button type="button" class="btn btn-sm btn-fw-outline" id="fw-tt-har"><i class="bi bi-download me-1"></i>{{ _('Download HAR') }}</button>
-          <button type="button" class="btn btn-sm btn-fw-outline" id="fw-tt-harview"><i class="bi bi-table me-1"></i>{{ _('View HAR') }}</button>
+        {# One line in the narrow request card: the two HAR actions share a
+           menu (layout sweep 2026-10-24). txn_trace.js binds them by id. #}
+        <div class="mt-3 d-flex gap-2 align-items-center">
+          <button type="button" class="btn btn-sm btn-fw-primary text-nowrap" id="fw-tt-run"><i class="bi bi-play-fill me-1"></i>{{ _('Trace') }}</button>
+          <button type="button" class="btn btn-sm btn-fw-outline text-nowrap" id="fw-tt-curl"><i class="bi bi-terminal me-1"></i>{{ _('Copy curl') }}</button>
+          <div class="dropdown">
+            <button type="button" class="btn btn-sm btn-fw-outline dropdown-toggle text-nowrap" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-file-earmark-zip me-1"></i>{{ _('HAR') }}</button>
+            <ul class="dropdown-menu">
+              <li><button type="button" class="dropdown-item" id="fw-tt-har"><i class="bi bi-download me-2"></i>{{ _('Download HAR') }}</button></li>
+              <li><button type="button" class="dropdown-item" id="fw-tt-harview"><i class="bi bi-table me-2"></i>{{ _('View HAR') }}</button></li>
+            </ul>
+          </div>
         </div>
         {% if may_reveal %}
         <div class="form-check mt-2">

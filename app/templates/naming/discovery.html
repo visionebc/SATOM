@@ -102,7 +102,7 @@
         <th>{{ _('Naming scheme') }}</th>
         <th>{{ _('Shares {name} with') }}</th>
         <th class="text-end">{{ _('Vendor') }}</th>
-        <th></th>
+        <th class="actions-col"></th>
       </tr></thead>
       <tbody>
       {% for t in analysis.tables %}
@@ -134,7 +134,7 @@
           {% for l in t.linked or [] %}<div><code>{{ l.table }}</code> {{ l.matched }}/{{ l.total }}</div>{% else %}<span class="text-muted">—</span>{% endfor %}
         </td>
         <td class="text-end" style="font-size:12px;" title="{% for r, n in t.factory_reasons.items() %}{{ n }} × {{ r }}&#10;{% endfor %}">{{ t.factory or '' }}</td>
-        <td class="text-end text-nowrap">
+        <td class="text-end actions-col"><div class="fw-row-actions">
           {% if t.main %}
           <form method="POST" action="{{ url_for('naming.discovery_adopt') }}" class="d-inline mb-0">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -163,7 +163,7 @@
             <button type="submit" name="action" value="forget" class="btn btn-sm btn-link text-muted p-0 ms-1" title="{{ _('Clear the naming scheme pattern of this object type') }}"><i class="bi bi-x-circle"></i></button>
           </form>
           {% endif %}
-        </td>
+        </div></td>
       </tr>
       {% if t.user %}
       <tr class="nd-adapt d-none" id="nd-adapt-{{ loop.index }}">

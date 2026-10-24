@@ -109,6 +109,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed
 
+- **Every table fits the screen; row actions stay on one line.** Measured on
+  the 690 pages of every ADOM menu and their detail pages at 1280, 1366, 1600
+  and 1920 px wide. A table wider than its box now first lets headers and
+  text wrap between words (names, badges, numbers, dates and actions stay on
+  one line), shows a very long value (a certificate, an image, a message
+  body) on one line with an ellipsis and the full value on hover, and only
+  then hides its least useful columns behind "N columns hidden · Show all".
+  Tables of the measured device GUI pages use the full width too. Rows with
+  many actions keep the main ones visible and move the rest into a "…" menu
+  (Appliances, Plugin Studio, Deep monitors, Service Monitor, Report Studio,
+  API Tokens). Toolbars that wrapped are on one line (device GUI lists,
+  Lua editor, Transaction Tracer, appliance page, Thresholds scope, API
+  explorers), buttons in one row have one size, and buttons keep at least
+  8 px from the text next to them. Plugin Studio's Explorer becomes a strip
+  of tabs above the content below 1400 px. Requested by the operator: "the
+  table may not appear complete depending on the resolution … it can always
+  use 100% of the screen, but it has to fit; the actions or buttons must be
+  in line and not on multiple lines, it doesn't look professional".
+
 - **Sidebar: menus and submenus share one size and typeface; the current
   page and its path stay highlighted.** First-level heads (Operations,
   Administrator, Device, Plugin Studio) were 10px uppercase while every entry
@@ -257,6 +276,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Settings".
 
 ### Fixed
+
+- **Lua Studio: Delete did nothing.** Its form was nested inside the editor
+  form, so the browser dropped it; it is now its own form.
 
 - **Sidebar: a long Plugin Studio app name is readable and can be starred.**
   An app is named by its author (up to 120 characters), and on one line

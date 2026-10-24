@@ -80,4 +80,11 @@
       });
     });
   }
+  // Import app package: the button is the label of a hidden file input;
+  // choosing a file submits the form (layout sweep 2026-10-24).
+  var imp = document.querySelector('input[data-ap-import]');
+  if (imp) imp.addEventListener('change', function () {
+    if (!imp.files || !imp.files.length || !imp.form) return;
+    if (imp.form.requestSubmit) imp.form.requestSubmit(); else imp.form.submit();
+  });
 })();

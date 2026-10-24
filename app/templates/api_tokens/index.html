@@ -111,7 +111,7 @@
         <tr>
           <th>{{ _('Name') }}</th><th>{{ _('Token') }}</th><th>{{ _('Owner') }}</th><th>{{ _('Scopes') }}</th>
           <th>{{ _('Capabilities') }}</th><th>{{ _('AppID scope') }}</th>
-          <th>ADOM</th><th>{{ _('Status') }}</th><th>{{ _('Last used') }}</th><th></th>
+          <th>ADOM</th><th>{{ _('Status') }}</th><th>{{ _('Last used') }}</th><th class="actions-col"></th>
         </tr>
       </thead>
       <tbody>
@@ -131,7 +131,8 @@
           </td>
           <td class="small text-muted">
             {{ t.last_used_at.strftime('%Y-%m-%d %H:%M') if t.last_used_at else 'never' }}</td>
-          <td class="text-end">
+          <td class="text-end actions-col">
+            <div class="fw-row-actions">
             <button type="button" class="btn btn-sm btn-outline-secondary"
                     data-bs-toggle="modal" data-bs-target="#editTok{{ t.id }}">{{ _('Edit') }}</button>
             {% if not t.revoked %}
@@ -140,12 +141,27 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-outline-warning" type="submit">{{ _('Revoke') }}</button>
             </form>
-            {% endif %}
+            {# Three verbs: the destructive one goes behind "..." (layout sweep 2026-10-24). #}
+            <div class="dropdown fw-row-more">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown"
+                      data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false"
+                      title="{{ _('More actions') }}" aria-label="{{ _('More actions') }}"><i class="bi bi-three-dots"></i></button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><form method="post" action="{{ url_for('api_tokens.delete', id=t.id) }}"
+                          data-fw-confirm-form="Delete token '{{ t.name }}'? This cannot be undone.">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="dropdown-item text-danger" type="submit"><i class="bi bi-trash"></i>{{ _('Delete') }}</button>
+                </form></li>
+              </ul>
+            </div>
+            {% else %}
             <form method="post" action="{{ url_for('api_tokens.delete', id=t.id) }}" class="d-inline"
                   data-fw-confirm-form="Delete token '{{ t.name }}'? This cannot be undone.">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-outline-danger" type="submit">{{ _('Delete') }}</button>
             </form>
+            {% endif %}
+            </div>
           </td>
         </tr>
         {% else %}

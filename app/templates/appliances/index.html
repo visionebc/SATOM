@@ -137,47 +137,58 @@
 {% endmacro %}
 {% macro appliance_actions(a, device_scope, owner) %}
           <td class="actions-col">
-            <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1"
+            {# Layout sweep 2026-10-24: Test, Edit and Maintenance stay visible;
+               the rest sits behind "..." so the row is one line at 1280 px. #}
+            <div class="fw-row-actions">
+            <button class="btn btn-sm btn-outline-secondary btn-sm-icon"
                     title="{{ _('Test Connection') }}"
                     data-test-id="{{ a.id }}">
               <i class="bi bi-lightning"></i>
             </button>
-            {% if a.kind in ('fortiweb', 'fortiadc') %}
-            <a href="{{ url_for('appliances.inspector', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Policy Inspector') }}"><i class="bi bi-diagram-2"></i></a>
-            <a href="{{ url_for('appliances.rediscover', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ 'Rediscovery' if has_snapshot(a.id) else 'Discovery' }}"><i class="bi {{ 'bi-arrow-repeat' if has_snapshot(a.id) else 'bi-binoculars' }}"></i></a>
-            {% if device_scope %}
-            {% if current_user.can('appliances.apply') %}
-            <a href="{{ url_for('appliances.console', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Console') }}"><i class="bi bi-terminal"></i></a>
-            {% endif %}
-            {% if current_user.can('appliances.apply') %}
-            <a href="{{ url_for('appliances.upgrade_prep', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Upgrade Preparation') }}"><i class="bi bi-clipboard-check"></i></a>
-            {% endif %}
-            {% if a.kind == 'fortiweb' and current_user.can('appliances.apply') %}
-            <a href="{{ url_for('appliances.upgrade', id=a.id) }}" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" title="{{ _('Upgrade Firmware') }}"><i class="bi bi-cloud-arrow-up"></i></a>
-            {% endif %}
-            {% elif owner %}
-            <a href="{{ url_for('appliances.detail', id=owner.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1 fw-adom-owner-link"
-               title="{{ _('Firmware, the backup vault and the console act on the whole appliance — they live on') }} {{ owner.name }}"><i class="bi bi-hdd-network"></i></a>
-            {% endif %}
-            {% endif %}
-{{ maintenance_toggle(a, 'index') }}
             {% if current_user.can('config_write') %}
-            <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
+            <button class="btn btn-sm btn-outline-primary btn-sm-icon"
                     title="{{ _('Edit') }}"
                     data-js="edit-appliance"
                     data-appliance='{{ a.to_dict()|tojson }}'>
               <i class="bi bi-pencil"></i>
             </button>
-            <form method="POST"
-                  action="{{ url_for('appliances.delete', id=a.id) }}"
-                  style="display:inline;"
-                  data-fw-confirm-form="Delete appliance '{{ a.name }}'? This cannot be undone.">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="{{ _('Delete') }}">
-                <i class="bi bi-trash"></i>
-              </button>
-            </form>
             {% endif %}
+{{ maintenance_toggle(a, 'index') }}
+            {% if a.kind in ('fortiweb', 'fortiadc') or current_user.can('config_write') %}
+            <div class="dropdown fw-row-more">
+              <button type="button" class="btn btn-sm btn-outline-secondary btn-sm-icon" data-bs-toggle="dropdown"
+                      data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false"
+                      title="{{ _('More actions') }}" aria-label="{{ _('More actions') }}"><i class="bi bi-three-dots"></i></button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                {% if a.kind in ('fortiweb', 'fortiadc') %}
+                <li><a class="dropdown-item" href="{{ url_for('appliances.inspector', id=a.id) }}"><i class="bi bi-diagram-2"></i>{{ _('Policy Inspector') }}</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('appliances.rediscover', id=a.id) }}"><i class="bi {{ 'bi-arrow-repeat' if has_snapshot(a.id) else 'bi-binoculars' }}"></i>{{ 'Rediscovery' if has_snapshot(a.id) else 'Discovery' }}</a></li>
+                {% if device_scope %}
+                {% if current_user.can('appliances.apply') %}
+                <li><a class="dropdown-item" href="{{ url_for('appliances.console', id=a.id) }}"><i class="bi bi-terminal"></i>{{ _('Console') }}</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('appliances.upgrade_prep', id=a.id) }}"><i class="bi bi-clipboard-check"></i>{{ _('Upgrade Preparation') }}</a></li>
+                {% endif %}
+                {% if a.kind == 'fortiweb' and current_user.can('appliances.apply') %}
+                <li><a class="dropdown-item" href="{{ url_for('appliances.upgrade', id=a.id) }}"><i class="bi bi-cloud-arrow-up"></i>{{ _('Upgrade Firmware') }}</a></li>
+                {% endif %}
+                {% elif owner %}
+                <li><a class="dropdown-item fw-adom-owner-link" href="{{ url_for('appliances.detail', id=owner.id) }}"
+                       title="{{ _('Firmware, the backup vault and the console act on the whole appliance — they live on') }} {{ owner.name }}"><i class="bi bi-hdd-network"></i>{{ owner.name }}</a></li>
+                {% endif %}
+                {% endif %}
+                {% if current_user.can('config_write') %}
+                {% if a.kind in ('fortiweb', 'fortiadc') %}<li><hr class="dropdown-divider"></li>{% endif %}
+                <li><form method="POST"
+                          action="{{ url_for('appliances.delete', id=a.id) }}"
+                          data-fw-confirm-form="Delete appliance '{{ a.name }}'? This cannot be undone.">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash"></i>{{ _('Delete') }}</button>
+                </form></li>
+                {% endif %}
+              </ul>
+            </div>
+            {% endif %}
+            </div>
           </td>
 {% endmacro %}
 
@@ -188,10 +199,10 @@
       <tr>
         <th>{{ _('Name') }}</th>
         <th>{{ _('Kind') }}</th>
-        <th>{{ _('Host') }}</th>
-        <th>{{ _('Port') }}</th>
+        <th data-priority="2">{{ _('Host') }}</th>
+        <th data-priority="5">{{ _('Port') }}</th>
         <th>{{ _('ADOM (vdom)') }}</th>
-        <th>{{ _('Tags') }}</th>
+        <th data-priority="5">{{ _('Tags') }}</th>
         <th>{{ _('Status') }}</th>
         <th class="actions-col">{{ _('Actions') }}</th>
       </tr>

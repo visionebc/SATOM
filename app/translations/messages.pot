@@ -11245,3 +11245,51 @@ msgstr ""
 #: app/templates/templates/index.html
 msgid "Approve template"
 msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "Common URLs"
+msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "Common paths"
+msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "Deploy (dry-run): build the plan, send nothing"
+msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "Download data"
+msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "Download package"
+msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "Dry-run"
+msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "Edit wording"
+msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "HAR"
+msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "Hide defaults"
+msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "More"
+msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "More actions"
+msgstr ""
+
+#: layout sweep 2026-10-24
+msgid "Threshold scope"
+msgstr ""

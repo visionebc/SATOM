@@ -373,7 +373,7 @@
   function drawInspector() {
     var f = sel && find(sel), box = $('sd-inspector'), h = '';
     if (!f) {
-      $('sd-insp-title').textContent = 'Theme (the whole app)';
+      $('sd-insp-title').textContent = 'Whole-app theme';
       var t = D.theme;
       h += '<p class="text-muted" style="font-size:11.5px;">Applies inside the app only; SATOM\'s menus and bars keep their colours.</p>';
       SCH.theme_colors.forEach(function (k) { h += colorRow(k, THEME_LABELS[k] || k, t[k]); });

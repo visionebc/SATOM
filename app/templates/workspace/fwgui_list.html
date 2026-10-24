@@ -18,7 +18,13 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-layout-sidebar me-2 text-accent"></i>{{ _leaf }}</h1>
-    <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · {{ _gxl }} {{ appliance.fw_version }}{% endif %}</p>
+    <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · {{ _gxl }} {{ appliance.fw_version }}{% endif %}
+    {#- where the rows come from: in the header, not the toolbar, so the toolbar keeps one row at 1280 px (2026-10-24) #}
+      {% if not _fwp and cache_meta and cache_meta.source == 'live' %}<span class="fw-badge fw-badge-info" title="{{ _('Read from the device when the page was drawn') }}"><i class="bi bi-broadcast me-1"></i>{{ _('live') }}</span>
+      {% elif view.read_live %}<span class="badge bg-info text-dark" title="{{ _('FortiWeb\'s predefined entries: read from the device through its GUI API, never cached, read-only.') }}"><i class="bi bi-broadcast me-1"></i>{{ _('live') }}</span>
+      {% elif cache_meta and cache_meta.generated_at %}<span class="badge bg-dark border" title="{{ _('Served from the SATOM cache of this device') }}"><i class="bi bi-database me-1"></i>{{ _('cache') }} {{ cache_meta.generated_at|string|truncate(16, True, '') }}</span>{% endif %}
+      {% if view.alias %}<span class="fw-badge fw-badge-secondary" title="{{ view.alias.evidence }}">{{ _('objects of %(c)s', c=view.endpoint) }}{% if view.alias.confidence != 'measured' %} · {{ _('tied by name') }}{% endif %}</span>{% endif %}
+    </p>
   </div>
   <div class="d-flex gap-2">
     <a class="btn btn-secondary btn-sm" href="{{ url_for('workspace.fwgui_index', appliance_id=appliance.id) }}"><i class="bi bi-grid-3x3-gap me-1"></i>{{ _('All pages') }}</a>
@@ -65,31 +71,42 @@
     {% if satom.adc_wizard and may_open('adc.wizard_virtual_server') %}<a class="btn btn-secondary btn-sm" href="{{ satom.adc_wizard }}" data-fwg-adc-wizard title="{{ _('SATOM wizard: virtual server, real server pool and members in one flow, dry run first.') }}"><i class="bi bi-magic me-1"></i>{{ _('Wizard') }}</a>{% endif %}
     {% if satom.generate_url %}<a class="btn btn-fw-primary btn-sm" href="{{ satom.generate_url }}" data-fwg-generate title="{{ _('Certificate Manager: CSR, signing and deploy to this device') }}"><i class="bi bi-magic me-1"></i>{{ _('Generate') }}</a>{% endif %}
     {% if satom.import_url %}<a class="btn btn-secondary btn-sm" href="{{ satom.import_url }}" data-fwg-import title="{{ _('REST cannot create these certificates: Import writes them over the certificate-only SSH session.') }}"><i class="bi bi-upload me-1"></i>{{ _('Import') }}</a>{% endif %}
-    {% if satom.artifact_kind and can_edit %}<button type="button" class="btn btn-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#artifact-add" data-fwg-artifact><i class="bi bi-file-earmark-arrow-up me-1"></i>{{ _('Upload') }} {{ satom.artifact_label }}</button>
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('artifacts.index', kind=satom.artifact_kind) }}"><i class="bi bi-archive me-1"></i>{{ _('Stored copies') }}</a>{% endif %}
+    {% if satom.artifact_kind and can_edit %}<button type="button" class="btn btn-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#artifact-add" data-fwg-artifact><i class="bi bi-file-earmark-arrow-up me-1"></i>{{ _('Upload') }} {{ satom.artifact_label }}</button>{% endif %}
     {% endif %}
     <a class="btn btn-secondary btn-sm" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil me-1"></i>{{ _('Edit') if can_edit else _('View') }}</a>
     {% if can_edit and view.endpoint %}
     {% if _fwp or (can_clone is defined and can_clone) %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-clone><i class="bi bi-copy me-1"></i>{{ _('Clone') }}</button>{% endif %}
     <button type="button" class="btn btn-fw-danger btn-sm" aria-disabled="true" data-fwg-delete><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
     {% endif %}
-    {% if can_edit and _fwp and satom is defined and satom.wpp %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-deepclone title="{{ _('Copy the profile AND the objects it references (sub-policies, signatures, rules) under new names, as the classic page did.') }}"><i class="bi bi-diagram-3 me-1"></i>{{ _('Deep clone') }}</button>{% endif %}
-    {% if satom is defined and satom and satom.sig_editor %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-sigedit data-url="{{ satom.sig_editor }}" title="{{ _('Open the selected signature profile in the SATOM signature editor: search the signature catalog, add a per-signature exception, switch a signature to alert-only.') }}"><i class="bi bi-shield-check me-1"></i>{{ _('Signature editor') }}</button>{% endif %}
-    {% if _fwp and satom is defined and satom.can_template and (satom.wpp or satom.section) %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-savetpl title="{{ _('Read the selected object from the device and save it to the Template Library as a pending template.') }}"><i class="bi bi-bookmark-plus me-1"></i>{{ _('Save as template') }}</button>{% endif %}
+    {# Secondary actions behind one "More" menu so the toolbar stays on one
+       row at 1280 px (2026-10-24). The items keep their data-fwg-* hooks, so
+       select() arms them and the handlers below run unchanged. #}
+    {% set _m_deep = can_edit and _fwp and satom is defined and satom and satom.wpp %}
+    {% set _m_sig = satom is defined and satom and satom.sig_editor %}
+    {% set _m_tpl = _fwp and satom is defined and satom and satom.can_template and (satom.wpp or satom.section) %}
+    {% set _m_fact = satom is defined and satom and satom.wpp_list and may_open('factory_catalog.index') %}
+    {% set _m_copies = satom is defined and satom and satom.artifact_kind and can_edit %}
+    {% if _m_deep or _m_sig or _m_tpl or _m_fact or _m_copies %}
+    <div class="dropdown fw-row-more" data-fwg-more>
+      <button type="button" class="btn btn-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false" title="{{ _('More actions') }}"><i class="bi bi-three-dots me-1"></i>{{ _('More') }}</button>
+      <div class="dropdown-menu">
+        {% if _m_deep %}<button type="button" class="dropdown-item" aria-disabled="true" data-fwg-deepclone title="{{ _('Copy the profile AND the objects it references (sub-policies, signatures, rules) under new names, as the classic page did.') }}"><i class="bi bi-diagram-3"></i>{{ _('Deep clone') }}</button>{% endif %}
+        {% if _m_sig %}<button type="button" class="dropdown-item" aria-disabled="true" data-fwg-sigedit data-url="{{ satom.sig_editor }}" title="{{ _('Open the selected signature profile in the SATOM signature editor: search the signature catalog, add a per-signature exception, switch a signature to alert-only.') }}"><i class="bi bi-shield-check"></i>{{ _('Signature editor') }}</button>{% endif %}
+        {% if _m_tpl %}<button type="button" class="dropdown-item" aria-disabled="true" data-fwg-savetpl title="{{ _('Read the selected object from the device and save it to the Template Library as a pending template.') }}"><i class="bi bi-bookmark-plus"></i>{{ _('Save as template') }}</button>{% endif %}
+        {% if _m_fact %}<a class="dropdown-item" href="{{ url_for('factory_catalog.index') }}" data-fwg-factory title="{{ _('Predefined profiles per firmware build and API version') }}"><i class="bi bi-box-seam"></i>{{ _('Factory catalog') }}</a>{% endif %}
+        {% if _m_copies %}<a class="dropdown-item" href="{{ url_for('artifacts.index', kind=satom.artifact_kind) }}"><i class="bi bi-archive"></i>{{ _('Stored copies') }}</a>{% endif %}
+      </div>
+    </div>
+    {% endif %}
     <div class="fw-search-box">
       <i class="bi bi-search search-icon" aria-hidden="true"></i>
       <input type="search" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}" data-fwg-search>
     </div>
     {% if satom is defined and satom and satom.wpp_list %}
-    <label class="form-check form-check-inline small mb-0" title="{{ _('Hide FortiWeb\'s predefined profiles (remembered per user)') }}">
-      <input class="form-check-input" type="checkbox" data-fwg-hide-default{{ ' checked' if satom.hide_default }}> {{ _('Hide default profiles') }}</label>
-    {% if may_open('factory_catalog.index') %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('factory_catalog.index') }}" data-fwg-factory title="{{ _('Predefined profiles per firmware build and API version') }}"><i class="bi bi-box-seam me-1"></i>{{ _('Factory catalog') }}</a>{% endif %}
+    <label class="form-check form-check-inline small mb-0 text-nowrap" title="{{ _('Hide FortiWeb\'s predefined profiles (remembered per user)') }}">
+      <input class="form-check-input" type="checkbox" data-fwg-hide-default{{ ' checked' if satom.hide_default }}> {{ _('Hide defaults') }}</label>
     {% endif %}
-    <span class="text-muted small ms-auto">{{ rows|length }} {{ _('objects') }}</span>
-    {% if not _fwp and cache_meta and cache_meta.source == 'live' %}<span class="fw-badge fw-badge-info" title="{{ _('Read from the device when the page was drawn') }}"><i class="bi bi-broadcast me-1"></i>{{ _('live') }}</span>
-    {% elif view.read_live %}<span class="badge bg-info text-dark" title="{{ _('FortiWeb\'s predefined entries: read from the device through its GUI API, never cached, read-only.') }}"><i class="bi bi-broadcast me-1"></i>{{ _('live') }}</span>
-    {% elif cache_meta and cache_meta.generated_at %}<span class="badge bg-dark border" title="{{ _('Served from the SATOM cache of this device') }}"><i class="bi bi-database me-1"></i>{{ _('cache') }} {{ cache_meta.generated_at|string|truncate(16, True, '') }}</span>{% endif %}
-    {% if view.alias %}<span class="fw-badge fw-badge-secondary" title="{{ view.alias.evidence }}">{{ _('objects of %(c)s', c=view.endpoint) }}{% if view.alias.confidence != 'measured' %} · {{ _('tied by name') }}{% endif %}</span>{% endif %}
+    <span class="text-muted small ms-auto text-nowrap">{{ rows|length }} {{ _('objects') }}</span>
     {% if can_edit %}
     <form method="post" action="{{ url_for('workspace.fwgui_refresh', appliance_id=appliance.id, page=page) }}" class="d-inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

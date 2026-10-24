@@ -73,8 +73,27 @@
   #apiTree .api-tree-leaf:hover { background: #FAFBFC; }
   #apiTree .api-tree-leaf-btn { color: inherit; }
   #apiTree .api-tree-leaf-btn:focus { box-shadow: none; }
-  #apiTree .api-tree-copy { opacity: 0; transition: opacity .12s ease; }
-  #apiTree .api-tree-leaf:hover .api-tree-copy { opacity: 1; }
+  /* ONE LINE PER ENDPOINT (2026-10-24). The clickable row is method + name
+     + build mark, never wrapping: the method badge has a fixed width, the
+     name truncates with an ellipsis (full name and URN in the title). The
+     URN and the transport badge sit below as plain text lines, and the row
+     actions float over the right edge on hover instead of taking width the
+     narrow menu column does not have at 1280 px. */
+  #apiTree .api-leaf-row { position: relative; display: flex; align-items: center; min-width: 0; }
+  #apiTree .api-tree-leaf-btn { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0;
+    padding: 5px 8px 2px 16px; white-space: nowrap; overflow: hidden; border: 0; }
+  #apiTree .api-tree-leaf-btn .fw-api-method { flex: 0 0 44px; text-align: center; font-size: 9px; padding: 2px 0; }
+  #apiTree .api-leaf-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+  #apiTree .api-tree-leaf-btn .fw-badge { flex: 0 0 auto; }
+  #apiTree .api-tree-leaf-btn .api-build-mark { margin-left: auto; }
+  #apiTree .api-leaf-meta { padding: 0 8px 4px 16px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; font-size: 10.5px; line-height: 1.4; cursor: pointer; }
+  #apiTree .api-leaf-meta code { font-size: 10.5px; }
+  #apiTree .api-leaf-actions { position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    padding-left: 14px; background: linear-gradient(to right, rgba(250,251,252,0), #FAFBFC 12px);
+    opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+  #apiTree .api-tree-leaf:hover .api-leaf-actions,
+  #apiTree .api-leaf-actions:focus-within { opacity: 1; pointer-events: auto; }
   /* Build awareness — light chrome only: --fw-* tokens and .fw-badge-*. */
   #build-banner .build-prov { font-size: 11.5px; color: var(--fw-text-secondary); }
   #build-banner .build-prov li { margin-bottom: 2px; }
@@ -199,42 +218,46 @@
                   {% for ep in section.endpoints %}
                     {% set method = ep.method or 'GET' %}
                     {% set row = db_rows.get(ep.name) if can_edit else none %}
-                    <div class="api-tree-leaf d-flex align-items-center" data-name="{{ ep.name }}"
+                    <div class="api-tree-leaf" data-name="{{ ep.name }}"
                          data-search="{{ (ep.name ~ ' ' ~ (ep.urn or ep.path or ''))|lower }}">
-                      <button type="button" class="btn btn-link text-start flex-grow-1 text-decoration-none api-tree-leaf-btn"
+                      <div class="api-leaf-row">
+                        <button type="button" class="btn btn-link text-start text-decoration-none api-tree-leaf-btn"
                               data-method="{{ method }}" data-path="{{ ep.urn or ep.path or '' }}"
                               data-name="{{ ep.name }}"
-                              style="padding:6px 8px 6px 24px;">
-                        <span class="fw-api-method fw-api-method-{{ method|lower }} me-1" style="font-size:9px;">{{ method }}</span>
-                        <span style="font-size:12.5px;">{{ ep.name }}</span>
+                                title="{{ ep.name }} &middot; {{ ep.urn or ep.path }}">
+                        <span class="fw-api-method fw-api-method-{{ method|lower }}">{{ method }}</span>
+                        <span class="api-leaf-name">{{ ep.name }}</span>
                         <span class="fw-badge api-build-mark d-none"></span>
-                        <br><code class="text-muted" style="font-size:10.5px;">{{ ep.urn or ep.path }}</code>
                         {% set pv = cc_prov.by_name.get(ep.name) if cc_prov else none %}
-                        {% if cc_prov %}<br>{{ prov_badge(pv or cc_prov.for_name(ep.name), show_path=True) }}{% endif %}
-                      </button>
-                      {% if row %}
-                      <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
-                              title="{{ _('Edit catalog endpoint') }}" data-js="edit-endpoint"
-                              data-id="{{ row.id }}" data-name="{{ row.name }}"
-                              data-urn="{{ row.urn }}" data-apiver="{{ row.api_version }}"
-                              style="padding:2px 7px;">
-                        <i class="bi bi-pencil" style="font-size:11px;"></i>
-                      </button>
-                      <form method="post" action="{{ url_for('registry.toggle', rid=row.id) }}"
-                            data-js="disable-endpoint" data-name="{{ row.name }}" class="d-inline me-1">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="next" value="{{ request.full_path }}">
-                        <button type="submit" class="btn btn-sm btn-fw-outline border-0 api-tree-copy"
-                                title="{{ _('Disable catalog endpoint (soft delete)') }}" style="padding:2px 7px;">
-                          <i class="bi bi-eye-slash" style="font-size:11px;"></i>
                         </button>
-                      </form>
-                      {% endif %}
-                      <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
-                              title="{{ _('Copy URN') }}" data-urn="{{ ep.urn or ep.path or '' }}"
-                              style="padding:2px 7px;">
-                        <i class="bi bi-clipboard" style="font-size:11px;"></i>
-                      </button>
+                        <div class="fw-row-actions api-leaf-actions">
+                        {% if row %}
+                        <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy"
+                                title="{{ _('Edit catalog endpoint') }}" data-js="edit-endpoint"
+                                data-id="{{ row.id }}" data-name="{{ row.name }}"
+                                data-urn="{{ row.urn }}" data-apiver="{{ row.api_version }}"
+                                style="padding:2px 7px;">
+                          <i class="bi bi-pencil" style="font-size:11px;"></i>
+                        </button>
+                        <form method="post" action="{{ url_for('registry.toggle', rid=row.id) }}"
+                              data-js="disable-endpoint" data-name="{{ row.name }}" class="d-inline">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <input type="hidden" name="next" value="{{ request.full_path }}">
+                          <button type="submit" class="btn btn-sm btn-fw-outline border-0 api-tree-copy"
+                                  title="{{ _('Disable catalog endpoint (soft delete)') }}" style="padding:2px 7px;">
+                            <i class="bi bi-eye-slash" style="font-size:11px;"></i>
+                          </button>
+                        </form>
+                        {% endif %}
+                        <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy"
+                                title="{{ _('Copy URN') }}" data-urn="{{ ep.urn or ep.path or '' }}"
+                                style="padding:2px 7px;">
+                          <i class="bi bi-clipboard" style="font-size:11px;"></i>
+                        </button>
+                        </div>
+                      </div>
+                      <div class="api-leaf-meta"><code class="text-muted">{{ ep.urn or ep.path }}</code></div>
+                      {% if cc_prov %}<div class="api-leaf-meta">{{ prov_badge(pv or cc_prov.for_name(ep.name), show_path=True) }}</div>{% endif %}
                     </div>
                   {% endfor %}
                 </div>
@@ -321,9 +344,13 @@
           </div>
           {% endif %}
           <div id="selected-urn" class="text-muted mt-1" style="font-size:11px;"></div>
-          <div class="mt-1">
-            <small class="text-muted">{{ _('Common paths:') }}</small>
-            <div class="d-flex flex-wrap gap-1 mt-1">
+          {# Common paths: one dropdown, not a chip row that wraps to two lines
+             in the narrow console column (2026-10-24). #}
+          <div class="dropdown mt-1">
+            <button type="button" class="btn btn-sm btn-fw-outline dropdown-toggle" data-bs-toggle="dropdown"
+                    aria-expanded="false" data-bs-popper-config='{"strategy":"fixed"}'>
+              <i class="bi bi-signpost-2 me-1"></i>{{ _('Common paths') }}</button>
+            <ul class="dropdown-menu" style="font-size:12.5px;">
               {% for path in [
                 'api/v2.0/system/status.systemstatus',
                 'api/v2.0/cmdb/server-policy.policy',
@@ -331,12 +358,13 @@
                 'api/v2.0/cmdb/server-policy.server-pool',
                 'api/v2.0/cmdb/waf/web-protection-profile.inline-protection',
               ] %}
-                <button class="fw-tag" style="cursor:pointer;border:none;font-size:10.5px;"
-                        data-js="common-path" data-path="{{ path }}">
-                  {{ path.split('.')[-1] }}
-                </button>
+                <li><button type="button" class="dropdown-item" data-js="common-path" data-path="{{ path }}"
+                            title="{{ path }}">
+                  <strong>{{ path.split('.')[-1] }}</strong>
+                  <code class="text-muted ms-2" style="font-size:10.5px;">{{ path.rsplit('.', 1)[0] }}</code>
+                </button></li>
               {% endfor %}
-            </div>
+            </ul>
           </div>
         </div>
 
@@ -922,6 +950,12 @@ document.addEventListener('keydown', function (e) {
   document.getElementById('btn-harvest').addEventListener('click', harvestNow);
   document.getElementById('btn-schema-harvest').addEventListener('click', schemaHarvestNow);
   loadBuild();
+  // The URN / transport lines under a leaf load it too (they sit outside the button).
+  document.querySelectorAll('#apiTree .api-leaf-meta').forEach(function (m) {
+    m.addEventListener('click', function () {
+      var b = m.parentElement.querySelector('.api-tree-leaf-btn'); if (b) b.click();
+    });
+  });
   document.querySelectorAll('#apiTree .api-tree-copy[data-urn]').forEach(function (btn) {
     btn.addEventListener('click', function (event) { copyUrn(this.dataset.urn); });
   });

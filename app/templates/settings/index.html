@@ -3548,7 +3548,7 @@
             <input class="form-control form-control-sm" name="notes" id="hv-notes">
           </div>
 
-          <div class="col-12 d-flex align-items-center gap-3">
+          <div class="col-12 d-flex flex-wrap align-items-center gap-3">
             <div class="form-check">
               <input class="form-check-input" type="checkbox" name="verify_ssl" id="hv-verify" value="1">
               <label class="form-check-label small" for="hv-verify">
@@ -3559,7 +3559,7 @@
               <input class="form-check-input" type="checkbox" name="enabled" id="hv-enabled" value="1" checked>
               <label class="form-check-label small" for="hv-enabled">{{ _('Enabled') }}</label>
             </div>
-            <div class="ms-auto">
+            <div class="ms-auto d-flex flex-nowrap gap-1">
               <button type="button" class="btn btn-sm btn-outline-secondary" id="hv-reset">{{ _('Clear') }}</button>
               <button type="submit" class="btn btn-sm btn-primary">{{ _('Save hypervisor') }}</button>
             </div>

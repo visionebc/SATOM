@@ -27181,3 +27181,51 @@ msgstr "Uniquement les appareils que je choisis dans Déploiement en masse"
 #: app/templates/templates/index.html
 msgid "Approve template"
 msgstr "Approuver le modèle"
+
+#: layout sweep 2026-10-24
+msgid "Common URLs"
+msgstr "URL courantes"
+
+#: layout sweep 2026-10-24
+msgid "Common paths"
+msgstr "Chemins courants"
+
+#: layout sweep 2026-10-24
+msgid "Deploy (dry-run): build the plan, send nothing"
+msgstr "Déployer (simulation) : construire le plan, ne rien envoyer"
+
+#: layout sweep 2026-10-24
+msgid "Download data"
+msgstr "Télécharger les données"
+
+#: layout sweep 2026-10-24
+msgid "Download package"
+msgstr "Télécharger le paquet"
+
+#: layout sweep 2026-10-24
+msgid "Dry-run"
+msgstr "Simulation"
+
+#: layout sweep 2026-10-24
+msgid "Edit wording"
+msgstr "Modifier la formulation"
+
+#: layout sweep 2026-10-24
+msgid "HAR"
+msgstr "HAR"
+
+#: layout sweep 2026-10-24
+msgid "Hide defaults"
+msgstr "Masquer les valeurs par défaut"
+
+#: layout sweep 2026-10-24
+msgid "More"
+msgstr "Plus"
+
+#: layout sweep 2026-10-24
+msgid "More actions"
+msgstr "Plus d'actions"
+
+#: layout sweep 2026-10-24
+msgid "Threshold scope"
+msgstr "Portée des seuils"

@@ -187,9 +187,9 @@
   </div>
 
   <div class="col-lg-7">
-    <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center">
+    <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center gap-3">
         <strong><i class="bi bi-database me-1"></i>{{ _('Database backups — pg_dump bundles (this node)') }}</strong>
-        {% if backups %}<button class="btn btn-outline-light btn-sm py-0" data-bs-toggle="modal" data-bs-target="#bundlesModal"><i class="bi bi-list-check me-1"></i>{{ _('Manage / clean up') }}</button>{% endif %}
+        {% if backups %}<button class="btn btn-outline-light btn-sm py-0 flex-shrink-0 text-nowrap" data-bs-toggle="modal" data-bs-target="#bundlesModal"><i class="bi bi-list-check me-1"></i>{{ _('Manage / clean up') }}</button>{% endif %}
       </div>
       <div class="card-body">
         {% if not backups %}
@@ -342,9 +342,9 @@
   </div>
 </div>
 
-<div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center">
+<div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center gap-3">
     <strong><i class="bi bi-git me-1"></i>Git repository backup — bundles (code + <code>reports/</code> history + all refs)</strong>
-    <button class="btn btn-outline-light btn-sm py-0" data-js="gitb-external"><i class="bi bi-hdd-network me-1"></i>{{ _('Check backup server') }}</button>
+    <button class="btn btn-outline-light btn-sm py-0 flex-shrink-0 text-nowrap" data-js="gitb-external"><i class="bi bi-hdd-network me-1"></i>{{ _('Check backup server') }}</button>
   </div>
   <div class="card-body">
     <p class="small text-muted">
@@ -507,7 +507,7 @@
 </div>
 
 <div class="card mb-3">
-  <div class="card-header d-flex justify-content-between align-items-center">
+  <div class="card-header d-flex justify-content-between align-items-center gap-3">
     <strong><i class="bi bi-book me-1"></i>How this works — backup architecture &amp; runbook</strong>
     <button class="btn btn-outline-light btn-sm" data-bs-toggle="collapse" data-bs-target="#sbDocs">{{ _('Show / hide') }}</button>
   </div>

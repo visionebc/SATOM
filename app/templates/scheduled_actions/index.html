@@ -48,26 +48,28 @@
      visit once trimmed, and the saved filter the user just emptied comes back. #}
   <input type="hidden" name="submitted" value="1">
   <div class="d-flex flex-wrap align-items-center gap-2">
-    <input type="text" class="form-control form-control-sm" name="q" style="max-width:210px;"
+    <input type="text" class="form-control form-control-sm" name="q" style="flex:2 1 130px; max-width:240px;"
            value="{{ flt.filters.q }}" placeholder="{{ _('Name contains…') }}">
-    <select name="action" class="form-select form-select-sm" style="max-width:220px;">
+    <select name="action" class="form-select form-select-sm" style="flex:2 1 130px; max-width:240px;">
       <option value="">{{ _('Any action') }}</option>
       {% for akey, alabel in action_choices %}
       <option value="{{ akey }}" {{ 'selected' if flt.filters.action == akey }}>{{ alabel }}</option>
       {% endfor %}
     </select>
-    <select name="status" class="form-select form-select-sm" style="max-width:140px;">
+    <select name="status" class="form-select form-select-sm" style="flex:1 1 140px; max-width:170px;">
       <option value="">{{ _('Any status') }}</option>
       {% for s in status_choices %}
       <option value="{{ s }}" {{ 'selected' if flt.filters.status == s }}>{{ _(s) }}</option>
       {% endfor %}
     </select>
-    <select name="schedule" class="form-select form-select-sm" style="max-width:140px;">
+    <select name="schedule" class="form-select form-select-sm" style="flex:1 1 140px; max-width:170px;">
       <option value="">{{ _('Any schedule') }}</option>
       {% for s in schedule_choices %}
       <option value="{{ s }}" {{ 'selected' if flt.filters.schedule == s }}>{{ _(s) }}</option>
       {% endfor %}
     </select>
+  </div>
+  <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
     {% if allow_cross %}
     {# Offered ONLY to a viewer who already holds the other surface's
        permission. It widens what is DRAWN, never what may be done: the rows it
@@ -84,10 +86,12 @@
              {{ 'checked' if flt.saved }}>
       <label class="form-check-label" for="f-save" style="font-size:13px;">{{ _('Remember for me') }}</label>
     </div>
-    <button type="submit" class="btn btn-fw-primary btn-sm">
-      <i class="bi bi-funnel me-1"></i>{{ _('Filter') }}</button>
-    <a class="btn btn-fw-secondary btn-sm" href="{{ url_for('.index', clear=1) }}">
-      <i class="bi bi-x-lg me-1"></i>{{ _('Clear') }}</a>
+    <div class="d-flex flex-nowrap gap-1">
+      <button type="submit" class="btn btn-fw-primary btn-sm text-nowrap">
+        <i class="bi bi-funnel me-1"></i>{{ _('Filter') }}</button>
+      <a class="btn btn-fw-secondary btn-sm text-nowrap" href="{{ url_for('.index', clear=1) }}">
+        <i class="bi bi-x-lg me-1"></i>{{ _('Clear') }}</a>
+    </div>
     <span class="text-muted ms-auto" style="font-size:12px;">
       {{ _('Showing') }} <strong>{{ rows|length }}</strong> {{ _('of') }} <strong>{{ total }}</strong>
       {% if flt.saved %}<span class="fw-badge fw-badge-primary ms-1">{{ _('saved to profile') }}</span>{% endif %}
@@ -115,8 +119,8 @@
         <th>{{ _('Action') }}</th>
         <th>{{ _('Schedule') }}</th>
         <th>{{ _('Targets') }}</th>
-        <th>{{ _('Enabled') }}</th>
-        <th>{{ _('Next run') }}</th>
+        <th data-keep>{{ _('Enabled') }}</th>
+        <th data-priority="2">{{ _('Next run') }}</th>
         <th>{{ _('Last status') }}</th>
         <th class="actions-col">{{ _('Actions') }}</th>
       </tr>

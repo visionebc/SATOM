@@ -22,7 +22,7 @@
   </div>
 </div>
 
-<form method="post" class="fw-card" style="max-width:1100px;">
+<form method="post" class="fw-card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="fw-card-body p-0">
     <div class="fw-table-wrapper mb-0" style="border:0;border-radius:0;">
@@ -59,9 +59,9 @@
       </table>
     </div>
   </div>
-  <div class="p-3 d-flex gap-2 align-items-center">
+  <div class="p-3 d-flex gap-3 align-items-center">
     <span class="text-muted" style="font-size:12px;">{{ _('Internal only: a certificate of this provider may serve an Internal server policy only (the Plugin Studio certificate step refuses any other zone).') }}</span>
-    <button type="submit" class="btn btn-primary btn-sm ms-auto"><i class="bi bi-save me-1"></i>{{ _('Save providers') }}</button>
+    <button type="submit" class="btn btn-primary btn-sm ms-auto flex-shrink-0 text-nowrap"><i class="bi bi-save me-1"></i>{{ _('Save providers') }}</button>
   </div>
 </form>
 {% endblock %}

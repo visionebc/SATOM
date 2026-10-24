@@ -27179,3 +27179,51 @@ msgstr "Nur die Geräte, die ich in der Massenbereitstellung auswähle"
 #: app/templates/templates/index.html
 msgid "Approve template"
 msgstr "Vorlage freigeben"
+
+#: layout sweep 2026-10-24
+msgid "Common URLs"
+msgstr "Häufige URLs"
+
+#: layout sweep 2026-10-24
+msgid "Common paths"
+msgstr "Häufige Pfade"
+
+#: layout sweep 2026-10-24
+msgid "Deploy (dry-run): build the plan, send nothing"
+msgstr "Bereitstellen (Probelauf): Plan erstellen, nichts senden"
+
+#: layout sweep 2026-10-24
+msgid "Download data"
+msgstr "Daten herunterladen"
+
+#: layout sweep 2026-10-24
+msgid "Download package"
+msgstr "Paket herunterladen"
+
+#: layout sweep 2026-10-24
+msgid "Dry-run"
+msgstr "Probelauf"
+
+#: layout sweep 2026-10-24
+msgid "Edit wording"
+msgstr "Wortlaut bearbeiten"
+
+#: layout sweep 2026-10-24
+msgid "HAR"
+msgstr "HAR"
+
+#: layout sweep 2026-10-24
+msgid "Hide defaults"
+msgstr "Standardwerte ausblenden"
+
+#: layout sweep 2026-10-24
+msgid "More"
+msgstr "Mehr"
+
+#: layout sweep 2026-10-24
+msgid "More actions"
+msgstr "Weitere Aktionen"
+
+#: layout sweep 2026-10-24
+msgid "Threshold scope"
+msgstr "Schwellenwert-Bereich"

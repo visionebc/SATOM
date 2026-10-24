@@ -47,6 +47,9 @@
                border-bottom:1px solid var(--fw-border); }
   .dp-tbl td { padding:8px; border-bottom:1px solid var(--fw-border-light); vertical-align:middle; }
   .dp-tbl tr:hover td { background:rgba(239,84,36,.06); }
+  /* Row actions on ONE line (2026-10-24): Edit + Probe now visible, the rest
+     behind the "..." menu; the column takes only the width the cluster needs. */
+  .dp-tbl .actions-col { white-space:nowrap; width:1%; }
   .dp-name { font-weight:600; color:var(--fw-text-primary); }
   .dp-sub  { font-size:.74rem; color:var(--fw-text-secondary); }
   .dp-detail { font-size:.78rem; color:var(--fw-text-primary); }
@@ -199,7 +202,7 @@
           <th style="width:14%">{{ _('Trend') }}</th>
           <th>{{ _('Last result') }}</th>
           <th style="width:12%">{{ _('Checked') }}</th>
-          <th style="width:9%"></th>
+          <th class="actions-col"></th>
         </tr></thead>
         <tbody id="dpRows"><tr><td colspan="7" class="text-muted">{{ _('Loading…') }}</td></tr></tbody>
       </table>
@@ -612,6 +615,8 @@
   }
 
   function renderRows(d) {
+    // A row's "..." menu is open: redrawing now would close it under the pointer.
+    if (document.querySelector('#dpRows .fw-row-more .dropdown-menu.show')) return;
     if (!d.probes.length) {
       document.getElementById('dpRows').innerHTML =
         '<tr><td colspan="7" class="text-muted">No probes yet.' +
@@ -639,19 +644,27 @@
       else if (p.kind === 'interface')
         where += ' · ' + (p.target ? esc(p.target) : 'all ports');
       var act = CAN_EDIT
-        ? '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="edit" data-id="' + p.id +
+        ? '<div class="fw-row-actions">' +
+          '<button class="btn btn-sm btn-link px-1 py-0 dp-act" data-act="edit" data-id="' + p.id +
             '" title="Edit"><i class="bi bi-pencil"></i></button>' +
-          '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="run" data-id="' + p.id +
+          '<button class="btn btn-sm btn-link px-1 py-0 dp-act" data-act="run" data-id="' + p.id +
             '" title="Probe now"><i class="bi bi-play-fill"></i></button>' +
+          '<div class="dropdown fw-row-more">' +
+          '<button type="button" class="btn btn-sm btn-link px-1 py-0" data-bs-toggle="dropdown"' +
+            ' aria-expanded="false" data-bs-popper-config=\'{"strategy":"fixed"}\'' +
+            ' title="More actions"><i class="bi bi-three-dots"></i></button>' +
+          '<div class="dropdown-menu dropdown-menu-end">' +
           (p.suppressed
-            ? '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="unmute" data-id="' + p.id +
-              '" title="Unmute (lift the suppression now)"><i class="bi bi-bell"></i></button>'
+            ? '<button type="button" class="dropdown-item dp-act" data-act="unmute" data-id="' + p.id +
+              '"><i class="bi bi-bell"></i>Unmute (lift the suppression now)</button>'
             : '') +
-          '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="toggle" data-id="' + p.id +
-            '" title="' + (p.enabled ? 'Disable' : 'Enable') + '"><i class="bi bi-' +
-            (p.enabled ? 'pause' : 'play') + '-circle"></i></button>' +
-          '<button class="btn btn-sm btn-link p-0 text-danger dp-act" data-act="delete" data-id="' + p.id +
-            '" title="Delete"><i class="bi bi-trash"></i></button>'
+          '<button type="button" class="dropdown-item dp-act" data-act="toggle" data-id="' + p.id +
+            '"><i class="bi bi-' + (p.enabled ? 'pause' : 'play') + '-circle"></i>' +
+            (p.enabled ? 'Disable' : 'Enable') + '</button>' +
+          '<div class="dropdown-divider"></div>' +
+          '<button type="button" class="dropdown-item text-danger dp-act" data-act="delete" data-id="' + p.id +
+            '"><i class="bi bi-trash"></i>Delete</button>' +
+          '</div></div></div>'
         : '';
       return '<tr class="' + (p.enabled ? '' : 'dp-off') + '">' +
         '<td><div class="dp-name"><span class="dp-dot" style="background:' + color(p.status) + '"></span>' +
@@ -665,7 +678,7 @@
           esc(p.latest ? p.latest.detail : 'never run') + '</span></td>' +
         '<td class="dp-sub">' + esc(ago(p.last_run_at)) + '<br><span class="dp-sub">every ' +
           p.interval_min + ' min</span></td>' +
-        '<td class="text-end">' + act + '</td></tr>';
+        '<td class="text-end actions-col">' + act + '</td></tr>';
     }).join('');
   }
 

@@ -27216,3 +27216,51 @@ msgstr "Solo i dispositivi che scelgo in Distribuzione massiva"
 #: app/templates/templates/index.html
 msgid "Approve template"
 msgstr "Approva modello"
+
+#: layout sweep 2026-10-24
+msgid "Common URLs"
+msgstr "URL comuni"
+
+#: layout sweep 2026-10-24
+msgid "Common paths"
+msgstr "Percorsi comuni"
+
+#: layout sweep 2026-10-24
+msgid "Deploy (dry-run): build the plan, send nothing"
+msgstr "Distribuisci (prova): crea il piano, non invia nulla"
+
+#: layout sweep 2026-10-24
+msgid "Download data"
+msgstr "Scarica dati"
+
+#: layout sweep 2026-10-24
+msgid "Download package"
+msgstr "Scarica pacchetto"
+
+#: layout sweep 2026-10-24
+msgid "Dry-run"
+msgstr "Prova"
+
+#: layout sweep 2026-10-24
+msgid "Edit wording"
+msgstr "Modifica formulazione"
+
+#: layout sweep 2026-10-24
+msgid "HAR"
+msgstr "HAR"
+
+#: layout sweep 2026-10-24
+msgid "Hide defaults"
+msgstr "Nascondi predefiniti"
+
+#: layout sweep 2026-10-24
+msgid "More"
+msgstr "Altro"
+
+#: layout sweep 2026-10-24
+msgid "More actions"
+msgstr "Altre azioni"
+
+#: layout sweep 2026-10-24
+msgid "Threshold scope"
+msgstr "Ambito delle soglie"

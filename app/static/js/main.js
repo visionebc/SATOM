@@ -628,3 +628,427 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   soon();
 })();
+
+// ============================================================
+// Tables fit their container (>= 769 px wide) — 2026-10-24
+// ------------------------------------------------------------
+// One opt-out pass for every visible <table> in #fw-main (not in a .modal,
+// not under [data-fit="off"], not nested in another table). A table that
+// is wider than its scroll/clip box gets, in this order, only as far as it
+// still overflows:
+//   1. headers and ordinary text cells may wrap at word boundaries
+//      (action cells, checkboxes, numbers and dates stay on one line);
+//      a pathological value (PEM, base64, a replacement-message body: one
+//      token longer than 40 characters or more than 300 characters) shows
+//      on one line, max 320 px, with an ellipsis and the full value in
+//      `title`;
+//   2. the lowest-priority columns are hidden from the right, never the
+//      checkbox column, the first identifying column (and the narrow ones
+//      left of it), a Status column, an Actions column or a th[data-keep].
+//      th[data-priority="1..5"]: 1 = hidden last, 5 = hidden first,
+//      unmarked = 3; at most half of the columns. A
+//      "N columns hidden · Show all" link above the table
+//      toggles show-all (then the table scrolls inside its own box) and back;
+//   3. last resort: long words in text cells may break anywhere.
+// Cells are hidden with a class, never removed, so scripts that read
+// td[i] keep working. A bare table with no scroll box of its own is moved
+// into a .fw-fit-scrollbox the first time it overflows, so it can never
+// widen the page. Re-runs on Turbo visits/renders/frame loads, Bootstrap
+// tab/collapse, container resize (ResizeObserver) and DOM changes in
+// #fw-main (MutationObserver), all debounced; a signature (box width,
+// rows, text length) makes a re-run on an unchanged table a no-op.
+// ============================================================
+(function () {
+  var api = window.__fwTableFit || (window.__fwTableFit = (function () {
+    var MIN_VW = 769;          // phones keep the .fw-phone-scroll behaviour above
+    var CLIP_TOKEN = 40, CLIP_LEN = 300, TITLE_MAX = 1000;
+    var timer = null, muting = false;
+    var observed = new WeakSet();
+    var ro = window.ResizeObserver ? new ResizeObserver(function () { schedule(120); }) : null;
+
+    function mainEl() { return document.getElementById('fw-main'); }
+    function px(v) { return parseFloat(v) || 0; }
+    function txt(el) { return (el.textContent || '').replace(/\s+/g, ' ').trim(); }
+
+    function eligible(t) {
+      if (t.closest('.modal, .dropdown-menu, [data-fit="off"]')) return false;
+      if (t.parentElement && t.parentElement.closest('table')) return false;
+      return t.offsetWidth > 0 && t.offsetHeight > 0;
+    }
+    function clipOf(t, main) {
+      for (var p = t.parentElement; p && p !== main; p = p.parentElement) {
+        if (getComputedStyle(p).overflowX !== 'visible') return p;
+      }
+      return main;
+    }
+    // What does not fit: the table against the content box of its clip box,
+    // and (when nothing between them scrolls) against #fw-main itself, since
+    // a box that grows with its table pushes the page sideways instead.
+    function excess(t, box, main) {
+      var tr = t.getBoundingClientRect();
+      var br = box.getBoundingClientRect(), bs = getComputedStyle(box);
+      var left = tr.left - br.left - box.clientLeft + box.scrollLeft;
+      var right = px(bs.paddingRight) + px(getComputedStyle(t).marginRight);
+      for (var p = t.parentElement; p && p !== box; p = p.parentElement) {
+        var cs = getComputedStyle(p);
+        right += px(cs.paddingRight) + px(cs.borderRightWidth) + px(cs.marginRight);
+      }
+      var ex = tr.width - (box.clientWidth - left - right);
+      if (box !== main) {
+        var outer = true;
+        for (var q = box; q && q !== main; q = q.parentElement) {
+          var qs = getComputedStyle(q);
+          // a drawer / popover placed by position is not in the page flow
+          if ((q !== box && qs.overflowX !== 'visible') || qs.position === 'fixed' || qs.position === 'absolute') { outer = false; break; }
+        }
+        if (outer) {
+          var mr = main.getBoundingClientRect();
+          var limit = mr.left + main.clientLeft + main.clientWidth - px(getComputedStyle(main).paddingRight);
+          ex = Math.max(ex, br.right - limit);
+        }
+      }
+      return ex;
+    }
+    function sigOf(t, box) {
+      var b = t.tBodies[0];
+      return [Math.round(box.clientWidth), t.rows.length, t.rows[0] ? t.rows[0].cells.length : 0,
+              b ? b.textContent.length : 0, t.getAttribute('data-fit-all') || ''].join('|');
+    }
+    function fitId(t) {
+      if (!t.getAttribute('data-fit-id')) t.setAttribute('data-fit-id', 'f' + Math.random().toString(36).slice(2, 9));
+      return t.getAttribute('data-fit-id');
+    }
+    function barOf(t) {
+      var id = t.getAttribute('data-fit-id');
+      return id ? document.querySelector('.fw-fit-bar[data-fit-for="' + id + '"]') : null;
+    }
+    function removeBar(t) { var b = barOf(t); if (b) b.remove(); }
+
+    function reset(t) {
+      t.classList.remove('fw-fit-wrap', 'fw-fit-break');
+      t.style.removeProperty('--fw-fit-clip');
+      for (var i = 0; i < t.rows.length; i++) {
+        var cells = t.rows[i].cells;
+        for (var j = 0; j < cells.length; j++) {
+          var c = cells[j];
+          c.classList.remove('fw-fit-nw', 'fw-fit-1tok', 'fw-fit-clip', 'fw-fit-hide');
+          if (c.__fitTok) { c.__fitTok.el.textContent = c.__fitTok.text; c.__fitTok = null; }
+          if (c.hasAttribute('data-fit-colspan')) {
+            c.colSpan = +c.getAttribute('data-fit-colspan');
+            c.removeAttribute('data-fit-colspan');
+          }
+          if (c.hasAttribute('data-fit-title')) { c.removeAttribute('title'); c.removeAttribute('data-fit-title'); }
+        }
+      }
+      var bs = t.querySelectorAll('.fw-fit-wrapbadge');
+      for (var k = 0; k < bs.length; k++) bs[k].classList.remove('fw-fit-wrapbadge');
+    }
+
+    var NUMDATE = /^(?:[-+~<>≈]?[\d][\d\s.,:\/\-+%()x×]*\s*(?:[kmgtp]?i?b|ms|s|sec|min|h|d|days?|%|px|°c)?|\d{4}-\d{2}-\d{2}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)?\s*(?:z|utc|[+-]\d{2}:?\d{2})?|.{1,14}\bago|—|-|n\/a|never|none|yes|no|on|off)$/i;
+    // Step 1: what each cell may do once the table wraps.
+    function markCells(t) {
+      t.classList.add('fw-fit-wrap');
+      // the identifying column (first titled header that is not '#'): a short
+      // name stays on one line ("- fortiadc10" broke under its marker)
+      var hr0 = t.tHead && t.tHead.rows.length === 1 ? t.tHead.rows[0] : null, keyIdx = -1;
+      if (hr0) for (var h = 0; h < hr0.cells.length; h++) {
+        var hs = txt(hr0.cells[h]);
+        if (hs && hs !== '#' && !hr0.cells[h].querySelector('input')) { keyIdx = h; break; }
+      }
+      for (var i = 0; i < t.rows.length; i++) {
+        var row = t.rows[i], head = row.parentElement && row.parentElement.tagName === 'THEAD';
+        for (var j = 0; j < row.cells.length; j++) {
+          var c = row.cells[j];
+          if (head) continue;
+          if (c.querySelector('.btn, button, input, select, textarea, .dropdown, .form-check, .form-switch')) {
+            c.classList.add('fw-fit-nw'); continue;
+          }
+          var s = txt(c);
+          if (!s) continue;
+          if (j === keyIdx && row.cells.length === hr0.cells.length && s.length <= 40) { c.classList.add('fw-fit-nw'); continue; }
+          if (s.length <= 32 && NUMDATE.test(s)) { c.classList.add('fw-fit-nw'); continue; }
+          var longTok = 0, toks = s.split(' ');
+          for (var k = 0; k < toks.length; k++) if (toks[k].length > longTok) longTok = toks[k].length;
+          if ((longTok > CLIP_TOKEN || s.length > CLIP_LEN) && !c.querySelector('table, ul, ol, .badge, .fw-badge, img, svg')) {
+            c.classList.add('fw-fit-clip');
+            if (!c.hasAttribute('title')) {
+              c.setAttribute('title', s.length > TITLE_MAX ? s.slice(0, TITLE_MAX) + '…' : s);
+              c.setAttribute('data-fit-title', '1');
+            }
+          }
+          // wrap between words only: object names are full of hyphens
+          // ("net-lab-front") and a break after one reads as two names
+          if (s.indexOf(' ') < 0) c.classList.add('fw-fit-1tok');
+          else if (/[-\/]/.test(s)) tokenize(c);
+          var badges = c.querySelectorAll('.badge, .fw-badge');
+          for (var m = 0; m < badges.length; m++) if (txt(badges[m]).length > 40) badges[m].classList.add('fw-fit-wrapbadge');
+        }
+      }
+    }
+
+    // The words of a plain-text cell (or of its single inline child) each in
+    // a nowrap span; the separators stay text nodes, so textContent is
+    // unchanged. reset() puts the original text back.
+    function tokenize(c) {
+      var el = c;
+      while (el.childNodes.length === 1 && el.firstChild.nodeType === 1 &&
+             !el.firstChild.matches('code, pre, .badge, .fw-badge')) el = el.firstChild;
+      for (var i = 0; i < el.childNodes.length; i++) if (el.childNodes[i].nodeType !== 3) return;
+      var orig = el.textContent, parts = orig.split(/(\s+)/), frag = document.createDocumentFragment();
+      for (var j = 0; j < parts.length; j++) {
+        if (!parts[j]) continue;
+        if (/^\s+$/.test(parts[j]) || !/[-\/]/.test(parts[j])) { frag.appendChild(document.createTextNode(parts[j])); continue; }
+        var sp = document.createElement('span');
+        sp.className = 'fw-fit-tok';
+        sp.textContent = parts[j];
+        frag.appendChild(sp);
+      }
+      el.textContent = '';
+      el.appendChild(frag);
+      c.__fitTok = { el: el, text: orig };
+    }
+
+    // Step 2 helpers: the header row and the columns that may go.
+    function headerRow(t) {
+      var hr = null;
+      if (t.tHead) { if (t.tHead.rows.length !== 1) return null; hr = t.tHead.rows[0]; }
+      else if (t.rows[0]) {
+        hr = t.rows[0];
+        for (var i = 0; i < hr.cells.length; i++) if (hr.cells[i].tagName !== 'TH') return null;
+      }
+      if (!hr || hr.cells.length < 3) return null;
+      for (var j = 0; j < hr.cells.length; j++) if (hr.cells[j].colSpan > 1) return null;
+      var rs = t.querySelectorAll('td[rowspan], th[rowspan]');
+      for (var k = 0; k < rs.length; k++) if (rs[k].closest('table') === t && rs[k].rowSpan > 1) return null;
+      return hr;
+    }
+    function forCol(t, idx, fn) {
+      for (var i = 0; i < t.rows.length; i++) {
+        var cells = t.rows[i].cells, at = 0;
+        for (var j = 0; j < cells.length; j++) {
+          var c = cells[j];
+          var span = c.hasAttribute('data-fit-colspan') ? +c.getAttribute('data-fit-colspan') : c.colSpan;
+          if (idx >= at && idx < at + span) { fn(c, span); break; }
+          at += span;
+        }
+      }
+    }
+    function hideCol(t, idx) {
+      forCol(t, idx, function (c, span) {
+        if (span === 1) { c.classList.add('fw-fit-hide'); return; }
+        if (!c.hasAttribute('data-fit-colspan')) c.setAttribute('data-fit-colspan', span);
+        c.colSpan = Math.max(1, c.colSpan - 1);
+      });
+    }
+    function unhideCol(t, idx) {
+      forCol(t, idx, function (c, span) {
+        if (span === 1) c.classList.remove('fw-fit-hide');
+        else c.colSpan = c.colSpan + 1;
+      });
+    }
+    function candidates(t, hr) {
+      var n = hr.cells.length, firstId = -1, keep = [], out = [];
+      var body = t.tBodies[0], sample = body ? Array.prototype.slice.call(body.rows, 0, 20) : [];
+      for (var i = 0; i < n; i++) {
+        var th = hr.cells[i], s = txt(th);
+        if (firstId < 0 && s && s !== '#' && !th.querySelector('input')) firstId = i;
+        var k = th.hasAttribute('data-keep') || th.classList.contains('actions-col') ||
+                !!th.querySelector('input[type="checkbox"]') ||
+                /^(actions?|operations?)$/i.test(s) || /\bstatus\b/i.test(s) || /^state$/i.test(s);
+        if (!k && sample.length) {
+          var act = 0;
+          for (var r = 0; r < sample.length; r++) {
+            var cell = sample[r].cells[i];
+            if (cell && cell.querySelector('.btn, button, input[type="checkbox"], .dropdown')) act++;
+          }
+          if (act * 2 >= sample.length && act > 0) k = true;
+        }
+        keep.push(k);
+      }
+      for (var j = 0; j < n; j++) {
+        if (keep[j] || j <= firstId) continue;
+        var pr = parseInt(hr.cells[j].getAttribute('data-priority'), 10);
+        out.push({ i: j, p: isNaN(pr) ? 3 : pr, name: txt(hr.cells[j]) });
+      }
+      out.sort(function (a, b) { return (b.p - a.p) || (b.i - a.i); });
+      return out;
+    }
+
+    function ensureScrollBox(t, box, main) {
+      var dedicated = box !== main && getComputedStyle(box).overflowX !== 'hidden' &&
+                      getComputedStyle(box).overflowX !== 'clip';
+      if (dedicated) {
+        for (var i = 0; i < box.children.length; i++) {
+          var k = box.children[i];
+          if (k !== t && !k.classList.contains('fw-fit-bar')) { dedicated = false; break; }
+        }
+      }
+      if (dedicated) return box;
+      if (t.parentElement.classList.contains('fw-fit-scrollbox')) return t.parentElement;
+      var w = document.createElement('div');
+      w.className = 'fw-fit-scrollbox';
+      t.parentNode.insertBefore(w, t);
+      w.appendChild(t);
+      return w;
+    }
+    function setBar(t, box, hidden, all) {
+      var bar = barOf(t);
+      if (!hidden.length && !all) { if (bar) bar.remove(); return; }
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.className = 'fw-fit-bar';
+        bar.setAttribute('data-fit-for', fitId(t));
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn-link btn-sm fw-fit-toggle';
+        bar.appendChild(b);
+        var anchor = (box.children.length === 1 || box.classList.contains('fw-fit-scrollbox')) && box !== mainEl() ? box : t;
+        anchor.parentNode.insertBefore(bar, anchor);
+      }
+      var btn = bar.firstChild;
+      if (all) {
+        btn.innerHTML = '<i class="bi bi-arrows-angle-contract me-1"></i>All columns shown · Fit to width';
+        btn.title = 'Hide the lowest-priority columns so the table fits without scrolling';
+      } else {
+        btn.innerHTML = '<i class="bi bi-layout-three-columns me-1"></i>' + hidden.length +
+          (hidden.length === 1 ? ' column hidden' : ' columns hidden') + ' · Show all';
+        btn.title = 'Hidden to fit the width: ' + hidden.join(', ');
+      }
+    }
+
+    var runs = new WeakMap();
+    function fit(t, main) {
+      if (!eligible(t)) return;
+      var box = clipOf(t, main);
+      var sig = sigOf(t, box);
+      if (t.__fitSig === sig && t.getAttribute('data-fit-id')) return;
+      // a table whose box resizes because of what this pass did (a page
+      // scrollbar that comes and goes) must not flip for ever
+      var now = Date.now(), r = runs.get(t) || { n: 0, t0: now };
+      if (now - r.t0 > 3000) { r.n = 0; r.t0 = now; }
+      if (++r.n > 8) return;
+      runs.set(t, r);
+      fitId(t);
+      reset(t);
+      var all = t.getAttribute('data-fit-all') === '1';
+      var hidden = [];
+      if (excess(t, box, main) > 1) {
+        box = ensureScrollBox(t, box, main);
+        if (ro && !observed.has(box)) { ro.observe(box); observed.add(box); }
+        markCells(t);
+        var ex = excess(t, box, main);
+        if (ex > 1 && t.querySelector('.fw-fit-clip')) {
+          // a narrow box (a 2-column table in a side panel): the clipped
+          // values give up width first, down to 120 px
+          var cw = t.querySelector('.fw-fit-clip').getBoundingClientRect().width;
+          t.style.setProperty('--fw-fit-clip', Math.max(120, Math.floor(Math.min(cw, 340) - ex - 16)) + 'px');
+          ex = excess(t, box, main);
+        }
+        var hr = ex > 1 ? headerRow(t) : null;
+        var cand = hr ? candidates(t, hr) : [];
+        if (hr && cand.length) {
+          if (all) { hidden = []; }
+          else {
+            // never more than half the columns: a narrow panel that would be
+            // left with its name column alone breaks long words instead
+            cand = cand.slice(0, Math.floor(hr.cells.length / 2));
+            while (ex > 1 && cand.length) {
+              // one column at a time (exact); a long list in batches sized
+              // by the header widths, to keep the number of layouts low
+              var freed = 0, batch = [], big = t.rows.length > 300;
+              while (cand.length && (batch.length === 0 || (big && freed < ex))) {
+                var c = cand.shift();
+                freed += hr.cells[c.i].getBoundingClientRect().width;
+                hideCol(t, c.i);
+                batch.push(c);
+              }
+              var ex2 = excess(t, box, main);
+              if (ex2 >= ex - 1) {
+                // hiding did not help: the overflow is not this table's
+                // columns (something else widens the box) - undo and stop
+                batch.forEach(function (b) { unhideCol(t, b.i); });
+                break;
+              }
+              batch.forEach(function (b) { hidden.push(b.name || ('column ' + (b.i + 1))); });
+              ex = ex2;
+            }
+          }
+          setBar(t, box, hidden, all);
+        } else {
+          removeBar(t);
+        }
+        // last resort (nothing left to hide, or no header to hide by): long
+        // tokens in text cells may break anywhere rather than scroll
+        if (!all && excess(t, box, main) > 1) t.classList.add('fw-fit-break');
+      } else {
+        removeBar(t);
+      }
+      t.__fitSig = sigOf(t, clipOf(t, main));
+    }
+
+    function run() {
+      timer = null;
+      var main = mainEl();
+      if (!main || window.innerWidth < MIN_VW) return;
+      muting = true;
+      try {
+        var ts = main.querySelectorAll('table');
+        for (var i = 0; i < ts.length; i++) {
+          var t = ts[i];
+          if (ro && !observed.has(t)) { ro.observe(t); observed.add(t); }
+          try { fit(t, main); } catch (e) { /* one odd table must not stop the rest */ }
+        }
+      } finally {
+        if (mo) mo.takeRecords();
+        muting = false;
+      }
+    }
+    function schedule(ms) {
+      clearTimeout(timer);
+      timer = setTimeout(run, ms == null ? 120 : ms);
+    }
+    function resetAll() {
+      var main = mainEl();
+      if (!main) return;
+      var ts = main.querySelectorAll('table[data-fit-id]');
+      for (var i = 0; i < ts.length; i++) { reset(ts[i]); removeBar(ts[i]); ts[i].__fitSig = null; }
+    }
+
+    var mo = window.MutationObserver ? new MutationObserver(function (recs) {
+      if (muting) return;
+      var main = mainEl();
+      if (!main) return;
+      for (var i = 0; i < recs.length; i++) {
+        var tg = recs[i].target;
+        if (tg === main || main.contains(tg)) { schedule(150); return; }
+      }
+    }) : null;
+    if (mo) mo.observe(document.documentElement, { childList: true, subtree: true });
+
+    ['turbo:load', 'turbo:render', 'turbo:frame-load', 'shown.bs.tab', 'shown.bs.collapse', 'shown.bs.modal']
+      .forEach(function (ev) { document.addEventListener(ev, function () { schedule(30); }); });
+    window.addEventListener('resize', function () { schedule(150); });
+    document.addEventListener('turbo:before-cache', resetAll);
+    document.addEventListener('turbo:before-render', function () {
+      if (ro) { ro.disconnect(); observed = new WeakSet(); }
+    });
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.fw-fit-toggle') : null;
+      if (!b) return;
+      var bar = b.closest('.fw-fit-bar');
+      var t = bar && document.querySelector('table[data-fit-id="' + bar.getAttribute('data-fit-for') + '"]');
+      if (!t) return;
+      if (t.getAttribute('data-fit-all') === '1') t.removeAttribute('data-fit-all');
+      else t.setAttribute('data-fit-all', '1');
+      t.__fitSig = null;
+      runs.delete(t);
+      var main = mainEl();
+      muting = true;
+      try { fit(t, main); } finally { if (mo) mo.takeRecords(); muting = false; }
+    });
+
+    return { run: run, schedule: schedule, reset: resetAll };
+  })());
+  if (window.FW) window.FW.fitTables = api.run;
+  api.schedule(0);
+})();

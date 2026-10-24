@@ -221,7 +221,28 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
-<li><strong>Sidebar: menus and submenus share one size and typeface; the current
+<li>
+<p><strong>Every table fits the screen; row actions stay on one line.</strong> Measured on
+  the 690 pages of every ADOM menu and their detail pages at 1280, 1366, 1600
+  and 1920 px wide. A table wider than its box now first lets headers and
+  text wrap between words (names, badges, numbers, dates and actions stay on
+  one line), shows a very long value (a certificate, an image, a message
+  body) on one line with an ellipsis and the full value on hover, and only
+  then hides its least useful columns behind "N columns hidden · Show all".
+  Tables of the measured device GUI pages use the full width too. Rows with
+  many actions keep the main ones visible and move the rest into a "…" menu
+  (Appliances, Plugin Studio, Deep monitors, Service Monitor, Report Studio,
+  API Tokens). Toolbars that wrapped are on one line (device GUI lists,
+  Lua editor, Transaction Tracer, appliance page, Thresholds scope, API
+  explorers), buttons in one row have one size, and buttons keep at least
+  8 px from the text next to them. Plugin Studio's Explorer becomes a strip
+  of tabs above the content below 1400 px. Requested by the operator: "the
+  table may not appear complete depending on the resolution … it can always
+  use 100% of the screen, but it has to fit; the actions or buttons must be
+  in line and not on multiple lines, it doesn't look professional".</p>
+</li>
+<li>
+<p><strong>Sidebar: menus and submenus share one size and typeface; the current
   page and its path stay highlighted.</strong> First-level heads (Operations,
   Administrator, Device, Plugin Studio) were 10px uppercase while every entry
   below them is 13.5px; they now use the same 13.5px type, 14px icon and
@@ -237,7 +258,8 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   Requested by the operator:
   "check the size of the menus and submenus, make sure they are the same size
   and typeface, and keep the active menu or submenu highlighted so it is
-  easier to see".</li>
+  easier to see".</p>
+</li>
 <li><strong>The console now ships its typeface: Inter 4.1.</strong> The stylesheets asked
   for Inter but no copy of it shipped, so every browser drew its own system
   font (Segoe UI on Windows, San Francisco on macOS, DejaVu on Linux) and the
@@ -379,6 +401,10 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>
+<p><strong>Lua Studio: Delete did nothing.</strong> Its form was nested inside the editor
+  form, so the browser dropped it; it is now its own form.</p>
+</li>
 <li>
 <p><strong>Sidebar: a long Plugin Studio app name is readable and can be starred.</strong>
   An app is named by its author (up to 120 characters), and on one line

@@ -28,9 +28,21 @@
 </div>
 {% endif %}
 
+<style nonce="{{ csp_nonce }}">
+/* Layout sweep 2026-10-24: below 1400 px the Explorer is a one-line strip of
+   tabs above the pane (the side column squeezed every table and wrapped its
+   own labels); from 1400 px it is the side column again. */
+.studio-explorer .list-group-item { white-space: nowrap; }
+@media (max-width: 1399.98px) {
+  .studio-explorer > .fw-card-header, .studio-explorer .studio-open-apps { display: none; }
+  .studio-explorer .list-group { flex-direction: row; overflow-x: auto; }
+  .studio-explorer .list-group-item { flex: 0 0 auto; width: auto; border-width: 0 1px 0 0; }
+  .studio-explorer .list-group-item .fw-badge { margin-left: 8px !important; }
+}
+</style>
 <div class="row g-3">
   {# ------------------------------------------------------------ explorer #}
-  <div class="col-xl-2 col-lg-3">
+  <div class="col-12 col-xxl-2">
     <div class="fw-card studio-explorer">
       <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-folder2-open me-2 text-accent"></i>{{ _('Explorer') }}</span></div>
       <div class="list-group list-group-flush" role="tablist" style="font-size:13px;">
@@ -54,8 +66,8 @@
         {% endif %}
       </div>
       {% if can_library and apps %}
-      <div class="px-3 pt-2 pb-1 text-muted text-uppercase" style="font-size:10px;letter-spacing:.04em;">{{ _('Open an app') }}</div>
-      <ul class="list-unstyled mb-2 px-2" style="font-size:12px;max-height:50vh;overflow:auto;">
+      <div class="px-3 pt-2 pb-1 text-muted text-uppercase studio-open-apps" style="font-size:10px;letter-spacing:.04em;">{{ _('Open an app') }}</div>
+      <ul class="list-unstyled mb-2 px-2 studio-open-apps" style="font-size:12px;max-height:50vh;overflow:auto;">
         {% for r in apps %}
         <li><a class="d-flex align-items-center px-2 py-1 rounded text-decoration-none" href="{{ url_for(r.edit_endpoint, slug=r.edit_slug) }}" title="{{ r.a.slug }}">
           <i class="bi {{ r.a.icon }} me-2 text-muted"></i><span class="text-truncate">{{ r.name }}</span>
@@ -67,7 +79,7 @@
   </div>
 
   {# --------------------------------------------------------------- panes #}
-  <div class="col-xl-10 col-lg-9">
+  <div class="col-12 col-xxl-10">
     <div class="tab-content">
       {% if can_library %}
       <div class="tab-pane fade {{ 'show active' if pane == 'stores' }}" id="studio-pane-stores" role="tabpanel">
@@ -85,7 +97,7 @@
                 <td><a href="{{ url_for('studio.store', slug=s.slug) }}"><strong>{{ s.name }}</strong></a>
                   <div class="text-muted" style="font-size:11px;"><code>{{ s.slug }}</code>{% if s.description %} · {{ s.description|truncate(80) }}{% endif %}</div></td>
                 <td>{{ s.columns }}</td><td>{{ s.rows }}</td>
-                <td style="font-size:13px;white-space:nowrap;">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') if s.updated_at else '' }} · {{ s.updated_by }}</td>
+                <td style="font-size:13px;"><span class="text-nowrap">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') if s.updated_at else '' }}</span> <span class="text-muted text-nowrap">· {{ s.updated_by }}</span></td>
                 <td class="actions-col">
                   <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" href="{{ url_for('studio.store', slug=s.slug) }}" title="{{ _('Open') }}"><i class="bi bi-pencil"></i></a>
                   <a class="btn btn-sm btn-outline-secondary btn-sm-icon" href="{{ url_for('studio.store_export', slug=s.slug) }}" title="{{ _('Export CSV') }}"><i class="bi bi-download"></i></a>
@@ -125,16 +137,15 @@
           {% if current_user.can('studio.plugin_studio') %}
           <form method="post" action="{{ url_for('plugins.import_package') }}" enctype="multipart/form-data" class="d-flex gap-2 align-items-center ms-auto" style="font-size:12px;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="file" name="package" accept=".satomplugin,.zip" class="form-control form-control-sm" style="max-width:260px;" required>
-            <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="allow_downgrade" value="1">{{ _('Allow downgrade') }}</label>
-            <button class="btn btn-outline-primary btn-sm" type="submit" title="{{ _('An app package: the app, its data stores, its connections (without secrets) and its API versions') }}"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import app package') }}</button>
+            <label class="form-check-label text-nowrap"><input class="form-check-input me-1" type="checkbox" name="allow_downgrade" value="1">{{ _('Allow downgrade') }}</label>
+            <label class="btn btn-outline-primary btn-sm text-nowrap mb-0" title="{{ _('An app package: the app, its data stores, its connections (without secrets) and its API versions') }}"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import app package') }}<input type="file" name="package" accept=".satomplugin,.zip" class="d-none" data-ap-import required></label>
           </form>
           {% endif %}
-          <button type="button" class="btn btn-fw-primary btn-sm {{ '' if current_user.can('studio.plugin_studio') else 'ms-auto' }}" data-bs-toggle="modal" data-bs-target="#apNewModal"><i class="bi bi-plus-lg me-1"></i>{{ _('New app') }}</button></div>
+        </div>
         <div id="apMsg" class="small mb-2" role="status"></div>
         <div class="fw-table-wrapper">
           <table class="fw-table" id="apTable">
-            <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Type') }}</th><th>{{ _('Status') }}</th><th>{{ _('Published') }}</th><th>{{ _('ADOMs') }}</th><th>{{ _('Shared with') }}</th><th>{{ _('Last change') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
+            <thead><tr><th class="fw-col-name">{{ _('Name') }}</th><th>{{ _('Type') }}</th><th>{{ _('Status') }}</th><th>{{ _('Published') }}</th><th>{{ _('ADOMs') }}</th><th>{{ _('Shared with') }}</th><th>{{ _('Last change') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
             <tbody>
             {% for r in apps %}{% set a = r.a %}
               <tr data-app="{{ a.slug }}">
@@ -151,25 +162,33 @@
                 <td style="font-size:12px;">{{ _('every ADOM') if '*' in a.adoms else (a.adoms|join(', ') or '—') }}</td>
                 <td style="font-size:12px;">{{ a.access.groups|length }} {{ _('group(s)') }}, {{ a.access.users|length }} {{ _('person(s)') }}</td>
                 {% endif %}
-                <td style="font-size:13px;white-space:nowrap;">{{ a.updated_at.strftime('%Y-%m-%d %H:%M') if a.updated_at else '' }} · {{ a.updated_by }}</td>
-                <td class="actions-col" style="white-space:nowrap;">
-                  <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" href="{{ url_for(r.edit_endpoint, slug=r.edit_slug) }}" title="{{ _('Edit') }}"><i class="bi bi-pencil"></i></a>
+                <td style="font-size:13px;"><span class="text-nowrap">{{ a.updated_at.strftime('%Y-%m-%d %H:%M') if a.updated_at else '' }}</span> <span class="text-muted text-nowrap">· {{ a.updated_by }}</span></td>
+                <td class="actions-col"><div class="fw-row-actions">
+                  <a class="btn btn-sm btn-outline-secondary btn-sm-icon" href="{{ url_for(r.edit_endpoint, slug=r.edit_slug) }}" title="{{ _('Edit') }}"><i class="bi bi-pencil"></i></a>
                   {% if r.enabled %}
-                  <button type="button" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" data-app-act="disable" title="{{ _('Disable: out of every menu, no run starts; nothing is deleted') }}"><i class="bi bi-pause-circle"></i></button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary btn-sm-icon" data-app-act="disable" title="{{ _('Disable: out of every menu, no run starts; nothing is deleted') }}"><i class="bi bi-pause-circle"></i></button>
                   {% else %}
-                  <button type="button" class="btn btn-sm btn-outline-success btn-sm-icon me-1" data-app-act="enable" title="{{ _('Enable') }}"><i class="bi bi-play-circle"></i></button>
+                  <button type="button" class="btn btn-sm btn-outline-success btn-sm-icon" data-app-act="enable" title="{{ _('Enable') }}"><i class="bi bi-play-circle"></i></button>
                   {% endif %}
-                  <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" href="{{ url_for('studio.app_data', slug=a.slug) }}" title="{{ _('Download data: runs and data stores (zip)') }}"><i class="bi bi-database-down"></i></a>
-                  {% if r.kind == 'script' %}
-                  {% if not r.missing %}<a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" href="{{ url_for('script_library.download', slug=a.script_slug) }}" title="{{ _('Download the code') }}"><i class="bi bi-file-earmark-zip"></i></a>{% endif %}
-                  {% else %}
-                  <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" href="{{ url_for('studio.app_export', slug=a.slug) }}" title="{{ _('Export app package') }}"><i class="bi bi-box-arrow-up"></i></a>
-                  {% endif %}
-                  <button type="button" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" data-app-act="reset" title="{{ _('Reset: delete its data from the database (runs and the rows of the data stores only it uses)') }}"><i class="bi bi-arrow-counterclockwise"></i></button>
-                  {% if not r.template %}
-                  <button type="button" class="btn btn-sm btn-outline-danger btn-sm-icon" data-app-act="delete" title="{{ _('Delete') }}"><i class="bi bi-trash"></i></button>
-                  {% endif %}
-                </td>
+                  <div class="dropdown fw-row-more">
+                    <button type="button" class="btn btn-sm btn-outline-secondary btn-sm-icon" data-bs-toggle="dropdown"
+                            data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false"
+                            title="{{ _('More actions') }}" aria-label="{{ _('More actions') }}"><i class="bi bi-three-dots"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                      <li><a class="dropdown-item" href="{{ url_for('studio.app_data', slug=a.slug) }}" title="{{ _('Download data: runs and data stores (zip)') }}"><i class="bi bi-database-down"></i>{{ _('Download data') }}</a></li>
+                      {% if r.kind == 'script' %}
+                      {% if not r.missing %}<li><a class="dropdown-item" href="{{ url_for('script_library.download', slug=a.script_slug) }}"><i class="bi bi-file-earmark-zip"></i>{{ _('Download the code') }}</a></li>{% endif %}
+                      {% else %}
+                      <li><a class="dropdown-item" href="{{ url_for('studio.app_export', slug=a.slug) }}"><i class="bi bi-box-arrow-up"></i>{{ _('Export app package') }}</a></li>
+                      {% endif %}
+                      <li><hr class="dropdown-divider"></li>
+                      <li><button type="button" class="dropdown-item text-warning" data-app-act="reset" title="{{ _('Reset: delete its data from the database (runs and the rows of the data stores only it uses)') }}"><i class="bi bi-arrow-counterclockwise"></i>{{ _('Reset') }}</button></li>
+                      {% if not r.template %}
+                      <li><button type="button" class="dropdown-item text-danger" data-app-act="delete"><i class="bi bi-trash"></i>{{ _('Delete') }}</button></li>
+                      {% endif %}
+                    </ul>
+                  </div>
+                </div></td>
               </tr>
             {% else %}
               <tr><td colspan="8" class="text-muted p-3">{{ _('No apps yet. Create one with New app.') }}</td></tr>
@@ -202,7 +221,7 @@
                 <td><code style="font-size:12px;">{{ c.base_url if c.kind == 'http' else (c.host ~ ':' ~ (c.port or 5432) ~ '/' ~ c.database) }}</code>
                   {% if c.api_version %}<div><a class="fw-badge fw-badge-info text-decoration-none" href="{{ url_for('studio.api_version', slug=c.api_version.api.slug, version=c.api_version.version) }}">{{ c.api_version.label }}</a></div>{% endif %}</td>
                 <td>{{ c.auth }}</td>
-                <td style="font-size:13px;white-space:nowrap;">{{ c.updated_at.strftime('%Y-%m-%d %H:%M') if c.updated_at else '' }} · {{ c.updated_by }}</td>
+                <td style="font-size:13px;"><span class="text-nowrap">{{ c.updated_at.strftime('%Y-%m-%d %H:%M') if c.updated_at else '' }}</span> <span class="text-muted text-nowrap">· {{ c.updated_by }}</span></td>
               </tr>
             {% else %}
               <tr><td colspan="5" class="text-muted p-3">{{ _('No connections yet.') }}</td></tr>
@@ -230,7 +249,7 @@
                 <td>{% if row.latest %}<span class="fw-badge fw-badge-success">{{ row.latest }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                 <td>{{ row.versions }}{% if row.drafts %} <span class="fw-badge fw-badge-secondary">{{ row.drafts }} {{ _('draft') }}</span>{% endif %}</td>
                 <td style="font-size:12px;">{% for s in row.connections %}<code>{{ s }}</code>{{ ', ' if not loop.last }}{% else %}<span class="text-muted">—</span>{% endfor %}</td>
-                <td style="font-size:13px;white-space:nowrap;">{{ a.updated_at.strftime('%Y-%m-%d %H:%M') if a.updated_at else '' }} · {{ a.updated_by }}</td>
+                <td style="font-size:13px;"><span class="text-nowrap">{{ a.updated_at.strftime('%Y-%m-%d %H:%M') if a.updated_at else '' }}</span> <span class="text-muted text-nowrap">· {{ a.updated_by }}</span></td>
               </tr>
             {% else %}
               <tr><td colspan="6" class="text-muted p-3">{{ _('No APIs yet.') }}</td></tr>

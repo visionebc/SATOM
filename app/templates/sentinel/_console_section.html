@@ -219,7 +219,7 @@
         <form method="post" action="{{ url_for('sentinel.recompute') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
-          <button class="btn btn-fw-outline btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Recompute from the store</button>
+          <button class="btn btn-fw-outline btn-sm text-nowrap" title="Recompute the baseline from the metrics store"><i class="bi bi-arrow-repeat me-1"></i>Recompute</button>
         </form>
       </div>
     </div></div>
@@ -316,7 +316,7 @@
 {# ── incident stats ─────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3" id="card-last-7-days">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
-    <strong><i class="bi bi-graph-up me-1"></i>Last 7 days</strong>{{ hint(sn_hint('console.stats')) }}
+    <span class="d-inline-flex align-items-center gap-1"><strong><i class="bi bi-graph-up me-1"></i>Last 7 days</strong>{{ hint(sn_hint('console.stats')) }}</span>
     <div class="btn-group btn-group-sm">
       {% for key, label in [('live','Live'), ('closed','Closed'), ('false_positive','False positives'), ('all','All')] %}
       <a class="btn {{ 'btn-fw-primary' if status == key else 'btn-fw-outline' }}"
@@ -349,7 +349,7 @@
 
 {# ── incidents ──────────────────────────────────────────────────────────── #}
 <div class="fw-card" id="card-incidents">
-  <div class="fw-card-header"><strong><i class="bi bi-list-ul me-1"></i>Incidents</strong>{{ hint(sn_hint('console.incidents')) }}</div>
+  <div class="fw-card-header"><span class="d-inline-flex align-items-center gap-1"><strong><i class="bi bi-list-ul me-1"></i>Incidents</strong>{{ hint(sn_hint('console.incidents')) }}</span></div>
   <div class="fw-card-body">
     {% if not incidents %}
       <div class="alert alert-secondary small mb-0">

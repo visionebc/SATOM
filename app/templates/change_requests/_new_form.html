@@ -157,13 +157,15 @@
             <span class="fw-step-num">3</span>
             <i class="bi bi-pencil-square me-2 text-accent"></i>{{ _('Proposed wording') }}
           </span>
-          <button type="button" class="btn btn-fw-outline btn-sm" id="cr-reset-proposal">
-            <i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore proposal') }}
+          <div class="d-flex gap-1 flex-shrink-0 ms-3">
+          <button type="button" class="btn btn-fw-outline btn-sm text-nowrap" id="cr-reset-proposal" title="{{ _('Restore proposal') }}">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore') }}
           </button>
           {% if cr_wording_url %}
-          <a class="btn btn-fw-outline btn-sm" href="{{ cr_wording_url }}">
-            <i class="bi bi-sliders me-1"></i>{{ _('Edit this wording') }}</a>
+          <a class="btn btn-fw-outline btn-sm text-nowrap" href="{{ cr_wording_url }}" title="{{ _('Edit this wording') }}">
+            <i class="bi bi-sliders me-1"></i>{{ _('Edit wording') }}</a>
           {% endif %}
+          </div>
         </div>
         <div class="fw-card-body">
           <div class="fw-alert fw-alert-info mb-3" style="font-size:12.5px;">

@@ -73,15 +73,23 @@
         <label class="fw-form-label">{{ _('Lua code') }}</label>
         <textarea class="form-control fw-form-control font-monospace" name="code" id="fld-code" rows="20">{{ script.code if script else '-- ' ~ target ~ ' Lua\nlocal ua = get_request_header(\"User-Agent\")\nif ua == nil then\n  block()\nend' }}</textarea>
       </div>
-      <div class="fw-card-footer d-flex gap-2 flex-wrap align-items-center">
-        <button class="btn btn-fw-primary" type="submit"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
-        <button class="btn btn-fw-outline" type="button" id="btn-analyze"><i class="bi bi-search me-1"></i>Lint &amp; analyse</button>
+      <div class="fw-card-footer d-flex flex-wrap gap-2 align-items-center">
+        <div class="d-flex flex-nowrap gap-1">
+          <button class="btn btn-sm btn-fw-primary text-nowrap" type="submit"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+          <button class="btn btn-sm btn-fw-outline text-nowrap" type="button" id="btn-analyze"><i class="bi bi-search me-1"></i>Lint &amp; analyse</button>
+        </div>
         {% if script %}
-        <button class="btn btn-fw-outline" type="button" id="btn-dryrun"><i class="bi bi-clipboard-check me-1"></i>{{ _('Deploy (dry-run)') }}</button>
-        <button class="btn btn-fw-danger" type="button" id="btn-deploy"><i class="bi bi-upload me-1"></i>{{ _('Deploy for real') }}</button>
-        <button class="btn btn-fw-danger ms-auto" type="button" id="btn-luadel"><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
-        <form method="post" action="{{ url_for('lua_studio.delete', sid=script.id) }}" id="lua-del" class="d-none">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
+        <div class="d-flex flex-nowrap gap-1">
+          <button class="btn btn-sm btn-fw-outline text-nowrap" type="button" id="btn-dryrun" title="{{ _('Deploy (dry-run): build the plan, send nothing') }}"><i class="bi bi-clipboard-check me-1"></i>{{ _('Dry-run') }}</button>
+          <button class="btn btn-sm btn-fw-danger text-nowrap" type="button" id="btn-deploy"><i class="bi bi-upload me-1"></i>{{ _('Deploy for real') }}</button>
+        </div>
+        <div class="dropdown fw-row-more ms-auto">
+          <button type="button" class="btn btn-sm btn-fw-outline" data-bs-toggle="dropdown" aria-expanded="false"
+                  data-bs-popper-config='{"strategy":"fixed"}' title="{{ _('More actions') }}"><i class="bi bi-three-dots"></i></button>
+          <div class="dropdown-menu dropdown-menu-end">
+            <button class="dropdown-item text-danger" type="button" id="btn-luadel"><i class="bi bi-trash"></i>{{ _('Delete script') }}</button>
+          </div>
+        </div>
         {% endif %}
       </div>
     </div>
@@ -94,6 +102,10 @@
     </div>
   </div>
 </form>
+{% if script %}
+<form method="post" action="{{ url_for('lua_studio.delete', sid=script.id) }}" id="lua-del" class="d-none">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
+{% endif %}
 
 <!-- Example browser (shared component) -->
 {% set exb_title = target ~ ' script examples' %}

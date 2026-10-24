@@ -739,6 +739,93 @@ summary.fw-nav-item { padding-right: 16px; }
 
 .fw-table .actions-col { white-space: nowrap; width: 1%; }
 
+/* ROW ACTIONS STAY ON ONE LINE (2026-10-24).
+   A cell holding two or more controls is an action cluster: at 1280-1366 px
+   the browser squeezed the column and stacked the icons three rows high
+   (API Tokens, Settings > Hypervisors). nowrap on the cell keeps them one
+   row; the table makes room elsewhere. .table covers the Bootstrap tables. */
+.fw-table .actions-col, .table .actions-col,
+.fw-table td:has(> .btn + .btn), .table td:has(> .btn + .btn),
+.fw-table td:has(> .btn + form), .table td:has(> .btn + form),
+.fw-table td:has(> form + .btn), .table td:has(> form + .btn),
+.fw-table td:has(> form + form), .table td:has(> form + form) { white-space: nowrap; width: 1%; }
+.fw-table td.actions-col > form, .table td.actions-col > form,
+.fw-table td:has(> .btn + form) > form, .table td:has(> .btn + form) > form,
+.fw-table td:has(> form + .btn) > form, .table td:has(> form + .btn) > form,
+.fw-table td:has(> form + form) > form, .table td:has(> form + form) > form { display: inline-block; margin: 0; }
+/* The explicit cluster: one row, a fixed 4px gap (no me-1 per button),
+   right-aligned in the Actions column. */
+.fw-row-actions { display: inline-flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap; }
+.fw-row-actions > form { display: inline-flex; margin: 0; }
+.fw-row-actions > .btn, .fw-row-actions > form > .btn, .fw-row-actions > .dropdown > .btn { margin: 0 !important; }
+/* Secondary actions go behind a "..." menu so the cluster stays narrow. */
+.fw-row-more .dropdown-menu { font-size: 13px; min-width: 210px; }
+.fw-row-more .dropdown-item { display: flex; align-items: center; gap: 8px; }
+.fw-row-more .dropdown-item > i { width: 16px; text-align: center; }
+.fw-row-more form { margin: 0; }
+
+/* TABLES THAT FIT THEIR CONTAINER (2026-10-24).
+   Opt-in on the wrapper: .fw-table-fit makes it a size container, and
+   columns marked .fw-col-opt-{xl,lg,md} drop out when the wrapper is
+   narrower than 1100/900/720 px - least useful first - so the Actions
+   column is never pushed behind a horizontal scroll. Opt-in because a
+   size container inside a shrink-to-fit parent collapses to zero width. */
+.fw-table-fit { container-type: inline-size; container-name: fwtable; }
+@container fwtable (max-width: 1100px) { .fw-col-opt-xl { display: none; } }
+@container fwtable (max-width: 900px)  { .fw-col-opt-lg { display: none; } }
+@container fwtable (max-width: 720px)  { .fw-col-opt-md { display: none; } }
+/* A name/title column that must not collapse to one word per line. */
+.fw-table .fw-col-name { min-width: 180px; }
+/* Long unbroken tokens (hosts, slugs, URLs) may break instead of widening. */
+.fw-table .fw-col-break { overflow-wrap: anywhere; }
+
+/* GLOBAL TABLE FIT (main.js "Tables fit their container", 2026-10-24).
+   main.js marks a table that overflows its box with .fw-fit-wrap and its
+   cells with .fw-fit-nw / .fw-fit-clip / .fw-fit-hide; nothing here applies
+   to a table that already fits. #fw-main raises the specificity above the
+   per-page nowrap rules (.fwg-satom .fw-table td, .fw-table thead th);
+   an inline style or .text-nowrap / .actions-col on a cell still wins.
+   Opt a table out with data-fit="off" on it or on an ancestor. */
+#fw-main table.fw-fit-wrap > * > tr > th:not(.fw-fit-nw):not(.actions-col):not(.text-nowrap),
+#fw-main table.fw-fit-wrap > * > tr > td:not(.fw-fit-nw):not(.fw-fit-1tok):not(.actions-col):not(.text-nowrap) {
+  white-space: normal; overflow-wrap: normal; word-break: normal;
+}
+/* last resort, set only when hiding columns could not make it fit */
+#fw-main table.fw-fit-break > * > tr > td:not(.fw-fit-nw):not(.fw-fit-clip):not(.actions-col):not(.text-nowrap) { overflow-wrap: anywhere; }
+#fw-main table.fw-fit-wrap > * > tr > .fw-fit-nw { white-space: nowrap; }
+/* one word (a hyphenated object name) / the words main.js wrapped in
+   .fw-fit-tok: never broken after a hyphen, except in the last resort */
+#fw-main table.fw-fit-wrap > * > tr > td.fw-fit-1tok, #fw-main table.fw-fit-wrap .fw-fit-tok { white-space: nowrap; }
+#fw-main table.fw-fit-break > * > tr > td.fw-fit-1tok, #fw-main table.fw-fit-break .fw-fit-tok { white-space: normal; overflow-wrap: anywhere; }
+#fw-main table.fw-fit-wrap .badge, #fw-main table.fw-fit-wrap .fw-badge,
+#fw-main table.fw-fit-wrap .fw-status { white-space: nowrap; }
+#fw-main table.fw-fit-wrap .fw-fit-wrapbadge { white-space: normal; text-align: left; }
+/* A pathological value (PEM, base64, a message body): one line, an
+   ellipsis, the full value in title. width + max-width: Chrome caps an
+   auto-layout cell only when both are set. */
+#fw-main table.fw-fit-wrap > * > tr > .fw-fit-clip {
+  width: var(--fw-fit-clip, 320px); max-width: var(--fw-fit-clip, 320px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#fw-main table.fw-fit-wrap > * > tr > .fw-fit-clip * { white-space: nowrap; }
+#fw-main table.fw-fit-wrap > * > tr > .fw-fit-clip > :is(pre, div, code) {
+  display: inline; margin: 0; padding: 0; border: 0; background: none;
+}
+#fw-main table .fw-fit-hide { display: none !important; }
+/* A badge or status pill in a table cell is one unit: never two lines
+   ("not published" wrapped even at 1920 px). Long ones (> 40 characters)
+   still wrap through .fw-fit-wrapbadge above, which is more specific. */
+#fw-main table .fw-badge, #fw-main table .badge { white-space: nowrap; }
+/* A bare table that overflowed is moved into this box: it scrolls inside
+   its card (show-all mode) and never widens the page. */
+.fw-fit-scrollbox { max-width: 100%; overflow-x: auto; }
+.fw-fit-scrollbox:has(.dropdown-menu.show) { overflow: visible; }
+/* "N columns hidden · Show all" above the table. */
+.fw-fit-bar { display: flex; justify-content: flex-end; align-items: center; padding: 2px 8px; min-height: 26px; }
+.fw-fit-bar .btn-link { font-size: 12px; padding: 1px 4px; color: var(--fw-text-secondary); text-decoration: none; }
+.fw-fit-bar .btn-link:hover, .fw-fit-bar .btn-link:focus-visible { color: var(--fw-accent); text-decoration: underline; }
+.fwg-satom .fw-fit-bar { padding: 4px 20px 0; }
+
 /* ============================================================
    Status Indicators
    ============================================================ */
@@ -2735,7 +2822,9 @@ button.fwg-btn{cursor:pointer;}
 .fwg-review{margin:8px 16px;padding:10px 12px;border:1px solid var(--fw-accent);background:#FFFFFF;}
 .fwg-review .fwg-btn{width:auto;padding:0 14px;}
 /* inline sub-table (HTTP Content Routing, Public IP): toolbar + grid in the value column */
-.fwg-subtable{flex:1 1 100%;max-width:900px;border:1px solid var(--fw-border,#D6DAE0);}
+/* full width of the value column (was max-width:900px, which left half the
+   screen empty at 1920 - 2026-10-24); min-width:0 lets it shrink in the grid */
+.fwg-subtable{flex:1 1 100%;min-width:0;max-width:100%;border:1px solid var(--fw-border,#D6DAE0);}
 .fwg-subtable .fwg-toolbar{padding:4px;}
 .fwg-subtable .fwg-table td{height:28px;}
 .fwg-noresults{text-align:center;color:var(--fw-text-muted);}
@@ -2768,8 +2857,11 @@ button.fwg-btn{cursor:pointer;}
 .fwg-pane.fwg-satom{margin:0 0 20px;min-height:0;display:block;font-size:13.5px;}
 .fwg-satom .fwg-note{padding:10px 20px;background:var(--fw-surface-alt);
   border-bottom:1px solid var(--fw-border-light);font-size:12.5px;color:var(--fw-text-secondary);}
-.fwg-satom .fwg-sat-toolbar{padding:14px 20px;margin:0;border-bottom:1px solid var(--fw-border-light);}
-.fwg-satom .fwg-sat-toolbar .fw-search-box{flex:0 1 280px;}
+/* one row at 1280 px (2026-10-24): 8px between toolbar items, and the search
+   box is the elastic item - a 160px basis that grows to 280px - so it gives
+   way before a button is pushed onto a second row */
+.fwg-satom .fwg-sat-toolbar{padding:14px 20px;margin:0;border-bottom:1px solid var(--fw-border-light);gap:8px;}
+.fwg-satom .fwg-sat-toolbar .fw-search-box{flex:1 1 160px;min-width:140px;max-width:280px;}
 .fwg-satom .fwg-sat-filters{padding:8px 20px;border-bottom:1px solid var(--fw-border-light);font-size:12.5px;}
 .fwg-satom .fwg-sat-filters summary{cursor:pointer;color:var(--fw-text-secondary);font-weight:500;}
 .fwg-satom .fwg-sat-filters[open] summary{margin-bottom:8px;}

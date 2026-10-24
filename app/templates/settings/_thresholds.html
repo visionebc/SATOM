@@ -8,13 +8,19 @@
       {{ _('Declare a limit once and every probe that has not been given its own value follows it. A probe keeps an explicit value only where somebody set one; everything else says') }} <em>{{ _('inherited') }}</em>{{ _(', and the Monitoring pages print which is which so a grade is never unexplained.') }}
     </p>
 
-    <div class="d-flex flex-wrap gap-2 mb-3" id="th-scopes"></div>
+    {# A select, not a row of buttons: the scopes are every registered product
+       plus the two SATOM ones, which wrapped to two rows at 1280 px and grows
+       with the product registry (2026-10-24). #}
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <label class="fw-form-label mb-0 text-nowrap" for="th-scope-pick">{{ _('Scope') }}</label>
+      <select class="form-select form-select-sm w-auto" id="th-scope-pick" aria-label="{{ _('Threshold scope') }}"></select>
+    </div>
 
     <form id="th-form" autocomplete="off">
       <input type="hidden" name="scope" id="th-scope">
       <div id="th-body" class="text-muted">{{ _('Loading…') }}</div>
 
-      <div class="d-flex align-items-center gap-2 mt-3 pt-3 border-top">
+      <div class="d-flex flex-wrap align-items-center gap-1 mt-3 pt-3 border-top">
         <button class="btn fw-btn-primary" type="submit">
           <i class="bi bi-check2 me-1"></i>{{ _('Save this scope') }}
         </button>
@@ -35,7 +41,7 @@
 (function () {
   var root = document.getElementById('tab-thresholds');
   if (!root) return;
-  var scopesEl = document.getElementById('th-scopes');
+  var pickEl = document.getElementById('th-scope-pick');
   var bodyEl = document.getElementById('th-body');
   var scopeEl = document.getElementById('th-scope');
   var msgEl = document.getElementById('th-msg');
@@ -98,11 +104,13 @@
   }
 
   function render(d) {
-    scopesEl.innerHTML = (d.scopes || []).map(function (s) {
-      return '<button type="button" class="btn btn-sm ' +
-        (s.key === d.scope ? 'fw-btn-primary' : 'fw-btn-secondary') +
-        '" data-th-scope="' + esc(s.key) + '">' + esc(s.name) + '</button>';
-    }).join('');
+    var groups = { product: 'Products', manager: 'SATOM', host: 'SATOM' }, last = null;
+    pickEl.innerHTML = (d.scopes || []).map(function (s) {
+      var g = groups[s.type] || 'Other', head = '';
+      if (g !== last) { head = (last === null ? '' : '</optgroup>') + '<optgroup label="' + esc(g) + '">'; last = g; }
+      return head + '<option value="' + esc(s.key) + '"' + (s.key === d.scope ? ' selected' : '') +
+        '>' + esc(s.name) + '</option>';
+    }).join('') + (last === null ? '' : '</optgroup>');
     scopeEl.value = d.scope;
     current = d.scope;
 
@@ -157,8 +165,6 @@
   }
 
   document.addEventListener('click', function (ev) {
-    var b = ev.target.closest('[data-th-scope]');
-    if (b && scopesEl.contains(b)) { ev.preventDefault(); load(b.dataset.thScope); return; }
     if (ev.target.closest('#th-reset')) {
       ev.preventDefault();
       if (!window.confirm('Clear every override in this scope and go back to the ' +
@@ -173,6 +179,8 @@
         .catch(function (e) { say(String(e), true); });
     }
   });
+
+  pickEl.addEventListener('change', function () { load(pickEl.value); });
 
   form.addEventListener('submit', function (ev) {
     ev.preventDefault();

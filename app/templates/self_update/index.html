@@ -446,21 +446,21 @@
         {% endif %}
 
         <div class="row g-3">
-          <div class="col-lg-4">
+          <div class="col-lg-5">
             <div class="text-muted small mb-1">{{ _('Available packs') }}</div>
             {% set shipped = api_packs.packs|selectattr('source', 'equalto', 'shipped')|list %}
             {% set uploaded = api_packs.packs|selectattr('source', 'equalto', 'uploaded')|list %}
             <ul class="list-group list-group-flush mb-2" id="apk-list">
               {% for p in shipped %}
-              <li class="list-group-item px-0 py-1 d-flex justify-content-between align-items-center">
-                <button type="button" class="btn btn-link btn-sm p-0 text-start"
+              <li class="list-group-item px-0 py-1 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <button type="button" class="btn btn-link btn-sm p-0 text-start text-wrap text-break"
                         data-js="apk-select" data-source="shipped" data-name="{{ p.name }}">
                   <span class="font-monospace">{{ p.name }}</span></button>
-                <span>
+                <span class="d-inline-flex flex-wrap align-items-center gap-1">
                 {% if p.series == 'knowledge' %}
                 <span class="fw-badge fw-badge-info apk-kb" title="{{ _('Rolling snapshot built by satom-harvester from lab schema dumps and vendor documentation, signed with the knowledge key. Each knowledge pack carries everything the older ones did.') }} {{ p.provenance }}">{{ _('knowledge pack (satom-harvester)') }}</span>
                 {% elif p.series == 'api_pack' %}
-                <span class="fw-badge fw-badge-success apk-lane" title="{{ _('satom-harvester snapshot pinned to this SATOM release, signed with the API pack key.') }} {{ p.provenance }}">{{ _('API pack') }}{% if p.pinned_to %} · {{ p.pinned_to }}{% endif %}</span>
+                <span class="fw-badge fw-badge-success apk-lane text-nowrap" title="{{ _('satom-harvester snapshot pinned to this SATOM release, signed with the API pack key.') }} {{ p.provenance }}">{{ _('API pack') }}{% if p.pinned_to %} · {{ p.pinned_to }}{% endif %}</span>
                 {% endif %}
                 {% if p.superseded %}
                 <span class="fw-badge fw-badge-secondary" title="{{ _('A newer pack of the same series carries everything this one does; it is not imported automatically.') }}">{{ _('superseded') }}</span>
@@ -471,12 +471,12 @@
               </li>
               {% endfor %}
               {% for p in uploaded %}
-              <li class="list-group-item px-0 py-1 d-flex justify-content-between align-items-center">
-                <button type="button" class="btn btn-link btn-sm p-0 text-start"
+              <li class="list-group-item px-0 py-1 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <button type="button" class="btn btn-link btn-sm p-0 text-start text-wrap text-break"
                         data-js="apk-select" data-source="uploaded" data-name="{{ p.name }}">
                   <span class="font-monospace">{{ p.name }}</span></button>
-                <span>
-                  <span class="text-muted small me-2">{{ (p.size / 1048576)|round(1) }} MB</span>
+                <span class="d-inline-flex align-items-center gap-2">
+                  <span class="text-muted small">{{ (p.size / 1048576)|round(1) }} MB</span>
                   <form method="post" class="d-inline" action="{{ url_for('self_update.apipack_delete') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="name" value="{{ p.name }}">
@@ -521,7 +521,7 @@
             {% endif %}
           </div>
 
-          <div class="col-lg-8">
+          <div class="col-lg-7">
             <div id="apk-detail" class="small text-muted">
               {% if api_packs.packs %}{{ _('Select a pack to see what it carries and what importing it would do.') }}
               {% else %}{{ _('Upload a pack to see its contents.') }}{% endif %}

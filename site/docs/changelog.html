@@ -114,7 +114,24 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>API tokens: grants per Process and per Plugin Studio app.</strong> A token can
+<li>
+<p><strong>Capacity Limits: one default limit for every row.</strong> A <em>Default limit</em>
+  card on Administrator → Capacity Limits takes one percent of the Fortinet
+  limit per product (for example <code>80</code>). Every row without a number or
+  percent of its own uses it, including rows that appear later (a new
+  device, firmware or planned model), and <em>Effective</em> shows the resulting
+  number on each row; automations and device health enforce it like any
+  other limit. A row with its own value keeps it; <em>Apply to all rows</em>
+  clears those values (overrides of the Fortinet number stay). The card
+  also shows where monitoring warns, since the Thresholds warning is a
+  percent of the effective limit (80 % of an 80 % limit = 64 % of
+  Fortinet's). Audited as <code>capacity.default_set</code> / <code>capacity.default_apply</code>.
+  Requested by the operator (translated from Spanish): "it needs to be more
+  general too, add an extra filter like 80% that automatically puts the
+  number on everything, so it's easier".</p>
+</li>
+<li>
+<p><strong>API tokens: grants per Process and per Plugin Studio app.</strong> A token can
   now be handed exactly "run THIS process" or "run THIS app" — Access →
   Tokens → <em>Processes it may run</em> / <em>Apps it may run</em>, one box per object.
   A grant is bound to the version an administrator approved: the diagram's
@@ -127,7 +144,8 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   grant never follows a reused id to a different object. An empty list
   grants <strong>none</strong>. Requested by the operator (translated from Spanish):
   "is there a way to add processes and apps in SATOM and have them create
-  a capability?".</li>
+  a capability?".</p>
+</li>
 <li>
 <p><strong><code>/api/v1/apps</code>: run a Plugin Studio app from outside.</strong> <code>GET /apps</code>
   lists the apps the token's owner may use in its ADOM (the console's

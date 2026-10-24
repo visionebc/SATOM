@@ -580,6 +580,13 @@ before creating objects.</p>
 <li><strong>Your limit</strong>: <em>Fortinet limit</em> (no buffer), a <strong>number</strong>, or a
   <strong>percent of Fortinet limit</strong>. <strong>Effective</strong> is the lowest of them and is
   what automations respect.</li>
+<li><strong>Default limit</strong> (card at the top): one percent of the Fortinet limit per
+  product, e.g. <code>80</code>. Every row without a number or percent of its own uses
+  it — shown as <em>default (80 %)</em> — including rows that appear later; a row
+  with its own value keeps it. <em>Apply to all rows</em> clears those own values
+  (an override of the Fortinet number stays). The Thresholds warning is a
+  percent of the effective limit: 80 % of an 80 % limit warns at 64 % of
+  Fortinet's.</li>
 <li><strong>Override</strong> (under the Fortinet limit) replaces Fortinet's number for a box
   where it is wrong. Leave it empty otherwise.</li>
 <li>Each type is counted where Fortinet counts it: <strong>per appliance</strong> (server

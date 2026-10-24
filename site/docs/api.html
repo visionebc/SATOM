@@ -1584,9 +1584,17 @@ Rate-limited to 30/min.</p>
 <h3 id="get-apps"><code>GET /apps</code></h3>
 <pre><code class="language-json">{&quot;apps&quot;: [{&quot;slug&quot;: &quot;ip-owner&quot;, &quot;name&quot;: &quot;IP owner&quot;, &quot;description&quot;: &quot;&quot;,
            &quot;version&quot;: 3, &quot;enabled&quot;: true, &quot;published&quot;: true,
-           &quot;fields&quot;: [{&quot;name&quot;: &quot;ip&quot;, &quot;label&quot;: &quot;IP address&quot;, &quot;type&quot;: &quot;text&quot;, &quot;required&quot;: true}],
+           &quot;fields&quot;: [{&quot;name&quot;: &quot;ip&quot;, &quot;label&quot;: &quot;IP address&quot;, &quot;type&quot;: &quot;text&quot;, &quot;required&quot;: true,
+                       &quot;help&quot;: &quot;e.g. {ip}&quot;, &quot;default&quot;: &quot;&quot;},
+                      {&quot;name&quot;: &quot;mode&quot;, &quot;label&quot;: &quot;Mode&quot;, &quot;type&quot;: &quot;select&quot;, &quot;required&quot;: true,
+                       &quot;help&quot;: &quot;&quot;, &quot;default&quot;: &quot;new&quot;, &quot;options&quot;: [&quot;new&quot;, &quot;existing&quot;]}],
            &quot;granted&quot;: &quot;yes&quot;}]}
 </code></pre>
+<p>Each field carries what a caller needs to fill it: <code>help</code>, <code>default</code> (never
+for a <code>password</code> field), the only values a <code>select</code> accepts (<code>options</code>), and
+for a <code>satom_select</code> the console list it draws from (<code>source</code>, e.g.
+<code>certificates</code>, <code>wpp_templates</code>: pass the value that list holds — an id for
+templates and Certificate Manager certificates, a name for FortiWeb objects).</p>
 <h3 id="post-appsslugrun"><code>POST /apps/&lt;slug&gt;/run</code></h3>
 <p>Body: <code>{"inputs": {"ip": "{ip}"}, "armed": false}</code>. The run starts in the
 background: the answer is <strong>202</strong> with the run id and where to poll it.

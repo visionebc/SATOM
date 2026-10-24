@@ -131,7 +131,25 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   number on everything, so it's easier".</p>
 </li>
 <li>
-<p><strong>API tokens: grants per Process and per Plugin Studio app.</strong> A token can
+<p><strong>Plugin Studio: the FortiWeb pick honours the form.</strong> <em>Pick a FortiWeb by
+  capacity</em> takes <strong>Objects the device must have</strong> (<code>requires</code>):
+  <code>certificate</code>, <code>server_pool</code>, <code>interface</code>, <code>web_protection_profile</code> (a
+  template id or a name). A FortiWeb with room that lacks one is skipped —
+  read on the device when it answers, else the local cache — so a diagram
+  no longer picks a FortiWeb by capacity alone and then fails on it at the
+  certificate or the policy. Capacity is checked first (a database count);
+  an empty value does not constrain; an unknown key is an error. When
+  nothing qualifies, the error names, per FortiWeb, the limit or the
+  missing object. Requested
+  by the operator (translated from Spanish): "the FortiWeb must be chosen
+  automatically from the variables entered, whether it is internal, and
+  the capacities".</p>
+</li>
+<li><strong><code>GET /api/v1/apps</code> says how to fill each field</strong>: <code>help</code>, <code>default</code>
+  (never a password field's), the <code>options</code> a <code>select</code> accepts and the
+  console list a <code>satom_select</code> draws from (<code>source</code>). A caller had only
+  the name, label and type.</li>
+<li><strong>API tokens: grants per Process and per Plugin Studio app.</strong> A token can
   now be handed exactly "run THIS process" or "run THIS app" — Access →
   Tokens → <em>Processes it may run</em> / <em>Apps it may run</em>, one box per object.
   A grant is bound to the version an administrator approved: the diagram's
@@ -144,8 +162,7 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   grant never follows a reused id to a different object. An empty list
   grants <strong>none</strong>. Requested by the operator (translated from Spanish):
   "is there a way to add processes and apps in SATOM and have them create
-  a capability?".</p>
-</li>
+  a capability?".</li>
 <li>
 <p><strong><code>/api/v1/apps</code>: run a Plugin Studio app from outside.</strong> <code>GET /apps</code>
   lists the apps the token's owner may use in its ADOM (the console's

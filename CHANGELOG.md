@@ -32,7 +32,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   certificate or the policy. Capacity is checked first (a database count);
   an empty value does not constrain; an unknown key is an error. When
   nothing qualifies, the error names, per FortiWeb, the limit or the
-  missing object. The `spo-fortiweb` app plugin (1.2.0) uses it. Requested
+  missing object. Requested
   by the operator (translated from Spanish): "the FortiWeb must be chosen
   automatically from the variables entered, whether it is internal, and
   the capacities".

@@ -5586,7 +5586,7 @@ a whole provisioning chain is one diagram whose failures the author routes:</p>
 </tr>
 <tr>
 <td><em>Pick a FortiWeb by capacity</em></td>
-<td>The first FortiWeb by name whose zone / line / department match and whose Capacity limit has room; <em>Exclude</em> gives a second, different one</td>
+<td>The first FortiWeb by name whose zone / line / department match and whose Capacity limit has room; <em>Exclude</em> gives a second, different one. <strong>Objects the device must have</strong> (<code>requires</code>, JSON): <code>certificate</code>, <code>server_pool</code>, <code>interface</code>, <code>web_protection_profile</code> (a template id or a name) — a FortiWeb with room that lacks one is skipped, read on the device when it answers (else the local cache), and an empty value does not constrain, so the form's choices pick the device instead of failing on it later. Capacity is checked first; when nothing qualifies the step fails naming, per FortiWeb, the limit or the missing object</td>
 <td>—</td>
 </tr>
 <tr>

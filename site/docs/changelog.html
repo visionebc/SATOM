@@ -114,7 +114,34 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>API tokens: read capabilities <code>metrics</code>, <code>findings</code> and
+<li><strong>API tokens: grants per Process and per Plugin Studio app.</strong> A token can
+  now be handed exactly "run THIS process" or "run THIS app" — Access →
+  Tokens → <em>Processes it may run</em> / <em>Apps it may run</em>, one box per object.
+  A grant is bound to the version an administrator approved: the diagram's
+  steps and arrows for a Process (moving or renaming a step changes
+  nothing), the published fields, diagram and actions for an app. Change
+  what it runs and the grant <strong>pauses</strong> (403 <code>grant_paused</code>) until an
+  administrator clicks <em>Re-approve</em> on the token, audited with both
+  fingerprints; ticking the box again does not re-approve it. Deleting the
+  object removes its grants from every token, audited per token, and a
+  grant never follows a reused id to a different object. An empty list
+  grants <strong>none</strong>. Requested by the operator (translated from Spanish):
+  "is there a way to add processes and apps in SATOM and have them create
+  a capability?".</li>
+<li>
+<p><strong><code>/api/v1/apps</code>: run a Plugin Studio app from outside.</strong> <code>GET /apps</code>
+  lists the apps the token's owner may use in its ADOM (the console's
+  access list and ADOM rules), with their form fields and whether the token
+  may run them; <code>POST /apps/&lt;slug&gt;/run</code> runs the published version of a
+  granted app in the background (202, poll <code>GET /app-runs/&lt;id&gt;</code>). A run from
+  the API is <strong>unarmed</strong> by default — store writes, writing SQL, non-GET API
+  calls and device changes are recorded as <em>rehearsal: not executed</em>, reads
+  run for real — and <code>"armed": true</code> needs the new explicit capability
+  <code>app_arm</code>. Migration <code>tokgr01</code> adds <code>api_tokens.process_grants</code> and
+  <code>api_tokens.studio_app_grants</code>.</p>
+</li>
+<li>
+<p><strong>API tokens: read capabilities <code>metrics</code>, <code>findings</code> and
   <code>config_history</code>.</strong> A token can now be handed exactly "read the metrics"
   and nothing else: <code>metrics</code> covers <code>GET /metrics/query</code> and the SATOM node
   readings (<code>/system/nodes</code>, <code>/system/nodes/history</code>), <code>findings</code> covers
@@ -124,7 +151,8 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   ticked reads all three, as before, and <code>monitoring</code> still implies <code>metrics</code>
   and <code>findings</code>, so no token issued earlier loses access. Requested by the
   operator (translated from Spanish): "SATOM has, for example, metrics that
-  could be delivered via the API".</li>
+  could be delivered via the API".</p>
+</li>
 <li><strong>Capacity Limits show Fortinet's factory limits.</strong> Every limit used to be
   an empty field the admin had to fill in from the datasheet, so on a fresh
   install no automation ever had a ceiling to respect. The knowledge / API
@@ -281,6 +309,14 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
+<li>
+<p><strong>A Process walk from <code>/api/v1</code> needs a grant for that process.</strong> Until
+  now every <code>write</code>-scope token could rehearse every process its ADOM saw
+  (and, with <code>process_arm</code>, walk any of them armed). Each token that walks a
+  process must now be granted it under Access → Tokens; until then the walk
+  answers 403 <code>not_granted</code>. <code>GET /processes</code> still lists what the ADOM
+  sees, and each entry now says <code>"granted": "yes" | "paused" | "no"</code>.</p>
+</li>
 <li>
 <p><strong>Every table fits the screen; row actions stay on one line.</strong> Measured on
   the 690 pages of every ADOM menu and their detail pages at 1280, 1366, 1600

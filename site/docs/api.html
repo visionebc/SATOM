@@ -75,6 +75,7 @@
       <a href="#13-observability--configuration-history-findings-metrics">13. Observability — configuration history, findings, metrics</a>
       <a href="#14-processes--apiv1processes">14. Processes — /api/v1/processes/*</a>
       <a href="#15-events-and-triggers--apiv1events-apiv1triggers">15. Events and triggers — /api/v1/events, /api/v1/triggers</a>
+      <a href="#16-plugin-studio-apps--apiv1apps">16. Plugin Studio apps — /api/v1/apps/*</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-api-v1--integration-manual">SATOM API v1 — Integration Manual</h1>
@@ -100,11 +101,12 @@ scope, can reach those.</p>
 API is part of <em>Presentation</em>: the door other systems use. What it opens onto
 is the appliance inventory, health, configuration history, findings and the
 metrics store (<em>Observability</em>), the pre-created Scheduled Actions, the
-Processes and the external approval of a Change Request (<em>Orchestrator</em>), and
+granted Processes and Plugin Studio apps and the external approval of a
+Change Request (<em>Orchestrator</em>), and
 the object authoring below — WAF carve-outs, FortiADC rules, templates,
 bindings and baselines (<em>Intent</em>). The OpenAPI document (§10) describes every
 route of this surface.</p>
-<p>There are exactly <strong>three</strong> ways to change anything, and they are not
+<p>There are exactly <strong>four</strong> ways to change anything, and they are not
 interchangeable:</p>
 <ol>
 <li><strong>Scheduled Actions</strong> (§3) — operational moves an operator pre-created for
@@ -116,6 +118,10 @@ interchangeable:</p>
 <li><strong>Intent</strong> (§12) — templates, bindings and baselines: desired state. Only
    with the <code>template_draft</code> / <code>template_apply</code> capabilities, and a push to a
    device is the console's own canary-gated job, never a direct write.</li>
+<li><strong>Processes and Plugin Studio apps</strong> (§14, §16) — a walk or a run of one
+   object an administrator <strong>granted</strong> your token, at the version approved.
+   Unarmed (a rehearsal) by default; writing for real needs <code>process_arm</code> /
+   <code>app_arm</code>.</li>
 </ol>
 <p>The same page also exposes what SATOM has <em>recorded</em> — configuration history
 and diffs, findings, metrics (§13) — and describes itself as an OpenAPI
@@ -505,7 +511,7 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td><code>POST</code></td>
 <td><code>/processes/&lt;id&gt;/run</code></td>
 <td>write</td>
-<td><code>process_arm</code> for <code>"armed": true</code></td>
+<td>a <strong>grant</strong> for the process; <code>process_arm</code> for <code>"armed": true</code></td>
 <td>Walk a process — a <strong>rehearsal</strong> unless armed (§14)</td>
 </tr>
 <tr>
@@ -528,6 +534,27 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>read</td>
 <td>—</td>
 <td>One walk and its steps; poll a run parked on a manual gate (§14)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/apps</code></td>
+<td>read</td>
+<td>—</td>
+<td>The Plugin Studio apps the token's owner may use in its ADOM, with their form fields (§16)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/apps/&lt;slug&gt;/run</code></td>
+<td>write</td>
+<td>a <strong>grant</strong> for the app; <code>app_arm</code> for <code>"armed": true</code></td>
+<td>Run an app's published version — <strong>unarmed</strong> unless armed (§16)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/app-runs/&lt;id&gt;</code></td>
+<td>read</td>
+<td>—</td>
+<td>One app run: status, outputs, steps (§16)</td>
 </tr>
 </tbody>
 </table>
@@ -880,12 +907,37 @@ curl -s -H &quot;Authorization: Bearer $TOKEN&quot; $BASE/actions/runs/99 | jq
 <tr>
 <td>403</td>
 <td><code>capability_denied</code></td>
-<td><code>"armed": true</code> on a process walk without the <code>process_arm</code> capability (§14)</td>
+<td><code>"armed": true</code> on a process walk without <code>process_arm</code>, or on an app run without <code>app_arm</code> (§14, §16)</td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>not_granted</code></td>
+<td>The token holds no grant for this process / app (§14, §16)</td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>grant_paused</code></td>
+<td>The process / app changed after it was granted; an administrator must re-approve it (§14, §16)</td>
 </tr>
 <tr>
 <td>400</td>
 <td><code>appliance_required</code> / <code>invalid_diagram</code></td>
 <td>A process walk needs a device, or its diagram cannot run yet (§14)</td>
+</tr>
+<tr>
+<td>400</td>
+<td><code>bad_request</code></td>
+<td>The body is not a JSON object (or a field in it has the wrong type)</td>
+</tr>
+<tr>
+<td>400</td>
+<td><code>app_error</code></td>
+<td>The app refused the run: a required input missing, a value not offered, too many runs (§16)</td>
+</tr>
+<tr>
+<td>409</td>
+<td><code>unpublished</code></td>
+<td>The app has no published version (§16)</td>
 </tr>
 <tr>
 <td>429</td>
@@ -1434,6 +1486,16 @@ is a rehearsal by default</strong>: every write step dry-runs and the run says s
 the token — tokens minted before this surface existed can rehearse and cannot
 write. Rate-limited to 30/min like the other write endpoints.</p>
 <h3 id="get-processes--get-processesid"><code>GET /processes</code> / <code>GET /processes/&lt;id&gt;</code></h3>
+<p><strong>Grants.</strong> A token runs only the processes an administrator <strong>granted</strong> it,
+one by one (Access → Tokens → <em>Processes it may run</em>). An empty list means
+<strong>none</strong> — unlike capabilities. A grant approves one <strong>version</strong>: the
+diagram's steps (kind and parameters) and arrows. Moving a step on the canvas
+or renaming it changes nothing; changing what a step does <strong>pauses</strong> the
+grant, and the walk answers 403 <code>grant_paused</code> until an administrator clicks
+<em>Re-approve</em> on the token. A process that is deleted takes its grants with it
+(audited per token). Until 2026-10-24 any <code>write</code> token could rehearse every
+process its ADOM saw; each such token now needs the grant. Each process in
+the list carries <code>"granted"</code>: <code>yes</code>, <code>paused</code> or <code>no</code>.</p>
 <pre><code class="language-json">{&quot;processes&quot;: [
   {&quot;id&quot;: 3, &quot;key&quot;: &quot;dr-failover-check&quot;, &quot;name&quot;: &quot;DR failover check&quot;,
    &quot;products&quot;: [&quot;fortiweb&quot;], &quot;enabled&quot;: true,
@@ -1441,7 +1503,7 @@ write. Rate-limited to 30/min like the other write endpoints.</p>
    &quot;trigger_event&quot;: &quot;alert.fired&quot;,
    &quot;trigger_filter&quot;: {&quot;families&quot;: [&quot;device&quot;], &quot;min_severity&quot;: &quot;critical&quot;},
    &quot;armed_on_trigger&quot;: false, &quot;trigger_rate_limit&quot;: 10,
-   &quot;updated_at&quot;: &quot;2026-10-21T02:10:00&quot;}]}
+   &quot;updated_at&quot;: &quot;2026-10-21T02:10:00&quot;, &quot;granted&quot;: &quot;yes&quot;}]}
 </code></pre>
 <p><code>GET /processes/&lt;id&gt;</code> adds <code>"graph"</code> (the nodes and arrows, as the editor
 stores them).</p>
@@ -1499,6 +1561,49 @@ missing <code>type</code>, <code>data</code> that is not an object or is too lar
 <p>Scope <code>read</code>. Every trigger: <code>key</code>, <code>name</code>, <code>event</code>, <code>enabled</code>, <code>conditions</code>,
 <code>cooldown_minutes</code>, <code>rate_limit_per_hour</code> and the keys of its enabled
 <code>automations</code> — so a caller can see which <code>type</code> values anything listens to.</p>
+<h2 id="16-plugin-studio-apps--apiv1apps">16. Plugin Studio apps — <code>/api/v1/apps/*</code></h2>
+<p>Run a <strong>Plugin Studio app</strong> (a form and a diagram, Plugins → Plugin Studio)
+from outside, and read what the run did. Script apps run from their own page
+and are not offered here.</p>
+<p><strong>Access.</strong> <code>read</code> lists apps and reads runs; <code>write</code> runs. What the token
+reaches is what its <strong>owner</strong> may open in the console, in the token's ADOM:
+the app's access list (users and groups, plus Studio authors) and its ADOMs.
+Anything else — another ADOM, an app the owner may not use, a script app —
+is the same 404. A run needs a <strong>grant</strong> for that app on the token (Access →
+Tokens → <em>Apps it may run</em>; empty = none), bound to the <strong>published version</strong>
+approved: its form fields, diagram and actions. Republishing the same content
+keeps the grant; publishing anything different <strong>pauses</strong> it (403
+<code>grant_paused</code>) until an administrator re-approves it. Deleting the app
+removes its grants (audited).</p>
+<p><strong>A run from the API is unarmed by default</strong>: every write step (store writes,
+writing SQL, a non-GET API call, a device change) is recorded as <em>rehearsal:
+not executed</em>, while the reads run for real. <code>"armed": true</code> needs the
+explicit <strong><code>app_arm</code></strong> capability. In the console a published app always runs
+armed; a machine with nobody at the screen does not get that default.
+Rate-limited to 30/min.</p>
+<h3 id="get-apps"><code>GET /apps</code></h3>
+<pre><code class="language-json">{&quot;apps&quot;: [{&quot;slug&quot;: &quot;ip-owner&quot;, &quot;name&quot;: &quot;IP owner&quot;, &quot;description&quot;: &quot;&quot;,
+           &quot;version&quot;: 3, &quot;enabled&quot;: true, &quot;published&quot;: true,
+           &quot;fields&quot;: [{&quot;name&quot;: &quot;ip&quot;, &quot;label&quot;: &quot;IP address&quot;, &quot;type&quot;: &quot;text&quot;, &quot;required&quot;: true}],
+           &quot;granted&quot;: &quot;yes&quot;}]}
+</code></pre>
+<h3 id="post-appsslugrun"><code>POST /apps/&lt;slug&gt;/run</code></h3>
+<p>Body: <code>{"inputs": {"ip": "{ip}"}, "armed": false}</code>. The run starts in the
+background: the answer is <strong>202</strong> with the run id and where to poll it.
+A disabled app answers 409 <code>disabled</code>, one never published 409
+<code>unpublished</code>; inputs the form refuses answer 400 <code>app_error</code>.</p>
+<pre><code class="language-json">{&quot;id&quot;: 88, &quot;app&quot;: &quot;ip-owner&quot;, &quot;version&quot;: 3, &quot;armed&quot;: false,
+ &quot;status&quot;: &quot;running&quot;, &quot;status_url&quot;: &quot;/api/v1/app-runs/88&quot;}
+</code></pre>
+<h3 id="get-app-runsid"><code>GET /app-runs/&lt;id&gt;</code></h3>
+<p><code>status</code> (<code>running</code> / <code>done</code> / <code>failed</code>), <code>error</code>, <code>inputs</code> (password values
+masked), <code>outputs</code>, <code>steps</code>, <code>started_at</code>, <code>finished_at</code>. Only the token's
+owner — or a Studio author — sees a run; the console's result buttons
+(<em>actions</em>) are not callable from the API.</p>
+<pre><code class="language-sh">curl -s -X POST -H &quot;Authorization: Bearer $T&quot; -H 'Content-Type: application/json' \
+  -d '{&quot;inputs&quot;: {&quot;ip&quot;: &quot;{ip}&quot;}}' https://&lt;your-satom-host&gt;/api/v1/apps/ip-owner/run
+curl -s -H &quot;Authorization: Bearer $T&quot; https://&lt;your-satom-host&gt;/api/v1/app-runs/88
+</code></pre>
     </div>
   </div>
 </section>

@@ -4079,6 +4079,16 @@ from the live routes. Full reference: <a href="api.html">docs/api_v1.md</a>.</p>
 history and diffs). With nothing ticked a token reads all three; with a list
 it reads only what the list names, so a dashboard token can hold <code>metrics</code>
 alone and run nothing. <code>monitoring</code> still reads metrics and findings.</p>
+<p><strong>Grants</strong> name single objects a token may run: under <em>Processes it may run</em>
+and <em>Apps it may run</em>, tick one box per Process or Plugin Studio app. Nothing
+ticked means it runs <strong>none</strong> (unlike capabilities). A grant approves the
+version you see: if someone changes what the Process does or publishes a
+different version of the app, the grant shows <strong>paused</strong> on the token and the
+API refuses the run until you open the token and press <strong>Re-approve</strong>.
+Dragging a step on the canvas or republishing the same content does not
+pause it. Deleting the Process or app removes its grants. A run from the API
+is a rehearsal by default; a real (armed) run also needs <code>process_arm</code> or
+<code>app_arm</code>. Only apps the token's owner may open in that ADOM can be granted.</p>
 <h2 id="19-appearance-logo-colours--themes">19. Appearance: logo, colours &amp; themes</h2>
 <p><code>Settings → Appearance</code> (administrators). Four palettes ship — <strong>SATOM Aurora</strong>
 (the default), <strong>Slate</strong>, <strong>Graphite</strong> and the original <strong>Classic</strong> — and you

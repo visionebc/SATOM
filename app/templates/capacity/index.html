@@ -1,46 +1,42 @@
 {% extends "base.html" %}
 {% block title %}Capacity Limits{% endblock %}
 
+{% macro per_device(pairs, same) -%}
+  {%- if same -%}
+    {{ pairs[0][1] if pairs and pairs[0][1] is not none else '—' }}
+  {%- else -%}
+    {%- for name, v in pairs %}<div class="small"><span class="text-muted">{{ name }}</span> {{ v if v is not none else '—' }}</div>{% endfor -%}
+  {%- endif -%}
+{%- endmacro %}
+
 {% block content %}
 <style nonce="{{ csp_nonce }}">
-  .cap-tbl input, .cap-tbl select { max-width:110px; display:inline-block; }
+  .cap-tbl input, .cap-tbl select { max-width:120px; display:inline-block; }
   .cap-eff { font-weight:600; }
-  .cap-used-hi { color:#fbbf24; font-weight:600; }
+  .cap-used-hi { color:#7A5700; font-weight:600; }
+  .cap-fac { font-weight:600; }
+  .cap-src { font-size:.75rem; color:#3D4550; }
+  .cap-override summary { font-size:.75rem; color:#3D4550; cursor:pointer; }
 </style>
 
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
   <div>
     <h1 class="fw-page-title mb-0"><i class="bi bi-speedometer2 me-2 text-accent"></i>{{ _('Capacity Limits') }}</h1>
     <p class="text-muted small mb-0">
-      {{ _('Per model × firmware:') }} <b>{{ _('Hard max') }}</b> {{ _('= Fortinet\'s ceiling (datasheet / Appendix B).') }}
-      <b>{{ _('Operational cap') }}</b> {{ _('= your safety buffer, as an absolute') }} <b>{{ _('number') }}</b> {{ _('or a') }}
-      <b>{{ _('percent') }}</b> {{ _('of the hard max. Automations check the effective cap (the lower one) before creating objects; the Monitoring page alerts when usage approaches it.') }}
+      <b>{{ _('Fortinet limit') }}</b> {{ _('= the factory maximum Fortinet publishes for the model and build (it arrives with the knowledge / API packs; a FortiWeb-VM\'s depends on its memory).') }}
+      <b>{{ _('Your limit') }}</b> {{ _('= your safety buffer, as a number or a percent of the Fortinet limit. Automations check the effective limit (the lowest) before creating objects; the Monitoring page alerts when usage approaches it.') }}
     </p>
   </div>
 </div>
-
-{% if missing_models %}
-<div class="alert alert-info py-2">
-  <i class="bi bi-lightbulb me-1"></i>Fleet models without a limits catalog:
-  {% for m in missing_models %}
-  <form method="post" action="{{ url_for('capacity.add_model') }}" class="d-inline">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="product" value="{{ m.product }}">
-    <input type="hidden" name="model" value="{{ m.model }}">
-    <input type="hidden" name="firmware_major" value="{{ m.fw }}">
-    <button class="btn btn-sm btn-outline-primary ms-1">＋ {{ m.model }} ({{ m.fw }}, {{ m.product }})</button>
-  </form>
-  {% endfor %}
-</div>
-{% endif %}
 
 <div class="fw-card mb-4">
   <div class="fw-card-body">
     <form method="post" action="{{ url_for('capacity.add_model') }}" class="row g-2 align-items-end">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-auto">
-        <label class="form-label text-muted small mb-1">{{ _('Model / SKU (e.g. FortiWeb-VM02, FWB-600F)') }}</label>
-        <input name="model" class="form-control form-control-sm" placeholder="{{ _('FortiWeb-VM04') }}">
+        <label class="form-label text-muted small mb-1">{{ _('Plan a model without a device (e.g. FortiWeb-1000F)') }}</label>
+        <input name="model" class="form-control form-control-sm" list="cap-models" placeholder="FortiWeb-VM">
+        <datalist id="cap-models">{% for m in known_models %}<option value="{{ m }}">{% endfor %}</datalist>
       </div>
       <div class="col-auto">
         <label class="form-label text-muted small mb-1">{{ _('Product') }}</label>
@@ -60,14 +56,19 @@
 </div>
 
 {% if not groups %}
-<div class="text-muted">{{ _('No capacity catalogs yet — add a model above (the fleet\'s models are suggested automatically).') }}</div>
+<div class="text-muted">{{ _('No capacity catalogs yet — every registered FortiWeb appears here on its own; add a model above to plan one you do not have.') }}</div>
 {% endif %}
 
 {% for (product, fw, model), rows in groups.items() %}
-<div class="fw-card mb-4">
+{% set g = view[(product, fw, model)] %}
+<div class="fw-card mb-4" data-cap-group="{{ model }}|{{ fw }}">
   <div class="fw-card-body">
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <b><i class="bi bi-hdd-rack me-1"></i>{{ model }} <span class="text-muted">· {{ product }} · fw {{ fw }}</span></b>
+      <b><i class="bi bi-hdd-rack me-1"></i>{{ model }} <span class="text-muted">· {{ product }} · fw {{ fw }}</span>
+        {% if g.devices %}<span class="text-muted small ms-2">{{ g.devices|map(attribute='name')|join(', ') }}</span>
+        {% else %}<span class="text-muted small ms-2">{{ _('no device — planning only') }}</span>{% endif %}
+      </b>
+      {% if not g.devices %}
       <form method="post" action="{{ url_for('capacity.delete_model') }}"
             data-confirm="Remove ALL limit rows for {{ model }} ({{ fw }})?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -76,32 +77,49 @@
         <input type="hidden" name="firmware_major" value="{{ fw }}">
         <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
       </form>
+      {% endif %}
     </div>
     <form method="post" action="{{ url_for('capacity.save') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <table class="table table-sm align-middle cap-tbl">
         <thead>
           <tr class="text-muted small">
-            <th>{{ _('Object type') }}</th><th>{{ _('In use (fleet max)') }}</th><th>{{ _('Hard max (Fortinet)') }}</th>
-            <th>{{ _('Cap mode') }}</th><th>{{ _('Cap value') }}</th><th>{{ _('Effective cap') }}</th><th class="text-muted">{{ _('Updated') }}</th>
+            <th>{{ _('Object type') }}</th><th>{{ _('In use') }}</th><th>{{ _('Fortinet limit') }}</th>
+            <th>{{ _('Your limit') }}</th><th>{{ _('Value') }}</th><th>{{ _('Effective') }}</th><th class="text-muted">{{ _('Updated') }}</th>
           </tr>
         </thead>
         <tbody>
           {% for r in rows %}
-          {% set used = usage.get((model, fw), {}).get(r.object_type, 0) %}
-          <tr>
-            <td>{{ labels.get(r.object_type, {}).get('label', r.object_type) }}</td>
-            <td class="{{ 'cap-used-hi' if r.effective_cap and used >= (warn_pct.get(product, 80.0) / 100.0) * r.effective_cap else '' }}">{{ used }}</td>
+          {% set c = g.cells[r.id] %}
+          {% set eff0 = c.effective[0][1] if c.effective else none %}
+          <tr data-cap-row="{{ r.object_type }}">
+            <td>{{ labels.get(r.object_type, {}).get('label', r.object_type) }}
+              <div class="cap-src">{{ _('per ADOM') if c.scope == 'adom' else _('per appliance') }}</div></td>
+            <td class="{{ 'cap-used-hi' if c.used is not none and eff0 and c.used >= (warn_pct.get(product, 80.0) / 100.0) * eff0 else '' }}">
+              {% if c.used is none %}—{% elif c.used_by|length > 1 %}{{ per_device(c.used_by, false) }}{% else %}{{ c.used }}{% endif %}
+            </td>
             <td>
-              <input type="hidden" name="row_id" value="{{ r.id }}">
-              <input name="hard_{{ r.id }}" value="{{ r.hard_max if r.hard_max is not none }}"
-                     class="form-control form-control-sm" inputmode="numeric" placeholder="—">
+              <span class="cap-fac" data-cap-factory>{{ per_device(c.factory, c.factory_same) }}</span>
+              {% if c.info.build %}<div class="cap-src">{{ c.info.build }}{% if not c.info.exact %} ({{ _('nearest build') }}){% endif %}{% if c.info.source %} · {{ 'Max Value API' if c.info.source == 'max-value-api' else _('admin guide') }}{% endif %}{% if c.info.note %} · {{ c.info.note }}{% endif %}</div>
+              {% elif c.info.note %}<div class="cap-src">{{ c.info.note }}</div>{% endif %}
+              {% if c.info.rule %}<div class="cap-src" title="{{ c.info.rule }}">VM: {{ c.info.rule }}</div>{% endif %}
+              {% if c.info.doubtful %}<div class="cap-src text-warning">{{ _('Fortinet\'s two sources disagree on this cell') }}</div>{% endif %}
+              {% for name, used, fac in c.contradicted %}
+              <div class="cap-src text-danger">{{ name }} {{ _('holds') }} {{ used }} &gt; {{ fac }}: {{ _('not enforced — set your own limit') }}</div>
+              {% endfor %}
+              <details class="cap-override"{% if r.hard_max is not none %} open{% endif %}>
+                <summary>{{ _('Override') }}</summary>
+                <input type="hidden" name="row_id" value="{{ r.id }}">
+                <input name="hard_{{ r.id }}" value="{{ r.hard_max if r.hard_max is not none }}"
+                       class="form-control form-control-sm mt-1" inputmode="numeric" placeholder="—"
+                       title="{{ _('Only when Fortinet\'s number is wrong for this box') }}">
+              </details>
             </td>
             <td>
               <select name="mode_{{ r.id }}" class="form-select form-select-sm">
-                <option value="none" {{ 'selected' if r.operational_cap is none and r.cap_percent is none }}>{{ _('no cap') }}</option>
+                <option value="none" {{ 'selected' if r.operational_cap is none and r.cap_percent is none }}>{{ _('Fortinet limit') }}</option>
                 <option value="number" {{ 'selected' if r.operational_cap is not none }}>{{ _('number') }}</option>
-                <option value="percent" {{ 'selected' if r.cap_percent is not none }}>% of max</option>
+                <option value="percent" {{ 'selected' if r.cap_percent is not none }}>{{ _('percent of Fortinet limit') }}</option>
               </select>
             </td>
             <td>
@@ -109,8 +127,8 @@
                      value="{{ r.operational_cap if r.operational_cap is not none else (r.cap_percent|round(1)|string if r.cap_percent is not none else '') }}"
                      class="form-control form-control-sm" inputmode="decimal" placeholder="—">
             </td>
-            <td class="cap-eff">{{ r.effective_cap if r.effective_cap is not none else '—' }}</td>
-            <td class="text-muted small">{{ r.updated_by or '' }} {{ r.updated_at.strftime('%Y-%m-%d') if r.updated_at }}</td>
+            <td class="cap-eff" data-cap-effective>{{ per_device(c.effective, c.effective_same) }}</td>
+            <td class="text-muted small">{{ r.updated_by or '' }} {{ r.updated_at.strftime('%Y-%m-%d') if r.updated_at and r.updated_by }}</td>
           </tr>
           {% endfor %}
         </tbody>

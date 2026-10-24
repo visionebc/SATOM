@@ -550,8 +550,34 @@ that will not come online.</p>
   install inherits the same inventory.</li>
 </ul>
 <p><strong>Capacity limits</strong> (Administrator → Capacity) define per-model object
-ceilings; clone and exception workflows check headroom before creating
-objects.</p>
+ceilings; clone, deploy, Plugin Studio and exception workflows check headroom
+before creating objects.</p>
+<ul>
+<li>Every registered FortiWeb appears on its own, grouped by <strong>platform</strong> and
+  firmware major (<code>FortiWeb-VM · 8.0</code>, <code>FortiWeb-1000F · 7.6</code>). <em>Add model</em> is
+  only for planning a model you do not have yet.</li>
+<li><strong>Fortinet limit</strong> is the factory maximum Fortinet publishes for that build
+  and model. It arrives with the knowledge / API packs (Max Value Table API +
+  Appendix B of the admin guide), with the build it is for and its source; a
+  build with no data of its own uses the nearest build of the same major
+  (<em>nearest build</em>).</li>
+<li><strong>FortiWeb-VM</strong> limits depend on the VM's memory (Fortinet's rule: server
+  policies = 20 for the first GB of RAM + 15 per extra GB, at most 256; 1024
+  from 64 GB). SATOM evaluates the rule on the last hardware scan, which the
+  hourly device sync refreshes when it is missing or older than a week. A VM
+  never scanned shows <em>run a hardware scan</em> and nothing is blocked.</li>
+<li><strong>Your limit</strong>: <em>Fortinet limit</em> (no buffer), a <strong>number</strong>, or a
+  <strong>percent of Fortinet limit</strong>. <strong>Effective</strong> is the lowest of them and is
+  what automations respect.</li>
+<li><strong>Override</strong> (under the Fortinet limit) replaces Fortinet's number for a box
+  where it is wrong. Leave it empty otherwise.</li>
+<li>Each type is counted where Fortinet counts it: <strong>per appliance</strong> (server
+  policies, server pools, virtual IPs — every ADOM of the box together) or
+  <strong>per ADOM</strong> (web protection profiles, certificates, SNI, virtual servers).</li>
+<li>A device that already holds MORE than the Fortinet limit is flagged
+  <em>not enforced — set your own limit</em>: the box accepts more than the
+  published number, so SATOM does not block on it.</li>
+</ul>
 <p><strong>Every action on a device is a job.</strong> Test connection, console commands,
 restores, failovers, saves in the Workspace and the object editor, certificate
 pushes, searches on the box: each one runs in the background and shows what
@@ -2799,7 +2825,7 @@ unexplained:</p>
 <td>a probe critical</td>
 </tr>
 <tr>
-<td><strong>Capacity</strong> — object-count headroom against the admin cap</td>
+<td><strong>Capacity</strong> — object-count headroom against the effective limit (Fortinet's, or yours)</td>
 <td>over <code>capacity.warn_pct</code></td>
 <td>over <code>capacity.crit_pct</code></td>
 </tr>

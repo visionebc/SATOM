@@ -133,11 +133,12 @@ KIND_FIELD_MAP = "field-map"
 KIND_BASELINE = "baseline"
 KIND_SIGMETA = "signature-meta"
 KIND_GUI = "gui-template"
+KIND_CAPACITY = "capacity-limits"
 #: (section, kind) pairs this node imports. Anything else is skipped with a
 #: visible warning: a newer publisher may ship a kind an older node lacks.
 KINDS = {
     SECTION_LIBRARY: (KIND_EVIDENCE,),
-    SECTION_DOCS: (KIND_RELEASE_NOTES, KIND_FIELD_SCHEMAS, KIND_FIELD_OVERLAY),
+    SECTION_DOCS: (KIND_RELEASE_NOTES, KIND_FIELD_SCHEMAS, KIND_FIELD_OVERLAY, KIND_CAPACITY),
     SECTION_CLI: (KIND_CLI,),
     SECTION_FACTORY: (KIND_FACTORY,),
     SECTION_FIELD_MAP: (KIND_FIELD_MAP,),
@@ -1457,6 +1458,7 @@ def _handlers() -> dict:
         KIND_BASELINE: (k.validate_baseline, k.state_baseline, k.import_baseline),
         KIND_SIGMETA: (k.validate_sigmeta, k.state_sigmeta, k.import_sigmeta),
         KIND_GUI: (k.validate_gui, k.state_gui, k.import_gui),
+        KIND_CAPACITY: (k.validate_capacity, k.state_capacity, k.import_capacity),
     }
 
 

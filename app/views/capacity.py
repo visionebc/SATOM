@@ -1,11 +1,11 @@
 """Capacity Limits admin — the editable catalog behind the capacity guardrails.
 
-One row per (product, firmware major, model, object type): ``hard_max`` is
-Fortinet's ceiling (datasheet / Appendix B — admin-entered, the unlicensed VMs
-can't self-report a SKU) and the operational cap is the admin's OWN safety
-buffer, entered either as an absolute NUMBER or as a PERCENT of the hard max.
-Automations honour the effective cap (min of both) via
-``services.capacity.check_headroom``.
+One row per (product, firmware major, platform, object type). The page shows
+Fortinet's FACTORY limit per device (from the knowledge / API packs; a
+FortiWeb-VM's depends on its memory) and the admin's OWN limit, entered as an
+absolute NUMBER or as a PERCENT of the factory limit; ``hard_max`` is only an
+override of the factory number. Automations honour the effective cap (the
+lowest) via ``services.capacity.check_headroom``.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ bp = Blueprint('capacity', __name__, url_prefix='/capacity')
 
 
 def _grouped_rows():
-    """OrderedDict[(product, fw_major, model)] -> [CapacityLimit …] in the
+    """OrderedDict[(product, fw_major, platform)] -> [CapacityLimit …] in the
     catalog's object-type order, scoped to the active ADOM's product (a
     FortiADC session sees only 'fortiadc' groups, FortiWeb the rest, Global
     everything)."""
@@ -33,50 +33,93 @@ def _grouped_rows():
         CapacityLimit.model, CapacityLimit.firmware_major).all()
     groups: OrderedDict = OrderedDict()
     for r in rows:
+        if r.object_type not in capsvc.OBJECT_TYPES:
+            continue        # a type retired from the catalog: not editable here
         groups.setdefault((r.product, r.firmware_major, r.model), []).append(r)
     for key in groups:
         groups[key].sort(key=lambda r: order.get(r.object_type, 99))
     return groups
 
 
-def _fleet_usage():
-    """(model, fw_major) -> {object_type: max used across matching appliances},
-    over the ADOM-visible fleet only."""
+def _fleet_by_group():
+    """(product, fw_major, platform) -> [appliance …] over the ADOM-visible
+    fleet, and the catalog rows each group needs (insert-only, so the page
+    shows every fleet platform with its factory limits without a click)."""
     from ..models import visible_appliances
-    usage: dict = {}
-    for a in visible_appliances().all():
+    out: dict = {}
+    added = 0
+    for a in visible_appliances().order_by(Appliance.name).all():
+        product = a.kind or capsvc.PRODUCT_DEFAULT
+        if product != capsvc.PRODUCT_DEFAULT:
+            continue        # the object-type catalog counts FortiWeb objects only
         fw = capsvc.firmware_major(a.firmware)
-        if not a.model or not fw:
+        model = capsvc.catalog_model(a.model, product)
+        if not model or not fw:
             continue
-        bucket = usage.setdefault((a.model, fw), {})
-        for h in capsvc.fleet_headroom(a):
-            bucket[h.object_type] = max(bucket.get(h.object_type, 0), h.used)
-    return usage
+        out.setdefault((product, fw, model), []).append(a)
+    for (product, fw, model) in out:
+        added += capsvc.ensure_rows_for(model, fw, product=product, commit=False)
+    if added:
+        db.session.commit()
+    return out
+
+
+def _cell(rows_h: list, row) -> dict:
+    """What one object-type row shows, from the headroom of every device of
+    the group (they share the platform and the firmware major; a VM's factory
+    number still differs by memory, and the build may differ by patch)."""
+    if not rows_h:
+        return {"used": None, "factory": [], "effective": [], "info": {},
+                "contradicted": []}
+    fac = [(a.name, h.factory) for a, h in rows_h]
+    eff = [(a.name, h.effective_cap) for a, h in rows_h]
+    info = next((h.factory_info for _a, h in rows_h if h.factory is not None),
+                rows_h[0][1].factory_info)
+    return {"used": max(h.used for _a, h in rows_h),
+            "used_by": [(a.name, h.used) for a, h in rows_h],
+            "factory": fac, "factory_same": len({v for _n, v in fac}) == 1,
+            "effective": eff, "effective_same": len({v for _n, v in eff}) == 1,
+            "info": info,
+            "contradicted": [(a.name, h.used, h.factory) for a, h in rows_h
+                             if h.contradicted],
+            "scope": rows_h[0][1].scope}
 
 
 @bp.route('/')
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def index():
-    from ..models import visible_appliances
+    fleet = _fleet_by_group()
     groups = _grouped_rows()
-    usage = _fleet_usage()
-    fleet = []
-    known = {(p, m, f) for (p, f, m) in groups}
-    for a in visible_appliances().order_by(Appliance.name).all():
-        fw = capsvc.firmware_major(a.firmware)
-        product = a.kind or capsvc.PRODUCT_DEFAULT
-        if a.model and fw and (product, a.model, fw) not in known:
-            if (product, a.model, fw) not in [(x['product'], x['model'], x['fw']) for x in fleet]:
-                fleet.append({'product': product, 'model': a.model, 'fw': fw})
+    view: dict = {}
+    for key, rows in groups.items():
+        devices = fleet.get(key, [])
+        per = {}
+        for r in rows:
+            if devices:
+                per[r.id] = _cell([(a, capsvc.headroom(a, r.object_type)) for a in devices], r)
+                continue
+            # A platform planned on this page with no device yet: the factory
+            # number of the newest build of that major (a VM has no memory to
+            # evaluate its rule against, so it shows the rule).
+            from types import SimpleNamespace
+            ghost = SimpleNamespace(id=None, name="", model=key[2], kind=key[0],
+                                    firmware="%s.9999" % key[1])
+            f = capsvc.factory_for(ghost, r.object_type)
+            eff, _b, _c = capsvc.effective_limit(f.value, r)
+            per[r.id] = {"used": None, "factory": [("", f.value)], "factory_same": True,
+                         "effective": [("", eff)], "effective_same": True,
+                         "info": f.to_dict(), "contradicted": [],
+                         "scope": capsvc.OBJECT_TYPES[r.object_type]["scope"]}
+        view[key] = {"devices": devices, "cells": per}
     labels = dict(capsvc.object_types_ordered())
     from ..services import product_scope
     from ..services import device_health as devhealth
     # The "in use" highlight follows the configured capacity warning level
     # of each product (Thresholds page), not a hard-coded 80 %.
     warn_pct = {p: devhealth.thresholds(p)[0] for (p, _f, _m) in groups}
-    return render_template('capacity/index.html', groups=groups, usage=usage,
-                           missing_models=fleet, labels=labels,
+    return render_template('capacity/index.html', groups=groups, view=view,
+                           labels=labels, known_models=capsvc.KNOWN_MODELS,
                            product_options=product_scope.creatable_kinds(),
                            warn_pct=warn_pct)
 
@@ -99,6 +142,7 @@ def add_model():
     if product not in offered:
         flash(f'This ADOM cannot add capacity rows for {product}.', 'danger')
         return redirect(url_for('capacity.index'))
+    model = capsvc.catalog_model(model, product) or model
     n = capsvc.ensure_rows_for(model, fw, product=product)
     log_action('capacity.model_add', f'{product}/{model}/{fw}', detail=f'{n} object-type rows')
     flash(f'Added {model} ({fw}, {product}) — {n} object types ready to configure.', 'success')
@@ -125,7 +169,7 @@ def save():
             if hard is not None and hard < 0:
                 raise ValueError
         except ValueError:
-            errors.append(f'{row.model}/{row.object_type}: hard max must be a non-negative integer')
+            errors.append(f'{row.model}/{row.object_type}: the override must be a non-negative integer')
             continue
 
         opcap, pct = None, None
@@ -138,7 +182,7 @@ def save():
                 errors.append(f'{row.model}/{row.object_type}: cap must be a non-negative integer')
                 continue
             if hard is not None and opcap > hard:
-                errors.append(f'{row.model}/{row.object_type}: cap {opcap} exceeds hard max {hard}')
+                errors.append(f'{row.model}/{row.object_type}: your limit {opcap} exceeds the override {hard}')
                 continue
         elif mode == 'percent' and raw_val:
             try:
@@ -174,6 +218,7 @@ def delete_model():
     model = (request.form.get('model') or '').strip()
     fw = (request.form.get('firmware_major') or '').strip()
     product = (request.form.get('product') or '').strip().lower() or capsvc.PRODUCT_DEFAULT
+    model = capsvc.catalog_model(model, product) or model
     # One product's catalog only, and only one this ADOM can see: the same
     # model name may exist for two products.
     q = scope_query(CapacityLimit.query, CapacityLimit.product).filter(

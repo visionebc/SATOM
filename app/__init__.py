@@ -2550,6 +2550,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # Operations > Automation > Mass Deploy history + the rollout
             # scope of a template family (services.template_bindings).
             from . import models_mass_deploy  # noqa: F401
+            # Factory capacity limits from the packs (services.capacity).
+            # Without this import create_all() never makes capacity_factory and
+            # the first capacity-limits import fails on a missing table.
+            from . import models_capacity  # noqa: F401
             # Fleet -> Architecture drawings. Without this import create_all()
             # never makes arch_diagrams and the page fails on its first query.
             from . import models_netarch  # noqa: F401

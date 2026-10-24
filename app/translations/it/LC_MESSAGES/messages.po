@@ -27264,3 +27264,277 @@ msgstr "Altre azioni"
 #: layout sweep 2026-10-24
 msgid "Threshold scope"
 msgstr "Ambito delle soglie"
+
+#: capacity factory limits + strings left untranslated by earlier rounds (2026-10-24)
+msgid "percent of Fortinet limit"
+msgstr "percentuale del limite Fortinet"
+
+msgid "= the factory maximum Fortinet publishes for the model and build (it arrives with the knowledge / API packs; a FortiWeb-VM's depends on its memory)."
+msgstr "= il massimo di fabbrica che Fortinet pubblica per il modello e la build (arriva con i pacchetti di conoscenza / API; quello di una FortiWeb-VM dipende dalla sua memoria)."
+
+msgid "= your safety buffer, as a number or a percent of the Fortinet limit. Automations check the effective limit (the lowest) before creating objects; the Monitoring page alerts when usage approaches it."
+msgstr "= il tuo margine di sicurezza, come numero o come percentuale del limite Fortinet. Le automazioni controllano il limite effettivo (il più basso) prima di creare oggetti; la pagina Monitoring avvisa quando l'uso si avvicina."
+
+msgid "A new version or a comment puts a notice in your bell. Follow the articles of:"
+msgstr "Una nuova versione o un commento mette un avviso nella tua campanella. Segui gli articoli di:"
+
+msgid "A site is down or slow and you need to know whether the box is the cause."
+msgstr "Un sito è giù o lento e devi sapere se la causa è l'apparato."
+
+msgid "A template never sends its own secret values. Type a value to set it on every selected device; leave it empty and each device keeps the one it has. What you type is used for this deploy only: it is not stored, logged or shown again."
+msgstr "Un modello non invia mai i propri valori segreti. Digita un valore per impostarlo su ogni dispositivo selezionato; lascialo vuoto e ogni dispositivo mantiene il suo. Ciò che digiti vale solo per questo deploy: non viene salvato, registrato né mostrato di nuovo."
+
+msgid "All I follow and e-mail"
+msgstr "Tutto ciò che seguo, ed e-mail"
+
+msgid "All three render from data already recorded: opening any of them never contacts an appliance. Probing runs in the background (the deep_monitor scheduled action, or \"Probe now\")."
+msgstr "Tutte e tre si disegnano da dati già registrati: aprirne una non contatta mai un apparato. Il sondaggio gira in background (l'azione pianificata deep_monitor o \"Probe now\")."
+
+msgid "Already in Confluence"
+msgstr "Già in Confluence"
+
+msgid "An approved Web Protection Profile template is deployed to the devices it governs, and is read-only on them. Which devices does this template govern?"
+msgstr "Un modello di Web Protection Profile approvato viene distribuito sui dispositivi che governa ed è in sola lettura su di essi. Quali dispositivi governa questo modello?"
+
+msgid "Author, approve and version the templates offered here"
+msgstr "Crea, approva e versiona i modelli offerti qui"
+
+msgid "Binding"
+msgstr "Vincolo"
+
+msgid "Bound"
+msgstr "Vincolato"
+
+msgid "Capture an object as a template (Save as template), or author one in the Template Library, and have it approved."
+msgstr "Cattura un oggetto come modello (Save as template), o creane uno nella Template Library, e fallo approvare."
+
+msgid "Checks that reach into the appliance: synthetic HTTPS against a server policy, interface IP / link drift, CPU, memory, and the proxyd workers and restarts. Several need SSH or a synthetic request."
+msgstr "Controlli che entrano nell'apparato: HTTPS sintetico verso una server policy, deriva di IP / link delle interfacce, CPU, memoria, e i worker e i riavvii di proxyd. Diversi richiedono SSH o una richiesta sintetica."
+
+msgid "Comparing appliances side by side, or a trend over the month."
+msgstr "Confrontare apparati fianco a fianco, o un andamento sul mese."
+
+msgid "Connection"
+msgstr "Connessione"
+
+msgid "Deep monitors, Service Monitor and Analytics"
+msgstr "Deep monitor, Service Monitor e Analytics"
+
+msgid "Delete this connection? Its pages stay in Confluence; SATOM stops updating them."
+msgstr "Eliminare questa connessione? Le sue pagine restano in Confluence; SATOM smette di aggiornarle."
+
+msgid "Deployed to all of them now, and again on every approved version."
+msgstr "Distribuito ora su tutti, e di nuovo a ogni versione approvata."
+
+msgid "Devices by ADOM"
+msgstr "Dispositivi per ADOM"
+
+msgid "Each device it is deployed to is bound to it: the profile becomes read-only there, and later approved versions are deployed to it."
+msgstr "Ogni dispositivo su cui viene distribuito vi resta vincolato: il profilo diventa lì in sola lettura, e le versioni approvate successive vengono distribuite su di esso."
+
+msgid "Filter the spaces"
+msgstr "Filtra gli spazi"
+
+msgid "Fortinet limit"
+msgstr "Limite Fortinet"
+
+msgid "Fortinet's two sources disagree on this cell"
+msgstr "Le due fonti di Fortinet non concordano su questa cella"
+
+msgid "How do they compare, and what changed over time?"
+msgstr "Come si confrontano, e cosa è cambiato nel tempo?"
+
+msgid "How it measures"
+msgstr "Come misura"
+
+msgid "How much is it carrying right now?"
+msgstr "Quanto sta portando in questo momento?"
+
+msgid "How these monitoring pages differ"
+msgstr "In cosa differiscono queste pagine di monitoraggio"
+
+msgid "In use"
+msgstr "In uso"
+
+msgid "Is the service actually working? (yes / no)"
+msgstr "Il servizio funziona davvero? (sì / no)"
+
+msgid "Mass Deploy works inside a FortiWeb ADOM: the bulk deploy writes FortiWeb configuration objects only. Choose the FortiWeb ADOM to use it."
+msgstr "Mass Deploy funziona dentro un'ADOM FortiWeb: il deploy massivo scrive solo oggetti di configurazione FortiWeb. Scegli l'ADOM FortiWeb per usarlo."
+
+msgid "Measures nothing new: boards that put many already-recorded series on one chart, over windows up to ninety days."
+msgstr "Non misura nulla di nuovo: bacheche che mettono molte serie già registrate su un grafico, su finestre fino a novanta giorni."
+
+msgid "New page goes under"
+msgstr "La nuova pagina va sotto"
+
+msgid "No Confluence connection yet."
+msgstr "Nessuna connessione Confluence ancora."
+
+msgid "No approved template in this ADOM"
+msgstr "Nessun modello approvato in questa ADOM"
+
+msgid "No capacity catalogs yet — every registered FortiWeb appears here on its own; add a model above to plan one you do not have."
+msgstr "Ancora nessun catalogo di capacità — ogni FortiWeb registrato appare qui da solo; aggiungi un modello sopra per pianificarne uno che non hai."
+
+msgid "No device in this ADOM."
+msgstr "Nessun dispositivo in questa ADOM."
+
+msgid "No page of this space matches."
+msgstr "Nessuna pagina di questo spazio corrisponde."
+
+msgid "No pages under this one."
+msgstr "Nessuna pagina sotto questa."
+
+msgid "Not drawn while unticked — they still run."
+msgstr "Non disegnate finché deselezionate — continuano a girare."
+
+msgid "Not selectable:"
+msgstr "Non selezionabile:"
+
+msgid "Nothing deployed from this page in this ADOM yet."
+msgstr "Nulla è stato ancora distribuito da questa pagina in questa ADOM."
+
+msgid "Nothing is deployed now. Operations › Automation › Mass Deploy binds each device it deploys to, and later approved versions go to those devices only."
+msgstr "Al momento non viene distribuito nulla. Operations › Automation › Mass Deploy vincola ogni dispositivo su cui distribuisce, e le versioni approvate successive vanno solo a quei dispositivi."
+
+msgid "One way: SATOM writes the page and replaces it on every publication; nothing comes back from Confluence. Whoever publishes an article picks the space and the parent page with the Confluence button on the article."
+msgstr "In un solo senso: SATOM scrive la pagina e la sostituisce a ogni pubblicazione; nulla torna da Confluence. Chi pubblica un articolo sceglie lo spazio e la pagina padre con il pulsante Confluence dell'articolo."
+
+msgid "Only when Fortinet's number is wrong for this box"
+msgstr "Solo quando il numero di Fortinet è sbagliato per questo apparato"
+
+msgid "Open device"
+msgstr "Apri dispositivo"
+
+msgid "Outbound links to systems SATOM does not own: NetBox for maintenance windows, an issue tracker (Jira, OpenProject or Vikunja) for change tickets, Confluence for Wiki articles, and your own Python hooks for anything else. Every integration here is optional — with all of them off, change requests and upgrades work exactly as before. Nothing on this page is contacted while the page renders."
+msgstr "Collegamenti in uscita verso sistemi che SATOM non possiede: NetBox per le finestre di manutenzione, un issue tracker (Jira, OpenProject o Vikunja) per i ticket di change, Confluence per gli articoli del Wiki e i tuoi hook Python per tutto il resto. Ogni integrazione qui è facoltativa — con tutte spente, le richieste di change e gli upgrade funzionano esattamente come prima. Nulla in questa pagina viene contattato mentre la pagina si disegna."
+
+msgid "Override"
+msgstr "Sostituisci"
+
+msgid "Override reason (approvers only, audited)"
+msgstr "Motivo della forzatura (solo approvatori, verificato)"
+
+msgid "Parent page"
+msgstr "Pagina padre"
+
+msgid "Pick a space…"
+msgstr "Scegli uno spazio…"
+
+msgid "Plan a model without a device (e.g. FortiWeb-1000F)"
+msgstr "Pianifica un modello senza dispositivo (es. FortiWeb-1000F)"
+
+msgid "Publish this article to Confluence"
+msgstr "Pubblica questo articolo in Confluence"
+
+msgid "Publish to Confluence"
+msgstr "Pubblica in Confluence"
+
+msgid "Publish version {n}"
+msgstr "Pubblica la versione {n}"
+
+msgid "Push an approved template to one or many devices of this ADOM in one job: an SMTP server change, an NTP or DNS change, a Web Protection Profile meant for some devices only. Preview first; the deploy runs on one canary device, then on the rest only if the canary succeeds."
+msgstr "Invia un modello approvato a uno o più dispositivi di questa ADOM in un solo job: un cambio di server SMTP, di NTP o di DNS, un Web Protection Profile pensato solo per alcuni dispositivi. Prima l'anteprima; il deploy gira su un dispositivo canary e sugli altri solo se il canary riesce."
+
+msgid "REST calls to the appliance's monitor API only, no SSH: sessions, sessions + latency + backend health per server policy, throughput, HTTP transactions; licence and FortiToken usage on FortiAuthenticator. Keeps answering when the configuration API is licence-locked."
+msgstr "Solo chiamate REST all'API di monitoraggio dell'apparato, niente SSH: sessioni, sessioni + latenza + salute dei backend per server policy, throughput, transazioni HTTP; uso di licenze e FortiToken su FortiAuthenticator. Continua a rispondere quando l'API di configurazione è bloccata dalla licenza."
+
+msgid "Saved to your profile"
+msgstr "Salvato nel tuo profilo"
+
+msgid "Search the pages of this space"
+msgstr "Cerca nelle pagine di questo spazio"
+
+msgid "Secret fields, typed at deploy time:"
+msgstr "Campi segreti, digitati al deploy:"
+
+msgid "Secrets set:"
+msgstr "Segreti impostati:"
+
+msgid "Show the pages under it"
+msgstr "Mostra le pagine sottostanti"
+
+msgid "Sizing, load, a policy that suddenly carries more (or less) traffic."
+msgstr "Dimensionamento, carico, una policy che d'improvviso porta più (o meno) traffico."
+
+msgid "That template is not the newest approved version in this ADOM. Pick one from the list."
+msgstr "Quel modello non è la versione approvata più recente in questa ADOM. Scegline uno dall'elenco."
+
+msgid "The default view is being drawn."
+msgstr "Si sta disegnando la vista predefinita."
+
+msgid "The question it answers"
+msgstr "La domanda a cui risponde"
+
+msgid "The template has nothing to push."
+msgstr "Il modello non ha nulla da inviare."
+
+msgid "This article already has a page in this space: publishing updates that page where it is."
+msgstr "Questo articolo ha già una pagina in questo spazio: pubblicare aggiorna quella pagina dove si trova."
+
+msgid "Today it governs every FortiWeb of the ADOM. Checked: the selected devices are bound to it, and from now on it governs, locks and is deployed to bound devices only. Unchecked: it is pushed to the selected devices and keeps governing all of them."
+msgstr "Oggi governa ogni FortiWeb dell'ADOM. Selezionato: i dispositivi scelti vi vengono vincolati, e da ora governa, blocca e si distribuisce solo sui dispositivi vincolati. Non selezionato: viene inviato ai dispositivi scelti e continua a governarli tutti."
+
+msgid "Top level of the space"
+msgstr "Livello superiore dello spazio"
+
+msgid "Update to version {n}"
+msgstr "Aggiorna alla versione {n}"
+
+msgid "Use it when"
+msgstr "Usala quando"
+
+msgid "Validated builds"
+msgstr "Build convalidate"
+
+msgid "Where Wiki articles can be published"
+msgstr "Dove si possono pubblicare gli articoli del Wiki"
+
+msgid "Which page?"
+msgstr "Quale pagina?"
+
+msgid "You are here"
+msgstr "Sei qui"
+
+msgid "Your limit"
+msgstr "Il tuo limite"
+
+msgid "Your saved calendar filter could not be read and was ignored. The default view is being drawn."
+msgstr "Il tuo filtro del calendario salvato non è leggibile ed è stato ignorato. Si sta disegnando la vista predefinita."
+
+msgid "admin guide"
+msgstr "guida di amministrazione"
+
+msgid "device(s)"
+msgstr "dispositivo/i"
+
+msgid "holds"
+msgstr "contiene"
+
+msgid "holds version {n}, current is {m}"
+msgstr "ha la versione {n}, l'attuale è {m}"
+
+msgid "nearest build"
+msgstr "build più vicina"
+
+msgid "no device — planning only"
+msgstr "nessun dispositivo — solo pianificazione"
+
+msgid "not enforced — set your own limit"
+msgstr "non applicato — imposta il tuo limite"
+
+msgid "page {id}"
+msgstr "pagina {id}"
+
+msgid "per ADOM"
+msgstr "per ADOM"
+
+msgid "per appliance"
+msgstr "per apparato"
+
+msgid "stopped"
+msgstr "fermato"
+
+msgid "{kind} on line {line}"
+msgstr "{kind} alla riga {line}"

@@ -442,8 +442,33 @@ Each appliance's detail page is the hub for device-level actions:
   install inherits the same inventory.
 
 **Capacity limits** (Administrator → Capacity) define per-model object
-ceilings; clone and exception workflows check headroom before creating
-objects.
+ceilings; clone, deploy, Plugin Studio and exception workflows check headroom
+before creating objects.
+
+- Every registered FortiWeb appears on its own, grouped by **platform** and
+  firmware major (`FortiWeb-VM · 8.0`, `FortiWeb-1000F · 7.6`). *Add model* is
+  only for planning a model you do not have yet.
+- **Fortinet limit** is the factory maximum Fortinet publishes for that build
+  and model. It arrives with the knowledge / API packs (Max Value Table API +
+  Appendix B of the admin guide), with the build it is for and its source; a
+  build with no data of its own uses the nearest build of the same major
+  (*nearest build*).
+- **FortiWeb-VM** limits depend on the VM's memory (Fortinet's rule: server
+  policies = 20 for the first GB of RAM + 15 per extra GB, at most 256; 1024
+  from 64 GB). SATOM evaluates the rule on the last hardware scan, which the
+  hourly device sync refreshes when it is missing or older than a week. A VM
+  never scanned shows *run a hardware scan* and nothing is blocked.
+- **Your limit**: *Fortinet limit* (no buffer), a **number**, or a
+  **percent of Fortinet limit**. **Effective** is the lowest of them and is
+  what automations respect.
+- **Override** (under the Fortinet limit) replaces Fortinet's number for a box
+  where it is wrong. Leave it empty otherwise.
+- Each type is counted where Fortinet counts it: **per appliance** (server
+  policies, server pools, virtual IPs — every ADOM of the box together) or
+  **per ADOM** (web protection profiles, certificates, SNI, virtual servers).
+- A device that already holds MORE than the Fortinet limit is flagged
+  *not enforced — set your own limit*: the box accepts more than the
+  published number, so SATOM does not block on it.
 
 **Every action on a device is a job.** Test connection, console commands,
 restores, failovers, saves in the Workspace and the object editor, certificate
@@ -2562,7 +2587,7 @@ unexplained:
 | **Harvest** — the last scheduled config syncs | one failed run | three failed runs in a row |
 | **Cache** — the newest stored snapshot | nothing cached, or older than `monitoring.stale_hours` (6 h) | older than 4× that |
 | **Probes** — the enabled monitors for that device | a probe alerting, or *all* probes disabled | a probe critical |
-| **Capacity** — object-count headroom against the admin cap | over `capacity.warn_pct` | over `capacity.crit_pct` |
+| **Capacity** — object-count headroom against the effective limit (Fortinet's, or yours) | over `capacity.warn_pct` | over `capacity.crit_pct` |
 
 Two rules matter when reading it:
 

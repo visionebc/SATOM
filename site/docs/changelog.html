@@ -125,7 +125,52 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   and <code>findings</code>, so no token issued earlier loses access. Requested by the
   operator (translated from Spanish): "SATOM has, for example, metrics that
   could be delivered via the API".</li>
-<li><strong>Operations › Automation › Mass Deploy.</strong> The newest approved version of
+<li><strong>Capacity Limits show Fortinet's factory limits.</strong> Every limit used to be
+  an empty field the admin had to fill in from the datasheet, so on a fresh
+  install no automation ever had a ceiling to respect. The knowledge / API
+  packs now carry Fortinet's published maximums (<code>capacity-limits</code> items of
+  the docs section, from the Max Value Table API and Appendix B of the
+  FortiWeb admin guide) per exact build, per CLI table and per hardware
+  model, and SATOM stores them in <code>capacity_factory</code>. The page shows, per
+  object type: <strong>In use</strong> · <strong>Fortinet limit</strong> (with the build and the source
+  it came from) · <strong>Your limit</strong> — a number or a percent of the Fortinet
+  limit · <strong>Effective</strong> (the lowest). The old <em>Hard max</em> field is now an
+  <em>Override</em>, only for a box where Fortinet's number is wrong.</li>
+<li><strong>FortiWeb-VM</strong> limits are rules on the VM's memory, Fortinet's own:
+    server policies = 20 for the first GB of RAM + 15 per extra GB, at most
+    256 (1024 from 64 GB); ADOMs and server pools by memory tier. SATOM
+    evaluates them on the <code>MemTotal</code> of the last hardware scan, rounded down
+    to whole GB as Fortinet specifies. The hourly device sync now rescans a
+    FortiWeb's hardware when the last scan is missing or older than a week
+    (read-only SSH); a VM never scanned shows "run a hardware scan" and
+    blocks nothing.</li>
+<li>A build with no document of its own uses the nearest build of the same
+    major (shown as <em>nearest build</em>), never another major.</li>
+<li>A factory limit the device already EXCEEDS is shown and NOT enforced:
+    the box proves it accepts more, and blocking on a number it contradicts
+    would stop work it would take. Your own limit still applies.</li>
+<li>Cells where Fortinet's two sources disagree are flagged. On 8.0.6 the
+    admin guide still carries git merge-conflict markers in five cells
+    (<code>&gt;&gt;&gt;&gt;&gt;&gt;&gt; ddd581b1…</code>) and disagrees with the API in eight; the API wins.</li>
+<li>Four object types join the catalog: offline Web Protection Profiles
+    (separate from inline — Fortinet publishes 256 of each per ADOM), server
+    pools, virtual servers and virtual IPs. Each type is counted in the scope
+    Fortinet counts it: per appliance (server policies, pools, VIPs — the
+    whole chassis) or per ADOM (profiles, certificates, SNI, virtual servers).</li>
+<li>
+<p>The catalog is keyed by platform (<code>FortiWeb-VM</code>, <code>FortiWeb-1000F</code>), not
+    by the string <code>get system status</code> prints: "FortiWeb-KVM 7.6.8" carried
+    the firmware, so every patch release made a new "model" Fortinet
+    publishes nothing for. Migration <code>capfac01</code> re-keys existing rows (the
+    row you filled in wins over empty duplicates). Every registered FortiWeb
+    appears on the page on its own; <em>Add model</em> is for planning one you do
+    not have.
+  Requested by the operator: "they should be loaded with the harvester and in
+  the updates, so the page shows the factory values and the user can enter a
+  number or a percentage".</p>
+</li>
+<li>
+<p><strong>Operations › Automation › Mass Deploy.</strong> The newest approved version of
   every template of the ADOM, pushed to one or many of its devices in one
   canary-gated job: an SMTP server change, an NTP or DNS change, a Web
   Protection Profile for some devices only. It shows the targets with their
@@ -137,7 +182,8 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   to implement on one or several FortiWebs, for example a change in the SMTP,
   instead of going to each one; it must be per ADOM", and "WPP goes in too,
   because special ones can be created that are deployed only to some; they
-  should not be put on all".</li>
+  should not be put on all".</p>
+</li>
 <li><strong>Secrets are typed at deploy time.</strong> A template never sends its own secret
   values (passwords, PSKs, private keys). Each one is left out of the push, so
   the device keeps its own, unless a value is typed in Mass Deploy. A typed
@@ -412,9 +458,19 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>Lua Studio: Delete did nothing.</strong> Its form was nested inside the editor
+  form, so the browser dropped it; it is now its own form.</li>
+<li><strong>Capacity counted every object twice.</strong> The device cache keeps an object
+  in both its <code>config</code> and <code>deep</code> layers, and the count added both: {device}
+  showed 100 server policies against the 50 <code>show server-policy policy</code>
+  lists over SSH, so the guardrails and the health grade read twice the real
+  usage. Objects are now counted once per (type, key).</li>
 <li>
-<p><strong>Lua Studio: Delete did nothing.</strong> Its form was nested inside the editor
-  form, so the browser dropped it; it is now its own form.</p>
+<p><strong>UI strings rendered in English in every other language.</strong> 91 strings
+  (Mass Deploy, the Confluence connection, the monitoring help, the calendar
+  filter notice and this round's capacity labels) had no Spanish, German,
+  French or Italian translation; the catalogue-coverage guard was red on
+  <code>main</code>. All are translated.</p>
 </li>
 <li>
 <p><strong>A capability-restricted API token could read every recorded

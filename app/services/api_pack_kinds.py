@@ -776,3 +776,146 @@ def import_gui(run, item, p: dict, st: dict) -> dict:
     _write_json(p["path"], body)
     run.ledger.set(_gui_unit(p), run.provenance)
     return {"file": str(p["path"].name), "replaced": replaced}
+
+
+# ---------------------------------------------------------------------------
+# capacity-limits -> capacity_factory (models_capacity)
+# ---------------------------------------------------------------------------
+
+_CAP_SCOPES = ("GLOBAL", "VDOM", "INSTANCE")
+_CAP_KEY_RE = re.compile(r"^[A-Za-z0-9 _.:\-]{1,128}$")
+_CAP_PID_RE = re.compile(r"^(?:\*|[A-Z0-9]{1,32})$")
+#: A published ceiling above this is a parsing accident, not a limit.
+_CAP_MAX = 10_000_000
+_CAP_OPS = ("<", "<=", ">", ">=")
+
+
+def _cap_int(v) -> int:
+    if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= _CAP_MAX:
+        raise ValueError("%r is not a count" % (v,))
+    return v
+
+
+def _cap_rule(r) -> dict:
+    """A FortiWeb-VM rule, rebuilt from known keys only."""
+    if not isinstance(r, dict):
+        raise ValueError("vm rule is not an object")
+    kind = r.get("rule")
+    tiers = []
+    for t in r.get("tiers") or []:
+        if not isinstance(t, dict) or t.get("op") not in _CAP_OPS:
+            raise ValueError("bad vm tier")
+        tiers.append({"op": t["op"], "gb": _cap_int(t.get("gb")),
+                      "value": _cap_int(t.get("value"))})
+    if kind == "fixed":
+        return {"rule": "fixed", "value": _cap_int(r.get("value"))}
+    if kind == "tiers" and tiers:
+        return {"rule": "tiers", "tiers": tiers}
+    if kind == "linear":
+        return {"rule": "linear", "base": _cap_int(r.get("base")),
+                "per_gb": _cap_int(r.get("per_gb")), "from_gb": _cap_int(r.get("from_gb", 1)),
+                "cap": _cap_int(r.get("cap")), "tiers": tiers}
+    raise ValueError("unknown vm rule %r" % (kind,))
+
+
+def _cap_object(o) -> dict:
+    if not isinstance(o, dict) or o.get("scope") not in _CAP_SCOPES:
+        raise ValueError("bad scope")
+    values = {}
+    for pid, v in (o.get("values") or {}).items():
+        if not isinstance(pid, str) or not _CAP_PID_RE.match(pid):
+            raise ValueError("bad model %r" % (pid,))
+        values[pid] = _cap_int(v)
+    out = {"scope": o["scope"], "values": values,
+           "label": str(o.get("label") or "")[:128],
+           "source": str(o.get("source") or "")[:32]}
+    if o.get("vm") is not None:
+        out["vm"] = _cap_rule(o["vm"])
+    doubt = [d for d in (o.get("doubtful") or []) if isinstance(d, str) and _CAP_PID_RE.match(d)]
+    if doubt:
+        out["doubtful"] = sorted(set(doubt))
+    if not values and "vm" not in out:
+        raise ValueError("no value")
+    return out
+
+
+def validate_capacity(run, item) -> dict:
+    """These numbers become caps that BLOCK creates: every value is re-checked
+    here and a malformed table is dropped (counted), never half-read."""
+    data = _payload(run, item)
+    product = _product_of(item, data)
+    firmware = _version(data, "firmware")
+    if firmware.count(".") != 2:
+        raise ItemInvalid("firmware %r is not an exact build" % firmware)
+    objs = data.get("objects")
+    if not isinstance(objs, dict) or not objs:
+        raise ItemInvalid("'objects' must be a non-empty object {cli table: {...}}")
+    good, bad = {}, 0
+    for k, o in objs.items():
+        try:
+            if not isinstance(k, str) or not _CAP_KEY_RE.match(k):
+                raise ValueError("bad table name")
+            good[k] = _cap_object(o)
+        except ValueError:
+            bad += 1
+    if not good:
+        raise ItemInvalid("no valid capacity table")
+    models = {str(k)[:32]: str(v)[:64] for k, v in (data.get("models") or {}).items()
+              if isinstance(k, str) and _CAP_PID_RE.match(k)}
+    sources = [{"kind": str(s.get("kind") or "")[:32], "url": str(s.get("url") or "")[:512]}
+               for s in (data.get("sources") or []) if isinstance(s, dict)
+               and re.match(r"^https?://", str(s.get("url") or ""))]
+    warnings = [str(w)[:500] for w in (data.get("warnings") or []) if isinstance(w, str)][:200]
+    doc = {"objects": good, "models": models, "sources": sources, "warnings": warnings}
+    return {"product": product, "firmware": firmware, "document": doc, "bad": bad,
+            "sha": _cap_sha(doc)}
+
+
+def _cap_sha(doc: dict) -> str:
+    import hashlib
+    return hashlib.sha256(json.dumps(doc, sort_keys=True, separators=(",", ":"))
+                          .encode("utf-8")).hexdigest()
+
+
+def _cap_row(p: dict):
+    from ..models_capacity import CapacityFactory
+    return CapacityFactory.query.filter_by(product=p["product"], firmware=p["firmware"]).first()
+
+
+def _cap_state(run, row, p: dict) -> tuple:
+    if row is None:
+        return ST_NEW, ""
+    if row.content_sha == p["sha"]:
+        return ST_PRESENT, ""
+    if not _is_pack(row.origin):
+        return ST_LOCAL, ""
+    ok, why = outranks(run.meta, row.origin)
+    return (ST_UPDATE, "") if ok else (ST_PRESENT, why)
+
+
+def state_capacity(run, item, p: dict) -> dict:
+    state, why = _cap_state(run, _cap_row(p), p)
+    out = _rollup({p["firmware"]: state}, {"tables": len(p["document"]["objects"])})
+    if why:
+        out["note"] = why
+    if p["bad"]:
+        out["warning"] = "%d malformed capacity table(s) skipped" % p["bad"]
+    return out
+
+
+def import_capacity(run, item, p: dict, st: dict) -> dict:
+    from ..models_capacity import CapacityFactory
+    row = _cap_row(p)
+    state, _why = _cap_state(run, row, p)
+    if state not in (ST_NEW, ST_UPDATE):
+        return {"firmware": p["firmware"], "written": False}
+    if row is None:
+        row = CapacityFactory(product=p["product"], firmware=p["firmware"])
+        db.session.add(row)
+    row.document = p["document"]
+    row.content_sha = p["sha"]
+    row.origin = run.provenance[:128]
+    row.imported_at = datetime.utcnow()
+    db.session.commit()
+    return {"firmware": p["firmware"], "written": True,
+            "tables": len(p["document"]["objects"])}

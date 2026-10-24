@@ -1276,9 +1276,37 @@ def _do_device_sync(appliance, params: dict, dry_run: bool, *, publish: bool) ->
     from . import device_sync as _ds
     run = _ds.sync_device(appliance, publish=publish, trigger="scheduled")
     ok = getattr(run, "status", "") == "ok"
+    if ok:
+        _refresh_hardware(appliance)
     return {"ok": ok,
             "summary": f"{appliance.name}: {getattr(run, 'detail', '')}",
             "log": getattr(run, "detail", "") or ""}
+
+
+#: How old a FortiWeb's hardware facts may get before the hourly sync rescans.
+HARDWARE_MAX_AGE_DAYS = 7
+
+
+def _refresh_hardware(appliance) -> None:
+    """Rescan a FortiWeb's vCPU / RAM over the read-only SSH channel when the
+    last scan is missing or older than a week. A FortiWeb-VM's factory capacity
+    limits are a rule on its memory (services.capacity.factory_for), so a VM
+    that was never scanned has no factory limit at all. Best effort: a failed
+    scan never fails the sync."""
+    if (appliance.kind or "fortiweb") != "fortiweb":
+        return
+    from datetime import datetime, timedelta
+    from ..models import DeviceHardware
+    try:
+        row = DeviceHardware.query.filter_by(appliance_id=appliance.id).first()
+        if row is not None and row.mem_total_mb and row.updated_at and \
+                row.updated_at > datetime.utcnow() - timedelta(days=HARDWARE_MAX_AGE_DAYS):
+            return
+        from . import hardware
+        hardware.scan_appliance(appliance)
+    except Exception:  # noqa: BLE001 — the sync result stands on its own
+        from ..extensions import db
+        db.session.rollback()
 
 
 def _do_deep_capture(appliance, dry_run: bool) -> dict:

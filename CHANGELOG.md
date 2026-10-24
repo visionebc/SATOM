@@ -19,6 +19,49 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   and `findings`, so no token issued earlier loses access. Requested by the
   operator (translated from Spanish): "SATOM has, for example, metrics that
   could be delivered via the API".
+- **Capacity Limits show Fortinet's factory limits.** Every limit used to be
+  an empty field the admin had to fill in from the datasheet, so on a fresh
+  install no automation ever had a ceiling to respect. The knowledge / API
+  packs now carry Fortinet's published maximums (`capacity-limits` items of
+  the docs section, from the Max Value Table API and Appendix B of the
+  FortiWeb admin guide) per exact build, per CLI table and per hardware
+  model, and SATOM stores them in `capacity_factory`. The page shows, per
+  object type: **In use** · **Fortinet limit** (with the build and the source
+  it came from) · **Your limit** — a number or a percent of the Fortinet
+  limit · **Effective** (the lowest). The old *Hard max* field is now an
+  *Override*, only for a box where Fortinet's number is wrong.
+  - **FortiWeb-VM** limits are rules on the VM's memory, Fortinet's own:
+    server policies = 20 for the first GB of RAM + 15 per extra GB, at most
+    256 (1024 from 64 GB); ADOMs and server pools by memory tier. SATOM
+    evaluates them on the `MemTotal` of the last hardware scan, rounded down
+    to whole GB as Fortinet specifies. The hourly device sync now rescans a
+    FortiWeb's hardware when the last scan is missing or older than a week
+    (read-only SSH); a VM never scanned shows "run a hardware scan" and
+    blocks nothing.
+  - A build with no document of its own uses the nearest build of the same
+    major (shown as *nearest build*), never another major.
+  - A factory limit the device already EXCEEDS is shown and NOT enforced:
+    the box proves it accepts more, and blocking on a number it contradicts
+    would stop work it would take. Your own limit still applies.
+  - Cells where Fortinet's two sources disagree are flagged. On 8.0.6 the
+    admin guide still carries git merge-conflict markers in five cells
+    (`>>>>>>> ddd581b1…`) and disagrees with the API in eight; the API wins.
+  - Four object types join the catalog: offline Web Protection Profiles
+    (separate from inline — Fortinet publishes 256 of each per ADOM), server
+    pools, virtual servers and virtual IPs. Each type is counted in the scope
+    Fortinet counts it: per appliance (server policies, pools, VIPs — the
+    whole chassis) or per ADOM (profiles, certificates, SNI, virtual servers).
+  - The catalog is keyed by platform (`FortiWeb-VM`, `FortiWeb-1000F`), not
+    by the string `get system status` prints: "FortiWeb-KVM 7.6.8" carried
+    the firmware, so every patch release made a new "model" Fortinet
+    publishes nothing for. Migration `capfac01` re-keys existing rows (the
+    row you filled in wins over empty duplicates). Every registered FortiWeb
+    appears on the page on its own; *Add model* is for planning one you do
+    not have.
+  Requested by the operator: "they should be loaded with the harvester and in
+  the updates, so the page shows the factory values and the user can enter a
+  number or a percentage".
+
 - **Operations › Automation › Mass Deploy.** The newest approved version of
   every template of the ADOM, pushed to one or many of its devices in one
   canary-gated job: an SMTP server change, an NTP or DNS change, a Web
@@ -290,6 +333,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 - **Lua Studio: Delete did nothing.** Its form was nested inside the editor
   form, so the browser dropped it; it is now its own form.
+- **Capacity counted every object twice.** The device cache keeps an object
+  in both its `config` and `deep` layers, and the count added both: fortiweb17
+  showed 100 server policies against the 50 `show server-policy policy`
+  lists over SSH, so the guardrails and the health grade read twice the real
+  usage. Objects are now counted once per (type, key).
+- **UI strings rendered in English in every other language.** 91 strings
+  (Mass Deploy, the Confluence connection, the monitoring help, the calendar
+  filter notice and this round's capacity labels) had no Spanish, German,
+  French or Italian translation; the catalogue-coverage guard was red on
+  `main`. All are translated.
 
 - **A capability-restricted API token could read every recorded
   configuration of its ADOM.** `GET /appliances/<id>/config-history` and

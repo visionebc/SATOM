@@ -27571,3 +27571,12 @@ msgstr "Es gibt noch keinen Trigger. Ein Administrator legt einen unter Automati
 
 msgid "Automations › Triggers"
 msgstr "Automatisierungen › Trigger"
+
+msgid "Change Mgt Types"
+msgstr "Change-Mgt-Typen"
+
+msgid "“documentary” types have no executor — they record a plan, they do not run. Add or edit types under Administrator → Objects → Change Mgt Types."
+msgstr "„Dokumentarische“ Typen haben keinen Executor – sie halten einen Plan fest, führen ihn aber nicht aus. Typen hinzufügen oder bearbeiten unter Administrator → Objekte → Change-Mgt-Typen."
+
+msgid "The change type this flow raises is disabled in Administrator → Objects → Change Mgt Types, so no change can be raised from here. Re-enable it there."
+msgstr "Der von diesem Workflow ausgelöste Änderungstyp ist unter Administrator → Objekte → Change-Mgt-Typen deaktiviert, daher kann hier keine Änderung angefordert werden. Aktivieren Sie ihn dort erneut."

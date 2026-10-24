@@ -27608,3 +27608,12 @@ msgstr "Non c'è ancora nessun trigger. Un amministratore ne crea uno in Automaz
 
 msgid "Automations › Triggers"
 msgstr "Automazioni › Trigger"
+
+msgid "Change Mgt Types"
+msgstr "Tipi di gest. modifiche"
+
+msgid "“documentary” types have no executor — they record a plan, they do not run. Add or edit types under Administrator → Objects → Change Mgt Types."
+msgstr "I tipi “documentali” non hanno un esecutore: registrano un piano, non lo eseguono. Aggiungi o modifica i tipi in Amministratore → Oggetti → Tipi di gest. modifiche."
+
+msgid "The change type this flow raises is disabled in Administrator → Objects → Change Mgt Types, so no change can be raised from here. Re-enable it there."
+msgstr "Il tipo di modifica che questa procedura solleva è disabilitato in Amministratore → Oggetti → Tipi di gest. modifiche, quindi nessuna modifica può essere sollevata da qui. Riattivarlo lì."

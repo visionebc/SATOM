@@ -455,7 +455,8 @@ PAGES: tuple[dict, ...] = (
        "change request approval workflow cr ticket review sign off document",
        "The review-and-approve workflow before a change lands."),
     _p("cr_types.index", "Change Management Types", "automation",
-       "change management type change type category cr taxonomy workflow definition",
+       "change management type change mgt types change type category cr taxonomy "
+       "workflow definition objects",
        "The kinds of change request the workflow accepts."),
     _p("scheduled_actions.index", "System Automations", "automation",
        "schedule cron timer recurring job automation periodic task system "

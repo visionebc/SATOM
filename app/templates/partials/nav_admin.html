@@ -51,14 +51,6 @@
     {% include "partials/nav_process.html" %}
 {% endset %}
 
-{# Change Management Types: an entry of the Administrator group itself, not
-   of a section (operator, 2026-10-25: "one level up, renamed Change
-   Management Types"). Triggers left for Automation > Automations, where it is
-   the third tab next to Scheduled and On a trigger. #}
-{% set _e_cmt %}
-    {% include "partials/nav_cr_types.html" %}
-{% endset %}
-
 {% set _s_devices %}
     {# Appliances: moved here from Fleet (2026-10-13); nav_fleet.html keeps it
        for profiles without user_manage. #}
@@ -103,6 +95,10 @@
 
 {% set _s_objects %}
     {% include "partials/nav_adom_assets.html" %}
+    {# Change Mgt Types (operator, 2026-10-25): an Objects entry, its label
+       shortened so it fits the sidebar; the page keeps its full title.
+       Triggers is the third tab of Automation > Automations. #}
+    {% include "partials/nav_cr_types.html" %}
     {# DNS Resolvers (operator, 2026-10-23): the console-wide list the DNS
        Lookup queries. Every ADOM draws it, like the lookup itself. #}
     {% if may_open('dns_tool.resolvers') %}
@@ -178,7 +174,6 @@
   <div class="fw-nav-group-body">
     {% for s in nav_sections([
          (_('Access'), 'bi-person-lock', 'Access', _s_access),
-         (_('Change Management Types'), None, 'Change Management Types', _e_cmt),
          (_('Change Management'), 'bi-clipboard2-check', 'Change Management', _s_change),
          (_('Devices'), 'bi-hdd-rack', 'Devices', _s_devices),
          (_('Objects'), 'bi-tags', 'Objects', _s_objects),

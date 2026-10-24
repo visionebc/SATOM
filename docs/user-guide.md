@@ -207,7 +207,7 @@ current list:
 
 | ADOM | URL | Purpose |
 |---|---|---|
-| **Global** | `/` | Fleet-wide dashboard and cross-product tools: Monitoring (with Metrics and Analysis), Search, Service Diagram, Architecture, Fleet Objects, WAF, Jobs, DNS Lookup, and an **Automation** sub-menu (with Certificate Manager, and an **API** sub-menu holding Schema builds and Build compatibility); and fleet administration under **Administrator**, in sections (Access, Change Management, Devices, Objects, Studio, System) |
+| **Global** | `/` | Fleet-wide dashboard and cross-product tools: Monitoring (with Metrics and Analysis), Search, Service Diagram, Architecture, Fleet Objects, WAF, Jobs, DNS Lookup, and an **Automation** sub-menu (with Certificate Manager, and an **API** sub-menu holding Schema builds and Build compatibility); and fleet administration under **Administrator**, in sections (Access, Change Management, Devices, Objects, System) |
 | **FortiWeb** | `/web/` | Everything WAF: FortiWeb's own menu for the selected device (Policy, Server Objects, Web Protection, System, …), the device-scoped WAF tools under Operations → WAF (Search Attack ID, Exceptions & Signature, WAF Artifacts), Operations, FortiWeb administration |
 | **FortiADC** | `/adc/` | Load-balancer management: the device's own menu when a layout exists for its build (otherwise a FortiADC group with Signatures only), and an ADC API console |
 | **FortiAuthenticator** | `/fac/` | Identity and access: the unit's own menu (users and groups, RADIUS and TACACS+ clients, Fortinet SSO, certificates…) drawn from its measured GUI, and a FAC API console |
@@ -339,11 +339,11 @@ Automation keeps **Automations**, the work operators schedule (§15).
 Administrator; **Certificate Manager** is under Automation (Certificate Manager in every
 ADOM: live in Global, FortiWeb and FortiADC, drawn disabled with the reason in
 FortiGate, FortiAnalyzer and FortiAuthenticator). **Administrator** is split
-into sections — Access, Change Management, Devices, Objects and System — plus
-one entry of its own, **Change Management Types** (the change types the
-Change Request form offers, renamed from *Change Management Types* on 2026-10-25); the
-sections, that entry and the entries of each section are alphabetical in the
-console's language, and a section with no entry you may open is not drawn. **Plugin Studio**
+into sections — Access, Change Management, Devices, Objects and System;
+**Objects** holds **Change Mgt Types** (the change types the Change Request
+form offers; the page is titled *Change Management Types*, and was *Change
+Types* until 2026-10-25). The sections and the entries of each section are
+alphabetical in the console's language, and a section with no entry you may open is not drawn. **Plugin Studio**
 (apps and the Python console in one page, §23) is an entry of its own on the
 **first level** of the sidebar, just above Administrator, in every ADOM;
 **Report Studio** and **Lua Studio** are in **Plugins** (Operations → Plugins
@@ -8772,7 +8772,7 @@ on (no automated action runs on FortiGate); a documentary type keeps every
 device, or only the products it is offered for. SATOM ships one documentary
 type, **Manual change (performed by hand)**, offered for every product: use
 it for work done by hand on any device, FortiGate included. It is an ordinary
-change type under **Administrator → Change Management Types → Your change types**, so you
+change type under **Administrator → Objects → Change Mgt Types → Your change types**, so you
 can reword, hide or delete it; once deleted it is not recreated.
 
 **Choosing the action.** The Action dropdown lists every automation that
@@ -9691,7 +9691,7 @@ Two details that are not cosmetic:
   would freeze the wording for the rest of the session and claim text is yours
   that you never wrote.
 
-**The proposal is on the page before any script runs.** Title, reason and rollback arrive filled in by the server with the wording set for the `upgrade` type under **Administrator → Change Management Types**, so with scripting off you still read, and can submit, the administrator's words. Until a script runs, the place where the appliances are named reads as the change type's *no appliances* text. With scripting on, the fields follow your ticks and your document language as they did before. **Edit this wording**, beside **Restore proposal**, opens that change type.
+**The proposal is on the page before any script runs.** Title, reason and rollback arrive filled in by the server with the wording set for the `upgrade` type under **Administrator → Objects → Change Mgt Types**, so with scripting off you still read, and can submit, the administrator's words. Until a script runs, the place where the appliances are named reads as the change type's *no appliances* text. With scripting on, the fields follow your ticks and your document language as they did before. **Edit this wording**, beside **Restore proposal**, opens that change type.
 
 **Or split the same selection into waves.** Below the form, stage 2 can raise the ticked appliances as several changes instead of one. You set the appliances per wave (default 5), the first window's start, each window's length in minutes (default 120) and the gap between windows (default 30). The appliances are chunked in name order, and each wave is an ordinary change request with its own window and its own approval, titled like the form's title with *— wave k/N* appended. Windows follow one another and never overlap. Leave the start empty to raise the waves now and schedule them later. The number of waves is capped (§40.2).
 

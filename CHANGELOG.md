@@ -242,8 +242,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ### Changed
 
 - **Menu: Change Management Types and Triggers moved** (operator request).
-  *Change Types* is now **Change Management Types**, an entry of the
-  Administrator group itself instead of the Change Management section.
+  *Change Types* is now **Change Mgt Types** (page title *Change Management
+  Types*), an entry of **Administrator → Objects** instead of the Change
+  Management section.
   **Triggers** left Administrator for **Automation → Automations**, where it
   is a third tab next to *Scheduled* and *On a trigger* (administrators only;
   the address `/administration/triggers/` is unchanged).

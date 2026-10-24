@@ -27573,3 +27573,12 @@ msgstr "Il n'y a encore aucun déclencheur. Un administrateur en crée un sous A
 
 msgid "Automations › Triggers"
 msgstr "Automatisations › Déclencheurs"
+
+msgid "Change Mgt Types"
+msgstr "Types de gest. des changements"
+
+msgid "“documentary” types have no executor — they record a plan, they do not run. Add or edit types under Administrator → Objects → Change Mgt Types."
+msgstr "Les types « documentaires » n'ont pas d'exécuteur — ils enregistrent un plan, ils ne l'exécutent pas. Ajoutez ou modifiez des types sous Administrateur → Objets → Types de gest. des changements."
+
+msgid "The change type this flow raises is disabled in Administrator → Objects → Change Mgt Types, so no change can be raised from here. Re-enable it there."
+msgstr "Le type de changement levé par ce flux est désactivé dans Administrateur → Objets → Types de gest. des changements, donc aucun changement ne peut être levé à partir d'ici. Réactivez-le là-bas."

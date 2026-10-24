@@ -40,6 +40,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
     blocks nothing.
   - A build with no document of its own uses the nearest build of the same
     major (shown as *nearest build*), never another major.
+  - A device whose firmware field is empty (registered while its REST API
+    was licence-locked) takes its build from the model string
+    ("FortiWeb-KVM 8.0.6").
   - A factory limit the device already EXCEEDS is shown and NOT enforced:
     the box proves it accepts more, and blocking on a number it contradicts
     would stop work it would take. Your own limit still applies.

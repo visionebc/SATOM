@@ -783,7 +783,7 @@ def import_gui(run, item, p: dict, st: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 _CAP_SCOPES = ("GLOBAL", "VDOM", "INSTANCE")
-_CAP_KEY_RE = re.compile(r"^[A-Za-z0-9 _.:\-]{1,128}$")
+_CAP_KEY_RE = re.compile(r"^[A-Za-z0-9 _.:+\-]{1,128}$")   # user.tacacs+-user
 _CAP_PID_RE = re.compile(r"^(?:\*|[A-Z0-9]{1,32})$")
 #: A published ceiling above this is a parsing accident, not a limit.
 _CAP_MAX = 10_000_000

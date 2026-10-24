@@ -146,6 +146,9 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
     blocks nothing.</li>
 <li>A build with no document of its own uses the nearest build of the same
     major (shown as <em>nearest build</em>), never another major.</li>
+<li>A device whose firmware field is empty (registered while its REST API
+    was licence-locked) takes its build from the model string
+    ("FortiWeb-KVM 8.0.6").</li>
 <li>A factory limit the device already EXCEEDS is shown and NOT enforced:
     the box proves it accepts more, and blocking on a number it contradicts
     would stop work it would take. Your own limit still applies.</li>

@@ -133,6 +133,20 @@ def firmware_build(firmware: str | None) -> str | None:
     return ".".join(m.groups()) if m else None
 
 
+def appliance_build(appliance) -> str | None:
+    """The appliance's exact build. ``firmware`` is empty on a device
+    registered while its REST API was licence-locked (fortiweb19, 2026-10-24),
+    and the FortiWeb model string carries the build ("FortiWeb-KVM 8.0.6"),
+    so that is the fallback."""
+    return (firmware_build(getattr(appliance, "firmware", None))
+            or firmware_build(getattr(appliance, "model", None)))
+
+
+def appliance_major(appliance) -> str | None:
+    b = appliance_build(appliance)
+    return firmware_major(b) if b else firmware_major(getattr(appliance, "firmware", None))
+
+
 # ---------------------------------------------------------------------------
 # Platform — the key Fortinet publishes limits for
 # ---------------------------------------------------------------------------
@@ -205,7 +219,7 @@ def get_limit(model: str | None, fw_major: str | None, object_type: str,
 def limit_for_appliance(appliance, object_type: str) -> CapacityLimit | None:
     product = appliance.kind or PRODUCT_DEFAULT
     return get_limit(catalog_model(appliance.model, product),
-                     firmware_major(appliance.firmware), object_type, product=product)
+                     appliance_major(appliance), object_type, product=product)
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +375,7 @@ def factory_for(appliance, object_type: str) -> Factory:
     spec = OBJECT_TYPES.get(object_type) or {}
     product = getattr(appliance, "kind", None) or PRODUCT_DEFAULT
     try:
-        doc, build, exact = factory_doc(product, firmware_build(appliance.firmware))
+        doc, build, exact = factory_doc(product, appliance_build(appliance))
     except Exception:  # noqa: BLE001 — no app context / table not created yet
         return Factory(note="factory limits unavailable")
     if doc is None:
@@ -492,7 +506,7 @@ def check_headroom(appliance, object_type: str, want: int = 1) -> tuple[bool, st
                f"{h.factory}: that number is not enforced"
                if getattr(h, "contradicted", False) else "No capacity limit set")
         return True, (f"{why} for {appliance.model or '?'} "
-                      f"{firmware_major(appliance.firmware) or '?'} / {h.label}; "
+                      f"{appliance_major(appliance) or '?'} / {h.label}; "
                       f"allowing (used={h.used}{scope}).")
     if h.ok:
         return True, (f"OK: {h.used}+{want} <= {h.effective_cap} {h.label} "

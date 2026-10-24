@@ -52,7 +52,7 @@ def _fleet_by_group():
         product = a.kind or capsvc.PRODUCT_DEFAULT
         if product != capsvc.PRODUCT_DEFAULT:
             continue        # the object-type catalog counts FortiWeb objects only
-        fw = capsvc.firmware_major(a.firmware)
+        fw = capsvc.appliance_major(a)
         model = capsvc.catalog_model(a.model, product)
         if not model or not fw:
             continue

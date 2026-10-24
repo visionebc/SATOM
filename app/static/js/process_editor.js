@@ -117,15 +117,16 @@
     });
   }
 
-  /* The words an arrow carries. A Manual gate names its own answers ("Ja" /
-     "Nein"), so its pass/fail arrows say those words, as on the paper the
-     procedure came from. */
+  /* The words an arrow carries. An "Ask a person" step names its own answers
+     ("Ja" / "Nein"), so its yes/no arrows say those words, as on the paper
+     the procedure came from. */
   function edgeText(e) {
     var br = BRANCH[e.branch] || BRANCH.always;
     var a = nodeByKey(e.src);
-    var p = (a && a.kind === "manual_gate" && a.params) || {};
-    if (e.branch === "pass" && p.pass_label) return p.pass_label;
-    if (e.branch === "fail" && p.fail_label) return p.fail_label;
+    /* "Ask a person" in a Plugin Studio app (yes / no arrows). */
+    var p = (a && a.kind === "ask" && a.params) || {};
+    if (e.branch === "yes" && p.pass_label) return p.pass_label;
+    if (e.branch === "no" && p.fail_label) return p.fail_label;
     return br.t;
   }
 

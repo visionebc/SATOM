@@ -27580,3 +27580,27 @@ msgstr "„Dokumentarische“ Typen haben keinen Executor – sie halten einen P
 
 msgid "The change type this flow raises is disabled in Administrator → Objects → Change Mgt Types, so no change can be raised from here. Re-enable it there."
 msgstr "Der von diesem Workflow ausgelöste Änderungstyp ist unter Administrator → Objekte → Change-Mgt-Typen deaktiviert, daher kann hier keine Änderung angefordert werden. Aktivieren Sie ihn dort erneut."
+
+msgid "Checks"
+msgstr "Prüfungen"
+
+msgid "Simulate"
+msgstr "Simulieren"
+
+msgid "Simulate the whole process"
+msgstr "Den ganzen Prozess simulieren"
+
+msgid "Answer Yes to every question"
+msgstr "Jede Frage mit Ja beantworten"
+
+msgid "Walk the whole process as a rehearsal and answer its questions here"
+msgstr "Den ganzen Prozess als Probelauf durchlaufen und seine Fragen hier beantworten"
+
+msgid "Walks the saved draft as a rehearsal: nothing is written to a device, the checks really look (they only read), each question stops here for your answer, and the path is coloured on the diagram."
+msgstr "Durchläuft den gespeicherten Entwurf als Probelauf: Auf kein Gerät wird geschrieben, die Prüfungen schauen wirklich nach (sie lesen nur), jede Frage hält hier für Ihre Antwort an, und der Weg wird im Diagramm eingefärbt."
+
+msgid "Save the diagram, then press Simulate."
+msgstr "Speichern Sie das Diagramm und drücken Sie dann Simulieren."
+
+msgid "One box per app, bound to the version you approve: when a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs app_arm."
+msgstr "Ein Kästchen pro App, gebunden an die Version, die Sie genehmigen: Wird eine andere App-Version veröffentlicht, pausiert die Freigabe, bis Sie sie erneut genehmigen. Nichts angehakt = es läuft keine. Ein scharfer Lauf braucht zusätzlich app_arm."

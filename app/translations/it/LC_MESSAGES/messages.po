@@ -27617,3 +27617,27 @@ msgstr "I tipi “documentali” non hanno un esecutore: registrano un piano, no
 
 msgid "The change type this flow raises is disabled in Administrator → Objects → Change Mgt Types, so no change can be raised from here. Re-enable it there."
 msgstr "Il tipo di modifica che questa procedura solleva è disabilitato in Amministratore → Oggetti → Tipi di gest. modifiche, quindi nessuna modifica può essere sollevata da qui. Riattivarlo lì."
+
+msgid "Checks"
+msgstr "Controlli"
+
+msgid "Simulate"
+msgstr "Simula"
+
+msgid "Simulate the whole process"
+msgstr "Simula l'intero processo"
+
+msgid "Answer Yes to every question"
+msgstr "Rispondi Sì a ogni domanda"
+
+msgid "Walk the whole process as a rehearsal and answer its questions here"
+msgstr "Percorrere l'intero processo come prova e rispondere qui alle sue domande"
+
+msgid "Walks the saved draft as a rehearsal: nothing is written to a device, the checks really look (they only read), each question stops here for your answer, and the path is coloured on the diagram."
+msgstr "Percorre la bozza salvata come prova: nulla viene scritto su un dispositivo, i controlli guardano davvero (leggono soltanto), ogni domanda si ferma qui per la tua risposta e il percorso viene colorato nel diagramma."
+
+msgid "Save the diagram, then press Simulate."
+msgstr "Salva il diagramma, poi premi Simula."
+
+msgid "One box per app, bound to the version you approve: when a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs app_arm."
+msgstr "Una casella per app, legata alla versione che approvi: quando viene pubblicata un'altra versione dell'app, l'autorizzazione si sospende finché non la riapprovi. Nulla selezionato = non ne esegue nessuna. Un'esecuzione armata richiede anche app_arm."

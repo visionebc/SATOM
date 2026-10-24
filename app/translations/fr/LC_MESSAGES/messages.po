@@ -27503,3 +27503,34 @@ msgstr "arrêté"
 
 msgid "{kind} on line {line}"
 msgstr "{kind} à la ligne {line}"
+
+# API token object grants (2026-10-24)
+msgid "Apps it may run"
+msgstr "Apps qu'il peut exécuter"
+
+msgid "Filter…"
+msgstr "Filtrer…"
+
+msgid "No Processes yet."
+msgstr "Aucun processus pour l'instant."
+
+msgid "No published flow apps yet."
+msgstr "Aucune app de flux publiée pour l'instant."
+
+msgid "None ticked: it runs none"
+msgstr "Rien de coché : il n'en exécute aucun"
+
+msgid "One box per Process or app, bound to the version you approve: when the diagram is edited or a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs process_arm or app_arm."
+msgstr "Une case par processus ou app, liée à la version que vous approuvez : si le diagramme est modifié ou si une autre version de l'app est publiée, l'autorisation est suspendue jusqu'à ce que vous l'approuviez à nouveau. Rien de coché = il n'en exécute aucun. Une exécution armée exige en plus process_arm ou app_arm."
+
+msgid "Processes it may run"
+msgstr "Processus qu'il peut exécuter"
+
+msgid "Re-approve"
+msgstr "Approuver à nouveau"
+
+msgid "Runs:"
+msgstr "Exécute :"
+
+msgid "gone"
+msgstr "supprimé"

@@ -252,6 +252,10 @@ def delete(pid):
     # no longer exists. One authority, same answer on both engines.
     ProcessRun.query.filter_by(process_id=proc.id).update(
         {"process_id": None}, synchronize_session=False)
+    # An API token granted this process loses the grant now, audited per
+    # token -- not left to point at an id the next process may reuse.
+    from ..services import token_grants
+    token_grants.forget("process", proc.id, key)
     db.session.delete(proc)
     db.session.commit()
     log_action("process.delete", target=key, extra={"name": name})

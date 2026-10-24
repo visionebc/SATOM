@@ -27538,3 +27538,34 @@ msgstr "fermato"
 
 msgid "{kind} on line {line}"
 msgstr "{kind} alla riga {line}"
+
+# API token object grants (2026-10-24)
+msgid "Apps it may run"
+msgstr "App che può eseguire"
+
+msgid "Filter…"
+msgstr "Filtra…"
+
+msgid "No Processes yet."
+msgstr "Ancora nessun processo."
+
+msgid "No published flow apps yet."
+msgstr "Ancora nessuna app di flusso pubblicata."
+
+msgid "None ticked: it runs none"
+msgstr "Nessuno selezionato: non ne esegue nessuno"
+
+msgid "One box per Process or app, bound to the version you approve: when the diagram is edited or a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs process_arm or app_arm."
+msgstr "Una casella per processo o app, legata alla versione che approvi: se il diagramma viene modificato o si pubblica un'altra versione dell'app, l'autorizzazione si sospende finché non la riapprovi. Nulla selezionato = non ne esegue nessuno. Un'esecuzione armata richiede anche process_arm o app_arm."
+
+msgid "Processes it may run"
+msgstr "Processi che può eseguire"
+
+msgid "Re-approve"
+msgstr "Riapprova"
+
+msgid "Runs:"
+msgstr "Esegue:"
+
+msgid "gone"
+msgstr "rimosso"

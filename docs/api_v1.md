@@ -22,12 +22,13 @@ In the terms of the NAF Framework ([naf-alignment.md](naf-alignment.md)) this
 API is part of *Presentation*: the door other systems use. What it opens onto
 is the appliance inventory, health, configuration history, findings and the
 metrics store (*Observability*), the pre-created Scheduled Actions, the
-Processes and the external approval of a Change Request (*Orchestrator*), and
+granted Processes and Plugin Studio apps and the external approval of a
+Change Request (*Orchestrator*), and
 the object authoring below — WAF carve-outs, FortiADC rules, templates,
 bindings and baselines (*Intent*). The OpenAPI document (§10) describes every
 route of this surface.
 
-There are exactly **three** ways to change anything, and they are not
+There are exactly **four** ways to change anything, and they are not
 interchangeable:
 
 1. **Scheduled Actions** (§3) — operational moves an operator pre-created for
@@ -39,6 +40,10 @@ interchangeable:
 3. **Intent** (§12) — templates, bindings and baselines: desired state. Only
    with the `template_draft` / `template_apply` capabilities, and a push to a
    device is the console's own canary-gated job, never a direct write.
+4. **Processes and Plugin Studio apps** (§14, §16) — a walk or a run of one
+   object an administrator **granted** your token, at the version approved.
+   Unarmed (a rehearsal) by default; writing for real needs `process_arm` /
+   `app_arm`.
 
 The same page also exposes what SATOM has *recorded* — configuration history
 and diffs, findings, metrics (§13) — and describes itself as an OpenAPI
@@ -149,10 +154,13 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/metrics/query` | read | `metrics`, only on a capability-restricted token | A read-only MetricsQL query over SATOM's own series (§13) |
 | `GET`  | `/processes` | read | — | The processes the token's ADOM may see (§14) |
 | `GET`  | `/processes/<id>` | read | — | One process, with its diagram (§14) |
-| `POST` | `/processes/<id>/run` | write | `process_arm` for `"armed": true` | Walk a process — a **rehearsal** unless armed (§14) |
+| `POST` | `/processes/<id>/run` | write | a **grant** for the process; `process_arm` for `"armed": true` | Walk a process — a **rehearsal** unless armed (§14) |
 | `GET`  | `/triggers` | read | — | The triggers and their enabled automations (§15) |
 | `POST` | `/events` | write | — | Post an `api.event`: starts the automations of every matching trigger (§15) |
 | `GET`  | `/process-runs/<id>` | read | — | One walk and its steps; poll a run parked on a manual gate (§14) |
+| `GET`  | `/apps` | read | — | The Plugin Studio apps the token's owner may use in its ADOM, with their form fields (§16) |
+| `POST` | `/apps/<slug>/run` | write | a **grant** for the app; `app_arm` for `"armed": true` | Run an app's published version — **unarmed** unless armed (§16) |
+| `GET`  | `/app-runs/<id>` | read | — | One app run: status, outputs, steps (§16) |
 
 The write endpoints are rate-limited to **30/min**, like `/actions/<id>/run`.
 
@@ -416,8 +424,13 @@ Every error is JSON with an `error` code (and usually a `message`).
 | 404 | `not_found` | No such action / run (or not visible to this token) |
 | 409 | `disabled` | The action — or the process — is disabled |
 | 409 | `already_running` | The action is already running |
-| 403 | `capability_denied` | `"armed": true` on a process walk without the `process_arm` capability (§14) |
+| 403 | `capability_denied` | `"armed": true` on a process walk without `process_arm`, or on an app run without `app_arm` (§14, §16) |
+| 403 | `not_granted` | The token holds no grant for this process / app (§14, §16) |
+| 403 | `grant_paused` | The process / app changed after it was granted; an administrator must re-approve it (§14, §16) |
 | 400 | `appliance_required` / `invalid_diagram` | A process walk needs a device, or its diagram cannot run yet (§14) |
+| 400 | `bad_request` | The body is not a JSON object (or a field in it has the wrong type) |
+| 400 | `app_error` | The app refused the run: a required input missing, a value not offered, too many runs (§16) |
+| 409 | `unpublished` | The app has no published version (§16) |
 | 429 | `rate_limited` | Too many requests (run is 30/min) |
 
 Object authoring answers with these too, plus its own set — see
@@ -888,6 +901,17 @@ write. Rate-limited to 30/min like the other write endpoints.
 
 ### `GET /processes` / `GET /processes/<id>`
 
+**Grants.** A token runs only the processes an administrator **granted** it,
+one by one (Access → Tokens → *Processes it may run*). An empty list means
+**none** — unlike capabilities. A grant approves one **version**: the
+diagram's steps (kind and parameters) and arrows. Moving a step on the canvas
+or renaming it changes nothing; changing what a step does **pauses** the
+grant, and the walk answers 403 `grant_paused` until an administrator clicks
+*Re-approve* on the token. A process that is deleted takes its grants with it
+(audited per token). Until 2026-10-24 any `write` token could rehearse every
+process its ADOM saw; each such token now needs the grant. Each process in
+the list carries `"granted"`: `yes`, `paused` or `no`.
+
 ```json
 {"processes": [
   {"id": 3, "key": "dr-failover-check", "name": "DR failover check",
@@ -896,7 +920,7 @@ write. Rate-limited to 30/min like the other write endpoints.
    "trigger_event": "alert.fired",
    "trigger_filter": {"families": ["device"], "min_severity": "critical"},
    "armed_on_trigger": false, "trigger_rate_limit": 10,
-   "updated_at": "2026-10-21T02:10:00"}]}
+   "updated_at": "2026-10-21T02:10:00", "granted": "yes"}]}
 ```
 
 `GET /processes/<id>` adds `"graph"` (the nodes and arrows, as the editor
@@ -977,3 +1001,60 @@ Scope `read`. Every trigger: `key`, `name`, `event`, `enabled`, `conditions`,
 `cooldown_minutes`, `rate_limit_per_hour` and the keys of its enabled
 `automations` — so a caller can see which `type` values anything listens to.
 
+## 16. Plugin Studio apps — `/api/v1/apps/*`
+
+Run a **Plugin Studio app** (a form and a diagram, Plugins → Plugin Studio)
+from outside, and read what the run did. Script apps run from their own page
+and are not offered here.
+
+**Access.** `read` lists apps and reads runs; `write` runs. What the token
+reaches is what its **owner** may open in the console, in the token's ADOM:
+the app's access list (users and groups, plus Studio authors) and its ADOMs.
+Anything else — another ADOM, an app the owner may not use, a script app —
+is the same 404. A run needs a **grant** for that app on the token (Access →
+Tokens → *Apps it may run*; empty = none), bound to the **published version**
+approved: its form fields, diagram and actions. Republishing the same content
+keeps the grant; publishing anything different **pauses** it (403
+`grant_paused`) until an administrator re-approves it. Deleting the app
+removes its grants (audited).
+
+**A run from the API is unarmed by default**: every write step (store writes,
+writing SQL, a non-GET API call, a device change) is recorded as *rehearsal:
+not executed*, while the reads run for real. `"armed": true` needs the
+explicit **`app_arm`** capability. In the console a published app always runs
+armed; a machine with nobody at the screen does not get that default.
+Rate-limited to 30/min.
+
+### `GET /apps`
+
+```json
+{"apps": [{"slug": "ip-owner", "name": "IP owner", "description": "",
+           "version": 3, "enabled": true, "published": true,
+           "fields": [{"name": "ip", "label": "IP address", "type": "text", "required": true}],
+           "granted": "yes"}]}
+```
+
+### `POST /apps/<slug>/run`
+
+Body: `{"inputs": {"ip": "192.0.2.7"}, "armed": false}`. The run starts in the
+background: the answer is **202** with the run id and where to poll it.
+A disabled app answers 409 `disabled`, one never published 409
+`unpublished`; inputs the form refuses answer 400 `app_error`.
+
+```json
+{"id": 88, "app": "ip-owner", "version": 3, "armed": false,
+ "status": "running", "status_url": "/api/v1/app-runs/88"}
+```
+
+### `GET /app-runs/<id>`
+
+`status` (`running` / `done` / `failed`), `error`, `inputs` (password values
+masked), `outputs`, `steps`, `started_at`, `finished_at`. Only the token's
+owner — or a Studio author — sees a run; the console's result buttons
+(*actions*) are not callable from the API.
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+  -d '{"inputs": {"ip": "192.0.2.7"}}' https://<your-satom-host>/api/v1/apps/ip-owner/run
+curl -s -H "Authorization: Bearer $T" https://<your-satom-host>/api/v1/app-runs/88
+```

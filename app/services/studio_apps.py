@@ -544,7 +544,9 @@ def unpublish(a: StudioApp, by: str) -> None:
 
 def delete(a: StudioApp) -> None:
     from . import studio_design as D
+    from . import token_grants
     D.delete_assets(a.id)  # SQLite (tests) does not cascade
+    token_grants.forget("app", a.id, a.slug)  # API tokens granted it lose the grant
     db.session.delete(a)
     db.session.commit()
 
@@ -768,6 +770,8 @@ def remove(a: StudioApp) -> dict:
         if meta:
             SL.delete(a.script_slug)
             SV.forget(a.script_slug, names)
+        from . import token_grants
+        token_grants.forget("app", a.id, a.slug)
         db.session.delete(a)
         db.session.commit()
         return {"script": a.script_slug, "runs": runs, "credentials": names}
@@ -778,6 +782,8 @@ def remove(a: StudioApp) -> dict:
     from . import studio_design as D
     runs = StudioAppRun.query.filter_by(app_id=a.id).delete(synchronize_session=False)
     D.delete_assets(a.id)
+    from . import token_grants
+    token_grants.forget("app", a.id, a.slug)  # API tokens granted it lose the grant
     db.session.delete(a)
     db.session.flush()
     gone = []

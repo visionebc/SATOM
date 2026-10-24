@@ -3672,6 +3672,17 @@ history and diffs). With nothing ticked a token reads all three; with a list
 it reads only what the list names, so a dashboard token can hold `metrics`
 alone and run nothing. `monitoring` still reads metrics and findings.
 
+**Grants** name single objects a token may run: under *Processes it may run*
+and *Apps it may run*, tick one box per Process or Plugin Studio app. Nothing
+ticked means it runs **none** (unlike capabilities). A grant approves the
+version you see: if someone changes what the Process does or publishes a
+different version of the app, the grant shows **paused** on the token and the
+API refuses the run until you open the token and press **Re-approve**.
+Dragging a step on the canvas or republishing the same content does not
+pause it. Deleting the Process or app removes its grants. A run from the API
+is a rehearsal by default; a real (armed) run also needs `process_arm` or
+`app_arm`. Only apps the token's owner may open in that ADOM can be granted.
+
 ## 19. Appearance: logo, colours & themes
 
 `Settings → Appearance` (administrators). Four palettes ship — **SATOM Aurora**

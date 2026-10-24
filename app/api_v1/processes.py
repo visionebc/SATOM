@@ -6,7 +6,10 @@ only by a button. This is that door, and it is as narrow as the button:
 * ``GET /processes`` lists the processes the token's ADOM may see — the same
   rule the console applies (``process_engine.visible_processes``), never a
   second author of visibility.
-* ``POST /processes/<id>/run`` starts a walk. ``armed`` defaults to **false**:
+* ``POST /processes/<id>/run`` starts a walk of a process GRANTED to the token
+  (``services.token_grants``: one grant per process, bound to the version an
+  administrator approved; edit the diagram and the grant pauses until it is
+  re-approved). ``armed`` defaults to **false**:
   a walk from the API is a REHEARSAL unless the caller says otherwise, and
   saying otherwise needs the explicit ``process_arm`` capability on top of the
   ``write`` scope (``models_api_token.EXPLICIT_ONLY_CAPABILITIES``) — a token
@@ -27,9 +30,10 @@ from ..models import db, visible_appliance_or_404
 from ..models_process import TRIGGER_API, Process, ProcessRun
 from ..services import process_engine as engine
 from ..services import process_kinds as pk
+from ..services import token_grants as TG
 from ..services.audit import log_action
 from . import bp
-from .auth import audit_extra, token_required
+from .auth import audit_extra, declares_capability, token_required
 
 
 def _err(status: int, code: str, message: str, **extra):
@@ -47,6 +51,15 @@ def _visible(proc) -> bool:
     return engine.may_run_here(proc, product=getattr(g, "product", "") or "")
 
 
+def _grant_state(proc) -> str:
+    """'yes' / 'paused' / 'no': may this token run *proc* right now."""
+    tok = _token()
+    if tok is None:
+        return "no"
+    ok, code, _msg = TG.authorize(tok, "process", proc)
+    return "yes" if ok else ("paused" if code == "grant_paused" else "no")
+
+
 def _process_json(proc, *, with_graph: bool = False) -> dict:
     graph = proc.graph()
     out = {
@@ -62,6 +75,7 @@ def _process_json(proc, *, with_graph: bool = False) -> dict:
         "armed_on_trigger": bool(proc.armed_on_trigger),
         "trigger_rate_limit": int(proc.trigger_rate_limit or 0),
         "updated_at": proc.updated_at.isoformat() if proc.updated_at else None,
+        "granted": _grant_state(proc),
     }
     if with_graph:
         out["graph"] = graph
@@ -127,19 +141,25 @@ def processes_get(id):
 @bp.route("/processes/<int:id>/run", methods=["POST"])
 @limiter.limit("30/minute")
 @token_required("write")
+@declares_capability("process_arm")
 def processes_run(id):
-    """Walk a process now. Body: ``{"appliance_id": int|null, "armed": bool}``.
+    """Walk a granted process now. Body: ``{"appliance_id": int|null, "armed": bool}``.
 
+    The token must hold a grant for this process at its current version.
     ``armed`` defaults to false (a rehearsal: every write step dry-runs).
     ``armed: true`` needs the explicit ``process_arm`` capability.
     Responses: 200 the run with its steps; 400 bad body / the diagram cannot
-    run / a device is needed; 403 ``capability_denied``; 404; 409 disabled.
+    run / a device is needed; 403 ``not_granted`` / ``grant_paused`` /
+    ``capability_denied``; 404; 409 disabled.
     """
     proc = db.session.get(Process, id)
     if proc is None or not _visible(proc):
         return _err(404, "not_found", "No such process.")
     if not proc.enabled:
         return _err(409, "disabled", "This process is disabled.")
+    ok, code, msg = TG.authorize(_token(), "process", proc)
+    if not ok:
+        return _err(403, code, msg)
     body = request.get_json(silent=True) or {}
     if not isinstance(body, dict):
         return _err(400, "bad_request", "The body must be a JSON object.")

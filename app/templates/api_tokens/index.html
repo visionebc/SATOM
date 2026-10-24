@@ -11,7 +11,7 @@
 {% endblock %}
 
 {% block content %}
-{% from "api_tokens/_pickers.html" import cap_picker, appid_picker %}
+{% from "api_tokens/_pickers.html" import cap_picker, appid_picker, grant_picker %}
 {# Object-write capabilities are EXPLICIT-only: an empty capability list grants
    every non-danger catalog action but NO object write. Printing "all" for an
    empty list — which this page did until the object writers existed — would
@@ -95,6 +95,16 @@
         </div>
       </div>
 
+      <div class="col-md-6">
+        <label class="form-label d-block">{{ _('Processes it may run') }}</label>
+        {{ grant_picker('gproc', 'process', [], grant_candidates['process']) }}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label d-block">{{ _('Apps it may run') }}</label>
+        {{ grant_picker('gapp', 'app', [], grant_candidates['app']) }}
+      </div>
+      <div class="col-12"><div class="form-text mt-0">{{ _('One box per Process or app, bound to the version you approve: when the diagram is edited or a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs process_arm or app_arm.') }}</div></div>
+
       <div class="col-12">
         <button class="btn btn-primary" type="submit">
           <i class="bi bi-plus-lg me-1"></i>{{ _('Create token') }}</button>
@@ -121,7 +131,12 @@
           <td><code>{{ t.masked }}</code></td>
           <td>{{ t.owner.username if t.owner else '—' }}</td>
           <td>{{ t.scope_list|join(', ') }}</td>
-          <td class="small">{{ t.capability_list|join(', ') if t.capability_list else NO_CAPS_LABEL }}</td>
+          <td class="small">{{ t.capability_list|join(', ') if t.capability_list else NO_CAPS_LABEL }}
+            {% set gs = grant_status.get(t.id, []) %}
+            {% if gs %}<div class="mt-1">{{ _('Runs:') }}
+              {% for gr in gs %}<code>{{ gr.key }}</code>{% if gr.state == 'paused' %} <span class="fw-badge fw-badge-warning">{{ _('paused') }}</span>{% elif gr.state == 'gone' %} <span class="fw-badge fw-badge-secondary">{{ _('gone') }}</span>{% endif %}{{ ', ' if not loop.last else '' }}{% endfor %}
+            </div>{% endif %}
+          </td>
           <td class="small">{{ t.app_id_list|join(', ') if t.app_id_list else 'any' }}</td>
           <td>{{ t.product }}</td>
           <td>
@@ -234,6 +249,37 @@
               <div class="form-text">Currently: {{ t.app_id_list|join(', ') }}</div>
               {% endif %}
             </div>
+
+            {% set gs = grant_status.get(t.id, []) %}
+            <div class="col-md-6">
+              <label class="form-label d-block">{{ _('Processes it may run') }}</label>
+              {{ grant_picker('egproc-' ~ t.id, 'process', t.grants('process')|map(attribute='id')|list, grant_candidates['process']) }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label d-block">{{ _('Apps it may run') }}</label>
+              {{ grant_picker('egapp-' ~ t.id, 'app', t.grants('app')|map(attribute='id')|list, grant_candidates['app']) }}
+            </div>
+            <div class="col-12"><div class="form-text mt-0">{{ _('One box per Process or app, bound to the version you approve: when the diagram is edited or a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs process_arm or app_arm.') }}</div>
+              {% if gs %}
+              <table class="table table-sm mb-0 mt-2 tok-grants">
+                <tbody>
+                {% for gr in gs %}
+                <tr>
+                  <td>{{ _(gr.label) }}</td><td>{{ gr.name }} <code>{{ gr.key }}</code></td>
+                  <td>{% if gr.state == 'ok' %}<span class="fw-badge fw-badge-success">{{ _('runs') }}</span>
+                      {% elif gr.state == 'paused' %}<span class="fw-badge fw-badge-warning">{{ _('paused') }}</span>
+                      {% else %}<span class="fw-badge fw-badge-secondary">{{ _('gone') }}</span>{% endif %}</td>
+                  <td class="small text-muted">{{ gr.by }} {{ gr.at[:16]|replace('T', ' ') }}</td>
+                  <td class="text-end">{% if gr.state == 'paused' %}
+                    <button type="submit" class="btn btn-sm btn-outline-primary"
+                            formaction="{{ url_for('api_tokens.approve_grant', id=t.id, kind=gr.kind, oid=gr.id) }}">{{ _('Re-approve') }}</button>
+                  {% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+              {% endif %}
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -260,7 +306,7 @@
     if (!out) { return; }
     if (!on.length) { out.textContent = p.getAttribute('data-empty'); out.classList.add('text-muted'); return; }
     out.classList.remove('text-muted');
-    var names = on.map(function (c) { return c.value; });
+    var names = on.map(function (c) { return c.getAttribute('data-label') || c.value; });
     out.textContent = names.length <= 3 ? names.join(', ')
       : names.length + ' ' + p.getAttribute('data-some') + ': ' + names.slice(0, 3).join(', ') + '…';
   }

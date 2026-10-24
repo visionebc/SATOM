@@ -62,3 +62,36 @@
   </div>
 </div>
 {% endmacro %}
+
+{# Object grants (services.token_grants): ONE Process / app per box, bound to
+   the version approved. Empty means none -- unlike the two pickers above. #}
+{% macro grant_picker(prefix, kind, selected, candidates) %}
+<div class="dropdown tok-picker" data-empty="{{ _('None ticked: it runs none') }}"
+     data-some="{{ _('selected') }}">
+  <button class="form-select text-start text-truncate" type="button"
+          data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+          data-bs-popper-config='{"strategy":"fixed"}'>
+    <span class="tok-picker-summary"></span>
+  </button>
+  <div class="dropdown-menu w-100 p-2 tok-picker-menu">
+    {% if candidates %}
+    <input type="search" class="form-control form-control-sm mb-2 tok-picker-search"
+           placeholder="{{ _('Filter…') }}" aria-label="{{ _('Filter') }}">
+    {% for o in candidates %}
+    {% set okey = o.key if kind == 'process' else o.slug %}
+    {% set where = (o.products if kind == 'process' else o.adoms)|join(', ') %}
+    <div class="form-check tok-picker-item" data-text="{{ (o.name ~ ' ' ~ okey ~ ' ' ~ where)|lower }}">
+      <input class="form-check-input" type="checkbox" name="grant_{{ kind }}" value="{{ o.id }}"
+             data-label="{{ okey }}" id="{{ prefix }}-{{ o.id }}" {{ 'checked' if o.id in selected else '' }}>
+      <label class="form-check-label" for="{{ prefix }}-{{ o.id }}">
+        {{ o.name }} <code>{{ okey }}</code>
+        <span class="text-muted small">({{ where or '—' }})</span>
+      </label>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="small text-muted px-1">{% if kind == 'process' %}{{ _('No Processes yet.') }}{% else %}{{ _('No published flow apps yet.') }}{% endif %}</div>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}

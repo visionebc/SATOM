@@ -32,6 +32,9 @@ from . import intent  # noqa: E402,F401
 from . import observability  # noqa: E402,F401
 # Orchestration: walk a Process (rehearsal by default; armed needs process_arm).
 from . import processes  # noqa: E402,F401
+# Orchestration: run a granted Plugin Studio app (unarmed by default; armed
+# needs app_arm).
+from . import apps  # noqa: E402,F401
 # Orchestration: outside systems post events that start triggers' automations.
 from . import triggers  # noqa: E402,F401
 # The OpenAPI document, built from the rules above at request time. Imported

@@ -74,8 +74,8 @@ CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap",
                 "template_draft", "template_apply",
                 # --- live inventory (see EXPLICIT_ONLY below) -----------------
                 "inventory",
-                # --- Process walks, ARMED (see EXPLICIT_ONLY below) -----------
-                "process_arm",
+                # --- Process walks / app runs, ARMED (EXPLICIT_ONLY below) ----
+                "process_arm", "app_arm",
                 # --- catalog groups added 2026-10-15 (CATALOG_EXPLICIT below) -
                 "cert_renew", "monitoring", "sentinel", "feeds",
                 "api_library", "netbox",
@@ -114,6 +114,10 @@ EXPLICIT_ONLY_CAPABILITIES = frozenset({
     # armed walk writes whatever the diagram writes, from outside, with nobody
     # at the screen. A rehearsal (the default) needs only the write scope.
     "process_arm",
+    # 'app_arm' = POST /api/v1/apps/<slug>/run with "armed": true: the same
+    # rule for a Plugin Studio app. Unarmed, its write steps are recorded,
+    # not executed.
+    "app_arm",
 })
 
 # ---------------------------------------------------------------------------
@@ -175,7 +179,8 @@ CAPABILITY_DESC = {
     "template_draft": "AUTHOR templates, bindings and baselines (desired state only — never touches a device)",
     "template_apply": "APPROVE a template and PUSH it to devices through the canary-gated apply",
     "inventory": "ASK a device its running firmware, live (reads the device, writes only this inventory)",
-    "process_arm": "WALK a Process ARMED from the API (its write steps really write); unarmed walks need only the write scope",
+    "process_arm": "WALK a granted Process ARMED from the API (its write steps really write); unarmed walks need only the write scope and the grant",
+    "app_arm": "RUN a granted Plugin Studio app ARMED from the API (its write steps really write); unarmed runs need only the write scope and the grant",
     "metrics": "READ the metrics store (MetricsQL query) and the SATOM nodes' CPU / memory / disk",
     "findings": "READ what the alert engine finds now",
     "config_history": "READ the recorded configuration versions of a device and the diff between two",
@@ -193,6 +198,7 @@ CAPABILITY_GROUPS = (
     ("Templates, bindings & baselines (always explicit)", ("template_draft", "template_apply")),
     ("Live inventory (always explicit)", ("inventory",)),
     ("Processes (always explicit)", ("process_arm",)),
+    ("Plugin Studio apps (always explicit)", ("app_arm",)),
 )
 
 # An object capability is only meaningful on a token bound to the matching
@@ -217,7 +223,29 @@ CAPABILITY_PRODUCTS = {
     # A process is offered per ADOM; the route checks the process's own ADOM
     # list against the token, so the capability itself binds to every product.
     "process_arm": tuple(p for p in VALID_PRODUCTS if p != "global"),
+    # An app is drawn per ADOM too; the route checks the app's own ADOM list.
+    "app_arm": tuple(p for p in VALID_PRODUCTS if p != "global"),
 }
+
+# ---------------------------------------------------------------------------
+# OBJECT GRANTS — which Processes and which Plugin Studio apps a token may run.
+#
+# A capability names a KIND of action; a grant names ONE object, the way
+# app_ids names server policies. Unlike every list above, an EMPTY grant list
+# means NONE: until 2026-10-24 any write-scope token could rehearse every
+# Process its ADOM saw, and apps had no API at all, so "empty = all" would
+# hand every token already issued every object created from now on.
+#
+# A grant is bound to the VERSION the administrator approved: it stores the
+# object's fingerprint (services.token_grants). Edit the Process diagram or
+# publish a new app version and the grant PAUSES (``grant_paused``) until an
+# administrator re-approves it -- otherwise editing an object would silently
+# change what an outside credential can do, with nobody looking at the token.
+# The id AND the key/slug must match, so an id reused after a delete never
+# inherits a grant.
+# ---------------------------------------------------------------------------
+GRANT_KINDS = ("process", "app")
+GRANT_LABEL = {"process": "Process", "app": "Plugin Studio app"}
 
 # Every runnable catalog action → the capability tag it belongs to. An action
 # missing here has tag None, so a capability-restricted token can never run it
@@ -300,6 +328,11 @@ class ApiToken(db.Model):
     # Fine-grained authorization (Phase 2). Both JSON lists; empty = unrestricted.
     capabilities = db.Column(db.Text, nullable=False, default="[]")   # CAPABILITIES
     app_ids = db.Column(db.Text, nullable=False, default="[]")        # AppId.app_id names
+    # Object grants (GRANT_KINDS). JSON lists of {id, key, fp, by, at};
+    # EMPTY = NONE (see the block above GRANT_KINDS). Not named "app_ids":
+    # that column is the AppID (server policy) scope.
+    process_grants = db.Column(db.Text, nullable=False, default="[]", server_default="[]")
+    studio_app_grants = db.Column(db.Text, nullable=False, default="[]", server_default="[]")
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     created_by = db.Column(db.String(64), nullable=True, default="")
@@ -445,6 +478,52 @@ class ApiToken(db.Model):
                     f"to the '{self.product}' ADOM.")
         return (True, "", "")
 
+    # ------------------------------------------------------------ object grants
+    _GRANT_COLUMN = {"process": "process_grants", "app": "studio_app_grants"}
+
+    def grants(self, kind: str) -> list[dict]:
+        """The grants of *kind* ('process' | 'app'), each ``{id, key, fp, by, at}``."""
+        try:
+            v = json.loads(getattr(self, self._GRANT_COLUMN[kind]) or "[]")
+        except (ValueError, TypeError):
+            return []
+        out = []
+        for g in v if isinstance(v, list) else []:
+            if isinstance(g, dict) and isinstance(g.get("id"), int) and g.get("key"):
+                out.append({"id": g["id"], "key": str(g["key"]), "fp": str(g.get("fp") or ""),
+                            "by": str(g.get("by") or ""), "at": str(g.get("at") or "")})
+        return out
+
+    def set_grants(self, kind: str, rows: list[dict]) -> None:
+        seen, clean = set(), []
+        for g in rows or []:
+            if g["id"] in seen:
+                continue
+            seen.add(g["id"])
+            clean.append({k: g.get(k, "") for k in ("id", "key", "fp", "by", "at")})
+        setattr(self, self._GRANT_COLUMN[kind], json.dumps(clean))
+
+    def authorize_grant(self, kind: str, obj_id: int, key: str,
+                        fingerprint: str) -> tuple[bool, str, str]:
+        """Gate a run of ONE Process / app on a grant for that very version.
+
+        No grant (an empty list included) = ``not_granted``. A grant whose
+        fingerprint differs from the object's current one = ``grant_paused``:
+        the object changed after an administrator approved it. Returns
+        ``(ok, error_code, message)``.
+        """
+        label = GRANT_LABEL.get(kind, kind)
+        for g in self.grants(kind):
+            if g["id"] == obj_id and g["key"] == key:
+                if fingerprint and g["fp"] == fingerprint:
+                    return (True, "", "")
+                return (False, "grant_paused",
+                        f"This {label} changed after it was granted to this token; "
+                        "an administrator must re-approve it under Access > Tokens.")
+        return (False, "not_granted",
+                f"This token is not granted this {label}. An administrator grants "
+                f"each {label} a token may run under Access > Tokens.")
+
     # --------------------------------------------------------------- lifecycle
     @property
     def is_expired(self) -> bool:
@@ -475,6 +554,8 @@ class ApiToken(db.Model):
             "scopes": self.scope_list,
             "capabilities": self.capability_list,
             "app_ids": self.app_id_list,
+            "process_grants": [g["key"] for g in self.grants("process")],
+            "app_grants": [g["key"] for g in self.grants("app")],
             "product": self.product,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,

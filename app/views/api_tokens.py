@@ -19,7 +19,9 @@ from ..models import AppId
 from ..models_api_token import (CAPABILITIES, CAPABILITY_DESC, CAPABILITY_GROUPS,
                                 CATALOG_EXPLICIT_CAPABILITIES,
                                 EXPLICIT_ONLY_CAPABILITIES, SCOPES, VALID_PRODUCTS,
-                                ApiToken, SCOPE_REQUIRED_PERMISSION, mint_token)
+                                GRANT_KINDS, GRANT_LABEL, ApiToken,
+                                SCOPE_REQUIRED_PERMISSION, mint_token)
+from ..services import token_grants as TG
 from ..services.audit import log_action
 
 bp = Blueprint("api_tokens", __name__, url_prefix="/api-tokens",
@@ -37,6 +39,8 @@ def _render_index(**extra):
                capabilities=CAPABILITIES, appid_catalog=appid_catalog,
                cap_groups=CAPABILITY_GROUPS, cap_desc=CAPABILITY_DESC,
                cap_explicit=sorted(EXPLICIT_ONLY_CAPABILITIES | CATALOG_EXPLICIT_CAPABILITIES),
+               grant_candidates={k: TG.candidates(k) for k in GRANT_KINDS},
+               grant_status={t.id: TG.status(t) for t in tokens},
                new_token=None)
     ctx.update(extra)
     return render_template("api_tokens/index.html", **ctx)
@@ -48,6 +52,18 @@ def _scopes_owner_lacks(owner, scopes) -> list[str]:
     was -- and the one handler that branched on ``admin`` honoured it."""
     return [s for s in scopes
             if owner is None or not owner.can(SCOPE_REQUIRED_PERMISSION.get(s, ""))]
+
+
+def _save_grants(tok, by) -> dict:
+    """Apply the form's grant pickers (``grant_process`` / ``grant_app``) to
+    *tok*; flash what the token's ADOM or owner cannot reach. Returns the
+    keys now granted, for the audit row."""
+    for kind in GRANT_KINDS:
+        refused = TG.select(tok, kind, request.form.getlist("grant_" + kind), by)
+        if refused:
+            flash(f"Not granted ({GRANT_LABEL[kind]}): {', '.join(refused)} — not offered "
+                  f"in the token's ADOM, or its owner may not use it.", "warning")
+    return {kind: [g["key"] for g in tok.grants(kind)] for kind in GRANT_KINDS}
 
 
 @bp.route("/", methods=["GET"])
@@ -95,10 +111,13 @@ def create():
         expires_at=expires_at, created_by=getattr(current_user, "username", ""),
         capabilities=capabilities, app_ids=app_ids,
     )
+    grants = _save_grants(tok, getattr(current_user, "username", ""))
+    db.session.commit()
     log_action("api_token.create", target=f"token:{tok.public_id}",
                extra={"name": tok.name, "owner": owner.username,
                       "scopes": scopes, "product": product,
-                      "capabilities": capabilities, "app_ids": app_ids})
+                      "capabilities": capabilities, "app_ids": app_ids,
+                      "grants": grants})
 
     return _render_index(new_token=plaintext, new_token_row=tok)
 
@@ -135,6 +154,8 @@ def edit(id):
     tok.set_scopes(scopes)
     tok.set_capabilities(capabilities)
     tok.set_app_ids(app_ids)
+    from flask_login import current_user
+    grants = _save_grants(tok, getattr(current_user, "username", ""))
     # Expiry: a positive day count re-anchors from now; -1 clears (never expires);
     # blank/0 leaves it unchanged.
     if days is not None:
@@ -145,8 +166,32 @@ def edit(id):
     db.session.commit()
     log_action("api_token.edit", target=f"token:{tok.public_id}",
                extra={"name": tok.name, "scopes": scopes, "product": product,
-                      "capabilities": capabilities, "app_ids": app_ids})
+                      "capabilities": capabilities, "app_ids": app_ids,
+                      "grants": grants})
     flash(f"Token “{tok.name}” updated.", "success")
+    return redirect(url_for("api_tokens.index"))
+
+
+@bp.route("/<int:id>/grants/<kind>/<int:oid>/approve", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def approve_grant(id, kind, oid):
+    """Re-approve a PAUSED grant: the token may run the object's CURRENT
+    version. One deliberate click per object, audited with both
+    fingerprints -- ticking the box again in the edit form does not do it."""
+    from flask_login import current_user
+    tok = db.session.get(ApiToken, id)
+    if tok is None or kind not in GRANT_KINDS:
+        abort(404)
+    res = TG.reapprove(tok, kind, oid, getattr(current_user, "username", ""))
+    if res is None:
+        flash("That grant cannot be re-approved: it is gone, or the token's ADOM "
+              "or owner can no longer reach the object.", "danger")
+        return redirect(url_for("api_tokens.index"))
+    db.session.commit()
+    log_action("api_token.grant_approve", target=f"token:{tok.public_id}",
+               extra={"kind": kind, "key": res["key"], "from": res["from"], "to": res["to"]})
+    flash(f"Token “{tok.name}” may run the current version of {res['key']}.", "success")
     return redirect(url_for("api_tokens.index"))
 
 

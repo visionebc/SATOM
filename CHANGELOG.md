@@ -8,6 +8,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **API tokens: grants per Process and per Plugin Studio app.** A token can
+  now be handed exactly "run THIS process" or "run THIS app" — Access →
+  Tokens → *Processes it may run* / *Apps it may run*, one box per object.
+  A grant is bound to the version an administrator approved: the diagram's
+  steps and arrows for a Process (moving or renaming a step changes
+  nothing), the published fields, diagram and actions for an app. Change
+  what it runs and the grant **pauses** (403 `grant_paused`) until an
+  administrator clicks *Re-approve* on the token, audited with both
+  fingerprints; ticking the box again does not re-approve it. Deleting the
+  object removes its grants from every token, audited per token, and a
+  grant never follows a reused id to a different object. An empty list
+  grants **none**. Requested by the operator (translated from Spanish):
+  "is there a way to add processes and apps in SATOM and have them create
+  a capability?".
+- **`/api/v1/apps`: run a Plugin Studio app from outside.** `GET /apps`
+  lists the apps the token's owner may use in its ADOM (the console's
+  access list and ADOM rules), with their form fields and whether the token
+  may run them; `POST /apps/<slug>/run` runs the published version of a
+  granted app in the background (202, poll `GET /app-runs/<id>`). A run from
+  the API is **unarmed** by default — store writes, writing SQL, non-GET API
+  calls and device changes are recorded as *rehearsal: not executed*, reads
+  run for real — and `"armed": true` needs the new explicit capability
+  `app_arm`. Migration `tokgr01` adds `api_tokens.process_grants` and
+  `api_tokens.studio_app_grants`.
+
 - **API tokens: read capabilities `metrics`, `findings` and
   `config_history`.** A token can now be handed exactly "read the metrics"
   and nothing else: `metrics` covers `GET /metrics/query` and the SATOM node
@@ -165,6 +190,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   console, so that if something fails it can always be repaired".
 
 ### Changed
+
+- **A Process walk from `/api/v1` needs a grant for that process.** Until
+  now every `write`-scope token could rehearse every process its ADOM saw
+  (and, with `process_arm`, walk any of them armed). Each token that walks a
+  process must now be granted it under Access → Tokens; until then the walk
+  answers 403 `not_granted`. `GET /processes` still lists what the ADOM
+  sees, and each entry now says `"granted": "yes" | "paused" | "no"`.
 
 - **Every table fits the screen; row actions stay on one line.** Measured on
   the 690 pages of every ADOM menu and their detail pages at 1280, 1366, 1600

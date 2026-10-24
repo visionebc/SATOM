@@ -104,6 +104,16 @@ def declares_capability(*caps: str):
     return decorator
 
 
+def read_gate(cap: str):
+    """``None`` when the token may read the data surface *cap*, else the 403.
+
+    One door for every read capability (``ApiToken.authorize_read``), so the
+    metrics, findings, node and config-history routes cannot drift apart again.
+    """
+    ok, code, msg = g.api_token.authorize_read(cap)
+    return None if ok else _err(403, code, msg)
+
+
 def owner_permission(perm: str):
     """``None`` when the token's owner holds *perm*, else the 403 response.
 

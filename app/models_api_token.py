@@ -78,7 +78,9 @@ CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap",
                 "process_arm",
                 # --- catalog groups added 2026-10-15 (CATALOG_EXPLICIT below) -
                 "cert_renew", "monitoring", "sentinel", "feeds",
-                "api_library", "netbox")
+                "api_library", "netbox",
+                # --- read-only data (see READ_CAPABILITIES below) -------------
+                "metrics", "findings", "config_history")
 
 # ---------------------------------------------------------------------------
 # EXPLICIT-ONLY capabilities — the empty-list default does NOT grant these.
@@ -128,6 +130,28 @@ CATALOG_EXPLICIT_CAPABILITIES = frozenset({
     "cert_renew", "monitoring", "sentinel", "feeds", "api_library", "netbox",
 })
 
+# ---------------------------------------------------------------------------
+# READ capabilities — what a token may READ of the data SATOM records.
+#
+# Until 2026-10-24 the metrics store, the findings and the node resources
+# answered to 'monitoring' (the capability that also RUNS sweeps and scrapes),
+# and the configuration history answered to nothing: a token restricted to
+# 'backend_edit' could still read every recorded configuration of its ADOM.
+# Each data surface now has its own tag, so a dashboard can be handed exactly
+# "read metrics" and nothing else.
+#
+# These keep the permissive default -- an empty list reads everything, as it
+# always did -- because a read grant widens nothing a read-scope token could
+# not already see. A restricted list must name the surface. 'monitoring'
+# still implies what it granted before (READ_IMPLIED_BY), so a token minted
+# with it keeps reading metrics and findings after the split.
+# ---------------------------------------------------------------------------
+READ_CAPABILITIES = frozenset({"metrics", "findings", "config_history"})
+READ_IMPLIED_BY = {
+    "metrics": ("monitoring",),
+    "findings": ("monitoring",),
+}
+
 # What each capability lets a token do, and how the token form groups them.
 # One table for the page, the docs and the tests; the template used to keep
 # its own copy of the descriptions.
@@ -152,6 +176,9 @@ CAPABILITY_DESC = {
     "template_apply": "APPROVE a template and PUSH it to devices through the canary-gated apply",
     "inventory": "ASK a device its running firmware, live (reads the device, writes only this inventory)",
     "process_arm": "WALK a Process ARMED from the API (its write steps really write); unarmed walks need only the write scope",
+    "metrics": "READ the metrics store (MetricsQL query) and the SATOM nodes' CPU / memory / disk",
+    "findings": "READ what the alert engine finds now",
+    "config_history": "READ the recorded configuration versions of a device and the diff between two",
 }
 CAPABILITY_GROUPS = (
     ("Server policies (AppID-scopable)",
@@ -160,6 +187,7 @@ CAPABILITY_GROUPS = (
     ("Fleet maintenance & reports", ("maintenance", "reports")),
     ("Monitoring & security", ("monitoring", "sentinel")),
     ("Feeds & integrations", ("feeds", "api_library", "netbox")),
+    ("Read-only data", ("metrics", "findings", "config_history")),
     ("FortiWeb objects (always explicit)", ("waf_exception_draft", "waf_exception_apply")),
     ("FortiADC objects (always explicit)", ("adc_rule_draft", "adc_rule_apply")),
     ("Templates, bindings & baselines (always explicit)", ("template_draft", "template_apply")),
@@ -374,6 +402,23 @@ class ApiToken(db.Model):
                     "target a specific server policy (backend/policy/cert ops), "
                     "not fleet-wide actions.")
         return (True, "", "")
+
+    def authorize_read(self, cap: str) -> tuple[bool, str, str]:
+        """Gate a READ of recorded data (metrics, findings, config history).
+
+        Empty capability list = read anything the scope and ADOM allow, as
+        before. A restricted list must hold *cap* or a capability that implied
+        it before the split (READ_IMPLIED_BY). Returns ``(ok, code, message)``.
+        """
+        if cap not in READ_CAPABILITIES:
+            return (False, "unknown_capability",
+                    f"'{cap}' is not a read capability.")
+        caps = self.capability_list
+        if not caps or cap in caps or any(c in caps for c in READ_IMPLIED_BY.get(cap, ())):
+            return (True, "", "")
+        return (False, "capability_denied",
+                f"This token is restricted to named capabilities and does not "
+                f"hold '{cap}'.")
 
     def authorize_object(self, cap: str) -> tuple[bool, str, str]:
         """Gate an OBJECT write (WAF carve-out / ADC rule) on an explicit grant.

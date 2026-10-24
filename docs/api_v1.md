@@ -123,8 +123,8 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `POST` | `/adc/rules` | write | `adc_rule_draft` (+ `adc_rule_apply` for `"apply": true`) | Create a FortiADC rule (§7) |
 | `GET`  | `/ui/themes` | read | — | The theme names on this node and which one is active (§8) |
 | `GET`  | `/ui/theme` | read | — | One theme as a `satom.ui-theme/2` document: tokens, logo and favicon; the active theme, or `?name=` (§8) |
-| `GET`  | `/system/nodes` | read | `monitoring`, only on a capability-restricted token | CPU, memory and disk of every SATOM node now, graded (§9). **Global** token only |
-| `GET`  | `/system/nodes/history` | read | `monitoring`, only on a capability-restricted token | The same readings over time (§9). **Global** token only |
+| `GET`  | `/system/nodes` | read | `metrics`, only on a capability-restricted token | CPU, memory and disk of every SATOM node now, graded (§9). **Global** token only |
+| `GET`  | `/system/nodes/history` | read | `metrics`, only on a capability-restricted token | The same readings over time (§9). **Global** token only |
 | `GET`  | `/openapi.json` | read | — | This API as an OpenAPI 3.0 document, built from the live routes (§10) |
 | `GET`  | `/templates` | read | — | Templates of the token's ADOM (§11) |
 | `GET`  | `/templates/<id>` | read | — | One template: body, versions, review history, bindings (§11) |
@@ -143,10 +143,10 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `POST` | `/baselines` | write | `template_draft` | Create a baseline (§12) |
 | `PUT`  | `/baselines/<id>` | write | `template_draft` | Update a baseline (§12) |
 | `DELETE` | `/baselines/<id>` | write | `template_draft` | Delete a baseline (§12) |
-| `GET`  | `/appliances/<id>/config-history` | read | — | Recorded configuration versions of one device (§13) |
-| `GET`  | `/appliances/<id>/config-diff` | read | — | What changed between two versions, `?from=&to=` (§13) |
-| `GET`  | `/findings` | read | `monitoring`, only on a capability-restricted token | What the alert engine finds right now (§13) |
-| `GET`  | `/metrics/query` | read | `monitoring`, only on a capability-restricted token | A read-only MetricsQL query over SATOM's own series (§13) |
+| `GET`  | `/appliances/<id>/config-history` | read | `config_history`, only on a capability-restricted token | Recorded configuration versions of one device (§13) |
+| `GET`  | `/appliances/<id>/config-diff` | read | `config_history`, only on a capability-restricted token | What changed between two versions, `?from=&to=` (§13) |
+| `GET`  | `/findings` | read | `findings`, only on a capability-restricted token | What the alert engine finds right now (§13) |
+| `GET`  | `/metrics/query` | read | `metrics`, only on a capability-restricted token | A read-only MetricsQL query over SATOM's own series (§13) |
 | `GET`  | `/processes` | read | — | The processes the token's ADOM may see (§14) |
 | `GET`  | `/processes/<id>` | read | — | One process, with its diagram (§14) |
 | `POST` | `/processes/<id>/run` | write | `process_arm` for `"armed": true` | Walk a process — a **rehearsal** unless armed (§14) |
@@ -304,6 +304,23 @@ earlier gained anything. Destructive actions (`upgrade`, `upgrade_prep`,
 `reboot`, `ha_failover`, `cert_lifecycle`, `custom_rest`) are never runnable
 through the API, whatever the token holds. System Automations also need an
 owner with user management rights.
+
+**Reading recorded data.** Three capabilities gate what a token may *read*,
+not run:
+
+| capability | routes | empty list grants it? |
+|---|---|---|
+| `metrics` | `GET /metrics/query`, `GET /system/nodes`, `GET /system/nodes/history` | yes |
+| `findings` | `GET /findings` | yes |
+| `config_history` | `GET /appliances/<id>/config-history`, `GET /appliances/<id>/config-diff` | yes |
+
+An empty list reads all three, as before. A restricted list must name the
+surface: a dashboard token can hold `metrics` alone and run nothing.
+`monitoring` still implies `metrics` and `findings`, which it granted before
+these existed (2026-10-24), so no token issued earlier lost them. Before that
+date the configuration history had no capability at all, so a token restricted
+to, say, `backend_edit` could read every recorded configuration of its ADOM;
+such a token now needs `config_history` too.
 
 ```json
 {
@@ -547,7 +564,7 @@ charts, for an outside monitoring system.
 **Access.** A `read` token bound to the **global** ADOM. A token bound to a
 product gets `403 wrong_product`, because SATOM health is Global-only and the
 API gives no more than a session gets. A token restricted to named
-capabilities also needs `monitoring` (`403 capability_denied` otherwise). An
+capabilities also needs `metrics` (`403 capability_denied` otherwise). An
 empty capability list is enough, as for every other `GET`. Rate-limited to
 60/min. Node addresses are never in the answer.
 
@@ -816,7 +833,7 @@ call costs a check cycle and is rate-limited to 6/min. Each finding: `key`,
 and, for a device finding, `product`. A token bound to a product receives
 that product's findings only; the installation's own (certificates, host,
 backups, code) need a `global` token. A token restricted to named
-capabilities must hold `monitoring` (`403 capability_denied`).
+capabilities must hold `findings` (`403 capability_denied`).
 
 ### `GET /metrics/query?expr=…`
 
@@ -836,7 +853,7 @@ store's own (`status`, `data.resultType`, `data.result`).
   receives everything.
 * The store itself stays on loopback with no account of its own; this route
   is the only way in from outside. A token restricted to named capabilities
-  must hold `monitoring`.
+  must hold `metrics`.
 
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" --get \

@@ -8,6 +8,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **API tokens: read capabilities `metrics`, `findings` and
+  `config_history`.** A token can now be handed exactly "read the metrics"
+  and nothing else: `metrics` covers `GET /metrics/query` and the SATOM node
+  readings (`/system/nodes`, `/system/nodes/history`), `findings` covers
+  `GET /findings`, and `config_history` covers the configuration history and
+  diffs. Until now metrics and findings answered to `monitoring`, the
+  capability that also runs sweeps and scrapes. A token with no capability
+  ticked reads all three, as before, and `monitoring` still implies `metrics`
+  and `findings`, so no token issued earlier loses access. Requested by the
+  operator (translated from Spanish): "SATOM has, for example, metrics that
+  could be delivered via the API".
 - **Operations › Automation › Mass Deploy.** The newest approved version of
   every template of the ADOM, pushed to one or many of its devices in one
   canary-gated job: an SMTP server change, an NTP or DNS change, a Web
@@ -280,6 +291,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - **Lua Studio: Delete did nothing.** Its form was nested inside the editor
   form, so the browser dropped it; it is now its own form.
 
+- **A capability-restricted API token could read every recorded
+  configuration of its ADOM.** `GET /appliances/<id>/config-history` and
+  `config-diff` checked the scope and the ADOM but no capability, so a token
+  restricted to, say, `backend_edit` read the whole configuration history.
+  Such a token now needs `config_history` (`403 capability_denied`
+  otherwise), and the check answers before the device lookup, so a
+  restricted token cannot probe which device ids exist. A token with no
+  capability ticked is unchanged.
 - **Sidebar: a long Plugin Studio app name is readable and can be starred.**
   An app is named by its author (up to 120 characters), and on one line
   "New FortiWeb server policy (DDI + certificate)" showed about half its

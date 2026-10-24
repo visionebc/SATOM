@@ -11,8 +11,9 @@ history, for an outside monitoring system. Three gates:
 * a token bound to the **global** ADOM: the page is Global-only because node
   names describe the installation, and a FortiWeb-bound token must not reach
   what a FortiWeb-ADOM session cannot;
-* a token restricted to named capabilities must hold ``monitoring``. An empty
-  list keeps the permissive read default every other ``GET`` here has.
+* a token restricted to named capabilities must hold ``metrics`` (or
+  ``monitoring``, which granted it before the read capabilities existed). An
+  empty list keeps the permissive read default every other ``GET`` here has.
 
 Node addresses are not in the answer: an inventory feed has no use for the
 management IPs of the manager, and leaking them is what Global-only exists to
@@ -24,7 +25,7 @@ from flask import g, jsonify, request
 
 from ..extensions import limiter
 from . import bp
-from .auth import _err, token_required
+from .auth import _err, declares_capability, read_gate, token_required
 
 
 def _gate():
@@ -33,17 +34,13 @@ def _gate():
         return _err(403, "wrong_product",
                     "Node resources describe the SATOM installation; they need "
                     "a token bound to the 'global' ADOM.")
-    caps = tok.capability_list
-    if caps and "monitoring" not in caps:
-        return _err(403, "capability_denied",
-                    "This token is restricted to named capabilities and does "
-                    "not hold 'monitoring'.")
-    return None
+    return read_gate("metrics")
 
 
 @bp.route("/system/nodes", methods=["GET"])
 @limiter.limit("60 per minute")
 @token_required("read")
+@declares_capability("metrics")
 def system_nodes():
     """CPU, memory and disk of every SATOM node now, graded (global token only)."""
     denied = _gate()
@@ -56,6 +53,7 @@ def system_nodes():
 @bp.route("/system/nodes/history", methods=["GET"])
 @limiter.limit("60 per minute")
 @token_required("read")
+@declares_capability("metrics")
 def system_nodes_history():
     """CPU, memory and disk of the SATOM nodes over time (global token only)."""
     denied = _gate()

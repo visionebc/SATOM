@@ -150,7 +150,7 @@ def build(app=None) -> dict:
             "description": (
                 "Token-authenticated integration surface. Every operation "
                 "names the minimum token scope (x-satom-scope) and the "
-                "explicit capabilities it asks for (x-satom-capabilities); "
+                "capabilities it asks for (x-satom-capabilities); "
                 "a token never exceeds its owner's permissions or its ADOM. "
                 "Prose manual: docs/api_v1.md."),
         },

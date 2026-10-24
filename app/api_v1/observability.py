@@ -33,7 +33,7 @@ from ..extensions import limiter
 from ..models import Appliance, visible_appliance_or_404, visible_appliances
 from ..models_sot import SotVersion
 from . import bp
-from .auth import _err, token_required
+from .auth import _err, declares_capability, read_gate, token_required
 
 #: Only SATOM's own series. A metric name is anything the query reads that is
 #: not a function, a keyword or a label; the store would answer for any
@@ -89,6 +89,7 @@ def _version_for(device: str, ref: str) -> SotVersion | None:
 @bp.route("/appliances/<int:id>/config-history", methods=["GET"])
 @limiter.limit("60 per minute")
 @token_required("read")
+@declares_capability("config_history")
 def config_history(id):
     """The recorded configuration versions of one device, newest first.
 
@@ -98,10 +99,16 @@ def config_history(id):
     ``total_objects``, ``section_count``, ``source`` and whether the payload
     was evacuated to the backup server.
 
+    A token restricted to named capabilities must hold ``config_history``.
+
     Responses:
         200: ``{"appliance": {...}, "device": "<slug>", "versions": [...]}``.
+        403: ``capability_denied``.
         404: No such appliance in the token's ADOM.
     """
+    denied = read_gate("config_history")
+    if denied is not None:
+        return denied
     from ..services import sot_store
     a = visible_appliance_or_404(id, user=_owner())
     try:
@@ -119,6 +126,7 @@ def config_history(id):
 @bp.route("/appliances/<int:id>/config-diff", methods=["GET"])
 @limiter.limit("30 per minute")
 @token_required("read")
+@declares_capability("config_history")
 def config_diff(id):
     """What changed between two recorded versions of one device's configuration.
 
@@ -127,13 +135,18 @@ def config_diff(id):
     object paths added, removed and changed (``section/endpoint/key``), with
     per-field detail for the first changed objects, and ``identical`` when
     nothing differs. Secrets were stripped when the versions were recorded.
+    A token restricted to named capabilities must hold ``config_history``.
 
     Responses:
         200: The diff.
         400: ``from`` or ``to`` missing or malformed.
+        403: ``capability_denied``.
         404: No such appliance in the token's ADOM, or a version that is not this device's.
         410: A version whose payload is no longer available (``blob_missing``).
     """
+    denied = read_gate("config_history")
+    if denied is not None:
+        return denied
     from ..services import sot_store
     a = visible_appliance_or_404(id, user=_owner())
     device = _device_slug(a)
@@ -156,16 +169,6 @@ def config_diff(id):
 # --------------------------------------------------------------------------- #
 #  Findings                                                                    #
 # --------------------------------------------------------------------------- #
-def _monitoring_gate():
-    """A token restricted to named capabilities must hold ``monitoring``."""
-    caps = g.api_token.capability_list
-    if caps and "monitoring" not in caps:
-        return _err(403, "capability_denied",
-                    "This token is restricted to named capabilities and does "
-                    "not hold 'monitoring'.")
-    return None
-
-
 def _finding_visible(f: dict, product: str) -> bool:
     """A product-bound token sees its own product's findings only; the
     installation's own (no product) are Global."""
@@ -177,6 +180,7 @@ def _finding_visible(f: dict, product: str) -> bool:
 @bp.route("/findings", methods=["GET"])
 @limiter.limit("6 per minute")
 @token_required("read")
+@declares_capability("findings")
 def findings():
     """What the alert engine finds right now, scoped to the token's ADOM.
 
@@ -187,13 +191,13 @@ def findings():
     device finding, ``product``. A token bound to a product receives that
     product's findings only; the installation's own (certificate, host,
     backup, code) need a ``global`` token. A token restricted to named
-    capabilities must hold ``monitoring``.
+    capabilities must hold ``findings`` (or ``monitoring``).
 
     Responses:
         200: ``{"evaluated_at": ..., "node": ..., "findings": [...]}``.
         403: ``capability_denied``.
     """
-    denied = _monitoring_gate()
+    denied = read_gate("findings")
     if denied is not None:
         return denied
     from ..services import alerts
@@ -287,6 +291,7 @@ def _filter_result(data: dict, product: str, devices: set[str]) -> dict:
 @bp.route("/metrics/query", methods=["GET"])
 @limiter.limit("60 per minute")
 @token_required("read")
+@declares_capability("metrics")
 def metrics_query():
     """A read-only MetricsQL query against SATOM's metrics store.
 
@@ -299,7 +304,7 @@ def metrics_query():
     series of that product's devices; a ``global`` token receives everything,
     the SATOM nodes' own readings included. The store itself stays on
     loopback; this route is the only way in from outside. A token restricted
-    to named capabilities must hold ``monitoring``.
+    to named capabilities must hold ``metrics`` (or ``monitoring``).
 
     Responses:
         200: The store's answer (``status``, ``data.resultType``, ``data.result``).
@@ -308,7 +313,7 @@ def metrics_query():
         502: The store answered an error (``store_unavailable``).
         504: The store did not answer within 10 s (``store_timeout``).
     """
-    denied = _monitoring_gate()
+    denied = read_gate("metrics")
     if denied is not None:
         return denied
     from ..services import vm_store

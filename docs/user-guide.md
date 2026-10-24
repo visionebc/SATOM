@@ -3627,6 +3627,14 @@ is reachable by any token. The API also exposes what SATOM has recorded
 describes itself as an OpenAPI document at `/api/v1/openapi.json`, built
 from the live routes. Full reference: [docs/api_v1.md](api_v1.md).
 
+**Capabilities** narrow what a token may do. Most name a kind of action
+(`backend_edit`, `maintenance`, `template_apply` …). Three name what it may
+**read**: `metrics` (the metrics query and the SATOM node readings),
+`findings` (the alert engine's findings) and `config_history` (configuration
+history and diffs). With nothing ticked a token reads all three; with a list
+it reads only what the list names, so a dashboard token can hold `metrics`
+alone and run nothing. `monitoring` still reads metrics and findings.
+
 ## 19. Appearance: logo, colours & themes
 
 `Settings → Appearance` (administrators). Four palettes ship — **SATOM Aurora**

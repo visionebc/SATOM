@@ -27532,3 +27532,27 @@ msgstr "Führt aus:"
 
 msgid "gone"
 msgstr "entfernt"
+
+msgid "Default limit"
+msgstr "Standardlimit"
+
+msgid "Every row without a limit of its own uses this percent of the Fortinet limit, including rows that appear later (a new device, firmware or planned model). A row with its own number or percent keeps it. Empty = off."
+msgstr "Jede Zeile ohne eigenes Limit verwendet diesen Prozentsatz des Fortinet-Limits, auch Zeilen, die später hinzukommen (ein neues Gerät, eine neue Firmware oder ein geplantes Modell). Eine Zeile mit eigener Zahl oder eigenem Prozentsatz behält diese. Leer = aus."
+
+msgid "%% of Fortinet limit"
+msgstr "%% des Fortinet-Limits"
+
+msgid "Clear the own limit of %(n)s rows of %(p)s so they use the default %(pct)s %%?"
+msgstr "Eigenes Limit von %(n)s Zeilen von %(p)s löschen, damit sie den Standardwert %(pct)s %% verwenden?"
+
+msgid "Rows with an override of the Fortinet number keep the override"
+msgstr "Zeilen mit einer Überschreibung der Fortinet-Zahl behalten sie"
+
+msgid "Apply to all rows"
+msgstr "Auf alle Zeilen anwenden"
+
+msgid "Monitoring warns at %(w)s %% of the effective limit, i.e. at %(x)s %% of the Fortinet limit (Thresholds page)."
+msgstr "Die Überwachung warnt bei %(w)s %% des effektiven Limits, also bei %(x)s %% des Fortinet-Limits (Seite Schwellenwerte)."
+
+msgid "default (%(pct)s %%)"
+msgstr "Standard (%(pct)s %%)"

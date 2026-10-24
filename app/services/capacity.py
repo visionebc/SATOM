@@ -12,6 +12,8 @@ Two numbers per (model, object type):
 * the **admin's limit** in ``CapacityLimit`` — a number or a percent of the
   factory limit (``operational_cap`` / ``cap_percent``), plus ``hard_max`` as
   an OVERRIDE of the factory number for the rare case Fortinet is wrong.
+  A row with no number and no percent takes the product's DEFAULT percent
+  (``default_percent``, an AppSetting), so new rows inherit it.
 
 The effective cap is the lowest of them. Automations call ``check_headroom``
 BEFORE creating an object so they never push the box past a limit it will
@@ -437,10 +439,39 @@ class Headroom:
         return self.__dict__.copy()
 
 
-def effective_limit(factory: int | None, lim, *, used: int | None = None) -> tuple:
+#: AppSetting key of a product's DEFAULT limit, a percent of the base (the
+#: Fortinet limit or its override). Every row with no number and no percent of
+#: its own uses it — rows created later (a new device, firmware or planned
+#: model) included — and a row's own value always wins.
+DEFAULT_PCT_KEY = "capacity.default_pct.%s"
+
+
+def default_percent(product: str | None) -> float | None:
+    """The product's default limit in percent (0 < p <= 100), or None when it
+    is unset, invalid or unreadable (no app context): a missing default must
+    never block work."""
+    try:
+        from ..models import AppSetting
+        raw = AppSetting.get(DEFAULT_PCT_KEY % (product or PRODUCT_DEFAULT))
+        p = float(raw) if raw not in (None, "") else None
+    except Exception:  # noqa: BLE001 — no app context / bad value
+        return None
+    return p if p is not None and 0 < p <= 100 else None
+
+
+def uses_default(lim) -> bool:
+    """True when the row has no limit of its own (neither number nor percent),
+    so the product default applies to it."""
+    return lim is None or (lim.operational_cap is None and lim.cap_percent is None)
+
+
+def effective_limit(factory: int | None, lim, *, used: int | None = None,
+                    product: str | None = None) -> tuple:
     """``(effective cap, base, contradicted)`` from the factory number and the
     admin row. Base = the admin override (``hard_max``) or else the factory
     number; the admin's number and percent (of the base) can only LOWER it.
+    A row with neither takes the product default percent (``default_percent``
+    of ``product``, else of the row's product).
     A factory number the device already exceeds is dropped from the base
     (see the module docstring); an override is the admin's word and stays."""
     override = lim.hard_max if lim is not None else None
@@ -450,6 +481,8 @@ def effective_limit(factory: int | None, lim, *, used: int | None = None) -> tup
     vals = [v for v in (base, lim.operational_cap if lim is not None else None)
             if v is not None]
     pct = lim.cap_percent if lim is not None else None
+    if pct is None and uses_default(lim):
+        pct = default_percent(product or getattr(lim, "product", None))
     if pct is not None and base is not None:
         try:
             p = float(pct)
@@ -472,7 +505,8 @@ def headroom(appliance, object_type: str, want: int = 0) -> Headroom:
     used, n_rows = chassis_count(appliance, object_type)
     lim = limit_for_appliance(appliance, object_type)
     fac = factory_for(appliance, object_type)
-    eff, _base, contradicted = effective_limit(fac.value, lim, used=used)
+    eff, _base, contradicted = effective_limit(
+        fac.value, lim, used=used, product=getattr(appliance, "kind", None) or PRODUCT_DEFAULT)
     free = (eff - used) if eff is not None else None
     ok = True if eff is None else (used + max(want, 0) <= eff)
     return Headroom(object_type, label, used, lim.hard_max if lim else None,

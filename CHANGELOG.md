@@ -8,6 +8,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Capacity Limits: one default limit for every row.** A *Default limit*
+  card on Administrator → Capacity Limits takes one percent of the Fortinet
+  limit per product (for example `80`). Every row without a number or
+  percent of its own uses it, including rows that appear later (a new
+  device, firmware or planned model), and *Effective* shows the resulting
+  number on each row; automations and device health enforce it like any
+  other limit. A row with its own value keeps it; *Apply to all rows*
+  clears those values (overrides of the Fortinet number stay). The card
+  also shows where monitoring warns, since the Thresholds warning is a
+  percent of the effective limit (80 % of an 80 % limit = 64 % of
+  Fortinet's). Audited as `capacity.default_set` / `capacity.default_apply`.
+  Requested by the operator (translated from Spanish): "it needs to be more
+  general too, add an extra filter like 80% that automatically puts the
+  number on everything, so it's easier".
+
 - **API tokens: grants per Process and per Plugin Studio app.** A token can
   now be handed exactly "run THIS process" or "run THIS app" — Access →
   Tokens → *Processes it may run* / *Apps it may run*, one box per object.

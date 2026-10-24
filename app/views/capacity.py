@@ -117,11 +117,106 @@ def index():
     from ..services import device_health as devhealth
     # The "in use" highlight follows the configured capacity warning level
     # of each product (Thresholds page), not a hard-coded 80 %.
-    warn_pct = {p: devhealth.thresholds(p)[0] for (p, _f, _m) in groups}
+    default_products = _default_products(groups)
+    warn_pct = {p: devhealth.thresholds(p)[0]
+                for p in {k[0] for k in groups} | {p for p, _l in default_products}}
+    defaults = {p: capsvc.default_percent(p) for p, _l in default_products}
+    # Rows that keep a limit of their own: what "Apply to all rows" would reset.
+    own = {p: sum(1 for k, rows in groups.items() if k[0] == p
+                  for r in rows if not capsvc.uses_default(r))
+           for p, _l in default_products}
     return render_template('capacity/index.html', groups=groups, view=view,
                            labels=labels, known_models=capsvc.KNOWN_MODELS,
                            product_options=product_scope.creatable_kinds(),
-                           warn_pct=warn_pct)
+                           warn_pct=warn_pct, default_products=default_products,
+                           defaults=defaults, own_counts=own,
+                           uses_default=capsvc.uses_default)
+
+
+def _default_products(groups=None) -> list:
+    """[(product, label)] whose default limit this session may set: the
+    products of the catalog groups it sees, plus FortiWeb (the product the
+    object-type catalog counts) when the ADOM may hold FortiWeb devices."""
+    from ..services import product_scope
+    from ..services.product_scope import scope_query
+    offered = dict(product_scope.creatable_kinds())
+    if groups is None:
+        seen = {p for (p,) in scope_query(db.session.query(CapacityLimit.product),
+                                          CapacityLimit.product).distinct()}
+    else:
+        seen = {k[0] for k in groups}
+    if capsvc.PRODUCT_DEFAULT in offered:
+        seen.add(capsvc.PRODUCT_DEFAULT)
+    return [(p, offered.get(p, p)) for p in sorted(seen)]
+
+
+@bp.route('/default', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def set_default():
+    from ..models import AppSetting
+    product = (request.form.get('product') or '').strip().lower()
+    if product not in dict(_default_products()):
+        flash(f'This ADOM cannot set the default limit for {product or "?"}.', 'danger')
+        return redirect(url_for('capacity.index'))
+    raw = (request.form.get('pct') or '').strip().rstrip('%').strip()
+    if raw:
+        try:
+            pct = float(raw)
+            if not (0 < pct <= 100):
+                raise ValueError
+        except ValueError:
+            flash('The default limit must be a percent greater than 0 and at most 100 '
+                  '(empty = off).', 'danger')
+            return redirect(url_for('capacity.index'))
+    else:
+        pct = None
+    before = capsvc.default_percent(product)
+    if before == pct:
+        flash('No changes.', 'info')
+        return redirect(url_for('capacity.index'))
+    AppSetting.set(capsvc.DEFAULT_PCT_KEY % product, '' if pct is None else ('%g' % pct))
+    log_action('capacity.default_set', product,
+               detail=f'{before if before is not None else "off"} -> '
+                      f'{"%g" % pct if pct is not None else "off"} % of the Fortinet limit')
+    flash(f'Default limit for {product}: '
+          + (f'{pct:g} % of the Fortinet limit.' if pct is not None
+             else 'off (rows without a limit of their own use the Fortinet limit).'),
+          'success')
+    return redirect(url_for('capacity.index'))
+
+
+@bp.route('/apply-default', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def apply_default():
+    """Clear every row's own number/percent (overrides of the Fortinet number
+    stay: they change the base, not the limit) so all use the default."""
+    from sqlalchemy import or_
+    from ..services.product_scope import scope_query
+    product = (request.form.get('product') or '').strip().lower()
+    if product not in dict(_default_products()):
+        flash(f'This ADOM cannot change the limits of {product or "?"}.', 'danger')
+        return redirect(url_for('capacity.index'))
+    pct = capsvc.default_percent(product)
+    if pct is None:
+        flash('Set a default limit first.', 'danger')
+        return redirect(url_for('capacity.index'))
+    rows = scope_query(CapacityLimit.query, CapacityLimit.product).filter(
+        CapacityLimit.product == product,
+        or_(CapacityLimit.operational_cap.isnot(None),
+               CapacityLimit.cap_percent.isnot(None))).all()
+    who = getattr(current_user, 'username', '') or ''
+    for r in rows:
+        r.operational_cap, r.cap_percent = None, None
+        r.source, r.updated_by = 'admin', who
+    if rows:
+        db.session.commit()
+        log_action('capacity.default_apply', product,
+                   detail=f'{len(rows)} rows reset to the default {pct:g} %')
+    flash(f'{len(rows)} row{"s" if len(rows) != 1 else ""} now use the default '
+          f'{pct:g} %.', 'success' if rows else 'info')
+    return redirect(url_for('capacity.index'))
 
 
 @bp.route('/add-model', methods=['POST'])

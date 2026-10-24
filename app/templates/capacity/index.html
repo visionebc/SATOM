@@ -29,6 +29,46 @@
   </div>
 </div>
 
+{% if default_products %}
+<div class="fw-card mb-4" data-cap-default>
+  <div class="fw-card-body">
+    <b><i class="bi bi-sliders me-1"></i>{{ _('Default limit') }}</b>
+    <p class="text-muted small mb-2">{{ _('Every row without a limit of its own uses this percent of the Fortinet limit, including rows that appear later (a new device, firmware or planned model). A row with its own number or percent keeps it. Empty = off.') }}</p>
+    {% for p, plabel in default_products %}
+    {% set dp = defaults.get(p) %}
+    <div class="d-flex flex-wrap align-items-end gap-2 mb-2" data-cap-default-product="{{ p }}">
+      <form method="post" action="{{ url_for('capacity.set_default') }}" class="d-flex align-items-end gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="product" value="{{ p }}">
+        <div>
+          <label class="form-label text-muted small mb-1">{{ plabel }}</label>
+          <div class="input-group input-group-sm" style="max-width:170px;">
+            <input name="pct" value="{{ '%g'|format(dp) if dp is not none else '' }}" class="form-control"
+                   inputmode="decimal" placeholder="{{ _('off') }}">
+            <span class="input-group-text">{{ _('%% of Fortinet limit') }}</span>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+      </form>
+      {% if dp is not none %}
+      {% set n_own = own_counts.get(p, 0) %}
+      <form method="post" action="{{ url_for('capacity.apply_default') }}"
+            data-confirm="{{ _('Clear the own limit of %(n)s rows of %(p)s so they use the default %(pct)s %%?', n=n_own, p=plabel, pct='%g'|format(dp)) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="product" value="{{ p }}">
+        <button class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not n_own }}
+                title="{{ _('Rows with an override of the Fortinet number keep the override') }}">
+          <i class="bi bi-arrow-repeat me-1"></i>{{ _('Apply to all rows') }}{% if n_own %} ({{ n_own }}){% endif %}</button>
+      </form>
+      {% set w = warn_pct.get(p, 80.0) %}
+      <div class="cap-src mb-1">{{ _('Monitoring warns at %(w)s %% of the effective limit, i.e. at %(x)s %% of the Fortinet limit (Thresholds page).', w='%g'|format(w), x='%g'|format((w * dp / 100.0)|round(1))) }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="fw-card mb-4">
   <div class="fw-card-body">
     <form method="post" action="{{ url_for('capacity.add_model') }}" class="row g-2 align-items-end">
@@ -115,9 +155,10 @@
                        title="{{ _('Only when Fortinet\'s number is wrong for this box') }}">
               </details>
             </td>
+            {% set dp = defaults.get(product) %}
             <td>
-              <select name="mode_{{ r.id }}" class="form-select form-select-sm">
-                <option value="none" {{ 'selected' if r.operational_cap is none and r.cap_percent is none }}>{{ _('Fortinet limit') }}</option>
+              <select name="mode_{{ r.id }}" class="form-select form-select-sm" data-cap-mode>
+                <option value="none" {{ 'selected' if uses_default(r) }}>{% if dp is not none %}{{ _('default (%(pct)s %%)', pct='%g'|format(dp)) }}{% else %}{{ _('Fortinet limit') }}{% endif %}</option>
                 <option value="number" {{ 'selected' if r.operational_cap is not none }}>{{ _('number') }}</option>
                 <option value="percent" {{ 'selected' if r.cap_percent is not none }}>{{ _('percent of Fortinet limit') }}</option>
               </select>
@@ -125,7 +166,8 @@
             <td>
               <input name="val_{{ r.id }}"
                      value="{{ r.operational_cap if r.operational_cap is not none else (r.cap_percent|round(1)|string if r.cap_percent is not none else '') }}"
-                     class="form-control form-control-sm" inputmode="decimal" placeholder="—">
+                     class="form-control form-control-sm" inputmode="decimal"
+                     placeholder="{{ ('%g %%'|format(dp)) if dp is not none and uses_default(r) else '—' }}">
             </td>
             <td class="cap-eff" data-cap-effective>{{ per_device(c.effective, c.effective_same) }}</td>
             <td class="text-muted small">{{ r.updated_by or '' }} {{ r.updated_at.strftime('%Y-%m-%d') if r.updated_at and r.updated_by }}</td>

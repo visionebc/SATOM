@@ -473,6 +473,13 @@ before creating objects.
 - **Your limit**: *Fortinet limit* (no buffer), a **number**, or a
   **percent of Fortinet limit**. **Effective** is the lowest of them and is
   what automations respect.
+- **Default limit** (card at the top): one percent of the Fortinet limit per
+  product, e.g. `80`. Every row without a number or percent of its own uses
+  it — shown as *default (80 %)* — including rows that appear later; a row
+  with its own value keeps it. *Apply to all rows* clears those own values
+  (an override of the Fortinet number stays). The Thresholds warning is a
+  percent of the effective limit: 80 % of an 80 % limit warns at 64 % of
+  Fortinet's.
 - **Override** (under the Fortinet limit) replaces Fortinet's number for a box
   where it is wrong. Leave it empty otherwise.
 - Each type is counted where Fortinet counts it: **per appliance** (server

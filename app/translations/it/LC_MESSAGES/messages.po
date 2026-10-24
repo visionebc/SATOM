@@ -27569,3 +27569,27 @@ msgstr "Esegue:"
 
 msgid "gone"
 msgstr "rimosso"
+
+msgid "Default limit"
+msgstr "Limite predefinito"
+
+msgid "Every row without a limit of its own uses this percent of the Fortinet limit, including rows that appear later (a new device, firmware or planned model). A row with its own number or percent keeps it. Empty = off."
+msgstr "Ogni riga senza un proprio limite usa questa percentuale del limite Fortinet, comprese le righe che compaiono in seguito (un nuovo dispositivo, firmware o modello pianificato). Una riga con un proprio numero o percentuale lo mantiene. Vuoto = disattivato."
+
+msgid "%% of Fortinet limit"
+msgstr "%% del limite Fortinet"
+
+msgid "Clear the own limit of %(n)s rows of %(p)s so they use the default %(pct)s %%?"
+msgstr "Cancellare il limite proprio di %(n)s righe di %(p)s perché usino il predefinito del %(pct)s %%?"
+
+msgid "Rows with an override of the Fortinet number keep the override"
+msgstr "Le righe con una sostituzione del numero Fortinet la mantengono"
+
+msgid "Apply to all rows"
+msgstr "Applica a tutte le righe"
+
+msgid "Monitoring warns at %(w)s %% of the effective limit, i.e. at %(x)s %% of the Fortinet limit (Thresholds page)."
+msgstr "Il monitoraggio avvisa al %(w)s %% del limite effettivo, cioè al %(x)s %% del limite Fortinet (pagina Soglie)."
+
+msgid "default (%(pct)s %%)"
+msgstr "predefinito (%(pct)s %%)"

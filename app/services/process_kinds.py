@@ -69,7 +69,7 @@ where the typed name only proves the operator read the warning.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from urllib.parse import urlsplit
 
 from ..models_process import FAIL, PASS, UNKNOWN
@@ -204,6 +204,14 @@ def expand(node: dict, ctx) -> dict:
 
 def _run_start(node, ctx) -> StepResult:
     return StepResult(PASS, "process entered", "")
+
+
+def _run_activity(node, ctx) -> StepResult:
+    """A documented box that only records that the walk passed it -- '1
+    Connectivity tests' in a runbook. The work it names is done by the steps
+    after it (or by a person reading its instructions on the run page)."""
+    first = (_s(node.get("params", {}), "doc").splitlines() or [""])[0]
+    return StepResult(PASS, first[:200] or "activity recorded")
 
 
 def _run_end(node, ctx) -> StepResult:
@@ -984,8 +992,17 @@ _KINDS: tuple[NodeKind, ...] = (
                            help="What the button that follows the pass arrow says "
                                 "-- 'Yes' when the gate is a question."),
                      Param("fail_label", "Fail button", "text", default="Failed",
-                           help="The button that follows the fail arrow -- 'No'.")),
+                           help="The button that follows the fail arrow -- 'No'."),
+                     Param("buttons", "Buttons", "select", default="two",
+                           choices=("two", "one"),
+                           help="one: a single button (the Pass button, e.g. "
+                                "'Done') for a task a person carries out, "
+                                "not a question.")),
              colour="#7A5700"),
+    NodeKind("activity", "Activity", "flow",
+             "A documented box that passes at once -- a heading such as "
+             "'1 Connectivity tests'. Its instructions are shown on the run.",
+             colour="#3D4550"),
 
     NodeKind("http_check", "HTTP check", "check",
              "Fetch a URL and assert status, latency and content.",
@@ -1095,6 +1112,7 @@ _KINDS: tuple[NodeKind, ...] = (
 )
 
 _RUNNERS = {
+    "activity": _run_activity,
     "start": _run_start, "end": _run_end, "decision": _run_decision,
     "manual_gate": _run_manual_gate, "http_check": _run_http_check,
     "tcp_check": _run_tcp_check, "dns_check": _run_dns_check,
@@ -1104,6 +1122,20 @@ _RUNNERS = {
     "compensate": _run_compensate, "appliance_fact": _run_appliance_fact,
     "notify": _run_notify,
 }
+
+#: Every step, whatever it asks, may carry the text of the procedure it comes
+#: from (FA-0008): a runbook is a document first. Shown on the run page and in
+#: the editor; the engine never reads them.
+COMMON_PARAMS = (
+    Param("doc", "Instructions", "textarea",
+          help="The full text of this activity: what the person does, the "
+               "commands, what to expect. Shown on the run page."),
+    Param("role", "Responsible", "text",
+          help="Who carries it out, e.g. Specialist, Communications Lead."),
+    Param("time", "Estimated time", "text",
+          help="Minutes, or free text such as 'restore time'."),
+)
+_KINDS = tuple(replace(k, params=k.params + COMMON_PARAMS) for k in _KINDS)
 
 KIND_KEYS = tuple(k.key for k in _KINDS)
 

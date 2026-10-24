@@ -383,15 +383,24 @@ def run_detail(rid):
                 params = n.get("params") or {}
                 gate = str(params.get("prompt") or "")
                 labels = {"pass": str(params.get("pass_label") or "").strip(),
-                          "fail": str(params.get("fail_label") or "").strip()}
+                          "fail": str(params.get("fail_label") or "").strip(),
+                          "one": str(params.get("buttons") or "") == "one"}
         # The step row holds the prompt AS RENDERED for this run's appliance
         # ("open https://192.0.2.20/"); the graph holds the template.
         parked = next((s for s in reversed(row.steps)
                        if s.node_key == row.waiting_node), None)
         if parked is not None and parked.detail:
             gate = parked.detail
+    # The procedure's own text per step (Instructions / Responsible /
+    # Estimated time), from the graph the run WALKED, not the current one.
+    docs = {}
+    for n in (row.graph or {}).get("nodes", []):
+        p = n.get("params") or {}
+        d = {k: str(p.get(k) or "").strip() for k in ("doc", "role", "time")}
+        if any(d.values()):
+            docs[str(n.get("key"))] = d
     return render_template("process/run.html", run=row, gate_prompt=gate,
-                           gate_labels=labels,
+                           gate_labels=labels, step_docs=docs,
                            can_edit=current_user.can("config_write"))
 
 

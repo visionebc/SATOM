@@ -18,8 +18,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   e-mail, also on rehearsals, marked `[rehearsal]`). A Manual gate can label its
   buttons (*Yes* / *No*), and an End step can set the run verdict (*ok* /
   *failed*), so a runbook whose checks fail on the way by design is judged by
-  the ending it reached. Example process: *Appliance recovery (restart
-  activities)*, started by a trigger on unreachable devices.
+  the ending it reached. Every step also carries the procedure's own text
+  (*Instructions*, *Responsible*, *Estimated time*), shown on the run page; a
+  new **Activity** step is a documented box that passes at once; a gate can
+  show a single button (*Done*) for a task. The diagram editor draws sideways
+  arrows from the side, wraps labels onto two lines and writes a gate's own
+  answers (*Ja* / *Nein*) on its arrows. Example process: *Appliance recovery
+  (restart activities)*, started by a trigger on unreachable devices.
 
 - **Capacity Limits: one default limit for every row.** A *Default limit*
   card on Administrator → Capacity Limits takes one percent of the Fortinet

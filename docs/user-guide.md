@@ -10161,6 +10161,7 @@ into five consoles at once.
 | Start / End | where the walk begins, and each way it can finish | no |
 | Decision | did an **earlier** step end pass / fail / unknown? | no |
 | Manual gate | stops and waits for a person | no |
+| Activity | a documented box that passes at once — a heading such as *1 Connectivity tests*; its instructions show on the run | no |
 | HTTP check | status, latency and body of a URL | no |
 | TCP check | one handshake — and it keeps *refused* apart from *timeout*, because a refusal proves the host is up | no |
 | DNS check | resolve a name on a configured server and assert the answer | no |
@@ -10203,9 +10204,16 @@ Three things make that work:
   probes an empty address. Console reads, console scripts and hook payloads
   are **never** rendered — inventory text spliced into a CLI line would be a
   command nobody reviewed.
-* **Questions.** A Manual gate takes its own button labels (*Pass button*,
-  *Fail button*), so "Is the console server OK?" is answered **Yes** / **No**;
-  the answer still follows the `pass` / `fail` arrows.
+* **Questions and tasks.** A Manual gate takes its own button labels (*Pass
+  button*, *Fail button*), so "Is the console server OK?" is answered **Yes** /
+  **No**; the answer still follows the `pass` / `fail` arrows, and the arrows
+  in the editor carry those words. *Buttons* `one` shows a single button (for
+  example *Done*) for a task a person carries out rather than a question.
+* **The procedure's own text.** Every step has *Instructions*, *Responsible*
+  and *Estimated time*. The run page shows them on the step that is waiting
+  and, folded, on every step of the run — the detailed description, the
+  commands and who does it travel with the plan instead of living in a second
+  document.
 * **The ending decides.** A runbook's first checks are expected to fail — that
   is why it was opened. On an End step, *Run verdict* `ok` or `failed` makes
   reaching that ending the verdict of the run (for example *Documentation* =
@@ -10213,6 +10221,11 @@ Three things make that work:
   or could not be looked at on the way. `computed` (the default) keeps the
   step-by-step verdict. Only an ending the walk actually stopped on counts: a
   path that runs out of arrows half way is judged step by step.
+
+In the editor an arrow leaves from the side when the next step is mostly
+beside it, and from the bottom when it is below, so a diagram laid out left to
+right like the paper original reads the same way. Labels wrap onto two lines;
+the full label is the tooltip.
 
 The bundled example is **Appliance recovery (restart activities)**: connectivity
 tests (HTTPS, TCP to the SSH port, SSH login), the firewall/routing, VM,

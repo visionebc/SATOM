@@ -29,7 +29,7 @@
   var CAN_EDIT = !!DATA.canEdit;
 
   var NS = "http://www.w3.org/2000/svg";
-  var W = 190, H = 46;               // node box
+  var W = 190, H = 58;               // node box (two label lines + kind)
   var sel = null;                    // {type:'node'|'edge', key|index}
   var connectFrom = null;
   var view = { x: 0, y: 0, k: 1 };
@@ -117,19 +117,79 @@
     });
   }
 
+  /* The words an arrow carries. A Manual gate names its own answers ("Ja" /
+     "Nein"), so its pass/fail arrows say those words, as on the paper the
+     procedure came from. */
+  function edgeText(e) {
+    var br = BRANCH[e.branch] || BRANCH.always;
+    var a = nodeByKey(e.src);
+    var p = (a && a.kind === "manual_gate" && a.params) || {};
+    if (e.branch === "pass" && p.pass_label) return p.pass_label;
+    if (e.branch === "fail" && p.fail_label) return p.fail_label;
+    return br.t;
+  }
+
+  /* Bottom -> top when the next step is below; side -> side when it is
+     mostly beside (right or left). */
+  function anchors(a, b) {
+    var ax = a.x + W / 2, ay = a.y + H / 2, bx = b.x + W / 2, by = b.y + H / 2;
+    var dx = bx - ax, dy = by - ay;
+    if (Math.abs(dx) > W && Math.abs(dx) > Math.abs(dy)) {
+      return dx > 0 ? { side: true, x1: a.x + W, y1: ay, x2: b.x, y2: by }
+                    : { side: true, x1: a.x, y1: ay, x2: b.x + W, y2: by };
+    }
+    if (dy < 0) {
+      return { side: false, x1: ax, y1: a.y, x2: bx, y2: b.y + H };
+    }
+    return { side: false, x1: ax, y1: a.y + H, x2: bx, y2: b.y };
+  }
+
+  /* At most two lines, broken at a space; the full text is the tooltip. */
+  function wrapLabel(text, max) {
+    text = String(text);
+    if (text.length <= max) return [text];
+    var cut = text.lastIndexOf(" ", max);
+    if (cut < 8) cut = max;
+    var rest = text.slice(cut).trim();
+    return [text.slice(0, cut).trim(),
+            rest.length > max ? rest.slice(0, max - 1) + "\u2026" : rest];
+  }
+
   function draw() {
     while (root.firstChild) root.removeChild(root.firstChild);
     root.setAttribute("transform",
       "translate(" + view.x + "," + view.y + ") scale(" + view.k + ")");
 
+    /* Several outcomes along the same pair of steps share ONE label
+       ("fail / unknown"), drawn once, instead of two words on top of each
+       other. */
+    var pairLabel = {}, pairFirst = {};
+    GRAPH.edges.forEach(function (e, idx) {
+      var t = edgeText(e);
+      var pk = e.src + "\u0000" + e.dst;
+      if (!(pk in pairFirst)) { pairFirst[pk] = idx; pairLabel[pk] = []; }
+      if (t) pairLabel[pk].push(t);
+    });
+
     GRAPH.edges.forEach(function (e, idx) {
       var a = nodeByKey(e.src), b = nodeByKey(e.dst);
       if (!a || !b) return;
       var br = BRANCH[e.branch] || BRANCH.always;
-      var x1 = a.x + W / 2, y1 = a.y + H, x2 = b.x + W / 2, y2 = b.y;
-      var my = (y1 + y2) / 2;
-      var d = "M " + x1 + " " + y1 + " C " + x1 + " " + my + ", " +
-        x2 + " " + my + ", " + x2 + " " + y2;
+      var g = anchors(a, b);
+      var x1 = g.x1, y1 = g.y1, x2 = g.x2, y2 = g.y2, d, lx, ly;
+      if (g.side) {
+        /* The flow runs sideways (a "yes" to the right, as on paper): leave
+           from the side, arrive at the side. */
+        var mx = (x1 + x2) / 2;
+        d = "M " + x1 + " " + y1 + " C " + mx + " " + y1 + ", " +
+          mx + " " + y2 + ", " + x2 + " " + y2;
+        lx = mx; ly = (y1 + y2) / 2;
+      } else {
+        var my = (y1 + y2) / 2;
+        d = "M " + x1 + " " + y1 + " C " + x1 + " " + my + ", " +
+          x2 + " " + my + ", " + x2 + " " + y2;
+        lx = (x1 + x2) / 2; ly = my;
+      }
       var hit = el("path", {
         d: d, fill: "none", stroke: "transparent", "stroke-width": 12,
         style: "cursor:pointer"
@@ -143,13 +203,13 @@
         "stroke-width": (sel && sel.type === "edge" && sel.index === idx) ? 3 : 1.6,
         "marker-end": "url(#" + br.m + ")"
       }));
-      if (br.t) {
-        var lx = (x1 + x2) / 2, ly = my;
+      var pk = e.src + "\u0000" + e.dst;
+      if (pairFirst[pk] === idx && pairLabel[pk].length) {
         var lbl = el("text", {
           x: lx, y: ly - 3, "text-anchor": "middle", fill: br.c,
           "font-size": "10", "font-family": "Inter, sans-serif"
         });
-        lbl.textContent = br.t;
+        lbl.textContent = pairLabel[pk].join(" / ");
         root.appendChild(lbl);
       }
     });
@@ -172,7 +232,7 @@
         tip.textContent = ran.outcome + (ran.detail ? " — " + ran.detail : "");
         g.appendChild(tip);
         var badge = el("text", {
-          x: W - 10, y: 38, "font-size": "10", "text-anchor": "end", "font-weight": "600",
+          x: W - 10, y: 50, "font-size": "10", "text-anchor": "end", "font-weight": "600",
           fill: oc, "font-family": "Inter, sans-serif"
         });
         badge.textContent = ran.outcome;
@@ -181,14 +241,20 @@
       g.appendChild(el("rect", {
         width: 4, height: H, rx: 2, fill: kind.colour || "#3D4550"
       }));
-      var t1 = el("text", {
-        x: 12, y: 19, "font-size": "12", "font-weight": "600",
-        fill: "#172B4D", "font-family": "Inter, sans-serif"
+      var lines = wrapLabel(n.label || n.key, 26);
+      lines.forEach(function (ln, i) {
+        var t1 = el("text", {
+          x: 12, y: 17 + i * 14, "font-size": "12", "font-weight": "600",
+          fill: "#172B4D", "font-family": "Inter, sans-serif"
+        });
+        t1.textContent = ln;
+        g.appendChild(t1);
       });
-      t1.textContent = (n.label || n.key).slice(0, 26);
-      g.appendChild(t1);
+      var full = el("title", {});
+      full.textContent = n.label || n.key;
+      g.appendChild(full);
       var t2 = el("text", {
-        x: 12, y: 34, "font-size": "10", fill: "#5E6C84",
+        x: 12, y: 49, "font-size": "10", fill: "#5E6C84",
         "font-family": "Inter, sans-serif"
       });
       t2.textContent = kind.label + " · " + n.key;

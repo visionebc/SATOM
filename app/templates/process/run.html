@@ -67,6 +67,16 @@
   <div class="fw-card-header"><i class="bi bi-hand-index me-2"></i>{{ _('This run is waiting for you') }}</div>
   <div class="fw-card-body">
     <p style="font-size:13px;white-space:pre-line;">{{ gate_prompt or _('Answer the gate to continue.') }}</p>
+    {% set gd = step_docs.get(run.waiting_node) %}
+    {% if gd %}
+    <div class="mb-2" style="font-size:12px;">
+      {% if gd.role %}<span class="fw-badge fw-badge-secondary me-1"><i class="bi bi-person me-1"></i>{{ gd.role }}</span>{% endif %}
+      {% if gd.time %}<span class="fw-badge fw-badge-secondary"><i class="bi bi-clock me-1"></i>{{ gd.time }}</span>{% endif %}
+    </div>
+    {% if gd.doc %}
+    <div class="p-2 mb-3" style="font-size:12.5px;white-space:pre-line;background:#F3F6FC;border:1px solid var(--fw-border,#DFE1E6);border-radius:6px;">{{ gd.doc }}</div>
+    {% endif %}
+    {% endif %}
     <form method="post" action="{{ url_for('process.run_resume', rid=run.id) }}" class="row g-2 align-items-end">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-md-7">
@@ -78,8 +88,10 @@
             same arrows every machine step uses. #}
         <button class="btn btn-success btn-sm" name="answer" value="pass">
           <i class="bi bi-check-lg me-1"></i>{{ gate_labels.pass or _('Passed') }}</button>
+        {% if not gate_labels.one %}
         <button class="btn btn-danger btn-sm" name="answer" value="fail">
           <i class="bi bi-x-lg me-1"></i>{{ gate_labels.fail or _('Failed') }}</button>
+        {% endif %}
       </div>
     </form>
   </div>
@@ -103,6 +115,13 @@
           <td style="font-size:12.5px;">
             <strong>{{ s.label or s.node_key }}</strong>
             <div class="text-muted" style="font-size:11.5px;">{{ s.kind }} · {{ s.node_key }}</div>
+            {% set sd = step_docs.get(s.node_key) %}
+            {% if sd %}
+            <details style="font-size:11.5px;">
+              <summary class="text-muted">{{ _('Instructions') }}{% if sd.role %} · {{ sd.role }}{% endif %}{% if sd.time %} · {{ sd.time }}{% endif %}</summary>
+              {% if sd.doc %}<div style="white-space:pre-line;">{{ sd.doc }}</div>{% endif %}
+            </details>
+            {% endif %}
           </td>
           <td style="font-size:12.5px;">
             {{ s.detail }}

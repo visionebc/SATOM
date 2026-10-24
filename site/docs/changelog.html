@@ -115,6 +115,20 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h3 id="added">Added</h3>
 <ul>
 <li>
+<p><strong>Process: runbooks that work for every appliance</strong> (operator request,
+  FA-0008: a recovery runbook as a process). The text of HTTP / TCP / DNS
+  checks, Manual gate prompts, End notes and the new Notify step may name the
+  run's appliance (<code>{{ appliance.host }}</code>, <code>{{ appliance.ssh_port }}</code>…), so one
+  plan serves every device; console commands and hook payloads are never
+  rendered. New steps: <strong>Appliance fact</strong> (compare an inventory field such as
+  VM or hardware, without contacting the device) and <strong>Notify</strong> (bell and/or
+  e-mail, also on rehearsals, marked <code>[rehearsal]</code>). A Manual gate can label its
+  buttons (<em>Yes</em> / <em>No</em>), and an End step can set the run verdict (<em>ok</em> /
+  <em>failed</em>), so a runbook whose checks fail on the way by design is judged by
+  the ending it reached. Example process: <em>Appliance recovery (restart
+  activities)</em>, started by a trigger on unreachable devices.</p>
+</li>
+<li>
 <p><strong>Capacity Limits: one default limit for every row.</strong> A <em>Default limit</em>
   card on Administrator → Capacity Limits takes one percent of the Fortinet
   limit per product (for example <code>80</code>). Every row without a number or

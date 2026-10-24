@@ -11458,6 +11458,11 @@ into five consoles at once.</p>
 <td>no</td>
 </tr>
 <tr>
+<td>Appliance fact</td>
+<td>compares one field SATOM keeps about the appliance (VM or hardware, product, model, HA mode…) with a value; reads the inventory only, so it answers when the device does not</td>
+<td>no</td>
+</tr>
+<tr>
 <td>Catalogue action</td>
 <td>invokes an automation from the Scheduled Actions catalogue</td>
 <td><strong>yes, when armed</strong></td>
@@ -11477,6 +11482,11 @@ into five consoles at once.</p>
 <td>undoes what the walk wrote before it, newest change first — only the steps that recorded an inverse; the rest are named as <code>unknown</code></td>
 <td><strong>yes, when armed</strong></td>
 </tr>
+<tr>
+<td>Notify</td>
+<td>rings the bell of every administrator and/or sends e-mail; also on an unarmed run, with <code>[rehearsal]</code> in the title</td>
+<td>no</td>
+</tr>
 </tbody>
 </table>
 <p>No step reimplements a question the product already answers somewhere else.
@@ -11490,6 +11500,37 @@ is what keeps a run in one place at a time, and therefore what lets a manual
 gate be answered hours later instead of holding a worker open.</p>
 <p>A retry loop is allowed. An endless one is stopped after 200 steps and the run
 says so, rather than reporting a verdict about a walk that never finished.</p>
+<h3 id="runbooks-one-plan-for-every-appliance">Runbooks: one plan for every appliance</h3>
+<p>A recovery runbook is written once and pointed at whichever appliance is down.
+Three things make that work:</p>
+<ul>
+<li><strong>Templates.</strong> The text of an HTTP, TCP or DNS check, a Manual gate prompt,
+  an End note and a Notify message may name the appliance of the run:
+  <code>https://{{ appliance.host }}/</code>, port <code>{{ appliance.ssh_port }}</code>,
+  <code>{{ appliance.name }}</code>, also <code>port</code>, <code>kind</code>, <code>model</code>, <code>hw_type</code>, <code>firmware</code>,
+  <code>zone</code>, <code>department</code>, <code>line</code>, <code>ha_vip</code>, and <code>{{ run.id }}</code>. A step that names
+  the appliance on a run pointed at none ends <code>unknown</code> and says why; it never
+  probes an empty address. Console reads, console scripts and hook payloads
+  are <strong>never</strong> rendered — inventory text spliced into a CLI line would be a
+  command nobody reviewed.</li>
+<li><strong>Questions.</strong> A Manual gate takes its own button labels (<em>Pass button</em>,
+  <em>Fail button</em>), so "Is the console server OK?" is answered <strong>Yes</strong> / <strong>No</strong>;
+  the answer still follows the <code>pass</code> / <code>fail</code> arrows.</li>
+<li><strong>The ending decides.</strong> A runbook's first checks are expected to fail — that
+  is why it was opened. On an End step, <em>Run verdict</em> <code>ok</code> or <code>failed</code> makes
+  reaching that ending the verdict of the run (for example <em>Documentation</em> =
+  <code>ok</code>, <em>Escalated</em> = <code>failed</code>); the summary still counts the steps that failed
+  or could not be looked at on the way. <code>computed</code> (the default) keeps the
+  step-by-step verdict. Only an ending the walk actually stopped on counts: a
+  path that runs out of arrows half way is judged step by step.</li>
+</ul>
+<p>The bundled example is <strong>Appliance recovery (restart activities)</strong>: connectivity
+tests (HTTPS, TCP to the SSH port, SSH login), the firewall/routing, VM,
+console and power questions, the escalations to the network/firewall, console
+and data-centre teams, admin login, diagnostics, L3 support, restore or
+solution, and the stability check, ending in <em>Documentation</em> or <em>Escalated</em>.
+SATOM cannot send ICMP from the node, so "ping" is a TCP handshake to the SSH
+port — a refusal still proves the host is up.</p>
 <h3 id="rehearsal-and-arming">Rehearsal and arming</h3>
 <p>A run is a <strong>rehearsal</strong> unless you tick <em>Arm this run</em>. Unarmed, nothing is
 changed — but the three writing steps say so differently, and the difference is

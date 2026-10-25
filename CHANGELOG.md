@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+Stage 0 of **SATOM Builder**, the separate tool customers install to author plugins and Plugin Studio apps: one package check shared by the importer and the Builder, a token API for it, trusted publishers, and the plugin frame in SATOM's light look.
+
 ### Added
 
 - **`/api/v1/builder/*` for SATOM Builder.** `GET /builder/target` describes
@@ -20,24 +22,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Read, write and admin scopes; rehearse needs a Plugin Studio author, import
   and publisher registration a super-admin owner. Packages above 10 MB are
   413. Every call is audited with its token.
+
 - **Trusted publishers** (Plugin Studio › Import › Trusted publishers,
   super-admins): register an Ed25519 public key (a SATOM Builder's publisher
   key) besides the built-in Vision EBC key, optionally per ADOM; enable or
   disable it, audited. A view or widget a publisher signed lands in
   *testing*; a publisher can never sign a code plugin; a disabled publisher
   is not trusted.
-
-### Changed
-
-- **Importing a plugin package is two steps.** The upload shows the package
-  first — problems, warnings, what it creates and keeps, where it lands, who
-  signed it, the rules applied — with a password box for each connection it
-  creates that needs a secret. Install stores those secrets on this server
-  (vault or encrypted setting); the upload waits on the server, only for its
-  uploader, for at most one hour. A publisher-signed package, and an unsigned
-  one sent through the API, are checked with the stricter Builder rules.
-- **An app whose connection has no secret yet shows a problem** (*connection
-  … has no secret yet*) and cannot be published until the secret is set.
 
 - **One package check for every plugin package.** Every rule a
   `.satomplugin` file must pass now lives in one place and runs in one call:
@@ -51,11 +42,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   action and design problems, stylesheet errors and code plugins. The
   answer also says what an import would create and keep, which connections
   need a secret, and where the package lands.
+
 - **Rules pack.** SATOM can hand out its package rules as a zip: the check
   and the modules it uses, copied byte for byte, plus `rules.json` with the
   hash of every file. The SATOM Builder runs that zip to check a package
   before sending it, and the server checks it again on validate, rehearse and
   import. The same SATOM version always gives the same zip and hash.
+
 - **Scripts travel in app packages.** Exporting an app now includes the
   published version (files and settings) of every Script Library script its
   *Run a script* steps use, and the HTTP connections those scripts call.
@@ -67,26 +60,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   database fields, and may declare only HTTP connections that exist on the
   server or come in the same package.
 
-### Fixed
-
-- **An app package can no longer replace a template.** Installing a package
-  with the id of a Plugin Studio › Examples object (`ex-*`: app, data store,
-  connection or script) is refused; before, the template's draft was
-  replaced.
-- **A connection that carries a secret is refused.** A package connection
-  with a non-empty `password`, `secret`, `token`, `api_key` or
-  `client_secret` used to be installed with the value silently ignored; it is
-  now refused, since secrets are always typed on the importing server.
-- **Postgres connections in an app package are refused with a clear message**
-  instead of failing halfway through the import with "a host name or address
-  is required" and leaving the connection behind.
-- **An API version without endpoints is refused before anything is written.**
-  The import used to create the API and its draft version, then roll back
-  the rest when publishing failed. Every rule that needs no server state
-  (secrets, postgres, empty API versions, connection definitions, data
-  stores, scripts, images) is now checked before the first write.
+- **Plugin CSS rules and their linter** (`app/services/plugin_css.py`, pure
+  standard library, for the rules pack). Errors: `@import`, non-`data:`
+  `url()`, `expression(`, `javascript:`, `behavior` / `-moz-binding`,
+  `position: fixed`, non-`data:` `@font-face` sources, more than 256 KiB.
+  Warnings: more than 20 `!important`, text colours below 4.5:1 on white,
+  `z-index` above 1000. The plugin editor lists the findings for the saved
+  stylesheet. Documented in the user guide, Report Studio, *Plugin CSS rules*.
 
 ### Changed
+
+- **Importing a plugin package is two steps.** The upload shows the package
+  first — problems, warnings, what it creates and keeps, where it lands, who
+  signed it, the rules applied — with a password box for each connection it
+  creates that needs a secret. Install stores those secrets on this server
+  (vault or encrypted setting); the upload waits on the server, only for its
+  uploader, for at most one hour. A publisher-signed package, and an unsigned
+  one sent through the API, are checked with the stricter Builder rules.
+
+- **An app whose connection has no secret yet shows a problem** (*connection
+  … has no secret yet*) and cannot be published until the secret is set.
 
 - **Report Studio views and widgets render in SATOM's light look.** The
   sandboxed plugin frame dropped its dark default: it now carries every
@@ -98,15 +91,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   written with light-on-dark colours keeps them; the editor's contrast
   warnings point at those lines.
 
-### Added
+### Fixed
 
-- **Plugin CSS rules and their linter** (`app/services/plugin_css.py`, pure
-  standard library, for the rules pack). Errors: `@import`, non-`data:`
-  `url()`, `expression(`, `javascript:`, `behavior` / `-moz-binding`,
-  `position: fixed`, non-`data:` `@font-face` sources, more than 256 KiB.
-  Warnings: more than 20 `!important`, text colours below 4.5:1 on white,
-  `z-index` above 1000. The plugin editor lists the findings for the saved
-  stylesheet. Documented in the user guide, Report Studio, *Plugin CSS rules*.
+- **An app package can no longer replace a template.** Installing a package
+  with the id of a Plugin Studio › Examples object (`ex-*`: app, data store,
+  connection or script) is refused; before, the template's draft was
+  replaced.
+
+- **A connection that carries a secret is refused.** A package connection
+  with a non-empty `password`, `secret`, `token`, `api_key` or
+  `client_secret` used to be installed with the value silently ignored; it is
+  now refused, since secrets are always typed on the importing server.
+
+- **Postgres connections in an app package are refused with a clear message**
+  instead of failing halfway through the import with "a host name or address
+  is required" and leaving the connection behind.
+
+- **An API version without endpoints is refused before anything is written.**
+  The import used to create the API and its draft version, then roll back
+  the rest when publishing failed. Every rule that needs no server state
+  (secrets, postgres, empty API versions, connection definitions, data
+  stores, scripts, images) is now checked before the first write.
 
 ## [4.0.3] - 2026-10-25
 

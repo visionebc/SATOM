@@ -3701,7 +3701,12 @@ need an `admin` token whose owner is a super-admin (holds the Plugin Studio
 key). An import through the API is the console's own import (§23.1) with the
 stricter Builder rules for unsigned and publisher-signed packages; the
 secrets it carries for the connections it creates are stored on this server
-and never logged. Details: [docs/api_v1.md §17](api_v1.md).
+and never logged. A `read` token also reads the **library** (`/builder/library`):
+the datasets and their columns, the data stores and their column definitions,
+the API Catalog with every version's endpoints, and the API library builds of
+the token's ADOM, one build's endpoints and one endpoint's fields on request.
+Structure only: no row of data and no secret leaves this server. Details:
+[docs/api_v1.md §17](api_v1.md).
 
 ## 19. Appearance: logo, colours & themes
 
@@ -5187,6 +5192,15 @@ separate process with only Python, `jinja2`, `markupsafe` and
 The server checks every package again on validate, rehearse and import, so
 the pack only lets the Builder find problems sooner and never decides on its
 own.
+
+The same pack carries the **test runtime**: the view renderer and frame, the
+diagram walk, the data-store rules, the script jail and the script SDK, also
+copied byte for byte (`rules.json` lists them under `runtime`). With it the
+Builder tests a package on its own test data before it reaches any server: a
+view renders exactly as here, a diagram walks with SATOM's rules, and a
+script runs in the same jail with the same SDK. The Builder supplies only the
+data (test rows, canned connection answers); nothing of the runtime is
+re-implemented there, and nothing of a test run reaches this server.
 
 **Example — new FortiWeb server policy** (package `spo-fortiweb`): the form
 asks for the entry type (*internal*, *split*, *internal-external*), the DNS

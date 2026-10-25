@@ -71,10 +71,10 @@
             <td>v{{ t.version }}</td>
             <td style="font-size:12px; white-space:nowrap;">{{ t.reviewed_by or '—' }}<br><span class="text-muted">{{ t.reviewed_at.strftime('%Y-%m-%d %H:%M') if t.reviewed_at else '—' }}</span></td>
             <td style="font-size:12px;">{{ e.validated|join(', ') if e.validated else '—' }}</td>
-            <td>{{ e.items }}</td>
+            <td>{{ e['items'] }}</td>
             <td style="font-size:12px;">{{ e.scope.text }}</td>
             <td class="actions-col" style="white-space:nowrap;">
-              {% if e.items %}
+              {% if e['items'] %}
               <a class="btn btn-sm btn-fw-primary" href="{{ url_for('mass_deploy.index', template=t.id) }}"><i class="bi bi-arrow-right-circle me-1"></i>{{ _('Select') }}</a>
               {% else %}
               <span class="fw-badge fw-badge-secondary" title="{{ _('The template has nothing to push.') }}">{{ _('empty') }}</span>

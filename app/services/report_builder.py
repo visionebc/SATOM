@@ -16,9 +16,12 @@ Three concerns:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import threading
 from collections import OrderedDict, deque
+from contextlib import contextmanager
 from typing import Any
 
 from . import dbintrospect
@@ -142,8 +145,26 @@ def table_description(name: str) -> str:
 #  Live-schema helpers                                                         #
 # --------------------------------------------------------------------------- #
 
+_SNAPSHOT = threading.local()
+#: The fleet table: the end of a join path, never a bridge (every table has
+#: appliance_id, so two hops through it reached every table of every product).
+HUB = "appliances"
+
+
+@contextmanager
+def schema_snapshot():
+    """Read the schema ONCE for a batch of compiles (dataset_examples
+    checks ~300 queries; each build_sql would read it again, ~0.5 s)."""
+    _SNAPSHOT.rel = dbintrospect.relations()
+    try:
+        yield
+    finally:
+        _SNAPSHOT.rel = None
+
+
 def _relations() -> dict[str, Any]:
-    return dbintrospect.relations()
+    rel = getattr(_SNAPSHOT, "rel", None)
+    return rel if rel is not None else dbintrospect.relations()
 
 
 def _objects() -> dict[str, dict[str, Any]]:
@@ -268,6 +289,8 @@ def related_tables(base: str, max_hops: int = 2) -> list[dict[str, Any]]:
         node, path = queue.popleft()
         if len(path) >= max_hops:
             continue
+        if node == HUB and path:
+            continue
         for step in graph.get(node, []):
             nxt = step["to"]
             if nxt in seen:
@@ -312,8 +335,23 @@ _LIMIT_MAX = 500
 _LIMIT_DEFAULT = 100
 
 
+_PG_MAX_IDENT = 63
+
+
+def sql_ident(name: str) -> str:
+    """``name`` as it may appear in SQL. Postgres cuts identifiers at 63
+    bytes, and two cached-object tables (FortiWeb's deep layer:
+    ``fortiweb_deep_server_policy__webprotection_profile_inline__api_...``)
+    share their first 63: cut, they became the same alias and the query
+    failed with ``DuplicateAlias``. A longer name becomes its first 50
+    characters plus a hash -- deterministic, so every reference agrees."""
+    if len(name.encode()) <= _PG_MAX_IDENT:
+        return name
+    return name[:50] + "_" + hashlib.sha1(name.encode()).hexdigest()[:12]
+
+
 def _quote_ident(table: str, col: str) -> str:
-    return f'"{table}"."{col}"'
+    return f'"{sql_ident(table)}"."{sql_ident(col)}"'
 
 
 def _quote_str(val: str) -> str:

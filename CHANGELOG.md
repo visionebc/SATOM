@@ -8,6 +8,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **316 joined plugin datasets, one ADOM each, from one button.** Requested:
+  "you said you would create about 600 datasets and I don't see them; divide
+  them by ADOM, and create as many as you can, trying to cover everything".
+  The 603 object datasets were there but only as a number in the banner of
+  Administrator › Database › Plugin datasets. **Generate joined datasets**
+  (same tab) writes, published and in their product's ADOM, the joins the
+  device cache allows: every list with its parent (each policy's source
+  addresses with the policy's ID and name), every field that names another
+  object resolved (a virtual server with its pool), and the chains a fleet
+  asks (FortiGate: the rules that use an address as source/destination, the
+  groups that hold it, the rules that use a group, a service or an incoming
+  interface; FortiADC: a virtual server's pool members; FortiAuthenticator:
+  users with their groups, RADIUS clients with their policies). On the lab
+  fleet: 316 (FortiWeb 215, FortiADC 38, FortiGate 44, FortiAnalyzer 12,
+  FortiAuthenticator 7), all compiled and run on this server first. It never
+  overwrites: only keys that do not exist yet. The table lists datasets by
+  ADOM, and **Browse the N datasets** opens every dataset of the server --
+  built-in, device objects, administrator -- in the Studio example browser,
+  menu by ADOM and category, with search, columns and the key to copy.
+
+- **Browse tables in the query builder**, the same browser as Python console
+  examples: menu by product and category, search over names, descriptions
+  and columns.
+
 - **FortiGate, FortiADC, FortiAnalyzer and FortiAuthenticator in the query
   builder, grouped per product.** Requested: "the query builder has things,
   but nothing of FortiAuthenticator, FortiAnalyzer, FortiGate or ADC; add
@@ -27,6 +51,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   server's pool) joins it through `<column>_ref` → `object_key`. So "which
   FortiGate rules use this IP" is one dataset: address → policy srcaddr →
   policy.
+
 - **Plugin Studio links to New plugin dataset** (and the Plugin datasets
   list), next to New app.
 
@@ -36,6 +61,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   list opened under the 72vh diagram, below the fold, so the click looked dead.
   The button now swaps the views: the list replaces the diagram and the button
   reads **Show diagram** to go back.
+
+- **Query-builder joins between long FortiWeb deep-layer tables failed
+  (`DuplicateAlias`).** Postgres cuts identifiers at 63 bytes and two
+  cached-object tables shared their first 63; a longer table or column name
+  now becomes its first 50 characters plus a hash, the same in every
+  reference.
+
+- **Related tables offered every table of every product.** The builder
+  walked two hops through the fleet table, which every table joins; the
+  fleet is now an end of a join path, never a bridge.
 
 - **Tables that stopped answering for minutes after opening the query
   builder.** On a1 two web workers stayed `idle in transaction` for 20

@@ -452,6 +452,41 @@ def load(entries: list[dict], scope) -> dict[str, dict]:
     return out
 
 
+def browser_items() -> list[dict]:
+    """Every dataset on this server for the dataset browser (the Studio
+    example browser), grouped by ADOM: menu = ADOM, submenu = category."""
+    from . import object_tables as OT
+    try:
+        from .dataset_examples import SOURCE as GENERATED
+    except Exception:  # noqa: BLE001
+        GENERATED = ""
+    domains = dict(OT.domains())
+    tables = OT.tables()
+    out = []
+    for d in catalog("", include_unpublished=True):
+        product = d.get("product") or ""
+        adom = (_PRODUCT_LABEL.get(product, product) + " ADOM") if product else "Every ADOM"
+        if d["source"] == "builtin":
+            sub = "Built-in"
+        elif d["source"] == "admin":
+            row = admin_row(d["key"])
+            sub = ("Joins generated from the device cache"
+                   if row is not None and row.source == GENERATED else "Built by an administrator")
+            if d.get("status") and d["status"] != "published":
+                sub += " (not published)"
+        else:
+            dl = domains.get(tables.get(d["key"], {}).get("domain", ""), d.get("group", ""))
+            sub = dl.split(" · ", 1)[-1]
+        cols = d.get("columns") or []
+        out.append({"id": d["key"], "group": adom, "subgroup": sub,
+                    "title": d.get("label") or d["key"], "description": d.get("description", ""),
+                    "tags": [d["key"], d["source"]],
+                    "code": "{{ %s.rows }}\n\n%d columns: %s" % (d["key"], len(cols), ", ".join(cols))})
+    order = ["Every ADOM"] + [_PRODUCT_LABEL[p] + " ADOM" for p in PRODUCTS if p in _PRODUCT_LABEL]
+    out.sort(key=lambda x: (order.index(x["group"]) if x["group"] in order else 99,))
+    return out
+
+
 def summary(product: str | None = None) -> dict:
     """Counts per source and per product, for the author guide and pickers."""
     cat = catalog(product)

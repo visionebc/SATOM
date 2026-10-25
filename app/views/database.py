@@ -66,6 +66,7 @@ def index():
                            plugin_datasets=PluginDataset.query.order_by(PluginDataset.key).all(),
                            plugin_dataset_usage=_dataset_usage(),
                            dataset_summary=PD.summary(""),
+                           dataset_browser=PD.browser_items(),
                            can_plugin_datasets=_can_plugin_datasets())
 
 
@@ -411,6 +412,30 @@ def plugin_dataset_save():
                                              "base": clean["spec"].get("base")})
     return jsonify({"ok": True, "id": ds.id, "key": ds.key,
                     "back_url": url_for("database.index") + "#tab-plugin-datasets"})
+
+
+@bp.route("/plugin-datasets/generate", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def plugin_dataset_generate():
+    """Write the joined datasets the device cache allows (services.dataset_examples):
+    only keys that do not exist, published, one ADOM each."""
+    from flask_login import current_user
+    from ..services import dataset_examples as DX
+    _need_plugin_datasets()
+    res = DX.generate(by=getattr(current_user, "username", "") or "")
+    log_action("plugin_dataset.generate", target="device cache",
+               extra={"created": res["created"], "existing": res["existing"],
+                      "refused": [k for k, _w in res["refused"]][:50],
+                      "by_product": res["by_product"]})
+    msg = "Created %d dataset(s) from the device cache (%s); %d already existed." % (
+        res["created"], ", ".join("%s %d" % kv for kv in sorted(res["by_product"].items())) or "none new",
+        res["existing"])
+    if res["refused"]:
+        msg += " %d could not be built on this server: %s." % (
+            len(res["refused"]), ", ".join(k for k, _w in res["refused"][:5]))
+    flash(msg, "success" if not res["refused"] else "warning")
+    return redirect(url_for("database.index") + "#tab-plugin-datasets")
 
 
 @bp.route("/plugin-datasets/<int:ds_id>/status", methods=["POST"])

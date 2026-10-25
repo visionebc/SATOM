@@ -11,7 +11,11 @@
         <div id="rb-errors" class="alert alert-danger py-2 small d-none"></div>
         <div class="rb-step" data-step="0">
           <h6 class="mb-2">{{ _('1 · Base table') }}</h6>
-          <select id="rb-base" class="form-select form-select-sm"></select>
+          <div class="d-flex gap-2">
+            <select id="rb-base" class="form-select form-select-sm"></select>
+            <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" id="rb-browse-tables">
+              <i class="bi bi-grid-3x3-gap me-1"></i>{{ _('Browse tables') }}</button>
+          </div>
           <p id="rb-base-desc" class="small text-muted mt-2 mb-0"></p>
         </div>
         <div class="rb-step d-none" data-step="1">
@@ -56,6 +60,11 @@
         <button type="button" id="rb-next" class="btn btn-outline-secondary btn-sm">{{ _('Next') }}</button>
         <button type="button" id="rb-generate" class="btn btn-fw-primary btn-sm d-none"><i class="bi bi-magic me-1"></i>{{ _('Generate SQL') }}</button>
       </div>
+      {#- Inside the dialog: Bootstrap keeps the focus in it. -#}
+      {% set exb_id = 'rb-tables-browser' %}
+      {% set exb_title = _('Tables') %}
+      {% set exb_search = _('Search tables, columns, descriptions…') %}
+      {% include '_example_browser.html' %}
     </div>
   </div>
 </div>

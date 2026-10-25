@@ -166,7 +166,15 @@
     <div class="card"><div class="card-body">
       <div class="d-flex align-items-center mb-2 gap-2 flex-wrap">
         <p class="text-muted small mb-0 me-auto">{{ _('A plugin never runs SQL: it declares the datasets it reads and SATOM hands it the rows, cut to the ADOM and devices of whoever opens it. Build a dataset here with the same no-SQL query builder as reports; once published, every plugin editor and SATOM Builder offer it (key admin_<name>).') }}</p>
+        <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" id="pd-browse">
+          <i class="bi bi-grid-3x3-gap me-1"></i>{{ _('Browse the %(n)d datasets', n=dataset_browser|length) }}</button>
         {% if can_plugin_datasets %}
+        <form method="post" action="{{ url_for('database.plugin_dataset_generate') }}" class="d-inline" id="pd-generate-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-outline-primary btn-sm text-nowrap" id="pd-generate"
+                  title="{{ _('Writes, published and one ADOM each, the joins the device cache allows: every list with its parent, every field that names another object resolved, and the common chains (which rules use an address, which groups hold it...). Never overwrites: only keys that do not exist yet; a deleted one comes back if you run it again.') }}">
+            <i class="bi bi-diagram-3 me-1"></i>{{ _('Generate joined datasets') }}</button>
+        </form>
         <a href="{{ url_for('database.plugin_dataset_new') }}" class="btn btn-fw-primary btn-sm text-nowrap" id="pd-new">
           <i class="bi bi-plus-lg me-1"></i>{{ _('New plugin dataset') }}</a>
         {% endif %}
@@ -186,7 +194,10 @@
         <table class="table table-sm table-hover align-middle" id="pd-table">
           <thead><tr><th>{{ _('Key') }}</th><th>{{ _('Name') }}</th><th>{{ _('ADOM') }}</th><th>{{ _('Status') }}</th><th>{{ _('Used by') }}</th><th>{{ _('Updated') }}</th><th class="text-end actions-col">{{ _('Actions') }}</th></tr></thead>
           <tbody>
-          {% for d in plugin_datasets %}
+          {% for adom, rows in plugin_datasets|groupby('product') %}
+            <tr class="pd-adom"><th colspan="7" class="small text-uppercase text-muted pt-3" scope="rowgroup">
+              {{ (adom ~ ' ADOM') if adom else _('Every ADOM') }} · {{ rows|length }}</th></tr>
+          {% for d in rows %}
             {% set used = plugin_dataset_usage.get(d.key, []) %}
             <tr id="pd-row-{{ d.key }}">
               <td><code>{{ d.key }}</code></td>
@@ -218,6 +229,7 @@
               </div></td>
             </tr>
           {% endfor %}
+          {% endfor %}
           </tbody>
         </table>
       </div>
@@ -232,6 +244,28 @@
   </div>
 </div>
 
+{% set exb_id = 'pd-browser' %}
+{% set exb_title = _('Plugin datasets, by ADOM') %}
+{% set exb_search = _('Search datasets, keys, columns…') %}
+{% include '_example_browser.html' %}
+<script nonce="{{ csp_nonce }}" id="pd-browser-data" type="application/json">{{ dataset_browser|tojson }}</script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  function go(){
+    if (!window.ExampleBrowser) return;
+    window.ExampleBrowser.init({
+      catalogElId: 'pd-browser-data', modalElId: 'pd-browser', openBtnId: 'pd-browse',
+      previewField: 'code',
+      labels: { all: 'All datasets', insert: 'Copy key', empty: 'No dataset matches.', show: 'How a plugin reads it' },
+      onInsert: function (d) {
+        var txt = '{{ "{{" }} ' + d.id + '.rows {{ "}}" }}';
+        if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(function(){});
+      }
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+})();
+</script>
 <script nonce="{{ csp_nonce }}" id="er-data" type="application/json">{"tables": {{ tables|tojson }}, "edges": {{ edges|tojson }}}</script>
 <script src="{{ asset('js/er_diagram.js') }}" nonce="{{ csp_nonce }}"></script>
 <script nonce="{{ csp_nonce }}">

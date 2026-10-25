@@ -7,11 +7,11 @@
      - a nonced init:  ExampleBrowser.init({ ...onInsert... });
    Loads its own CSS/JS (both 'self' assets, CSP-safe). #}
 <link rel="stylesheet" href="{{ asset('css/example_browser.css') }}">
-<div id="exb-modal" class="exb-modal">
+<div id="{{ exb_id|default('exb-modal') }}" class="exb-modal">
   <div class="exb-panel">
     <div class="exb-head">
       <h2><i class="bi bi-collection"></i>{{ exb_title|default('Examples') }}</h2>
-      <input class="exb-search" type="search" placeholder="{{ _('Search examples…') }}" aria-label="{{ _('Search examples') }}">
+      <input class="exb-search" type="search" placeholder="{{ exb_search|default(_('Search examples…')) }}" aria-label="{{ exb_search|default(_('Search examples')) }}">
       <button type="button" class="exb-close" aria-label="{{ _('Close') }}">&times;</button>
     </div>
     <div class="exb-body">

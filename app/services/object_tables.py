@@ -236,7 +236,10 @@ DESCRIPTIONS: dict[str, str] = {
 }
 
 #: Fields that name another object, beyond "a field named like a type":
-#: ``(product, source logical, field column) -> target logicals``.
+#: ``(product, source logical, field column) -> target logicals``. A target
+#: ``logical:field`` is matched on that device field of the target instead of
+#: its key (FortiAuthenticator links by ``resource_uri``), through the
+#: target's ``<field>_key`` column.
 REFS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("fortigate", "firewall_policy/srcaddr", "name"): ("firewall_address", "firewall_addrgrp"),
     ("fortigate", "firewall_policy/dstaddr", "name"): ("firewall_address", "firewall_addrgrp"),
@@ -258,7 +261,13 @@ REFS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("fortiadc", "load_balance_pool/pool_member", "real_server"): ("load_balance_real_server",),
     ("fortiweb", "server_policy", "server_pool"): ("server_pool",),
     ("fortiweb", "server_policy", "web_protection_profile"): ("webprotection_profile_inline",),
+    ("fortiauthenticator", "auth_local_group_members", "user"): ("auth_local_users:resource_uri",),
+    ("fortiauthenticator", "auth_local_group_members", "group"): ("auth_user_groups:resource_uri",),
+    ("fortiauthenticator", "radius_policy_client", "client"): ("radius_clients:resource_uri",),
+    ("fortiauthenticator", "radius_policy_client", "policy"): ("radius_policies:resource_uri",),
 }
+KEY_SUFFIX = "_key"
+
 
 _lock = threading.Lock()
 _cache: dict[str, Any] = {"objs": None, "tables": None}
@@ -356,7 +365,7 @@ def tables() -> dict[str, dict]:
                 masked.append(col)
         out[key] = {"name": key, "cols": cols, "object": {
                         "product": product, "layer": layer, "logical": logical,
-                        "fields": fields, "refs": {}},
+                        "fields": fields, "refs": {}, "keys": {}},
                     "label": "%s %s%s" % (PRODUCT_LABEL[product], _human(logical),
                                           " (deep)" if layer == "deep" else ""),
                     "domain": domain_key(product, layer, category(product, logical)),
@@ -385,17 +394,21 @@ def tables() -> dict[str, dict]:
                 guess = PD.object_key(product, layer, field.replace("-", "_"))
                 if guess != key and guess in out and "/" not in out[guess]["object"]["logical"]:
                     targets = [out[guess]["object"]["logical"]]
-            hit = [PD.object_key(product, layer, tl) for tl in targets]
-            hit = [h for h in hit if h in out and h != key]
+            hit = []
+            for spec in targets:
+                tl, _sep, tf = spec.partition(":")
+                h = PD.object_key(product, layer, tl)
+                if h in out and h != key:
+                    hit.append((h, _target_key(out[h], tf) if tf else "object_key"))
             ref_col = col + REF_SUFFIX
             if not hit or ref_col in {c["name"] for c in t["cols"]}:
                 continue
             t["cols"].append({"name": ref_col, "type": "TEXT", "pk": False, "fk": True,
                               "sensitive": False, "json": True})
             ob["refs"][ref_col] = field
-            for h in hit:
+            for h, to_col in hit:
                 edges.append({"from_table": key, "from_col": ref_col, "to_table": h,
-                              "to_col": "object_key", "inferred": not curated})
+                              "to_col": to_col, "inferred": not curated})
                 refs.append((ref_col, out[h]["label"]))
         t["edges"] = edges
         t["description"] = _describe(product, t.pop("_rows"), refs,
@@ -403,6 +416,18 @@ def tables() -> dict[str, dict]:
     with _lock:
         _cache.update(objs=objs, tables=out)
     return out
+
+
+def _target_key(target: dict, field: str) -> str:
+    """The ``<field>_key`` column of ``target`` (``<appliance_id>/<value>``),
+    added the first time a reference needs it."""
+    from . import plugin_datasets as PD
+    col = PD.field_column(field) + KEY_SUFFIX
+    if col not in target["object"]["keys"]:
+        target["object"]["keys"][col] = field
+        target["cols"].append({"name": col, "type": "TEXT", "pk": False, "fk": False,
+                               "sensitive": False, "json": True})
+    return col
 
 
 # --------------------------------------------------------------------------
@@ -433,6 +458,7 @@ def from_sql(name: str, needed: set[str] | None = None, *, postgres: bool | None
     """The sub-select a query reads ``name`` from, aliased ``"name"``: the
     fixed columns, plus the fields and links in ``needed`` (all if None)."""
     from . import dbintrospect as D
+    from .report_builder import sql_ident
     t = tables()[name]
     ob = t["object"]
     if postgres is None:
@@ -443,11 +469,11 @@ def from_sql(name: str, needed: set[str] | None = None, *, postgres: bool | None
              owner + "COALESCE(o.mkey, '') AS \"object_key\""]
     for col, field in ob["fields"].items():
         if needed is None or col in needed:
-            parts.append('%s AS "%s"' % (_extract(field, postgres), col))
-    for col, field in ob["refs"].items():
+            parts.append('%s AS "%s"' % (_extract(field, postgres), sql_ident(col)))
+    for col, field in list(ob["refs"].items()) + list(ob.get("keys", {}).items()):
         if needed is None or col in needed:
-            parts.append('%s(%s) AS "%s"' % (owner, _extract(field, postgres), col))
+            parts.append('%s(%s) AS "%s"' % (owner, _extract(field, postgres), sql_ident(col)))
     return ("(SELECT %s FROM device_objects o JOIN appliances a ON a.id = o.appliance_id"
             " WHERE a.kind = %s AND o.layer = %s AND o.logical_name = %s) AS \"%s\"" % (
                 ", ".join(parts), _lit(ob["product"]), _lit(ob["layer"]), _lit(ob["logical"]),
-                name))
+                sql_ident(name)))

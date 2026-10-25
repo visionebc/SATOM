@@ -33,19 +33,30 @@ window.ExampleBrowser = (function () {
       icon: ex.icon || ''
     };
   }
+  var LABELS = { all: 'All examples', insert: 'Insert', empty: 'No examples match.',
+                 show: 'Show code' };
 
   function init(cfg) {
     cfg = cfg || {};
     var previewField = cfg.previewField || 'code';
     var onInsert = cfg.onInsert || function () {};
+    // cfg.items: an array, or a function called at every open (the page's own
+    // data -- the query builder's tables, the dataset catalogue); else the
+    // JSON island cfg.catalogElId. cfg.labels overrides LABELS.
+    var L = {};
+    Object.keys(LABELS).forEach(function (k) { L[k] = (cfg.labels || {})[k] || LABELS[k]; });
     var catEl = document.getElementById(cfg.catalogElId || 'ex-catalog');
     var modal = document.getElementById(cfg.modalElId || 'exb-modal');
-    if (!modal || !catEl) return null;
+    if (!modal || (!catEl && !cfg.items)) return null;
 
-    var catalog = [];
-    try { catalog = JSON.parse(catEl.textContent || '[]'); } catch (e) { catalog = []; }
-    if (!Array.isArray(catalog)) catalog = [];
-    var items = catalog.map(norm);
+    function load() {
+      var catalog = [];
+      if (typeof cfg.items === 'function') catalog = cfg.items();
+      else if (cfg.items) catalog = cfg.items;
+      else { try { catalog = JSON.parse(catEl.textContent || '[]'); } catch (e) { catalog = []; } }
+      return (Array.isArray(catalog) ? catalog : []).map(norm);
+    }
+    var items = load();
 
     var nav = modal.querySelector('.exb-nav');
     var cards = modal.querySelector('.exb-cards');
@@ -81,7 +92,7 @@ window.ExampleBrowser = (function () {
       var list = filtered();
       var tr = buildTree(list);
       var h = '<button type="button" class="exb-navitem exb-all' +
-        (sel.group === null ? ' active' : '') + '" data-all="1">All examples' +
+        (sel.group === null ? ' active' : '') + '" data-all="1">' + esc(L.all) +
         '<span class="exb-badge">' + list.length + '</span></button>';
       tr.order.forEach(function (g) {
         var gd = tr.t[g];
@@ -114,21 +125,21 @@ window.ExampleBrowser = (function () {
         if (sel.subgroup !== null && (it.subgroup || '') !== sel.subgroup) return false;
         return true;
       });
-      if (!list.length) { cards.innerHTML = '<div class="exb-empty">No examples match.</div>'; return; }
+      if (!list.length) { cards.innerHTML = '<div class="exb-empty">' + esc(L.empty) + '</div>'; return; }
       var h = '';
       list.forEach(function (it) {
         var code = it.raw[previewField] || it.raw.code || it.raw.jinja || '';
         h += '<div class="exb-card">';
         h += '<div class="exb-card-h"><div class="exb-title">' +
           (it.icon ? '<i class="bi ' + esc(it.icon) + '"></i>' : '') + esc(it.title) + '</div>' +
-          '<button type="button" class="exb-ins" data-id="' + esc(it.id) + '">Insert</button></div>';
+          '<button type="button" class="exb-ins" data-id="' + esc(it.id) + '">' + esc(L.insert) + '</button></div>';
         h += '<div class="exb-meta">' + esc(it.group) + (it.subgroup ? ' · ' + esc(it.subgroup) : '') + '</div>';
         if (it.desc) h += '<div class="exb-desc">' + esc(it.desc) + '</div>';
         if (it.datasets.length) h += '<div class="exb-ds">' +
           it.datasets.map(function (d) { return '<code>' + esc(d) + '</code>'; }).join('') + '</div>';
         if (it.tags.length) h += '<div class="exb-tags">' +
           it.tags.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>';
-        h += '<details class="exb-codewrap"><summary>Show code</summary>' +
+        if (code) h += '<details class="exb-codewrap"><summary>' + esc(L.show) + '</summary>' +
           '<pre class="exb-code">' + esc(code) + '</pre></details>';
         h += '</div>';
       });
@@ -162,6 +173,7 @@ window.ExampleBrowser = (function () {
     });
 
     function open() {
+      if (cfg.items) items = load();
       modal.style.display = 'flex';
       search.value = ''; sel = { group: null, subgroup: null }; collapsed = {};
       renderAll();
@@ -172,6 +184,11 @@ window.ExampleBrowser = (function () {
     if (openBtn) openBtn.addEventListener('click', open);
     if (closeBtn) closeBtn.addEventListener('click', close);
     modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+    // Inside a Bootstrap modal (the query builder) Escape must close only the
+    // browser, not the dialog under it.
+    modal.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && modal.style.display === 'flex') close();
     });

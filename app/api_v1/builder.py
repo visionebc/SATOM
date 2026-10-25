@@ -9,6 +9,9 @@ runs with that person's RBAC and ADOM, and SATOM stays the authority:
   the runtime the Builder tests on test data with (§13);
 * ``GET /builder/library[/fortinet/<product>/<version>]`` -- structure a
   plugin builds on: datasets, stores, API Catalog, API library (§14);
+* ``GET /builder/data`` -- this server's rows for the Builder's test data:
+  datasets as a render here shows the owner, data stores, ``satom_select``
+  lists; the owner must be a Plugin Studio author (§15);
 * ``POST /builder/validate`` -- ``package_check.check`` with the ``builder``
   policy; nothing is written (§4);
 * ``POST /builder/rehearse`` -- an unarmed walk of the package's app against
@@ -213,6 +216,38 @@ def builder_library_build(product, version):
             res = BL.fortinet_endpoints(product, version)
         _audit("builder.library.build", target="%s %s" % (product, version),
                endpoint=endpoint[:120])
+    return jsonify(res)
+
+
+@bp.route("/builder/data", methods=["GET"])
+@limiter.limit("30/minute")
+@token_required("read")
+def builder_data():
+    """This server's rows for the Builder's test data (contract §15).
+
+    Query: ``datasets`` and ``stores`` (comma lists; absent = all, empty =
+    none) and ``limit`` (rows per table, 1 to 2000, default 200). Datasets
+    are what a view's render here would read for the token's owner (scoped
+    and masked), data stores their declared columns plus ``_id``, and
+    ``sources`` the ``satom_select`` lists. The owner must be a Plugin
+    Studio author (``studio.script_library``), who reads the stores here.
+
+    Responses:
+        200: ``satom.builder-data/1``.
+        403: The owner is not a Plugin Studio author (``owner_forbidden``), or the ADOM (``wrong_product``).
+    """
+    from ..services import builder_data as BD
+    from ..services import studio_apps as SA
+    refused = _adom_refusal()
+    if refused:
+        return refused
+    if not SA.is_author(_owner()):
+        return _err(403, "owner_forbidden", "The token's owner is not a Plugin Studio "
+                    "author (studio.script_library).")
+    with _as_owner():
+        res = BD.sample(request.args.get("datasets"), request.args.get("stores"),
+                        request.args.get("limit", BD.DEFAULT_LIMIT))
+        _audit("builder.data", target=_product(), limit=res["limit"], **BD.counts(res))
     return jsonify(res)
 
 

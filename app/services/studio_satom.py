@@ -1173,16 +1173,32 @@ def _fleet_objects(source: str) -> list[dict]:
             for n, devs in sorted(where.items(), key=lambda kv: kv[0].lower())]
 
 
+def _visible(query):
+    """In a request, the appliances the person may see (their ADOM, no
+    maintenance rows without the permission), as every fleet list does. A
+    form listed the whole fleet in every ADOM until 2026-10-25, and the
+    choice check accepted any of it. Outside a request (a scheduled run) the
+    query is unchanged."""
+    from flask import has_request_context
+    if not has_request_context():
+        return query
+    from ..models import visible_appliances
+    return visible_appliances(query)
+
+
 def source_options(source: str) -> tuple[list[dict], str]:
     """``([{value, label}], problem)`` for a ``satom_select`` field."""
     from . import settings_store as store
     if source == "fortiweb":
+        from ..models import Appliance
+        rows = sorted(_visible(Appliance.query.filter_by(kind="fortiweb")).all(),
+                      key=lambda a: (a.name or "").lower())
         return [{"value": str(a.id), "label": "%s (%s / %s)" % (a.name, a.zone or "-", a.line or "-")}
-                for a in fleet_order("fortiweb")], ""
+                for a in rows], ""
     if source == "appliances":
         # Every product: a runbook (FA-0008) is written once for any device.
         from ..models import Appliance
-        rows = Appliance.query.filter_by(is_cluster=False).order_by(Appliance.name).all()
+        rows = _visible(Appliance.query.filter_by(is_cluster=False)).order_by(Appliance.name).all()
         return [{"value": str(a.id), "label": "%s (%s, %s)" % (a.name, a.kind, a.host)}
                 for a in rows], ""
     if source in ("fortiweb_pools", "fortiweb_interfaces", "fortiweb_certificates"):

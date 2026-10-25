@@ -3705,7 +3705,15 @@ and never logged. A `read` token also reads the **library** (`/builder/library`)
 the datasets and their columns, the data stores and their column definitions,
 the API Catalog with every version's endpoints, and the API library builds of
 the token's ADOM, one build's endpoints and one endpoint's fields on request.
-Structure only: no row of data and no secret leaves this server. Details:
+Structure only: no row of data and no secret leaves this server. The one
+call that does send rows is **data** (`/builder/data`, `read` token, owner a
+Plugin Studio author): the Builder starts an author's test data from this
+server's data. It gets exactly what a view rendered here would show that
+owner (their ADOM's devices, no maintenance device without the permission,
+the audit log only with `audit.view`, sensitive columns masked), the rows of
+the data stores (declared columns and `_id`, never who edited them) and the
+lists of `satom_select` fields, at most 2,000 rows per table. Each call
+leaves an audit line `builder.data` with the row counts. Details:
 [docs/api_v1.md §17](api_v1.md).
 
 ## 19. Appearance: logo, colours & themes

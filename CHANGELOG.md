@@ -6,6 +6,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **`GET /api/v1/builder/data`:** SATOM Builder starts an author's test data
+  from this server's data instead of synthetic rows. Requested: "add the data
+  we have in SATOM to the Builder so something already exists". The answer is
+  what a view rendered here would show the token's owner (their ADOM's
+  devices, no maintenance device without the permission, the audit log only
+  with `audit.view`, sensitive columns masked), the data stores' rows
+  (declared columns and `_id`) and the `satom_select` lists; at most 2,000
+  rows per table and 3 MB in all. `read` token, owner a Plugin Studio
+  author; audit line `builder.data` with the row counts.
+
+### Fixed
+
+- **`satom_select` device lists follow the ADOM:** the *Appliances* and
+  *FortiWeb appliances* lists of a Plugin Studio form showed the whole fleet
+  in every ADOM, maintenance devices included, and the form accepted any of
+  them. In a request they are now the devices the person may see, like every
+  other fleet list; a scheduled run is unchanged.
+
 ## [4.2.0] - 2026-10-25
 
 What SATOM provides for SATOM Builder 0.2: the **test runtime** in the rules pack (the

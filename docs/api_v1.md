@@ -160,6 +160,7 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/builder/rules-pack` | read | — | SATOM's package rules, with the runtime the Builder tests with, as a zip, header `X-Satom-Rules-Sha256` (§17) |
 | `GET`  | `/builder/library` | read | — | Structure a plugin builds on: datasets and their columns, data stores, API Catalog, API library builds (§17) |
 | `GET`  | `/builder/library/fortinet/<product>/<version>` | read | the product is the token's ADOM (any, for `global`) | One API library build's endpoints, or with `?endpoint=` that endpoint's fields (§17) |
+| `GET`  | `/builder/data` | read | owner is a Plugin Studio author | This server's rows for the Builder's test data: datasets scoped to the owner, data stores, `satom_select` lists (§17) |
 | `POST` | `/builder/validate` | write | — | Check a package with the builder rules; writes nothing (§17) |
 | `POST` | `/builder/rehearse` | write | owner is a Plugin Studio author | Walk a package's app **unarmed**, or render a view; installs nothing (§17) |
 | `POST` | `/builder/import` | admin | owner is a super-admin (`studio.plugin_studio`) | Import a package: the console's import path, secrets for new connections (§17) |
@@ -1072,6 +1073,33 @@ One build of the API library: `{"product", "version", "endpoints": [{"endpoint",
 where `status` is `measured`, `blind`, `absent` or `unmeasured` (an empty
 `fields` is "unknown" unless the status is `measured`). A product outside the
 token's ADOM is 403 `wrong_product`.
+
+### `GET /builder/data`
+
+This server's rows, for the Builder's test data (contract §15). `read`
+scope; the owner must be a Plugin Studio author (`studio.script_library`),
+else 403 `owner_forbidden`. Query: `datasets` and `stores` (comma lists;
+absent = all, empty = none), `limit` (rows per table, 1 to 2000, default 200).
+
+```json
+{"format": "satom.builder-data/1", "satom_version": "4.2.1", "product": "fortiweb",
+ "taken_at": "2026-10-25T14:00:00+00:00", "limit": 200,
+ "datasets": {"fleet_appliances": {"columns": ["id", "name", "kind", "firmware", "host", "port"],
+                                   "rows": [{"id": "1", "name": "fwb-a", "...": "..."}],
+                                   "total": 1, "truncated": false}},
+ "stores": {"owners": {"columns": [{"name": "ip", "label": "IP", "type": "text", "required": true}],
+                       "rows": [{"ip": "192.0.2.7", "_id": 1}], "total": 1, "truncated": false}},
+ "sources": {"appliances": [{"value": "1", "label": "fwb-a (fortiweb, 192.0.2.11)"}]},
+ "unknown": {"datasets": [], "stores": []}}
+```
+
+Dataset rows are what a view rendered here shows the token's owner: the
+fixed query through the masked read-only path (values as text, as a view
+sees them), cut to the owner's visible appliances and ADOM, the audit log
+only with `audit.view`. Store rows carry the declared columns and `_id`.
+`sources` are the `satom_select` lists, scoped the same way. The answer
+stays under 3 MB: a table that does not fit is cut (`truncated`). One audit
+line `builder.data` with the row counts per table.
 
 ### `POST /builder/validate`
 

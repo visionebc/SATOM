@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 14 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 14 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,11 +59,16 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 14 entries</span>
+        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
+        <ul class="rel-leads"></ul>
+      </a>
+      <a class="rel-nav-item" href="v4.1.0.html" data-rel-version="4.1.0">
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 4.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-meta">2026-10-25 · Added · Changed · Fixed · 14 entries</span>
         <ul class="rel-leads"><li>/api/v1/builder/ for SATOM Builder</li><li>Trusted publishers</li><li>One package check for every plugin package</li><li class="rel-more">… and 11 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v4.0.3.html" data-rel-version="4.0.3">
-        <span class="rel-nav-head"><span class="rel-nav-v">Version 4.0.3</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 4.0.3</span></span>
         <span class="rel-nav-meta">2026-10-25 · Fixed · 1 entry</span>
         <ul class="rel-leads"><li>Mass Deploy: the Items column read &lt;built-in method items of dict object …&gt;, and a template with nothing to push still offered Select</li></ul>
       </a>
@@ -490,133 +495,8 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<p>Stage 0 of <strong>SATOM Builder</strong>, the separate tool customers install to author plugins and Plugin Studio apps: one package check shared by the importer and the Builder, a token API for it, trusted publishers, and the plugin frame in SATOM's light look.</p>
-<h3 id="added">Added</h3>
-<ul>
-<li>
-<p><strong><code>/api/v1/builder/*</code> for SATOM Builder.</strong> <code>GET /builder/target</code> describes
-  this server for the package rules (choices, Examples templates, the Studio
-  objects that exist — never a secret —, publishers, schema);
-  <code>GET /builder/rules-pack</code> serves SATOM's own rules as a zip with
-  <code>X-Satom-Rules-Sha256</code>; <code>POST /builder/validate</code> checks a package and
-  writes nothing; <code>POST /builder/rehearse</code> walks a package's app <strong>unarmed</strong>
-  against this server's stores and connections (or renders a view) and
-  installs nothing; <code>POST /builder/import</code> is the console's import, with the
-  secrets of the connections it creates; <code>GET/POST /builder/publishers</code>.
-  Read, write and admin scopes; rehearse needs a Plugin Studio author, import
-  and publisher registration a super-admin owner. Packages above 10 MB are
-  413. Every call is audited with its token.</p>
-</li>
-<li>
-<p><strong>Trusted publishers</strong> (Plugin Studio › Import › Trusted publishers,
-  super-admins): register an Ed25519 public key (a SATOM Builder's publisher
-  key) besides the built-in Vision EBC key, optionally per ADOM; enable or
-  disable it, audited. A view or widget a publisher signed lands in
-  <em>testing</em>; a publisher can never sign a code plugin; a disabled publisher
-  is not trusted.</p>
-</li>
-<li>
-<p><strong>One package check for every plugin package.</strong> Every rule a
-  <code>.satomplugin</code> file must pass now lives in one place and runs in one call:
-  the package format and signature, <code>min_satom</code>, templates, data stores and
-  their seed rows, connections, API Catalog versions, the diagram, the form,
-  the actions, the design and its images, scripts, and for views and widgets
-  the body template, datasets, parameters and stylesheet. Each problem names
-  the rule it breaks. Two policies: packages signed by Vision EBC are
-  checked under <em>import</em>, and everything that arrives through the SATOM
-  Builder is checked under <em>builder</em>, which also refuses diagram, form,
-  action and design problems, stylesheet errors and code plugins. The
-  answer also says what an import would create and keep, which connections
-  need a secret, and where the package lands.</p>
-</li>
-<li>
-<p><strong>Rules pack.</strong> SATOM can hand out its package rules as a zip: the check
-  and the modules it uses, copied byte for byte, plus <code>rules.json</code> with the
-  hash of every file. The SATOM Builder runs that zip to check a package
-  before sending it, and the server checks it again on validate, rehearse and
-  import. The same SATOM version always gives the same zip and hash.</p>
-</li>
-<li>
-<p><strong>Scripts travel in app packages.</strong> Exporting an app now includes the
-  published version (files and settings) of every Script Library script its
-  <em>Run a script</em> steps use, and the HTTP connections those scripts call.
-  Credential values never travel. On import, a missing script is created and
-  published as version 1 for administrators; a script that already exists is
-  kept, with a warning when its published files differ. A packaged script
-  must run without network and without declared credentials, may not use
-  <code>secret</code> or <code>tcp</code> from the SDK, may not pass <code>write=True</code>, may not have
-  database fields, and may declare only HTTP connections that exist on the
-  server or come in the same package.</p>
-</li>
-<li>
-<p><strong>Plugin CSS rules and their linter</strong> (<code>app/services/plugin_css.py</code>, pure
-  standard library, for the rules pack). Errors: <code>@import</code>, non-<code>data:</code>
-  <code>url()</code>, <code>expression(</code>, <code>javascript:</code>, <code>behavior</code> / <code>-moz-binding</code>,
-  <code>position: fixed</code>, non-<code>data:</code> <code>@font-face</code> sources, more than 256 KiB.
-  Warnings: more than 20 <code>!important</code>, text colours below 4.5:1 on white,
-  <code>z-index</code> above 1000. The plugin editor lists the findings for the saved
-  stylesheet. Documented in the user guide, Report Studio, <em>Plugin CSS rules</em>.</p>
-</li>
-</ul>
-<h3 id="changed">Changed</h3>
-<ul>
-<li>
-<p><strong>Importing a plugin package is two steps.</strong> The upload shows the package
-  first — problems, warnings, what it creates and keeps, where it lands, who
-  signed it, the rules applied — with a password box for each connection it
-  creates that needs a secret. Install stores those secrets on this server
-  (vault or encrypted setting); the upload waits on the server, only for its
-  uploader, for at most one hour. A publisher-signed package, and an unsigned
-  one sent through the API, are checked with the stricter Builder rules.</p>
-</li>
-<li>
-<p><strong>An app whose connection has no secret yet shows a problem</strong> (<em>connection
-  … has no secret yet</em>) and cannot be published until the secret is set.</p>
-</li>
-<li>
-<p><strong>Report Studio views and widgets render in SATOM's light look.</strong> The
-  sandboxed plugin frame dropped its dark default: it now carries every
-  <code>--fw-*</code> token with the active <strong>Settings › Appearance</strong> theme on top, so a
-  customer theme reaches plugins, plus a small class kit (<code>.fw-card</code>,
-  <code>.fw-badge-*</code>, <code>.fw-table</code>, <code>.btn-fw-*</code>, <code>.fw-alert-*</code>, base typography),
-  all inlined. The frame's Content-Security-Policy is unchanged. The built-in
-  examples and the render-error card moved to the light palette. A view
-  written with light-on-dark colours keeps them; the editor's contrast
-  warnings point at those lines.</p>
-</li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li><strong>The offline installer no longer stops at "tar is missing" on a minimal RHEL or
-  SUSE server.</strong> The RHEL and SUSE bundles now carry <code>tar</code> and <code>gzip</code>, and the guided
-  setup installs <code>tar</code> from the bundle next to it before giving up. The message
-  explains how to extract a bundle without <code>tar</code> (<code>python3 -m tarfile -e</code>).</li>
-<li>
-<p><strong>An app package can no longer replace a template.</strong> Installing a package
-  with the id of a Plugin Studio › Examples object (<code>ex-*</code>: app, data store,
-  connection or script) is refused; before, the template's draft was
-  replaced.</p>
-</li>
-<li>
-<p><strong>A connection that carries a secret is refused.</strong> A package connection
-  with a non-empty <code>password</code>, <code>secret</code>, <code>token</code>, <code>api_key</code> or
-  <code>client_secret</code> used to be installed with the value silently ignored; it is
-  now refused, since secrets are always typed on the importing server.</p>
-</li>
-<li>
-<p><strong>Postgres connections in an app package are refused with a clear message</strong>
-  instead of failing halfway through the import with "a host name or address
-  is required" and leaving the connection behind.</p>
-</li>
-<li>
-<p><strong>An API version without endpoints is refused before anything is written.</strong>
-  The import used to create the API and its draft version, then roll back
-  the rest when publishing failed. Every rule that needs no server state
-  (secrets, postgres, empty API versions, connection definitions, data
-  stores, scripts, images) is now checked before the first write.</p>
-</li>
-</ul>
-<p class="rel-prevnext"><a href="v4.0.3.html">Version 4.0.3 →</a></p>
+
+<p class="rel-prevnext"><a href="v4.1.0.html">Version 4.1.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

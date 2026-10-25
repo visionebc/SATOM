@@ -6,7 +6,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
-Stage 0 of **SATOM Builder**, the separate tool customers install to author plugins and Plugin Studio apps: one package check shared by the importer and the Builder, a token API for it, trusted publishers, and the plugin frame in SATOM's light look.
+## [4.1.0] - 2026-10-25
+
+What SATOM provides for **SATOM Builder**, the separate tool customers install to author
+plugins and Plugin Studio apps: one package check shared by the importer and the Builder, a
+token API for it, trusted publishers, scripts that travel in app packages, and the plugin
+frame in SATOM's light look. Also: the offline installer no longer stops on a minimal RHEL or
+SUSE server without `tar`.
 
 ### Added
 

@@ -767,7 +767,32 @@ def schema(target: dict) -> dict:
         "script": {"field_types": [t for t in SL.FIELD_TYPES if t not in SL.DB_FIELD_TYPES],
                    "sdk": list(SCRIPT_SDK), "max_timeout": SL.TIMEOUT_MAX},
         "limits": limits(),
+        # the editors' input checks, read from the same constants the rules use
+        "methods": list(_api_spec().METHODS), "param_in": list(_api_spec().PARAM_IN),
+        "reserved_vars": list(F.RESERVED_VARS),
+        "patterns": patterns(),
     }
+
+
+def _api_spec():
+    from . import studio_api_spec as S
+    return S
+
+
+def patterns() -> dict:
+    """The name patterns an editor checks as the author types: the regexes of
+    the modules that enforce them (never restated)."""
+    from . import plugin_package as P
+    from . import studio_apps as SA
+    from . import studio_connections as SC
+    from . import studio_flow as F
+    from . import studio_store as SS
+    return {"slug": P.SLUG_RE.pattern, "version": P.VERSION_RE.pattern,
+            "icon": P.ICON_RE.pattern, "field": SA._FIELD_RE.pattern,
+            "action_key": SA._ACTION_RE.pattern, "app_slug": SA._SLUG_RE.pattern,
+            "store_slug": SS._SLUG_RE.pattern, "column": SS._COL_RE.pattern,
+            "connection_slug": SC._SLUG_RE.pattern, "step_key": F._KEY_RE.pattern,
+            "variable": F._VAR_RE.pattern, "operation_id": _api_spec()._ID_RE.pattern}
 
 
 def author_guide(target: dict) -> str:

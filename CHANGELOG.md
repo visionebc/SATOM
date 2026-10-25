@@ -6,6 +6,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-10-25
+
+Documentation and upgrade-path release: the manual every node serves no
+longer describes the removed Process section, and the update package accepts
+a server on 3.3.3 or newer again.
+
+### Fixed
+
+- **The update package accepts 3.3.3 or newer again.** From 3.4.2 on, each
+  package's oldest accepted version rose by itself (4.0.0 needed 3.4.7)
+  while this manual promised 3.3.3, because the build compared wheels only
+  against the packages still kept on the build host. A server on 3.3.3 to
+  3.4.6 can apply 4.0.1 directly; nothing changes for newer servers.
+- **The Documentation Center on every node (`/manual/docs-center/`)** no
+  longer describes the Process section removed in 4.0.0: the API page
+  (`/processes` routes, `process_arm`, `invalid_diagram`,
+  `appliance_required`), API tokens (Process grants), Triggers and Plugin
+  Studio apps (*Walk a process* step) and the NAF framework were corrected,
+  and Navigation records the 4.0.0 menu change.
+
 ## [4.0.0] - 2026-10-25
 
 A major version because something was removed: the **Process** section,

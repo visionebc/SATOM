@@ -257,6 +257,9 @@ those releases (3.3.3, the first one that recorded it). A node below that is
 refused at <strong>Upgrade path</strong> with nothing changed. Coming from 3.3.2 or older
 you apply <code>satom-update-3.3.3.tar.gz</code> first — it carries every wheel — and
 then the newer package.</p>
+<p>One exception: the <strong>4.0.0</strong> package needs <strong>3.4.7 or newer</strong> (it was built
+against only the packages still on the build host). 4.0.1 and later accept
+3.3.3 or newer again, so a node on 3.3.3–3.4.6 skips 4.0.0.</p>
 <p><strong>On a node on 3.3.2 or older, install the 3.3.3 package's runner first.</strong>
 Those nodes run an update runner that stages the package in a directory only
 root can read and then points <code>pip</code> — running as the service account — at the

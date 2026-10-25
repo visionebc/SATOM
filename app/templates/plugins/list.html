@@ -13,7 +13,8 @@
 </div>
 
 <div class="fw-card" id="import-plugin">
-  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Import plugin') }}</h2></div>
+  <div class="fw-card-header d-flex align-items-center justify-content-between"><h2 class="fw-card-title">{{ _('Import plugin') }}</h2>
+    <a class="btn btn-sm btn-fw-outline" href="{{ url_for('plugins.publishers') }}"><i class="bi bi-patch-check me-1"></i>{{ _('Trusted publishers') }}</a></div>
   <div class="fw-card-body">
     <form method="post" action="{{ url_for('plugins.import_package') }}" enctype="multipart/form-data" class="d-flex align-items-center gap-3 flex-wrap">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -22,6 +23,7 @@
       <button class="btn btn-fw-primary" type="submit"><i class="bi bi-upload me-1"></i>{{ _('Import') }}</button>
     </form>
     <div class="text-secondary mt-2" style="font-size:13px">{{ _('A .satomplugin package installs without an update package. Views and widgets land here (signed: testing, unsigned: draft) and update the plugin with the same slug; code plugins must be signed by a trusted key and load at the next') }} <code>satom execute restart-all</code>. {{ _('Export a view to move it to another server.') }}</div>
+    <div class="text-secondary mt-1" style="font-size:13px">{{ _('Uploading shows the package first: its problems, what it creates and keeps, who signed it, and a box for the secret of every connection it creates. Nothing is installed until you confirm.') }}</div>
   </div>
 </div>
 

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Trusted publishers') }}{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-patch-check me-2 text-accent"></i>{{ _('Trusted publishers') }}</h1>
+    <p class="fw-page-sub">{{ _('Public keys whose signature an import trusts, besides the Vision EBC key. Register the publisher key of your SATOM Builder here.') }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-outline" href="{{ url_for('plugins.index') }}#import-plugin"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import plugin') }}</a>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-body text-secondary" style="font-size:13px">
+    {{ _('A view or widget signed by an enabled publisher lands in testing (unsigned: draft), and every package it signs is checked with the strict Builder rules. A publisher can never sign a code plugin: code is installed only when Vision EBC signed it. A disabled publisher is not trusted: its packages are refused.') }}
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Registered publishers') }}</h2></div>
+  {% if publishers %}
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr><th>{{ _('Label') }}</th><th>{{ _('Key id') }}</th><th>{{ _('ADOMs') }}</th><th>{{ _('State') }}</th><th>{{ _('Added') }}</th><th class="actions-col"></th></tr></thead>
+      <tbody>
+        {% for p in publishers %}
+        <tr>
+          <td><i class="bi bi-patch-check me-2 text-accent"></i>{{ p.label }}</td>
+          <td style="font-size:12px"><code title="{{ p.key_id }}">{{ p.key_id[:16] }}…</code></td>
+          <td style="font-size:12px">{{ p.adoms|join(', ') if p.adoms else _('every ADOM') }}</td>
+          <td>{% if p.enabled %}<span class="fw-badge fw-badge-success">{{ _('enabled') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>{% endif %}</td>
+          <td class="text-secondary" style="font-size:12px">{{ p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at }}{% if p.created_by %} · {{ p.created_by }}{% endif %}</td>
+          <td class="text-end actions-col">
+            <form method="post" action="{{ url_for('plugins.publisher_toggle', key_id=p.key_id, action='disable' if p.enabled else 'enable') }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-fw-outline" type="submit">{{ _('Disable') if p.enabled else _('Enable') }}</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="fw-card-body text-secondary">{{ _('No publisher registered. Only packages signed by Vision EBC read as signed.') }}</div>
+  {% endif %}
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Add a publisher') }}</h2></div>
+  <div class="fw-card-body">
+    <form method="post" action="{{ url_for('plugins.publisher_add') }}" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-2" style="font-size:13px">
+        <div class="col-md-4">
+          <label class="form-label" for="pub-label">{{ _('Label') }}</label>
+          <input class="form-control" id="pub-label" name="label" maxlength="80" required placeholder="{{ _('e.g. SATOM Builder, Lab') }}">
+        </div>
+        <div class="col-md-8">
+          <label class="form-label" for="pub-key">{{ _('Public key (base64 of the raw 32-byte Ed25519 key)') }}</label>
+          <input class="form-control font-monospace" id="pub-key" name="public_key" required>
+        </div>
+        {% if adom_choices %}
+        <div class="col-12">
+          <div class="form-label">{{ _('Limit to these ADOMs (none ticked: every ADOM)') }}</div>
+          {% for a in adom_choices %}<label class="me-3"><input type="checkbox" name="adoms" value="{{ a }}"> {{ a }}</label>{% endfor %}
+        </div>
+        {% endif %}
+        <div class="col-12"><button class="btn btn-fw-primary" type="submit"><i class="bi bi-plus-lg me-1"></i>{{ _('Add publisher') }}</button></div>
+      </div>
+    </form>
+    <div class="text-secondary mt-2" style="font-size:12px">{{ _('SATOM Builder shows its public key on its Publisher key page. The key id is the SHA-256 of the raw key, the id plugin.sig names.') }}</div>
+  </div>
+</div>
+
+{% if vision_keys %}
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Built-in keys') }}</h2></div>
+  <div class="fw-card-body" style="font-size:12px">
+    {% for k in vision_keys %}<div><span class="fw-badge fw-badge-success">{{ _('Vision EBC') }}</span> <code>{{ k }}</code></div>{% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

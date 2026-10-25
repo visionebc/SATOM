@@ -18,6 +18,8 @@ Every rule is checked BEFORE anything is written: member names (no traversal,
 nothing unlisted), sizes, the sha256 of each member against the manifest, and
 the signature when there is one. A signature by a key that is not in
 ``TRUSTED_KEYS`` -- or one that does not match -- is an error, never "unsigned".
+An import also trusts the enabled registered publishers
+(:func:`trusted_keys_with_publishers`, Plugin Studio › Trusted publishers).
 """
 from __future__ import annotations
 
@@ -182,6 +184,24 @@ def check_code_entry(src: bytes, label: str) -> None:
 
 def trusted_keys() -> dict[str, bytes]:
     return {k: base64.b64decode(v) for k, v in TRUSTED_KEYS.items()}
+
+
+def trusted_keys_with_publishers(product: str | None = None) -> dict[str, bytes]:
+    """``TRUSTED_KEYS`` plus the ENABLED registered publishers that apply to
+    ADOM *product* (``services.plugin_publishers``) -- what an import trusts.
+    A Vision EBC key id always maps to the pinned key. The database is asked
+    here only: ``read_package(data, keys=...)`` stays pure."""
+    from . import plugin_publishers as PP
+    keys = PP.keys(product)
+    keys.update(trusted_keys())
+    return keys
+
+
+def signed_by(signer: str | None) -> str:
+    """``vision-ebc`` | ``publisher`` | ``none`` for a package's signer."""
+    if not signer:
+        return "none"
+    return "vision-ebc" if signer in TRUSTED_KEYS else "publisher"
 
 
 def verify_signature(manifest_bytes: bytes, sig_bytes: bytes,

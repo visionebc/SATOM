@@ -527,7 +527,22 @@ def problems(a: StudioApp) -> list[str]:
         errs += D.problems(D.clean(a.design), a.fields, a.graph, D.asset_keys(a.id))
     except D.DesignError as exc:
         errs.append("design: %s" % exc)
+    errs += secret_problems(a)
     return sorted(set(errs))
+
+
+def secret_problems(a: StudioApp) -> list[str]:
+    """A connection the app uses that needs a secret and has none: the app
+    cannot be published until someone types it here (an imported package
+    creates its connections WITHOUT their secrets)."""
+    from . import studio_connections as SC
+    out = []
+    for slug in sorted(_refs(a.graph, a.actions, a.fields, "connection")):
+        c = SC.get(slug)
+        if c is not None and SC.needs_secret(c) and not SC.has_secret(slug):
+            out.append("connection %s has no secret yet: set it in Plugin Studio › "
+                       "Connections" % slug)
+    return out
 
 
 def publish(a: StudioApp, note: str, by: str) -> int:

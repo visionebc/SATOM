@@ -27641,3 +27641,138 @@ msgstr "Salva il diagramma, poi premi Simula."
 
 msgid "One box per app, bound to the version you approve: when a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs app_arm."
 msgstr "Una casella per app, legata alla versione che approvi: quando viene pubblicata un'altra versione dell'app, l'autorizzazione si sospende finché non la riapprovi. Nulla selezionato = non ne esegue nessuna. Un'esecuzione armata richiede anche app_arm."
+
+msgid "%(what)s “%(name)s” %(version)s (%(signed)s) — status %(status)s."
+msgstr "%(what)s «%(name)s» %(version)s (%(signed)s) — stato %(status)s."
+
+msgid "A package never carries secrets. Type the password or token of each connection this import creates; it is stored on this server only (vault, or encrypted in the database). Leave a box empty to set it later in Plugin Studio › Connections: until then the app shows a problem and cannot be published."
+msgstr "Un pacchetto non contiene mai segreti. Digiti la password o il token di ogni connessione creata da questa importazione; viene salvato solo su questo server (nel vault, o cifrato nel database). Lasci un campo vuoto per impostarlo più tardi in Plugin Studio › Connessioni: fino ad allora l’app mostra un problema e non può essere pubblicata."
+
+msgid "A view or widget signed by an enabled publisher lands in testing (unsigned: draft), and every package it signs is checked with the strict Builder rules. A publisher can never sign a code plugin: code is installed only when Vision EBC signed it. A disabled publisher is not trusted: its packages are refused."
+msgstr "Una vista o un widget firmato da un editore abilitato finisce in test (non firmato: bozza), e ogni pacchetto che firma viene controllato con le regole rigorose del Builder. Un editore non può mai firmare un plugin di codice: il codice viene installato solo se lo ha firmato Vision EBC. Un editore disabilitato non è attendibile: i suoi pacchetti vengono rifiutati."
+
+msgid "Add a publisher"
+msgstr "Aggiungi un editore"
+
+msgid "Add publisher"
+msgstr "Aggiungi editore"
+
+msgid "App"
+msgstr "App"
+
+msgid "Built-in keys"
+msgstr "Chiavi integrate"
+
+msgid "Check what this package does before it is installed. Nothing has been written yet."
+msgstr "Controlli cosa fa questo pacchetto prima di installarlo. Non è ancora stato scritto nulla."
+
+msgid "Choose a .satomplugin file to import."
+msgstr "Scelga un file .satomplugin da importare."
+
+msgid "Code plugin"
+msgstr "Plugin di codice"
+
+msgid "Creates"
+msgstr "Crea"
+
+msgid "Import cancelled; the upload was deleted."
+msgstr "Importazione annullata; il file caricato è stato eliminato."
+
+msgid "Import refused: %(why)s"
+msgstr "Importazione rifiutata: %(why)s"
+
+msgid "Installed app “%(name)s” %(version)s (%(signed)s). Created: %(created)s. Kept: %(kept)s. To do: %(todo)s."
+msgstr "App «%(name)s» %(version)s installata (%(signed)s). Creato: %(created)s. Mantenuto: %(kept)s. Da fare: %(todo)s."
+
+msgid "Installed code plugin “%(name)s” %(version)s (%(signed)s). It loads at the next `satom execute restart-all`."
+msgstr "Plugin di codice «%(name)s» %(version)s installato (%(signed)s). Si carica al prossimo `satom execute restart-all`."
+
+msgid "Keeps as they are on this server"
+msgstr "Mantiene così come sono su questo server"
+
+msgid "Key id"
+msgstr "Id della chiave"
+
+msgid "Lands in"
+msgstr "Finisce in"
+
+msgid "Limit to these ADOMs (none ticked: every ADOM)"
+msgstr "Limita a questi ADOM (nessuno selezionato: tutti gli ADOM)"
+
+msgid "No publisher registered. Only packages signed by Vision EBC read as signed."
+msgstr "Nessun editore registrato. Solo i pacchetti firmati da Vision EBC risultano firmati."
+
+msgid "Problems"
+msgstr "Problemi"
+
+msgid "Public key (base64 of the raw 32-byte Ed25519 key)"
+msgstr "Chiave pubblica (base64 della chiave Ed25519 grezza di 32 byte)"
+
+msgid "Public keys whose signature an import trusts, besides the Vision EBC key. Register the publisher key of your SATOM Builder here."
+msgstr "Chiavi pubbliche la cui firma un’importazione accetta, oltre alla chiave di Vision EBC. Registri qui la chiave editore del suo SATOM Builder."
+
+msgid "Publisher refused: %(why)s"
+msgstr "Editore rifiutato: %(why)s"
+
+msgid "Publisher “%(label)s” %(state)s."
+msgstr "Editore «%(label)s» %(state)s."
+
+msgid "Publisher “%(label)s” registered (key %(kid)s)."
+msgstr "Editore «%(label)s» registrato (chiave %(kid)s)."
+
+msgid "Registered publishers"
+msgstr "Editori registrati"
+
+msgid "Rules applied"
+msgstr "Regole applicate"
+
+msgid "SATOM Builder shows its public key on its Publisher key page. The key id is the SHA-256 of the raw key, the id plugin.sig names."
+msgstr "SATOM Builder mostra la sua chiave pubblica nella pagina Publisher key. L’id della chiave è lo SHA-256 della chiave grezza, l’id che plugin.sig indica."
+
+msgid "Secrets for the new connections"
+msgstr "Segreti delle nuove connessioni"
+
+msgid "Signed by"
+msgstr "Firmato da"
+
+msgid "That key is already registered as “%(label)s”."
+msgstr "Questa chiave è già registrata come «%(label)s»."
+
+msgid "That upload is no longer waiting (it expires after one hour). Upload the package again."
+msgstr "Quel caricamento non è più in attesa (scade dopo un’ora). Carichi di nuovo il pacchetto."
+
+msgid "The upload waits here for one hour, then it is deleted."
+msgstr "Il caricamento resta qui un’ora, poi viene eliminato."
+
+msgid "This package cannot be installed until its author fixes these problems."
+msgstr "Questo pacchetto non può essere installato finché il suo autore non corregge questi problemi."
+
+msgid "Trusted publishers"
+msgstr "Editori attendibili"
+
+msgid "Uploading shows the package first: its problems, what it creates and keeps, who signed it, and a box for the secret of every connection it creates. Nothing is installed until you confirm."
+msgstr "Il caricamento mostra prima il pacchetto: i suoi problemi, cosa crea e mantiene, chi lo ha firmato e un campo per il segreto di ogni connessione che crea. Nulla viene installato finché non conferma."
+
+msgid "Vision EBC"
+msgstr "Vision EBC"
+
+msgid "Warnings"
+msgstr "Avvisi"
+
+msgid "What the import does"
+msgstr "Cosa fa l’importazione"
+
+msgid "Widget"
+msgstr "Widget"
+
+msgid "e.g. SATOM Builder, Lab"
+msgstr "es. SATOM Builder, Laboratorio"
+
+msgid "nothing"
+msgstr "nulla"
+
+msgid "signed by %(who)s"
+msgstr "firmato da %(who)s"
+
+msgid "trusted publisher"
+msgstr "editore attendibile"

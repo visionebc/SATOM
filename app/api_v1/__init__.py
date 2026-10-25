@@ -35,6 +35,9 @@ from . import observability  # noqa: E402,F401
 from . import apps  # noqa: E402,F401
 # Orchestration: outside systems post events that start triggers' automations.
 from . import triggers  # noqa: E402,F401
+# SATOM Builder: the target snapshot, the rules pack, validate / rehearse /
+# import of plugin packages and the trusted publisher keys.
+from . import builder  # noqa: E402,F401
 # The OpenAPI document, built from the rules above at request time. Imported
 # LAST on purpose: it documents whatever is registered when it is asked.
 from . import openapi  # noqa: E402,F401

@@ -139,6 +139,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <label class="form-check-label text-nowrap"><input class="form-check-input me-1" type="checkbox" name="allow_downgrade" value="1">{{ _('Allow downgrade') }}</label>
             <label class="btn btn-outline-primary btn-sm text-nowrap mb-0" title="{{ _('An app package: the app, its data stores, its connections (without secrets) and its API versions') }}"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import app package') }}<input type="file" name="package" accept=".satomplugin,.zip" class="d-none" data-ap-import required></label>
+            <a class="btn btn-outline-secondary btn-sm text-nowrap" href="{{ url_for('plugins.publishers') }}" title="{{ _('Public keys whose signature an import trusts, besides the Vision EBC key. Register the publisher key of your SATOM Builder here.') }}"><i class="bi bi-patch-check me-1"></i>{{ _('Trusted publishers') }}</a>
           </form>
           {% endif %}
         </div>

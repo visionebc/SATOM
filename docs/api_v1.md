@@ -156,6 +156,13 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/apps` | read | — | The Plugin Studio apps the token's owner may use in its ADOM, with their form fields (§16) |
 | `POST` | `/apps/<slug>/run` | write | a **grant** for the app; `app_arm` for `"armed": true` | Run an app's published version — **unarmed** unless armed (§16) |
 | `GET`  | `/app-runs/<id>` | read | — | One app run: status, outputs, steps (§16) |
+| `GET`  | `/builder/target` | read | — | This server described for SATOM Builder: choices, existing Studio objects, publishers, schema (§17) |
+| `GET`  | `/builder/rules-pack` | read | — | SATOM's package rules as a zip, header `X-Satom-Rules-Sha256` (§17) |
+| `POST` | `/builder/validate` | write | — | Check a package with the builder rules; writes nothing (§17) |
+| `POST` | `/builder/rehearse` | write | owner is a Plugin Studio author | Walk a package's app **unarmed**, or render a view; installs nothing (§17) |
+| `POST` | `/builder/import` | admin | owner is a super-admin (`studio.plugin_studio`) | Import a package: the console's import path, secrets for new connections (§17) |
+| `GET`  | `/builder/publishers` | read | — | The trusted publisher keys (§17) |
+| `POST` | `/builder/publishers` | admin | owner is a super-admin | Register a publisher key; idempotent (§17) |
 
 The write endpoints are rate-limited to **30/min**, like `/actions/<id>/run`.
 
@@ -425,6 +432,11 @@ Every error is JSON with an `error` code (and usually a `message`).
 | 400 | `bad_request` | The body is not a JSON object (or a field in it has the wrong type) |
 | 400 | `app_error` | The app refused the run: a required input missing, a value not offered, too many runs (§16) |
 | 409 | `unpublished` | The app has no published version (§16) |
+| 403 | `wrong_product` | The token's owner may no longer work in the ADOM the token is bound to (§17) |
+| 413 | `too_large` | A package above 10 MB (§17) |
+| 409 | `busy` | Too many rehearsals are running at once; retry (§17) |
+| 422 | `package_refused` | The import was refused; `problems` lists why (§17) |
+| 400 | `invalid_key` | The publisher key is not the base64 of a raw 32-byte Ed25519 key (§17) |
 | 429 | `rate_limited` | Too many requests (run is 30/min) |
 
 Object authoring answers with these too, plus its own set — see
@@ -989,4 +1001,108 @@ owner — or a Studio author — sees a run; the console's result buttons
 curl -s -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
   -d '{"inputs": {"ip": "192.0.2.7"}}' https://<your-satom-host>/api/v1/apps/ip-owner/run
 curl -s -H "Authorization: Bearer $T" https://<your-satom-host>/api/v1/app-runs/88
+```
+
+## 17. SATOM Builder — `/api/v1/builder/*`
+
+What **SATOM Builder** (the separate tool that builds plugins and Plugin
+Studio apps) calls. Each author links their **own** token, so every call runs
+with that person's permissions and ADOM, and SATOM stays the authority: it
+checks every package again with its own rules on validate, rehearse and
+import. A token whose owner may no longer work in the token's ADOM is refused
+with 403 `wrong_product`. Every call is audited with the token and its owner.
+
+Package bodies (`validate`, `rehearse`, `import`) are `multipart/form-data`:
+`package` (the `.satomplugin` file, at most **10 MB**, else 413 `too_large`)
+and an optional `options` field holding a JSON object. The write endpoints are
+rate-limited to 30/min.
+
+### `GET /builder/target`
+
+This server described for the rules: `satom_version`, `rules_sha256`,
+`product` (the token's ADOM), `caller` (`username`, `scopes`, `can_author`,
+`can_import`), `choices` (what the app editor's pickers offer, plus the
+plugin `datasets`), `templates` (the Examples objects, which a package can
+never replace), `existing` (the apps, data stores with their columns,
+connections with `has_secret` — never the secret — API versions and scripts
+on this server), `publishers` (the enabled ones of this ADOM, with their
+public key) and `schema`. It is exactly the `target` the rules pack's
+`check()` takes.
+
+### `GET /builder/rules-pack`
+
+`application/zip`, `satom-rules-<version>-<sha12>.zip`: SATOM's own package
+rules for the Builder's local checks. The header `X-Satom-Rules-Sha256` is the
+zip's SHA-256.
+
+### `POST /builder/validate`
+
+A dry run: the package is checked with the **builder** rules against this
+server and nothing is written. HTTP 200 even when `ok` is false:
+
+```json
+{"ok": false, "problems": [{"where": "app.graph.nodes[ddi]", "message": "..."}],
+ "warnings": [], "summary": {"kind": "app", "slug": "ip-owner", "version": "1.0.0",
+ "signed_by": "publisher", "creates": [], "keeps": [], "needs_secrets": ["ddi"],
+ "lands_in": "draft"}}
+```
+
+### `POST /builder/rehearse`
+
+`options`: `{"inputs": {...}, "answers": "yes" | "no" | "stop"}`. The token's
+owner must be a Plugin Studio author (`studio.script_library`), else 403
+`owner_forbidden`. The package is checked first; its problems are returned
+and nothing runs. An **app**'s diagram is then walked **unarmed** against this
+server's data stores, connections and secrets: write steps and script steps
+are recorded as *rehearsal: not executed*, reads run for real, and nothing is
+installed or saved (no run record). An object the package would create that
+is not here yet is a problem (`connection ddi is not on this server yet:
+import the package first`). *Ask a person* is answered with `answers`;
+`stop` returns `status: "waiting"` with the prompt. Too many rehearsals at
+once answer 409 `busy`.
+
+```json
+{"ok": true, "status": "done", "steps": [...], "outputs": [...],
+ "waiting": null, "error": "", "problems": []}
+```
+
+A **view or widget** answers `{"ok": true, "rendered": "<html>"}`, rendered in
+the plugin sandbox with this server's datasets cut to the token's owner.
+
+### `POST /builder/import`
+
+`options`: `{"allow_downgrade": false, "secrets": {"<connection slug>":
+"<secret>"}}`. Needs the `admin` scope and an owner who is a super-admin
+(`studio.plugin_studio`). It is the console's import path (Plugin Studio ›
+Import), with the same checks. The rules applied depend on the signature:
+`import` for a Vision EBC signature; the stricter `builder` rules for a
+package signed by a registered publisher and for an **unsigned** package sent
+through this API. A `code` plugin is refused unless Vision EBC signed it.
+`secrets` are stored for the connections the import **creates** (the vault,
+or encrypted in the database) and never logged; a value for a connection
+that already exists is ignored and reported in `kept`. A refusal is 422
+`package_refused` with `problems`.
+
+```json
+{"ok": true, "kind": "app", "slug": "ip-owner", "version": "1.0.0",
+ "lands_in": "draft", "created": ["connection ddi", "secret of connection ddi"],
+ "kept": [], "todo": ["review the diagram, test it and Publish ..."], "problems": [],
+ "warnings": [], "signed_by": "publisher", "signer": "<key id>", "policy": "builder"}
+```
+
+### `GET /builder/publishers` · `POST /builder/publishers`
+
+`GET` lists the registered publisher keys as a JSON array: `[{"key_id",
+"label", "enabled", "created_at"}]`. `POST` (admin scope, super-admin owner)
+registers one: `{"label": "SATOM Builder", "public_key": "<base64 of the raw
+32-byte Ed25519 key>"}` → 201 `{"key_id", "created": true}`. The same key
+again answers 200 with the existing `key_id`; a malformed key answers 400
+`invalid_key`. Disabling a publisher is done in the console (Plugin Studio ›
+Trusted publishers).
+
+```sh
+curl -s -H "Authorization: Bearer $T" -F package=@ip-owner-1.0.0.satomplugin \
+  https://<your-satom-host>/api/v1/builder/validate
+curl -s -H "Authorization: Bearer $T" -F package=@ip-owner-1.0.0.satomplugin \
+  -F 'options={"secrets": {"ddi": "s3cret"}}' https://<your-satom-host>/api/v1/builder/import
 ```

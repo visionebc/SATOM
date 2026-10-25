@@ -201,8 +201,8 @@ def _object_entry(key: str, o: dict, all_objs: dict) -> dict:
                                o["product"], o["logical"], o["layer"], o["rows"],
                                "; masked: " + ", ".join(secret) if secret else ""),
             "product": o["product"], "columns": cols, "relations": rels, "masked": secret,
-            "group": "%s › %s" % (_PRODUCT_LABEL.get(o["product"], o["product"]),
-                                  o["logical"].split("/", 1)[0].replace("_", " ")),
+            "group": "%s objects%s" % (_PRODUCT_LABEL.get(o["product"], o["product"]),
+                                       " (deep layer)" if o["layer"] == "deep" else ""),
             "object": {"product": o["product"], "layer": o["layer"], "logical_name": o["logical"]},
             "rows": o["rows"]}
 

@@ -26,7 +26,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `admin_<name>`. Runs as the read-only console role with the viewer's ADOM
   added by the server. Needs the Plugin Studio permission.
 - **The plugin editor's dataset picker** is grouped (built-in, administrator,
-  one group per product and object family) and searchable; the Python
+  one group per product and cache layer) and searchable; the Python
   console offers the same datasets.
 - **A view carries the administrator datasets it reads.** Export writes their
   definitions in the package (`dataset_defs`); an import into a server that

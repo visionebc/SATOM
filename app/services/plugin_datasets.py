@@ -12,8 +12,9 @@ Until 4.3.0 the only datasets were the nine written in
   ``__``: ``fortiweb_vip``, ``fortigate_firewall_policy``,
   ``fortiadc_load_balance_pool__pool_member``. Columns: ``id``,
   ``appliance_id``, ``device``, ``mkey``, ``parent_id`` and the object's own
-  fields as the cache holds them (``-`` → ``_``; at most :data:`MAX_FIELDS`,
-  the most common first). A field whose name says secret (password, passwd,
+  fields as the cache holds them (``-`` → ``_``; at most :data:`MAX_FIELDS`:
+  :data:`PRIORITY_FIELDS` first, then the ones holding a value, then the most
+  common; the device API's bookkeeping ``q_*`` and ``_*`` left out). A field whose name says secret (password, passwd,
   psk, secret, token, private, ``*key``) is masked.
 * ``admin`` -- what an administrator built with the Report Builder's query
   builder (Administrator › Database › Plugin datasets, model
@@ -47,7 +48,16 @@ from typing import Any
 
 SOURCES = ("builtin", "objects", "admin")
 PRODUCTS = ("fortiweb", "fortigate", "fortiadc", "fortianalyzer", "fortiauthenticator")
-MAX_FIELDS = 80
+MAX_FIELDS = 120
+#: Fields an author looks for first: kept whatever the order the cache lists
+#: them in (a FortiGate policy has 200+ fields, all present in every row).
+PRIORITY_FIELDS = ("name", "mkey", "id", "policyid", "status", "action", "type", "comment",
+                   "comments", "description", "interface", "srcintf", "dstintf", "srcaddr",
+                   "dstaddr", "address", "ip", "vip", "subnet", "start-ip", "end-ip", "fqdn",
+                   "host", "port", "protocol", "service", "schedule", "pool", "server-pool",
+                   "vserver", "web-protection-profile", "deployment-mode", "logtraffic",
+                   "traffic-log", "tlog", "certificate", "version", "uuid")
+_PRIORITY = {f: i for i, f in enumerate(PRIORITY_FIELDS)}
 MAX_ROWS = 1000
 SAMPLE_ROWS = 25
 CATALOG_TTL = 300.0
@@ -133,7 +143,7 @@ def _scan_objects() -> dict[str, dict]:
         if kind not in PRODUCTS or not logical:
             continue
         t = types.setdefault((kind, layer or "config", logical),
-                             {"rows": int(n or 0), "freq": {}, "order": []})
+                             {"rows": int(n or 0), "freq": {}, "filled": {}, "order": []})
         if isinstance(payload, str):
             try:
                 payload = json.loads(payload)
@@ -141,15 +151,23 @@ def _scan_objects() -> dict[str, dict]:
                 payload = None
         if isinstance(payload, dict):
             for f, v in payload.items():
-                if isinstance(v, (dict, list)):
+                # nested values are sub-objects (their own datasets); q_* and _*
+                # are the device API's own bookkeeping, not configuration
+                if isinstance(v, (dict, list)) or f.startswith(("q_", "_")):
                     continue
                 if f not in t["freq"]:
                     t["order"].append(f)
                 t["freq"][f] = t["freq"].get(f, 0) + 1
+                if v not in (None, "", 0, "disable", "none"):
+                    t["filled"][f] = t["filled"].get(f, 0) + 1
     out: dict[str, dict] = {}
     for (kind, layer, logical), t in sorted(types.items()):
         key = object_key(kind, layer, logical)
-        ranked = sorted(t["order"], key=lambda f: (-t["freq"][f], t["order"].index(f)))
+        pos = {f: i for i, f in enumerate(t["order"])}
+        # the fields an author looks for, then the ones that hold something
+        # (a set value, not empty/0/disable), then the most common
+        ranked = sorted(t["order"], key=lambda f: (_PRIORITY.get(f, len(_PRIORITY)),
+                                                   -t["filled"].get(f, 0), -t["freq"][f], pos[f]))
         fields, seen = [], set(FIXED_OBJECT_COLUMNS)
         for f in ranked:
             col = field_column(f)

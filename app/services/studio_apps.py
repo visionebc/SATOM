@@ -61,6 +61,8 @@ ACTION_KINDS = ("save_store", "download", "send", "run_app", "change_request")
 MAX_FIELDS = 40
 MAX_ACTIONS = 20
 MAX_OPTIONS = 500
+#: The stored diagram, as JSON.
+MAX_GRAPH_BYTES = 512 * 1024
 RUN_VARS_CAP = 256 * 1024
 #: Runs in progress at once: per user, and on the whole node. Every run is a
 #: thread of the web process; an operator holding the Run button must not be
@@ -471,6 +473,24 @@ def save_settings(a: StudioApp, form: dict, adom_keys, by: str) -> None:
     db.session.commit()
 
 
+def clean_graph(graph) -> dict:
+    """The diagram as stored: an object of nodes and edges, at most
+    :data:`MAX_GRAPH_BYTES`. Its steps are judged by ``studio_flow.validate_graph``."""
+    if not isinstance(graph, dict) or len(json.dumps(graph)) > MAX_GRAPH_BYTES:
+        raise AppError("the diagram is not an object, or is larger than 512 KiB")
+    return {"nodes": graph.get("nodes") or [], "edges": graph.get("edges") or []}
+
+
+def form_ref_problems(fields: list, graph) -> list[str]:
+    """``form.<name>`` the diagram reads that is not a field of the form.
+    *graph* is the diagram or its stored JSON text."""
+    names = {f.get("name") for f in fields or [] if isinstance(f, dict)}
+    text = graph if isinstance(graph, str) else json.dumps(graph)
+    return ["the diagram reads form.%s, which is not a field of the form" % m.group(1)
+            for m in re.finditer(r"form\.([a-z_][a-z0-9_]*)", text or "")
+            if m.group(1) not in names]
+
+
 def save_draft(a: StudioApp, *, fields=None, graph=None, actions=None, design=None,
                by: str) -> list[str]:
     """Save what was sent. Returns the diagram problems (a draft with problems
@@ -480,9 +500,7 @@ def save_draft(a: StudioApp, *, fields=None, graph=None, actions=None, design=No
     if fields is not None:
         a.fields_json = json.dumps(clean_fields(fields, ch))
     if graph is not None:
-        if not isinstance(graph, dict) or len(json.dumps(graph)) > 512 * 1024:
-            raise AppError("the diagram is not an object, or is larger than 512 KiB")
-        a.graph_json = json.dumps({"nodes": graph.get("nodes") or [], "edges": graph.get("edges") or []})
+        a.graph_json = json.dumps(clean_graph(graph))
     if actions is not None:
         a.actions_json = json.dumps(clean_actions(actions, ch))
     if design is not None:
@@ -503,10 +521,7 @@ def problems(a: StudioApp) -> list[str]:
         clean_actions(a.actions, ch)
     except AppError as exc:
         errs.append(str(exc))
-    names = {f["name"] for f in a.fields}
-    for m in re.finditer(r"form\.([a-z_][a-z0-9_]*)", a.graph_json or ""):
-        if m.group(1) not in names:
-            errs.append("the diagram reads form.%s, which is not a field of the form" % m.group(1))
+    errs += form_ref_problems(a.fields, a.graph_json or "")
     from . import studio_design as D
     try:
         errs += D.problems(D.clean(a.design), a.fields, a.graph, D.asset_keys(a.id))

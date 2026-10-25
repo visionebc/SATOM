@@ -27,9 +27,21 @@ INSTALL RULES -- what an import may and may not overwrite
   connection is never changed -- its URL and credentials are this server's.
 * **API Catalog versions** are created and published when missing; a version
   that exists is frozen by design and is kept.
+* **Scripts** (``"scripts"``: the Script Library scripts the diagram's
+  ``script`` steps run, with their published files and settings) are created
+  when missing and published as version 1 for ``admins``. An existing script
+  is kept, with a warning when its published files differ.
+
+Nothing is written before the whole package passed the rules that need no
+server state (``package_check.app_preflight``): a template (Plugin Studio >
+Examples) is never replaced or created, a connection never carries a secret
+and is never postgres, an API version has endpoints, every packaged script
+passes the script rules. The import page applies the rest of
+``package_check.check`` -- by policy -- before it calls :func:`install`.
 
 Export writes the same file from a live app, minus every secret: a
-connection's secret is never in the package, in either direction.
+connection's secret is never in the package, in either direction, and a
+script travels without any credential value.
 """
 from __future__ import annotations
 
@@ -64,11 +76,61 @@ def _refs(a) -> dict:
     return r
 
 
+def connection_form(c: dict) -> dict:
+    """The connection form install applies for the package entry *c*
+    (``studio_connections.save``; ``clean_definition`` checks the same)."""
+    form = {k: "" if c.get(k) is None else str(c.get(k))
+            for k in ("name", "description", "base_url", "auth", "username", "header_name",
+                      "token_url", "scope", "timeout")}
+    form["login_path"] = form["token_url"] if c.get("auth") == "session" else ""
+    form["verify_tls"] = "1" if c.get("verify_tls", True) else ""
+    return form
+
+
+def _scripts(slugs) -> list[dict]:
+    """The published version of each script, as a package carries it: its
+    files and settings. Credential VALUES live in the vault and never come
+    here; declared credentials and a network mode travel only so that the
+    import can refuse them by name (a packaged script has neither)."""
+    from . import script_library as SL
+    out = []
+    for slug in sorted(slugs):
+        try:
+            meta = SL.get(slug)
+        except SL.ScriptError:
+            meta = None
+        if not meta or not meta.get("published"):
+            continue                    # the diagram's problem says so on import
+        v = SL.version(slug, int(meta["published"])) or {}
+        settings = {"fields": v.get("fields") or [], "timeout": v.get("timeout") or SL.TIMEOUT_DEFAULT,
+                    "audience": meta.get("audience") or "admins",
+                    "connections": list(v.get("connections") or []),
+                    "entry": v.get("entry") or SL.ENTRY}
+        if (v.get("network") or "none") != "none":
+            settings["network"] = v["network"]
+        if v.get("credentials"):
+            settings["credentials"] = [{"name": c.get("name"), "kind": c.get("kind")}
+                                       for c in v["credentials"] if isinstance(c, dict)]
+        out.append({"slug": slug, "name": v.get("name") or meta.get("name") or slug,
+                    "description": meta.get("description") or "",
+                    "files": dict(v.get("files") or {}), "settings": settings})
+    return out
+
+
+def _published_files(SL, slug: str) -> dict:
+    meta = SL.get(slug) or {}
+    v = SL.version(slug, int(meta["published"])) if meta.get("published") else None
+    return dict((v or {}).get("files") or {})
+
+
 def build_body(a) -> dict:
     """``app.json`` for app ``a`` -- secrets excluded by construction."""
     from . import studio_connections as SC
     from . import studio_store as SS
     refs = _refs(a)
+    scripts = _scripts(refs["scripts"])
+    for sc in scripts:              # what a script calls travels with it
+        refs["connections"].update(sc["settings"]["connections"])
     stores = []
     for slug in sorted(refs["stores"]):
         st = SS.get(slug)
@@ -95,10 +157,13 @@ def build_body(a) -> dict:
                 "docs_url": v.api.docs_url, "description": v.api.description,
                 "version": v.version, "base_path": v.base_path, "operations": v.operations}
         conns.append(d)
-    return {"app": {"slug": a.slug, "name": a.name, "icon": a.icon,
+    body = {"app": {"slug": a.slug, "name": a.name, "icon": a.icon,
                     "description": a.description, "fields": a.fields,
                     "graph": a.graph, "actions": a.actions, "design": a.design},
             "stores": stores, "connections": conns, "apis": list(apis.values())}
+    if scripts:
+        body["scripts"] = scripts
+    return body
 
 
 def export_app(a, satom_version: str = "") -> tuple[str, bytes]:
@@ -126,16 +191,29 @@ def _body(pk) -> dict:
 
 
 def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
-    """Install an app package. ``{app, created, kept, todo, problems}``."""
+    """Install an app package. ``{app, created, kept, todo, problems, warnings}``."""
     from ..extensions import db
+    from . import package_check as PC
+    from . import script_library as SL
     from . import studio_apis as SAPI
     from . import studio_apps as SA
     from . import studio_connections as SC
     from . import studio_design as D
+    from . import studio_examples as EX
     from . import studio_store as SS
     if pk.kind != "app":
         raise AppPackageError("not an app package")
     body = _body(pk)
+    # Refused before anything is written (defence in depth: the import page
+    # checks the whole package first).
+    for kind, oslug in PC.objects(body):
+        if EX.is_template(kind, oslug):
+            raise AppPackageError("%s %s is a template (Plugin Studio > Examples): a package "
+                                  "can never replace or create it" % (kind, oslug))
+    refused = PC.app_preflight(body, pk.files)
+    if refused:
+        raise AppPackageError("the app package is refused: " + "; ".join(
+            "%s: %s" % (p["where"], p["message"]) for p in refused))
     spec = body.get("app") or {}
     slug = str(spec.get("slug") or "").strip()
     existing = SA.get(slug) if slug else None
@@ -145,7 +223,7 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
             P.version_tuple(pk.version) < P.version_tuple(existing.pkg_version):
         raise AppPackageError("%s %s is installed and %s is older (tick Allow downgrade)"
                               % (slug, existing.pkg_version, pk.version))
-    created, kept, todo = [], [], []
+    created, kept, todo, warnings = [], [], [], []
     try:
         for api in body.get("apis") or []:
             a = SAPI.get(str(api.get("slug") or ""))
@@ -171,10 +249,7 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
                             % c["slug"])
                 continue
             row = SC.create(c["slug"], c.get("name") or c["slug"], c.get("kind") or "http", by)
-            form = {k: c.get(k) for k in ("name", "description", "base_url", "auth", "username",
-                                          "header_name", "token_url", "scope", "timeout")}
-            form["login_path"] = c.get("token_url") if c.get("auth") == "session" else ""
-            form["verify_tls"] = "1" if c.get("verify_tls", True) else ""
+            form = connection_form(c)
             if c.get("api"):
                 api = SAPI.get(c["api"])
                 v = SAPI.get_version(api, c.get("api_version") or "") if api else None
@@ -201,6 +276,25 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
                     SS.save_schema(st, st.name, st.description, st.columns + more, by)
                 kept.append("data store %s (exists: rows kept%s)" % (
                     st.slug, ", added " + ", ".join(c["name"] for c in more) if more else ""))
+        note = "installed from the package %s %s" % (pk.slug, pk.version)
+        for sc in body.get("scripts") or []:
+            sslug = str(sc["slug"])
+            if SL.exists(sslug):
+                kept.append("script %s (exists: kept as it is here)" % sslug)
+                if _published_files(SL, sslug) != dict(sc.get("files") or {}):
+                    warnings.append("script %s exists here and its published files differ from "
+                                    "the package's: this server's are kept" % sslug)
+                continue
+            st = sc.get("settings") or {}
+            SL.create(sslug, sc.get("name") or sslug, by)
+            SL.save_draft(sslug, sc.get("files") or {},
+                          {"name": sc.get("name") or sslug,
+                           "description": sc.get("description") or "",
+                           "fields": st.get("fields") or [], "timeout": st.get("timeout"),
+                           "connections": st.get("connections") or [], "network": "none",
+                           "audience": "admins", "credentials": []}, by, note=note)
+            n = SL.publish(sslug, note, by).get("published")
+            created.append("script %s v%s (published, for admins)" % (sslug, n))
         a = existing
         if a is None:
             a = SA.create(slug, spec.get("name") or slug, by)
@@ -228,10 +322,10 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
                                  actions=spec.get("actions") or [],
                                  design=spec.get("design") or {}, by=by)
     except (SA.AppError, SS.StoreError, SC.ConnectionError_, SAPI.ApiError, KeyError,
-            D.DesignError) as exc:
+            D.DesignError, SL.ScriptError) as exc:
         db.session.rollback()
         raise AppPackageError("the app package could not be installed: %s" % exc) from None
     if a.status != "published":
         todo.append("review the diagram, test it and Publish (Plugin Studio › Apps › %s)" % slug)
-    return {"app": a, "created": created, "kept": kept, "todo": todo,
+    return {"app": a, "created": created, "kept": kept, "todo": todo, "warnings": warnings,
             "problems": SA.problems(a) if problems is not None else []}

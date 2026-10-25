@@ -135,37 +135,49 @@ def destination(c: StudioConnection) -> tuple:
             c.username or "", bool(c.verify_tls))
 
 
-def save(c: StudioConnection, form: dict, by: str) -> bool:
-    """Apply the form. True when the stored secret was dropped because the
-    destination changed (the caller says so; the secret is entered again)."""
-    before = destination(c) if (c.base_url or c.host) else None
-    c.name = (form.get("name") or c.name).strip()[:120] or c.name
-    c.description = (form.get("description") or "").strip()[:2000]
+#: What clean_definition returns per kind, besides name/description/timeout/
+#: verify_tls/username -- the columns save() writes.
+_HTTP_KEYS = ("base_url", "auth", "header_name", "token_url", "scope")
+_PG_KEYS = ("host", "port", "database", "auth")
+
+
+def clean_definition(form: dict) -> dict:
+    """The form of a connection, checked and normalised -- no database, no
+    secret. ``form["kind"]`` is ``http`` (default) or ``postgres``. Raises
+    ``ConnectionError_`` with what is wrong. ``save`` applies the result; the
+    rules pack (``package_check``) checks the connections of an app package
+    with it before anything is created."""
+    kind = form.get("kind") or "http"
+    if kind not in KINDS:
+        raise ConnectionError_("unknown kind %r" % kind)
+    out = {"kind": kind, "name": (form.get("name") or "").strip()[:120],
+           "description": (form.get("description") or "").strip()[:2000]}
     try:
-        c.timeout = max(1, min(int(form.get("timeout") or 20), MAX_TIMEOUT))
+        out["timeout"] = max(1, min(int(form.get("timeout") or 20), MAX_TIMEOUT))
     except ValueError:
         raise ConnectionError_("timeout must be a number of seconds") from None
-    c.verify_tls = bool(form.get("verify_tls", True)) and str(form.get("verify_tls")) not in ("0", "false", "")
-    c.username = (form.get("username") or "").strip()[:255]
-    if c.kind == "http":
-        c.base_url = _clean_base_url(form.get("base_url") or "")
+    out["verify_tls"] = bool(form.get("verify_tls", True)) and \
+        str(form.get("verify_tls")) not in ("0", "false", "")
+    user = out["username"] = (form.get("username") or "").strip()[:255]
+    if kind == "http":
+        out["base_url"] = _clean_base_url(form.get("base_url") or "")
         auth = form.get("auth") or "none"
         if auth not in HTTP_AUTH:
             raise ConnectionError_("unknown authentication %r" % auth)
-        c.auth = auth
+        out["auth"] = auth
         hn = (form.get("header_name") or "").strip()
         if auth == "api_key" and not _HEADER_RE.match(hn):
             raise ConnectionError_("an API key needs a header name (letters, digits and -)")
-        c.header_name = hn if auth == "api_key" else ""
+        out["header_name"] = hn if auth == "api_key" else ""
         if auth == "oauth2":
             tu = (form.get("token_url") or "").strip()
             p = urlsplit(tu)
             if p.scheme != "https" or not p.hostname or p.username:
                 # https only: the client secret travels in this request's body.
                 raise ConnectionError_("OAuth2 needs a token URL https://host/path")
-            c.token_url = tu[:500]
-            c.scope = (form.get("scope") or "").strip()[:500]
-            if not c.username:
+            out["token_url"] = tu[:500]
+            out["scope"] = (form.get("scope") or "").strip()[:500]
+            if not user:
                 raise ConnectionError_("OAuth2 needs the client id (in the user field)")
         elif auth == "session":
             lp = (form.get("login_path") or form.get("token_url") or "").strip() \
@@ -175,35 +187,48 @@ def save(c: StudioConnection, form: dict, by: str) -> bool:
                 # host of the base URL.
                 raise ConnectionError_("the login path is a path under the base URL, "
                                        "e.g. /api/auth/login")
-            c.token_url, c.scope = lp[:500], ""
-            if not c.username:
+            out["token_url"], out["scope"] = lp[:500], ""
+            if not user:
                 raise ConnectionError_("session login needs a user")
         else:
-            c.token_url, c.scope = "", ""
-        if auth == "basic" and not c.username:
+            out["token_url"], out["scope"] = "", ""
+        if auth == "basic" and not user:
             raise ConnectionError_("basic authentication needs a user")
-        if "api_version_id" in form:
-            from . import studio_apis as SA
-            try:
-                v = SA.resolve_binding(form.get("api_version_id"))
-            except SA.ApiError as exc:
-                raise ConnectionError_(str(exc)) from None
-            c.api_version_id = v.id if v else None
     else:
         host = (form.get("host") or "").strip()
         if not host or _CTRL.search(host) or "/" in host or len(host) > 255:
             raise ConnectionError_("a host name or address is required")
-        c.host = host
+        out["host"] = host
         try:
-            c.port = int(form.get("port") or 5432)
+            out["port"] = int(form.get("port") or 5432)
         except ValueError:
             raise ConnectionError_("port must be a number") from None
-        if not 1 <= c.port <= 65535:
+        if not 1 <= out["port"] <= 65535:
             raise ConnectionError_("port must be 1-65535")
-        c.database = (form.get("database") or "").strip()[:128]
-        if not c.database or not c.username:
+        out["database"] = (form.get("database") or "").strip()[:128]
+        if not out["database"] or not user:
             raise ConnectionError_("a database and a user are required")
-        c.auth = "password"
+        out["auth"] = "password"
+    return out
+
+
+def save(c: StudioConnection, form: dict, by: str) -> bool:
+    """Apply the form. True when the stored secret was dropped because the
+    destination changed (the caller says so; the secret is entered again)."""
+    before = destination(c) if (c.base_url or c.host) else None
+    d = clean_definition({**form, "kind": c.kind})
+    c.name = d["name"] or c.name
+    c.description = d["description"]
+    c.timeout, c.verify_tls, c.username = d["timeout"], d["verify_tls"], d["username"]
+    for k in (_HTTP_KEYS if c.kind == "http" else _PG_KEYS):
+        setattr(c, k, d[k])
+    if c.kind == "http" and "api_version_id" in form:
+        from . import studio_apis as SA
+        try:
+            v = SA.resolve_binding(form.get("api_version_id"))
+        except SA.ApiError as exc:
+            raise ConnectionError_(str(exc)) from None
+        c.api_version_id = v.id if v else None
     c.updated_by = by
     _forget_token(c.slug)
     dropped = False

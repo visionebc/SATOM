@@ -24,7 +24,6 @@ No extension that re-enables HTML (``md_in_html``) may be added to
 """
 from __future__ import annotations
 
-import html
 import re
 from urllib.parse import urlsplit
 
@@ -36,38 +35,10 @@ from markdown.treeprocessors import Treeprocessor
 from markupsafe import Markup
 
 _EXTENSIONS = ("fenced_code", "tables", "sane_lists", "nl2br", "toc")
-_SAFE_SCHEMES = {"http", "https", "mailto"}
-_WS = re.compile(r"[\x00-\x20\x7f]+")
 
-
-def _decoded(raw: str) -> str:
-    """``raw`` with HTML entities decoded until nothing changes.
-    python-markdown keeps ``&#58;`` in an href as written and the browser
-    decodes it, so ``javascript&#58;`` IS ``javascript:`` — the scheme is
-    judged on what the browser will see, and that is what gets emitted (a
-    fixpoint holds no entity left to decode)."""
-    for _ in range(8):
-        nxt = html.unescape(raw)
-        if nxt == raw:
-            return raw
-        raw = nxt
-    return ""
-
-
-def safe_url(raw: str | None, *, image: bool = False) -> str | None:
-    """``raw`` if it is safe to put in href/src, else ``None``."""
-    url = _WS.sub("", _decoded(str(raw or "")))
-    if not url:
-        return None
-    if url.startswith(("#", "/")) and not url.startswith("//"):
-        return url
-    scheme = urlsplit(url).scheme.lower()
-    if not scheme:
-        # "page", "./img.png" — relative. A colon before any slash would
-        # have been parsed as a scheme above.
-        return url
-    allowed = {"http", "https"} if image else _SAFE_SCHEMES
-    return url if scheme in allowed else None
+# The link-target rule lives in url_safety (standard library only), so the
+# database-free rules pack can carry it without python-markdown.
+from .url_safety import _SAFE_SCHEMES, _WS, _decoded, safe_url  # noqa: E402,F401
 
 
 class _LinkGuard(Treeprocessor):

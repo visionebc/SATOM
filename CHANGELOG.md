@@ -6,6 +6,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.0.2] - 2026-10-25
+
+Fixes found by the nightly review of 4.0.0: the Mass Deploy page, a Device
+health hint, and Process leftovers in Deploy clone and the documentation.
+
+### Fixed
+
+- **Mass Deploy: the page title, header and footer read
+  `<built-in method title of str object …>` and the ADOM name was blank.**
+  The view passed its ADOM product (a plain string) to the template under the
+  name the page chrome reads for the branding.
+- **Device health: a device without hardware inventory says how to get it
+  again** — *use "Scan hardware (SSH)" above; rediscovery does not collect
+  it* — a hint the per-ADOM redesign had dropped.
+- **Deploy clone no longer lists the Process tables** dropped in 4.0.0 among
+  the tables it empties on the target.
+- **API manual and NAF alignment:** the API manual no longer lists the
+  Process error codes. The NAF matrix cites Plugin Studio apps as the
+  Orchestrator evidence. Compensating actions and scheduled execution are
+  now marked *partial*: a step undoes only its own writes, and only script
+  apps run on a schedule.
+
 ## [4.0.1] - 2026-10-25
 
 Documentation and upgrade-path release: the manual every node serves no

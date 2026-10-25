@@ -164,7 +164,7 @@ says "in NAF terms this is …" where the two differ.</p>
 </tr>
 <tr>
 <td><img src="img/naf-icon-orchestration-colored.svg" width="18" alt=""> <strong>Orchestrator</strong> — coordinating the blocks</td>
-<td>Processes (Studio), Scheduled Actions, Change Requests and the CR orchestrator, Integration hooks</td>
+<td>Plugin Studio apps (runbooks), Triggers and automations, Scheduled Actions, Change Requests and the CR orchestrator, Integration hooks</td>
 <td>The SATOM <em>reconciler</em> is deployment and HA machinery (it brings a node to the released commit); it is not the NAF Orchestrator.</td>
 </tr>
 <tr>
@@ -365,42 +365,42 @@ baselines (Observability). The user guide says which one it means each time.</p>
 <td>MUST</td>
 <td>Coordinate processes across the blocks without touching the network directly</td>
 <td>met</td>
-<td><code>app/services/process_engine.py</code>, <code>app/services/cr_orchestrator.py</code></td>
+<td><code>app/services/studio_flow.py</code> (a Plugin Studio app's diagram walks checks, scripts, SATOM steps and change requests; device writes go through each block's own path), <code>app/services/cr_orchestrator.py</code></td>
 </tr>
 <tr>
 <td>Orchestrator</td>
 <td>SHOULD</td>
 <td>Event-driven execution (synchronous, asynchronous, scheduled)</td>
 <td>met</td>
-<td>A Process declares a trigger event and filter; <code>app/services/process_triggers.py</code> starts the walk as a background job (never inside the scheduler tick), one running walk per process and device, rate-limited per process, rehearsal unless <em>armed on trigger</em>; hooks (<code>app/services/integration_hooks.py</code>), the console, Scheduled Actions and <code>app/api_v1/processes.py</code> are the other doors</td>
+<td><code>app/services/trigger_engine.py</code> starts a <em>Run a Plugin Studio app</em> automation as a background job (never inside the scheduler tick), with cooldown and a 3-hop chain limit; an <em>Ask a person</em> step parks the run and <code>app/services/studio_apps.py</code> resumes it on the answer; hooks (<code>app/services/integration_hooks.py</code>), the console and <code>app/api_v1/apps.py</code> are the other doors</td>
 </tr>
 <tr>
 <td>Orchestrator</td>
 <td>SHOULD</td>
 <td>Reverse or compensating actions on error</td>
-<td>met</td>
-<td>The <em>Compensate</em> step in <code>app/services/process_kinds.py</code> undoes the walk's recorded steps newest first through each domain's own inverse (status flips, <code>app/services/observatory_fix.py</code>, <code>app/services/provision_runner.py</code>); a step without a recorded inverse is named <code>unknown</code>, never guessed</td>
+<td>partial</td>
+<td>A SATOM step that fails half-way undoes exactly what it created (<code>app/services/studio_satom.py</code>); there is no step that reverses the earlier steps of a run (the Process <em>Compensate</em> step was removed in 4.0.0)</td>
 </tr>
 <tr>
 <td>Orchestrator</td>
 <td>SHOULD</td>
 <td>Dry-run of a workflow</td>
 <td>met</td>
-<td>Unarmed Process runs (<code>app/services/process_engine.py</code>)</td>
+<td>Rehearsal runs and <em>Simulate</em> in the app editor (<code>app/services/studio_apps.py</code>, <code>app/services/studio_flow.py</code>): steps that write are recorded as not executed</td>
 </tr>
 <tr>
 <td>Orchestrator</td>
 <td>SHOULD</td>
 <td>Scheduled execution of a workflow</td>
-<td>met</td>
-<td>The <code>run_process</code> action in <code>app/services/scheduled_actions.py</code> walks a Process on any schedule (armed only when the action is armed and change-controlled)</td>
+<td>partial</td>
+<td>Script apps run on a cron schedule (<code>app/services/script_schedules.py</code>); a flow app runs from an event, the console or the API, not on a schedule (the <code>run_process</code> action was removed in 4.0.0)</td>
 </tr>
 <tr>
 <td>Orchestrator</td>
 <td>SHOULD</td>
 <td>Logging and traceability of past and current workflows</td>
 <td>met</td>
-<td><code>app/models_process.py</code> (ProcessRun, ProcessRunStep), <code>app/models_cr_types.py</code>, the audit log</td>
+<td><code>app/models_studio.py</code> (StudioAppRun with its steps, inputs and outputs), <code>app/models_triggers.py</code> (EventAutomationRun), <code>app/models_cr_types.py</code>, the audit log</td>
 </tr>
 <tr>
 <td>Orchestrator</td>
@@ -450,7 +450,7 @@ word now allows <em>conformant</em>. This is a <strong>self-assessment</strong> 
 pinned commit — the Network Automation Forum issues no certification — and
 it is only as good as the matrix above, which is why every row names its
 evidence and a test checks the file exists.</p>
-<p>Three rows are deliberately not <code>met</code>, all SHOULD or MAY:</p>
+<p>These rows are deliberately not <code>met</code>, all SHOULD or MAY:</p>
 <ol>
 <li><strong>Intent — a neutral model derived into vendor artefacts</strong> (<code>accepted-gap</code>).
    SATOM is a Fortinet-specific product; its templates are the vendor's own
@@ -461,6 +461,10 @@ evidence and a test checks the file exists.</p>
 <li><strong>Executor — idempotent operations</strong> and <strong>Orchestrator — correlate events</strong>
    (<code>partial</code>). Idempotence is designed for but not measured as a property;
    correlation is limited to cooldowns and drift attribution.</li>
+<li><strong>Orchestrator — compensating actions</strong> and <strong>Orchestrator — scheduled
+   execution</strong> (<code>partial</code>, since 4.0.0). With the Process section removed, a
+   Plugin Studio step undoes only its own writes, and only script apps run on
+   a schedule.</li>
 </ol>
 <p>Scope statements that keep the MUST rows honest: the Collector row is met by
 SNMP v2c polling and a syslog receiver — SNMPv3, traps, flow telemetry and

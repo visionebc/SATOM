@@ -868,7 +868,7 @@ curl -s -H &quot;Authorization: Bearer $TOKEN&quot; $BASE/actions/runs/99 | jq
 <tr>
 <td>409</td>
 <td><code>disabled</code></td>
-<td>The action — or the process — is disabled</td>
+<td>The action is disabled</td>
 </tr>
 <tr>
 <td>409</td>
@@ -883,17 +883,12 @@ curl -s -H &quot;Authorization: Bearer $TOKEN&quot; $BASE/actions/runs/99 | jq
 <tr>
 <td>403</td>
 <td><code>not_granted</code></td>
-<td>The token holds no grant for this process / app (§14, §16)</td>
+<td>The token holds no grant for this app (§16)</td>
 </tr>
 <tr>
 <td>403</td>
 <td><code>grant_paused</code></td>
-<td>The process / app changed after it was granted; an administrator must re-approve it (§14, §16)</td>
-</tr>
-<tr>
-<td>400</td>
-<td><code>appliance_required</code> / <code>invalid_diagram</code></td>
-<td>A process walk needs a device, or its diagram cannot run yet (§14)</td>
+<td>The app changed after it was granted; an administrator must re-approve it (§16)</td>
 </tr>
 <tr>
 <td>400</td>

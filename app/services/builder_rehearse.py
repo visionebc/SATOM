@@ -84,8 +84,8 @@ def _render_view(pk: P.Package, inputs: dict) -> dict:
         name = pk.manifest.get("name") or pk.slug
         css = pk.text("style.css")
         js = pk.text("script.js")
-    from ..views.plugins import _frame_document
-    doc = _frame_document(_P(), html, data, params)
+    from .plugin_frame import frame_document
+    doc = frame_document(_P(), html, data, params)
     problems = [{"where": "body.jinja", "message": err}] if err else []
     return {"ok": not problems, "rendered": doc, "problems": problems}
 

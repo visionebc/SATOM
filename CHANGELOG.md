@@ -6,6 +6,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+SATOM Builder can now test a package on its own test data before it reaches
+any server, and show authors what they build on. Requested: "the developer
+must be able to test everything with test data, then send it to the test
+SATOM, and users then bring it into their production SATOM".
+
+- **Runtime in the rules pack:** `GET /api/v1/builder/rules-pack` also carries,
+  copied verbatim, the view renderer and frame, the diagram walk, the
+  data-store rules, the script jail and the script SDK, with the class kit and
+  the default design tokens. `rules.json` lists them under `runtime`. The
+  Builder supplies only the data the database would; no rule is
+  re-implemented there.
+- **`GET /api/v1/builder/library`** (read scope): the datasets with their
+  columns, the data stores with their column definitions, the API Catalog with
+  every version's endpoints, and the API library builds of the token's ADOM.
+  `GET /api/v1/builder/library/fortinet/<product>/<version>` lists a build's
+  endpoints, and with `?endpoint=` that endpoint's fields. Structure only:
+  never a row and never a secret.
+- `plugin_sandbox.dataset_columns()` names the columns each curated dataset
+  returns, read from its fixed query.
+
+### Changed
+
+- The document a view renders into is built in one pure module
+  (`services/plugin_frame.py`) for the console page, the editor preview, the
+  Builder rehearsal and the Builder's local preview.
+
 ### Security
 
 Root no longer acts BY PATH where the service account (`satom`) can point the

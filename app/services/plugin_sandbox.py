@@ -116,6 +116,61 @@ def dataset_catalog() -> list[dict[str, str]]:
     ]
 
 
+def _select_items(sql: str) -> list[str]:
+    """The top-level items of the outer SELECT list (commas inside brackets
+    and quotes do not split)."""
+    m = re.match(r"\s*SELECT\s+", sql, re.I)
+    if not m:
+        return []
+    items, buf, depth, quote = [], "", 0, ""
+    i = m.end()
+    while i < len(sql):
+        ch = sql[i]
+        if quote:
+            buf += ch
+            if ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+            buf += ch
+        elif ch == "(":
+            depth += 1
+            buf += ch
+        elif ch == ")":
+            depth -= 1
+            buf += ch
+        elif depth == 0 and ch == ",":
+            items.append(buf.strip())
+            buf = ""
+        elif depth == 0 and re.match(r"\s+FROM\b", sql[i:], re.I):
+            break
+        else:
+            buf += ch
+        i += 1
+    if buf.strip():
+        items.append(buf.strip())
+    return items
+
+
+def dataset_columns(key: str) -> list[str]:
+    """The column names a dataset's rows carry, in order, read from its fixed
+    SQL (``x AS name`` -> ``name``; ``t.col`` -> ``col``). The SATOM Builder
+    shapes its test data with this, through the rules pack, so a view tested
+    there reads the same keys it reads here. Unknown dataset -> []."""
+    spec = DATASETS.get(key)
+    if spec is None:
+        return []
+    out = []
+    for item in _select_items(spec[2]):
+        alias = re.search(r"\bAS\s+\"?([A-Za-z_][A-Za-z0-9_-]*)\"?\s*$", item, re.I)
+        if alias:
+            out.append(alias.group(1))
+            continue
+        name = item.rsplit(".", 1)[-1].strip().strip('"')
+        out.append(name)
+    return out
+
+
 def _viewer_scope():
     """What the person rendering may see: ``(visible appliance ids, ADOM key or
     "" for Global, may read the audit log)``. ``None`` outside a request —

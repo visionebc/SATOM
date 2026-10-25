@@ -15,12 +15,25 @@ WHAT IS IN IT (contract, section 3.1)
 ::
 
     rules.json                    format, satom_version, commit, files {path: sha256},
-                                  entry, stubs, requires
+                                  entry, stubs, requires, runtime
     satom_rules/__init__.py       re-exports check, schema, author_guide, POLICIES,
                                   CHECK_VERSION
     satom_rules/app/__init__.py   empty
     satom_rules/app/extensions.py STUB: ``db`` raises on any attribute
-    satom_rules/app/services/*.py VERBATIM copies: package_check and its import closure
+    satom_rules/app/services/*.py VERBATIM copies: package_check, the runtime
+                                  modules (RUNTIME_MODULES) and their import closure
+    satom_rules/runtime/plugin-kit.css   static/css/plugin-kit.css, verbatim
+    satom_rules/runtime/tokens.css       the default design tokens (plugin_frame)
+
+THE RUNTIME (contract section 13)
+---------------------------------
+The SATOM Builder also TESTS a package before it ever reaches a server: it
+renders a view with this server's renderer and frame, walks a diagram with
+this server's walk and store rules, and runs a script in this server's jail
+with this server's SDK -- on test data it keeps itself. Those modules travel
+here, packed exactly like the rules, and ``rules.json`` lists them under
+``runtime`` (packed or stub). Nothing of the runtime is re-implemented on the
+Builder side; it only supplies the data the database would.
 
 The closure is computed here, from the syntax tree: every relative import of
 an ``app`` module, at module level AND inside functions, followed from
@@ -49,6 +62,24 @@ from pathlib import Path
 FORMAT = "satom.rules-pack/1"
 PACKAGE = "satom_rules"
 ENTRY_MODULE = "app.services.package_check"
+#: The runtime the SATOM Builder tests a package with, locally and on test
+#: data (contract section 13): the same view renderer, frame, diagram walk,
+#: store rules, jail and script SDK this server runs. Packed like the rules --
+#: verbatim, or a stub when a module needs the server -- and listed in
+#: ``rules.json`` under ``runtime`` with which of the two each one is.
+RUNTIME_FORMAT = "satom.runtime/1"
+RUNTIME_MODULES = (
+    "app.services.plugin_frame", "app.services.plugin_sandbox",
+    "app.services.studio_flow", "app.services.studio_apps", "app.services.studio_store",
+    "app.services.studio_connections", "app.services.studio_apis",
+    "app.services.studio_api_spec", "app.services.studio_checks",
+    "app.services.studio_satom", "app.services.script_library",
+    "app.services.sandbox", "app.services.sandbox_boot",
+    "app.services.script_sdk", "app.services.integration_sdk",
+)
+#: Data files of the runtime (paths inside the pack -> how they are made).
+RUNTIME_KIT = PACKAGE + "/runtime/plugin-kit.css"       # static/css/plugin-kit.css, verbatim
+RUNTIME_TOKENS = PACKAGE + "/runtime/tokens.css"        # the default design tokens
 #: What the pack needs besides the standard library (contract 3.1).
 REQUIRES = ("jinja2", "markupsafe", "cryptography")
 #: Always stubs: the database layer and the Flask app factory.
@@ -212,7 +243,7 @@ def closure() -> dict:
     """``{"packed": [modules], "stubs": {module: why}}`` -- what the pack
     holds. Raises RulesPackError when the closure cannot be packed."""
     infos: dict[str, _Info] = {}
-    todo = [ENTRY_MODULE]
+    todo = [ENTRY_MODULE] + list(RUNTIME_MODULES)
     while todo:
         mod = todo.pop()
         if mod in infos or mod in FORCED_STUBS:
@@ -242,7 +273,7 @@ def closure() -> dict:
                 why[mod] = "it uses %s at import time" % ", ".join(used)
                 changed = True
     packed, stubs, seen = [], {}, set()
-    todo = [ENTRY_MODULE]
+    todo = [ENTRY_MODULE] + list(RUNTIME_MODULES)
     if ENTRY_MODULE in why:
         raise RulesPackError("%s itself cannot be packed: %s" % (ENTRY_MODULE, why[ENTRY_MODULE]))
     while todo:
@@ -347,6 +378,23 @@ def _commit() -> str:
     return _COMMIT[0]
 
 
+def _runtime_files() -> dict[str, bytes]:
+    from . import plugin_frame
+    with open(plugin_frame.KIT_PATH, "rb") as fh:
+        kit = fh.read()
+    return {RUNTIME_KIT: kit,
+            RUNTIME_TOKENS: plugin_frame.default_tokens_css().encode("utf-8")}
+
+
+def runtime_manifest(c: dict | None = None) -> dict:
+    """``rules.json`` ``runtime``: each runtime module, packed or stubbed."""
+    c = c or closure()
+    packed = set(c["packed"])
+    return {"format": RUNTIME_FORMAT,
+            "modules": {m: ("packed" if m in packed else "stub") for m in RUNTIME_MODULES},
+            "kit_css": RUNTIME_KIT, "tokens_css": RUNTIME_TOKENS}
+
+
 def members() -> dict[str, bytes]:
     """Every member of the pack but rules.json, by path."""
     c = closure()
@@ -355,6 +403,7 @@ def members() -> dict[str, bytes]:
         out[_member(mod)] = _source(mod).encode("utf-8")
     for mod, why in c["stubs"].items():
         out[_member(mod)] = _stub_source(mod, why).encode("utf-8")
+    out.update(_runtime_files())
     return out
 
 
@@ -364,9 +413,11 @@ def build(*, cache: bool = True) -> tuple[bytes, str]:
     if cache and not _SOURCE_OVERRIDES and key in _CACHE:
         return _CACHE[key]
     files = members()
+    c = closure()
     manifest = {"format": FORMAT, "satom_version": key[0], "commit": key[1],
                 "entry": PACKAGE, "requires": list(REQUIRES),
-                "stubs": sorted(m for m in closure()["stubs"]),
+                "runtime": runtime_manifest(c),
+                "stubs": sorted(m for m in c["stubs"]),
                 "files": {p: hashlib.sha256(b).hexdigest() for p, b in sorted(files.items())}}
     files["rules.json"] = json.dumps(manifest, indent=1, sort_keys=True).encode("utf-8")
     buf = io.BytesIO()

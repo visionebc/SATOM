@@ -5,7 +5,10 @@ Plugin Studio apps. Each author links their OWN token, so every call here
 runs with that person's RBAC and ADOM, and SATOM stays the authority:
 
 * ``GET /builder/target`` -- this server described for the rules (§2);
-* ``GET /builder/rules-pack`` -- SATOM's own rule code, as a zip (§3);
+* ``GET /builder/rules-pack`` -- SATOM's own rule code, as a zip (§3), with
+  the runtime the Builder tests on test data with (§13);
+* ``GET /builder/library[/fortinet/<product>/<version>]`` -- structure a
+  plugin builds on: datasets, stores, API Catalog, API library (§14);
 * ``POST /builder/validate`` -- ``package_check.check`` with the ``builder``
   policy; nothing is written (§4);
 * ``POST /builder/rehearse`` -- an unarmed walk of the package's app against
@@ -155,6 +158,62 @@ def builder_rules_pack():
     resp.headers["X-Satom-Rules-Sha256"] = sha
     resp.headers["X-Content-Type-Options"] = "nosniff"
     return resp
+
+
+@bp.route("/builder/library", methods=["GET"])
+@token_required("read")
+def builder_library():
+    """What a plugin can build on, structure only (contract §14).
+
+    The datasets with their columns, the data stores with their column
+    definitions, the API Catalog with every version's endpoints, and the
+    builds the API library knows for the token's ADOM. Never a row of data,
+    never a secret.
+
+    Responses:
+        200: ``satom.builder-library/1``.
+        403: The owner may not work in the token's ADOM (``wrong_product``).
+    """
+    from ..services import builder_library as BL
+    refused = _adom_refusal()
+    if refused:
+        return refused
+    with _as_owner():
+        res = BL.library(_product())
+        _audit("builder.library", target=_product())
+    return jsonify(res)
+
+
+@bp.route("/builder/library/fortinet/<product>/<version>", methods=["GET"])
+@token_required("read")
+def builder_library_build(product, version):
+    """One build of the API library: its endpoints, or with ``?endpoint=``
+    that endpoint's fields (contract §14).
+
+    Responses:
+        200: ``{"product", "version", "endpoints": [...]}`` or
+             ``{"product", "version", "endpoint", "status", "fields"}``.
+        400: The version or endpoint is malformed (``bad_request``).
+        403: The product is not the token's ADOM (``wrong_product``).
+    """
+    import re
+    from ..services import builder_library as BL
+    refused = _adom_refusal()
+    if refused:
+        return refused
+    if product not in BL.products_for(_product()):
+        return _err(403, "wrong_product", "The token's ADOM does not cover %s." % product[:40])
+    endpoint = request.args.get("endpoint") or ""
+    if not re.match(r"^[0-9A-Za-z._-]{1,40}$", version) or len(endpoint) > 200:
+        return _err(400, "bad_request", "Malformed version or endpoint.")
+    with _as_owner():
+        if endpoint:
+            res = BL.fortinet_fields(product, version, endpoint)
+        else:
+            res = BL.fortinet_endpoints(product, version)
+        _audit("builder.library.build", target="%s %s" % (product, version),
+               endpoint=endpoint[:120])
+    return jsonify(res)
 
 
 @bp.route("/builder/validate", methods=["POST"])

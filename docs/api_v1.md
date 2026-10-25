@@ -157,7 +157,9 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `POST` | `/apps/<slug>/run` | write | a **grant** for the app; `app_arm` for `"armed": true` | Run an app's published version — **unarmed** unless armed (§16) |
 | `GET`  | `/app-runs/<id>` | read | — | One app run: status, outputs, steps (§16) |
 | `GET`  | `/builder/target` | read | — | This server described for SATOM Builder: choices, existing Studio objects, publishers, schema (§17) |
-| `GET`  | `/builder/rules-pack` | read | — | SATOM's package rules as a zip, header `X-Satom-Rules-Sha256` (§17) |
+| `GET`  | `/builder/rules-pack` | read | — | SATOM's package rules, with the runtime the Builder tests with, as a zip, header `X-Satom-Rules-Sha256` (§17) |
+| `GET`  | `/builder/library` | read | — | Structure a plugin builds on: datasets and their columns, data stores, API Catalog, API library builds (§17) |
+| `GET`  | `/builder/library/fortinet/<product>/<version>` | read | the product is the token's ADOM (any, for `global`) | One API library build's endpoints, or with `?endpoint=` that endpoint's fields (§17) |
 | `POST` | `/builder/validate` | write | — | Check a package with the builder rules; writes nothing (§17) |
 | `POST` | `/builder/rehearse` | write | owner is a Plugin Studio author | Walk a package's app **unarmed**, or render a view; installs nothing (§17) |
 | `POST` | `/builder/import` | admin | owner is a super-admin (`studio.plugin_studio`) | Import a package: the console's import path, secrets for new connections (§17) |
@@ -1034,6 +1036,42 @@ public key) and `schema`. It is exactly the `target` the rules pack's
 `application/zip`, `satom-rules-<version>-<sha12>.zip`: SATOM's own package
 rules for the Builder's local checks. The header `X-Satom-Rules-Sha256` is the
 zip's SHA-256.
+
+The same zip carries the **runtime** the Builder tests a package with on its
+own test data, before it reaches any server: the view renderer and frame, the
+diagram walk, the data-store rules, the script jail and the script SDK, all
+copied verbatim from this server. `rules.json` lists them under `runtime`
+(`packed` or `stub`) with the frame's class kit and default design tokens.
+
+### `GET /builder/library`
+
+Structure only, never a row of data and never a secret:
+
+```json
+{"format": "satom.builder-library/1", "product": "fortiweb",
+ "datasets": [{"key": "fleet_appliances", "label": "Fleet appliances", "description": "...",
+               "columns": ["id", "name", "kind", "firmware", "host", "port"]}],
+ "stores": {"owners": {"name": "Owners", "description": "",
+                       "columns": [{"name": "ip", "label": "IP", "type": "text", "required": true}]}},
+ "apis": [{"slug": "ipam", "name": "IPAM", "owner": "", "docs_url": "", "description": "",
+           "versions": [{"version": "1.0", "status": "published", "base_path": "/api",
+                         "notes": "", "operations": [{"id": "getHost", "method": "GET",
+                                                      "path": "/hosts/{id}", "summary": "..."}]}]}],
+ "fortinet": {"products": {"fortiweb": [{"version": "7.6.8", "build": "...", "line": "7.6",
+                                         "measured": true, "vendor_only": false,
+                                         "cli_measured": true, "in_fleet": true}]}}}
+```
+
+`fortinet` covers the token's ADOM (every product for `global`).
+
+### `GET /builder/library/fortinet/<product>/<version>`
+
+One build of the API library: `{"product", "version", "endpoints": [{"endpoint",
+"urn", "section", "verdict", "fields_known", "sources", "vendor_only"}]}`. With
+`?endpoint=<name>`: `{"product", "version", "endpoint", "status", "fields"}`,
+where `status` is `measured`, `blind`, `absent` or `unmeasured` (an empty
+`fields` is "unknown" unless the status is `measured`). A product outside the
+token's ADOM is 403 `wrong_product`.
 
 ### `POST /builder/validate`
 

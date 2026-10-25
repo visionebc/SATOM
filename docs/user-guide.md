@@ -3689,6 +3689,20 @@ Republishing the same content does not pause it. Deleting the app removes its
 grants. A run from the API is a rehearsal by default; a real (armed) run also
 needs `app_arm`. Only apps the token's owner may open in that ADOM can be granted.
 
+**SATOM Builder** (`/api/v1/builder/*`). The separate tool that builds
+plugins and Plugin Studio apps works with its author's own token: a `read`
+token fetches this server's description (`/builder/target`) and its rules
+(`/builder/rules-pack`), a `write` token validates a package
+(`/builder/validate`, nothing written) and, when its owner is a Plugin Studio
+author, rehearses it (`/builder/rehearse`: the app's diagram walks unarmed
+against this server's stores and connections, nothing is installed). Importing
+(`/builder/import`) and registering a publisher key (`/builder/publishers`)
+need an `admin` token whose owner is a super-admin (holds the Plugin Studio
+key). An import through the API is the console's own import (§23.1) with the
+stricter Builder rules for unsigned and publisher-signed packages; the
+secrets it carries for the connections it creates are stored on this server
+and never logged. Details: [docs/api_v1.md §17](api_v1.md).
+
 ## 19. Appearance: logo, colours & themes
 
 `Settings → Appearance` (administrators). Four palettes ship — **SATOM Aurora**
@@ -4391,11 +4405,42 @@ of every file and an optional Ed25519 signature).
 
 - **Export** (the download icon on a row of the Report Studio list) writes an
   unsigned package of that view or widget.
-- **Import plugin** (top of the list) reads a package and checks it before
-  anything is written: only the files the manifest lists, each matching its
-  sha256, sizes capped (10 MB package, 2 MB per file). A signature must come
-  from a key this server trusts and match the manifest — a bad or unknown
-  signature is refused, never treated as "unsigned".
+- **Import plugin** (top of the list, or *Import app package* under Plugin
+  Studio › Apps) reads a package and checks it before anything is written:
+  only the files the manifest lists, each matching its sha256, sizes capped
+  (10 MB package, 2 MB per file). A signature must come from a key this server
+  trusts and match the manifest — a bad or unknown signature is refused, never
+  treated as "unsigned".
+- **The import is two steps.** Uploading shows the package first: its
+  problems and warnings, what it creates and what it keeps as it is here,
+  where it lands (*draft* or *testing*), who signed it (Vision EBC, a trusted
+  publisher by its label, or unsigned) and which rules were applied. For every
+  connection the package **creates** that needs a password or token there is
+  a password box: a package never carries secrets, so type it here and it is
+  stored like any connection secret (the vault, or encrypted in the database).
+  Leave it empty to set it later in Plugin Studio › Connections — until then
+  the app shows the problem *connection … has no secret yet* and cannot be
+  published. **Install** writes everything; **Cancel** deletes the upload.
+  The uploaded file waits on the server (never in your browser session), only
+  for you, and is deleted after Install, Cancel or one hour. A package with
+  problems cannot be installed.
+- **Rules applied.** A package signed by Vision EBC, and an unsigned upload in
+  the console, get the import rules; a package signed by a **trusted
+  publisher** gets the stricter Builder rules (a diagram, form, action, design
+  or CSS problem refuses it). For every package: an app cannot replace an
+  Examples template or a script app, a connection carrying a secret or a
+  PostgreSQL connection is refused, and so is an API version without
+  endpoints.
+- **Trusted publishers** (the button on the import card; super-admins only)
+  lists the public keys an import trusts besides the built-in Vision EBC key —
+  typically the publisher key of your SATOM Builder. **Add a publisher** takes
+  a label (up to 80 characters) and the base64 of the raw 32-byte Ed25519
+  public key, optionally limited to some ADOMs; the same key twice is the same
+  publisher. A view or widget signed by an enabled publisher lands in
+  *testing*. A publisher can **never** sign a code plugin: code installs only
+  with a Vision EBC signature. **Disable** a publisher and its packages are
+  refused like any unknown signature; **Enable** trusts it again. Adding,
+  disabling and enabling are in the audit log.
   - A **view or widget** becomes an ordinary Report Studio row: signed packages
     land in *testing*, unsigned ones in *draft*. A package with the slug of a
     plugin you already have **updates it in place**; an older version is

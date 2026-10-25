@@ -2798,6 +2798,43 @@ class Plugin(db.Model):
         return f"<Plugin {self.id} {self.slug!r} {self.status}>"
 
 
+class PluginPublisher(db.Model):
+    """A trusted plugin publisher: an Ed25519 public key a super-admin
+    registered (Plugin Studio › Trusted publishers), on top of the Vision EBC
+    keys pinned in ``plugin_package.TRUSTED_KEYS``.
+
+    A package signed by an ENABLED publisher reads as signed (views and
+    widgets land in *testing*) and is checked with the ``builder`` policy; a
+    publisher can never make a ``code`` package acceptable
+    (``services.plugin_import``). ``key_id`` is the sha256 hex of the raw
+    32-byte key, the id ``plugin.sig`` names. ``adom_keys`` (JSON list, NULL =
+    every ADOM) limits the ADOMs whose imports trust the key.
+    """
+
+    __tablename__ = "plugin_publishers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    key_id = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    label = db.Column(db.String(80), nullable=False)
+    public_key = db.Column(db.String(64), nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    adom_keys = db.Column(db.Text, nullable=True)
+    created_by = db.Column(db.String(64), nullable=False, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    @property
+    def adoms(self) -> list:
+        """The ADOM keys the key is limited to; ``[]`` = every ADOM."""
+        try:
+            v = json.loads(self.adom_keys or "[]")
+            return [str(x) for x in v] if isinstance(v, list) else []
+        except Exception:
+            return []
+
+    def __repr__(self) -> str:
+        return f"<PluginPublisher {self.key_id[:12]} {self.label!r}>"
+
+
 # ---------------------------------------------------------------------------
 # Lua Script Studio — author / lint / analyze / deploy Lua for FortiWeb/ADC
 # ---------------------------------------------------------------------------

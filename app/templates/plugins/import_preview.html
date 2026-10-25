@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Import plugin') }}{% endblock %}
+{% block content %}
+{% set kind_label = {'view': _('View'), 'widget': _('Widget'), 'app': _('App'), 'code': _('Code plugin')} %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-box-arrow-in-down me-2 text-accent"></i>{{ _('Import plugin') }}</h1>
+    <p class="fw-page-sub">{{ _('Check what this package does before it is installed. Nothing has been written yet.') }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-outline" href="{{ url_for('plugins.publishers') }}"><i class="bi bi-patch-check me-1"></i>{{ _('Trusted publishers') }}</a>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ info.name }} <span class="text-secondary fw-normal">{{ info.slug }} {{ info.version }}</span></h2></div>
+  <div class="fw-card-body">
+    <div class="row g-3" style="font-size:13px">
+      <div class="col-md-3"><div class="text-secondary">{{ _('Kind') }}</div><span class="fw-badge fw-badge-secondary">{{ kind_label.get(info.kind, info.kind) }}</span></div>
+      <div class="col-md-3"><div class="text-secondary">{{ _('Signed by') }}</div>
+        {% if info.signed_by == 'vision-ebc' %}<span class="fw-badge fw-badge-success" title="{{ info.signer }}">{{ _('Vision EBC') }}</span>
+        {% elif info.signed_by == 'publisher' %}<span class="fw-badge fw-badge-info" title="{{ info.signer }}">{{ info.signer_label }}</span> <span class="text-secondary">{{ _('trusted publisher') }}</span>
+        {% else %}<span class="fw-badge fw-badge-secondary">{{ _('unsigned') }}</span>{% endif %}</div>
+      <div class="col-md-3"><div class="text-secondary">{{ _('Lands in') }}</div><span class="fw-badge fw-badge-{{ 'warning' if info.lands_in == 'testing' else 'secondary' }}">{{ info.lands_in }}</span></div>
+      <div class="col-md-3"><div class="text-secondary">{{ _('Rules applied') }}</div><code>{{ info.policy }}</code></div>
+    </div>
+    {% if meta.filename %}<div class="text-secondary mt-2" style="font-size:12px">{{ _('File') }}: {{ meta.filename }}</div>{% endif %}
+  </div>
+</div>
+
+{% if info.problems %}
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-x-octagon text-danger me-1"></i>{{ _('Problems') }} <span class="fw-badge fw-badge-danger">{{ info.problems|length }}</span></h2></div>
+  <div class="fw-card-body">
+    <p class="text-secondary" style="font-size:13px">{{ _('This package cannot be installed until its author fixes these problems.') }}</p>
+    <ul class="mb-0" style="font-size:13px">{% for p in info.problems %}<li><code>{{ p.where }}</code> — {{ p.message }}</li>{% endfor %}</ul>
+  </div>
+</div>
+{% endif %}
+
+{% if info.warnings %}
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-exclamation-triangle text-warning me-1"></i>{{ _('Warnings') }}</h2></div>
+  <div class="fw-card-body"><ul class="mb-0" style="font-size:13px">{% for p in info.warnings %}<li><code>{{ p.where }}</code> — {{ p.message }}</li>{% endfor %}</ul></div>
+</div>
+{% endif %}
+
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('What the import does') }}</h2></div>
+  <div class="fw-card-body">
+    <div class="row g-3" style="font-size:13px">
+      <div class="col-md-6"><div class="fw-semibold mb-1">{{ _('Creates') }}</div>
+        {% if info.creates %}<ul class="mb-0">{% for c in info.creates %}<li>{{ c }}</li>{% endfor %}</ul>{% else %}<span class="text-secondary">{{ _('nothing') }}</span>{% endif %}</div>
+      <div class="col-md-6"><div class="fw-semibold mb-1">{{ _('Keeps as they are on this server') }}</div>
+        {% if info.keeps %}<ul class="mb-0">{% for c in info.keeps %}<li>{{ c }}</li>{% endfor %}</ul>{% else %}<span class="text-secondary">{{ _('nothing') }}</span>{% endif %}</div>
+    </div>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('plugins.import_confirm', token=token) }}" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% set asks = info.connections|selectattr('needs_secret')|list %}
+  {% if asks %}
+  <div class="fw-card">
+    <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-key me-1 text-accent"></i>{{ _('Secrets for the new connections') }}</h2></div>
+    <div class="fw-card-body">
+      <p class="text-secondary" style="font-size:13px">{{ _('A package never carries secrets. Type the password or token of each connection this import creates; it is stored on this server only (vault, or encrypted in the database). Leave a box empty to set it later in Plugin Studio › Connections: until then the app shows a problem and cannot be published.') }}</p>
+      {% for c in asks %}
+      <div class="row g-2 align-items-center mb-2" style="font-size:13px">
+        <label class="col-md-4 col-form-label" for="secret-{{ c.slug }}"><strong>{{ c.name }}</strong> <code>{{ c.slug }}</code> <span class="text-secondary">({{ c.kind }}, {{ c.auth }})</span></label>
+        <div class="col-md-6"><input class="form-control" type="password" id="secret-{{ c.slug }}" name="secret_{{ c.slug }}" autocomplete="new-password" maxlength="8192"></div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  <div class="fw-card">
+    <div class="fw-card-body d-flex align-items-center gap-3 flex-wrap">
+      <label class="d-flex align-items-center gap-1" style="font-size:13px"><input type="checkbox" name="allow_downgrade" value="1"{% if meta.allow_downgrade %} checked{% endif %}> {{ _('Allow downgrade') }}</label>
+      <button class="btn btn-fw-primary" type="submit"{% if info.problems %} disabled{% endif %}><i class="bi bi-check2 me-1"></i>{{ _('Install') }}</button>
+      <button class="btn btn-fw-outline" type="submit" formaction="{{ url_for('plugins.import_cancel', token=token) }}" formnovalidate>{{ _('Cancel') }}</button>
+      <span class="text-secondary" style="font-size:12px">{{ _('The upload waits here for one hour, then it is deleted.') }}</span>
+    </div>
+  </div>
+</form>
+{% endblock %}

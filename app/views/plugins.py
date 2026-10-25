@@ -14,6 +14,7 @@ from functools import wraps
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
                    flash, abort, jsonify, Response, make_response)
+from flask_babel import gettext as _
 from flask_login import login_required, current_user
 
 from ..extensions import db
@@ -267,113 +268,182 @@ def view(slug):
 
 # --- Plugin packages (satom.plugin/1): import / export ----------------------
 # A package moves a plugin between servers WITHOUT an update package. Views
-# and widgets become ordinary Plugin Studio rows; code plugins (signed only)
-# are written to data/plugins/code/ and mount at /x/<slug>/ after a restart.
+# and widgets become ordinary Plugin Studio rows; code plugins (Vision EBC
+# signed only) are written to data/plugins/code/ and mount at /x/<slug>/ after
+# a restart; apps bring their stores, connections and API versions.
+#
+# Two steps (2026-10-25): the upload is checked and shown -- problems, what
+# it creates and keeps, where it lands, who signed it -- with a password box
+# for every connection it creates that needs a secret; Confirm installs it
+# through services.plugin_import, the code path /api/v1/builder/import uses
+# too. The bytes wait under the data directory (plugin_import.stage), bound to
+# the uploader, for one hour; never in the session cookie.
+def _import_back():
+    ref = request.referrer or ""
+    return ref if "/studio" in ref else url_for("plugins.index")
+
+
 @bp.route("/import", methods=["POST"])
 @superadmin_required
 def import_package():
-    from ..version import app_version
+    from ..services import plugin_import as PI
 
     up = request.files.get("package")
     if up is None or not up.filename:
-        flash("Choose a .satomplugin file to import.", "error")
-        return redirect(url_for("plugins.index"))
+        flash(_("Choose a .satomplugin file to import."), "error")
+        return redirect(_import_back())
+    data = up.read(pkgfmt.MAX_PACKAGE + 1)
     try:
-        pk = pkgfmt.read_package(up.read(pkgfmt.MAX_PACKAGE + 1))
-    except pkgfmt.PackageError as exc:
-        flash(f"Import refused: {exc}", "error")
-        return redirect(url_for("plugins.index"))
-    need = pk.manifest.get("min_satom")
-    if need and pkgfmt.version_tuple(need) > pkgfmt.version_tuple(app_version()):
-        flash(f"Import refused: {pk.slug} {pk.version} needs SATOM {need} or "
-              f"newer (this server runs {app_version()}).", "error")
-        return redirect(url_for("plugins.index"))
-    allow_down = request.form.get("allow_downgrade") == "1"
-    signed = f"signed {pk.signer[:16]}" if pk.signer else "unsigned"
+        PI.read(data, stamp())
+    except PI.ImportRefused as exc:
+        flash(_("Import refused: %(why)s", why=str(exc)), "error")
+        return redirect(_import_back())
+    token = PI.stage(data, owner_id=current_user.id, product=stamp(), filename=up.filename,
+                     allow_downgrade=request.form.get("allow_downgrade") == "1")
+    return redirect(url_for("plugins.import_preview", token=token))
 
-    if pk.kind == "app":
-        # A Plugin Studio app with its data stores, connections (no secrets)
-        # and API Catalog versions -- services.studio_app_package.
-        from ..services import studio_app_package as SAP
-        try:
-            rep = SAP.install(pk, current_user.username, allow_downgrade=allow_down)
-        except pkgfmt.PackageError as exc:
-            flash(f"Import refused: {exc}", "error")
-            return redirect(request.referrer or url_for("plugins.index"))
-        log_action("studio.app.import", target=rep["app"].slug,
-                   extra={"version": pk.version, "signer": pk.signer,
-                          "created": rep["created"], "kept": rep["kept"]})
-        flash(f"Installed app “{pk.manifest['name']}” {pk.version} ({signed}). "
-              f"Created: {', '.join(rep['created']) or 'nothing'}. "
-              f"Kept: {', '.join(rep['kept']) or 'nothing'}. "
-              f"To do: {'; '.join(rep['todo']) or 'nothing'}.", "success")
-        return redirect(url_for("studio.app_edit", slug=rep["app"].slug))
 
-    if pk.kind == "code":
-        try:
-            plugin_code.install(pk, current_user.username, allow_downgrade=allow_down)
-        except pkgfmt.PackageError as exc:
-            flash(f"Import refused: {exc}", "error")
-            return redirect(url_for("plugins.index"))
-        log_action("plugin.code.install", target=pk.slug,
-                   extra={"version": pk.version, "signer": pk.signer})
-        flash(f"Installed code plugin “{pk.manifest['name']}” {pk.version} "
-              f"({signed}). It loads at the next `satom execute restart-all`.",
-              "success")
+def _staged_or_none(token):
+    from ..services import plugin_import as PI
+    got = PI.load(token, current_user.id)
+    if got is None:
+        flash(_("That upload is no longer waiting (it expires after one hour). "
+                "Upload the package again."), "error")
+    return got
+
+
+@bp.route("/import/<token>")
+@superadmin_required
+def import_preview(token):
+    from ..services import plugin_import as PI
+
+    got = _staged_or_none(token)
+    if got is None:
+        return redirect(url_for("plugins.index"))
+    data, meta = got
+    try:
+        info = PI.inspect(data, user=current_user, product=meta.get("product") or "",
+                          via="ui")
+    except PI.ImportRefused as exc:
+        PI.discard(token)
+        flash(_("Import refused: %(why)s", why=str(exc)), "error")
+        return redirect(url_for("plugins.index"))
+    return render_template("plugins/import_preview.html", info=info, token=token,
+                           meta=meta)
+
+
+@bp.route("/import/<token>/confirm", methods=["POST"])
+@superadmin_required
+def import_confirm(token):
+    from ..services import plugin_import as PI
+
+    got = _staged_or_none(token)
+    if got is None:
+        return redirect(url_for("plugins.index"))
+    data, meta = got
+    PI.discard(token)  # one confirmation per upload, whatever its outcome
+    secrets = {k[len("secret_"):]: v for k, v in request.form.items()
+               if k.startswith("secret_") and v}
+    try:
+        rep = PI.import_package(
+            data, user=current_user, product=meta.get("product") or "", via="ui",
+            allow_downgrade=bool(meta.get("allow_downgrade"))
+            or request.form.get("allow_downgrade") == "1",
+            secrets=secrets)
+    except PI.ImportRefused as exc:
+        msg = "; ".join(p["message"] for p in exc.problems[:8])
+        flash(_("Import refused: %(why)s", why=msg or str(exc)), "error")
+        return redirect(url_for("plugins.index"))
+    signed = (_("signed by %(who)s", who=rep["signer_label"]) if rep["signer"]
+              else _("unsigned"))
+    nothing = _("nothing")
+    if rep["kind"] == "app":
+        flash(_("Installed app “%(name)s” %(version)s (%(signed)s). Created: %(created)s. "
+                "Kept: %(kept)s. To do: %(todo)s.", name=rep["name"], version=rep["version"],
+                signed=signed, created=", ".join(rep["created"]) or nothing,
+                kept=", ".join(rep["kept"]) or nothing,
+                todo="; ".join(rep["todo"]) or nothing), "success")
+        return redirect(url_for("studio.app_edit", slug=rep["app_slug"]))
+    if rep["kind"] == "code":
+        flash(_("Installed code plugin “%(name)s” %(version)s (%(signed)s). It loads at "
+                "the next `satom execute restart-all`.", name=rep["name"],
+                version=rep["version"], signed=signed), "success")
         return redirect(url_for("plugins.index") + "#code-plugins")
+    note = " ".join(w[:1].upper() + w[1:] + "." for w in rep["warnings"])
+    flash(_("%(what)s “%(name)s” %(version)s (%(signed)s) — status %(status)s.",
+            what=_("Updated") if rep.get("updated") else _("Imported"), name=rep["name"],
+            version=rep["version"], signed=signed, status=rep["lands_in"])
+          + (" " + note if note else ""), "warning" if note else "success")
+    return redirect(url_for("plugins.edit", pid=rep["plugin_id"]))
 
-    existing = Plugin.query.filter_by(slug=pk.slug).first()
-    if existing is not None and (scope_query(Plugin.query, Plugin.product)
-                                 .filter_by(id=existing.id).first() is None):
-        flash(f"Import refused: the slug {pk.slug} belongs to a plugin of "
-              f"another ADOM.", "error")
-        return redirect(url_for("plugins.index"))
-    if (existing is not None and existing.pkg_version and not allow_down
-            and pkgfmt.version_tuple(pk.version)
-            < pkgfmt.version_tuple(existing.pkg_version)):
-        flash(f"Import refused: {pk.slug} {existing.pkg_version} is installed and "
-              f"{pk.version} is older (tick “Allow downgrade”).", "error")
-        return redirect(url_for("plugins.index"))
 
-    wanted = [str(k) for k in pk.manifest.get("datasets") or []]
-    ds = [k for k in wanted if k in sandbox.DATASETS]
-    dropped = [k for k in wanted if k not in sandbox.DATASETS]
-    if existing is None:
-        plugin = Plugin(created_by=current_user.username, product=stamp(),
-                        slug=pk.slug, status="testing" if pk.signer else "draft")
-        db.session.add(plugin)
+@bp.route("/import/<token>/cancel", methods=["POST"])
+@superadmin_required
+def import_cancel(token):
+    from ..services import plugin_import as PI
+
+    if PI.load(token, current_user.id) is not None:
+        PI.discard(token)
+    flash(_("Import cancelled; the upload was deleted."), "success")
+    return redirect(url_for("plugins.index"))
+
+
+# --- Trusted publishers (contract §8) ----------------------------------------
+# Ed25519 keys a super-admin registers, on top of the Vision EBC key pinned in
+# plugin_package.TRUSTED_KEYS: a SATOM Builder's publisher key, typically. A
+# publisher's signature makes a view or widget land in testing; it never makes
+# a code plugin acceptable (services.plugin_import). Disabled = not trusted.
+@bp.route("/publishers")
+@superadmin_required
+def publishers():
+    from ..services import plugin_publishers as PP
+    return render_template("plugins/publishers.html", publishers=PP.list_publishers(),
+                           vision_keys=sorted(pkgfmt.TRUSTED_KEYS),
+                           adom_choices=_adom_choices())
+
+
+def _adom_choices() -> list:
+    try:
+        from ..branding import live_products
+        return [str(k) for k in live_products("tokens")]
+    except Exception:  # noqa: BLE001 -- the page opens without the ADOM registry
+        return []
+
+
+@bp.route("/publishers", methods=["POST"])
+@superadmin_required
+def publisher_add():
+    from ..services import plugin_publishers as PP
+    try:
+        row, created = PP.add(request.form.get("label"), request.form.get("public_key"),
+                              current_user.username, request.form.getlist("adoms"))
+    except PP.PublisherError as exc:
+        flash(_("Publisher refused: %(why)s", why=str(exc)), "error")
+        return redirect(url_for("plugins.publishers"))
+    if created:
+        log_action("plugin.publisher.add", target=row.key_id,
+                   extra={"label": row.label, "adoms": row.adoms})
+        flash(_("Publisher “%(label)s” registered (key %(kid)s).", label=row.label,
+                kid=row.key_id[:16]), "success")
     else:
-        plugin = existing
-    plugin.name = pk.manifest["name"].strip()[:200]
-    plugin.kind = pk.kind
-    plugin.icon = pk.manifest["icon"]
-    plugin.jinja = pk.text("body.jinja")
-    plugin.css = pk.text("style.css")
-    plugin.js = pk.text("script.js")
-    plugin.data_sources = json.dumps(ds)
-    plugin.params = json.dumps(sandbox.clean_param_defs(pk.manifest.get("params") or []))
-    plugin.pkg_version = pk.version
-    plugin.pkg_signer = pk.signer or ""
-    note = ""
-    if plugin.status == "published":
-        # The publish gate holds for an update too: a body that no longer
-        # renders goes back to testing instead of breaking Custom Views.
-        data = sandbox.load_datasets(plugin.datasets)
-        _html, err = sandbox.safe_render(plugin.jinja, data,
-                                         sandbox.resolve_params(plugin.param_defs, {}))
-        if err:
-            plugin.status = "testing"
-            note = f" It no longer renders cleanly ({err}), so it is back in testing."
-    db.session.commit()
-    log_action("plugin.import", target=plugin.slug,
-               extra={"id": plugin.id, "version": pk.version, "signer": pk.signer,
-                      "updated": existing is not None})
-    if dropped:
-        note += " Datasets this server does not have were dropped: " + ", ".join(dropped) + "."
-    flash(f"{'Updated' if existing is not None else 'Imported'} “{plugin.name}” "
-          f"{pk.version} ({signed}) — status {plugin.status}.{note}",
-          "warning" if note else "success")
-    return redirect(url_for("plugins.edit", pid=plugin.id))
+        flash(_("That key is already registered as “%(label)s”.", label=row.label), "warning")
+    return redirect(url_for("plugins.publishers"))
+
+
+@bp.route("/publishers/<key_id>/<action>", methods=["POST"])
+@superadmin_required
+def publisher_toggle(key_id, action):
+    from ..services import plugin_publishers as PP
+    if action not in ("enable", "disable"):
+        abort(404)
+    row = PP.get(key_id)
+    if row is None:
+        abort(404)
+    PP.set_enabled(row, action == "enable")
+    log_action("plugin.publisher.%s" % action, target=row.key_id, extra={"label": row.label})
+    flash(_("Publisher “%(label)s” %(state)s.", label=row.label,
+            state=_("enabled") if row.enabled else _("disabled")), "success")
+    return redirect(url_for("plugins.publishers"))
 
 
 @bp.route("/<int:pid>/export")

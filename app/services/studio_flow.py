@@ -506,6 +506,9 @@ class Ctx:
     user_obj: object = None
     run_id: int = 0
     deadline: float = 0.0
+    #: False = a ``script`` step is recorded, not run (the Builder's
+    #: rehearsal: a script run would leave a run record on this server).
+    scripts: bool = True
 
     def scope(self) -> dict:
         s = dict(self.vars)
@@ -658,6 +661,10 @@ def _run_step(node: dict, ctx: Ctx):
         value = SC.json_path(body, ex) if ex else body
         return "ok", value, "HTTP %d, %d ms" % (r["status"], r["ms"])
     if kind == "script":
+        if not ctx.scripts:
+            plan = {k: v for k, v in (node.get("params") or {}).items() if k != "save_as"}
+            return "ok", {"rehearsal": True, "would": render(plan, scope)}, \
+                "rehearsal: script not run"
         return _run_script(node, ctx)
     from . import studio_satom as S
     if kind in S.KIND_KEYS:

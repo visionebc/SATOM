@@ -6,6 +6,39 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **`/api/v1/builder/*` for SATOM Builder.** `GET /builder/target` describes
+  this server for the package rules (choices, Examples templates, the Studio
+  objects that exist — never a secret —, publishers, schema);
+  `GET /builder/rules-pack` serves SATOM's own rules as a zip with
+  `X-Satom-Rules-Sha256`; `POST /builder/validate` checks a package and
+  writes nothing; `POST /builder/rehearse` walks a package's app **unarmed**
+  against this server's stores and connections (or renders a view) and
+  installs nothing; `POST /builder/import` is the console's import, with the
+  secrets of the connections it creates; `GET/POST /builder/publishers`.
+  Read, write and admin scopes; rehearse needs a Plugin Studio author, import
+  and publisher registration a super-admin owner. Packages above 10 MB are
+  413. Every call is audited with its token.
+- **Trusted publishers** (Plugin Studio › Import › Trusted publishers,
+  super-admins): register an Ed25519 public key (a SATOM Builder's publisher
+  key) besides the built-in Vision EBC key, optionally per ADOM; enable or
+  disable it, audited. A view or widget a publisher signed lands in
+  *testing*; a publisher can never sign a code plugin; a disabled publisher
+  is not trusted.
+
+### Changed
+
+- **Importing a plugin package is two steps.** The upload shows the package
+  first — problems, warnings, what it creates and keeps, where it lands, who
+  signed it, the rules applied — with a password box for each connection it
+  creates that needs a secret. Install stores those secrets on this server
+  (vault or encrypted setting); the upload waits on the server, only for its
+  uploader, for at most one hour. A publisher-signed package, and an unsigned
+  one sent through the API, are checked with the stricter Builder rules.
+- **An app whose connection has no secret yet shows a problem** (*connection
+  … has no secret yet*) and cannot be published until the secret is set.
+
 ## [4.0.1] - 2026-10-25
 
 Documentation and upgrade-path release: the manual every node serves no

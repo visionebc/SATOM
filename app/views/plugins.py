@@ -10,6 +10,8 @@ that cannot touch the app's cookies, DOM or session.
 from __future__ import annotations
 
 import json
+import os
+import re
 from functools import wraps
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
@@ -22,6 +24,7 @@ from ..services import plugin_sandbox as sandbox
 from ..services import plugin_examples as examples
 from ..services import plugin_package as pkgfmt
 from ..services import plugin_code
+from ..services import plugin_css
 from ..services.audit import log_action
 from ..services.product_scope import stamp, scope_query
 
@@ -91,7 +94,8 @@ def edit(pid):
                            examples_json=_examples_json(),
                            params_json=json.dumps(plugin.param_defs).replace("</", "<\\/"),
                            device_options_json=_dev_opts_json(),
-                           example_cats=examples.categories())
+                           example_cats=examples.categories(),
+                           css_findings=plugin_css.lint(plugin.css or ""))
 
 
 @bp.route("/save", methods=["POST"])
@@ -422,10 +426,43 @@ def _unique_slug(base: str) -> str:
     return slug
 
 
+_KIT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                         "static", "css", "plugin-kit.css")
+_kit_cache: "str | None" = None
+
+
+def _kit_css() -> str:
+    """The published plugin class kit (``static/css/plugin-kit.css``).
+
+    Read once per worker and INLINED: the frame's CSP is ``default-src 'none'``,
+    so a ``<link>`` to the file would simply not load."""
+    global _kit_cache
+    if _kit_cache is None:
+        with open(_KIT_PATH, encoding="utf-8") as fh:
+            _kit_cache = re.sub(r"/\*.*?\*/\n?", "", fh.read(), flags=re.S)
+    return _kit_cache
+
+
+def _frame_tokens_css() -> str:
+    """``:root`` with every ``--fw-*`` token, then the active theme's overrides.
+
+    The defaults come from ``theme_tokens`` (generated from ``fortiweb.css``);
+    the overrides from ``theme_service.active_css()`` -- Settings > Appearance,
+    re-validated per token kind there, cached, and never raising -- so a
+    customer theme reaches every plugin exactly as it reaches the console."""
+    from ..services import theme_service
+    base = "".join("--fw-%s:%s;" % (k, theme_service.DEFAULTS[k])
+                   for k in theme_service.TOKEN_NAMES)
+    return ":root{%s}\n%s" % (base, theme_service.active_css())
+
+
 def _frame_document(plugin, body_html: str, data: dict,
                     params: dict | None = None) -> str:
     css = getattr(plugin, "css", "") or ""
     js = getattr(plugin, "js", "") or ""
+    # A ``</style`` in the plugin's CSS would end the element and turn the rest
+    # into HTML. ``<\/`` is the same text to the CSS parser (``\/`` is ``/``).
+    css = css.replace("</", "<\\/")
     # Neutralise any ``</script>`` in the injected JSON so a dataset/param value
     # (e.g. a device policy comment synced from a FortiWeb) can never break out
     # of its <script> island — the same guard the editor's JSON islands use.
@@ -433,16 +470,14 @@ def _frame_document(plugin, body_html: str, data: dict,
     params_json = json.dumps(params or {}).replace("</", "<\\/")
     # Datasets are ALSO exposed to the plugin JS as a JSON island (it can't fetch
     # them back — opaque origin — so we inject them here).
+    # Look: SATOM's light theme. Current tokens first, then the class kit, then
+    # the plugin's own CSS, so the plugin can refine both.
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<style>body{margin:0;font-family:Inter,system-ui,sans-serif;"
-        "background:#080d1a;color:#e2e8f0;padding:16px}"
-        "table{border-collapse:collapse;width:100%}"
-        "th,td{border:1px solid rgba(148,163,184,.15);padding:6px 10px;"
-        "text-align:left;font-size:13px}th{text-transform:uppercase;"
-        "font-size:11px;color:#94a3b8}</style>"
-        f"<style>{css}</style></head><body>"
+        f"<style id='satom-tokens'>{_frame_tokens_css()}</style>"
+        f"<style id='satom-kit'>{_kit_css()}</style>"
+        f"<style id='plugin-css'>{css}</style></head><body>"
         f"{body_html}"
         f"<script id='plugin-data' type='application/json'>{data_json}</script>"
         f"<script id='plugin-params' type='application/json'>{params_json}</script>"

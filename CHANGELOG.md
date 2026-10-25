@@ -6,6 +6,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.0.3] - 2026-10-25
+
+One Mass Deploy fix, found while verifying 4.0.2 on a live node.
+
+### Fixed
+
+- **Mass Deploy: the Items column read `<built-in method items of dict
+  object …>`, and a template with nothing to push still offered Select.**
+  The catalog row is a dict, and in the template `e.items` is the dict's
+  own `items` method, not the count. The column now shows the number of
+  items, and an empty template shows *empty* again. A sweep of the 270
+  parameterless console pages found no other page rendering a method in
+  place of a value.
+
 ## [4.0.2] - 2026-10-25
 
 Fixes found by the nightly review of 4.0.0: the Mass Deploy page, a Device

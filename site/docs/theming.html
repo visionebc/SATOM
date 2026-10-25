@@ -283,6 +283,17 @@ those elements light. Light-canvas palettes are fully supported.</p>
 the stylesheet, tracked separately. The card, input, table and modal surfaces
 were already tokenised (<code>--fw-surface</code>, <code>--fw-surface-alt</code>) as part of this
 work; what remains is the status tints.</p>
+<h3 id="plugins-follow-the-theme-too">Plugins follow the theme too</h3>
+<p>Report Studio views and widgets render in a sandboxed iframe that cannot load
+<code>fortiweb.css</code>. The frame therefore carries the tokens itself: every <code>--fw-*</code>
+token at its stylesheet default, then the active theme's override block (the
+same <code>css_for()</code> output, re-validated per kind), then the plugin class kit
+(<code>app/static/css/plugin-kit.css</code>, inlined) and finally the plugin's own CSS.
+Activating a theme reaches every plugin that uses the tokens or the kit
+(within the 15 s cache TTL), with no change to the plugin. The status colours in
+the kit are the same literals as the console's <code>.fw-badge-*</code> block, so the same
+"cannot repaint" caveat applies there. What a plugin stylesheet may contain is
+in the user guide, Report Studio, <em>Plugin CSS rules</em>.</p>
 <hr>
 <h2 id="9-brand-gradients-and-glows">9. Brand gradients and glows</h2>
 <p>Five tokens sit in the <strong>Brand</strong> group and behave unlike the rest.</p>

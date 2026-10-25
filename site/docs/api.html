@@ -76,6 +76,7 @@
       <a href="#14-processes-removed">14. Processes (removed)</a>
       <a href="#15-events-and-triggers--apiv1events-apiv1triggers">15. Events and triggers — /api/v1/events, /api/v1/triggers</a>
       <a href="#16-plugin-studio-apps--apiv1apps">16. Plugin Studio apps — /api/v1/apps/*</a>
+      <a href="#17-satom-builder--apiv1builder">17. SATOM Builder — /api/v1/builder/*</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-api-v1--integration-manual">SATOM API v1 — Integration Manual</h1>
@@ -527,6 +528,55 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>—</td>
 <td>One app run: status, outputs, steps (§16)</td>
 </tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/builder/target</code></td>
+<td>read</td>
+<td>—</td>
+<td>This server described for SATOM Builder: choices, existing Studio objects, publishers, schema (§17)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/builder/rules-pack</code></td>
+<td>read</td>
+<td>—</td>
+<td>SATOM's package rules as a zip, header <code>X-Satom-Rules-Sha256</code> (§17)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/builder/validate</code></td>
+<td>write</td>
+<td>—</td>
+<td>Check a package with the builder rules; writes nothing (§17)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/builder/rehearse</code></td>
+<td>write</td>
+<td>owner is a Plugin Studio author</td>
+<td>Walk a package's app <strong>unarmed</strong>, or render a view; installs nothing (§17)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/builder/import</code></td>
+<td>admin</td>
+<td>owner is a super-admin (<code>studio.plugin_studio</code>)</td>
+<td>Import a package: the console's import path, secrets for new connections (§17)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/builder/publishers</code></td>
+<td>read</td>
+<td>—</td>
+<td>The trusted publisher keys (§17)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/builder/publishers</code></td>
+<td>admin</td>
+<td>owner is a super-admin</td>
+<td>Register a publisher key; idempotent (§17)</td>
+</tr>
 </tbody>
 </table>
 <p>The write endpoints are rate-limited to <strong>30/min</strong>, like <code>/actions/&lt;id&gt;/run</code>.</p>
@@ -904,6 +954,31 @@ curl -s -H &quot;Authorization: Bearer $TOKEN&quot; $BASE/actions/runs/99 | jq
 <td>409</td>
 <td><code>unpublished</code></td>
 <td>The app has no published version (§16)</td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>wrong_product</code></td>
+<td>The token's owner may no longer work in the ADOM the token is bound to (§17)</td>
+</tr>
+<tr>
+<td>413</td>
+<td><code>too_large</code></td>
+<td>A package above 10 MB (§17)</td>
+</tr>
+<tr>
+<td>409</td>
+<td><code>busy</code></td>
+<td>Too many rehearsals are running at once; retry (§17)</td>
+</tr>
+<tr>
+<td>422</td>
+<td><code>package_refused</code></td>
+<td>The import was refused; <code>problems</code> lists why (§17)</td>
+</tr>
+<tr>
+<td>400</td>
+<td><code>invalid_key</code></td>
+<td>The publisher key is not the base64 of a raw 32-byte Ed25519 key (§17)</td>
 </tr>
 <tr>
 <td>429</td>
@@ -1521,6 +1596,86 @@ owner — or a Studio author — sees a run; the console's result buttons
 <pre><code class="language-sh">curl -s -X POST -H &quot;Authorization: Bearer $T&quot; -H 'Content-Type: application/json' \
   -d '{&quot;inputs&quot;: {&quot;ip&quot;: &quot;{ip}&quot;}}' https://&lt;your-satom-host&gt;/api/v1/apps/ip-owner/run
 curl -s -H &quot;Authorization: Bearer $T&quot; https://&lt;your-satom-host&gt;/api/v1/app-runs/88
+</code></pre>
+<h2 id="17-satom-builder--apiv1builder">17. SATOM Builder — <code>/api/v1/builder/*</code></h2>
+<p>What <strong>SATOM Builder</strong> (the separate tool that builds plugins and Plugin
+Studio apps) calls. Each author links their <strong>own</strong> token, so every call runs
+with that person's permissions and ADOM, and SATOM stays the authority: it
+checks every package again with its own rules on validate, rehearse and
+import. A token whose owner may no longer work in the token's ADOM is refused
+with 403 <code>wrong_product</code>. Every call is audited with the token and its owner.</p>
+<p>Package bodies (<code>validate</code>, <code>rehearse</code>, <code>import</code>) are <code>multipart/form-data</code>:
+<code>package</code> (the <code>.satomplugin</code> file, at most <strong>10 MB</strong>, else 413 <code>too_large</code>)
+and an optional <code>options</code> field holding a JSON object. The write endpoints are
+rate-limited to 30/min.</p>
+<h3 id="get-buildertarget"><code>GET /builder/target</code></h3>
+<p>This server described for the rules: <code>satom_version</code>, <code>rules_sha256</code>,
+<code>product</code> (the token's ADOM), <code>caller</code> (<code>username</code>, <code>scopes</code>, <code>can_author</code>,
+<code>can_import</code>), <code>choices</code> (what the app editor's pickers offer, plus the
+plugin <code>datasets</code>), <code>templates</code> (the Examples objects, which a package can
+never replace), <code>existing</code> (the apps, data stores with their columns,
+connections with <code>has_secret</code> — never the secret — API versions and scripts
+on this server), <code>publishers</code> (the enabled ones of this ADOM, with their
+public key) and <code>schema</code>. It is exactly the <code>target</code> the rules pack's
+<code>check()</code> takes.</p>
+<h3 id="get-builderrules-pack"><code>GET /builder/rules-pack</code></h3>
+<p><code>application/zip</code>, <code>satom-rules-&lt;version&gt;-&lt;sha12&gt;.zip</code>: SATOM's own package
+rules for the Builder's local checks. The header <code>X-Satom-Rules-Sha256</code> is the
+zip's SHA-256.</p>
+<h3 id="post-buildervalidate"><code>POST /builder/validate</code></h3>
+<p>A dry run: the package is checked with the <strong>builder</strong> rules against this
+server and nothing is written. HTTP 200 even when <code>ok</code> is false:</p>
+<pre><code class="language-json">{&quot;ok&quot;: false, &quot;problems&quot;: [{&quot;where&quot;: &quot;app.graph.nodes[ddi]&quot;, &quot;message&quot;: &quot;...&quot;}],
+ &quot;warnings&quot;: [], &quot;summary&quot;: {&quot;kind&quot;: &quot;app&quot;, &quot;slug&quot;: &quot;ip-owner&quot;, &quot;version&quot;: &quot;1.0.0&quot;,
+ &quot;signed_by&quot;: &quot;publisher&quot;, &quot;creates&quot;: [], &quot;keeps&quot;: [], &quot;needs_secrets&quot;: [&quot;ddi&quot;],
+ &quot;lands_in&quot;: &quot;draft&quot;}}
+</code></pre>
+<h3 id="post-builderrehearse"><code>POST /builder/rehearse</code></h3>
+<p><code>options</code>: <code>{"inputs": {...}, "answers": "yes" | "no" | "stop"}</code>. The token's
+owner must be a Plugin Studio author (<code>studio.script_library</code>), else 403
+<code>owner_forbidden</code>. The package is checked first; its problems are returned
+and nothing runs. An <strong>app</strong>'s diagram is then walked <strong>unarmed</strong> against this
+server's data stores, connections and secrets: write steps and script steps
+are recorded as <em>rehearsal: not executed</em>, reads run for real, and nothing is
+installed or saved (no run record). An object the package would create that
+is not here yet is a problem (<code>connection ddi is not on this server yet:
+import the package first</code>). <em>Ask a person</em> is answered with <code>answers</code>;
+<code>stop</code> returns <code>status: "waiting"</code> with the prompt. Too many rehearsals at
+once answer 409 <code>busy</code>.</p>
+<pre><code class="language-json">{&quot;ok&quot;: true, &quot;status&quot;: &quot;done&quot;, &quot;steps&quot;: [...], &quot;outputs&quot;: [...],
+ &quot;waiting&quot;: null, &quot;error&quot;: &quot;&quot;, &quot;problems&quot;: []}
+</code></pre>
+<p>A <strong>view or widget</strong> answers <code>{"ok": true, "rendered": "&lt;html&gt;"}</code>, rendered in
+the plugin sandbox with this server's datasets cut to the token's owner.</p>
+<h3 id="post-builderimport"><code>POST /builder/import</code></h3>
+<p><code>options</code>: <code>{"allow_downgrade": false, "secrets": {"&lt;connection slug&gt;":
+"&lt;secret&gt;"}}</code>. Needs the <code>admin</code> scope and an owner who is a super-admin
+(<code>studio.plugin_studio</code>). It is the console's import path (Plugin Studio ›
+Import), with the same checks. The rules applied depend on the signature:
+<code>import</code> for a Vision EBC signature; the stricter <code>builder</code> rules for a
+package signed by a registered publisher and for an <strong>unsigned</strong> package sent
+through this API. A <code>code</code> plugin is refused unless Vision EBC signed it.
+<code>secrets</code> are stored for the connections the import <strong>creates</strong> (the vault,
+or encrypted in the database) and never logged; a value for a connection
+that already exists is ignored and reported in <code>kept</code>. A refusal is 422
+<code>package_refused</code> with <code>problems</code>.</p>
+<pre><code class="language-json">{&quot;ok&quot;: true, &quot;kind&quot;: &quot;app&quot;, &quot;slug&quot;: &quot;ip-owner&quot;, &quot;version&quot;: &quot;1.0.0&quot;,
+ &quot;lands_in&quot;: &quot;draft&quot;, &quot;created&quot;: [&quot;connection ddi&quot;, &quot;secret of connection ddi&quot;],
+ &quot;kept&quot;: [], &quot;todo&quot;: [&quot;review the diagram, test it and Publish ...&quot;], &quot;problems&quot;: [],
+ &quot;warnings&quot;: [], &quot;signed_by&quot;: &quot;publisher&quot;, &quot;signer&quot;: &quot;&lt;key id&gt;&quot;, &quot;policy&quot;: &quot;builder&quot;}
+</code></pre>
+<h3 id="get-builderpublishers--post-builderpublishers"><code>GET /builder/publishers</code> · <code>POST /builder/publishers</code></h3>
+<p><code>GET</code> lists the registered publisher keys as a JSON array: <code>[{"key_id",
+"label", "enabled", "created_at"}]</code>. <code>POST</code> (admin scope, super-admin owner)
+registers one: <code>{"label": "SATOM Builder", "public_key": "&lt;base64 of the raw
+32-byte Ed25519 key&gt;"}</code> → 201 <code>{"key_id", "created": true}</code>. The same key
+again answers 200 with the existing <code>key_id</code>; a malformed key answers 400
+<code>invalid_key</code>. Disabling a publisher is done in the console (Plugin Studio ›
+Trusted publishers).</p>
+<pre><code class="language-sh">curl -s -H &quot;Authorization: Bearer $T&quot; -F package=@ip-owner-1.0.0.satomplugin \
+  https://&lt;your-satom-host&gt;/api/v1/builder/validate
+curl -s -H &quot;Authorization: Bearer $T&quot; -F package=@ip-owner-1.0.0.satomplugin \
+  -F 'options={&quot;secrets&quot;: {&quot;ddi&quot;: &quot;s3cret&quot;}}' https://&lt;your-satom-host&gt;/api/v1/builder/import
 </code></pre>
     </div>
   </div>

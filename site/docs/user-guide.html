@@ -4091,6 +4091,19 @@ API refuses the run until you open the token and press <strong>Re-approve</stron
 Republishing the same content does not pause it. Deleting the app removes its
 grants. A run from the API is a rehearsal by default; a real (armed) run also
 needs <code>app_arm</code>. Only apps the token's owner may open in that ADOM can be granted.</p>
+<p><strong>SATOM Builder</strong> (<code>/api/v1/builder/*</code>). The separate tool that builds
+plugins and Plugin Studio apps works with its author's own token: a <code>read</code>
+token fetches this server's description (<code>/builder/target</code>) and its rules
+(<code>/builder/rules-pack</code>), a <code>write</code> token validates a package
+(<code>/builder/validate</code>, nothing written) and, when its owner is a Plugin Studio
+author, rehearses it (<code>/builder/rehearse</code>: the app's diagram walks unarmed
+against this server's stores and connections, nothing is installed). Importing
+(<code>/builder/import</code>) and registering a publisher key (<code>/builder/publishers</code>)
+need an <code>admin</code> token whose owner is a super-admin (holds the Plugin Studio
+key). An import through the API is the console's own import (§23.1) with the
+stricter Builder rules for unsigned and publisher-signed packages; the
+secrets it carries for the connections it creates are stored on this server
+and never logged. Details: <a href="api.html">docs/api_v1.md §17</a>.</p>
 <h2 id="19-appearance-logo-colours--themes">19. Appearance: logo, colours &amp; themes</h2>
 <p><code>Settings → Appearance</code> (administrators). Four palettes ship — <strong>SATOM Aurora</strong>
 (the default), <strong>Slate</strong>, <strong>Graphite</strong> and the original <strong>Classic</strong> — and you
@@ -4947,6 +4960,63 @@ it explains what a plugin <em>cannot</em> do:</p>
 <li>A render error is a <strong>visible red card inside the frame</strong>, never a broken host
   page.</li>
 </ul>
+<h4 id="plugin-css-rules">Plugin CSS rules</h4>
+<p>The frame cannot load SATOM's stylesheet (its policy is <code>default-src 'none'</code>;
+styles, scripts, images and fonts must be inline or <code>data:</code>), so it brings the
+light look with it:</p>
+<ul>
+<li><strong>Tokens.</strong> Every <code>--fw-*</code> design token is set on <code>:root</code>, with the active
+  theme from <strong>Settings › Appearance</strong> applied on top. Use them instead of
+  fixed colours (<code>var(--fw-text-primary)</code>, <code>var(--fw-text-secondary)</code>,
+  <code>var(--fw-surface)</code>, <code>var(--fw-surface-alt)</code>, <code>var(--fw-border)</code>,
+  <code>var(--fw-accent)</code>, <code>var(--fw-radius)</code> …) and the view follows a
+  customer's theme with no change.</li>
+<li><strong>The class kit.</strong> Already styled, no CSS needed:
+  <code>.fw-card</code> with <code>.fw-card-header</code>, <code>.fw-card-title</code>, <code>.fw-card-body</code>,
+  <code>.fw-card-footer</code>; <code>.fw-badge</code> with
+  <code>.fw-badge-{primary,secondary,success,danger,warning,info}</code>; <code>.fw-table</code>
+  (optionally inside <code>.fw-table-wrapper</code>); <code>.btn-fw-{primary,secondary,outline,danger}</code>
+  (<code>.btn-sm</code> for the small size); <code>.fw-alert</code> with
+  <code>.fw-alert-{success,danger,warning,info}</code>; <code>.fw-muted</code>. Bare <code>h1</code>–<code>h6</code>,
+  <code>p</code>, <code>a</code>, <code>code</code>, <code>pre</code>, <code>table</code>, inputs and buttons get SATOM typography.</li>
+<li><strong>Status colours</strong> come from the badge set, calibrated against white:
+  success <code>#15692A</code>, warning <code>#7A5700</code>, danger <code>#8B1C2A</code>, neutral <code>#3D4550</code>,
+  and <code>#4C2A85</code> for a fifth category.</li>
+<li><strong>Fonts.</strong> The frame uses <code>--fw-font</code>. The Inter files SATOM ships cannot be
+  fetched from inside the frame and are too large to inline in every render,
+  so Inter shows only where it is installed on the workstation; otherwise the
+  system UI font applies.</li>
+</ul>
+<p>Your CSS is added <strong>after</strong> the kit, so it can refine it. These are checked by
+the CSS linter that the rules pack carries (<code>plugin_css</code>); the plugin editor
+lists the findings for the saved stylesheet under the CSS field.</p>
+<p><strong>Errors</strong> — a package checked under the Builder policy is refused when its
+CSS has any of these, and none of it works under the frame's policy anyway:</p>
+<ul>
+<li><code>@import</code>;</li>
+<li><code>url(…)</code> (or a string inside <code>image-set(…)</code>) whose target is not a <code>data:</code> URI;</li>
+<li><code>expression(</code>, <code>javascript:</code>, the <code>behavior</code> and <code>-moz-binding</code> properties;</li>
+<li><code>position: fixed</code> — an overlay pinned over the frame; use <code>absolute</code> or <code>sticky</code>;</li>
+<li><code>@font-face</code> whose <code>src</code> is anything but <code>url(data:…)</code> (<code>local(…)</code> included);</li>
+<li>a stylesheet larger than 256 KiB.</li>
+</ul>
+<p><strong>Warnings</strong> — shown, never a refusal:</p>
+<ul>
+<li>more than 20 <code>!important</code>;</li>
+<li><code>color:</code> set to a hex colour with contrast below 4.5:1 against white (a rule
+  that sets its own opaque <code>background</code> is not checked: white text on your own
+  fill is fine);</li>
+<li><code>z-index</code> above 1000;</li>
+<li><code>&lt;/style</code> inside the stylesheet (the frame neutralises it).</li>
+</ul>
+<p>Comments and quoted strings never trigger a rule (<code>content: "@import"</code> is
+fine), and CSS escapes are decoded first, so <code>@\69mport</code> is still <code>@import</code>.</p>
+<blockquote>
+<p>Views written for the old dark frame (earlier releases) keep their own colours.
+Light text such as <code>color: #e2e8f0</code> now sits on a white page: the editor's
+contrast warnings point at exactly those lines; replace them with the tokens.
+The built-in examples were moved to the tokens in the same release.</p>
+</blockquote>
 <p><strong>Input parameters.</strong> A plugin may declare selectors (device, select, text,
 number, date) so the consumer can filter it. Values arrive as <code>?p_&lt;name&gt;=…</code> and
 reach the body as <code>params.&lt;name&gt;</code>. They <strong>never touch SQL</strong> — the dataset stays
@@ -4968,11 +5038,42 @@ of every file and an optional Ed25519 signature).</p>
 <ul>
 <li><strong>Export</strong> (the download icon on a row of the Report Studio list) writes an
   unsigned package of that view or widget.</li>
-<li><strong>Import plugin</strong> (top of the list) reads a package and checks it before
-  anything is written: only the files the manifest lists, each matching its
-  sha256, sizes capped (10 MB package, 2 MB per file). A signature must come
-  from a key this server trusts and match the manifest — a bad or unknown
-  signature is refused, never treated as "unsigned".</li>
+<li><strong>Import plugin</strong> (top of the list, or <em>Import app package</em> under Plugin
+  Studio › Apps) reads a package and checks it before anything is written:
+  only the files the manifest lists, each matching its sha256, sizes capped
+  (10 MB package, 2 MB per file). A signature must come from a key this server
+  trusts and match the manifest — a bad or unknown signature is refused, never
+  treated as "unsigned".</li>
+<li><strong>The import is two steps.</strong> Uploading shows the package first: its
+  problems and warnings, what it creates and what it keeps as it is here,
+  where it lands (<em>draft</em> or <em>testing</em>), who signed it (Vision EBC, a trusted
+  publisher by its label, or unsigned) and which rules were applied. For every
+  connection the package <strong>creates</strong> that needs a password or token there is
+  a password box: a package never carries secrets, so type it here and it is
+  stored like any connection secret (the vault, or encrypted in the database).
+  Leave it empty to set it later in Plugin Studio › Connections — until then
+  the app shows the problem <em>connection … has no secret yet</em> and cannot be
+  published. <strong>Install</strong> writes everything; <strong>Cancel</strong> deletes the upload.
+  The uploaded file waits on the server (never in your browser session), only
+  for you, and is deleted after Install, Cancel or one hour. A package with
+  problems cannot be installed.</li>
+<li><strong>Rules applied.</strong> A package signed by Vision EBC, and an unsigned upload in
+  the console, get the import rules; a package signed by a <strong>trusted
+  publisher</strong> gets the stricter Builder rules (a diagram, form, action, design
+  or CSS problem refuses it). For every package: an app cannot replace an
+  Examples template or a script app, a connection carrying a secret or a
+  PostgreSQL connection is refused, and so is an API version without
+  endpoints.</li>
+<li><strong>Trusted publishers</strong> (the button on the import card; super-admins only)
+  lists the public keys an import trusts besides the built-in Vision EBC key —
+  typically the publisher key of your SATOM Builder. <strong>Add a publisher</strong> takes
+  a label (up to 80 characters) and the base64 of the raw 32-byte Ed25519
+  public key, optionally limited to some ADOMs; the same key twice is the same
+  publisher. A view or widget signed by an enabled publisher lands in
+  <em>testing</em>. A publisher can <strong>never</strong> sign a code plugin: code installs only
+  with a Vision EBC signature. <strong>Disable</strong> a publisher and its packages are
+  refused like any unknown signature; <strong>Enable</strong> trusts it again. Adding,
+  disabling and enabling are in the audit log.</li>
 <li>A <strong>view or widget</strong> becomes an ordinary Report Studio row: signed packages
     land in <em>testing</em>, unsigned ones in <em>draft</em>. A package with the slug of a
     plugin you already have <strong>updates it in place</strong>; an older version is
@@ -5625,6 +5726,69 @@ connection is never changed, and the app's <strong>draft</strong> is replaced wh
 published version and access list stay as they are. A package older than the
 installed one needs <em>Allow downgrade</em>. Signed packages come from the internal
 generator (<code>{org}/satom-plugins</code>).</p>
+<p><strong>What the importer checks.</strong> Every package goes through one check before
+anything is written. Each problem names the rule it breaks, and the answer
+also lists what the import would create and keep and which connections need a
+secret. Packages signed by Vision EBC are checked under the <em>import</em> policy.
+Packages that come through the SATOM Builder are checked under the <em>builder</em>
+policy, which is stricter. These rules refuse a package under both policies:</p>
+<ul>
+<li>the file is a readable <code>satom.plugin/1</code> package (only listed members, each
+  matching its sha256, sizes capped, any signature by a trusted key);</li>
+<li><code>min_satom</code> is not newer than this server;</li>
+<li>a code plugin is signed by Vision EBC (a publisher can never sign code);</li>
+<li><code>app.json</code> is well formed: a valid app id, form, actions, design, and a
+  diagram of at most 512 KiB;</li>
+<li>nothing in the package is a template (Plugin Studio › Examples, <code>ex-*</code>):
+  no app, data store, connection or script with a template's id;</li>
+<li>the app does not replace a script app;</li>
+<li>every <code>assets/*</code> image matches its SHA-256 name and is a PNG, JPEG, GIF or
+  WebP within the image limits;</li>
+<li>every data store has a valid id and at least one valid column, and every
+  seed row fits the columns;</li>
+<li>no connection carries a secret (<code>password</code>, <code>secret</code>, <code>token</code>, <code>api_key</code>,
+  <code>client_secret</code>), no connection is <code>postgres</code>, every connection has a valid
+  base URL and authentication, and a pinned connection names an API version
+  that the package carries or that is published here;</li>
+<li>every API version has a valid id, version and endpoint list, with at least
+  one endpoint;</li>
+<li>every packaged script passes the script rules (below).</li>
+</ul>
+<p>The <em>builder</em> policy also refuses code plugins, diagram, form, action and
+design problems (the ones that block Publish), stylesheet errors, a
+<code>body.jinja</code> that does not parse, and more than 500 seed rows in a data store.
+Under <em>import</em>, those are warnings. Warnings never refuse a package: datasets
+or parameters the import drops, an older version (it needs <em>Allow
+downgrade</em>), a column whose type differs here, hard-to-read colours, an API
+pin nobody has, a script kept as it is here.</p>
+<p><strong>Script apps in packages.</strong> Exporting an app also writes the published
+version of every Script Library script its <em>Run a script</em> steps use (files,
+form, timeout, audience, declared connections), plus the HTTP connections
+those scripts call. Credential values never travel. On import, a missing
+script is created and published as version 1 for <strong>admins</strong> (an
+administrator widens the audience later), and an existing script is kept as
+it is, with a warning when its published files differ from the package's.
+A packaged script:</p>
+<ul>
+<li>runs with no network and declares no credentials;</li>
+<li>does not use <code>secret</code> or <code>tcp</code> from <code>satom_script</code> / <code>satom_sdk</code> in any
+  form (import, attribute, bare name, <code>getattr</code>, star import);</li>
+<li>never passes <code>write=</code> other than <code>False</code>;</li>
+<li>has no database fields (<code>lookup</code>, <code>lookup_multi</code>, <code>dataset</code>);</li>
+<li>declares only HTTP connections that exist on this server or come in the
+  same package;</li>
+<li>compiles, and keeps <code>main.py</code> as its entry.</li>
+</ul>
+<p><strong>Rules pack.</strong> The SATOM Builder checks a package with SATOM's own rules
+before it sends it. SATOM hands them out as a <em>rules pack</em>: a zip with the
+package check and the modules it uses, copied byte for byte from this
+server, stubs for the parts that need the server, and <code>rules.json</code> with the
+SATOM version and the sha256 of every file. The Builder runs the pack in a
+separate process with only Python, <code>jinja2</code>, <code>markupsafe</code> and
+<code>cryptography</code>. The same SATOM version always gives the same zip and hash.
+The server checks every package again on validate, rehearse and import, so
+the pack only lets the Builder find problems sooner and never decides on its
+own.</p>
 <p><strong>Example — new FortiWeb server policy</strong> (package <code>spo-fortiweb</code>): the form
 asks for the entry type (<em>internal</em>, <em>split</em>, <em>internal-external</em>), the DNS
 name (the service), an extra text for the name, the port, the real servers,

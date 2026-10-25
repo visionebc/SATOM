@@ -199,7 +199,7 @@ version. Ticking the box again does <strong>not</strong> re-approve it.</p>
 is written to the <a href="audit-log.html">audit log</a> (<code>api_token.grant_removed</code>), and so
 is each re-approval (<code>api_token.grant_approve</code>, with the old and new version
 fingerprints). A run from the API is a rehearsal unless the caller asks for
-<code>"armed": true</code>, which also needs <code>process_arm</code> or <code>app_arm</code>.</p>
+<code>"armed": true</code>, which also needs <code>app_arm</code>.</p>
 <h3 id="revoke-a-token">Revoke a token<a class="dc-anchor" href="#revoke-a-token" title="Permanent link">#</a></h3>
 <p>Click <strong>Revoke</strong> on the row and confirm <em>"Revoke token '&lt;name&gt;'? Every
 client using it stops working immediately."</em> The token stops authenticating
@@ -379,11 +379,6 @@ The full endpoint list is in <a href="api.html">the API reference</a>.</p>
 <td><strong>No — explicit only</strong></td>
 </tr>
 <tr>
-<td><code>process_arm</code></td>
-<td>WALK a granted Process ARMED from the API (its write steps really write); unarmed walks need only the write scope and the grant</td>
-<td><strong>No — explicit only</strong></td>
-</tr>
-<tr>
 <td><code>app_arm</code></td>
 <td>RUN a granted Plugin Studio app ARMED from the API (its write steps really write); unarmed runs need only the write scope and the grant</td>
 <td><strong>No — explicit only</strong></td>
@@ -529,18 +524,17 @@ application's policy is refused with <code>appid_scope_denied</code>.</p>
 - <code>GET /api/v1/ping</code> lists the new scope or capability.</p>
 <h3 id="the-external-system-gets-403-not-granted-or-403-grant-paused">The external system gets <code>403 not_granted</code> or <code>403 grant_paused</code><a class="dc-anchor" href="#the-external-system-gets-403-not-granted-or-403-grant-paused" title="Permanent link">#</a></h3>
 <p><strong>Possible causes</strong>
-- <code>not_granted</code>: the token holds no grant for that Process or app. Since
-  2026-10-24 a token walks only the Processes granted to it, even as a
-  rehearsal.
-- <code>grant_paused</code>: the Process diagram, or the app's published version,
-  changed after the grant was approved.</p>
+- <code>not_granted</code>: the token holds no grant for that app; a token runs only
+  the apps granted to it, even as a rehearsal.
+- <code>grant_paused</code>: the app's published version changed after the grant was
+  approved.</p>
 <p><strong>Solution</strong>
 1. <strong>Edit</strong> the token. For <code>not_granted</code>, tick the object under
-   <strong>Processes it may run</strong> or <strong>Apps it may run</strong> and save.
+   <strong>Apps it may run</strong> and save.
 2. For <code>grant_paused</code>, read what changed in the object, then click
    <strong>Re-approve</strong> next to it.</p>
 <p><strong>Verification</strong>
-- <code>GET /api/v1/processes</code> or <code>GET /api/v1/apps</code> shows <code>"granted": "yes"</code>
+- <code>GET /api/v1/apps</code> shows <code>"granted": "yes"</code>
   for the object.</p>
 <h2 id="advanced">Advanced<a class="dc-anchor" href="#advanced" title="Permanent link">#</a></h2>
 <details class="dc-adv">
@@ -587,7 +581,7 @@ Tokens can be given <code>admin</code> only if their owner holds <a class="dc-pe
   token's ADOM ever resolve.</li>
 </ul>
 </details></article>
-<div class="dc-tags"><a class="dc-tag" href="search.html?q=api%20token">#api token</a><a class="dc-tag" href="search.html?q=bearer">#bearer</a><a class="dc-tag" href="search.html?q=integration">#integration</a><a class="dc-tag" href="search.html?q=machine-to-machine">#machine-to-machine</a><a class="dc-tag" href="search.html?q=scope">#scope</a><a class="dc-tag" href="search.html?q=capability">#capability</a><a class="dc-tag" href="search.html?q=appid%20scope">#appid scope</a><a class="dc-tag" href="search.html?q=revoke">#revoke</a><a class="dc-tag" href="search.html?q=grant">#grant</a><a class="dc-tag" href="search.html?q=process%20grant">#process grant</a><a class="dc-tag" href="search.html?q=app%20grant">#app grant</a><a class="dc-tag" href="search.html?q=re-approve">#re-approve</a><a class="dc-tag" href="search.html?q=paused%20grant">#paused grant</a></div>
+<div class="dc-tags"><a class="dc-tag" href="search.html?q=api%20token">#api token</a><a class="dc-tag" href="search.html?q=bearer">#bearer</a><a class="dc-tag" href="search.html?q=integration">#integration</a><a class="dc-tag" href="search.html?q=machine-to-machine">#machine-to-machine</a><a class="dc-tag" href="search.html?q=scope">#scope</a><a class="dc-tag" href="search.html?q=capability">#capability</a><a class="dc-tag" href="search.html?q=appid%20scope">#appid scope</a><a class="dc-tag" href="search.html?q=revoke">#revoke</a><a class="dc-tag" href="search.html?q=grant">#grant</a><a class="dc-tag" href="search.html?q=app%20grant">#app grant</a><a class="dc-tag" href="search.html?q=re-approve">#re-approve</a><a class="dc-tag" href="search.html?q=paused%20grant">#paused grant</a></div>
 <details class="dc-src"><summary>Source files this article was verified against</summary><ul><li><code>app/views/api_tokens.py</code></li><li><code>app/templates/api_tokens/index.html</code></li><li><code>app/templates/api_tokens/_pickers.html</code></li><li><code>app/services/token_grants.py</code></li><li><code>app/api_v1/apps.py</code></li><li><code>app/api_v1/processes.py</code></li><li><code>app/models_api_token.py</code></li><li><code>app/api_v1/auth.py</code></li><li><code>app/api_v1/routes.py</code></li><li><code>app/api_v1/waf.py</code></li><li><code>app/branding.py</code></li><li><code>app/templates/base.html</code></li></ul></details>
 <section class="dc-related"><h2 class="dc-rel-h">Related articles</h2><div class="dc-rel-grid"><a class="dc-rel" href="api.html"><b>SATOM API (REST v1)</b><span>SATOM&#x27;s own REST API for your systems (not the Fortinet device API) — the token-authenticated integration API at /api/v1: how tokens, scopes, capabilities and ADOM binding work, every endpoint, the error format and the rate limits.</span></a><a class="dc-rel" href="users-and-profiles.html"><b>Users and permission profiles</b><span>Create and manage SATOM accounts and compose the permission profiles that decide exactly what each account may do, with a guard that never lets you remove the last administrator.</span></a><a class="dc-rel" href="appids.html"><b>AppIDs</b><span>The global catalog of AppIDs (billing key and access-control unit) and the binding of each server policy to exactly one AppID, fed by hand, by file upload or by a nightly URL import.</span></a><a class="dc-rel" href="scheduled-actions.html"><b>Scheduled actions (Automations and System Automations)</b><span>Schedule work to run unattended — fleet changes an operator plans (Automations) and the product&#x27;s own housekeeping such as backups, syncs and probe sweeps (System Automations) — fired by a dedicated scheduler service.</span></a><a class="dc-rel" href="audit-log.html"><b>Audit log</b><span>The read-only trail of who did what, when, from where and against which target — searchable by user, action, text, entry ID and date.</span></a><a class="dc-rel" href="process.html"><b>Process (removed) — runbooks are Plugin Studio apps</b><span>The Process section was removed on 2026-10-25. Runbooks — recovery plans, validations, procedures with questions for a person — are Plugin Studio apps now.</span></a><a class="dc-rel" href="studio-apps.html"><b>Plugin Studio apps</b><span>Build a small application — a form, a diagram of steps over data stores, APIs, databases and scripts, and an output with actions — and publish it as its own entry in Operations → Plugins for the ADOMs and the groups or people you pick.</span></a></div></section>
 <nav class="dc-pn"><a class="dc-pn-prev" href="settings-scout.html"><span>← Previous</span><b>Path Diagnostics settings</b></a><a class="dc-pn-next" href="settings-my-account.html"><span>Next →</span><b>Security &amp; password</b></a></nav>

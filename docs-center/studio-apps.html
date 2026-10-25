@@ -112,7 +112,7 @@ re-reads the choices and refuses a value that is not one of them. Tick
 <strong>searchable</strong> on a list to give it a search box: every word must match, a
 counter shows <em>matches / total</em>, a choice you made stays selected while you
 search, and Enter in the box never runs the app.</p>
-<p><strong>The diagram</strong> — drawn in the same editor as <a href="process.html">Process</a>. Steps:</p>
+<p><strong>The diagram</strong> — boxes and arrows drawn in the app editor. Steps:</p>
 <div class="dc-table"><table>
 <thead>
 <tr>
@@ -171,11 +171,6 @@ search, and Enter in the box never runs the app.</p>
 <td>Actions</td>
 <td>Run a script</td>
 <td>The published version of a <a href="script-library.html">Script Library</a> script</td>
-</tr>
-<tr>
-<td>Actions</td>
-<td>Walk a process</td>
-<td>A <a href="process.html">Process</a> walk, continuing on its verdict (rehearsal runs walk it unarmed; an armed run arms it only for a user with <code>config_write</code>)</td>
 </tr>
 <tr>
 <td>SATOM</td>
@@ -250,10 +245,9 @@ output, or <strong>raise a change request</strong>.</p>
 <p class="dc-co-title"><span class="dc-co-ico">❗</span>Important</p>
 <p><strong>An action never changes a device.</strong> <em>Raise a change request</em> creates a
 <strong>draft</strong> <a href="change-requests.html">change request</a> — with the app and the run named
-in it — that goes through the normal approval before anything runs. Only two
-kinds of <strong>step</strong> write to an appliance — <em>Walk a process</em> and the SATOM steps
-that issue a certificate or create / remove a server policy — and only in an
-armed run, for a user who holds <code>config_write</code>; a rehearsal describes them.</p>
+in it — that goes through the normal approval before anything runs. Only the SATOM
+steps that issue a certificate or create / remove a server policy write to an
+appliance, and only in an armed run, for a user who holds <code>config_write</code>; a rehearsal describes them.</p>
 </div>
 <h3 id="limits">Limits<a class="dc-anchor" href="#limits" title="Permanent link">#</a></h3>
 <ul>

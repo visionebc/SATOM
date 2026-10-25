@@ -67,6 +67,9 @@ wheels, not operating-system packages.</p>
 accepts only a node on 3.3.3 or newer. On an older node it stops at <strong>Upgrade
 path</strong> without changing anything. Apply <code>satom-update-3.3.3.tar.gz</code> (release
 v3.3.3, which carries every wheel) first, then the newer package.</p>
+<p>One exception: the <strong>4.0.0</strong> package accepts only a node on <strong>3.4.7 or newer</strong> (it
+was built while old packages were being pruned from the build host). A node on 3.3.3–3.4.6
+applies the v3.4.7 package first. Packages after 4.0.0 accept 3.3.3 or newer again.</p>
 </div>
 <p>Every node refuses an unsigned package. Releases publish the package, its
 <code>.sha256</code> and the public key it is signed with, so you normally do not build

@@ -116,8 +116,9 @@ editor before anyone runs it for real.</p>
 </ul>
 <h2 id="upgrading">Upgrading<a class="dc-anchor" href="#upgrading" title="Permanent link">#</a></h2>
 <p>Apply the update package as usual (<strong>Settings → System → Software Update</strong>, or
-<code>satom execute update package</code>), after the steps under <em>Before you upgrade</em>. Servers on 3.3.2 or
-older apply 3.3.3 first, as before. Rollback is a normal downgrade plus the database backup the
+<code>satom execute update package</code>), after the steps under <em>Before you upgrade</em>. The package upgrades a
+server on <strong>3.4.7 or newer</strong>; an older server applies the v3.4.7 package first (3.3.2 or older starts
+with v3.3.3) and is otherwise refused at <em>Upgrade path</em> without any change. Rollback is a normal downgrade plus the database backup the
 update took; the Process tables come back only from that backup.</p></article>
 <div class="dc-tags"><a class="dc-tag" href="search.html?q=release">#release</a><a class="dc-tag" href="search.html?q=4.0.0">#4.0.0</a><a class="dc-tag" href="search.html?q=what%27s%20new">#what&#x27;s new</a><a class="dc-tag" href="search.html?q=changelog">#changelog</a><a class="dc-tag" href="search.html?q=runbooks">#runbooks</a><a class="dc-tag" href="search.html?q=plugin%20studio">#plugin studio</a><a class="dc-tag" href="search.html?q=process%20removed">#process removed</a><a class="dc-tag" href="search.html?q=api%20tokens">#api tokens</a><a class="dc-tag" href="search.html?q=capacity">#capacity</a><a class="dc-tag" href="search.html?q=mass%20deploy">#mass deploy</a><a class="dc-tag" href="search.html?q=installed%20software">#installed software</a><a class="dc-tag" href="search.html?q=rollback">#rollback</a><a class="dc-tag" href="search.html?q=navigation">#navigation</a></div>
 <details class="dc-src"><summary>Source files this article was verified against</summary><ul><li><code>CHANGELOG.md</code></li><li><code>app/services/studio_checks.py</code></li><li><code>migrations/versions/procdrop01_drop_process_tables.py</code></li><li><code>app/services/software_inventory.py</code></li></ul></details>

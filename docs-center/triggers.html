@@ -257,12 +257,10 @@ run, its status and where the real record is.</p>
 <ul>
 <li>A chain stops after <strong>3 hops</strong> of <code>automation.finished</code>: a trigger that
   matches its own automation would otherwise loop.</li>
-<li>Processes that carry their own trigger (Process → Trigger) keep working;
-  the Triggers page lists them.</li>
-<li>Plugin Studio apps have a <strong>Walk a process</strong> step, so one app diagram can
-  call APIs, run scripts, query data and walk device runbooks. A rehearsal run
-  walks the process unarmed; an armed run walks it armed only for a user who
-  holds <code>config_write</code>.</li>
+<li>A runbook is a Plugin Studio app: one app diagram can check devices, ask a
+  person, call APIs, run scripts and query data. An event starts it through a
+  <em>Run a Plugin Studio app</em> automation; a rehearsal run never writes, an armed
+  run writes only for a user who holds <code>config_write</code>.</li>
 <li><code>GET /api/v1/triggers</code> lists triggers and their enabled automations, so a
   caller can see which event types anything listens to.</li>
 </ul></article>

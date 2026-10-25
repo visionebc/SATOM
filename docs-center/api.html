@@ -49,7 +49,7 @@
   <p class="dc-lead">SATOM&#x27;s own REST API for your systems (not the Fortinet device API) — the token-authenticated integration API at /api/v1: how tokens, scopes, capabilities and ADOM binding work, every endpoint, the error format and the rate limits.</p>
   <div class="dc-meta"><div class="dc-meta-row"><span class="dc-meta-k">👤 For</span><span class="dc-role dc-role-admin">Administrator</span><span class="dc-role dc-role-advanced">Advanced user</span></div><div class="dc-meta-row"><span class="dc-meta-k">🔑 Permissions</span><a class="dc-perm" href="permissions.html#users-manage" title="Manage users — Create, edit, delete, reset and re-profile users"><code>users.manage</code></a> <a class="dc-perm" href="permissions.html#appliances-view" title="View appliances — See the appliance inventory"><code>appliances.view</code></a> <a class="dc-perm" href="permissions.html#registry-view" title="View registry — Browse the endpoint registry &amp; API explorer"><code>registry.view</code></a> <a class="dc-perm" href="permissions.html#registry-execute_write" title="Execute write API calls — Run POST/PUT/DELETE/PATCH in the API Explorer (GET is always allowed)"><code>registry.execute_write</code></a> </div><div class="dc-meta-row"><span class="dc-meta-k">📍 Where</span>Base URL https://&lt;your-satom-host&gt;/api/v1 ; tokens are issued under API Tokens (URL /api-tokens)</div></div>
 </header>
-<details class="dc-toc-m"><summary>On this page</summary><ul><li class="lv2"><a href="#overview">Overview</a></li><li class="lv2"><a href="#tokens">Tokens</a></li><li class="lv3"><a href="#capabilities">Capabilities</a></li><li class="lv2"><a href="#endpoints">Endpoints</a></li><li class="lv3"><a href="#openapi">OpenAPI</a></li><li class="lv3"><a href="#intent-templates-bindings-baselines">Intent: templates, bindings, baselines</a></li><li class="lv3"><a href="#observability-history-findings-metrics">Observability: history, findings, metrics</a></li><li class="lv3"><a href="#processes">Processes</a></li><li class="lv3"><a href="#plugin-studio-apps">Plugin Studio apps</a></li><li class="lv3"><a href="#scheduled-actions">Scheduled actions</a></li><li class="lv3"><a href="#satom-node-resources">SATOM node resources</a></li><li class="lv3"><a href="#firmware-check">Firmware check</a></li><li class="lv3"><a href="#waf-carve-outs-fortiweb">WAF carve-outs (FortiWeb)</a></li><li class="lv3"><a href="#fortiadc-rules">FortiADC rules</a></li><li class="lv2"><a href="#errors">Errors</a></li><li class="lv2"><a href="#rate-limits-and-auditing">Rate limits and auditing</a></li></ul></details>
+<details class="dc-toc-m"><summary>On this page</summary><ul><li class="lv2"><a href="#overview">Overview</a></li><li class="lv2"><a href="#tokens">Tokens</a></li><li class="lv3"><a href="#capabilities">Capabilities</a></li><li class="lv2"><a href="#endpoints">Endpoints</a></li><li class="lv3"><a href="#openapi">OpenAPI</a></li><li class="lv3"><a href="#intent-templates-bindings-baselines">Intent: templates, bindings, baselines</a></li><li class="lv3"><a href="#observability-history-findings-metrics">Observability: history, findings, metrics</a></li><li class="lv3"><a href="#plugin-studio-apps">Plugin Studio apps</a></li><li class="lv3"><a href="#scheduled-actions">Scheduled actions</a></li><li class="lv3"><a href="#satom-node-resources">SATOM node resources</a></li><li class="lv3"><a href="#firmware-check">Firmware check</a></li><li class="lv3"><a href="#waf-carve-outs-fortiweb">WAF carve-outs (FortiWeb)</a></li><li class="lv3"><a href="#fortiadc-rules">FortiADC rules</a></li><li class="lv2"><a href="#errors">Errors</a></li><li class="lv2"><a href="#rate-limits-and-auditing">Rate limits and auditing</a></li></ul></details>
 <article class="dc-doc"><h2 id="overview">Overview<a class="dc-anchor" href="#overview" title="Permanent link">#</a></h2>
 <blockquote>
 <p><strong>This is SATOM's own API</strong> — the one your systems use to talk to SATOM.
@@ -70,8 +70,8 @@ appliance's firmware, and author WAF carve-outs (FortiWeb) or exception rules
 (FortiADC) from a short allow-list. Since 3.4.0 it also reads and — with
 explicit capabilities — writes <strong>desired state</strong> (templates, bindings,
 baselines), reads what SATOM has <strong>observed</strong> (configuration history and
-diffs, the current findings, a read-only metrics query) and starts
-<strong>processes</strong>. It <strong>cannot</strong> upgrade, flash or reboot an appliance, run any
+diffs, the current findings, a read-only metrics query) and runs
+<strong>Plugin Studio apps</strong>. It <strong>cannot</strong> upgrade, flash or reboot an appliance, run any
 action flagged destructive, or write arbitrary configuration: every write the
 API offers goes through the console's own path, and a template apply ends in
 the same dry-run preview and canary-first job as a click in the console.</p>
@@ -387,24 +387,6 @@ and the call answers <code>403 grant_paused</code> until it is re-approved.</p>
 </tr>
 <tr>
 <td>GET</td>
-<td><code>/processes</code>, <code>/processes/&lt;id&gt;</code></td>
-<td>read</td>
-<td>Processes the token's ADOM may see (3.4.0)</td>
-</tr>
-<tr>
-<td>POST</td>
-<td><code>/processes/&lt;id&gt;/run</code></td>
-<td>write + a grant (+ <code>process_arm</code> to arm)</td>
-<td>Start a walk: <code>appliance</code>, <code>armed</code> (default false = rehearsal) (3.4.0)</td>
-</tr>
-<tr>
-<td>GET</td>
-<td><code>/process-runs/&lt;id&gt;</code></td>
-<td>read</td>
-<td>A run with its steps, verdict and what started it (3.4.0)</td>
-</tr>
-<tr>
-<td>GET</td>
 <td><code>/apps</code></td>
 <td>read</td>
 <td>Plugin Studio apps the token's owner may use in its ADOM, with their fields and <code>granted</code></td>
@@ -451,16 +433,6 @@ its own. The query must reference <code>satom_*</code> series only (anything els
 <code>400</code>), answers within 10 s or returns <code>store_timeout</code>, and a product-bound
 token is handed only the series of its own devices (node series included for
 a <code>global</code> token only).</p>
-<h3 id="processes">Processes<a class="dc-anchor" href="#processes" title="Permanent link">#</a></h3>
-<p><code>/processes</code> lists what the token's ADOM may see; <code>POST /processes/&lt;id&gt;/run</code>
-queues a walk against <code>appliance</code> and returns the run — a rehearsal unless
-<code>"armed": true</code>, which needs <code>process_arm</code> and scope <code>write</code>;
-<code>/process-runs/&lt;id&gt;</code> returns the run with its steps. Diagrams that cannot run
-answer <code>invalid_diagram</code>; a diagram with device steps and no appliance answers
-<code>appliance_required</code>. See <a href="process.html">Process</a>.</p>
-<p>Each walk needs a grant for that process on the token (<code>403 not_granted</code>
-without one, <code>403 grant_paused</code> when the diagram changed after approval).
-Every entry of <code>/processes</code> carries <code>"granted": "yes" | "paused" | "no"</code>.</p>
 <h3 id="plugin-studio-apps">Plugin Studio apps<a class="dc-anchor" href="#plugin-studio-apps" title="Permanent link">#</a></h3>
 <p><code>/apps</code> lists the <a href="studio-apps.html">apps</a> the token's owner may open in the
 token's ADOM — the console's access list and ADOM rules — with their form
@@ -648,27 +620,17 @@ surface (<code>not_appid_scopable</code>).</p>
 <tr>
 <td>403</td>
 <td><code>capability_denied</code></td>
-<td>The token lacks the capability (<code>template_draft</code>, <code>template_apply</code>, <code>process_arm</code>, <code>metrics</code>, <code>config_history</code> …)</td>
-</tr>
-<tr>
-<td>400</td>
-<td><code>appliance_required</code></td>
-<td>A process with device steps was started without an appliance (3.4.0)</td>
-</tr>
-<tr>
-<td>400</td>
-<td><code>invalid_diagram</code></td>
-<td>The process diagram cannot run (3.4.0)</td>
+<td>The token lacks the capability (<code>template_draft</code>, <code>template_apply</code>, <code>app_arm</code>, <code>metrics</code>, <code>config_history</code> …)</td>
 </tr>
 <tr>
 <td>403</td>
 <td><code>not_granted</code></td>
-<td>The token holds no grant for that process or app</td>
+<td>The token holds no grant for that app</td>
 </tr>
 <tr>
 <td>403</td>
 <td><code>grant_paused</code></td>
-<td>The process or app changed after it was granted; re-approve it on the token</td>
+<td>The app changed after it was granted; re-approve it on the token</td>
 </tr>
 <tr>
 <td>409</td>
@@ -789,7 +751,7 @@ surface:</p>
 <section class="dc-related"><h2 class="dc-rel-h">Related articles</h2><div class="dc-rel-grid"><a class="dc-rel" href="api-tokens.html"><b>API tokens</b><span>Mint, scope, edit, revoke and delete the bearer tokens that let external systems call the /api/v1 integration API.</span></a><a class="dc-rel" href="studio-apps.html"><b>Plugin Studio apps</b><span>Build a small application — a form, a diagram of steps over data stores, APIs, databases and scripts, and an output with actions — and publish it as its own entry in Operations → Plugins for the ADOMs and the groups or people you pick.</span></a><a class="dc-rel" href="scheduled-actions.html"><b>Scheduled actions (Automations and System Automations)</b><span>Schedule work to run unattended — fleet changes an operator plans (Automations) and the product&#x27;s own housekeeping such as backups, syncs and probe sweeps (System Automations) — fired by a dedicated scheduler service.</span></a><a class="dc-rel" href="exceptions.html"><b>Exceptions &amp; Signature carve-outs</b><span>Author WAF exceptions and signature customisations as desired state bound to Server Policies, then push them to the FortiWeb, place them on other FortiWebs, version, roll back and safely delete them.</span></a><a class="dc-rel" href="fortiadc.html"><b>FortiADC workspace</b><span>The FortiADC ADOM mirrors the appliance&#x27;s own left menu so you can browse, create, edit and delete FortiADC objects live on a selected device, with a dry-run preview before every form-based write.</span></a><a class="dc-rel" href="security-model.html"><b>Security model</b><span>How SATOM protects sign-in, sessions, stored credentials and the host it runs on — accounts and privileges, permissions, CSRF and headers, encryption at rest and in transit, and the audit trail.</span></a><a class="dc-rel" href="error-messages.html"><b>Error messages</b><span>The error and warning messages SATOM shows, with where they appear, what they mean and what to do — sign-in, permissions, appliances, jobs and scheduling, changes, backups and updates, HA and the API.</span></a><a class="dc-rel" href="api-registry.html"><b>Endpoint registry and API-Registry Explorer</b><span>The endpoint registry maps the logical names SATOM uses to the REST paths each product and API version serves; the API-Registry Explorer lets you browse and edit that catalog and send requests to an appliance.</span></a><a class="dc-rel" href="architecture.html"><b>Architecture</b><span>How a SATOM node is put together — reverse proxy, gunicorn, the Flask application, PostgreSQL, the metrics store and the background services — and how two nodes form a primary/standby pair.</span></a><a class="dc-rel" href="template-library.html"><b>Template library</b><span>A versioned library of desired-state templates (web protection profiles, system profiles, server policies, structures and captured configuration objects) with an approval workflow and a dry-run-first, canary-first apply.</span></a><a class="dc-rel" href="process.html"><b>Process (removed) — runbooks are Plugin Studio apps</b><span>The Process section was removed on 2026-10-25. Runbooks — recovery plans, validations, procedures with questions for a person — are Plugin Studio apps now.</span></a><a class="dc-rel" href="alerting.html"><b>Alerting and notification delivery</b><span>The proactive alert engine evaluates health checks every 15 minutes and routes each finding to five sinks — in-app bell, e-mail, a signed webhook, integration hooks and a syslog/CEF feed — each with its own severity floor and family mask.</span></a><a class="dc-rel" href="data-and-storage.html"><b>Data and storage</b><span>Where SATOM keeps its data — PostgreSQL, the device configuration cache and versioned source-of-truth store, the metrics store, the files under data/ — and how each one is replicated, retained and backed up.</span></a><a class="dc-rel" href="naf-framework.html"><b>Where SATOM sits in the NAF Framework</b><span>How SATOM maps onto the Network Automation Forum&#x27;s reference framework — which of its six functional blocks each SATOM feature belongs to, where SATOM&#x27;s own names differ from the framework&#x27;s, and where the conformance matrix lives.</span></a></div></section>
 <nav class="dc-pn"><a class="dc-pn-prev" href="glossary.html"><span>← Previous</span><b>Glossary</b></a><a class="dc-pn-next" href="server-policy.html"><span>Next →</span><b>Server Policy</b></a></nav>
 </main>
-  <aside class="dc-toc" aria-label="On this page"><p class="dc-toc-h">On this page</p><ul><li class="lv2"><a href="#overview">Overview</a></li><li class="lv2"><a href="#tokens">Tokens</a></li><li class="lv3"><a href="#capabilities">Capabilities</a></li><li class="lv2"><a href="#endpoints">Endpoints</a></li><li class="lv3"><a href="#openapi">OpenAPI</a></li><li class="lv3"><a href="#intent-templates-bindings-baselines">Intent: templates, bindings, baselines</a></li><li class="lv3"><a href="#observability-history-findings-metrics">Observability: history, findings, metrics</a></li><li class="lv3"><a href="#processes">Processes</a></li><li class="lv3"><a href="#plugin-studio-apps">Plugin Studio apps</a></li><li class="lv3"><a href="#scheduled-actions">Scheduled actions</a></li><li class="lv3"><a href="#satom-node-resources">SATOM node resources</a></li><li class="lv3"><a href="#firmware-check">Firmware check</a></li><li class="lv3"><a href="#waf-carve-outs-fortiweb">WAF carve-outs (FortiWeb)</a></li><li class="lv3"><a href="#fortiadc-rules">FortiADC rules</a></li><li class="lv2"><a href="#errors">Errors</a></li><li class="lv2"><a href="#rate-limits-and-auditing">Rate limits and auditing</a></li></ul></aside>
+  <aside class="dc-toc" aria-label="On this page"><p class="dc-toc-h">On this page</p><ul><li class="lv2"><a href="#overview">Overview</a></li><li class="lv2"><a href="#tokens">Tokens</a></li><li class="lv3"><a href="#capabilities">Capabilities</a></li><li class="lv2"><a href="#endpoints">Endpoints</a></li><li class="lv3"><a href="#openapi">OpenAPI</a></li><li class="lv3"><a href="#intent-templates-bindings-baselines">Intent: templates, bindings, baselines</a></li><li class="lv3"><a href="#observability-history-findings-metrics">Observability: history, findings, metrics</a></li><li class="lv3"><a href="#plugin-studio-apps">Plugin Studio apps</a></li><li class="lv3"><a href="#scheduled-actions">Scheduled actions</a></li><li class="lv3"><a href="#satom-node-resources">SATOM node resources</a></li><li class="lv3"><a href="#firmware-check">Firmware check</a></li><li class="lv3"><a href="#waf-carve-outs-fortiweb">WAF carve-outs (FortiWeb)</a></li><li class="lv3"><a href="#fortiadc-rules">FortiADC rules</a></li><li class="lv2"><a href="#errors">Errors</a></li><li class="lv2"><a href="#rate-limits-and-auditing">Rate limits and auditing</a></li></ul></aside>
 </div>
 <div class="dc-scrim" hidden></div>
 <footer class="dc-foot"><div class="wrap">

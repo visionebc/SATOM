@@ -156,10 +156,6 @@ one to use when talking to someone who knows the framework.</p>
 <li><strong>The Knowledge Harvester is not the Collector.</strong> It harvests <em>vendor</em>
   knowledge (which fields a firmware build serves, release notes); the NAF
   Collector reads the <em>network's</em> state. See <a href="api-library.html">API library</a>.</li>
-<li><strong>A Process step's "executor" is not the Executor.</strong> In the code, the
-  handler that runs one step of a <a href="process.html">Process</a> is called an executor;
-  the NAF Executor is the block that writes to devices (the CLI writer, the
-  write actions).</li>
 <li><strong>The reconciler is not the Orchestrator.</strong> SATOM's reconciler keeps a
   standby node's code in step with the primary — deployment and high
   availability, see <a href="high-availability.html">High availability</a>. The NAF
@@ -207,11 +203,12 @@ aborts on the first error, and a read-back that verifies the write
 (<a href="object-editor.html">Object editor</a>, <a href="policy-cloning.html">Policy cloning</a>,
 <a href="provisioning.html">Provisioning</a>, <a href="firmware-upgrade.html">Firmware upgrade</a>).</p>
 <h3 id="orchestrator">Orchestrator<a class="dc-anchor" href="#orchestrator" title="Permanent link">#</a></h3>
-<p><a href="process.html">Processes</a> coordinate the other blocks without touching a device
-themselves: they can now start from an event (an alert, a failed upgrade, an
-approved change), from the <strong>Walk a process</strong> scheduled action, or from the
-API (<code>/processes/&lt;id&gt;/run</code>, rehearsal unless the token holds <code>process_arm</code>),
-and a <strong>Compensate</strong> step undoes what a walk wrote. <a href="change-requests.html">Change requests</a>
+<p><a href="studio-apps.html">Plugin Studio apps</a> coordinate the other blocks: a runbook is an
+app that checks devices, asks a person and collects diagnostics. An app starts
+from an event (an alert, a failed upgrade, an approved change) through a
+<a href="triggers.html">trigger</a> automation, on a schedule, or from the API
+(<code>/apps/&lt;slug&gt;/run</code>, rehearsal unless the token holds <code>app_arm</code>). The
+Process section that did this until 4.0.0 is <a href="process.html">removed</a>. <a href="change-requests.html">Change requests</a>
 and <a href="integrations.html">Integration hooks</a> are the other two doors of the same
 block.</p>
 <h3 id="presentation">Presentation<a class="dc-anchor" href="#presentation" title="Permanent link">#</a></h3>

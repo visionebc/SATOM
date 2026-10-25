@@ -93,6 +93,10 @@ Stage 0 of **SATOM Builder**, the separate tool customers install to author plug
 
 ### Fixed
 
+- **The offline installer no longer stops at "tar is missing" on a minimal RHEL or
+  SUSE server.** The RHEL and SUSE bundles now carry `tar` and `gzip`, and the guided
+  setup installs `tar` from the bundle next to it before giving up. The message
+  explains how to extract a bundle without `tar` (`python3 -m tarfile -e`).
 - **An app package can no longer replace a template.** Installing a package
   with the id of a Plugin Studio › Examples object (`ex-*`: app, data store,
   connection or script) is refused; before, the template's draft was

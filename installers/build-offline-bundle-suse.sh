@@ -55,7 +55,7 @@ FAKEROOT="${FAKEROOT:-/tmp/satom-node}"
 # install-satom.sh installs them from here when it detects the mismatch;
 # this list guarantees they are present.
 PKGS=(python311 python311-pip postgresql-server postgresql nginx rsync
-      openssl curl ca-certificates sudo openssh git bubblewrap
+      openssl curl ca-certificates sudo openssh git bubblewrap tar gzip
       libexpat1 libopenssl3 libsqlite3-0 libz1)
 
 echo "==> SATOM offline bundle v${VERSION} — SUSE family (leap 15, x86_64)"

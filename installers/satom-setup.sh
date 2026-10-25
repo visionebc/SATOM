@@ -207,6 +207,22 @@ curl_from_bundle() {
     have curl || return 1
     ok "curl installed from the offline bundle"
 }
+# A minimal RHEL/SUSE image may have no tar; the offline bundle carries it.
+# (Found 2026-10-25 by SATOM Builder's offline tests on a minimal Rocky 9: the
+# setup stopped at "tar is missing" with no way forward offline.)
+tar_from_bundle() {
+    local f
+    for f in "$SCRIPT_DIR"/bundle/rpms/tar-[0-9]*.rpm "$SCRIPT_DIR"/bundle/rpms-suse/tar-[0-9]*.rpm \
+             "$SCRIPT_DIR"/bundle/debs/tar_*.deb; do
+        [ -e "$f" ] || continue
+        case "$f" in
+            *.rpm) have rpm && rpm -U --quiet "$f" >>"${LOG:-/dev/null}" 2>&1 ;;
+            *.deb) have dpkg && dpkg -i "$f" >>"${LOG:-/dev/null}" 2>&1 ;;
+        esac
+        have tar && { ok "tar installed from the offline bundle"; return 0; }
+    done
+    return 1
+}
 ver_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]; }   # ver_ge A B -> A >= B
 port_owner() {
     have ss || { echo ""; return; }
@@ -329,7 +345,8 @@ check_requirements() {
     have curl || curl_from_bundle \
         || die "curl is missing (install it with the package manager: ${PKG} install curl)"
     have openssl || die "openssl is missing (${PKG} install openssl)"
-    have tar || die "tar is missing"
+    have tar || tar_from_bundle \
+        || die "tar is missing: install it (${PKG} install tar), or run this script from an extracted offline bundle (extract it with: python3 -m tarfile -e <bundle>.tar.gz .)"
     NODE_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"
     [ -n "$NODE_IP" ] || NODE_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
     ok "Primary IP: ${NODE_IP:-unknown}"

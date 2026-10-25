@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-10-26
+
+Every product's cached objects reach the no-SQL query builder, grouped per
+product and category, and one button turns them into **316 joined plugin
+datasets, one ADOM each** (which FortiGate rules use an address, a virtual
+server with its pool members, users with their groups…), browsable like the
+Python console examples. SATOM Builder works with **every ADOM's datasets
+through one Global token** (`?adom=` on every Builder call, `reach` and
+`elsewhere`), and a Builder package that reads another ADOM's dataset is now
+refused instead of installing empty. Fixed: query-builder joins between long
+FortiWeb deep-layer tables, related tables that offered every product, tables
+that stopped answering for minutes after the query builder opened (a lock
+deadlock at boot), "Show as list" on the relational model, and a crash on a
+misshapen Plugin Studio diagram.
+
 ### Added
 
 - **SATOM Builder: the ADOM of each call, and every ADOM's datasets with one

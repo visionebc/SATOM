@@ -72,6 +72,10 @@ SATOM Builder's copy of this code.
 
 ### Fixed
 
+- **Builder rehearsal of a view ignored its params:** `POST
+  /api/v1/builder/rehearse` passed the `inputs` (`{name: value}`) to the
+  param resolver, which reads `p_<name>`, so every view rendered with its
+  defaults whatever the author chose. `plugin_sandbox.param_args()` maps them.
 - **`--authorize-peer` no longer stops right after authorizing the key** when
   the standby's IP has no name in DNS (`getent` failing under `pipefail`): it
   now goes on to register the standby in `ha_nodes.json` and print the check.

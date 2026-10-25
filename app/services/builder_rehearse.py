@@ -77,7 +77,7 @@ def _render_view(pk: P.Package, inputs: dict) -> dict:
     keys = [k for k in pk.manifest.get("datasets") or [] if k in sandbox.DATASETS]
     data = sandbox.load_datasets(keys)
     pdefs = sandbox.clean_param_defs(pk.manifest.get("params") or [])
-    params = sandbox.resolve_params(pdefs, inputs or {})
+    params = sandbox.resolve_params(pdefs, sandbox.param_args(inputs))
     html, err = sandbox.safe_render(pk.text("body.jinja"), data, params)
 
     class _P:  # what the frame builder reads off a Plugin row

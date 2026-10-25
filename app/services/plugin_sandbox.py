@@ -364,6 +364,18 @@ def _coerce(raw: Any, typ: str, d: dict[str, Any]) -> Any:
     return s
 
 
+def param_args(inputs) -> dict[str, Any]:
+    """Values given by param NAME (``{"zone": "dmz"}``: a Builder rehearsal,
+    the Builder's test runs) as the request arguments :func:`resolve_params`
+    reads (``p_<name>``). Passed as they were, every value was ignored and the
+    view rendered with its defaults."""
+    out: dict[str, Any] = {}
+    for k, v in (inputs or {}).items():
+        k = str(k)
+        out[k if k.startswith("p_") else "p_" + k] = v
+    return out
+
+
 def resolve_params(defs: list[dict[str, Any]], args: Any) -> dict[str, Any]:
     """Coerce raw request values (``p_<name>``) into a {name: value} map.
 

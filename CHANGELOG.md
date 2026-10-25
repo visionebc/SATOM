@@ -35,9 +35,18 @@ SATOM Builder's copy of this code.
   the CLI loads the signature verifier only from the root-owned runner copy.
 - **`upgrade-converge.sh`** runs with the system Python, never the venv's, also
   when started by hand.
+- **`install-satom.sh --authorize-peer`** (run on a live primary to admit a
+  standby) created, `chown`-ed, `chmod`-ed and appended to
+  `.ssh/authorized_keys` as root by path, and ran the venv's Python as root to
+  merge `data/ha_nodes.json`. Measured on a disposable node: with that file
+  planted as a link, a root-only file ended owned by `satom` with the standby's
+  line appended. All of it now runs as `satom`.
 
 ### Fixed
 
+- **`--authorize-peer` no longer stops right after authorizing the key** when
+  the standby's IP has no name in DNS (`getent` failing under `pipefail`): it
+  now goes on to register the standby in `ha_nodes.json` and print the check.
 - **A failed package apply can roll the dependencies back again.** The
   `pip freeze` taken before the apply was written to `/root`, which the
   rollback -- running `pip install -r` as `satom` -- cannot read.

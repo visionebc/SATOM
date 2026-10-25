@@ -181,15 +181,22 @@ if [ "${1:-}" = "--authorize-peer" ]; then
     SHELL_WRAPPER=/usr/local/sbin/satom-ha-rsync-shell
     [ -x "$SHELL_WRAPPER" ] || die "$SHELL_WRAPPER is missing (reinstall or copy deploy/satom-ha-rsync-shell)"
 
+    # Everything below lives in the service account's directories and is done
+    # BY that account: root creating, chown-ing, chmod-ing and appending by
+    # path there would follow a link it planted (.ssh -> /root, or
+    # authorized_keys -> /etc/shadow, handed over to it). This runs on a LIVE
+    # primary, where that account is the one the web worker runs as.
+    as_app() { runuser -u "$APP_USER" -- env HOME="$APP_DIR" PATH=/usr/sbin:/usr/bin:/sbin:/bin "$@"; }
     AK="$APP_DIR/.ssh/authorized_keys"
-    install -d -m 700 -o "$APP_USER" -g "$APP_USER" "$APP_DIR/.ssh"
-    touch "$AK"; chown "$APP_USER:$APP_USER" "$AK"; chmod 600 "$AK"
+    as_app sh -c 'umask 077; install -d -m 700 "$1" && touch "$2" && chmod 600 "$2"' sh "$APP_DIR/.ssh" "$AK" \
+        || die "Could not prepare ${AK} as ${APP_USER}"
     KEYBODY="$(echo "$PEER_PUBKEY" | awk '{print $1" "$2}')"
-    if grep -qF "$KEYBODY" "$AK"; then
+    if as_app grep -qF "$KEYBODY" "$AK"; then
         ok "That key was already authorized — not duplicated"
     else
         printf 'from="%s",restrict,command="%s" %s\n' \
-            "$PEER_IP" "$SHELL_WRAPPER" "$PEER_PUBKEY" >> "$AK"
+            "$PEER_IP" "$SHELL_WRAPPER" "$PEER_PUBKEY" | as_app sh -c 'cat >> "$1"' sh "$AK" \
+            || die "Could not authorize the standby in ${AK}"
         ok "Standby ${PEER_IP} authorized (read-only rsync of data/ only)"
     fi
     # ---- SATOM-HANODES-MERGE --------------------------------------------
@@ -199,14 +206,16 @@ if [ "${1:-}" = "--authorize-peer" ]; then
     # This is the point where the primary learns its peer's IP.
     PEER_NAME="${4:-}"
     if [ -z "$PEER_NAME" ]; then
-        PEER_NAME="$(getent hosts "$PEER_IP" 2>/dev/null | awk '{print $2}' | head -1)"
+        # No reverse name is normal (set -e + pipefail would end the subcommand here).
+        PEER_NAME="$(getent hosts "$PEER_IP" 2>/dev/null | awk '{print $2}' | head -1 || true)"
         PEER_NAME="${PEER_NAME%%.*}"
     fi
     [ -n "$PEER_NAME" ] || PEER_NAME="$PEER_IP"
     if [ -x "$APP_DIR/venv/bin/python" ]; then
-        SATOM_PEER_IP="$PEER_IP" SATOM_PEER_NAME="$PEER_NAME" \
-        SATOM_APP_DIR="$APP_DIR" "$APP_DIR/venv/bin/python" - <<'PYNODES' && \
-            chown "$APP_USER:$APP_USER" "$APP_DIR/data/ha_nodes.json" 2>/dev/null || true
+        # The venv is the service account's: it runs AS that account, which
+        # also owns data/ha_nodes.json.
+        as_app env SATOM_PEER_IP="$PEER_IP" SATOM_PEER_NAME="$PEER_NAME" \
+        SATOM_APP_DIR="$APP_DIR" "$APP_DIR/venv/bin/python" - <<'PYNODES' || true
 import json, os, socket
 
 app = os.environ["SATOM_APP_DIR"]

@@ -1093,8 +1093,8 @@ that already exists is ignored and reported in `kept`. A refusal is 422
 
 ### `GET /builder/publishers` · `POST /builder/publishers`
 
-`GET` lists the registered publisher keys: `{"publishers": [{"key_id",
-"label", "enabled", "created_at"}]}`. `POST` (admin scope, super-admin owner)
+`GET` lists the registered publisher keys as a JSON array: `[{"key_id",
+"label", "enabled", "created_at"}]`. `POST` (admin scope, super-admin owner)
 registers one: `{"label": "SATOM Builder", "public_key": "<base64 of the raw
 32-byte Ed25519 key>"}` → 201 `{"key_id", "created": true}`. The same key
 again answers 200 with the existing `key_id`; a malformed key answers 400

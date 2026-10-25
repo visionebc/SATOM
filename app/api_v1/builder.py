@@ -289,11 +289,11 @@ def builder_publishers():
     """The registered plugin publishers: key id, label, enabled, created.
 
     Responses:
-        200: ``{"publishers": [{"key_id", "label", "enabled", "created_at"}]}``.
+        200: ``[{"key_id", "label", "enabled", "created_at"}]`` (contract §1).
     """
     from ..services import plugin_publishers as PP
     rows = [PP.as_json(r) for r in PP.list_publishers()]
-    return jsonify({"publishers": rows})
+    return jsonify(rows)
 
 
 @bp.route("/builder/publishers", methods=["POST"])

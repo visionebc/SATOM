@@ -32,6 +32,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **Database › Relational model: "Show as list" did nothing visible.** The
+  list opened under the 72vh diagram, below the fold, so the click looked dead.
+  The button now swaps the views: the list replaces the diagram and the button
+  reads **Show diagram** to go back.
+
 - **Tables that stopped answering for minutes after opening the query
   builder.** On a1 two web workers stayed `idle in transaction` for 20
   minutes and `app_ids` and `waf_artifact_ref` stopped answering. The ER

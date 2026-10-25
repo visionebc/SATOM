@@ -27,8 +27,10 @@
       <div class="d-flex align-items-start gap-3 mb-2">
         <p class="text-muted small mb-0">{% set _inferred = edges|selectattr('inferred')|list|length %}{{ tables|length }} tables · {{ edges|length - _inferred }} foreign-key relationships{% if _inferred %} · {{ _inferred }} inferred from column names{% endif %}.
           <span class="text-muted">{{ _('Layered schema layout — parents left, dependents right; crow\'s-foot = many side. Drag a table, scroll to zoom, drag the canvas to pan; click a table to pin its relationships.') }}</span></p>
-        <button class="btn btn-outline-secondary btn-sm ms-auto flex-shrink-0 text-nowrap" type="button" data-bs-toggle="collapse" data-bs-target="#er-list">
-          <i class="bi bi-list-ul me-1"></i>{{ _('Show as list') }}</button>
+        <button class="btn btn-outline-secondary btn-sm ms-auto flex-shrink-0 text-nowrap" type="button" id="er-view-toggle"
+                data-bs-toggle="collapse" data-bs-target="#er-list" aria-expanded="false" aria-controls="er-list"
+                data-label-list="{{ _('Show as list') }}" data-label-diagram="{{ _('Show diagram') }}">
+          <i class="bi bi-list-ul me-1"></i><span>{{ _('Show as list') }}</span></button>
       </div>
       <div id="er-diagram" style="width:100%;height:72vh;min-height:640px;"></div>
 
@@ -246,6 +248,20 @@
   }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', renderER); }
   else { renderER(); }
+
+  // "Show as list" swaps the views. The list sits under a 72vh diagram, so
+  // merely expanding it opened it below the fold and the click looked dead.
+  var erList=document.getElementById('er-list'), erDiagram=document.getElementById('er-diagram');
+  var erToggle=document.getElementById('er-view-toggle');
+  function erView(list){
+    erDiagram.classList.toggle('d-none', list);
+    erToggle.querySelector('i').className='bi '+(list?'bi-diagram-3':'bi-list-ul')+' me-1';
+    erToggle.querySelector('span').textContent=erToggle.dataset[list?'labelDiagram':'labelList'];
+  }
+  if(erList && erDiagram && erToggle){
+    erList.addEventListener('show.bs.collapse', function(){ erView(true); });
+    erList.addEventListener('hidden.bs.collapse', function(){ erView(false); });
+  }
 
   // ----- Tables browser -----
   var sel=document.getElementById('tbl-select'), meta=document.getElementById('tbl-meta');

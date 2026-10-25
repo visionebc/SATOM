@@ -135,7 +135,7 @@
   <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Available datasets') }} <span class="text-secondary fw-normal">{{ _('(read-only)') }}</span></h2></div>
   <div class="fw-card-body">
     <p class="text-secondary mb-2" style="font-size:13px">{{ _('Built-in datasets, the ones an administrator published (Administrator › Database › Plugin datasets) and one per object type the device cache holds. A view declares the ones it reads and gets them as') }} <code>{{ '{{ <key>.rows }}' }}</code>.</p>
-    {% for group, items in datasets|groupby('group') %}
+    {% for _gs, items in datasets|groupby('group_sort') %}{% set group = items[0].group %}
     <details class="mb-1" {{ 'open' if group in ('Built-in', 'Administrator datasets') }}>
       <summary style="font-size:13px">{{ group }} <span class="text-secondary">({{ items|length }})</span></summary>
       <ul class="mb-1" style="font-size:13px">

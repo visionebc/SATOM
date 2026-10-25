@@ -81,7 +81,7 @@
                      placeholder="{{ _('Search datasets: name, key, column') }}" aria-label="{{ _('Search datasets') }}">
               <span class="text-secondary" style="font-size:12px" id="ds-count" aria-live="polite"></span>
             </div>
-            {% for group, items in datasets|groupby('group') %}
+            {% for _gs, items in datasets|groupby('group_sort') %}{% set group = items[0].group %}
             {% set chosen = plugin and (items|selectattr('key', 'in', plugin.datasets)|list) %}
             <details class="ds-group" {{ 'open' if group in ('Built-in', 'Administrator datasets') or chosen }}>
               <summary>{{ group }} <span class="text-secondary">({{ items|length }})</span></summary>

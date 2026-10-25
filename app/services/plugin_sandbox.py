@@ -29,7 +29,10 @@ from . import dbintrospect
 
 
 # --- Curated datasets -------------------------------------------------------
-# key -> (label, description, SQL). Every query is SELECT-only and runs through
+# key -> (label, description, SQL). The typed cache tables (device_server_*,
+# device_web_protection_profiles) hold one row per cache LAYER (config and
+# deep), so these read the config layer only: one row per object.
+# Every query is SELECT-only and runs through
 # dbintrospect.run_query (sensitive columns masked, row-capped). To offer a new
 # dataset, add a row here — never accept SQL from the plugin author.
 DATASETS: dict[str, tuple[str, str, str]] = {
@@ -41,8 +44,9 @@ DATASETS: dict[str, tuple[str, str, str]] = {
     "server_policies": (
         "Server policies (cached)",
         "Cached FortiWeb server policies with their key columns.",
-        "SELECT appliance_id, name, deployment_mode, vserver, server_pool, status "
-        "FROM device_server_policies ORDER BY appliance_id, name",
+        "SELECT p.appliance_id, p.name, p.deployment_mode, p.vserver, p.server_pool, p.status "
+        "FROM device_server_policies p JOIN device_objects o ON o.id = p.object_id "
+        "WHERE o.layer = 'config' ORDER BY p.appliance_id, p.name",
     ),
     "server_policies_full": (
         "Server policies (rich)",
@@ -69,15 +73,17 @@ DATASETS: dict[str, tuple[str, str, str]] = {
     "server_pools": (
         "Server pools + members",
         "Cached back-end pools with their type/protocol columns.",
-        "SELECT appliance_id, name, type, protocol "
-        "FROM device_server_pools ORDER BY appliance_id, name",
+        "SELECT p.appliance_id, p.name, p.type, p.protocol "
+        "FROM device_server_pools p JOIN device_objects o ON o.id = p.object_id "
+        "WHERE o.layer = 'config' ORDER BY p.appliance_id, p.name",
     ),
     "web_protection_profiles": (
         "Web Protection Profiles",
         "Cached WAF profiles (inline/offline) with their signature rule. "
         "bot_policy is always empty: the cache does not keep it.",
-        "SELECT appliance_id, name, kind, signature_rule, NULL AS bot_policy "
-        "FROM device_web_protection_profiles ORDER BY appliance_id, name",
+        "SELECT p.appliance_id, p.name, p.kind, p.signature_rule, NULL AS bot_policy "
+        "FROM device_web_protection_profiles p JOIN device_objects o ON o.id = p.object_id "
+        "WHERE o.layer = 'config' ORDER BY p.appliance_id, p.name",
     ),
     "certificates": (
         "Managed certificates",
@@ -96,7 +102,8 @@ DATASETS: dict[str, tuple[str, str, str]] = {
         "Fleet counts",
         "One-row summary: device / policy / certificate totals.",
         "SELECT (SELECT COUNT(*) FROM appliances) AS devices, "
-        "(SELECT COUNT(*) FROM device_server_policies) AS server_policies, "
+        "(SELECT COUNT(*) FROM device_server_policies p JOIN device_objects o "
+        "ON o.id = p.object_id WHERE o.layer = 'config') AS server_policies, "
         "(SELECT COUNT(*) FROM managed_certificate) AS certificates",
     ),
     "scheduled_actions": (

@@ -532,8 +532,17 @@ def load_datasets(keys) -> dict[str, Any]:
     return {k: out[k] for k in keys if k in out}
 
 
+_SOURCE_RANK = {"builtin": 0, "admin": 1, "objects": 2}
+
+
 def picker(product: str | None = None) -> list[dict]:
     """The catalogue for a picker: key, label, description, group, source,
-    columns (no spec, no rows)."""
-    return [{k: d.get(k) for k in ("key", "label", "description", "group", "source", "product",
-                                   "columns")} for d in catalog(product)]
+    columns (no spec, no rows); ``group_sort`` keeps built-in first, then the
+    administrator datasets, then the object groups (Jinja's groupby sorts)."""
+    out = []
+    for d in catalog(product):
+        e = {k: d.get(k) for k in ("key", "label", "description", "group", "source", "product",
+                                   "columns")}
+        e["group_sort"] = "%d %s" % (_SOURCE_RANK.get(d["source"], 3), d.get("group") or "")
+        out.append(e)
+    return out

@@ -16,7 +16,7 @@
       <div class="fw-card-body">
         <p class="text-muted small mb-2">{{ _('Ticked datasets arrive as data[key], each {columns, rows} with rows as a list of dicts.') }}</p>
         <div id="pyc-ds-list" style="max-height:520px;overflow:auto">
-          {% for group, items in datasets|groupby('group') %}
+          {% for _gs, items in datasets|groupby('group_sort') %}{% set group = items[0].group %}
           <details class="mb-1" {{ 'open' if group == 'Built-in' }}>
             <summary class="small fw-semibold">{{ group }} <span class="text-muted">({{ items|length }})</span></summary>
             {% for d in items %}

@@ -57,7 +57,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   error. They now read the real columns under the same names a view uses
   (`common_name` = the certificate's name, `not_after` = its expiry,
   `action_key` = the action); `bot_policy` is kept for the views that name it
-  and is always empty (the cache does not keep it). A dataset whose query fails now says `error` instead of looking empty.
+  and is always empty (the cache does not keep it).
+- **Server policies, pools and Web Protection Profiles showed twice** in the
+  plugin datasets (and *Fleet counts* counted policies twice): their cache
+  tables hold one row per cache layer (config and deep). The datasets now read
+  the config layer only. A dataset whose query fails now says `error` instead of looking empty.
   Found from SATOM Builder's test data ("where is all the FortiWeb data?").
 - **`satom_select` device lists follow the ADOM:** the *Appliances* and
   *FortiWeb appliances* lists of a Plugin Studio form showed the whole fleet

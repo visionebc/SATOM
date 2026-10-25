@@ -4432,7 +4432,7 @@ CSS has any of these, and none of it works under the frame's policy anyway:
   that sets its own opaque `background` is not checked: white text on your own
   fill is fine);
 - `z-index` above 1000;
-- `</style` inside the stylesheet (the frame neutralises it).
+- a closing style tag inside the stylesheet (the frame neutralises it).
 
 Comments and quoted strings never trigger a rule (`content: "@import"` is
 fine), and CSS escapes are decoded first, so `@\69mport` is still `@import`.

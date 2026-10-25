@@ -5007,7 +5007,7 @@ CSS has any of these, and none of it works under the frame's policy anyway:</p>
   that sets its own opaque <code>background</code> is not checked: white text on your own
   fill is fine);</li>
 <li><code>z-index</code> above 1000;</li>
-<li><code>&lt;/style</code> inside the stylesheet (the frame neutralises it).</li>
+<li>a closing style tag inside the stylesheet (the frame neutralises it).</li>
 </ul>
 <p>Comments and quoted strings never trigger a rule (<code>content: "@import"</code> is
 fine), and CSS escapes are decoded first, so <code>@\69mport</code> is still <code>@import</code>.</p>

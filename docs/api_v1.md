@@ -1015,6 +1015,16 @@ checks every package again with its own rules on validate, rehearse and
 import. A token whose owner may no longer work in the token's ADOM is refused
 with 403 `wrong_product`. Every call is audited with the token and its owner.
 
+**The ADOM of a call (`?adom=<key>`).** Every call except `rules-pack` and
+`publishers` takes `?adom=`. With a **Global** token it is the ADOM the whole
+call runs in -- the datasets offered, the snapshot, the check, the render and
+where an import installs -- among `global` and the ADOMs the token's owner may
+enter. A token **bound to an ADOM** may only name that ADOM: any other is 403
+`wrong_product` (it never widens). An unknown key is 400 `bad_request`; no
+`adom` means the token's own ADOM. A view that reads datasets of more than one
+ADOM installs in `global` and is opened from the Global console. In Global,
+the datasets offered are those of the ADOMs the owner may enter.
+
 Package bodies (`validate`, `rehearse`, `import`) are `multipart/form-data`:
 `package` (the `.satomplugin` file, at most **10 MB**, else 413 `too_large`)
 and an optional `options` field holding a JSON object. The write endpoints are
@@ -1029,8 +1039,18 @@ plugin `datasets`), `templates` (the Examples objects, which a package can
 never replace), `existing` (the apps, data stores with their columns,
 connections with `has_secret` — never the secret — API versions and scripts
 on this server), `publishers` (the enabled ones of this ADOM, with their
-public key) and `schema`. It is exactly the `target` the rules pack's
-`check()` takes.
+public key), `elsewhere`, `reach` and `schema`. It is exactly the `target` the
+rules pack's `check()` takes.
+
+- `elsewhere` -- `{"datasets": {"<key>": "<adom>"}}`: the datasets that exist
+  in the owner's OTHER ADOMs and not in this call's ADOM (names only). The
+  check uses it to refuse a Builder package that reads one of them with rule
+  `view.datasets_adom` ("dataset X lives in ADOM Y, not in ADOM Z where this
+  package would install"); a console import gets the same message as a
+  warning. Empty in Global.
+- `reach` -- what the token reaches: `{"token_adom", "adom", "can_choose",
+  "adoms"}`; `can_choose` is true for a Global token, and `adoms` lists
+  `global` plus the owner's ADOMs (a bound token: only its own).
 
 ### `GET /builder/rules-pack`
 
@@ -1072,7 +1092,9 @@ fixed `sql`, an administrator one its `spec` (the Report Builder query, which a
 package carries in `dataset_defs`), a device-object one its `object`
 (`{"product", "layer", "logical_name"}`).
 
-`fortinet` covers the token's ADOM (every product for `global`).
+`fortinet` covers the call's ADOM (in `global`, every product whose ADOM the
+owner may enter). The library also carries `elsewhere` and `reach`, as the
+target does.
 
 ### `GET /builder/library/fortinet/<product>/<version>`
 

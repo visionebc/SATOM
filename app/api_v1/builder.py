@@ -22,6 +22,13 @@ runs with that person's RBAC and ADOM, and SATOM stays the authority:
   ``admin`` scope and a super-admin owner (``studio.plugin_studio``) (§6);
 * ``GET/POST /builder/publishers`` -- the trusted publisher keys (§8).
 
+Every call but the rules pack and the publishers takes ``?adom=<key>``
+(contract §17): with a Global token it is the ADOM the call runs in, among
+Global and the ADOMs the owner may enter; a token bound to an ADOM can only
+name its own. The library and the target say what the token reaches
+(``reach``) and which datasets live in the owner's other ADOMs
+(``elsewhere``).
+
 Package bodies are multipart: ``package`` (at most 10 MB, else 413) and an
 optional ``options`` JSON string. Every call writes one audit line naming
 the token and its owner; a secret relayed by ``import`` is never in it.
@@ -42,6 +49,7 @@ from .auth import audit_extra, token_required
 #: Multipart framing and the ``options`` field on top of the package itself.
 _ENVELOPE = 256 * 1024
 SUPER_ADMIN = "studio.plugin_studio"
+GLOBAL = "global"
 
 
 def _err(status: int, code: str, message: str, **extra):
@@ -75,14 +83,42 @@ def _as_owner():
             g.pop("_login_user", None)
 
 
+def _token_adom() -> str:
+    """The ADOM the token itself is bound to: ``global`` for a Global token."""
+    tok = getattr(g, "api_token", None)
+    return ((getattr(tok, "product", "") or "").strip().lower() or GLOBAL) if tok else GLOBAL
+
+
 def _adom_refusal():
-    """A token's ADOM the owner may no longer enter is refused (403)."""
+    """A token's ADOM the owner may no longer enter is refused (403).
+
+    Contract §17: ``?adom=<key>`` names the ADOM of this call. A Global token
+    may name Global or any ADOM its owner may enter, and the whole call --
+    datasets, snapshot, check, render, import -- then runs in it (``g.product``,
+    which ``product_scope`` reads first). A token bound to an ADOM may only
+    name that ADOM: it never widens."""
+    from ..services import product_scope as PSc
     owner = _owner()
     allowed = getattr(owner, "allowed_adoms", None)
+    if allowed is not None:
+        allowed = {str(k).strip().lower() for k in allowed}
     product = _product()
-    if allowed is not None and product and product != "global" and product not in allowed:
+    if allowed is not None and product and product != GLOBAL and product not in allowed:
         return _err(403, "wrong_product",
                     "The token's owner may not work in the ADOM this token is bound to.")
+    want = (request.args.get("adom") or "").strip().lower()
+    if not want:
+        return None
+    if want not in PSc.product_keys():
+        return _err(400, "bad_request", "Unknown ADOM %r." % want[:40])
+    tok = _token_adom()
+    if tok != GLOBAL and want != tok:
+        return _err(403, "wrong_product",
+                    "This token is bound to ADOM %s; only a Global token chooses the ADOM "
+                    "of a call." % tok)
+    if want != GLOBAL and allowed is not None and want not in allowed:
+        return _err(403, "wrong_product", "The token's owner may not work in ADOM %s." % want)
+    g.product = want
     return None
 
 
@@ -133,7 +169,8 @@ def builder_target():
     if refused:
         return refused
     with _as_owner():
-        snap = BT.snapshot(_owner(), _product(), scopes=g.api_token.scope_list)
+        snap = BT.snapshot(_owner(), _product(), scopes=g.api_token.scope_list,
+                           token_adom=_token_adom())
         _audit("builder.target", target=_product())
     return jsonify(snap)
 
@@ -182,7 +219,7 @@ def builder_library():
     if refused:
         return refused
     with _as_owner():
-        res = BL.library(_product())
+        res = BL.library(_product(), owner=_owner(), token_adom=_token_adom())
         _audit("builder.library", target=_product())
     return jsonify(res)
 
@@ -204,7 +241,7 @@ def builder_library_build(product, version):
     refused = _adom_refusal()
     if refused:
         return refused
-    if product not in BL.products_for(_product()):
+    if product not in BL.products_for(_product(), _owner()):
         return _err(403, "wrong_product", "The token's ADOM does not cover %s." % product[:40])
     endpoint = request.args.get("endpoint") or ""
     if not re.match(r"^[0-9A-Za-z._-]{1,40}$", version) or len(endpoint) > 200:

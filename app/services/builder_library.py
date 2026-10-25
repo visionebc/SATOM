@@ -20,22 +20,33 @@ FORMAT = "satom.builder-library/1"
 _BUILD_KEYS = ("version", "build", "line", "measured", "vendor_only", "cli_measured", "in_fleet")
 
 
-def products_for(adom: str) -> list[str]:
-    """The API library products a token bound to *adom* may read."""
+def products_for(adom: str, owner=None) -> list[str]:
+    """The API library products a call in ADOM *adom* may read: that one, or
+    in Global every product whose ADOM the owner may enter."""
     from . import api_library as L
     if adom in L.PRODUCTS:
         return [adom]
-    return list(L.PRODUCTS) if adom in ("", "global") else []
+    if adom not in ("", "global"):
+        return []
+    if owner is None:
+        return list(L.PRODUCTS)
+    from . import builder_target as BT
+    mine = set(BT.adoms_for(owner))
+    return [p for p in L.PRODUCTS if p in mine]
 
 
-def datasets() -> list[dict]:
-    """Every dataset of the token's ADOM (built-in, administrator, device
+def datasets(owner=None, adom: str | None = None) -> list[dict]:
+    """Every dataset of the call's ADOM (built-in, administrator, device
     objects) with its columns, relations, group and, for a built-in one, its
-    fixed SQL; an administrator dataset says how it is built (its query)."""
-    from . import plugin_datasets as PD
+    fixed SQL; an administrator dataset says how it is built (its query).
+    In Global: every ADOM the owner may enter (``builder_target.offered``)."""
+    from flask import g, has_request_context
+    from . import builder_target as BT
+    if adom is None:
+        adom = (getattr(g, "product", "") or "") if has_request_context() else ""
     keep = ("key", "label", "description", "columns", "source", "group", "product",
             "relations", "masked", "sql", "spec", "object")
-    return [{k: d[k] for k in keep if k in d} for d in PD.catalog()]
+    return [{k: d[k] for k in keep if k in d} for d in BT.offered(owner, adom)]
 
 
 def stores() -> dict:
@@ -60,10 +71,10 @@ def apis() -> list[dict]:
     return out
 
 
-def fortinet(adom: str) -> dict:
+def fortinet(adom: str, owner=None) -> dict:
     from . import api_library as L
     out = {}
-    for p in products_for(adom):
+    for p in products_for(adom, owner):
         try:
             rows = L.builds(p)
         except Exception:  # noqa: BLE001 -- a product with no library tables yet
@@ -72,9 +83,17 @@ def fortinet(adom: str) -> dict:
     return {"products": out}
 
 
-def library(adom: str) -> dict:
-    return {"format": FORMAT, "product": adom or "", "datasets": datasets(),
-            "stores": stores(), "apis": apis(), "fortinet": fortinet(adom)}
+def library(adom: str, owner=None, token_adom: str | None = None) -> dict:
+    """Contract §14, plus §17: ``reach`` (what the connection reaches, when
+    the call came with a token) and ``elsewhere`` (the datasets of the
+    owner's other ADOMs, names only)."""
+    from . import builder_target as BT
+    out = {"format": FORMAT, "product": adom or "", "datasets": datasets(owner, adom),
+           "stores": stores(), "apis": apis(), "fortinet": fortinet(adom, owner),
+           "elsewhere": BT.elsewhere(owner, adom)}
+    if token_adom is not None:
+        out["reach"] = BT.reach(owner, token_adom, adom)
+    return out
 
 
 def fortinet_endpoints(product: str, version: str) -> dict:

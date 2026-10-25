@@ -13,6 +13,7 @@ against one description of this server whichever door it comes through.
 from __future__ import annotations
 
 FORMAT = "satom.builder-target/1"
+GLOBAL = "global"
 
 
 def _rules():
@@ -32,11 +33,65 @@ def caller(owner, scopes=None) -> dict:
             "can_import": can_import}
 
 
-def choices() -> dict:
+def adoms_for(owner) -> list[str]:
+    """The product ADOMs *owner* may enter, sorted: every one for an owner
+    whose profile names none."""
+    from . import product_scope as PSc
+    allowed = PSc.adoms_of(owner)
+    return sorted(k for k in PSc.concrete_products() if allowed is None or k in allowed)
+
+
+def offered(owner, product: str | None) -> list[dict]:
+    """The datasets a plugin installed in ADOM *product* may read, for
+    *owner*. Global ('' or 'global') is every ADOM the owner may enter, never
+    the products a confined owner may not (their Global console is the union
+    of their ADOMs)."""
     from . import plugin_datasets as PD
+    p = "" if product in (None, "", GLOBAL) else product
+    out = PD.catalog(p)
+    if p:
+        return out
+    mine = set(adoms_for(owner))
+    return [d for d in out if not d.get("product") or d["product"] in mine]
+
+
+def elsewhere(owner, product: str | None) -> dict:
+    """Contract §17: the datasets that exist in the owner's OTHER ADOMs but
+    not in *product*, as ``{"datasets": {key: adom}}``. Names only: what lets
+    a check say "it lives in ADOM X" instead of "this server has no such
+    dataset". Empty in Global, which already offers all of them."""
+    from . import plugin_datasets as PD
+    p = "" if product in (None, "", GLOBAL) else product
+    out: dict[str, str] = {}
+    if not p:
+        return {"datasets": out}
+    here = set(PD.keys(p))
+    for adom in adoms_for(owner):
+        if adom == p:
+            continue
+        for k in PD.keys(adom):
+            if k not in here:
+                out.setdefault(k, adom)
+    return {"datasets": out}
+
+
+def reach(owner, token_adom: str | None, product: str | None) -> dict:
+    """Contract §17: what this connection reaches. A Global token chooses the
+    ADOM per call (``?adom=``) among Global and the owner's ADOMs; a token
+    bound to an ADOM stays in it."""
+    tok = token_adom or GLOBAL
+    can_choose = tok == GLOBAL
+    return {"token_adom": tok, "adom": product or GLOBAL, "can_choose": can_choose,
+            "adoms": ([GLOBAL] + adoms_for(owner)) if can_choose else [tok]}
+
+
+def choices(owner=None, product: str | None = None) -> dict:
+    from flask import g, has_request_context
     from . import studio_apps as SA
     out = dict(SA.choices())
-    out["datasets"] = PD.keys()          # every source, the token's ADOM
+    if product is None:
+        product = (getattr(g, "product", "") or "") if has_request_context() else ""
+    out["datasets"] = [d["key"] for d in offered(owner, product)]   # the call's ADOM
     return out
 
 
@@ -91,8 +146,10 @@ def publishers(product: str | None) -> list[dict]:
             for r in PP.list_publishers() if r.enabled and PP.applies_to(r, product)]
 
 
-def snapshot(owner_user, product_key: str, *, scopes=None) -> dict:
-    """Contract §2, for *owner_user* in ADOM *product_key*."""
+def snapshot(owner_user, product_key: str, *, scopes=None, token_adom=None) -> dict:
+    """Contract §2, for *owner_user* in ADOM *product_key*. ``elsewhere``
+    (§17) names the datasets of the owner's other ADOMs; ``reach`` is there
+    when the call came with a token (*token_adom*)."""
     from ..version import app_version
     package_check, rules_pack = _rules()
     _zip, sha = rules_pack.build()
@@ -102,10 +159,13 @@ def snapshot(owner_user, product_key: str, *, scopes=None) -> dict:
         "rules_sha256": sha,
         "product": product_key or "",
         "caller": caller(owner_user, scopes),
-        "choices": choices(),
+        "choices": choices(owner_user, product_key or ""),
         "templates": templates(),
         "existing": existing(),
         "publishers": publishers(product_key),
+        "elsewhere": elsewhere(owner_user, product_key),
     }
+    if token_adom is not None:
+        target["reach"] = reach(owner_user, token_adom, product_key)
     target["schema"] = package_check.schema(dict(target))
     return target

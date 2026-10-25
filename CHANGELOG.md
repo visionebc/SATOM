@@ -8,6 +8,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **SATOM Builder: the ADOM of each call, and every ADOM's datasets with one
+  Global token.** Requested: "nowhere in the Builder does it say I have to
+  choose the ADOM; and what if I want something from two ADOMs, like every
+  firewall rule that holds the IPs of the FortiWeb interfaces? Make it see
+  every dataset SATOM has, the basics by default, so the user can see and
+  pick them". The Builder's token was bound to the FortiWeb ADOM, so no
+  FortiGate dataset ever reached it and its AI said `fortigate_firewall_policy`
+  "does not exist". Now every `/api/v1/builder/*` call takes `?adom=`: with a
+  Global token it is the ADOM the whole call runs in (datasets, check, render,
+  where an import installs), among Global and the ADOMs the token's owner may
+  enter; a token bound to an ADOM can never widen to another (403). The
+  library and the target add `reach` (what the token reaches) and
+  `elsewhere` (the datasets of the owner's other ADOMs, names only), and the
+  author guide every AI prompt starts with names the ADOM and says which
+  ADOM holds the rest -- never "it does not exist". In Global the datasets
+  offered are those of the ADOMs the owner may enter, no longer every product.
+
 - **316 joined plugin datasets, one ADOM each, from one button.** Requested:
   "you said you would create about 600 datasets and I don't see them; divide
   them by ADOM, and create as many as you can, trying to cover everything".
@@ -56,6 +73,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   list), next to New app.
 
 ### Fixed
+
+- **A Builder package that reads a dataset of another ADOM is refused, not
+  installed broken.** A view reading `fortigate_firewall_policy` imported into
+  the FortiWeb ADOM got only a warning, and the import dropped the dataset: the
+  view installed and showed nothing. New rule `view.datasets_adom` (refuses a
+  Builder package, warns on a console import): "dataset X lives in ADOM Y, not
+  in ADOM Z where this package would install: install it in ADOM Y, or in
+  Global when it reads more than one ADOM".
 
 - **Database › Relational model: "Show as list" did nothing visible.** The
   list opened under the 72vh diagram, below the fold, so the click looked dead.

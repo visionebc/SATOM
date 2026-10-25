@@ -77,6 +77,10 @@ RULES = (
     ("view.datasets", WARNING, "Datasets this server does not offer are dropped on import, "
      "unless the package carries their definition (an administrator dataset): then the import "
      "creates it pending until an administrator publishes it."),
+    ("view.datasets_adom", BUILDER, "A dataset the view reads lives in another ADOM of this "
+     "server (the target's elsewhere): the package installs in the ADOM that offers every "
+     "dataset it reads, or in Global when it reads more than one ADOM -- never where the "
+     "import would drop the dataset."),
     ("view.params", WARNING, "Input parameters that are malformed or repeated are dropped on "
      "import."),
     ("css.lint", BUILDER, "style.css passes the plugin CSS rules (its errors)."),
@@ -291,6 +295,9 @@ def _check_view(pk, target: dict, r: _Report, summary: dict) -> None:
     known = set((target.get("choices") or {}).get("datasets") or [])
     defined = {str(d.get("key")) for d in pk.manifest.get("dataset_defs") or []
                if isinstance(d, dict)}
+    away = (target.get("elsewhere") or {}).get("datasets") or {}
+    away = away if isinstance(away, dict) else {}
+    here = str(target.get("product") or "") or "global"
     for k in pk.manifest.get("datasets") or []:
         if str(k) in known:
             continue
@@ -299,6 +306,13 @@ def _check_view(pk, target: dict, r: _Report, summary: dict) -> None:
                   "dataset %s comes with the package: it lands pending until an administrator "
                   "publishes it (Administrator › Database › Plugin datasets)" % k)
             summary.setdefault("pending_datasets", []).append(str(k))
+        elif str(k) in away:
+            adom = str(away[str(k)])
+            r.add("view.datasets_adom", "datasets",
+                  "dataset %s lives in ADOM %s, not in ADOM %s where this package would "
+                  "install: install it in ADOM %s, or in Global when it reads more than one "
+                  "ADOM" % (k, adom, here, adom))
+            summary.setdefault("other_adoms", {})[str(k)] = adom
         else:
             r.add("view.datasets", "datasets",
                   "dataset %s is not offered by this server: the import drops it" % k)
@@ -852,13 +866,25 @@ def author_guide(target: dict) -> str:
             objects.setdefault(prod, []).append(d)
         else:
             named.append(d)
-    w("- Datasets on this server: %s." % (", ".join("`%s`" % d for d in named) or "none"))
+    here = str(target.get("product") or "") or "global"
+    w("- Datasets this package can read in ADOM %s: %s." % (
+        here, ", ".join("`%s`" % d for d in named) or "none"))
     if objects:
         w("- Device-object datasets (one per object type the device cache holds; columns `id`, "
           "`appliance_id`, `device`, `mkey`, `parent_id` + the object's fields, `-` read as `_`; "
           "the Library lists every one): %s." % "; ".join(
               "%s: %d (e.g. %s)" % (p, len(v), ", ".join("`%s`" % k for k in v[:3]))
               for p, v in sorted(objects.items())))
+    away = (target.get("elsewhere") or {}).get("datasets") or {}
+    if isinstance(away, dict) and away:
+        by_adom: dict = {}
+        for k, a in sorted(away.items()):
+            by_adom.setdefault(str(a), []).append(k)
+        w("- Datasets that exist on this server in OTHER ADOMs (a package installed in ADOM %s "
+          "cannot read them; never say they do not exist -- say which ADOM has them: the "
+          "project must move to that ADOM, or to Global to read more than one ADOM): %s." % (
+              here, "; ".join("%s: %d (e.g. %s)" % (a, len(v), ", ".join(
+                  "`%s`" % k for k in v[:3])) for a, v in sorted(by_adom.items()))))
     w("- Parameter types: %s." % ", ".join("`%s`" % t for t in sc["param_types"]))
     w("- style.css follows the plugin CSS rules; script.js runs in a sandboxed frame.")
     w("")

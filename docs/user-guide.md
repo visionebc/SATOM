@@ -3713,8 +3713,18 @@ owner (their ADOM's devices, no maintenance device without the permission,
 the audit log only with `audit.view`, sensitive columns masked), the rows of
 the data stores (declared columns and `_id`, never who edited them) and the
 lists of `satom_select` fields, at most 2,000 rows per table. Each call
-leaves an audit line `builder.data` with the row counts. Details:
-[docs/api_v1.md §17](api_v1.md).
+leaves an audit line `builder.data` with the row counts.
+
+**Which ADOM a Builder plugin lands in.** A plugin installs in one ADOM and
+reads only the datasets that ADOM offers; one that reads FortiGate and
+FortiWeb datasets together installs in **Global** and is opened from the
+Global console. Give the Builder a **Global** token: it then sees every
+dataset of the ADOMs its owner may enter and names the ADOM of each call
+(`?adom=`). A token bound to one ADOM never reaches another; the Builder is
+still told which datasets live elsewhere and where, so it never claims a
+dataset does not exist. A package that reads a dataset of another ADOM is
+refused through the Builder ("dataset X lives in ADOM Y …") instead of being
+installed with that dataset dropped. Details: [docs/api_v1.md §17](api_v1.md).
 
 ## 19. Appearance: logo, colours & themes
 

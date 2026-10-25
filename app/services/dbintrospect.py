@@ -126,6 +126,31 @@ def _short_type(t: str) -> str:
     return _TYPE_ALIASES.get(base, base or "?")
 
 
+def _row_count(name: str) -> int:
+    """``COUNT(*)`` of one table in a transaction of its own, -1 if it cannot
+    be read within :data:`_COUNT_LOCK_TIMEOUT`.
+
+    Not through ``db.session`` (2026-10-25): counting all ~150 tables in the
+    request's transaction kept a lock on every one of them until the request
+    ended, while the schema reads ran on another connection. A boot step of
+    any timer (``ALTER TABLE app_ids ...``) then queued between the two, the
+    request waited on its own lock -- a deadlock across two connections
+    Postgres cannot see -- and every reader of that table queued behind it (a1,
+    2026-10-25: two web workers idle in transaction for 20 minutes)."""
+    try:
+        with db.engine.connect() as conn:
+            if _is_postgres():
+                conn.execute(text("SET LOCAL lock_timeout = '%s'" % _COUNT_LOCK_TIMEOUT))
+            n = conn.execute(text(f'SELECT COUNT(*) FROM "{name}"')).scalar() or 0
+            conn.rollback()
+        return int(n)
+    except Exception:  # noqa: BLE001 -- a badge, never fatal
+        return -1
+
+
+_COUNT_LOCK_TIMEOUT = "2s"
+
+
 def relations() -> dict[str, Any]:
     """The full relational model for the ER diagram.
 
@@ -164,12 +189,7 @@ def relations() -> dict[str, Any]:
                 "nullable": bool(c.get("nullable", True)),
             })
         # Row count for the diagram header badge — best-effort, never fatal.
-        try:
-            nrows = int(db.session.execute(
-                text(f'SELECT COUNT(*) FROM "{name}"')).scalar() or 0)
-        except Exception:
-            db.session.rollback()
-            nrows = -1
+        nrows = _row_count(name)
         tables.append({
             "name": name,
             "columns": len(cols),   # kept for the accessible row-fallback (a count)

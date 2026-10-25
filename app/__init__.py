@@ -2290,15 +2290,40 @@ def create_app(config_override: object | None = None) -> Flask:
         # 4-column unique key the second insert violated the constraint and the
         # walk lost it, so a content-routing policy under-reported precisely the
         # profiles that make it hard to migrate. Best-effort; never blocks boot.
+        #
+        # Every step below runs on EVERY create_app() -- each timer tick of
+        # every CLI -- so in steady state it must issue NO DDL: even an
+        # ``ALTER TABLE ... DROP CONSTRAINT IF EXISTS`` that drops nothing
+        # takes an ACCESS EXCLUSIVE lock and waits in the lock queue, and
+        # every reader of the table waits behind it (a1, 2026-10-25: a
+        # request holding a read lock + these ALTERs = the table unreadable
+        # for 20 minutes). Look first, change only what is still old.
+        def _unique_cols(table, name):
+            for u in insp.get_unique_constraints(table):
+                if u.get('name') == name:
+                    return list(u.get('column_names') or [])
+            return None
+
+        def _has_unique(table, name):
+            return _unique_cols(table, name) is not None
+
+        def _has_index(table, name):
+            return any(i.get('name') == name for i in insp.get_indexes(table))
         try:
             if insp.has_table('waf_artifact_ref'):
-                db.session.execute(text(
-                    'ALTER TABLE waf_artifact_ref '
-                    'DROP CONSTRAINT IF EXISTS uq_waf_artifact_ref_edge'))
-                db.session.execute(text(
-                    'CREATE UNIQUE INDEX IF NOT EXISTS ix_waf_artifact_ref_edge '
-                    'ON waf_artifact_ref '
-                    '(appliance_id, policy_mkey, kind, name, wpp_mkey)'))
+                # Only the OLD 4-column key is dropped: the model declares the
+                # new 5-column one under the same name, so a fresh database
+                # has it (and SQLite could not drop it anyway).
+                edge = _unique_cols('waf_artifact_ref', 'uq_waf_artifact_ref_edge')
+                if edge is not None and 'wpp_mkey' not in edge:
+                    db.session.execute(text(
+                        'ALTER TABLE waf_artifact_ref '
+                        'DROP CONSTRAINT IF EXISTS uq_waf_artifact_ref_edge'))
+                if not _has_index('waf_artifact_ref', 'ix_waf_artifact_ref_edge'):
+                    db.session.execute(text(
+                        'CREATE UNIQUE INDEX IF NOT EXISTS ix_waf_artifact_ref_edge '
+                        'ON waf_artifact_ref '
+                        '(appliance_id, policy_mkey, kind, name, wpp_mkey)'))
                 db.session.commit()
         except Exception:  # noqa: BLE001 — never block boot on a migration
             db.session.rollback()
@@ -2311,12 +2336,14 @@ def create_app(config_override: object | None = None) -> Flask:
         # UniqueConstraint never clashes). Best-effort; never blocks boot.
         try:
             if insp.has_table('app_ids'):
-                db.session.execute(text(
-                    'ALTER TABLE app_ids DROP CONSTRAINT IF EXISTS uq_appid_product_key'))
+                if _has_unique('app_ids', 'uq_appid_product_key'):
+                    db.session.execute(text(
+                        'ALTER TABLE app_ids DROP CONSTRAINT IF EXISTS uq_appid_product_key'))
                 db.session.execute(text(
                     "UPDATE app_ids SET product='global' WHERE product <> 'global'"))
-                db.session.execute(text(
-                    'CREATE UNIQUE INDEX IF NOT EXISTS ix_appid_uq ON app_ids (app_id)'))
+                if not _has_index('app_ids', 'ix_appid_uq'):
+                    db.session.execute(text(
+                        'CREATE UNIQUE INDEX IF NOT EXISTS ix_appid_uq ON app_ids (app_id)'))
                 db.session.commit()
         except Exception:  # noqa: BLE001 — never block boot on a migration
             db.session.rollback()
@@ -2352,7 +2379,14 @@ def create_app(config_override: object | None = None) -> Flask:
         insp = inspect(_db.engine)
         if not insp.has_table("monitor_probe"):
             return
+        # Only a column still NOT NULL: this runs on every create_app(), and
+        # an ALTER that changes nothing still takes an ACCESS EXCLUSIVE lock
+        # (see _ensure_columns).
+        nullable = {c['name']: c.get('nullable', True)
+                    for c in insp.get_columns("monitor_probe")}
         for col in ("warn_ms", "tls_warn_days", "stale_after_h"):
+            if nullable.get(col, True):
+                continue
             try:
                 _db.session.execute(text(
                     "ALTER TABLE monitor_probe ALTER COLUMN %s DROP NOT NULL" % col))
@@ -2416,6 +2450,8 @@ def create_app(config_override: object | None = None) -> Flask:
                 cols = {c['name'] for c in insp.get_columns(table)}
                 if col not in cols:
                     continue
+                if any(i.get('name') == ixname for i in insp.get_indexes(table)):
+                    continue        # steady state: no DDL (see _ensure_columns)
                 db.session.execute(text(
                     f'CREATE INDEX IF NOT EXISTS {ixname} ON {table} ({col})'))
             db.session.commit()

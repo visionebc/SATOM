@@ -285,6 +285,12 @@ def import_package(data: bytes, *, user, product: str, via: str = "ui",
         stored = _store_secrets(wanted, creating, out)
         out["todo"] = [t for t in out["todo"] if not any(
             t.startswith("set the secret of connection %s " % s) for s in stored)]
+        if stored:
+            # the install reported the app's problems BEFORE the secrets were
+            # stored: ask again, so "has no secret yet" is not reported for a
+            # secret this same import just set (found by the Builder lab run)
+            from . import studio_apps as SA
+            out["problems"] = norm_problems(SA.problems(a))
         log_action("studio.app.import", target=a.slug,
                    extra=dict(extra, created=out["created"], kept=out["kept"],
                               secrets_set=stored))

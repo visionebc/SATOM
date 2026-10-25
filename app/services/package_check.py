@@ -260,7 +260,12 @@ def _check_package(pk, target: dict, r: _Report, summary: dict) -> None:
 
 
 def _check_code(pk, summary: dict, r: _Report) -> None:
-    r.add("code.builder", "manifest", "a code plugin is refused: build a script app instead")
+    if r.policy == "builder":
+        r.add("code.builder", "manifest", "a code plugin is refused: build a script app instead")
+    else:
+        r.add("code.builder", "manifest",
+              "a code plugin runs inside SATOM: accepted only signed by Vision EBC; a SATOM "
+              "Builder package can never carry code (build a script app instead)")
     if summary["signed_by"] != "vision-ebc":
         r.add("code.signature", "manifest",
               "a code plugin must be signed by Vision EBC: unsigned code is never installed "

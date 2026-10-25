@@ -20,6 +20,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **Four plugin datasets were always empty:** *Server policies (cached)*,
+  *Web Protection Profiles*, *Managed certificates* and *Scheduled actions*
+  named columns their tables do not have (`"deployment-mode"`,
+  `"signature-rule"`, `"bot-mitigate-policy"`, `common_name`, `not_after`,
+  `action_key`), the query failed, and every view got an empty table with no
+  error. They now read the real columns under the same names a view uses
+  (`common_name` = the certificate's name, `not_after` = its expiry,
+  `action_key` = the action); `bot_policy` is kept for the views that name it
+  and is always empty (the cache does not keep it). A dataset whose query fails now says `error` instead of looking empty.
+  Found from SATOM Builder's test data ("where is all the FortiWeb data?").
 - **`satom_select` device lists follow the ADOM:** the *Appliances* and
   *FortiWeb appliances* lists of a Plugin Studio form showed the whole fleet
   in every ADOM, maintenance devices included, and the form accepted any of

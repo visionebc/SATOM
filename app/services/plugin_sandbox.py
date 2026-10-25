@@ -41,8 +41,7 @@ DATASETS: dict[str, tuple[str, str, str]] = {
     "server_policies": (
         "Server policies (cached)",
         "Cached FortiWeb server policies with their key columns.",
-        "SELECT appliance_id, name, \"deployment-mode\" AS deployment_mode, "
-        "vserver, \"server-pool\" AS server_pool, status "
+        "SELECT appliance_id, name, deployment_mode, vserver, server_pool, status "
         "FROM device_server_policies ORDER BY appliance_id, name",
     ),
     "server_policies_full": (
@@ -75,16 +74,17 @@ DATASETS: dict[str, tuple[str, str, str]] = {
     ),
     "web_protection_profiles": (
         "Web Protection Profiles",
-        "Cached WAF profiles (inline/offline) with their signature/bot refs.",
-        "SELECT appliance_id, name, kind, \"signature-rule\" AS signature_rule, "
-        "\"bot-mitigate-policy\" AS bot_policy "
+        "Cached WAF profiles (inline/offline) with their signature rule. "
+        "bot_policy is always empty: the cache does not keep it.",
+        "SELECT appliance_id, name, kind, signature_rule, NULL AS bot_policy "
         "FROM device_web_protection_profiles ORDER BY appliance_id, name",
     ),
     "certificates": (
         "Managed certificates",
-        "Certificates tracked by the Certificate Manager (no key material).",
-        "SELECT id, common_name, appliance_id, status, not_after "
-        "FROM managed_certificate ORDER BY not_after",
+        "Certificates tracked by the Certificate Manager (no key material): "
+        "common_name is the certificate's name, not_after its expiry.",
+        "SELECT id, name AS common_name, appliance_id, status, expires_at AS not_after "
+        "FROM managed_certificate ORDER BY expires_at",
     ),
     "audit_recent": (
         "Recent audit activity",
@@ -102,7 +102,7 @@ DATASETS: dict[str, tuple[str, str, str]] = {
     "scheduled_actions": (
         "Scheduled actions",
         "Configured automation schedule (name, action, next run).",
-        "SELECT name, action_key, schedule_kind, enabled, next_run, product "
+        "SELECT name, action AS action_key, schedule_kind, enabled, next_run, product "
         "FROM scheduled_action ORDER BY next_run",
     ),
 }
@@ -231,6 +231,13 @@ def load_datasets(keys: list[str]) -> dict[str, Any]:
             res = dbintrospect.run_query(sql)
             cols = res.get("columns") if isinstance(res, dict) else None
             rows = res.get("rows") if isinstance(res, dict) else None
+            if isinstance(res, dict) and res.get("error"):
+                # A failed query is said, never shown as "no rows": until
+                # 2026-10-25 four datasets named columns their tables do not
+                # have and every view read them as empty, silently.
+                out[key] = {"columns": dataset_columns(key), "rows": [],
+                            "error": str(res["error"])[:200]}
+                continue
             dict_rows = []
             if cols and rows:
                 for r in rows:

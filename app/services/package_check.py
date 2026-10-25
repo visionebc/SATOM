@@ -248,6 +248,8 @@ def _check_package(pk, target: dict, r: _Report, summary: dict) -> None:
                   "%s %s needs SATOM %s or newer (this server runs %s)"
                   % (pk.slug, pk.version, need, have or "an unknown version"))
         if pk.kind == "code":
+            # a code plugin is loaded at the next restart-all, never "draft"
+            summary["lands_in"] = "restart"
             _check_code(pk, summary, r)
         elif pk.kind == "app":
             summary["lands_in"] = "draft"

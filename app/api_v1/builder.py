@@ -293,6 +293,7 @@ def builder_publishers():
     """
     from ..services import plugin_publishers as PP
     rows = [PP.as_json(r) for r in PP.list_publishers()]
+    _audit("builder.publishers", target=_product(), count=len(rows))
     return jsonify(rows)
 
 

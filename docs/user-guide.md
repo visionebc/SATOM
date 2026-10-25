@@ -3395,6 +3395,24 @@ Global → Administrator → **Database** (admin only):
   and filters with value dropdowns → grouping/ordering). Built-ins are
   read-only; **Clone** one to customize. Direct SQL is available too, but
   strictly read-only and validated.
+  Besides the database's own tables, the builder offers **every object type
+  the device cache holds, for every product**, as a table of its own, grouped
+  as `<Product> · <category>` (*FortiGate · Firewall policies*, *FortiADC ·
+  Server load balancing*, *FortiAnalyzer · ADOMs and devices*…) with a line
+  saying what it is. FortiGate, FortiADC, FortiAnalyzer and FortiAuthenticator
+  have no tables of their own (SATOM keeps what it reads from them in one
+  generic cache), so this is how they reach reports and plugin datasets. Each
+  such table has `id`, `appliance_id`, `device`, `mkey`, `parent_id` and
+  `object_key`, then the object's fields as text; secret fields are refused,
+  and the viewer's ADOM applies as on any table. Joins never cross devices: a
+  sub-object (a policy's source-address list) reaches its parent by
+  `parent_id`, and a field that names another object (a policy's source
+  address, a group's member, a virtual server's pool) has a `<field>_ref`
+  column that joins the target's `object_key`. "Which FortiGate rules use
+  this address" is therefore one query: address → policy `srcaddr` list →
+  policy. **Browse tables** (step 1) opens every table in a searchable browser
+  — menu by product and category, search over names, descriptions and
+  columns — and picks the one you click.
 - **ER diagram** — a live, professional database diagram (crow's-foot
   notation, domain-colored, searchable, draggable, exportable SVG). Every
   table of the database is in it. Relationships declared as foreign keys are
@@ -3403,7 +3421,9 @@ Global → Administrator → **Database** (admin only):
   of that name (singular or plural) whose primary key is `id`. History tables
   keep `appliance_id` without a foreign key on purpose, because their rows
   outlive the appliance. The header counts both kinds apart; the list view
-  marks inferred ones, and the Query Builder joins on both.
+  marks inferred ones, and the Query Builder joins on both. **Show as list**
+  replaces the diagram with the list of relationships (the button then reads
+  **Show diagram** and brings the diagram back).
 - **Tables browser + SQL console** — read-only introspection with sensitive
   columns masked. Console queries run as the dedicated read-only role
   `satom_console_ro`, which cannot read credential tables or credential
@@ -4426,6 +4446,36 @@ no rows from it, and the page says which ones); a dataset a plugin reads
 cannot be deleted. **Pending approval**: a package that brings a view with an
 administrator dataset this server does not have creates it *pending*; review
 its query and preview, then publish it.
+
+**Generate joined datasets** (same tab, same permission) writes in one click
+the joins the device cache allows, so plugin authors start from hundreds of
+ready datasets instead of an empty list. Each one is an ordinary
+administrator dataset — published, in its product's ADOM, source *generated
+from the device cache*, editable like one you built — in three families:
+
+- **list with its parent**: every sub-object list with its parent's identity
+  and main fields (each FortiGate policy's source addresses with the policy's
+  ID and name; each FortiADC pool's members with the pool);
+- **reference resolved**: every field that names another object, with that
+  object's fields (a virtual server with its pool, a group member with the
+  address);
+- **common chains**: FortiGate — the rules that use an address as source or
+  destination, the address groups that hold an address, the rules that use a
+  group, a service or an incoming interface; FortiADC — a virtual server's
+  pool members; FortiAuthenticator — users with their groups, RADIUS clients
+  with their policies.
+
+Every candidate is compiled and run on this server before it is written; one
+that cannot be built here (for instance a chain that would expose a sensitive
+column) is skipped and the message names it. It **never overwrites**: only
+keys that do not exist yet are created, so running it again adds only what
+the cache gained since — and brings back one you deleted. On the lab fleet the
+first run created 316 (FortiWeb 215, FortiGate 44, FortiADC 38, FortiAnalyzer
+12, FortiAuthenticator 7). The table of the tab groups administrator datasets
+by ADOM, and **Browse the N datasets** opens every dataset this server offers
+— built-in, device objects and administrator — in the same browser as the
+Python console examples: menu by ADOM and category, search over keys,
+descriptions and columns, and the `{{ key.rows }}` to copy into a view.
 
 **Lifecycle: draft → testing → published.** The two gates are deliberate:
 

@@ -4369,6 +4369,65 @@ it explains what a plugin *cannot* do:
 - A render error is a **visible red card inside the frame**, never a broken host
   page.
 
+#### Plugin CSS rules
+
+The frame cannot load SATOM's stylesheet (its policy is `default-src 'none'`;
+styles, scripts, images and fonts must be inline or `data:`), so it brings the
+light look with it:
+
+- **Tokens.** Every `--fw-*` design token is set on `:root`, with the active
+  theme from **Settings › Appearance** applied on top. Use them instead of
+  fixed colours (`var(--fw-text-primary)`, `var(--fw-text-secondary)`,
+  `var(--fw-surface)`, `var(--fw-surface-alt)`, `var(--fw-border)`,
+  `var(--fw-accent)`, `var(--fw-radius)` …) and the view follows a
+  customer's theme with no change.
+- **The class kit.** Already styled, no CSS needed:
+  `.fw-card` with `.fw-card-header`, `.fw-card-title`, `.fw-card-body`,
+  `.fw-card-footer`; `.fw-badge` with
+  `.fw-badge-{primary,secondary,success,danger,warning,info}`; `.fw-table`
+  (optionally inside `.fw-table-wrapper`); `.btn-fw-{primary,secondary,outline,danger}`
+  (`.btn-sm` for the small size); `.fw-alert` with
+  `.fw-alert-{success,danger,warning,info}`; `.fw-muted`. Bare `h1`–`h6`,
+  `p`, `a`, `code`, `pre`, `table`, inputs and buttons get SATOM typography.
+- **Status colours** come from the badge set, calibrated against white:
+  success `#15692A`, warning `#7A5700`, danger `#8B1C2A`, neutral `#3D4550`,
+  and `#4C2A85` for a fifth category.
+- **Fonts.** The frame uses `--fw-font`. The Inter files SATOM ships cannot be
+  fetched from inside the frame and are too large to inline in every render,
+  so Inter shows only where it is installed on the workstation; otherwise the
+  system UI font applies.
+
+Your CSS is added **after** the kit, so it can refine it. These are checked by
+the CSS linter that the rules pack carries (`plugin_css`); the plugin editor
+lists the findings for the saved stylesheet under the CSS field.
+
+**Errors** — a package checked under the Builder policy is refused when its
+CSS has any of these, and none of it works under the frame's policy anyway:
+
+- `@import`;
+- `url(…)` (or a string inside `image-set(…)`) whose target is not a `data:` URI;
+- `expression(`, `javascript:`, the `behavior` and `-moz-binding` properties;
+- `position: fixed` — an overlay pinned over the frame; use `absolute` or `sticky`;
+- `@font-face` whose `src` is anything but `url(data:…)` (`local(…)` included);
+- a stylesheet larger than 256 KiB.
+
+**Warnings** — shown, never a refusal:
+
+- more than 20 `!important`;
+- `color:` set to a hex colour with contrast below 4.5:1 against white (a rule
+  that sets its own opaque `background` is not checked: white text on your own
+  fill is fine);
+- `z-index` above 1000;
+- `</style` inside the stylesheet (the frame neutralises it).
+
+Comments and quoted strings never trigger a rule (`content: "@import"` is
+fine), and CSS escapes are decoded first, so `@\69mport` is still `@import`.
+
+> Views written for the old dark frame (earlier releases) keep their own colours.
+> Light text such as `color: #e2e8f0` now sits on a white page: the editor's
+> contrast warnings point at exactly those lines; replace them with the tokens.
+> The built-in examples were moved to the tokens in the same release.
+
 **Input parameters.** A plugin may declare selectors (device, select, text,
 number, date) so the consumer can filter it. Values arrive as `?p_<name>=…` and
 reach the body as `params.<name>`. They **never touch SQL** — the dataset stays

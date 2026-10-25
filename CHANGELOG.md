@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-25
+
+Plugins can read everything SATOM keeps, and SATOM Builder is in line with it:
+**one dataset per cached device-object type** for every product (603 on the lab
+fleet), **plugin datasets an administrator builds** with the no-SQL query
+builder (Administrator › Database › Plugin datasets), views that carry the
+definition of the administrator datasets they read, and SATOM Builder reading
+this server's own data for its test data (`GET /api/v1/builder/data`). Fixed:
+four built-in datasets that were always empty, policies and WAF profiles that
+showed twice, and `satom_select` device lists that ignored the ADOM.
+
 ### Added
 
 - **Every cached device object is a plugin dataset.** Requested: "create

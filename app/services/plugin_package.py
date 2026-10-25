@@ -7,8 +7,9 @@ package: Plugin Studio's Export writes one (unsigned), the internal generator
 A package is a zip holding exactly:
 
     plugin.json   manifest: format, slug, name, version, kind, icon,
-                  description, datasets, params, min_satom, entry (code only),
-                  built_at, files {member: sha256}
+                  description, datasets, params, dataset_defs (the
+                  administrator datasets a view reads), min_satom, entry
+                  (code only), built_at, files {member: sha256}
     plugin.sig    optional: {"alg": "ed25519", "key_id": <sha256 hex of the raw
                   public key>, "sig": <base64 Ed25519 over plugin.json's bytes>}
     body.jinja, style.css, script.js     kind view | widget
@@ -148,6 +149,7 @@ def validate_manifest(m) -> dict:
             raise PackageError(f"'{k}' must be a list.")
     if kind in ("code", "app") and (m.get("datasets") or m.get("params")):
         raise PackageError(f"A {kind} plugin carries no datasets or params.")
+    _check_dataset_defs(m, kind)
     if m.get("min_satom") and not VERSION_RE.match(str(m["min_satom"])):
         raise PackageError("min_satom must be X.Y.Z.")
     files = m.get("files")
@@ -166,6 +168,39 @@ def validate_manifest(m) -> dict:
     if kind == "code" and f"code/{entry}/__init__.py" not in files:
         raise PackageError(f"code/{entry}/__init__.py is missing.")
     return m
+
+
+#: An administrator dataset a view brings with it (services.plugin_datasets):
+#: the destination creates it PENDING until an administrator publishes it.
+DATASET_DEF_KEY_RE = re.compile(r"^admin_[a-z][a-z0-9_]{1,59}$")
+MAX_DATASET_DEFS = 20
+
+
+def _check_dataset_defs(m: dict, kind: str) -> None:
+    defs = m.get("dataset_defs", [])
+    if not isinstance(defs, list):
+        raise PackageError("'dataset_defs' must be a list.")
+    if defs and kind not in ("view", "widget"):
+        raise PackageError(f"A {kind} plugin carries no dataset definitions.")
+    if len(defs) > MAX_DATASET_DEFS:
+        raise PackageError(f"At most {MAX_DATASET_DEFS} dataset definitions.")
+    wanted = {str(k) for k in m.get("datasets") or []}
+    seen = set()
+    for i, d in enumerate(defs):
+        if not isinstance(d, dict):
+            raise PackageError(f"dataset_defs[{i}] must be an object.")
+        key = str(d.get("key") or "")
+        if not DATASET_DEF_KEY_RE.match(key):
+            raise PackageError(f"dataset_defs[{i}].key must be admin_<name>.")
+        if key not in wanted or key in seen:
+            raise PackageError(f"dataset_defs[{i}]: {key} is not one of the plugin's datasets "
+                               "(or is defined twice).")
+        seen.add(key)
+        if not isinstance(d.get("spec"), dict) or not isinstance(d["spec"].get("base"), str):
+            raise PackageError(f"dataset_defs[{i}].spec must be a query (an object with base).")
+        for f, n in (("label", 120), ("description", 2000), ("product", 32)):
+            if not isinstance(d.get(f, ""), str) or len(d.get(f, "")) > n:
+                raise PackageError(f"dataset_defs[{i}].{f} must be text of at most {n} characters.")
 
 
 def check_code_entry(src: bytes, label: str) -> None:
@@ -310,6 +345,19 @@ def write_package(manifest: dict, files: dict[str, bytes]) -> bytes:
     return buf.getvalue()
 
 
+def dataset_defs_for(keys) -> list[dict]:
+    """The definitions of the administrator datasets among *keys*, as a package
+    carries them (the destination re-checks and compiles every query)."""
+    try:
+        from ..models import PluginDataset
+        rows = PluginDataset.query.filter(PluginDataset.key.in_(
+            [k for k in keys or [] if DATASET_DEF_KEY_RE.match(str(k))])).all()
+    except Exception:  # noqa: BLE001 -- not migrated / no server
+        return []
+    return [{"key": d.key, "label": d.label or d.key, "description": d.description or "",
+             "product": d.product or "", "spec": d.spec_dict} for d in rows][:MAX_DATASET_DEFS]
+
+
 def export_plugin(plugin, satom_version: str = "") -> tuple[str, bytes]:
     """-> (filename, bytes) of an unsigned package for a Plugin Studio row."""
     version = plugin.pkg_version or "1.0.0"
@@ -322,6 +370,9 @@ def export_plugin(plugin, satom_version: str = "") -> tuple[str, bytes]:
         "params": list(plugin.param_defs),
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    defs = dataset_defs_for(plugin.datasets)
+    if defs:
+        manifest["dataset_defs"] = defs
     if VERSION_RE.match(satom_version or ""):
         manifest["min_satom"] = satom_version
     files = {"body.jinja": (plugin.jinja or "").encode("utf-8"),

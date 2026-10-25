@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{#- A Plugin dataset (models.PluginDataset, services.plugin_datasets): a Report
+    Builder query an administrator publishes for plugins and SATOM Builder.
+    Context: ds (or None), builder_catalog, table_names, products, used_by. -#}
+{% block title %}{{ 'Edit plugin dataset' if ds else 'New plugin dataset' }} — Database{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-collection me-2 text-accent"></i>{{ _('Edit plugin dataset') if ds else _('New plugin dataset') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Build a query without SQL; publish it and every plugin editor and SATOM Builder offer it. A plugin reads it as') }} <code id="pd-usage">{{ '{{ ' ~ (ds.key if ds else 'admin_<key>') ~ '.rows }}' }}</code>.</p>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a href="{{ url_for('database.index') }}#tab-plugin-datasets" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
+    <button id="pd-save" class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+  </div>
+</div>
+
+<div id="pd-errors" class="alert alert-danger py-2 small d-none" role="alert"></div>
+{% if ds and ds.status == 'pending' %}
+<div class="alert alert-warning py-2 small" role="note" id="pd-pending">
+  <i class="bi bi-hourglass-split me-1"></i>{{ _('This dataset came in with an imported package') }}{% if ds.source %} ({{ ds.source }}){% endif %}. {{ _('Review its query and preview, then save it as published: until then the plugins that read it get no rows from it.') }}
+</div>
+{% endif %}
+{% if used_by %}
+<div class="alert alert-info py-2 small" role="note">{{ _('Read by these plugins:') }} {{ used_by|join(', ') }}. {{ _('A change applies to them at their next render.') }}</div>
+{% endif %}
+
+<div class="card mb-3"><div class="card-body">
+  <div class="row g-2">
+    <div class="col-md-4">
+      <label class="form-label small text-muted" for="pd-key">{{ _('Key') }}</label>
+      <div class="input-group input-group-sm">
+        <span class="input-group-text">admin_</span>
+        <input id="pd-key" class="form-control form-control-sm font-monospace" maxlength="60" placeholder="policies_by_device"
+               value="{{ ds.key[6:] if ds else '' }}" {{ 'readonly' if ds }} aria-describedby="pd-key-help">
+      </div>
+      <div class="form-text" id="pd-key-help">{{ _('A letter, then lowercase letters, digits and _. It never changes: plugins name the dataset by it.') }}</div>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small text-muted" for="pd-label">{{ _('Name') }}</label>
+      <input id="pd-label" class="form-control form-control-sm" maxlength="120" value="{{ ds.label if ds else '' }}" placeholder="{{ _('e.g. Server policies per device') }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small text-muted" for="pd-product">{{ _('ADOM') }}</label>
+      <select id="pd-product" class="form-select form-select-sm">
+        <option value="">{{ _('Every ADOM') }}</option>
+        {% for p in products %}<option value="{{ p }}" {{ 'selected' if ds and ds.product == p }}>{{ p }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small text-muted" for="pd-status">{{ _('Status') }}</label>
+      <select id="pd-status" class="form-select form-select-sm">
+        <option value="draft" {{ 'selected' if not ds or ds.status != 'published' }}>{{ _('Draft') }}</option>
+        <option value="published" {{ 'selected' if ds and ds.status == 'published' }}>{{ _('Published') }}</option>
+      </select>
+    </div>
+    <div class="col-12">
+      <label class="form-label small text-muted" for="pd-desc">{{ _('Description (what a plugin author reads in the picker and the Library)') }}</label>
+      <input id="pd-desc" class="form-control form-control-sm" maxlength="2000" value="{{ ds.description if ds else '' }}">
+    </div>
+  </div>
+  <p class="small text-muted mt-2 mb-0"><i class="bi bi-shield-lock me-1"></i>
+    {{ _('The query runs as the read-only console role, credential tables and sensitive columns refused; SATOM adds the ADOM of whoever opens the plugin to every table, and keeps only the devices that person may see.') }}</p>
+</div></div>
+
+<div class="card mb-3 rpt-widget" id="pd-query-card"><div class="card-body">
+  <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+    <h2 class="h6 mb-0 me-auto">{{ _('Query') }}</h2>
+    <button type="button" class="btn btn-fw-primary btn-sm w-builder" id="pd-build"><i class="bi bi-magic me-1"></i>{{ _('Build the query (no SQL)') }}</button>
+    <button type="button" class="btn btn-outline-secondary btn-sm w-preview" id="pd-preview"><i class="bi bi-play-fill me-1"></i>{{ _('Preview') }}</button>
+  </div>
+  <label class="form-label small text-muted" for="pd-sql">{{ _('The SQL it compiles to (read-only, for reading; the query below is what is saved)') }}</label>
+  <textarea class="form-control font-monospace w-sql mb-2" rows="4" id="pd-sql" readonly></textarea>
+  <details class="mb-2">
+    <summary class="small">{{ _('Query as JSON (advanced: base, joins, columns, filters, group_by, order_by, limit)') }}</summary>
+    <textarea class="form-control font-monospace mt-2" rows="8" id="pd-spec" spellcheck="false">{{ (ds.spec_dict if ds else {})|tojson(indent=1) }}</textarea>
+  </details>
+  <div class="small text-muted mb-1" id="pd-meta" aria-live="polite"></div>
+  <div class="table-responsive"><table class="table table-sm table-striped" id="pd-prev"><thead></thead><tbody></tbody></table></div>
+</div></div>
+
+<script nonce="{{ csp_nonce }}" id="rb-catalog" type="application/json">{{ builder_catalog|tojson }}</script>
+{% include "database/_rb_modal.html" %}
+<script src="{{ asset('js/report_builder.js') }}" nonce="{{ csp_nonce }}"></script>
+<script nonce="{{ csp_nonce }}" id="pd-data" type="application/json">{{ {"id": ds.id if ds else None}|tojson }}</script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  function tok(){ var m=document.querySelector('meta[name="csrf-token"]'); return m?m.content:''; }
+  function $(id){ return document.getElementById(id); }
+  var data=JSON.parse($('pd-data').textContent), card=$('pd-query-card');
+  function spec(){ try { return JSON.parse($('pd-spec').value||'{}'); } catch(e){ return null; } }
+  function errors(list){ var b=$('pd-errors'); if(!list||!list.length){ b.classList.add('d-none'); return; }
+    b.textContent=list.join(' · '); b.classList.remove('d-none'); }
+  function body(){ return {id:data.id, key:$('pd-key').value.trim(), label:$('pd-label').value.trim(),
+    description:$('pd-desc').value, product:$('pd-product').value, status:$('pd-status').value, spec:spec()}; }
+  function cell(v){ var td=document.createElement('td'); td.className='small';
+    td.textContent=(v===null||v===undefined)?'':String(v); return td; }
+  function preview(){
+    var s=spec(); if(!s){ errors(['The query JSON does not parse.']); return; }
+    $('pd-meta').textContent='Running…';
+    fetch('{{ url_for("database.plugin_dataset_preview") }}',{method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':tok()}, body:JSON.stringify(body())})
+      .then(function(r){ return r.json(); }).then(function(j){
+        var thead=$('pd-prev').querySelector('thead'), tbody=$('pd-prev').querySelector('tbody');
+        thead.textContent=''; tbody.textContent='';
+        if(!j.ok){ errors(j.errors); $('pd-meta').textContent=''; return; }
+        errors([]);
+        $('pd-sql').value=j.sql||'';
+        $('pd-usage').textContent='{{ "{{ " }}'+j.key+'.rows {{ "}}" }}';
+        $('pd-meta').textContent=j.row_count+' row(s) for your ADOM; a plugin reads the columns '+j.columns.join(', ')+'.';
+        var tr=document.createElement('tr');
+        j.columns.forEach(function(c){ var th=document.createElement('th'); th.className='small font-monospace'; th.textContent=c; tr.appendChild(th); });
+        thead.appendChild(tr);
+        j.rows.forEach(function(row){ var r=document.createElement('tr');
+          j.columns.forEach(function(c){ r.appendChild(cell(row[c])); }); tbody.appendChild(r); });
+      }).catch(function(){ errors(['The preview request failed.']); });
+  }
+  $('pd-build').addEventListener('click', function(){ if(window.ReportBuilder) window.ReportBuilder.open(card); });
+  card.addEventListener('rb:generated', function(ev){
+    $('pd-spec').value=JSON.stringify(ev.detail.spec, null, 1);
+    $('pd-sql').value=ev.detail.sql;
+    preview();
+  });
+  // the wizard clicks .w-preview after generating; rb:generated already previewed
+  $('pd-preview').addEventListener('click', function(ev){ if(ev.isTrusted) preview(); });
+  $('pd-save').addEventListener('click', function(){
+    if(!spec()){ errors(['The query JSON does not parse.']); return; }
+    fetch('{{ url_for("database.plugin_dataset_save") }}',{method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':tok()}, body:JSON.stringify(body())})
+      .then(function(r){ return r.json(); }).then(function(j){
+        if(!j.ok){ errors(j.errors); window.scrollTo({top:0,behavior:'smooth'}); return; }
+        window.location=j.back_url;
+      }).catch(function(){ errors(['The save request failed.']); });
+  });
+  if(data.id) preview();
+})();
+</script>
+{% endblock %}

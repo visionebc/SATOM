@@ -53,6 +53,9 @@ SECRET_KEYS = ("password", "secret", "token", "api_key", "client_secret")
 SCRIPT_FORBIDDEN = ("secret", "tcp")
 SDK_MODULES = ("satom_script", "satom_sdk")
 #: What a packaged script may use from the SDK.
+#: Device-object dataset keys start with their product (services.plugin_datasets).
+_OBJECT_PRODUCTS = ("fortiweb", "fortigate", "fortiadc", "fortianalyzer", "fortiauthenticator")
+
 SCRIPT_SDK = ("inputs", "result", "log", "connection")
 #: The kinds a package may hold, and what of an app package travels.
 OBJECT_KINDS = ("app", "store", "connection", "script")
@@ -71,7 +74,9 @@ RULES = (
     ("code.signature", ALL, "A code plugin is signed by Vision EBC; unsigned code is never "
      "installed and a publisher can never sign code."),
     ("view.template", BUILDER, "body.jinja parses in SATOM's plugin sandbox."),
-    ("view.datasets", WARNING, "Datasets this server does not offer are dropped on import."),
+    ("view.datasets", WARNING, "Datasets this server does not offer are dropped on import, "
+     "unless the package carries their definition (an administrator dataset): then the import "
+     "creates it pending until an administrator publishes it."),
     ("view.params", WARNING, "Input parameters that are malformed or repeated are dropped on "
      "import."),
     ("css.lint", BUILDER, "style.css passes the plugin CSS rules (its errors)."),
@@ -284,8 +289,17 @@ def _check_view(pk, target: dict, r: _Report, summary: dict) -> None:
         line = getattr(exc, "lineno", None)
         r.add("view.template", "body.jinja", ("line %s: %s" % (line, exc)) if line else str(exc))
     known = set((target.get("choices") or {}).get("datasets") or [])
+    defined = {str(d.get("key")) for d in pk.manifest.get("dataset_defs") or []
+               if isinstance(d, dict)}
     for k in pk.manifest.get("datasets") or []:
-        if str(k) not in known:
+        if str(k) in known:
+            continue
+        if str(k) in defined:
+            r.add("view.datasets", "datasets",
+                  "dataset %s comes with the package: it lands pending until an administrator "
+                  "publishes it (Administrator › Database › Plugin datasets)" % k)
+            summary.setdefault("pending_datasets", []).append(str(k))
+        else:
             r.add("view.datasets", "datasets",
                   "dataset %s is not offered by this server: the import drops it" % k)
     raw = pk.manifest.get("params") or []
@@ -831,7 +845,20 @@ def author_guide(target: dict) -> str:
     w("- body.jinja renders in an immutable Jinja sandbox with autoescape and StrictUndefined; "
       "each dataset is a variable `{{ <dataset>.rows }}` / `.columns`, input values are "
       "`{{ params.<name> }}`.")
-    w("- Datasets on this server: %s." % (", ".join("`%s`" % d for d in sc["datasets"]) or "none"))
+    named, objects = [], {}
+    for d in sc["datasets"]:
+        prod = d.split("_", 1)[0]
+        if prod in _OBJECT_PRODUCTS:
+            objects.setdefault(prod, []).append(d)
+        else:
+            named.append(d)
+    w("- Datasets on this server: %s." % (", ".join("`%s`" % d for d in named) or "none"))
+    if objects:
+        w("- Device-object datasets (one per object type the device cache holds; columns `id`, "
+          "`appliance_id`, `device`, `mkey`, `parent_id` + the object's fields, `-` read as `_`; "
+          "the Library lists every one): %s." % "; ".join(
+              "%s: %d (e.g. %s)" % (p, len(v), ", ".join("`%s`" % k for k in v[:3]))
+              for p, v in sorted(objects.items())))
     w("- Parameter types: %s." % ", ".join("`%s`" % t for t in sc["param_types"]))
     w("- style.css follows the plugin CSS rules; script.js runs in a sandboxed frame.")
     w("")

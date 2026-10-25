@@ -75,12 +75,25 @@
 
         <div class="mb-3">
           <label class="fw-form-label">{{ _('Datasets') }} <span class="text-secondary fw-normal">{{ _('(read-only)') }}</span></label>
-          <div class="d-flex flex-wrap gap-2">
-            {% for d in datasets %}
-            <label class="ds-chip" title="{{ d.description }}">
-              <input type="checkbox" name="datasets" value="{{ d.key }}" class="ds-cb"
-                {{ 'checked' if plugin and d.key in plugin.datasets }}> {{ d.label }}
-            </label>
+          <div class="ds-picker" id="ds-picker">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <input type="search" class="form-control fw-form-control ds-search" id="ds-search"
+                     placeholder="{{ _('Search datasets: name, key, column') }}" aria-label="{{ _('Search datasets') }}">
+              <span class="text-secondary" style="font-size:12px" id="ds-count" aria-live="polite"></span>
+            </div>
+            {% for group, items in datasets|groupby('group') %}
+            {% set chosen = plugin and (items|selectattr('key', 'in', plugin.datasets)|list) %}
+            <details class="ds-group" {{ 'open' if group in ('Built-in', 'Administrator datasets') or chosen }}>
+              <summary>{{ group }} <span class="text-secondary">({{ items|length }})</span></summary>
+              <div class="d-flex flex-wrap gap-2 pt-2">
+                {% for d in items %}
+                <label class="ds-chip" title="{{ d.description }}" data-search="{{ (d.key ~ ' ' ~ d.label ~ ' ' ~ (d.columns or [])|join(' '))|lower }}">
+                  <input type="checkbox" name="datasets" value="{{ d.key }}" class="ds-cb"
+                    {{ 'checked' if plugin and d.key in plugin.datasets }}> {{ d.label }} <code class="ds-key">{{ d.key }}</code>
+                </label>
+                {% endfor %}
+              </div>
+            </details>
             {% endfor %}
           </div>
         </div>
@@ -189,6 +202,30 @@
 })();
 </script>
 
+<script nonce="{{ csp_nonce }}">
+(function(){
+  // Dataset picker: search across every group (built-in, administrator, device objects).
+  var q = document.getElementById('ds-search'), count = document.getElementById('ds-count');
+  if (!q) return;
+  function upd(){
+    var t = q.value.trim().toLowerCase(), shown = 0, picked = 0;
+    document.querySelectorAll('#ds-picker .ds-group').forEach(function(g){
+      var any = 0;
+      g.querySelectorAll('.ds-chip').forEach(function(c){
+        var hit = !t || c.getAttribute('data-search').indexOf(t) !== -1;
+        c.hidden = !hit; if (hit) { any++; shown++; }
+        if (c.querySelector('input').checked) picked++;
+      });
+      g.hidden = !any;
+      if (t && any) g.open = true;
+    });
+    count.textContent = picked + ' selected' + (t ? ' · ' + shown + ' match' : '');
+  }
+  q.addEventListener('input', upd);
+  document.getElementById('ds-picker').addEventListener('change', upd);
+  upd();
+})();
+</script>
 <script type="application/json" id="pl-params">{{ params_json|safe }}</script>
 <script type="application/json" id="pl-devices">{{ device_options_json|safe }}</script>
 <script nonce="{{ csp_nonce }}">
@@ -272,6 +309,11 @@
 @media(max-width:1100px){.ed-grid{grid-template-columns:1fr}}
 .ds-chip{font-size:13px;display:inline-flex;align-items:center;gap:6px;background:#FFFFFF;border:1px solid var(--fw-border);border-radius:var(--fw-radius);padding:6px 10px;cursor:pointer;color:var(--fw-text-primary)}
 .ds-chip:hover{border-color:var(--fw-accent)}
+.ds-group{border:1px solid var(--fw-border-light,#EAEFF9);border-radius:var(--fw-radius);padding:6px 10px;margin-bottom:6px;background:#FFFFFF}
+.ds-group>summary{cursor:pointer;font-size:13px;font-weight:600}
+.ds-search{max-width:360px}
+.ds-key{font-size:11px;color:var(--fw-text-secondary)}
+.ds-chip[hidden],.ds-group[hidden]{display:none!important}
 /* CSS lint findings of the saved stylesheet (plugin_css.lint) */
 .pl-css-findings{list-style:none;padding:0;margin:8px 0 0;font-size:12px;color:var(--fw-text-secondary)}
 .pl-css-findings li{margin:3px 0}

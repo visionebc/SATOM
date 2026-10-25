@@ -5,10 +5,14 @@ holds instead of synthetic rows: the rows of the curated datasets, the rows
 of the data stores, and the lists a ``satom_select`` field offers. Every row
 comes through the path a view's render takes here:
 
-* datasets run their fixed SELECT through ``plugin_sandbox.load_datasets``,
-  i.e. ``dbintrospect.run_query`` (read-only, sensitive columns masked,
-  values as text) and are cut to what the token's OWNER may see (visible
-  appliances, the token's ADOM, the audit log only with ``audit.view``);
+* datasets come through ``plugin_datasets.load_datasets`` -- a built-in one's
+  fixed SELECT through ``dbintrospect.run_query`` (read-only, sensitive
+  columns masked, values as text), an administrator's query through
+  ``db_lookup``, a device-object type from the cache with its secret fields
+  masked -- cut to what the token's OWNER may see (visible appliances, the
+  token's ADOM, the audit log only with ``audit.view``). Without
+  ``datasets`` the built-in and administrator ones are sent; a device-object
+  dataset only when named;
 * data stores are what a Plugin Studio author already reads on the Data
   stores page: declared columns plus ``_id``, never the ``_by`` user names;
 * the ``satom_select`` lists are ``studio_satom.source_options``, which is
@@ -66,13 +70,17 @@ def _fit(rows: list, budget: int) -> list:
 def sample(datasets=None, stores=None, limit=DEFAULT_LIMIT) -> dict:
     """The rows, for the request's ``current_user`` (the token's owner)."""
     from flask import g
-    from . import plugin_sandbox as PS
+    from . import plugin_datasets as PD
     from . import studio_satom as S
     from . import studio_store as SS
     from ..version import app_version
 
     limit = clean_limit(limit)
-    ds_keys, ds_unknown = _names(datasets, PS.DATASETS)
+    catalog = {d["key"]: d for d in PD.catalog()}
+    # absent = the built-in and administrator datasets; a device-object
+    # dataset (about 600 of them) is sent only when named
+    default = [k for k, d in catalog.items() if d["source"] != "objects"]
+    ds_keys, ds_unknown = _names(datasets, catalog) if datasets is not None else (default, [])
     store_slugs = [s.slug for s in SS.StudioDataStore.query.order_by(SS.StudioDataStore.slug).all()]
     st_keys, st_unknown = _names(stores, store_slugs)
     budget = MAX_BYTES
@@ -82,13 +90,14 @@ def sample(datasets=None, stores=None, limit=DEFAULT_LIMIT) -> dict:
            "limit": limit, "datasets": {}, "stores": {}, "sources": {},
            "unknown": {"datasets": ds_unknown, "stores": st_unknown}}
 
-    loaded = PS.load_datasets(ds_keys)
+    loaded = PD.load_datasets(ds_keys)
     for key in ds_keys:
-        d = loaded.get(key) or {"columns": PS.dataset_columns(key), "rows": []}
+        cols = list(catalog[key]["columns"])
+        d = loaded.get(key) or {"columns": cols, "rows": []}
         rows = list(d.get("rows") or [])
         kept = _fit(rows[:limit], budget)
         budget -= _size(kept)
-        entry = {"columns": list(d.get("columns") or PS.dataset_columns(key)), "rows": kept,
+        entry = {"columns": list(d.get("columns") or cols), "rows": kept,
                  "total": len(rows), "truncated": len(kept) < len(rows)}
         if d.get("error"):
             entry["error"] = str(d["error"])[:200]

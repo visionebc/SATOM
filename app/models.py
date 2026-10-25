@@ -2835,6 +2835,50 @@ class PluginPublisher(db.Model):
         return f"<PluginPublisher {self.key_id[:12]} {self.label!r}>"
 
 
+class PluginDataset(db.Model):
+    """A dataset an administrator built for plugins (Administrator › Database ›
+    Plugin datasets), next to the built-in ones and the device-object ones
+    (``services.plugin_datasets``).
+
+    ``spec`` is a Report Builder query (JSON: base, joins, columns, filters,
+    order, limit) run through ``services.db_lookup`` -- catalogue-checked
+    identifiers, sensitive columns refused, the read-only console role, the
+    ADOM scope added by the server. ``key`` is what a plugin declares
+    (``admin.<slug>``). ``product`` limits it to one ADOM ('' = every ADOM).
+    Only a ``published`` dataset is offered to plugins; a ``pending`` one came
+    in with an imported package and waits for an administrator.
+    """
+
+    __tablename__ = "plugin_datasets"
+
+    STATUSES = ("draft", "published", "pending")
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    label = db.Column(db.String(120), nullable=False, default="")
+    description = db.Column(db.Text, nullable=False, default="")
+    spec = db.Column(db.Text, nullable=False, default="{}")
+    product = db.Column(db.String(32), nullable=False, default="")
+    status = db.Column(db.String(16), nullable=False, default="draft")
+    source = db.Column(db.String(120), nullable=False, default="")   # "" or the package that brought it
+    created_by = db.Column(db.String(64), nullable=False, default="")
+    updated_by = db.Column(db.String(64), nullable=False, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                           nullable=False)
+
+    @property
+    def spec_dict(self) -> dict:
+        try:
+            v = json.loads(self.spec or "{}")
+            return v if isinstance(v, dict) else {}
+        except Exception:
+            return {}
+
+    def __repr__(self) -> str:
+        return f"<PluginDataset {self.key} {self.status}>"
+
+
 # ---------------------------------------------------------------------------
 # Lua Script Studio — author / lint / analyze / deploy Lua for FortiWeb/ADC
 # ---------------------------------------------------------------------------

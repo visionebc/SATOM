@@ -8,6 +8,35 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Every cached device object is a plugin dataset.** Requested: "create
+  the 600, plus what the administrator creates, so there are examples and
+  if something is missing an administrator can create it; the Builder must
+  receive these datasets so both are in line". One dataset per object type
+  the device cache holds, for every product (FortiWeb, FortiGate, FortiADC,
+  FortiAnalyzer, FortiAuthenticator; 603 on the lab fleet), generated, with
+  keys a view reads directly (`{{ fortiweb_vip.rows }}`,
+  `fortigate_firewall_policy`, `fortiadc_load_balance_pool__pool_member`):
+  `id`, `appliance_id`, `device`, `mkey`, `parent_id` and the object's own
+  fields, secret-named fields masked, rows cut to the viewer's ADOM and
+  devices. Relations (to the fleet, to a parent object, to a type a field is
+  named after) come with them.
+- **Plugin datasets an administrator builds** (Administrator › Database ›
+  Plugin datasets): the Report Builder's no-SQL query, a preview of what a
+  plugin reads, draft or published, per ADOM or every ADOM; key
+  `admin_<name>`. Runs as the read-only console role with the viewer's ADOM
+  added by the server. Needs the Plugin Studio permission.
+- **The plugin editor's dataset picker** is grouped (built-in, administrator,
+  one group per product and object family) and searchable; the Python
+  console offers the same datasets.
+- **A view carries the administrator datasets it reads.** Export writes their
+  definitions in the package (`dataset_defs`); an import into a server that
+  lacks one creates it *pending approval* instead of dropping it, and says so.
+- **SATOM Builder gets all of it:** `/builder/library` lists every dataset
+  with its source, columns, relations and how it is built;
+  `/builder/target` offers every key; `/builder/data` sends any of them
+  (the built-in and administrator ones by default, a device-object one when
+  named).
+
 - **`GET /api/v1/builder/data`:** SATOM Builder starts an author's test data
   from this server's data instead of synthetic rows. Requested: "add the data
   we have in SATOM to the Builder so something already exists". The answer is

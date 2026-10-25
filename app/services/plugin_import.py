@@ -191,8 +191,22 @@ def _install_view(pk: P.Package, by: str, allow_downgrade: bool) -> dict:
         raise ImportRefused("%s %s is installed and %s is older (tick “Allow downgrade”)"
                             % (pk.slug, existing.pkg_version, pk.version))
     wanted = [str(k) for k in pk.manifest.get("datasets") or []]
-    ds = [k for k in wanted if k in sandbox.DATASETS]
-    dropped = [k for k in wanted if k not in sandbox.DATASETS]
+    from . import plugin_datasets as PD
+    defs = {str(d.get("key")): d for d in pk.manifest.get("dataset_defs") or []
+            if isinstance(d, dict)}
+    ds, dropped, pending, refused = [], [], [], []
+    for k in wanted:
+        if PD.declarable([k]):
+            ds.append(k)
+        elif k in defs:
+            why = PD.create_pending(defs[k], by=by, source="%s %s" % (pk.slug, pk.version))
+            if why:
+                refused.append("%s (%s)" % (k, why))
+            else:
+                ds.append(k)
+                pending.append(k)
+        else:
+            dropped.append(k)
     if existing is None:
         from .product_scope import ProductScopeUnresolved
         try:
@@ -218,7 +232,7 @@ def _install_view(pk: P.Package, by: str, allow_downgrade: bool) -> dict:
     if plugin.status == "published":
         # The publish gate holds for an update too: a body that no longer
         # renders goes back to testing instead of breaking Custom Views.
-        data = sandbox.load_datasets(plugin.datasets)
+        data = PD.load_datasets(plugin.datasets)
         _html, err = sandbox.safe_render(plugin.jinja, data,
                                          sandbox.resolve_params(plugin.param_defs, {}))
         if err:
@@ -227,6 +241,13 @@ def _install_view(pk: P.Package, by: str, allow_downgrade: bool) -> dict:
     db.session.commit()
     if dropped:
         warnings.append("datasets this server does not have were dropped: " + ", ".join(dropped))
+    if refused:
+        warnings.append("dataset definitions this server refused (the view does not get them): "
+                        + "; ".join(refused))
+    if pending:
+        todo.append("an administrator reviews and publishes %s in Administrator › Database › "
+                    "Plugin datasets (until then the view gets no rows from %s)"
+                    % (", ".join(pending), "it" if len(pending) == 1 else "them"))
     if plugin.status != "published":
         todo.append("preview it and move it through testing to published (Report Studio)")
     return {"plugin": plugin, "updated": existing is not None,

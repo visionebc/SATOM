@@ -17,6 +17,7 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-tables" type="button">{{ _('Tables') }}</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-console" type="button">{{ _('SQL console') }}</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reports" type="button" id="tab-reports-btn">Reports &amp; dashboards</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-plugin-datasets" type="button" id="tab-plugin-datasets-btn">{{ _('Plugin datasets') }}{% set _pending = plugin_datasets|selectattr('status', 'equalto', 'pending')|list|length %}{% if _pending %} <span class="badge bg-warning text-dark">{{ _pending }}</span>{% endif %}</button></li>
 </ul>
 
 <div class="tab-content">
@@ -157,6 +158,76 @@
       {% endif %}
     </div></div>
   </div>
+
+  <!-- Plugin datasets (services.plugin_datasets) -->
+  <div class="tab-pane fade" id="tab-plugin-datasets">
+    <div class="card"><div class="card-body">
+      <div class="d-flex align-items-center mb-2 gap-2 flex-wrap">
+        <p class="text-muted small mb-0 me-auto">{{ _('A plugin never runs SQL: it declares the datasets it reads and SATOM hands it the rows, cut to the ADOM and devices of whoever opens it. Build a dataset here with the same no-SQL query builder as reports; once published, every plugin editor and SATOM Builder offer it (key admin_<name>).') }}</p>
+        {% if can_plugin_datasets %}
+        <a href="{{ url_for('database.plugin_dataset_new') }}" class="btn btn-fw-primary btn-sm text-nowrap" id="pd-new">
+          <i class="bi bi-plus-lg me-1"></i>{{ _('New plugin dataset') }}</a>
+        {% endif %}
+      </div>
+      <div class="alert py-2 px-3 small mb-3" style="background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.25)">
+        <i class="bi bi-collection me-1 text-accent"></i>
+        {{ _('Datasets plugins can read on this server:') }}
+        <strong>{{ dataset_summary.builtin }}</strong> {{ _('built-in') }} ·
+        <strong>{{ dataset_summary.admin }}</strong> {{ _('published here') }} ·
+        <strong>{{ dataset_summary.objects.values()|sum }}</strong> {{ _('device-object datasets, one per object type the device cache holds') }}{% if dataset_summary.objects %} ({% for p, n in dataset_summary.objects|dictsort %}{{ p }} {{ n }}{{ ', ' if not loop.last }}{% endfor %}){% endif %}.
+      </div>
+      {% if not can_plugin_datasets %}
+      <p class="small text-muted">{{ _('Creating and publishing plugin datasets needs the Plugin Studio permission (studio.plugin_studio).') }}</p>
+      {% endif %}
+      {% if plugin_datasets %}
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle" id="pd-table">
+          <thead><tr><th>{{ _('Key') }}</th><th>{{ _('Name') }}</th><th>{{ _('ADOM') }}</th><th>{{ _('Status') }}</th><th>{{ _('Used by') }}</th><th>{{ _('Updated') }}</th><th class="text-end actions-col">{{ _('Actions') }}</th></tr></thead>
+          <tbody>
+          {% for d in plugin_datasets %}
+            {% set used = plugin_dataset_usage.get(d.key, []) %}
+            <tr id="pd-row-{{ d.key }}">
+              <td><code>{{ d.key }}</code></td>
+              <td>{{ d.label }}<div class="small text-muted">{{ (d.description or '')[:120] }}</div></td>
+              <td class="small">{{ d.product or _('every ADOM') }}</td>
+              <td>{% if d.status == 'published' %}<span class="badge bg-success">{{ _('published') }}</span>
+                  {% elif d.status == 'pending' %}<span class="badge bg-warning text-dark" title="{{ _('Came in with an imported package: review the query, then publish it.') }}">{{ _('pending approval') }}</span>{% if d.source %}<div class="small text-muted">{{ d.source }}</div>{% endif %}
+                  {% else %}<span class="badge bg-secondary">{{ _('draft') }}</span>{% endif %}</td>
+              <td class="small">{{ used|join(', ') or '—' }}</td>
+              <td class="small text-muted">{{ d.updated_at.strftime('%Y-%m-%d %H:%M') if d.updated_at else '—' }} · {{ d.updated_by or d.created_by }}</td>
+              <td class="text-end actions-col"><div class="fw-row-actions">
+                {% if can_plugin_datasets %}
+                <a class="btn btn-sm btn-outline-secondary btn-sm-icon" href="{{ url_for('database.plugin_dataset_edit', ds_id=d.id) }}" title="{{ _('Edit') }}" aria-label="{{ _('Edit') }} {{ d.key }}"><i class="bi bi-pencil"></i></a>
+                <form method="post" action="{{ url_for('database.plugin_dataset_status', ds_id=d.id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  {% if d.status == 'published' %}
+                  <input type="hidden" name="status" value="draft">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon" title="{{ _('Unpublish') }}" aria-label="{{ _('Unpublish') }} {{ d.key }}"><i class="bi bi-eye-slash"></i></button>
+                  {% else %}
+                  <input type="hidden" name="status" value="published">
+                  <button type="submit" class="btn btn-sm btn-outline-primary btn-sm-icon" title="{{ _('Publish') if d.status == 'draft' else _('Approve and publish') }}" aria-label="{{ _('Publish') }} {{ d.key }}"><i class="bi bi-check2-circle"></i></button>
+                  {% endif %}
+                </form>
+                <form method="post" action="{{ url_for('database.plugin_dataset_delete', ds_id=d.id) }}" class="d-inline js-del-dataset">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="{{ _('Delete') }}" aria-label="{{ _('Delete') }} {{ d.key }}"><i class="bi bi-trash"></i></button>
+                </form>
+                {% endif %}
+              </div></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-4" id="pd-empty">
+        <i class="bi bi-collection" style="font-size:2rem;"></i>
+        <p class="mt-2 mb-1">{{ _('No plugin datasets built here yet.') }}</p>
+        <p class="small">{{ _('Plugins can already read the built-in and device-object datasets. Build one here when a plugin needs something else: a join, a filter, a total.') }}</p>
+      </div>
+      {% endif %}
+    </div></div>
+  </div>
 </div>
 
 <script nonce="{{ csp_nonce }}" id="er-data" type="application/json">{"tables": {{ tables|tojson }}, "edges": {{ edges|tojson }}}</script>
@@ -232,6 +303,15 @@
   document.querySelectorAll('.js-del-report').forEach(function(f){
     f.addEventListener('submit', function(ev){
       if(!confirm('Delete this report?')) ev.preventDefault();
+    });
+  });
+  if(location.hash==='#tab-plugin-datasets'){
+    var pbtn=document.getElementById('tab-plugin-datasets-btn');
+    if(pbtn && window.bootstrap){ new bootstrap.Tab(pbtn).show(); }
+  }
+  document.querySelectorAll('.js-del-dataset').forEach(function(f){
+    f.addEventListener('submit', function(ev){
+      if(!confirm('Delete this plugin dataset?')) ev.preventDefault();
     });
   });
 })();

@@ -149,11 +149,12 @@ def edit(slug):
     if script is None:
         abort(404)
     from ..services import sandbox, plugin_sandbox, py_examples
+    from ..services import plugin_datasets as PD
     from ..services import studio_examples as EX
     console = current_user.can("studio.python_console")
     return render_template("script_library/edit.html", script=script,
                            console=console, template=EX.is_template("script", slug),
-                           datasets=plugin_sandbox.dataset_catalog() if console else [],
+                           datasets=PD.picker() if console else [],
                            examples=py_examples.all_examples() if console else [],
                            vault_ok=SV.available(),
                            cred_status=SV.status(slug, script.get("credentials") or []),

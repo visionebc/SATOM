@@ -19,7 +19,7 @@ from flask import (Blueprint, Response, abort, flash, jsonify, redirect,
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_any_permission, require_permission
-from ..services import plugin_sandbox
+from ..services import plugin_datasets as PD
 from ..services import py_console as pyc
 from ..services import py_examples
 from ..services.audit import log_action
@@ -84,7 +84,7 @@ def index():
         apis=apis,
         apps=SA.list_rows() if can_library else [],
         runs=SL.recent_runs(limit=15) if can_library else [],
-        datasets=plugin_sandbox.dataset_catalog() if can_console else [],
+        datasets=PD.picker() if can_console else [],
         examples=py_examples.all_examples() if can_console else [],
         bundles=_bundles() if can_library else [],
         sandbox_ok=sandbox.available())
@@ -132,10 +132,9 @@ def console_run():
     body = request.get_json(silent=True) or {}
     source = (body.get("source") or "")[:100_000]
     req_keys = body.get("datasets") or []
-    known = {d["key"] for d in plugin_sandbox.dataset_catalog()}
     # dedupe + keep only entitled dataset keys -- a client can never widen access
-    keys = [k for k in dict.fromkeys(req_keys) if k in known]
-    bundle = plugin_sandbox.load_datasets(keys)
+    keys = PD.known(dict.fromkeys(str(k) for k in req_keys))
+    bundle = PD.load_datasets(keys)
     result = pyc.run_python(source, bundle)
     log_action("py_console.run", target="python-console", extra={
         "datasets": keys,

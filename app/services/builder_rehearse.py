@@ -73,9 +73,10 @@ def _missing(spec: dict, body: dict) -> list[dict]:
 
 
 def _render_view(pk: P.Package, inputs: dict) -> dict:
+    from . import plugin_datasets as PD
     from . import plugin_sandbox as sandbox
-    keys = [k for k in pk.manifest.get("datasets") or [] if k in sandbox.DATASETS]
-    data = sandbox.load_datasets(keys)
+    keys = PD.known(pk.manifest.get("datasets") or [])
+    data = PD.load_datasets(keys)
     pdefs = sandbox.clean_param_defs(pk.manifest.get("params") or [])
     params = sandbox.resolve_params(pdefs, sandbox.param_args(inputs))
     html, err = sandbox.safe_render(pk.text("body.jinja"), data, params)

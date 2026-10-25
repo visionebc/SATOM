@@ -20,6 +20,7 @@ from flask_login import login_required, current_user
 from ..extensions import db
 from ..models import Plugin, Permission
 from ..services import plugin_sandbox as sandbox
+from ..services import plugin_datasets as PD
 from ..services import plugin_examples as examples
 from ..services import plugin_package as pkgfmt
 from ..services import plugin_code
@@ -70,7 +71,7 @@ def index():
                .order_by(Plugin.updated_at.desc()).all())
     from flask import current_app
     return render_template("plugins/list.html", plugins=plugins,
-                           datasets=sandbox.dataset_catalog(),
+                           datasets=PD.picker(),
                            code_plugins=plugin_code.overview(current_app))
 
 
@@ -78,7 +79,7 @@ def index():
 @superadmin_required
 def new():
     return render_template("plugins/editor.html", plugin=None,
-                           datasets=sandbox.dataset_catalog(),
+                           datasets=PD.picker(),
                            examples_json=_examples_json(),
                            params_json="[]",
                            device_options_json=_dev_opts_json(),
@@ -90,7 +91,7 @@ def new():
 def edit(pid):
     plugin = _plugin_or_404(pid)
     return render_template("plugins/editor.html", plugin=plugin,
-                           datasets=sandbox.dataset_catalog(),
+                           datasets=PD.picker(),
                            examples_json=_examples_json(),
                            params_json=json.dumps(plugin.param_defs).replace("</", "<\\/"),
                            device_options_json=_dev_opts_json(),
@@ -108,7 +109,7 @@ def save(pid=None):
         flash("A name is required.", "error")
         return redirect(url_for("plugins.new"))
     ds = f.getlist("datasets")
-    ds = [k for k in ds if k in sandbox.DATASETS]  # entitlement filter
+    ds = PD.declarable(ds)  # entitlement filter: every source, this ADOM
     if pid:
         plugin = _plugin_or_404(pid)
     else:
@@ -151,7 +152,7 @@ def set_status(pid):
             flash("Move the view to “testing” and preview it before publishing.",
                   "error")
             return redirect(url_for("plugins.edit", pid=plugin.id))
-        data = sandbox.load_datasets(plugin.datasets)
+        data = PD.load_datasets(plugin.datasets)
         params = sandbox.resolve_params(plugin.param_defs, {})
         _html, err = sandbox.safe_render(plugin.jinja, data, params)
         if err:
@@ -199,7 +200,7 @@ def frame(pid):
         abort(403)  # live-render of arbitrary source is an author-only tool
     src = live if live is not None else plugin.jinja
     keys = plugin.datasets
-    data = sandbox.load_datasets(keys)
+    data = PD.load_datasets(keys)
     params = sandbox.resolve_params(plugin.param_defs, request.args)
     html, _err = sandbox.safe_render(src, data, params)
     doc = _frame_document(plugin, html, data, params)
@@ -221,8 +222,8 @@ def frame(pid):
 def preview():
     """Render an UNSAVED body (live editor preview) and return the document."""
     src = request.form.get("jinja") or ""
-    keys = [k for k in request.form.getlist("datasets") if k in sandbox.DATASETS]
-    data = sandbox.load_datasets(keys)
+    keys = PD.known(request.form.getlist("datasets"))
+    data = PD.load_datasets(keys)
     pdefs = sandbox.clean_param_defs(request.form.get("params"))
     params = sandbox.resolve_params(pdefs, request.form)
     html, err = sandbox.safe_render(src, data, params)

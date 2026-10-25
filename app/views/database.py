@@ -26,7 +26,7 @@ from ..services import report_builder
 from ..services.csv_safe import spreadsheet_safe
 from ..services.audit import log_action
 from ..extensions import db
-from ..models import DbReport
+from ..models import DbReport, PluginDataset
 
 bp = Blueprint("database", __name__, url_prefix="/database")
 
@@ -56,12 +56,17 @@ def _refuse_confined_profiles():
 @login_required
 @require_permission("user_manage")
 def index():
+    from ..services import plugin_datasets as PD
     rel = dbintrospect.relations()
     reports = DbReport.query.order_by(DbReport.updated_at.desc()).all()
     return render_template("database/index.html",
                            tables=rel["tables"], edges=rel["edges"],
                            table_names=[t["name"] for t in rel["tables"]],
-                           reports=reports)
+                           reports=reports,
+                           plugin_datasets=PluginDataset.query.order_by(PluginDataset.key).all(),
+                           plugin_dataset_usage=_dataset_usage(),
+                           dataset_summary=PD.summary(""),
+                           can_plugin_datasets=_can_plugin_datasets())
 
 
 @bp.route("/table")
@@ -287,3 +292,172 @@ def legacy_scripts(rest):
     if request.query_string:
         target += "?" + request.query_string.decode("latin-1")
     return redirect(target, code=308)
+
+
+# ---------------------------------------------------------------------------
+# Plugin datasets (services.plugin_datasets): an administrator's query,
+# published for plugins and pulled by SATOM Builder.
+# ---------------------------------------------------------------------------
+def _can_plugin_datasets() -> bool:
+    from flask_login import current_user
+    return bool(getattr(current_user, "is_authenticated", False)
+                and current_user.can("studio.plugin_studio"))
+
+
+def _need_plugin_datasets():
+    from flask import abort
+    if not _can_plugin_datasets():
+        abort(403)
+
+
+def _dataset_usage() -> dict:
+    """``{dataset key: [plugin slugs]}`` over every ADOM's plugins."""
+    from ..models import Plugin
+    out: dict = {}
+    for p in Plugin.query.all():
+        for k in p.datasets:
+            out.setdefault(k, []).append(p.slug)
+    return out
+
+
+def _dataset_form(ds):
+    rel = dbintrospect.relations()
+    from ..services.plugin_datasets import PRODUCTS
+    return render_template("database/plugin_dataset_edit.html", ds=ds,
+                           table_names=[t["name"] for t in rel["tables"]],
+                           builder_catalog=report_builder.catalog(), products=PRODUCTS,
+                           used_by=_dataset_usage().get(ds.key, []) if ds else [])
+
+
+@bp.route("/plugin-datasets/new")
+@login_required
+@require_permission("user_manage")
+def plugin_dataset_new():
+    _need_plugin_datasets()
+    return _dataset_form(None)
+
+
+@bp.route("/plugin-datasets/<int:ds_id>/edit")
+@login_required
+@require_permission("user_manage")
+def plugin_dataset_edit(ds_id: int):
+    _need_plugin_datasets()
+    return _dataset_form(PluginDataset.query.get_or_404(ds_id))
+
+
+@bp.route("/plugin-datasets/preview", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def plugin_dataset_preview():
+    """What a plugin would read from this query, for the signed-in
+    administrator's ADOM: the column names a view uses and the first rows."""
+    from ..services import db_lookup
+    from ..services import plugin_datasets as PD
+    _need_plugin_datasets()
+    body = request.get_json(silent=True) or {}
+    try:
+        clean = PD.clean_admin(body.get("key") or "preview", body.get("label") or "preview", "",
+                               body.get("spec"), body.get("product") or "")
+        entry = {"key": clean["key"], "source": "admin", "spec": clean["spec"],
+                 "columns": PD.admin_columns(clean["spec"])}
+        data = PD.load([entry], None)[clean["key"]]
+    except (PD.DatasetError, db_lookup.LookupError_) as exc:
+        return jsonify({"ok": False, "errors": [str(exc)]}), 400
+    if data.get("error"):
+        return jsonify({"ok": False, "errors": [data["error"]]}), 400
+    sql, _errs = report_builder.build_sql(clean["spec"])
+    return jsonify({"ok": True, "key": clean["key"], "columns": data["columns"],
+                    "rows": data["rows"][:20], "row_count": len(data["rows"]), "sql": sql})
+
+
+@bp.route("/plugin-datasets/save", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def plugin_dataset_save():
+    from flask_login import current_user
+    from ..services import plugin_datasets as PD
+    _need_plugin_datasets()
+    body = request.get_json(silent=True) or {}
+    try:
+        clean = PD.clean_admin(body.get("key"), body.get("label"), body.get("description"),
+                               body.get("spec"), body.get("product"))
+    except PD.DatasetError as exc:
+        return jsonify({"ok": False, "errors": [str(exc)]}), 400
+    status = body.get("status") if body.get("status") in ("draft", "published") else "draft"
+    who = getattr(current_user, "username", "") or ""
+    ds_id = body.get("id")
+    other = PluginDataset.query.filter_by(key=clean["key"]).first()
+    if ds_id:
+        ds = PluginDataset.query.get_or_404(int(ds_id))
+        if ds.key != clean["key"]:
+            return jsonify({"ok": False, "errors": [
+                "The key cannot change: plugins name the dataset by it. Create a new one."]}), 400
+        action = "plugin_dataset.update"
+    else:
+        if other is not None:
+            return jsonify({"ok": False, "errors": ["%s already exists." % clean["key"]]}), 400
+        ds = PluginDataset(key=clean["key"], created_by=who)
+        db.session.add(ds)
+        action = "plugin_dataset.create"
+    import json as _json
+    ds.label = clean["label"]
+    ds.description = clean["description"]
+    ds.spec = _json.dumps(clean["spec"])
+    ds.product = clean["product"]
+    ds.status = status
+    ds.updated_by = who
+    db.session.commit()
+    log_action(action, target=ds.key, extra={"status": status, "product": ds.product,
+                                             "base": clean["spec"].get("base")})
+    return jsonify({"ok": True, "id": ds.id, "key": ds.key,
+                    "back_url": url_for("database.index") + "#tab-plugin-datasets"})
+
+
+@bp.route("/plugin-datasets/<int:ds_id>/status", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def plugin_dataset_status(ds_id: int):
+    """Publish (also approves one an imported package brought) or unpublish."""
+    from ..services import plugin_datasets as PD
+    _need_plugin_datasets()
+    ds = PluginDataset.query.get_or_404(ds_id)
+    new = request.form.get("status")
+    if new not in ("draft", "published"):
+        flash("Unknown status.", "warning")
+        return redirect(url_for("database.index") + "#tab-plugin-datasets")
+    if new == "published":
+        try:
+            PD.clean_admin(ds.key, ds.label or ds.key, "", ds.spec_dict, ds.product)
+        except PD.DatasetError as exc:
+            flash("%s cannot be published: %s" % (ds.key, exc), "error")
+            return redirect(url_for("database.plugin_dataset_edit", ds_id=ds.id))
+    before = ds.status
+    ds.status = new
+    db.session.commit()
+    log_action("plugin_dataset.status", target=ds.key, extra={"from": before, "to": new})
+    used = _dataset_usage().get(ds.key, [])
+    msg = "%s is now %s." % (ds.key, new)
+    if new == "draft" and used:
+        msg += " Plugins that read it now get no rows from it: " + ", ".join(used) + "."
+    flash(msg, "warning" if new == "draft" and used else "success")
+    return redirect(url_for("database.index") + "#tab-plugin-datasets")
+
+
+@bp.route("/plugin-datasets/<int:ds_id>/delete", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def plugin_dataset_delete(ds_id: int):
+    _need_plugin_datasets()
+    ds = PluginDataset.query.get_or_404(ds_id)
+    used = _dataset_usage().get(ds.key, [])
+    if used:
+        flash("%s is read by %s: remove it from those plugins first (or unpublish it)."
+              % (ds.key, ", ".join(used)), "warning")
+        return redirect(url_for("database.index") + "#tab-plugin-datasets")
+    key = ds.key
+    db.session.delete(ds)
+    db.session.commit()
+    log_action("plugin_dataset.delete", target=key)
+    flash("%s deleted." % key, "info")
+    return redirect(url_for("database.index") + "#tab-plugin-datasets")
+

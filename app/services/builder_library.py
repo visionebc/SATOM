@@ -2,8 +2,8 @@
 (contract section 14). Structure only: names, columns, operations, fields.
 Never a row of data, never a secret.
 
-* ``datasets`` -- the curated datasets a view reads (label, description and
-  the columns its rows carry: ``plugin_sandbox.dataset_columns``);
+* ``datasets`` -- every dataset a view reads (``plugin_datasets``: built-in,
+  administrator, device objects), with its columns and relations;
 * ``stores`` -- the data stores this server has, with their full column
   definitions (an app's store steps read and write these);
 * ``apis`` -- the API Catalog: every API, its versions and their endpoints,
@@ -29,9 +29,13 @@ def products_for(adom: str) -> list[str]:
 
 
 def datasets() -> list[dict]:
-    from . import plugin_sandbox as PS
-    return [{"key": k, "label": v[0], "description": v[1], "columns": PS.dataset_columns(k)}
-            for k, v in PS.DATASETS.items()]
+    """Every dataset of the token's ADOM (built-in, administrator, device
+    objects) with its columns, relations, group and, for a built-in one, its
+    fixed SQL; an administrator dataset says how it is built (its query)."""
+    from . import plugin_datasets as PD
+    keep = ("key", "label", "description", "columns", "source", "group", "product",
+            "relations", "masked", "sql", "spec", "object")
+    return [{k: d[k] for k in keep if k in d} for d in PD.catalog()]
 
 
 def stores() -> dict:

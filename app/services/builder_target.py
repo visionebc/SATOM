@@ -33,10 +33,10 @@ def caller(owner, scopes=None) -> dict:
 
 
 def choices() -> dict:
-    from . import plugin_sandbox as sandbox
+    from . import plugin_datasets as PD
     from . import studio_apps as SA
     out = dict(SA.choices())
-    out["datasets"] = list(sandbox.DATASETS)
+    out["datasets"] = PD.keys()          # every source, the token's ADOM
     return out
 
 

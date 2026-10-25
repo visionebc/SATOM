@@ -1063,6 +1063,15 @@ Structure only, never a row of data and never a secret:
                                          "cli_measured": true, "in_fleet": true}]}}}
 ```
 
+`datasets` is every dataset a plugin can read in the token's ADOM (built-in,
+administrator and device-object, user guide §23.1.1). Each entry carries
+`source` (`builtin` | `admin` | `objects`), `group` (for pickers), `product`
+('' = any), `columns`, `relations` (`[{"column", "to", "to_column",
+"inferred"}]`) and `masked` (the fields read as `********`); a built-in one its
+fixed `sql`, an administrator one its `spec` (the Report Builder query, which a
+package carries in `dataset_defs`), a device-object one its `object`
+(`{"product", "layer", "logical_name"}`).
+
 `fortinet` covers the token's ADOM (every product for `global`).
 
 ### `GET /builder/library/fortinet/<product>/<version>`
@@ -1079,10 +1088,12 @@ token's ADOM is 403 `wrong_product`.
 This server's rows, for the Builder's test data (contract §15). `read`
 scope; the owner must be a Plugin Studio author (`studio.script_library`),
 else 403 `owner_forbidden`. Query: `datasets` and `stores` (comma lists;
-absent = all, empty = none), `limit` (rows per table, 1 to 2000, default 200).
+empty = none; `stores` absent = all; `datasets` absent = the built-in and
+administrator datasets, a device-object dataset only when named), `limit`
+(rows per table, 1 to 2000, default 200).
 
 ```json
-{"format": "satom.builder-data/1", "satom_version": "4.2.1", "product": "fortiweb",
+{"format": "satom.builder-data/1", "satom_version": "4.3.0", "product": "fortiweb",
  "taken_at": "2026-10-25T14:00:00+00:00", "limit": 200,
  "datasets": {"fleet_appliances": {"columns": ["id", "name", "kind", "firmware", "host", "port"],
                                    "rows": [{"id": "1", "name": "fwb-a", "...": "..."}],

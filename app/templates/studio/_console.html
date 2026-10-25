@@ -15,15 +15,20 @@
       <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-collection me-2 text-accent"></i>{{ _('Data bundle') }}</span></div>
       <div class="fw-card-body">
         <p class="text-muted small mb-2">{{ _('Ticked datasets arrive as data[key], each {columns, rows} with rows as a list of dicts.') }}</p>
-        <div id="pyc-ds-list">
-          {% for d in datasets %}
-          <div class="form-check mb-2">
-            <input class="form-check-input pyc-ds" type="checkbox" value="{{ d.key }}" id="pyc-ds-{{ d.key }}">
-            <label class="form-check-label" for="pyc-ds-{{ d.key }}">
-              <code>{{ d.key }}</code>
-              <span class="d-block text-muted" style="font-size:11px;line-height:1.3;">{{ d.description }}</span>
-            </label>
-          </div>
+        <div id="pyc-ds-list" style="max-height:520px;overflow:auto">
+          {% for group, items in datasets|groupby('group') %}
+          <details class="mb-1" {{ 'open' if group == 'Built-in' }}>
+            <summary class="small fw-semibold">{{ group }} <span class="text-muted">({{ items|length }})</span></summary>
+            {% for d in items %}
+            <div class="form-check mb-2">
+              <input class="form-check-input pyc-ds" type="checkbox" value="{{ d.key }}" id="pyc-ds-{{ d.key }}">
+              <label class="form-check-label" for="pyc-ds-{{ d.key }}">
+                <code>{{ d.key }}</code>
+                <span class="d-block text-muted" style="font-size:11px;line-height:1.3;">{{ d.description }}</span>
+              </label>
+            </div>
+            {% endfor %}
+          </details>
           {% endfor %}
         </div>
       </div>

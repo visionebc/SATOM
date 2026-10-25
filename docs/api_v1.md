@@ -417,12 +417,11 @@ Every error is JSON with an `error` code (and usually a `message`).
 | 403 | `wrong_product` | Token's ADOM cannot touch that action's product |
 | 403 | `destructive_blocked` | Firmware upgrade/flash/reboot — never allowed via API |
 | 404 | `not_found` | No such action / run (or not visible to this token) |
-| 409 | `disabled` | The action — or the process — is disabled |
+| 409 | `disabled` | The action is disabled |
 | 409 | `already_running` | The action is already running |
 | 403 | `capability_denied` | `"armed": true` on an app run without `app_arm` (§16) |
-| 403 | `not_granted` | The token holds no grant for this process / app (§14, §16) |
-| 403 | `grant_paused` | The process / app changed after it was granted; an administrator must re-approve it (§14, §16) |
-| 400 | `appliance_required` / `invalid_diagram` | A process walk needs a device, or its diagram cannot run yet (§14) |
+| 403 | `not_granted` | The token holds no grant for this app (§16) |
+| 403 | `grant_paused` | The app changed after it was granted; an administrator must re-approve it (§16) |
 | 400 | `bad_request` | The body is not a JSON object (or a field in it has the wrong type) |
 | 400 | `app_error` | The app refused the run: a required input missing, a value not offered, too many runs (§16) |
 | 409 | `unpublished` | The app has no published version (§16) |

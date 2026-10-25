@@ -231,7 +231,7 @@
           : '');
     var note = dev.hw
       ? '<div class="mon-note"><i class="bi bi-clock-history me-1"></i>' + esc(dev.freshness) + '</div>'
-      : '<div class="mon-note"><i class="bi bi-cpu me-1"></i>no hardware inventory · ' + esc(dev.freshness) + '</div>';
+      : '<div class="mon-note"><i class="bi bi-cpu me-1"></i>no hardware inventory — use “Scan hardware (SSH)” above; rediscovery does not collect it · ' + esc(dev.freshness) + '</div>';
     return '<div class="fw-card dh-dev st-' + w + '" role="button" tabindex="0" data-dev="' + dev.id + '"' +
       ' aria-label="' + esc(dev.name) + ' — ' + STATUS_LABEL[w] + '"><div class="fw-card-body">' +
       '<div class="d-flex justify-content-between align-items-start gap-2">' +

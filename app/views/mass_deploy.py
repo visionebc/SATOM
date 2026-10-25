@@ -53,7 +53,7 @@ def index():
         if selected is not None:
             devices = md.device_rows(selected, product)
     return render_template(
-        'mass_deploy/index.html', product=product, supported=supported,
+        'mass_deploy/index.html', product_key=product, supported=supported,
         entries=entries, selected=selected,
         selected_scope=md.scope_info(selected) if selected is not None else None,
         secret_fields=(secret_mask.secret_fields(iter_push_items(selected.body_dict))

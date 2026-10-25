@@ -75,7 +75,7 @@ says "in NAF terms this is …" where the two differ.
 | <img src="img/naf-icon-observability-colored.svg" width="18" alt=""> **Observability** — actual state, kept and processed | **Source of Truth** (configuration history), Monitoring (the time-series store), the health engine and alerts, Drift, Sentinel, Scout, Release Advisor | **The main collision.** SATOM's *Source of Truth* is the history of the **actual** configuration of each appliance. In NAF terms that is **Observability**, not Intent. |
 | <img src="img/naf-icon-collector-colored.svg" width="18" alt=""> **Collector** — reading the network | Device sync, Deep capture, Metrics collection (scrape targets), Log collection, the FortiAnalyzer log view | *satom-harvester* is **not** the NAF Collector: it harvests vendor knowledge (API schemas, release notes), not network state. |
 | <img src="img/naf-icon-executor-colored.svg" width="18" alt=""> **Executor** — writing the network | The CLI writer, Policy operations and Clone, Provisioning, write actions, Firmware upgrade, Observatory fix | The code calls a Process node's handler an "executor". That is a Process-engine term, not the NAF Executor. |
-| <img src="img/naf-icon-orchestration-colored.svg" width="18" alt=""> **Orchestrator** — coordinating the blocks | Processes (Studio), Scheduled Actions, Change Requests and the CR orchestrator, Integration hooks | The SATOM *reconciler* is deployment and HA machinery (it brings a node to the released commit); it is not the NAF Orchestrator. |
+| <img src="img/naf-icon-orchestration-colored.svg" width="18" alt=""> **Orchestrator** — coordinating the blocks | Plugin Studio apps (runbooks), Triggers and automations, Scheduled Actions, Change Requests and the CR orchestrator, Integration hooks | The SATOM *reconciler* is deployment and HA machinery (it brings a node to the released commit); it is not the NAF Orchestrator. |
 | <img src="img/naf-icon-presentation-colored.svg" width="18" alt=""> **Presentation** — people and other systems | The web console, the `satom` CLI, API v1, the Documentation Center, notifications (bell, e-mail, webhook, syslog/CEF) | — |
 | <img src="img/naf-icon-infrastructure-colored.svg" width="18" alt=""> **Infrastructure** — the network itself | The managed appliances: FortiWeb, FortiADC, FortiGate, FortiAnalyzer, FortiAuthenticator | Not a block of the automation system. |
 
@@ -127,12 +127,12 @@ baselines (Observability). The user guide says which one it means each time.
 | Observability | SHOULD | A capable query language | met | MetricsQL dashboards (`app/services/vm_store.py`), internal to the console |
 | Observability | SHOULD | Events when the actual state differs from the intended state | met | `app/services/intent_compliance.py` compares each bound device with its rendered template (key-subset diff); the *Intent deviation* check in `app/services/alerts.py` raises the finding and the typed hook event `intent.deviation`; `Config drift` (previous snapshot) remains a separate check |
 | Observability | MAY | Enrichment with contextual and third-party information | met | `app/services/release_advisor.py`, `app/services/drift_attribution.py`, Sentinel (`app/services/sentinel/`) |
-| Orchestrator | MUST | Coordinate processes across the blocks without touching the network directly | met | `app/services/process_engine.py`, `app/services/cr_orchestrator.py` |
-| Orchestrator | SHOULD | Event-driven execution (synchronous, asynchronous, scheduled) | met | A Process declares a trigger event and filter; `app/services/process_triggers.py` starts the walk as a background job (never inside the scheduler tick), one running walk per process and device, rate-limited per process, rehearsal unless *armed on trigger*; hooks (`app/services/integration_hooks.py`), the console, Scheduled Actions and `app/api_v1/processes.py` are the other doors |
-| Orchestrator | SHOULD | Reverse or compensating actions on error | met | The *Compensate* step in `app/services/process_kinds.py` undoes the walk's recorded steps newest first through each domain's own inverse (status flips, `app/services/observatory_fix.py`, `app/services/provision_runner.py`); a step without a recorded inverse is named `unknown`, never guessed |
-| Orchestrator | SHOULD | Dry-run of a workflow | met | Unarmed Process runs (`app/services/process_engine.py`) |
-| Orchestrator | SHOULD | Scheduled execution of a workflow | met | The `run_process` action in `app/services/scheduled_actions.py` walks a Process on any schedule (armed only when the action is armed and change-controlled) |
-| Orchestrator | SHOULD | Logging and traceability of past and current workflows | met | `app/models_process.py` (ProcessRun, ProcessRunStep), `app/models_cr_types.py`, the audit log |
+| Orchestrator | MUST | Coordinate processes across the blocks without touching the network directly | met | `app/services/studio_flow.py` (a Plugin Studio app's diagram walks checks, scripts, SATOM steps and change requests; device writes go through each block's own path), `app/services/cr_orchestrator.py` |
+| Orchestrator | SHOULD | Event-driven execution (synchronous, asynchronous, scheduled) | met | `app/services/trigger_engine.py` starts a *Run a Plugin Studio app* automation as a background job (never inside the scheduler tick), with cooldown and a 3-hop chain limit; an *Ask a person* step parks the run and `app/services/studio_apps.py` resumes it on the answer; hooks (`app/services/integration_hooks.py`), the console and `app/api_v1/apps.py` are the other doors |
+| Orchestrator | SHOULD | Reverse or compensating actions on error | partial | A SATOM step that fails half-way undoes exactly what it created (`app/services/studio_satom.py`); there is no step that reverses the earlier steps of a run (the Process *Compensate* step was removed in 4.0.0) |
+| Orchestrator | SHOULD | Dry-run of a workflow | met | Rehearsal runs and *Simulate* in the app editor (`app/services/studio_apps.py`, `app/services/studio_flow.py`): steps that write are recorded as not executed |
+| Orchestrator | SHOULD | Scheduled execution of a workflow | partial | Script apps run on a cron schedule (`app/services/script_schedules.py`); a flow app runs from an event, the console or the API, not on a schedule (the `run_process` action was removed in 4.0.0) |
+| Orchestrator | SHOULD | Logging and traceability of past and current workflows | met | `app/models_studio.py` (StudioAppRun with its steps, inputs and outputs), `app/models_triggers.py` (EventAutomationRun), `app/models_cr_types.py`, the audit log |
 | Orchestrator | MAY | Correlate events and infer the course of action | partial | Cooldown and `app/services/drift_attribution.py` only |
 | Presentation | MUST | Robust and flexible authentication and authorization | met | Local accounts with TOTP, LDAP and RADIUS (`app/services/directory_auth.py`), RBAC with ADOM scoping (`app/services/access.py`), owner-capped API tokens (`app/models_api_token.py`) |
 | Presentation | MAY | Many forms: GUI, ITSM, messaging, documentation, dashboards | met | The console, NetBox and ticket integrations (`app/services/change_requests.py`), hooks, the Documentation Center (`app/views/manual.py`) |
@@ -152,7 +152,7 @@ pinned commit — the Network Automation Forum issues no certification — and
 it is only as good as the matrix above, which is why every row names its
 evidence and a test checks the file exists.
 
-Three rows are deliberately not `met`, all SHOULD or MAY:
+These rows are deliberately not `met`, all SHOULD or MAY:
 
 1. **Intent — a neutral model derived into vendor artefacts** (`accepted-gap`).
    SATOM is a Fortinet-specific product; its templates are the vendor's own
@@ -163,6 +163,10 @@ Three rows are deliberately not `met`, all SHOULD or MAY:
 3. **Executor — idempotent operations** and **Orchestrator — correlate events**
    (`partial`). Idempotence is designed for but not measured as a property;
    correlation is limited to cooldowns and drift attribution.
+4. **Orchestrator — compensating actions** and **Orchestrator — scheduled
+   execution** (`partial`, since 4.0.0). With the Process section removed, a
+   Plugin Studio step undoes only its own writes, and only script apps run on
+   a schedule.
 
 Scope statements that keep the MUST rows honest: the Collector row is met by
 SNMP v2c polling and a syslog receiver — SNMPv3, traps, flow telemetry and

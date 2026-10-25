@@ -305,6 +305,11 @@ tar xzf satom-offline-<ver>-suse15-x86_64.tar.gz
 cd satom-installer
 sudo bash install-satom.sh        # detects bundle/ and never touches the network
 ```
+A minimal RHEL or SUSE server may have no `tar`: extract the bundle with Python
+(`python3 -m tarfile -e satom-offline-<ver>-<os>.tar.gz .`) and run the guided
+setup (`satom-setup.sh`) from the extracted folder — it installs `tar` from the
+bundle before anything else.
+
 There is a bundle for **Debian 12**, **RHEL/Rocky/Alma 9** and, since **1.3**,
 **openSUSE Leap 15 / SLES 15**. **Arch only has an ONLINE path** — there the
 installer needs egress to the distribution mirrors and to PyPI.

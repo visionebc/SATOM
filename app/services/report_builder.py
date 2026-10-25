@@ -111,19 +111,30 @@ TABLE_CATALOG: dict[str, dict[str, str]] = {
 }
 
 
+def _object_table(name: str) -> dict | None:
+    """The cached-object table ``name`` (services.object_tables), if it is one."""
+    if name in TABLE_CATALOG:
+        return None
+    try:
+        from . import object_tables
+        return object_tables.tables().get(name)
+    except Exception:  # noqa: BLE001 -- no device cache here: no object tables
+        return None
+
+
 def table_label(name: str) -> str:
     """Friendly label for a table (falls back to the raw name)."""
-    entry = TABLE_CATALOG.get(name)
+    entry = TABLE_CATALOG.get(name) or _object_table(name)
     return entry["label"] if entry else name
 
 
 def table_domain(name: str) -> str:
-    entry = TABLE_CATALOG.get(name)
+    entry = TABLE_CATALOG.get(name) or _object_table(name)
     return entry["domain"] if entry else "other"
 
 
 def table_description(name: str) -> str:
-    entry = TABLE_CATALOG.get(name)
+    entry = TABLE_CATALOG.get(name) or _object_table(name)
     return entry["description"] if entry else ""
 
 
@@ -135,9 +146,34 @@ def _relations() -> dict[str, Any]:
     return dbintrospect.relations()
 
 
+def _objects() -> dict[str, dict[str, Any]]:
+    """The device cache's object types as tables (services.object_tables):
+    FortiGate, FortiADC, FortiAnalyzer and FortiAuthenticator have no table of
+    their own."""
+    try:
+        from . import object_tables
+        return object_tables.tables()
+    except Exception:  # noqa: BLE001 -- no device cache here: no object tables
+        logger.exception("report builder: the cached object types are not offered")
+        return {}
+
+
 def _live_tables() -> dict[str, dict[str, Any]]:
-    """{table_name: table_dict} from the live relations()."""
-    return {t["name"]: t for t in _relations()["tables"]}
+    """{table_name: table_dict}: the live relations() plus the cached object
+    types (a real table always wins a name)."""
+    live = {t["name"]: t for t in _relations()["tables"]}
+    for name, t in _objects().items():
+        live.setdefault(name, t)
+    return live
+
+
+def _from(name: str, live: dict[str, dict[str, Any]], needed: set[str] | None = None) -> str:
+    """What a query reads ``name`` from: the table, or the sub-select of a
+    cached object type (only the fields in ``needed``)."""
+    if live.get(name, {}).get("object"):
+        from . import object_tables
+        return object_tables.from_sql(name, needed)
+    return f'"{name}"'
 
 
 def _non_sensitive_cols(table: dict[str, Any]) -> list[dict[str, str]]:
@@ -150,7 +186,10 @@ def _edges() -> list[dict[str, str]]:
     """FK edges with both endpoints on live tables and a non-empty target."""
     live = _live_tables()
     out = []
-    for e in _relations()["edges"]:
+    edges = list(_relations()["edges"])
+    for t in live.values():
+        edges += t.get("edges") or []
+    for e in edges:
         if (e.get("to_table") and e.get("from_table") in live
                 and e.get("to_table") in live and e.get("to_col")):
             out.append(e)
@@ -182,7 +221,13 @@ def catalog() -> dict[str, Any]:
         "to_table": e["to_table"], "to_col": e["to_col"],
         "phrase": _edge_phrase(e), "inferred": bool(e.get("inferred")),
     } for e in _edges()]
-    domains = [{"key": k, "label": v} for k, v in DOMAINS.items()]
+    domains = [{"key": k, "label": v} for k, v in DOMAINS.items() if k != "other"]
+    try:
+        from . import object_tables
+        domains += [{"key": k, "label": v} for k, v in object_tables.domains()]
+    except Exception:  # noqa: BLE001 -- no device cache here
+        pass
+    domains.append({"key": "other", "label": DOMAINS["other"]})
     return {"tables": tables, "edges": edges, "domains": domains}
 
 
@@ -295,8 +340,12 @@ def _valid_col(colmeta, table, col) -> tuple[bool, str]:
 
 
 def _fmt_value(op: str, raw, col_type: str) -> tuple[str, str]:
-    """Return (sql_fragment, error). ``col_type`` unused for now but kept for
-    future numeric coercion decisions."""
+    """Return (sql_fragment, error). ``col_type`` ``json-text`` (a field of
+    a cached object, always text) quotes numbers too: ``'1'``, not ``1``."""
+    scalar = _scalar_value
+    if col_type == "json-text":
+        def scalar(v):
+            return _quote_str("1" if v is True else "0" if v is False else v)
     if op in _NULLARY_OPS:
         return "", ""
     if op == "in":
@@ -304,7 +353,7 @@ def _fmt_value(op: str, raw, col_type: str) -> tuple[str, str]:
             return "", "'in' needs a non-empty list of values"
         parts = []
         for v in raw:
-            fv = _scalar_value(v)
+            fv = scalar(v)
             parts.append(fv)
         return "(" + ", ".join(parts) + ")", ""
     # single scalar
@@ -313,7 +362,29 @@ def _fmt_value(op: str, raw, col_type: str) -> tuple[str, str]:
         if "%" not in s:
             s = f"%{s}%"
         return _quote_str(s), ""
-    return _scalar_value(raw), ""
+    return scalar(raw), ""
+
+
+def _needed_columns(spec: dict, base: str) -> dict[str, set[str]]:
+    """``{table: {column}}`` every part of ``spec`` names: a cached-object
+    table extracts only those fields."""
+    out: dict[str, set[str]] = {}
+
+    def add(t, c):
+        if t and c:
+            out.setdefault(str(t).strip(), set()).add(str(c).strip())
+    for j in spec.get("joins") or []:
+        if isinstance(j, dict):
+            add(j.get("from_table") or base, j.get("from_col"))
+            add(j.get("table"), j.get("to_col"))
+    for key in ("columns", "filters", "group_by"):
+        for c in spec.get(key) or []:
+            if isinstance(c, dict):
+                add(c.get("table") or base, c.get("col"))
+    ob = spec.get("order_by")
+    if isinstance(ob, dict) and ob.get("table"):
+        add(ob.get("table"), ob.get("col"))
+    return out
 
 
 def _scalar_value(v) -> str:
@@ -353,6 +424,7 @@ def build_sql(spec: Any, *, extra_where: list[str] | None = None
     base = str(spec.get("base") or "").strip()
     if base not in live:
         return "", [f"unknown base table '{base}'"]
+    needed = _needed_columns(spec, base)
 
     # ---- joins ------------------------------------------------------------
     used_tables = {base}
@@ -380,7 +452,8 @@ def build_sql(spec: Any, *, extra_where: list[str] | None = None
             errors.append(f"join: {why2}")
             continue
         join_sql.append(
-            f'LEFT JOIN "{jt}" ON {_quote_ident(ft, fc)} = {_quote_ident(jt, tc)}')
+            f'LEFT JOIN {_from(jt, live, needed.get(jt))} '
+            f'ON {_quote_ident(ft, fc)} = {_quote_ident(jt, tc)}')
         used_tables.add(jt)
 
     # ---- columns / select list -------------------------------------------
@@ -447,6 +520,8 @@ def build_sql(spec: Any, *, extra_where: list[str] | None = None
             where_parts.append(f"{ident} {_OPS[op]}")
             continue
         col_type = colmeta[ft][fc].get("type", "")
+        if colmeta[ft][fc].get("json"):
+            col_type = "json-text"
         frag, ferr = _fmt_value(op, f.get("value"), col_type)
         if ferr:
             errors.append(f"filter: {ferr}")
@@ -501,7 +576,7 @@ def build_sql(spec: Any, *, extra_where: list[str] | None = None
         return "", errors
 
     where_parts += list(extra_where or [])
-    sql = "SELECT " + ", ".join(select_parts) + f' FROM "{base}"'
+    sql = "SELECT " + ", ".join(select_parts) + f" FROM {_from(base, live, needed.get(base))}"
     if join_sql:
         sql += " " + " ".join(join_sql)
     if where_parts:
@@ -535,7 +610,7 @@ def column_values(table: str, col: str, cap: int = 25) -> list[str]:
     except (TypeError, ValueError):
         cap = 25
     ident = _quote_ident(table, col)
-    sql = (f'SELECT DISTINCT {ident} FROM "{table}" '
+    sql = (f'SELECT DISTINCT {ident} FROM {_from(table, live, {col})} '
            f'WHERE {ident} IS NOT NULL ORDER BY {ident} LIMIT :cap')
     try:
         result = db.session.execute(text(sql), {"cap": cap})

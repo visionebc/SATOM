@@ -6,7 +6,46 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **FortiGate, FortiADC, FortiAnalyzer and FortiAuthenticator in the query
+  builder, grouped per product.** Requested: "the query builder has things,
+  but nothing of FortiAuthenticator, FortiAnalyzer, FortiGate or ADC; add
+  them, split them per device, and say what they do". Those products have no
+  tables of their own (everything SATOM reads from them is in the generic
+  `device_objects`), so the builder behind Plugin datasets, DB reports and
+  script lookups offered only FortiWeb's curated projections. Every cached
+  object type (603 on the lab fleet, the same types and keys as the object
+  datasets) is now a table of the builder, grouped as `<Product> · <category>`
+  (FortiGate · Firewall policies, FortiADC · Server load balancing,
+  FortiAnalyzer · ADOMs and devices…) with a description of what it is. It
+  compiles to a read-only sub-select over the cache, extracts only the fields
+  the query uses, compares them as text, refuses secret fields and is
+  confined to the viewer's ADOMs like any table. Joins never cross devices: a
+  sub-object reaches its parent by `parent_id`, and a field that names
+  another object (a policy's source address, a group's member, a virtual
+  server's pool) joins it through `<column>_ref` → `object_key`. So "which
+  FortiGate rules use this IP" is one dataset: address → policy srcaddr →
+  policy.
+- **Plugin Studio links to New plugin dataset** (and the Plugin datasets
+  list), next to New app.
+
 ### Fixed
+
+- **Tables that stopped answering for minutes after opening the query
+  builder.** On a1 two web workers stayed `idle in transaction` for 20
+  minutes and `app_ids` and `waf_artifact_ref` stopped answering. The ER
+  model (`dbintrospect.relations()`, behind the query builder and the
+  Database page) counted all ~150 tables in the request's transaction,
+  holding a read lock on every one until the request ended, while its schema
+  reads ran on a second connection; meanwhile every `create_app()` (each tick
+  of every timer) ran `ALTER TABLE … DROP CONSTRAINT IF EXISTS` although
+  there was nothing left to drop. The ALTER queued between the two
+  connections of the request: a deadlock Postgres cannot see, with every
+  reader of the table waiting behind it. Row counts now run in their own
+  short transaction with a 2 s lock timeout, and the boot fixups
+  (`waf_artifact_ref`, `app_ids`, `monitor_probe` NOT NULL, the extra indexes)
+  look first and issue no DDL in steady state.
 
 - **A diagram with the wrong shape is a named problem, not a crash.** A
   SATOM Builder author using a local model (gpt-oss) saw "the package could

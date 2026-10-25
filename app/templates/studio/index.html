@@ -13,10 +13,20 @@
       {{ _('Build apps for operators -- a diagram of steps or a Python script, each with its form -- and try code against the fleet data in a sandboxed console.') }}
       <strong>{{ _('Only Python code is accepted.') }}</strong></p>
   </div>
-  {% if can_library %}
-  <div class="d-flex gap-2">
+  {% set _can_datasets = current_user.can('user_manage') and current_user.can('studio.plugin_studio') %}
+  {% if can_library or _can_datasets %}
+  <div class="d-flex gap-2 flex-wrap">
+    {% if _can_datasets %}
+    <a class="btn btn-outline-secondary" id="ps-new-dataset" href="{{ url_for('database.plugin_dataset_new') }}"
+       title="{{ _('Administrator › Database › Plugin datasets: build a query without SQL and publish it to every plugin and SATOM Builder') }}">
+      <i class="bi bi-collection me-1"></i>{{ _('New plugin dataset') }}</a>
+    <a class="btn btn-outline-secondary" id="ps-datasets" href="{{ url_for('database.index') }}#tab-plugin-datasets">
+      <i class="bi bi-list-ul me-1"></i>{{ _('Plugin datasets') }}</a>
+    {% endif %}
+    {% if can_library %}
     <button type="button" class="btn btn-fw-primary" data-bs-toggle="modal" data-bs-target="#apNewModal">
       <i class="bi bi-plus-lg me-1"></i>{{ _('New app') }}</button>
+    {% endif %}
   </div>
   {% endif %}
 </div>

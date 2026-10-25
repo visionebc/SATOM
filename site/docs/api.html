@@ -540,7 +540,21 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td><code>/builder/rules-pack</code></td>
 <td>read</td>
 <td>—</td>
-<td>SATOM's package rules as a zip, header <code>X-Satom-Rules-Sha256</code> (§17)</td>
+<td>SATOM's package rules, with the runtime the Builder tests with, as a zip, header <code>X-Satom-Rules-Sha256</code> (§17)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/builder/library</code></td>
+<td>read</td>
+<td>—</td>
+<td>Structure a plugin builds on: datasets and their columns, data stores, API Catalog, API library builds (§17)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/builder/library/fortinet/&lt;product&gt;/&lt;version&gt;</code></td>
+<td>read</td>
+<td>the product is the token's ADOM (any, for <code>global</code>)</td>
+<td>One API library build's endpoints, or with <code>?endpoint=</code> that endpoint's fields (§17)</td>
 </tr>
 <tr>
 <td><code>POST</code></td>
@@ -1622,6 +1636,34 @@ public key) and <code>schema</code>. It is exactly the <code>target</code> the r
 <p><code>application/zip</code>, <code>satom-rules-&lt;version&gt;-&lt;sha12&gt;.zip</code>: SATOM's own package
 rules for the Builder's local checks. The header <code>X-Satom-Rules-Sha256</code> is the
 zip's SHA-256.</p>
+<p>The same zip carries the <strong>runtime</strong> the Builder tests a package with on its
+own test data, before it reaches any server: the view renderer and frame, the
+diagram walk, the data-store rules, the script jail and the script SDK, all
+copied verbatim from this server. <code>rules.json</code> lists them under <code>runtime</code>
+(<code>packed</code> or <code>stub</code>) with the frame's class kit and default design tokens.</p>
+<h3 id="get-builderlibrary"><code>GET /builder/library</code></h3>
+<p>Structure only, never a row of data and never a secret:</p>
+<pre><code class="language-json">{&quot;format&quot;: &quot;satom.builder-library/1&quot;, &quot;product&quot;: &quot;fortiweb&quot;,
+ &quot;datasets&quot;: [{&quot;key&quot;: &quot;fleet_appliances&quot;, &quot;label&quot;: &quot;Fleet appliances&quot;, &quot;description&quot;: &quot;...&quot;,
+               &quot;columns&quot;: [&quot;id&quot;, &quot;name&quot;, &quot;kind&quot;, &quot;firmware&quot;, &quot;host&quot;, &quot;port&quot;]}],
+ &quot;stores&quot;: {&quot;owners&quot;: {&quot;name&quot;: &quot;Owners&quot;, &quot;description&quot;: &quot;&quot;,
+                       &quot;columns&quot;: [{&quot;name&quot;: &quot;ip&quot;, &quot;label&quot;: &quot;IP&quot;, &quot;type&quot;: &quot;text&quot;, &quot;required&quot;: true}]}},
+ &quot;apis&quot;: [{&quot;slug&quot;: &quot;ipam&quot;, &quot;name&quot;: &quot;IPAM&quot;, &quot;owner&quot;: &quot;&quot;, &quot;docs_url&quot;: &quot;&quot;, &quot;description&quot;: &quot;&quot;,
+           &quot;versions&quot;: [{&quot;version&quot;: &quot;1.0&quot;, &quot;status&quot;: &quot;published&quot;, &quot;base_path&quot;: &quot;/api&quot;,
+                         &quot;notes&quot;: &quot;&quot;, &quot;operations&quot;: [{&quot;id&quot;: &quot;getHost&quot;, &quot;method&quot;: &quot;GET&quot;,
+                                                      &quot;path&quot;: &quot;/hosts/{id}&quot;, &quot;summary&quot;: &quot;...&quot;}]}]}],
+ &quot;fortinet&quot;: {&quot;products&quot;: {&quot;fortiweb&quot;: [{&quot;version&quot;: &quot;7.6.8&quot;, &quot;build&quot;: &quot;...&quot;, &quot;line&quot;: &quot;7.6&quot;,
+                                         &quot;measured&quot;: true, &quot;vendor_only&quot;: false,
+                                         &quot;cli_measured&quot;: true, &quot;in_fleet&quot;: true}]}}}
+</code></pre>
+<p><code>fortinet</code> covers the token's ADOM (every product for <code>global</code>).</p>
+<h3 id="get-builderlibraryfortinetproductversion"><code>GET /builder/library/fortinet/&lt;product&gt;/&lt;version&gt;</code></h3>
+<p>One build of the API library: <code>{"product", "version", "endpoints": [{"endpoint",
+"urn", "section", "verdict", "fields_known", "sources", "vendor_only"}]}</code>. With
+<code>?endpoint=&lt;name&gt;</code>: <code>{"product", "version", "endpoint", "status", "fields"}</code>,
+where <code>status</code> is <code>measured</code>, <code>blind</code>, <code>absent</code> or <code>unmeasured</code> (an empty
+<code>fields</code> is "unknown" unless the status is <code>measured</code>). A product outside the
+token's ADOM is 403 <code>wrong_product</code>.</p>
 <h3 id="post-buildervalidate"><code>POST /builder/validate</code></h3>
 <p>A dry run: the package is checked with the <strong>builder</strong> rules against this
 server and nothing is written. HTTP 200 even when <code>ok</code> is false:</p>

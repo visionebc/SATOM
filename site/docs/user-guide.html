@@ -4103,7 +4103,12 @@ need an <code>admin</code> token whose owner is a super-admin (holds the Plugin 
 key). An import through the API is the console's own import (§23.1) with the
 stricter Builder rules for unsigned and publisher-signed packages; the
 secrets it carries for the connections it creates are stored on this server
-and never logged. Details: <a href="api.html">docs/api_v1.md §17</a>.</p>
+and never logged. A <code>read</code> token also reads the <strong>library</strong> (<code>/builder/library</code>):
+the datasets and their columns, the data stores and their column definitions,
+the API Catalog with every version's endpoints, and the API library builds of
+the token's ADOM, one build's endpoints and one endpoint's fields on request.
+Structure only: no row of data and no secret leaves this server. Details:
+<a href="api.html">docs/api_v1.md §17</a>.</p>
 <h2 id="19-appearance-logo-colours--themes">19. Appearance: logo, colours &amp; themes</h2>
 <p><code>Settings → Appearance</code> (administrators). Four palettes ship — <strong>SATOM Aurora</strong>
 (the default), <strong>Slate</strong>, <strong>Graphite</strong> and the original <strong>Classic</strong> — and you
@@ -5789,6 +5794,14 @@ separate process with only Python, <code>jinja2</code>, <code>markupsafe</code> 
 The server checks every package again on validate, rehearse and import, so
 the pack only lets the Builder find problems sooner and never decides on its
 own.</p>
+<p>The same pack carries the <strong>test runtime</strong>: the view renderer and frame, the
+diagram walk, the data-store rules, the script jail and the script SDK, also
+copied byte for byte (<code>rules.json</code> lists them under <code>runtime</code>). With it the
+Builder tests a package on its own test data before it reaches any server: a
+view renders exactly as here, a diagram walks with SATOM's rules, and a
+script runs in the same jail with the same SDK. The Builder supplies only the
+data (test rows, canned connection answers); nothing of the runtime is
+re-implemented there, and nothing of a test run reaches this server.</p>
 <p><strong>Example — new FortiWeb server policy</strong> (package <code>spo-fortiweb</code>): the form
 asks for the entry type (<em>internal</em>, <em>split</em>, <em>internal-external</em>), the DNS
 name (the service), an extra text for the name, the port, the real servers,

@@ -6,6 +6,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-10-25
+
+What SATOM provides for SATOM Builder 0.2: the **test runtime** in the rules pack (the
+Builder tests a package on its own test data with SATOM's own renderer, frame, diagram walk,
+store rules, script jail and SDK) and the **library** endpoint (datasets with their columns,
+data stores, API Catalog, API library builds). Also: a Builder rehearsal of a view honours
+its params, and root no longer acts by path where the service account can redirect the path
+(package apply, CLI, `--authorize-peer`).
+
 ### Added
 
 SATOM Builder can now test a package on its own test data before it reaches

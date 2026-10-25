@@ -3783,7 +3783,25 @@ either every FortiWeb of the ADOM or only the devices bound to it (§29.1.4):</p
   (pick a base table by domain → related tables via foreign keys → columns
   and filters with value dropdowns → grouping/ordering). Built-ins are
   read-only; <strong>Clone</strong> one to customize. Direct SQL is available too, but
-  strictly read-only and validated.</li>
+  strictly read-only and validated.
+  Besides the database's own tables, the builder offers <strong>every object type
+  the device cache holds, for every product</strong>, as a table of its own, grouped
+  as <code>&lt;Product&gt; · &lt;category&gt;</code> (<em>FortiGate · Firewall policies</em>, <em>FortiADC ·
+  Server load balancing</em>, <em>FortiAnalyzer · ADOMs and devices</em>…) with a line
+  saying what it is. FortiGate, FortiADC, FortiAnalyzer and FortiAuthenticator
+  have no tables of their own (SATOM keeps what it reads from them in one
+  generic cache), so this is how they reach reports and plugin datasets. Each
+  such table has <code>id</code>, <code>appliance_id</code>, <code>device</code>, <code>mkey</code>, <code>parent_id</code> and
+  <code>object_key</code>, then the object's fields as text; secret fields are refused,
+  and the viewer's ADOM applies as on any table. Joins never cross devices: a
+  sub-object (a policy's source-address list) reaches its parent by
+  <code>parent_id</code>, and a field that names another object (a policy's source
+  address, a group's member, a virtual server's pool) has a <code>&lt;field&gt;_ref</code>
+  column that joins the target's <code>object_key</code>. "Which FortiGate rules use
+  this address" is therefore one query: address → policy <code>srcaddr</code> list →
+  policy. <strong>Browse tables</strong> (step 1) opens every table in a searchable browser
+  — menu by product and category, search over names, descriptions and
+  columns — and picks the one you click.</li>
 <li><strong>ER diagram</strong> — a live, professional database diagram (crow's-foot
   notation, domain-colored, searchable, draggable, exportable SVG). Every
   table of the database is in it. Relationships declared as foreign keys are
@@ -3792,7 +3810,9 @@ either every FortiWeb of the ADOM or only the devices bound to it (§29.1.4):</p
   of that name (singular or plural) whose primary key is <code>id</code>. History tables
   keep <code>appliance_id</code> without a foreign key on purpose, because their rows
   outlive the appliance. The header counts both kinds apart; the list view
-  marks inferred ones, and the Query Builder joins on both.</li>
+  marks inferred ones, and the Query Builder joins on both. <strong>Show as list</strong>
+  replaces the diagram with the list of relationships (the button then reads
+  <strong>Show diagram</strong> and brings the diagram back).</li>
 <li><strong>Tables browser + SQL console</strong> — read-only introspection with sensitive
   columns masked. Console queries run as the dedicated read-only role
   <code>satom_console_ro</code>, which cannot read credential tables or credential
@@ -4115,8 +4135,17 @@ owner (their ADOM's devices, no maintenance device without the permission,
 the audit log only with <code>audit.view</code>, sensitive columns masked), the rows of
 the data stores (declared columns and <code>_id</code>, never who edited them) and the
 lists of <code>satom_select</code> fields, at most 2,000 rows per table. Each call
-leaves an audit line <code>builder.data</code> with the row counts. Details:
-<a href="api.html">docs/api_v1.md §17</a>.</p>
+leaves an audit line <code>builder.data</code> with the row counts.</p>
+<p><strong>Which ADOM a Builder plugin lands in.</strong> A plugin installs in one ADOM and
+reads only the datasets that ADOM offers; one that reads FortiGate and
+FortiWeb datasets together installs in <strong>Global</strong> and is opened from the
+Global console. Give the Builder a <strong>Global</strong> token: it then sees every
+dataset of the ADOMs its owner may enter and names the ADOM of each call
+(<code>?adom=</code>). A token bound to one ADOM never reaches another; the Builder is
+still told which datasets live elsewhere and where, so it never claims a
+dataset does not exist. A package that reads a dataset of another ADOM is
+refused through the Builder ("dataset X lives in ADOM Y …") instead of being
+installed with that dataset dropped. Details: <a href="api.html">docs/api_v1.md §17</a>.</p>
 <h2 id="19-appearance-logo-colours--themes">19. Appearance: logo, colours &amp; themes</h2>
 <p><code>Settings → Appearance</code> (administrators). Four palettes ship — <strong>SATOM Aurora</strong>
 (the default), <strong>Slate</strong>, <strong>Graphite</strong> and the original <strong>Classic</strong> — and you
@@ -5010,6 +5039,35 @@ no rows from it, and the page says which ones); a dataset a plugin reads
 cannot be deleted. <strong>Pending approval</strong>: a package that brings a view with an
 administrator dataset this server does not have creates it <em>pending</em>; review
 its query and preview, then publish it.</p>
+<p><strong>Generate joined datasets</strong> (same tab, same permission) writes in one click
+the joins the device cache allows, so plugin authors start from hundreds of
+ready datasets instead of an empty list. Each one is an ordinary
+administrator dataset — published, in its product's ADOM, source <em>generated
+from the device cache</em>, editable like one you built — in three families:</p>
+<ul>
+<li><strong>list with its parent</strong>: every sub-object list with its parent's identity
+  and main fields (each FortiGate policy's source addresses with the policy's
+  ID and name; each FortiADC pool's members with the pool);</li>
+<li><strong>reference resolved</strong>: every field that names another object, with that
+  object's fields (a virtual server with its pool, a group member with the
+  address);</li>
+<li><strong>common chains</strong>: FortiGate — the rules that use an address as source or
+  destination, the address groups that hold an address, the rules that use a
+  group, a service or an incoming interface; FortiADC — a virtual server's
+  pool members; FortiAuthenticator — users with their groups, RADIUS clients
+  with their policies.</li>
+</ul>
+<p>Every candidate is compiled and run on this server before it is written; one
+that cannot be built here (for instance a chain that would expose a sensitive
+column) is skipped and the message names it. It <strong>never overwrites</strong>: only
+keys that do not exist yet are created, so running it again adds only what
+the cache gained since — and brings back one you deleted. On the lab fleet the
+first run created 316 (FortiWeb 215, FortiGate 44, FortiADC 38, FortiAnalyzer
+12, FortiAuthenticator 7). The table of the tab groups administrator datasets
+by ADOM, and <strong>Browse the N datasets</strong> opens every dataset this server offers
+— built-in, device objects and administrator — in the same browser as the
+Python console examples: menu by ADOM and category, search over keys,
+descriptions and columns, and the <code>{{ key.rows }}</code> to copy into a view.</p>
 <p><strong>Lifecycle: draft → testing → published.</strong> The two gates are deliberate:</p>
 <ul>
 <li>you cannot jump from <em>draft</em> straight to <em>published</em> — a view has to sit in

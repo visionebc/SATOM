@@ -1625,6 +1625,15 @@ with that person's permissions and ADOM, and SATOM stays the authority: it
 checks every package again with its own rules on validate, rehearse and
 import. A token whose owner may no longer work in the token's ADOM is refused
 with 403 <code>wrong_product</code>. Every call is audited with the token and its owner.</p>
+<p><strong>The ADOM of a call (<code>?adom=&lt;key&gt;</code>).</strong> Every call except <code>rules-pack</code> and
+<code>publishers</code> takes <code>?adom=</code>. With a <strong>Global</strong> token it is the ADOM the whole
+call runs in -- the datasets offered, the snapshot, the check, the render and
+where an import installs -- among <code>global</code> and the ADOMs the token's owner may
+enter. A token <strong>bound to an ADOM</strong> may only name that ADOM: any other is 403
+<code>wrong_product</code> (it never widens). An unknown key is 400 <code>bad_request</code>; no
+<code>adom</code> means the token's own ADOM. A view that reads datasets of more than one
+ADOM installs in <code>global</code> and is opened from the Global console. In Global,
+the datasets offered are those of the ADOMs the owner may enter.</p>
 <p>Package bodies (<code>validate</code>, <code>rehearse</code>, <code>import</code>) are <code>multipart/form-data</code>:
 <code>package</code> (the <code>.satomplugin</code> file, at most <strong>10 MB</strong>, else 413 <code>too_large</code>)
 and an optional <code>options</code> field holding a JSON object. The write endpoints are
@@ -1637,8 +1646,19 @@ plugin <code>datasets</code>), <code>templates</code> (the Examples objects, whi
 never replace), <code>existing</code> (the apps, data stores with their columns,
 connections with <code>has_secret</code> — never the secret — API versions and scripts
 on this server), <code>publishers</code> (the enabled ones of this ADOM, with their
-public key) and <code>schema</code>. It is exactly the <code>target</code> the rules pack's
-<code>check()</code> takes.</p>
+public key), <code>elsewhere</code>, <code>reach</code> and <code>schema</code>. It is exactly the <code>target</code> the
+rules pack's <code>check()</code> takes.</p>
+<ul>
+<li><code>elsewhere</code> -- <code>{"datasets": {"&lt;key&gt;": "&lt;adom&gt;"}}</code>: the datasets that exist
+  in the owner's OTHER ADOMs and not in this call's ADOM (names only). The
+  check uses it to refuse a Builder package that reads one of them with rule
+  <code>view.datasets_adom</code> ("dataset X lives in ADOM Y, not in ADOM Z where this
+  package would install"); a console import gets the same message as a
+  warning. Empty in Global.</li>
+<li><code>reach</code> -- what the token reaches: <code>{"token_adom", "adom", "can_choose",
+  "adoms"}</code>; <code>can_choose</code> is true for a Global token, and <code>adoms</code> lists
+  <code>global</code> plus the owner's ADOMs (a bound token: only its own).</li>
+</ul>
 <h3 id="get-builderrules-pack"><code>GET /builder/rules-pack</code></h3>
 <p><code>application/zip</code>, <code>satom-rules-&lt;version&gt;-&lt;sha12&gt;.zip</code>: SATOM's own package
 rules for the Builder's local checks. The header <code>X-Satom-Rules-Sha256</code> is the
@@ -1671,7 +1691,9 @@ administrator and device-object, user guide §23.1.1). Each entry carries
 fixed <code>sql</code>, an administrator one its <code>spec</code> (the Report Builder query, which a
 package carries in <code>dataset_defs</code>), a device-object one its <code>object</code>
 (<code>{"product", "layer", "logical_name"}</code>).</p>
-<p><code>fortinet</code> covers the token's ADOM (every product for <code>global</code>).</p>
+<p><code>fortinet</code> covers the call's ADOM (in <code>global</code>, every product whose ADOM the
+owner may enter). The library also carries <code>elsewhere</code> and <code>reach</code>, as the
+target does.</p>
 <h3 id="get-builderlibraryfortinetproductversion"><code>GET /builder/library/fortinet/&lt;product&gt;/&lt;version&gt;</code></h3>
 <p>One build of the API library: <code>{"product", "version", "endpoints": [{"endpoint",
 "urn", "section", "verdict", "fields_known", "sources", "vendor_only"}]}</code>. With

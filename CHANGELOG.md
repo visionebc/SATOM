@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A diagram with the wrong shape is a named problem, not a crash.** A
+  SATOM Builder author using a local model (gpt-oss) saw "the package could
+  not be checked: 'list' object has no attribute 'get'" three rounds in a
+  row: the model wrote each step's `params` as a list of `{name, value}`
+  pairs, `studio_flow.validate_graph` crashed on it, and the model never
+  learnt what was wrong. `studio_apps.clean_graph` now refuses nodes or
+  edges that are not lists of objects and `params` that is not an object
+  (rule `app.definition`, naming the step), the Plugin Studio save path
+  answers that instead of failing, and `validate_graph` reports the same
+  shapes instead of raising. The author guide of the rules pack now says
+  that `params` is an object, shows one step, and that form values are
+  `{{ form.<field> }}`.
+
 ## [4.3.0] - 2026-10-25
 
 Plugins can read everything SATOM keeps, and SATOM Builder is in line with it:

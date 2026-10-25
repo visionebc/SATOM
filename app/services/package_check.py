@@ -881,6 +881,14 @@ def author_guide(target: dict) -> str:
       "StrictUndefined over `form`, `vars`, every saved variable by name and `run`."
       % ", ".join("`%s`" % b["key"] for b in sc["branches"]))
     w("")
+    w("A step's `params` is an object of name: value with the parameters of its kind listed "
+      "below -- never a list of {name, value} pairs. A form field is read as "
+      "`{{ form.<field> }}`, a saved variable by its name. For example:")
+    w("")
+    w("`{\"key\": \"find\", \"kind\": \"store_query\", \"label\": \"Find rows\", \"params\": "
+      "{\"store\": \"<store>\", \"filter\": {\"ip\": \"{{ form.ip }}\"}, "
+      "\"save_as\": \"rows\"}, \"x\": 200, \"y\": 0}`")
+    w("")
     for k in sc["step_kinds"]:
         w("- `%s` -- %s (%s%s). %s" % (k["key"], k["label"], k["group"],
                                        ", writes" if k["writes"] else "", k["summary"]))

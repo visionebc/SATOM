@@ -394,6 +394,14 @@ def validate_graph(graph: dict, choices: dict | None = None) -> list[str]:
     if not isinstance(graph, dict):
         return ["the diagram is not an object"]
     nodes, edges = graph.get("nodes") or [], graph.get("edges") or []
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        return ["the diagram's nodes and edges are lists"]
+    if any(not isinstance(n, dict) for n in nodes):
+        errs.append("a step of the diagram is not an object")
+    if any(not isinstance(e, dict) for e in edges):
+        errs.append("an arrow of the diagram is not an object")
+    nodes = [n for n in nodes if isinstance(n, dict)]
+    edges = [e for e in edges if isinstance(e, dict)]
     km = kind_map(choices)
     keys = set()
     for n in nodes:
@@ -408,6 +416,9 @@ def validate_graph(graph: dict, choices: dict | None = None) -> list[str]:
             errs.append("%s: unknown step kind %r" % (k, n.get("kind")))
             continue
         p = n.get("params") or {}
+        if not isinstance(p, dict):
+            errs.append("%s: params is an object of name: value, not a %s" % (k, type(p).__name__))
+            continue
         for prm in kind.params:
             v = p.get(prm.name)
             if prm.required and (v is None or str(v).strip() == ""):

@@ -478,7 +478,21 @@ def clean_graph(graph) -> dict:
     :data:`MAX_GRAPH_BYTES`. Its steps are judged by ``studio_flow.validate_graph``."""
     if not isinstance(graph, dict) or len(json.dumps(graph)) > MAX_GRAPH_BYTES:
         raise AppError("the diagram is not an object, or is larger than 512 KiB")
-    return {"nodes": graph.get("nodes") or [], "edges": graph.get("edges") or []}
+    nodes, edges = graph.get("nodes") or [], graph.get("edges") or []
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        raise AppError("the diagram's nodes and edges are lists")
+    for i, n in enumerate(nodes):
+        if not isinstance(n, dict):
+            raise AppError("step %d of the diagram is not an object" % (i + 1))
+        params = n.get("params")
+        if params is not None and not isinstance(params, dict):
+            raise AppError("step %s: params is an object of name: value, such as "
+                           "{\"store\": \"cmdb\"} (it is a %s)"
+                           % (n.get("key") or i + 1, type(params).__name__))
+    for i, e in enumerate(edges):
+        if not isinstance(e, dict):
+            raise AppError("arrow %d of the diagram is not an object" % (i + 1))
+    return {"nodes": nodes, "edges": edges}
 
 
 def form_ref_problems(fields: list, graph) -> list[str]:

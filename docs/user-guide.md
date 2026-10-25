@@ -5078,6 +5078,71 @@ published version and access list stay as they are. A package older than the
 installed one needs *Allow downgrade*. Signed packages come from the internal
 generator (`satom-dev/satom-plugins`).
 
+**What the importer checks.** Every package goes through one check before
+anything is written. Each problem names the rule it breaks, and the answer
+also lists what the import would create and keep and which connections need a
+secret. Packages signed by Vision EBC are checked under the *import* policy.
+Packages that come through the SATOM Builder are checked under the *builder*
+policy, which is stricter. These rules refuse a package under both policies:
+
+- the file is a readable `satom.plugin/1` package (only listed members, each
+  matching its sha256, sizes capped, any signature by a trusted key);
+- `min_satom` is not newer than this server;
+- a code plugin is signed by Vision EBC (a publisher can never sign code);
+- `app.json` is well formed: a valid app id, form, actions, design, and a
+  diagram of at most 512 KiB;
+- nothing in the package is a template (Plugin Studio › Examples, `ex-*`):
+  no app, data store, connection or script with a template's id;
+- the app does not replace a script app;
+- every `assets/*` image matches its SHA-256 name and is a PNG, JPEG, GIF or
+  WebP within the image limits;
+- every data store has a valid id and at least one valid column, and every
+  seed row fits the columns;
+- no connection carries a secret (`password`, `secret`, `token`, `api_key`,
+  `client_secret`), no connection is `postgres`, every connection has a valid
+  base URL and authentication, and a pinned connection names an API version
+  that the package carries or that is published here;
+- every API version has a valid id, version and endpoint list, with at least
+  one endpoint;
+- every packaged script passes the script rules (below).
+
+The *builder* policy also refuses code plugins, diagram, form, action and
+design problems (the ones that block Publish), stylesheet errors, a
+`body.jinja` that does not parse, and more than 500 seed rows in a data store.
+Under *import*, those are warnings. Warnings never refuse a package: datasets
+or parameters the import drops, an older version (it needs *Allow
+downgrade*), a column whose type differs here, hard-to-read colours, an API
+pin nobody has, a script kept as it is here.
+
+**Script apps in packages.** Exporting an app also writes the published
+version of every Script Library script its *Run a script* steps use (files,
+form, timeout, audience, declared connections), plus the HTTP connections
+those scripts call. Credential values never travel. On import, a missing
+script is created and published as version 1 for **admins** (an
+administrator widens the audience later), and an existing script is kept as
+it is, with a warning when its published files differ from the package's.
+A packaged script:
+
+- runs with no network and declares no credentials;
+- does not use `secret` or `tcp` from `satom_script` / `satom_sdk` in any
+  form (import, attribute, bare name, `getattr`, star import);
+- never passes `write=` other than `False`;
+- has no database fields (`lookup`, `lookup_multi`, `dataset`);
+- declares only HTTP connections that exist on this server or come in the
+  same package;
+- compiles, and keeps `main.py` as its entry.
+
+**Rules pack.** The SATOM Builder checks a package with SATOM's own rules
+before it sends it. SATOM hands them out as a *rules pack*: a zip with the
+package check and the modules it uses, copied byte for byte from this
+server, stubs for the parts that need the server, and `rules.json` with the
+SATOM version and the sha256 of every file. The Builder runs the pack in a
+separate process with only Python, `jinja2`, `markupsafe` and
+`cryptography`. The same SATOM version always gives the same zip and hash.
+The server checks every package again on validate, rehearse and import, so
+the pack only lets the Builder find problems sooner and never decides on its
+own.
+
 **Example — new FortiWeb server policy** (package `spo-fortiweb`): the form
 asks for the entry type (*internal*, *split*, *internal-external*), the DNS
 name (the service), an extra text for the name, the port, the real servers,

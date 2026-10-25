@@ -322,7 +322,7 @@ def _clean_prop(p: dict, v):
             raise DesignError("%s: letters, digits, _, - and dots" % p["label"])
         return s
     if kind == "url":
-        from .wiki_markdown import safe_url
+        from .url_safety import safe_url
         if s and safe_url(s) is None:
             raise DesignError("%s: an http(s) address, a mail address or a SATOM path" % p["label"])
         return s[:p["max"]]
@@ -584,7 +584,7 @@ def md(text: str) -> Markup:
 
 
 def safe_href(url: str) -> str:
-    from .wiki_markdown import safe_url
+    from .url_safety import safe_url
     return safe_url(url) or ""
 
 

@@ -73,16 +73,21 @@ def create(slug: str, name: str, by: str) -> StudioApi:
     return a
 
 
-def save(a: StudioApi, form: dict, by: str) -> None:
-    a.name = (form.get("name") or a.name).strip()[:120] or a.name
-    a.owner = (form.get("owner") or "").strip()[:120]
-    a.description = (form.get("description") or "").strip()[:4000]
-    url = (form.get("docs_url") or "").strip()
+def clean_docs_url(url) -> str:
+    """The documentation link of an API: empty, or an http(s) URL."""
+    url = (url or "").strip()
     if url:
         p = urlsplit(url)
         if p.scheme not in ("http", "https") or not p.hostname or len(url) > 500:
             raise ApiError("the documentation link must be an http(s) URL")
-    a.docs_url = url
+    return url
+
+
+def save(a: StudioApi, form: dict, by: str) -> None:
+    a.name = (form.get("name") or a.name).strip()[:120] or a.name
+    a.owner = (form.get("owner") or "").strip()[:120]
+    a.description = (form.get("description") or "").strip()[:4000]
+    a.docs_url = clean_docs_url(form.get("docs_url"))
     a.updated_by = by
     db.session.commit()
 

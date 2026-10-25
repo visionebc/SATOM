@@ -6,6 +6,55 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **One package check for every plugin package.** Every rule a
+  `.satomplugin` file must pass now lives in one place and runs in one call:
+  the package format and signature, `min_satom`, templates, data stores and
+  their seed rows, connections, API Catalog versions, the diagram, the form,
+  the actions, the design and its images, scripts, and for views and widgets
+  the body template, datasets, parameters and stylesheet. Each problem names
+  the rule it breaks. Two policies: packages signed by Vision EBC are
+  checked under *import*, and everything that arrives through the SATOM
+  Builder is checked under *builder*, which also refuses diagram, form,
+  action and design problems, stylesheet errors and code plugins. The
+  answer also says what an import would create and keep, which connections
+  need a secret, and where the package lands.
+- **Rules pack.** SATOM can hand out its package rules as a zip: the check
+  and the modules it uses, copied byte for byte, plus `rules.json` with the
+  hash of every file. The SATOM Builder runs that zip to check a package
+  before sending it, and the server checks it again on validate, rehearse and
+  import. The same SATOM version always gives the same zip and hash.
+- **Scripts travel in app packages.** Exporting an app now includes the
+  published version (files and settings) of every Script Library script its
+  *Run a script* steps use, and the HTTP connections those scripts call.
+  Credential values never travel. On import, a missing script is created and
+  published as version 1 for administrators; a script that already exists is
+  kept, with a warning when its published files differ. A packaged script
+  must run without network and without declared credentials, may not use
+  `secret` or `tcp` from the SDK, may not pass `write=True`, may not have
+  database fields, and may declare only HTTP connections that exist on the
+  server or come in the same package.
+
+### Fixed
+
+- **An app package can no longer replace a template.** Installing a package
+  with the id of a Plugin Studio › Examples object (`ex-*`: app, data store,
+  connection or script) is refused; before, the template's draft was
+  replaced.
+- **A connection that carries a secret is refused.** A package connection
+  with a non-empty `password`, `secret`, `token`, `api_key` or
+  `client_secret` used to be installed with the value silently ignored; it is
+  now refused, since secrets are always typed on the importing server.
+- **Postgres connections in an app package are refused with a clear message**
+  instead of failing halfway through the import with "a host name or address
+  is required" and leaving the connection behind.
+- **An API version without endpoints is refused before anything is written.**
+  The import used to create the API and its draft version, then roll back
+  the rest when publishing failed. Every rule that needs no server state
+  (secrets, postgres, empty API versions, connection definitions, data
+  stores, scripts, images) is now checked before the first write.
+
 ### Changed
 
 - **Report Studio views and widgets render in SATOM's light look.** The

@@ -76,6 +76,7 @@ RUNTIME_MODULES = (
     "app.services.studio_satom", "app.services.script_library",
     "app.services.sandbox", "app.services.sandbox_boot",
     "app.services.script_sdk", "app.services.integration_sdk",
+    "app.services.studio_broker", "app.services.studio_http", "app.services.script_runner",
 )
 #: Data files of the runtime (paths inside the pack -> how they are made).
 RUNTIME_KIT = PACKAGE + "/runtime/plugin-kit.css"       # static/css/plugin-kit.css, verbatim

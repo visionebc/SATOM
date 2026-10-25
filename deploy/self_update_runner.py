@@ -23,6 +23,7 @@ import os
 import re
 import secrets
 import socket
+import shutil
 import stat
 import subprocess
 import sys
@@ -591,7 +592,8 @@ def db_smoke_ok():
 def _peer_host():
     """The OTHER HA node's host from ha_nodes.json (failover-agnostic)."""
     try:
-        nodes = json.loads((APP / "data" / "ha_nodes.json").read_text())
+        raw = _load_update_package().read_small_nofollow(APP / "data" / "ha_nodes.json")
+        nodes = json.loads((raw or b"[]").decode("utf-8"))
         me = os.environ.get("FM_NODE_NAME") or socket.gethostname()
         for n in nodes:
             if n.get("name") != me and n.get("host"):
@@ -601,10 +603,28 @@ def _peer_host():
     return None
 
 
+def _read_root_env():
+    """APP/.env as text when it is a regular file owned by root and writable by
+    nobody else, reached without following a link; else None. It is
+    root:<account> 0640, but it sits in the account's directory: a link there
+    would make root read any KEY=value file, and a file the account wrote is not
+    root's configuration."""
+    try:
+        fd = os.open(str(APP / ".env"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+    with os.fdopen(fd, "rb") as fh:
+        st_ = os.fstat(fh.fileno())
+        if (not stat.S_ISREG(st_.st_mode) or st_.st_uid != 0
+                or st_.st_mode & (stat.S_IWGRP | stat.S_IWOTH)):
+            return None
+        return fh.read(1024 * 1024).decode("utf-8", "replace")
+
+
 def _env_db_creds():
     """(user, password, dbname) from the .env SQLALCHEMY_DATABASE_URI."""
     try:
-        for line in (APP / ".env").read_text().splitlines():
+        for line in (_read_root_env() or "").splitlines():
             if line.startswith("SQLALCHEMY_DATABASE_URI="):
                 uri = line.split("=", 1)[1].strip().strip('"').strip("'")
                 m = re.search(r"://([^:]+):([^@]+)@[^/]+/([A-Za-z0-9_]+)", uri)
@@ -1730,32 +1750,45 @@ def _chown_tree():
     Root wrote these files, and a root-owned app tree is the exact state in
     which enforce_unit_user() stops writing the User= drop-in — the next update
     would silently put the web app back to running as root.
+
+    ``.env`` stays root:<account> 0640. The tree-wide chown re-owns it too, so
+    it is opened (O_NOFOLLOW) BEFORE the chown and that same inode is re-sealed
+    afterwards through the descriptor -- only when it was root's to begin with:
+    a .env the account wrote is never adopted as root's.
     """
     if not APP_USER or APP_USER == "root":
         return True, "running un-deprivileged; nothing to hand back"
-    r = subprocess.run(["chown", "-R", "%s:%s" % (APP_USER, APP_USER), str(APP)],
-                       capture_output=True, text=True, timeout=300)
-    # Through an O_NOFOLLOW fd, not `chown`/`chmod` on the path: those follow
-    # a .env -> /etc/shadow link and would make the target group-readable by
-    # the service account.
+    env_fd, env_was_roots = None, False
     try:
-        import grp
-        fd = os.open(str(APP / ".env"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        try:
-            if stat.S_ISREG(os.fstat(fd).st_mode):
-                os.fchown(fd, 0, grp.getgrnam(APP_USER).gr_gid)
-                os.fchmod(fd, 0o640)
-        finally:
-            os.close(fd)
-    except (OSError, KeyError):
+        env_fd = os.open(str(APP / ".env"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        st_ = os.fstat(env_fd)
+        env_was_roots = stat.S_ISREG(st_.st_mode) and st_.st_uid == 0
+    except OSError:
         pass
+    try:
+        # -h: a link in the tree is re-owned itself, never the file it names.
+        r = subprocess.run(["chown", "-R", "-h", "%s:%s" % (APP_USER, APP_USER), str(APP)],
+                           capture_output=True, text=True, timeout=300)
+        if env_fd is not None and env_was_roots:
+            try:
+                import grp
+                os.fchown(env_fd, 0, grp.getgrnam(APP_USER).gr_gid)
+                os.fchmod(env_fd, 0o640)
+            except (OSError, KeyError):
+                pass
+    finally:
+        if env_fd is not None:
+            os.close(env_fd)
     return r.returncode == 0, (r.stderr or "tree owned by %s" % APP_USER)[:200]
 
 
 def _current_version():
+    """APP/VERSION, read without following a link and only when it holds a
+    version: the status file the account reads, and a git commit message,
+    repeat it."""
     try:
-        return (APP / "VERSION").read_text().strip()
-    except OSError:
+        return _load_update_package().read_version_file(APP / "VERSION")
+    except Exception:  # noqa: BLE001 -- an unreadable version is no version
         return ""
 
 
@@ -1772,6 +1805,54 @@ _PIP_MISSING_RES = (
     re.compile(r"Could not find a version that satisfies the requirement ([^\s;]+)"),
 )
 _REQ_MEMBERS = ("requirements.txt", "./requirements.txt")
+
+
+def _as_app():
+    """Writes INSIDE the app tree are done AS the service account: it owns every
+    directory there and can swap any entry for a link between a root check and
+    a root write. Whatever it then makes the write do, it could do itself."""
+    return bool(APP_USER) and APP_USER != "root" and os.geteuid() == 0
+
+
+def _run_bytes(cmd, data, timeout=1800, cwd="/"):
+    """``cmd`` AS THE SERVICE ACCOUNT, with ``data`` (bytes) on stdin."""
+    return subprocess.run(["runuser", "-u", APP_USER, "--"] + list(cmd), input=data,
+                          capture_output=True, timeout=timeout, cwd=cwd)
+
+
+def install_tree(up, app_tar):
+    """Lay the verified app.tar.gz over the tree. Root validates it (no link,
+    device, absolute or '..' path, size ceiling) and keeps the file list; the
+    service account extracts it into its own tree."""
+    if not _as_app():
+        return up.extract_app_tree(app_tar, APP)
+    written = up.app_tree_files(app_tar)
+    r = _run_bytes(["tar", "-xzf", "-", "-C", str(APP), "--no-same-owner"],
+                   Path(app_tar).read_bytes())
+    if r.returncode != 0:
+        raise RuntimeError("extracting the application tree as %s failed: %s"
+                           % (APP_USER, (r.stderr or b"").decode("utf-8", "replace")[-300:]))
+    return written
+
+
+def remove_in_tree(rels):
+    """Remove these tree-relative FILES (never directories) -- as the account."""
+    rels = [r for r in rels if r and not r.startswith("/") and ".." not in Path(r).parts]
+    if not rels:
+        return
+    if _as_app():
+        for i in range(0, len(rels), 200):
+            _run_bytes(["rm", "-f", "--"] + rels[i:i + 200], b"", timeout=300, cwd=str(APP))
+        return
+    for rel in rels:
+        if _link_below(APP, Path(rel).parent):
+            continue
+        target = APP / rel
+        try:
+            if target.is_file() or target.is_symlink():
+                target.unlink()
+        except OSError:
+            pass
 
 
 def _make_wheelhouse(pkg_dir, up):
@@ -1922,10 +2003,10 @@ def package_change(req_path):
         if not up.PKG_NAME_RE.match(name):
             raise RuntimeError("%r is not an acceptable package name" % name)
         pkg_file = UPLOADS / name
-        if not pkg_file.is_file():
+        if not pkg_file.is_file() or pkg_file.is_symlink():
             raise RuntimeError("%s is not staged on this node" % name)
         st.step("locate package", True, "%s (%d bytes)"
-                % (name, pkg_file.stat().st_size))
+                % (name, pkg_file.lstat().st_size))
 
         # -- 2. extract ONCE into root-only space ---------------------------
         # The staging directory is writable by the service account, so anything
@@ -1934,7 +2015,16 @@ def package_change(req_path):
         stage = Path(tempfile.mkdtemp(prefix="satom-pkg-", dir="/var/tmp"))
         os.chmod(stage, 0o700)
         st.begin("extract to root-only staging")
-        pkg_dir = up.extract_package(pkg_file, stage)
+        # Copied ONCE through a descriptor (no link, a regular file) and the
+        # copy is what gets extracted: the upload dir is the account's.
+        ufd = up.open_dir_nofollow(APP, UPLOADS.relative_to(APP).parts)
+        try:
+            with up.open_file_nofollow(ufd, name) as src_, \
+                    open(stage / "package.tar.gz", "wb") as out_:
+                shutil.copyfileobj(src_, out_, 1 << 20)
+        finally:
+            os.close(ufd)
+        pkg_dir = up.extract_package(stage / "package.tar.gz", stage / "pkg")
         st.step("extract to root-only staging", True, str(stage))
 
         # -- 3. signature + integrity ---------------------------------------
@@ -1994,12 +2084,15 @@ def package_change(req_path):
             st.step("database backup", True,
                     "skipped (standby; its database is a replica of the primary)")
 
-        freeze = Path("/root/satom-venv-freeze-pre-package-%s.txt"
-                      % datetime.utcnow().strftime("%Y%m%d-%H%M%S"))
+        # In the root-owned, world-readable wheelhouse: the rollback below runs
+        # `pip install -r` AS the service account, which cannot read /root.
+        freeze = Path(wheelhouse) / ("venv-freeze-pre-package-%s.txt"
+                                     % datetime.utcnow().strftime("%Y%m%d-%H%M%S"))
         st.begin("freeze current dependencies")
         fr = run([str(VENV / "pip"), "freeze"], timeout=180, user=APP_USER)
         if fr.returncode == 0:
             freeze.write_text(fr.stdout)
+            os.chmod(freeze, 0o644)
             st.step("freeze current dependencies", True, str(freeze))
         else:
             freeze = None
@@ -2020,7 +2113,7 @@ def package_change(req_path):
                           (git("ls-files", timeout=120).stdout or "").splitlines()
                           if ln.strip()}
         st.begin("install application tree")
-        written = up.extract_app_tree(app_tar, APP)
+        written = install_tree(up, app_tar)
         st.step("install application tree", True, "%d file(s) from %s"
                 % (len(written), name))
 
@@ -2032,15 +2125,9 @@ def package_change(req_path):
         # and absent there was deleted upstream. Only TRACKED paths are
         # considered, so data/, pki/ and .env cannot be caught by this.
         stale = sorted(tracked_now - set(written))
-        for rel in stale:
-            # The tracked list comes from a .git the service account owns:
-            # never unlink through a planted directory link.
-            if _link_below(APP, Path(rel).parent):
-                continue
-            try:
-                (APP / rel).unlink()
-            except OSError:
-                pass
+        # The tracked list comes from a .git the service account owns: the
+        # files are removed BY that account, so a planted link gains it nothing.
+        remove_in_tree(stale)
         if stale:
             st.step("remove %d file(s) the new revision dropped" % len(stale),
                     True, ", ".join(stale[:8]))
@@ -2166,15 +2253,7 @@ def package_change(req_path):
             st.begin("rollback to %s" % snapshot[:12])
             git("reset", "--hard", snapshot)
             stray = _new_untracked(untracked_before)
-            for rel in stray:
-                target = APP / rel
-                if _link_below(APP, Path(rel).parent):
-                    continue
-                try:
-                    if target.is_file() or target.is_symlink():
-                        target.unlink()
-                except OSError:
-                    pass
+            remove_in_tree(stray)
             if stray:
                 st.step("remove %d file(s) the package added" % len(stray), True,
                         ", ".join(stray[:8]))
@@ -2919,7 +2998,8 @@ def _candidates(mgr, installed):
 def _vm_pin():
     """VM_VERSION of the release on disk ('' when unknown)."""
     try:
-        for line in (APP / "deploy" / "metrics-store.env").read_text().splitlines():
+        raw = _load_update_package().read_small_nofollow(APP / "deploy" / "metrics-store.env")
+        for line in (raw or b"").decode("utf-8", "replace").splitlines():
             m = re.match(r'^\s*VM_VERSION="?([0-9][0-9A-Za-z.+-]*)"?\s*$', line)
             if m:
                 return m.group(1)

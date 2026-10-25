@@ -36,7 +36,10 @@ STATE_DIR="/var/lib/satom-runner"
 # operator who disables one afterwards keeps it disabled.
 ARMED_REGISTRY="${STATE_DIR}/armed-units.json"
 SEED_MARKER="${STATE_DIR}/upgrade-seeded-3x"
-PY="${SATOM_RUN_PY:-${APP_DIR}/venv/bin/python}"
+# A SYSTEM interpreter, never the venv: the venv is the service account's, and
+# this script runs as root (also when an operator runs it by hand).
+PY="${SATOM_RUN_PY:-/usr/bin/python3}"
+case "$PY" in "${APP_DIR}"/*) PY=/usr/bin/python3 ;; esac
 # Same as self_update_runner._LATE_ARM: installed by an earlier update but never
 # enabled, because the runner of that time enabled nothing.
 LATE_ARM="satom-scripts.path"

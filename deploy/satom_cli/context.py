@@ -8,6 +8,7 @@ enforces this with an AST check, not with good intentions.
 """
 import grp
 import os
+import stat
 import pwd
 import shutil
 import socket
@@ -272,7 +273,18 @@ class Ctx:
         if self._env is None:
             self._env = {}
             try:
-                for line in ENV_FILE.read_text().splitlines():
+                # No link, a regular file root owns and nobody else can write:
+                # .env sits in the service account's directory, which could
+                # otherwise point it at any KEY=value file root can read -- and
+                # these values reach processes run AS that account (app_env).
+                fd = os.open(str(ENV_FILE), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as fh:
+                    st_ = os.fstat(fh.fileno())
+                    if (not stat.S_ISREG(st_.st_mode) or st_.st_uid != 0
+                            or st_.st_mode & (stat.S_IWGRP | stat.S_IWOTH)):
+                        raise OSError("%s is not root's regular file" % ENV_FILE)
+                    text = fh.read(1024 * 1024).decode("utf-8", "replace")
+                for line in text.splitlines():
                     line = line.strip()
                     if not line or line.startswith("#") or "=" not in line:
                         continue

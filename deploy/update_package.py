@@ -43,7 +43,7 @@ import os
 import re
 import stat
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 SCHEMA = "satom.update-package/1"
 PRODUCT = "satom"
@@ -399,6 +399,120 @@ def _extractall(tf, dest, members):
         tf.extractall(dest, members=members)
 
 
+# ---------------------------------------------------------------------------
+# Root touching the service account's directories
+# ---------------------------------------------------------------------------
+# data/ and everything below it belong to the service account, which can swap
+# any entry for a symlink at any moment -- including between a check and the
+# write that follows it. So root never writes, chmods or chowns there BY PATH:
+# every directory component is opened relative to its parent with O_NOFOLLOW,
+# a new file is created O_EXCL|O_NOFOLLOW under a random name, its mode and
+# owner are set on the open DESCRIPTOR, and an atomic rename replaces the
+# final NAME (a link planted there is replaced, never followed). The runner,
+# the operator CLI and every other root writer share these functions.
+
+def open_dir_nofollow(base, parts, ids=None) -> int:
+    """O_DIRECTORY fd of ``base/<parts...>``. ``base`` is opened normally (it is
+    the app root, whose parent root owns); every component below it with
+    O_NOFOLLOW, created 0750 and handed to ``ids`` = (uid, gid) when missing."""
+    fd = os.open(str(base), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in parts:
+            if part in ("", ".", "..") or "/" in part:
+                raise PackageError("refusing the path component %r" % (part,))
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            try:
+                nfd = os.open(part, flags, dir_fd=fd)
+            except FileNotFoundError:
+                os.mkdir(part, 0o750, dir_fd=fd)
+                nfd = os.open(part, flags, dir_fd=fd)
+                if ids:
+                    os.fchown(nfd, ids[0], ids[1])
+            os.close(fd)
+            fd = nfd
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+_PLAIN_NAME_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]{0,200}$")
+
+
+def write_nofollow(dir_fd, name, chunks, mode=0o640, ids=None) -> int:
+    """Write ``chunks`` (an iterable of bytes) to ``name`` in ``dir_fd`` without
+    following any link; returns the byte count. The file appears under
+    ``name`` only once it is complete."""
+    if not isinstance(name, str) or not _PLAIN_NAME_RE.fullmatch(name):
+        raise PackageError("refusing to write a file named %r" % (name,))
+    tmp = ".%s.%s.tmp" % (name, os.urandom(6).hex())
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600,
+                 dir_fd=dir_fd)
+    total = 0
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            for chunk in chunks:
+                fh.write(chunk)
+                total += len(chunk)
+            fh.flush()
+            os.fchmod(fh.fileno(), mode)
+            if ids:
+                os.fchown(fh.fileno(), ids[0], ids[1])
+        os.replace(tmp, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+    except BaseException:
+        try:
+            os.unlink(tmp, dir_fd=dir_fd)
+        except OSError:
+            pass
+        raise
+    return total
+
+
+def open_file_nofollow(dir_fd, name, owner_uid=None):
+    """A binary file object for reading ``name`` in ``dir_fd``: a regular file,
+    reached without following a link, owned by ``owner_uid`` when given."""
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise PackageError("%s is not a regular file" % name)
+        if owner_uid is not None and st.st_uid != owner_uid:
+            raise PackageError("%s is owned by uid %d, expected %d"
+                               % (name, st.st_uid, owner_uid))
+        return os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def read_small_nofollow(path, limit=64 * 1024):
+    """Bytes of a small regular file reached WITHOUT following a link in its
+    last component, or None. For files root reads in the service account's
+    tree (VERSION, status JSON): a link there would otherwise make root read
+    any file and repeat its content where that account can see it."""
+    try:
+        fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+    with os.fdopen(fd, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            return None
+        data = fh.read(limit + 1)
+    return data if len(data) <= limit else None
+
+
+def read_version_file(path) -> str:
+    """The VERSION file's version, or "" when it is not a plain version."""
+    raw = read_small_nofollow(path, 128)
+    text = (raw or b"").decode("ascii", "replace").strip()
+    return text if VERSION_RE.match(text) and len(text) <= 64 else ""
+
+
+def file_chunks(fh, size=1 << 20):
+    """Iterate a binary file in ``size`` blocks."""
+    return iter(lambda: fh.read(size), b"")
+
+
 def extract_package(path, dest) -> Path:
     """Extract the package tarball under ``dest``; return the package dir."""
     dest = Path(dest)
@@ -427,26 +541,41 @@ def extract_app_tree(app_tar, dest) -> list:
     reusing ``_safe_members``.
     """
     dest = Path(dest)
-    written = []
     with tarfile.open(app_tar, "r:gz") as tf:
-        members = []
-        for m in tf.getmembers():
-            name = m.name
-            if name.startswith("/") or ".." in Path(name).parts:
-                raise PackageError("unsafe path in app tree: %s" % name)
-            if m.issym() or m.islnk():
-                raise PackageError("app tree contains a link (%s); not allowed" % name)
-            if m.ischr() or m.isblk() or m.isfifo() or m.isdev():
-                raise PackageError("app tree contains a device/fifo (%s)" % name)
-            if not (m.isfile() or m.isdir()):
-                raise PackageError("app tree member %s has unsupported type" % name)
-            members.append(m)
-            if m.isfile():
-                written.append(name)
-        _check_unpacked_size(members, "app tree")
+        members, written = _app_tree_members(tf)
         _refuse_links_on_disk(dest, members)
         _extractall(tf, dest, members)
     return written
+
+
+def _app_tree_members(tf):
+    members, written = [], []
+    for m in tf.getmembers():
+        name = m.name
+        if name.startswith("/") or ".." in Path(name).parts:
+            raise PackageError("unsafe path in app tree: %s" % name)
+        if m.issym() or m.islnk():
+            raise PackageError("app tree contains a link (%s); not allowed" % name)
+        if m.ischr() or m.isblk() or m.isfifo() or m.isdev():
+            raise PackageError("app tree contains a device/fifo (%s)" % name)
+        if not (m.isfile() or m.isdir()):
+            raise PackageError("app tree member %s has unsupported type" % name)
+        members.append(m)
+        if m.isfile():
+            # Normalised (``./x`` -> ``x``): the caller compares this list
+            # with ``git ls-files``, and a spelling difference would make
+            # every tracked file look dropped.
+            written.append(str(PurePosixPath(name)))
+    _check_unpacked_size(members, "app tree")
+    return members, written
+
+
+def app_tree_files(app_tar) -> list:
+    """Validate ``app.tar.gz`` exactly as :func:`extract_app_tree` does and
+    return the FILE paths it holds, without extracting anything. The runner
+    uses it when the tree is written by the service account, not by root."""
+    with tarfile.open(app_tar, "r:gz") as tf:
+        return _app_tree_members(tf)[1]
 
 
 def read_manifest(pkg_dir) -> dict:

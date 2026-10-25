@@ -6,6 +6,42 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security
+
+Root no longer acts BY PATH where the service account (`satom`) can point the
+path somewhere else. The application tree and `data/` belong to that account,
+which can turn any entry into a symbolic link at any moment, including between
+a check and the write that follows it. Found by the release-trust review of
+SATOM Builder's copy of this code.
+
+- **Package apply:** the verified `app.tar.gz` is still validated by root (no
+  links, devices, absolute or `..` paths, size ceiling), but `satom` extracts
+  it into its own tree and removes the files the new revision dropped (also
+  when a failed apply rolls back). Root extracted and unlinked there itself,
+  after a check `satom` could race. The uploaded package is copied to root-only
+  staging through a descriptor that does not follow a link.
+- **Reads that followed links:** `VERSION` (repeated in the update status and a
+  git commit message `satom` reads), `.env` (the standby's database credentials;
+  the CLI's environment for processes run as `satom`), `data/ha_nodes.json` and
+  `deploy/metrics-store.env` are read without following a link, and `.env` only
+  when it is a regular file owned by root.
+- **`.env` is never adopted:** handing the tree back after an update re-seals
+  only the root-owned `.env` it opened before the `chown`; one `satom` wrote
+  stays its own (and ignored) instead of becoming root's configuration.
+  `chown -R` of the tree no longer follows links (`-h`).
+- **CLI:** `satom execute clone import` stages the bundle as `satom`
+  (`app_copy`), `satom execute update package` queues its request and status
+  as `satom`, and `satom execute repair tmp --yes` deletes as `satom`; as root
+  the CLI loads the signature verifier only from the root-owned runner copy.
+- **`upgrade-converge.sh`** runs with the system Python, never the venv's, also
+  when started by hand.
+
+### Fixed
+
+- **A failed package apply can roll the dependencies back again.** The
+  `pip freeze` taken before the apply was written to `/root`, which the
+  rollback -- running `pip install -r` as `satom` -- cannot read.
+
 ## [4.1.0] - 2026-10-25
 
 What SATOM provides for **SATOM Builder**, the separate tool customers install to author

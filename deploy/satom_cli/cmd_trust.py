@@ -16,7 +16,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from .context import app_copy, chown_app, run
+from .context import app_copy, run
 from .render import Result
 
 TRUST_DIR = Path(os.environ.get("SATOM_TRUST_DIR", "/etc/satom/update-keys"))
@@ -43,8 +43,12 @@ def _up(ctx):
     fallback: applying a package goes through the runner, which loads its own
     sibling and refuses if that sibling is not root-owned.
     """
-    for path in (RUNNER_LIB / "update_package.py",
-                 ctx.app_dir / "deploy" / "update_package.py"):
+    # As root, ONLY the root-owned copy: the app tree's copy is the service
+    # account's code, and loading it here would run it as root.
+    paths = [RUNNER_LIB / "update_package.py"]
+    if os.geteuid() != 0:
+        paths.append(ctx.app_dir / "deploy" / "update_package.py")
+    for path in paths:
         if path.is_file():
             spec = importlib.util.spec_from_file_location("satom_update_package", path)
             mod = importlib.util.module_from_spec(spec)
@@ -574,18 +578,6 @@ def _version(ctx):
         return "unknown"
 
 
-def _chown_app(ctx, path):
-    chown_app(ctx, path)
-
-
-def _write_new(path, text):
-    """Create ``path`` (never through a symlink, never over an existing name):
-    the queue directories are the service account's."""
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640)
-    with os.fdopen(fd, "w") as fh:
-        fh.write(text)
-
-
 def _runner_problem(ctx):
     up = _up(ctx)
     if up is None:
@@ -602,24 +594,28 @@ def _enqueue(ctx, name, *, allow_downgrade, do_backup):
     from datetime import datetime
     req_dir = ctx.app_dir / "data" / "update-requests"
     sta_dir = ctx.app_dir / "data" / "update-status"
-    req_dir.mkdir(parents=True, exist_ok=True)
-    sta_dir.mkdir(parents=True, exist_ok=True)
     uid = datetime.utcnow().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
     req = {"id": uid, "kind": "package", "package": name,
            "allow_downgrade": bool(allow_downgrade), "do_backup": bool(do_backup),
            "requested_by": "%s (cli)" % ctx.user,
            "requested_at": datetime.utcnow().isoformat() + "Z",
            "node": socket.gethostname(), "role": ctx.role, "origin": "cli"}
-    _write_new(sta_dir / (uid + ".json"), json.dumps({
+    # Both files are written BY the account (app_copy): the queue directories
+    # are its own, and root creating, chown-ing and renaming by path there
+    # would follow a directory it had turned into a link.
+    status = json.dumps({
         "id": uid, "state": "queued", "steps": [], "kind": "package",
         "package": name, "requested_by": req["requested_by"],
         "node": req["node"], "role": req["role"], "origin": "cli",
-        "updated_at": req["requested_at"]}))
-    _chown_app(ctx, sta_dir / (uid + ".json"))
-    tmp = req_dir / ("." + uid + ".tmp")
-    _write_new(tmp, json.dumps(req))
-    _chown_app(ctx, tmp)
-    tmp.rename(req_dir / (uid + ".json"))
+        "updated_at": req["requested_at"]})
+    with tempfile.TemporaryDirectory(prefix="satom-enqueue-") as tdir:
+        for dest, text in ((sta_dir / (uid + ".json"), status),
+                           (req_dir / (uid + ".json"), json.dumps(req))):
+            src = Path(tdir) / dest.name
+            src.write_text(text)
+            ok, err = app_copy(ctx, src, dest)
+            if not ok:
+                raise OSError("cannot queue %s: %s" % (dest, err))
     return uid
 
 

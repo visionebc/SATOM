@@ -8,14 +8,13 @@ argv, and verifying the node afterwards.
 import getpass
 import json
 import os
-import shutil
 import tarfile
 import time
 from pathlib import Path
 
 from . import dbq
 from .cmd_fix import _app_stdin, _yes
-from .context import run
+from .context import app_cmd, app_copy, run
 from .render import Result
 
 PASSPHRASE_ENV = "SATOM_CLONE_PASSPHRASE"
@@ -242,15 +241,18 @@ def import_(ctx, args):
 
     # The app runs as the service account and must be able to read the file;
     # a copy in its own private directory, not a wider mode on the original.
+    # Written BY the account (app_copy drops before it writes): root copying,
+    # chmod-ing and chown-ing by path in data/clone-imports/ would follow a
+    # link the account planted there.
     inbox = ctx.app_dir / "data" / "clone-imports"
-    inbox.mkdir(mode=0o700, parents=True, exist_ok=True)
     dst = inbox / src.name
-    if src.resolve() != dst.resolve():
-        shutil.copyfile(src, dst)
-    owner = (ctx.app_dir / "data").stat()
-    for p in (inbox, dst):
-        os.chown(p, owner.st_uid, owner.st_gid)
-    os.chmod(dst, 0o600)
+    if os.path.abspath(str(src)) != str(dst):
+        ok_, err_ = app_copy(ctx, src, dst)
+        if not ok_:
+            return Result("bad", "cannot stage %s for the service account: %s"
+                          % (src.name, err_), exit_code=4)
+    run(app_cmd(ctx, ["chmod", "700", str(inbox)]), timeout=30)
+    run(app_cmd(ctx, ["chmod", "600", str(dst)]), timeout=30)
 
     r = Result("ok", "clone import %s" % src.name)
     steps, stopped = [], []

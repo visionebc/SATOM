@@ -703,11 +703,14 @@ def repair_tmp(ctx, args):
         r.lines("apply", ["  sudo satom execute repair tmp --older-than %d --yes" % days])
         return r
     removed, failed = 0, 0
+    # Removed BY the service account: data/tmp is its scratch, and a root
+    # rmtree there follows nothing but would delete through a data/tmp that
+    # had been turned into a link.
     for p, _s in victims:
-        try:
-            shutil.rmtree(p) if p.is_dir() else p.unlink()
+        rc, _o, _e = run(app_cmd(ctx, ["rm", "-rf", "--", str(p)]), timeout=300)
+        if rc == 0 and not os.path.lexists(str(p)):
             removed += 1
-        except Exception:  # noqa: BLE001
+        else:
             failed += 1
     r = Result("ok" if not failed else "warn", "reclaimed %.1f MB" % (total / 1e6))
     r.rows("", [("removed", removed), ("failed", failed), ("older than", "%d days" % days)])

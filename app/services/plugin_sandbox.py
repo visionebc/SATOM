@@ -217,8 +217,8 @@ def safe_render(jinja_src: str, data: dict[str, Any],
     except Exception as exc:  # noqa: BLE001 — sandbox SecurityError et al.
         msg = f"{type(exc).__name__}: {exc}"
     card = (
-        '<div style="border:1px solid #ef4444;background:rgba(239,68,68,.08);'
-        'border-radius:12px;padding:16px;color:#fca5a5;font-family:monospace;'
+        '<div style="border:1px solid rgba(220,53,69,.45);background:rgba(220,53,69,.08);'
+        'border-radius:8px;padding:16px;color:#8B1C2A;font-family:monospace;'
         'font-size:13px;white-space:pre-wrap">Plugin render error:\n'
         + _escape(msg) + "</div>"
     )

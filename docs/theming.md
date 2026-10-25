@@ -219,6 +219,19 @@ the stylesheet, tracked separately. The card, input, table and modal surfaces
 were already tokenised (`--fw-surface`, `--fw-surface-alt`) as part of this
 work; what remains is the status tints.
 
+### Plugins follow the theme too
+
+Report Studio views and widgets render in a sandboxed iframe that cannot load
+`fortiweb.css`. The frame therefore carries the tokens itself: every `--fw-*`
+token at its stylesheet default, then the active theme's override block (the
+same `css_for()` output, re-validated per kind), then the plugin class kit
+(`app/static/css/plugin-kit.css`, inlined) and finally the plugin's own CSS.
+Activating a theme reaches every plugin that uses the tokens or the kit
+(within the 15 s cache TTL), with no change to the plugin. The status colours in
+the kit are the same literals as the console's `.fw-badge-*` block, so the same
+"cannot repaint" caveat applies there. What a plugin stylesheet may contain is
+in the user guide, Report Studio, *Plugin CSS rules*.
+
 
 ---
 

@@ -32,44 +32,44 @@ from typing import Any
 # into each example's ``css`` string; each example still renders in its own
 # sandboxed iframe so class names never collide.
 _BASE = (
-    "h2{font-size:18px;margin:0 0 12px;color:#e2e8f0}"
-    "h3{font-size:14px;color:#cbd5e1;margin:16px 0 6px}"
-    ".hint{font-size:12px;color:#94a3b8;margin:0 0 12px}"
+    "h2{font-size:18px;margin:0 0 12px;color:var(--fw-text-primary)}"
+    "h3{font-size:14px;color:var(--fw-text-primary);margin:16px 0 6px}"
+    ".hint{font-size:12px;color:var(--fw-text-secondary);margin:0 0 12px}"
     "table{width:100%;border-collapse:collapse;font-size:13px}"
-    "th{text-align:left;color:#94a3b8;font-weight:600;padding:6px 8px;border-bottom:1px solid rgba(148,163,184,.15)}"
-    "td{padding:6px 8px;border-bottom:1px solid rgba(148,163,184,.07);color:#e2e8f0}"
+    "th{text-align:left;color:var(--fw-text-secondary);font-weight:600;padding:6px 8px;border-bottom:1px solid rgba(148,163,184,.15)}"
+    "td{padding:6px 8px;border-bottom:1px solid rgba(148,163,184,.07);color:var(--fw-text-primary)}"
 )
 _CARD = (
-    ".card{background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.12);"
+    ".card{background:var(--fw-surface-alt);border:1px solid rgba(148,163,184,.12);"
     "border-radius:14px;padding:16px}"
 )
 _STATUS = (
     ".st{border-radius:6px;padding:2px 8px;font-size:11px}"
-    ".st.on{background:rgba(16,185,129,.15);color:#6ee7b7}"
-    ".st.off{background:rgba(239,68,68,.12);color:#fca5a5}"
+    ".st.on{background:rgba(40,167,69,.16);color:#15692A}"
+    ".st.off{background:rgba(220,53,69,.12);color:#8B1C2A}"
 )
 _BAR = (
     ".bar{display:flex;align-items:center;gap:10px;margin:7px 0}"
-    ".bar .lbl{width:150px;font-size:13px;color:#cbd5e1;overflow:hidden;"
+    ".bar .lbl{width:150px;font-size:13px;color:var(--fw-text-primary);overflow:hidden;"
     "text-overflow:ellipsis;white-space:nowrap}"
     ".bar .track{flex:1;background:rgba(148,163,184,.1);border-radius:8px;height:20px;overflow:hidden}"
-    ".bar .fill{height:100%;background:linear-gradient(90deg,#3b82f6,#8b5cf6)}"
+    ".bar .fill{height:100%;background:linear-gradient(90deg,#0A3F9F,#4C2A85)}"
     ".bar .val{width:38px;text-align:right;font-size:13px}"
 )
 _BANNER = (
-    ".banner{display:flex;align-items:center;gap:16px;background:rgba(15,23,42,.6);"
+    ".banner{display:flex;align-items:center;gap:16px;background:var(--fw-surface-alt);"
     "border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:20px;margin-bottom:18px}"
     ".banner .big{font-size:44px;font-weight:700}"
-    ".banner.bad .big{color:#fca5a5}.banner.good .big{color:#6ee7b7}"
-    ".banner .sub{font-size:12px;color:#94a3b8;margin-top:2px}"
+    ".banner.bad .big{color:#8B1C2A}.banner.good .big{color:#15692A}"
+    ".banner .sub{font-size:12px;color:var(--fw-text-secondary);margin-top:2px}"
 )
 _DONUT = (
     ".donut-wrap{display:flex;align-items:center;gap:24px;flex-wrap:wrap}"
     ".donut{width:150px;height:150px;border-radius:50%;background:rgba(148,163,184,.12)}"
     ".donut .hole{position:relative;top:37px;left:37px;width:76px;height:76px;border-radius:50%;"
-    "background:#0b1220;display:flex;align-items:center;justify-content:center;flex-direction:column}"
-    ".donut .hole b{font-size:24px;color:#e2e8f0}.donut .hole span{font-size:10px;color:#94a3b8;text-transform:uppercase}"
-    ".legend div{display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0;color:#cbd5e1}"
+    "background:var(--fw-surface);display:flex;align-items:center;justify-content:center;flex-direction:column}"
+    ".donut .hole b{font-size:24px;color:var(--fw-text-primary)}.donut .hole span{font-size:10px;color:var(--fw-text-secondary);text-transform:uppercase}"
+    ".legend div{display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0;color:var(--fw-text-primary)}"
     ".legend i{width:12px;height:12px;border-radius:3px;display:inline-block}"
 )
 
@@ -97,9 +97,9 @@ _EXAMPLES: list[dict[str, Any]] = [
   <div class="kpi"><div class="kpi-n">{{ c.certificates if c else 0 }}</div><div class="kpi-l">Certificates</div></div>
 </div>""",
         "css": """.kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.kpi{background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:22px;text-align:center}
-.kpi-n{font-size:38px;font-weight:700;background:linear-gradient(90deg,#3b82f6,#8b5cf6);-webkit-background-clip:text;background-clip:text;color:transparent}
-.kpi-l{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:4px}""",
+.kpi{background:var(--fw-surface-alt);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:22px;text-align:center}
+.kpi-n{font-size:38px;font-weight:700;background:linear-gradient(90deg,#0A3F9F,#4C2A85);-webkit-background-clip:text;background-clip:text;color:transparent}
+.kpi-l{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--fw-text-secondary);margin-top:4px}""",
         "js": "",
     },
     {
@@ -121,10 +121,10 @@ _EXAMPLES: list[dict[str, Any]] = [
   <div class="stat-l">server policies per device</div>
   <div class="stat-sub">{{ pol }} policies across {{ dev }} device(s)</div>
 </div>""",
-        "css": """.stat{background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:26px;text-align:center}
-.stat-n{font-size:46px;font-weight:700;color:#93c5fd}
-.stat-l{font-size:13px;color:#cbd5e1;margin-top:4px}
-.stat-sub{font-size:12px;color:#64748b;margin-top:8px}""",
+        "css": """.stat{background:var(--fw-surface-alt);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:26px;text-align:center}
+.stat-n{font-size:46px;font-weight:700;color:var(--fw-accent)}
+.stat-l{font-size:13px;color:var(--fw-text-primary);margin-top:4px}
+.stat-sub{font-size:12px;color:var(--fw-text-secondary);margin-top:8px}""",
         "js": "",
     },
     {
@@ -147,8 +147,8 @@ _EXAMPLES: list[dict[str, Any]] = [
 <div class="meter"><div class="fill" style="width:{{ pct }}%"></div></div>
 <div class="cap">{{ certs }} certificate(s) for {{ dev }} device(s) — {{ pct }}%</div>""",
         "css": _BASE + """.meter{height:26px;border-radius:13px;background:rgba(148,163,184,.12);overflow:hidden}
-.meter .fill{height:100%;background:linear-gradient(90deg,#10b981,#3b82f6)}
-.cap{font-size:12px;color:#94a3b8;margin-top:8px}""",
+.meter .fill{height:100%;background:linear-gradient(90deg,#15692A,#0A3F9F)}
+.cap{font-size:12px;color:var(--fw-text-secondary);margin-top:8px}""",
         "js": "",
     },
     {
@@ -174,7 +174,7 @@ _EXAMPLES: list[dict[str, Any]] = [
 <tr><td colspan="4">No devices registered.</td></tr>
 {% endfor %}
 </tbody></table>""",
-        "css": _BASE + """.tag{background:rgba(59,130,246,.15);color:#93c5fd;border-radius:6px;padding:2px 8px;font-size:11px}""",
+        "css": _BASE + """.tag{background:rgba(10,63,159,.10);color:var(--fw-accent);border-radius:6px;padding:2px 8px;font-size:11px}""",
         "js": "",
     },
     {
@@ -202,12 +202,12 @@ _EXAMPLES: list[dict[str, Any]] = [
 </div>""",
         "css": _CARD + """.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
 .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.name{font-weight:600;color:#e2e8f0}
-.kind{font-size:10px;text-transform:uppercase;border-radius:6px;padding:2px 8px;background:rgba(59,130,246,.15);color:#93c5fd}
-.kind.fortiadc{background:rgba(139,92,246,.15);color:#c4b5fd}
-.fw{font-size:12px;color:#94a3b8;margin-bottom:4px}
-.host{font-size:12px;color:#64748b;font-family:monospace}
-.card.empty{color:#94a3b8;text-align:center}""",
+.name{font-weight:600;color:var(--fw-text-primary)}
+.kind{font-size:10px;text-transform:uppercase;border-radius:6px;padding:2px 8px;background:rgba(10,63,159,.10);color:var(--fw-accent)}
+.kind.fortiadc{background:rgba(76,42,133,.12);color:#4C2A85}
+.fw{font-size:12px;color:var(--fw-text-secondary);margin-bottom:4px}
+.host{font-size:12px;color:var(--fw-text-secondary);font-family:monospace}
+.card.empty{color:var(--fw-text-secondary);text-align:center}""",
         "js": "",
     },
     {
@@ -231,7 +231,7 @@ _EXAMPLES: list[dict[str, Any]] = [
 {% endfor %}
 </tbody></table>
 {% else %}<p class="hint">No devices registered.</p>{% endif %}""",
-        "css": _BASE + """code{color:#93c5fd;font-size:12px}""",
+        "css": _BASE + """code{color:var(--fw-accent);font-size:12px}""",
         "js": "",
     },
     {
@@ -253,10 +253,10 @@ _EXAMPLES: list[dict[str, Any]] = [
 </ul>""",
         "css": """.ep{list-style:none;padding:0;margin:0}
 .ep li{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid rgba(148,163,184,.08)}
-.ep .n{width:120px;color:#e2e8f0;font-size:13px}
-.ep code{flex:1;color:#93c5fd;font-family:monospace;font-size:13px}
-.ep .k{font-size:10px;text-transform:uppercase;color:#94a3b8}
-.ep .none{color:#94a3b8}""",
+.ep .n{width:120px;color:var(--fw-text-primary);font-size:13px}
+.ep code{flex:1;color:var(--fw-accent);font-family:monospace;font-size:13px}
+.ep .k{font-size:10px;text-transform:uppercase;color:var(--fw-text-secondary)}
+.ep .none{color:var(--fw-text-secondary)}""",
         "js": "",
     },
     {
@@ -277,7 +277,7 @@ _EXAMPLES: list[dict[str, Any]] = [
 var counts={};rows.forEach(function(r){counts[r.kind]=(counts[r.kind]||0)+1;});
 var el=document.getElementById('chart');
 var keys=Object.keys(counts).sort();
-if(!keys.length){el.innerHTML='<p style="color:#94a3b8">No devices registered.</p>';}
+if(!keys.length){el.innerHTML='<p style="color:var(--fw-text-secondary)">No devices registered.</p>';}
 var max=Math.max(1,...keys.map(function(k){return counts[k];}));
 keys.forEach(function(k){
   var pct=Math.round(counts[k]/max*100);
@@ -302,7 +302,7 @@ keys.forEach(function(k){
         "css": _DONUT,
         "js": """var rows=(window.pluginData.fleet_appliances||{}).rows||[];
 var counts={};rows.forEach(function(r){counts[r.kind]=(counts[r.kind]||0)+1;});
-var total=rows.length||1;var palette=['#3b82f6','#10b981','#8b5cf6','#fbbf24','#ef4444'];
+var total=rows.length||1;var palette=['#0A3F9F','#15692A','#4C2A85','#7A5700','#8B1C2A'];
 var seg=[],acc=0,i=0,legend='';
 Object.keys(counts).sort().forEach(function(k){
   var c=palette[i%palette.length];var pct=counts[k]/total*100;
@@ -363,7 +363,7 @@ document.getElementById('legend').innerHTML=legend||'<div>No devices.</div>';"""
 <td><span class="st {{ 'on' if r.status=='enable' else 'off' }}">{{ r.status or '—' }}</span></td></tr>
 {% else %}<tr><td colspan="7">No cached policies. Run a rediscovery.</td></tr>{% endfor %}
 </tbody></table>""",
-        "css": _BASE + _STATUS + """.q{width:100%;padding:8px 12px;margin-bottom:10px;background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.15);border-radius:10px;color:#e2e8f0}""",
+        "css": _BASE + _STATUS + """.q{width:100%;padding:8px 12px;margin-bottom:10px;background:var(--fw-surface-alt);border:1px solid rgba(148,163,184,.15);border-radius:10px;color:var(--fw-text-primary)}""",
         "js": """var q=document.getElementById('q'),t=document.getElementById('t');
 q.addEventListener('input',function(){var v=q.value.toLowerCase();
 t.querySelectorAll('tbody tr').forEach(function(tr){tr.style.display=tr.textContent.toLowerCase().indexOf(v)>=0?'':'none';});});""",
@@ -419,14 +419,14 @@ t.querySelectorAll('tbody tr').forEach(function(tr){tr.style.display=tr.textCont
 </div>""",
         "css": _CARD + _STATUS + """.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .top{display:flex;justify-content:space-between;align-items:center}
-.top b{color:#e2e8f0}
-.meta{font-size:11px;color:#94a3b8;margin:4px 0 8px}
-.kv{display:flex;justify-content:space-between;font-size:12px;color:#cbd5e1;padding:2px 0}
-.kv span{color:#64748b}
+.top b{color:var(--fw-text-primary)}
+.meta{font-size:11px;color:var(--fw-text-secondary);margin:4px 0 8px}
+.kv{display:flex;justify-content:space-between;font-size:12px;color:var(--fw-text-primary);padding:2px 0}
+.kv span{color:var(--fw-text-secondary)}
 .flags{margin-top:8px;display:flex;gap:6px}
 .flag{font-size:10px;border-radius:5px;padding:2px 7px}
-.flag.y{background:rgba(16,185,129,.15);color:#6ee7b7}.flag.n{background:rgba(148,163,184,.1);color:#94a3b8}
-.card.empty{color:#94a3b8;text-align:center}""",
+.flag.y{background:rgba(40,167,69,.16);color:#15692A}.flag.n{background:rgba(148,163,184,.1);color:var(--fw-text-secondary)}
+.card.empty{color:var(--fw-text-secondary);text-align:center}""",
         "js": "",
     },
     {
@@ -480,8 +480,8 @@ t.querySelectorAll('tbody tr').forEach(function(tr){tr.style.display=tr.textCont
 {% for r in bad %}<tr><td>{{ r.device or r.appliance_id }}</td><td>{{ r.policy }}</td><td>{{ r.vserver or '—' }}</td><td>{{ r.status }}</td></tr>{% endfor %}
 </tbody></table>
 {% else %}<div class="ok">✅ Every cached policy has a WAF profile bound.</div>{% endif %}""",
-        "css": _BASE + """.warn{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:12px;padding:14px;margin-bottom:14px}
-.ok{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:#6ee7b7;border-radius:12px;padding:14px}""",
+        "css": _BASE + """.warn{background:rgba(220,53,69,.10);border:1px solid rgba(220,53,69,.30);color:#8B1C2A;border-radius:12px;padding:14px;margin-bottom:14px}
+.ok{background:rgba(40,167,69,.10);border:1px solid rgba(40,167,69,.30);color:#15692A;border-radius:12px;padding:14px}""",
         "js": "",
     },
     {
@@ -564,7 +564,7 @@ t.querySelectorAll('tbody tr').forEach(function(tr){tr.style.display=tr.textCont
 var by={};rows.forEach(function(r){var k=r.device||r.appliance_id||'?';by[k]=(by[k]||0)+1;});
 var arr=Object.keys(by).map(function(k){return[k,by[k]];}).sort(function(a,b){return b[1]-a[1];});
 var el=document.getElementById('chart');
-if(!arr.length){el.innerHTML='<p style="color:#94a3b8">No cached policies. Run a rediscovery.</p>';}
+if(!arr.length){el.innerHTML='<p style="color:var(--fw-text-secondary)">No cached policies. Run a rediscovery.</p>';}
 var max=Math.max(1,...arr.map(function(x){return x[1];}));
 arr.forEach(function(x){var d=document.createElement('div');d.className='bar';
   d.innerHTML='<div class="lbl" title="'+x[0]+'">'+x[0]+'</div><div class="track"><div class="fill" style="width:'+Math.round(x[1]/max*100)+'%"></div></div><div class="val">'+x[1]+'</div>';
@@ -586,11 +586,11 @@ arr.forEach(function(x){var d=document.createElement('div');d.className='bar';
 <p class="hint">App ID is read from each policy's comment. Set a comment like
 <code>AppID: shop-01</code> on your policies to group them here.</p>
 <div id="groups"></div>""",
-        "css": """.hint{font-size:12px;color:#94a3b8;margin-bottom:14px}code{color:#93c5fd}
-.grp{background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.12);border-radius:14px;padding:16px;margin-bottom:12px}
-.grp h3{margin:0 0 8px;font-size:15px;color:#c4b5fd}
-.grp .cnt{font-size:11px;color:#94a3b8;font-weight:400}
-.pill{display:inline-block;background:rgba(139,92,246,.14);color:#ddd6fe;border-radius:8px;padding:4px 10px;margin:3px;font-size:12px}
+        "css": """.hint{font-size:12px;color:var(--fw-text-secondary);margin-bottom:14px}code{color:var(--fw-accent)}
+.grp{background:var(--fw-surface-alt);border:1px solid rgba(148,163,184,.12);border-radius:14px;padding:16px;margin-bottom:12px}
+.grp h3{margin:0 0 8px;font-size:15px;color:#4C2A85}
+.grp .cnt{font-size:11px;color:var(--fw-text-secondary);font-weight:400}
+.pill{display:inline-block;background:rgba(76,42,133,.12);color:#4C2A85;border-radius:8px;padding:4px 10px;margin:3px;font-size:12px}
 .none{background:rgba(148,163,184,.06);border-style:dashed}""",
         "js": """var rows=(window.pluginData.server_policies_full||{}).rows||[];
 var groups={};
@@ -629,7 +629,7 @@ keys.forEach(function(k){
 </tbody></table>
 {% else %}<p class="hint">No cached policies.</p>{% endif %}""",
         "css": _BASE + """.mini{display:inline-block;width:120px;height:10px;background:rgba(148,163,184,.12);border-radius:5px;overflow:hidden;vertical-align:middle;margin-right:8px}
-.mini-fill{height:100%;background:linear-gradient(90deg,#3b82f6,#8b5cf6)}""",
+.mini-fill{height:100%;background:linear-gradient(90deg,#0A3F9F,#4C2A85)}""",
         "js": "",
     },
     {
@@ -648,7 +648,7 @@ keys.forEach(function(k){
         "css": _DONUT,
         "js": """var rows=(window.pluginData.server_policies_full||{}).rows||[];
 var counts={};rows.forEach(function(r){var k=(r.status==='enable')?'enabled':'disabled';counts[k]=(counts[k]||0)+1;});
-var total=rows.length||1;var colors={enabled:'#10b981',disabled:'#ef4444'};
+var total=rows.length||1;var colors={enabled:'#15692A',disabled:'#8B1C2A'};
 var seg=[],acc=0,legend='';
 ['enabled','disabled'].forEach(function(k){if(!counts[k])return;var pct=counts[k]/total*100;
   seg.push(colors[k]+' '+acc.toFixed(1)+'% '+(acc+pct).toFixed(1)+'%');acc+=pct;
@@ -678,9 +678,9 @@ document.getElementById('legend').innerHTML=legend||'<div>No policies.</div>';""
 <ul>{% for r in items %}<li>{{ r.device or r.appliance_id }} · {{ r.policy }}</li>{% endfor %}</ul></div>
 {% endfor %}
 {% else %}<p class="hint">No cached policies.</p>{% endif %}""",
-        "css": _BASE + """.grp{background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:12px;padding:12px 16px;margin-bottom:10px}
-.grp h3{margin:0 0 6px;color:#93c5fd}.grp h3 span{color:#64748b;font-weight:400;font-size:12px}
-.grp ul{margin:0;padding-left:18px;color:#cbd5e1;font-size:13px}""",
+        "css": _BASE + """.grp{background:var(--fw-surface-alt);border:1px solid rgba(148,163,184,.1);border-radius:12px;padding:12px 16px;margin-bottom:10px}
+.grp h3{margin:0 0 6px;color:var(--fw-accent)}.grp h3 span{color:var(--fw-text-secondary);font-weight:400;font-size:12px}
+.grp ul{margin:0;padding-left:18px;color:var(--fw-text-primary);font-size:13px}""",
         "js": "",
     },
     {
@@ -775,7 +775,7 @@ document.getElementById('legend').innerHTML=legend||'<div>No policies.</div>';""
 <tr><td>{{ r.appliance_id }}</td><td>{{ r.name }}</td><td>{{ r.type or '—' }}</td><td>{{ r.protocol or '—' }}</td></tr>
 {% else %}<tr><td colspan="4">No cached pools. Run a rediscovery.</td></tr>{% endfor %}
 </tbody></table>""",
-        "css": _BASE + """.q{width:100%;padding:8px 12px;margin-bottom:10px;background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.15);border-radius:10px;color:#e2e8f0}""",
+        "css": _BASE + """.q{width:100%;padding:8px 12px;margin-bottom:10px;background:var(--fw-surface-alt);border:1px solid rgba(148,163,184,.15);border-radius:10px;color:var(--fw-text-primary)}""",
         "js": """var q=document.getElementById('q'),t=document.getElementById('t');
 q.addEventListener('input',function(){var v=q.value.toLowerCase();
 t.querySelectorAll('tbody tr').forEach(function(tr){tr.style.display=tr.textContent.toLowerCase().indexOf(v)>=0?'':'none';});});""",
@@ -819,7 +819,7 @@ t.querySelectorAll('tbody tr').forEach(function(tr){tr.style.display=tr.textCont
         "css": _DONUT,
         "js": """var rows=(window.pluginData.server_pools||{}).rows||[];
 var counts={};rows.forEach(function(r){var k=r.protocol||'unknown';counts[k]=(counts[k]||0)+1;});
-var total=rows.length||1;var palette=['#3b82f6','#10b981','#8b5cf6','#fbbf24','#ef4444','#06b6d4'];
+var total=rows.length||1;var palette=['#0A3F9F','#15692A','#4C2A85','#7A5700','#8B1C2A','#0E7C86'];
 var seg=[],acc=0,i=0,legend='';
 Object.keys(counts).sort().forEach(function(k){var c=palette[i%palette.length];var pct=counts[k]/total*100;
   seg.push(c+' '+acc.toFixed(1)+'% '+(acc+pct).toFixed(1)+'%');acc+=pct;
@@ -958,9 +958,9 @@ document.getElementById('legend').innerHTML=legend||'<div>No pools.</div>';""",
 {% else %}<div class="card empty">No WAF profiles cached.</div>{% endfor %}
 </div>""",
         "css": _CARD + """.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
-.card b{color:#e2e8f0}.card .k{float:right;font-size:10px;text-transform:uppercase;color:#94a3b8}
-.kv{display:flex;justify-content:space-between;font-size:12px;color:#cbd5e1;padding:3px 0;margin-top:4px}
-.kv span{color:#64748b}.card.empty{color:#94a3b8;text-align:center}""",
+.card b{color:var(--fw-text-primary)}.card .k{float:right;font-size:10px;text-transform:uppercase;color:var(--fw-text-secondary)}
+.kv{display:flex;justify-content:space-between;font-size:12px;color:var(--fw-text-primary);padding:3px 0;margin-top:4px}
+.kv span{color:var(--fw-text-secondary)}.card.empty{color:var(--fw-text-secondary);text-align:center}""",
         "js": "",
     },
     {
@@ -994,8 +994,8 @@ document.getElementById('legend').innerHTML=legend||'<div>No pools.</div>';""",
 <li><code>{{ name }}</code> — {{ items|length }} policy(ies)</li>
 {% else %}<li class="hint">No policy binds a WAF profile.</li>{% endfor %}
 </ul>""",
-        "css": _BASE + """.unused{color:#fca5a5}code{color:#93c5fd}
-.refs{margin:0;padding-left:18px;color:#cbd5e1;font-size:13px}""",
+        "css": _BASE + """.unused{color:#8B1C2A}code{color:var(--fw-accent)}
+.refs{margin:0;padding-left:18px;color:var(--fw-text-primary);font-size:13px}""",
         "js": "",
     },
     {
@@ -1051,7 +1051,7 @@ document.getElementById('legend').innerHTML=legend||'<div>No pools.</div>';""",
 {% else %}<tr><td colspan="5">No managed certificates.</td></tr>{% endfor %}
 </tbody></table>""",
         "css": _BASE + """.pill{border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600}
-.pill.r{background:rgba(239,68,68,.15);color:#fca5a5}.pill.a{background:rgba(251,191,36,.15);color:#fcd34d}.pill.g{background:rgba(16,185,129,.15);color:#6ee7b7}""",
+.pill.r{background:rgba(220,53,69,.16);color:#8B1C2A}.pill.a{background:rgba(255,193,7,.20);color:#7A5700}.pill.g{background:rgba(40,167,69,.16);color:#15692A}""",
         "js": """var now=Date.now();
 document.querySelectorAll('#tb tr[data-exp]').forEach(function(tr){
   var raw=tr.getAttribute('data-exp');var t=Date.parse(raw);var cell=tr.querySelector('.days');
@@ -1079,7 +1079,7 @@ document.querySelectorAll('#tb tr[data-exp]').forEach(function(tr){
 {% else %}<tr><td colspan="4">No managed certificates.</td></tr>{% endfor %}
 </tbody></table>""",
         "css": _BASE + """.pill{border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600}
-.pill.r{background:rgba(239,68,68,.15);color:#fca5a5}.pill.a{background:rgba(251,191,36,.15);color:#fcd34d}""",
+.pill.r{background:rgba(220,53,69,.16);color:#8B1C2A}.pill.a{background:rgba(255,193,7,.20);color:#7A5700}""",
         "js": """var win=parseInt((window.pluginParams||{}).days,10); if(isNaN(win)) win=3650;
 document.getElementById('win').textContent=win;
 var now=Date.now();
@@ -1110,8 +1110,8 @@ document.querySelectorAll('#tb tr[data-exp]').forEach(function(tr){
 <tr data-exp="{{ r.not_after }}"><td>{{ r.common_name or '—' }}</td><td>{{ r.appliance_id or '—' }}</td><td>{{ r.status or '—' }}</td><td>{{ r.not_after or '—' }}</td></tr>
 {% else %}<tr class="keep"><td colspan="4">No managed certificates.</td></tr>{% endfor %}
 </tbody></table>""",
-        "css": _BASE + """.warn{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:12px;padding:12px;margin-bottom:14px}
-.ok{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:#6ee7b7}""",
+        "css": _BASE + """.warn{background:rgba(220,53,69,.10);border:1px solid rgba(220,53,69,.30);color:#8B1C2A;border-radius:12px;padding:12px;margin-bottom:14px}
+.ok{background:rgba(40,167,69,.10);border:1px solid rgba(40,167,69,.30);color:#15692A}""",
         "js": """var now=Date.now();var expired=0;
 document.querySelectorAll('#tb tr[data-exp]').forEach(function(tr){
   var t=Date.parse(tr.getAttribute('data-exp'));
@@ -1136,7 +1136,7 @@ else{s.className='warn ok';s.textContent='✅ No expired certificates.';}""",
         "css": _DONUT,
         "js": """var rows=(window.pluginData.certificates||{}).rows||[];
 var counts={};rows.forEach(function(r){var k=r.status||'unknown';counts[k]=(counts[k]||0)+1;});
-var total=rows.length||1;var palette=['#10b981','#fbbf24','#ef4444','#3b82f6','#8b5cf6'];
+var total=rows.length||1;var palette=['#15692A','#7A5700','#8B1C2A','#0A3F9F','#4C2A85'];
 var seg=[],acc=0,i=0,legend='';
 Object.keys(counts).sort().forEach(function(k){var c=palette[i%palette.length];var pct=counts[k]/total*100;
   seg.push(c+' '+acc.toFixed(1)+'% '+(acc+pct).toFixed(1)+'%');acc+=pct;
@@ -1190,10 +1190,10 @@ document.getElementById('legend').innerHTML=legend||'<div>No certificates.</div>
 </ul>""",
         "css": """.tl{list-style:none;margin:0;padding:0}
 .tl li{display:flex;gap:12px;padding:0 0 14px 4px;position:relative;border-left:2px solid rgba(148,163,184,.15);margin-left:6px}
-.tl .dot{width:10px;height:10px;border-radius:50%;background:#3b82f6;margin:2px 0 0 -11px;flex:none}
-.tl .cn{color:#e2e8f0;font-size:13px;font-weight:600}
-.tl .d{color:#94a3b8;font-size:12px}
-.tl .none{border:0;color:#94a3b8}""",
+.tl .dot{width:10px;height:10px;border-radius:50%;background:#0A3F9F;margin:2px 0 0 -11px;flex:none}
+.tl .cn{color:var(--fw-text-primary);font-size:13px;font-weight:600}
+.tl .d{color:var(--fw-text-secondary);font-size:12px}
+.tl .none{border:0;color:var(--fw-text-secondary)}""",
         "js": "",
     },
 
@@ -1222,10 +1222,10 @@ document.getElementById('legend').innerHTML=legend||'<div>No certificates.</div>
 </div>""",
         "css": """.feed{display:flex;flex-direction:column}
 .ev{display:flex;gap:12px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(148,163,184,.1)}
-.ic .dot{width:9px;height:9px;border-radius:50%;background:#3b82f6;display:inline-block;margin-top:5px}
-.ev .a{font-size:13px;color:#e2e8f0}.ev .m{font-size:12px;color:#94a3b8}
-.ev .p{background:rgba(59,130,246,.15);color:#93c5fd;border-radius:4px;padding:0 6px;font-size:10px}
-.ev .t{margin-left:auto;font-size:11px;color:#64748b;white-space:nowrap}""",
+.ic .dot{width:9px;height:9px;border-radius:50%;background:#0A3F9F;display:inline-block;margin-top:5px}
+.ev .a{font-size:13px;color:var(--fw-text-primary)}.ev .m{font-size:12px;color:var(--fw-text-secondary)}
+.ev .p{background:rgba(10,63,159,.10);color:var(--fw-accent);border-radius:4px;padding:0 6px;font-size:10px}
+.ev .t{margin-left:auto;font-size:11px;color:var(--fw-text-secondary);white-space:nowrap}""",
         "js": "",
     },
     {
@@ -1241,10 +1241,10 @@ document.getElementById('legend').innerHTML=legend||'<div>No certificates.</div>
         "params": [],
         "jinja": """<h2>Actions by user (recent)</h2><div id="board"></div>""",
         "css": """.row{display:flex;align-items:center;gap:10px;margin:6px 0}
-.row .u{width:130px;font-size:13px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .u{width:130px;font-size:13px;color:var(--fw-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .tr{flex:1;background:rgba(148,163,184,.1);border-radius:8px;height:20px;overflow:hidden}
-.row .fl{height:100%;background:linear-gradient(90deg,#3b82f6,#8b5cf6)}
-.row .n{width:34px;text-align:right;font-size:13px;color:#e2e8f0}""",
+.row .fl{height:100%;background:linear-gradient(90deg,#0A3F9F,#4C2A85)}
+.row .n{width:34px;text-align:right;font-size:13px;color:var(--fw-text-primary)}""",
         "js": """var rows=(window.pluginData.audit_recent||{}).rows||[];
 var c={};rows.forEach(function(r){var u=r.username||'system';c[u]=(c[u]||0)+1;});
 var pairs=Object.keys(c).map(function(k){return [k,c[k]];}).sort(function(a,b){return b[1]-a[1];});
@@ -1276,9 +1276,9 @@ el.appendChild(d);});""",
 {% endfor %}
 </tbody></table>
 {% else %}<p class="hint">No audit activity.</p>{% endif %}""",
-        "css": _BASE + """code{color:#93c5fd;font-size:12px}
+        "css": _BASE + """code{color:var(--fw-accent);font-size:12px}
 .mini{width:100%;height:10px;background:rgba(148,163,184,.12);border-radius:5px;overflow:hidden}
-.mini-fill{height:100%;background:linear-gradient(90deg,#3b82f6,#8b5cf6)}""",
+.mini-fill{height:100%;background:linear-gradient(90deg,#0A3F9F,#4C2A85)}""",
         "js": "",
     },
     {
@@ -1297,7 +1297,7 @@ el.appendChild(d);});""",
         "css": _DONUT,
         "js": """var rows=(window.pluginData.audit_recent||{}).rows||[];
 var counts={};rows.forEach(function(r){var k=(r.product&&r.product.trim())?r.product:'(none)';counts[k]=(counts[k]||0)+1;});
-var total=rows.length||1;var palette=['#3b82f6','#10b981','#8b5cf6','#fbbf24','#ef4444','#06b6d4','#f472b6'];
+var total=rows.length||1;var palette=['#0A3F9F','#15692A','#4C2A85','#7A5700','#8B1C2A','#0E7C86','#B0561B'];
 var seg=[],acc=0,i=0,legend='';
 Object.keys(counts).sort().forEach(function(k){var c=palette[i%palette.length];var pct=counts[k]/total*100;
   seg.push(c+' '+acc.toFixed(1)+'% '+(acc+pct).toFixed(1)+'%');acc+=pct;
@@ -1320,7 +1320,7 @@ document.getElementById('legend').innerHTML=legend||'<div>No activity.</div>';""
         "params": [],
         "jinja": """<h2>Most-touched targets</h2>
 <div id="top"></div>""",
-        "css": _BASE + _BAR + ".bar .lbl{width:200px}.empty{color:#94a3b8}",
+        "css": _BASE + _BAR + ".bar .lbl{width:200px}.empty{color:var(--fw-text-secondary)}",
         "js": """var rows=(window.pluginData.audit_recent||{}).rows||[];
 var c={};rows.forEach(function(r){var t=(r.target&&r.target.trim())?r.target:'(none)';c[t]=(c[t]||0)+1;});
 var pairs=Object.keys(c).map(function(k){return [k,c[k]];}).sort(function(a,b){return b[1]-a[1];}).slice(0,10);
@@ -1346,9 +1346,9 @@ pairs.forEach(function(p){var d=document.createElement('div');d.className='bar';
 <div id="hist" class="hist"></div>""",
         "css": """.hist{display:flex;align-items:flex-end;gap:3px;height:140px;padding-top:10px}
 .hist .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
-.hist .b{width:100%;background:linear-gradient(180deg,#8b5cf6,#3b82f6);border-radius:3px 3px 0 0;min-height:2px}
-.hist .h{font-size:9px;color:#64748b;margin-top:3px}
-.empty{color:#94a3b8}""",
+.hist .b{width:100%;background:linear-gradient(180deg,#4C2A85,#0A3F9F);border-radius:3px 3px 0 0;min-height:2px}
+.hist .h{font-size:9px;color:var(--fw-text-secondary);margin-top:3px}
+.empty{color:var(--fw-text-secondary)}""",
         "js": """var rows=(window.pluginData.audit_recent||{}).rows||[];
 var buckets=new Array(24).fill(0);
 rows.forEach(function(r){var m=/\\b(\\d{2}):\\d{2}:\\d{2}/.exec(r.timestamp||'');if(m){buckets[parseInt(m[1],10)]++;}});
@@ -1379,7 +1379,7 @@ else{buckets.forEach(function(n,h){var c=document.createElement('div');c.classNa
 </ul>""",
         "css": """.feed{list-style:none;padding:0;margin:0}
 .feed li{padding:8px 0;border-bottom:1px solid rgba(148,163,184,.08);font-size:13px}
-.who{color:#93c5fd}.act{color:#c4b5fd;margin:0 6px}.tgt{color:#cbd5e1}.ts{float:right;color:#64748b;font-size:11px}""",
+.who{color:var(--fw-accent)}.act{color:#4C2A85;margin:0 6px}.tgt{color:var(--fw-text-primary)}.ts{float:right;color:var(--fw-text-secondary);font-size:11px}""",
         "js": "",
     },
     {
@@ -1401,7 +1401,7 @@ else{buckets.forEach(function(n,h){var c=document.createElement('div');c.classNa
 <tr><td>{{ r.timestamp }}</td><td>{{ r.username or 'system' }}</td><td><code>{{ r.action }}</code></td><td>{{ r.target or '—' }}</td></tr>
 {% else %}<tr><td colspan="4">No rows match “{{ params.action }}”.</td></tr>{% endfor %}
 </tbody></table>""",
-        "css": _BASE + "code{color:#c4b5fd;font-size:12px}",
+        "css": _BASE + "code{color:#4C2A85;font-size:12px}",
         "js": "",
     },
 
@@ -1447,7 +1447,7 @@ else{buckets.forEach(function(n,h){var c=document.createElement('div');c.classNa
 var on=0,off=0;rows.forEach(function(r){var e=r.enabled;
   if(e===1||e==='1'||e==='true'||e==='True'||e===true){on++;}else{off++;}});
 var total=rows.length||1;var seg=[],acc=0,legend='';
-[['enabled',on,'#10b981'],['paused',off,'#94a3b8']].forEach(function(x){if(!x[1])return;var pct=x[1]/total*100;
+[['enabled',on,'#15692A'],['paused',off,'#3D4550']].forEach(function(x){if(!x[1])return;var pct=x[1]/total*100;
   seg.push(x[2]+' '+acc.toFixed(1)+'% '+(acc+pct).toFixed(1)+'%');acc+=pct;
   legend+='<div><i style="background:'+x[2]+'"></i>'+x[0]+' — '+x[1]+'</div>';});
 var d=document.getElementById('donut');
@@ -1500,11 +1500,11 @@ document.getElementById('legend').innerHTML=legend||'<div>No scheduled actions.<
 </ul>""",
         "css": """.tl{list-style:none;margin:0;padding:0}
 .tl li{display:flex;gap:12px;padding:0 0 14px 4px;border-left:2px solid rgba(148,163,184,.15);margin-left:6px}
-.tl .dot{width:10px;height:10px;border-radius:50%;background:#10b981;margin:2px 0 0 -11px;flex:none}
-.tl .paused .dot,.tl li.paused .dot{background:#94a3b8}
-.tl .nm{color:#e2e8f0;font-size:13px;font-weight:600}.tl .nm em{color:#94a3b8;font-weight:400}
-.tl .d{color:#94a3b8;font-size:12px}
-.tl .none{border:0;color:#94a3b8}""",
+.tl .dot{width:10px;height:10px;border-radius:50%;background:#15692A;margin:2px 0 0 -11px;flex:none}
+.tl .paused .dot,.tl li.paused .dot{background:var(--fw-text-secondary)}
+.tl .nm{color:var(--fw-text-primary);font-size:13px;font-weight:600}.tl .nm em{color:var(--fw-text-secondary);font-weight:400}
+.tl .d{color:var(--fw-text-secondary);font-size:12px}
+.tl .none{border:0;color:var(--fw-text-secondary)}""",
         "js": "",
     },
 
@@ -1537,10 +1537,10 @@ document.getElementById('legend').innerHTML=legend||'<div>No scheduled actions.<
 </div>
 {% else %}<p class="hint">No cached policies to score.</p>{% endif %}""",
         "css": _BASE + """.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.sc{background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:20px;text-align:center}
-.sc .p{font-size:34px;font-weight:700;color:#6ee7b7}
-.sc .l{font-size:12px;color:#cbd5e1;margin-top:4px}
-.sc .s{font-size:11px;color:#64748b;margin-top:4px}""",
+.sc{background:var(--fw-surface-alt);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:20px;text-align:center}
+.sc .p{font-size:34px;font-weight:700;color:#15692A}
+.sc .l{font-size:12px;color:var(--fw-text-primary);margin-top:4px}
+.sc .s{font-size:11px;color:var(--fw-text-secondary);margin-top:4px}""",
         "js": "",
     },
     {
@@ -1572,8 +1572,8 @@ document.getElementById('legend').innerHTML=legend||'<div>No scheduled actions.<
 <p class="hint">No server policies are cached yet — run a rediscovery for coverage detail.</p>
 {% endif %}
 </div>""",
-        "css": _BASE + _CARD + """.card p{color:#cbd5e1;font-size:14px;line-height:1.6;margin:0 0 10px}
-.card b{color:#e2e8f0}.bad{color:#fca5a5}.good{color:#6ee7b7}""",
+        "css": _BASE + _CARD + """.card p{color:var(--fw-text-primary);font-size:14px;line-height:1.6;margin:0 0 10px}
+.card b{color:var(--fw-text-primary)}.bad{color:#8B1C2A}.good{color:#15692A}""",
         "js": "",
     },
     {
@@ -1624,7 +1624,7 @@ document.getElementById('legend').innerHTML=legend||'<div>No scheduled actions.<
 {% endfor %}
 </tbody></table>
 {% else %}<p class="hint">No cached policies.</p>{% endif %}""",
-        "css": _BASE + "td b{color:#93c5fd}",
+        "css": _BASE + "td b{color:var(--fw-accent)}",
         "js": "",
     },
 
@@ -1647,7 +1647,7 @@ document.getElementById('legend').innerHTML=legend||'<div>No scheduled actions.<
 {% if rows %}
 {% set total = rows|length %}
 <div class="strip">
-{% set colors = ['#3b82f6','#8b5cf6','#10b981','#fbbf24','#ef4444'] %}
+{% set colors = ['#0A3F9F','#4C2A85','#15692A','#7A5700','#8B1C2A'] %}
 {% for kind, items in rows|groupby('kind') %}
 <div class="seg" style="width:{{ (items|length / total * 100)|round(1) }}%;background:{{ colors[loop.index0 % 5] }}" title="{{ kind }}: {{ items|length }}"></div>
 {% endfor %}
@@ -1661,7 +1661,7 @@ document.getElementById('legend').innerHTML=legend||'<div>No scheduled actions.<
         "css": _BASE + """.strip{display:flex;height:28px;border-radius:8px;overflow:hidden;background:rgba(148,163,184,.12)}
 .seg{height:100%}
 .legend{margin-top:12px;display:flex;flex-wrap:wrap;gap:16px}
-.legend span{display:flex;align-items:center;gap:6px;font-size:13px;color:#cbd5e1}
+.legend span{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--fw-text-primary)}
 .legend i{width:12px;height:12px;border-radius:3px}""",
         "js": "",
     },
@@ -1678,13 +1678,13 @@ document.getElementById('legend').innerHTML=legend||'<div>No scheduled actions.<
         "params": [],
         "jinja": """<h2>Policies per device (enabled / disabled)</h2>
 <div id="chart"></div>
-<div class="key"><span><i style="background:#10b981"></i>enabled</span><span><i style="background:#ef4444"></i>disabled</span></div>""",
+<div class="key"><span><i style="background:#15692A"></i>enabled</span><span><i style="background:#8B1C2A"></i>disabled</span></div>""",
         "css": """#chart .row{display:flex;align-items:center;gap:10px;margin:7px 0}
-#chart .lbl{width:150px;font-size:13px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chart .lbl{width:150px;font-size:13px;color:var(--fw-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #chart .track{flex:1;display:flex;height:20px;border-radius:8px;overflow:hidden;background:rgba(148,163,184,.1)}
-#chart .on{background:#10b981}#chart .off{background:#ef4444}
-#chart .val{width:44px;text-align:right;font-size:12px;color:#e2e8f0}
-.key{margin-top:12px;display:flex;gap:16px}.key span{display:flex;align-items:center;gap:6px;font-size:12px;color:#94a3b8}
+#chart .on{background:#15692A}#chart .off{background:#8B1C2A}
+#chart .val{width:44px;text-align:right;font-size:12px;color:var(--fw-text-primary)}
+.key{margin-top:12px;display:flex;gap:16px}.key span{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fw-text-secondary)}
 .key i{width:12px;height:12px;border-radius:3px}""",
         "js": """var rows=(window.pluginData.server_policies_full||{}).rows||[];
 var by={};rows.forEach(function(r){var k=r.device||r.appliance_id||'?';by[k]=by[k]||{on:0,off:0};
@@ -1692,7 +1692,7 @@ var by={};rows.forEach(function(r){var k=r.device||r.appliance_id||'?';by[k]=by[
 var keys=Object.keys(by).sort(function(a,b){return (by[b].on+by[b].off)-(by[a].on+by[a].off);});
 var max=Math.max(1,...keys.map(function(k){return by[k].on+by[k].off;}));
 var el=document.getElementById('chart');
-if(!keys.length){el.innerHTML='<p style="color:#94a3b8">No cached policies.</p>';}
+if(!keys.length){el.innerHTML='<p style="color:var(--fw-text-secondary)">No cached policies.</p>';}
 keys.forEach(function(k){var o=by[k];var tot=o.on+o.off;var w=tot/max*100;
   var d=document.createElement('div');d.className='row';
   d.innerHTML='<div class="lbl" title="'+k+'">'+k+'</div><div class="track" style="width:'+w+'%">'+
@@ -1715,7 +1715,7 @@ keys.forEach(function(k){var o=by[k];var tot=o.on+o.off;var w=tot/max*100;
 <div id="spark" class="spark">…</div>
 <div class="cap">Events bucketed by hour of day (0–23).</div>""",
         "css": """.spark{height:60px}.spark svg{width:100%;height:60px}
-.cap{font-size:11px;color:#64748b;margin-top:6px}""",
+.cap{font-size:11px;color:var(--fw-text-secondary);margin-top:6px}""",
         "js": """var rows=(window.pluginData.audit_recent||{}).rows||[];
 var b=new Array(24).fill(0);
 rows.forEach(function(r){var m=/\\b(\\d{2}):\\d{2}:\\d{2}/.exec(r.timestamp||'');if(m)b[parseInt(m[1],10)]++;});
@@ -1724,7 +1724,7 @@ var max=Math.max(1,...b);var w=300,h=60,step=w/23;
 var pts=b.map(function(n,i){return (i*step).toFixed(1)+','+(h-(n/max*(h-6))-3).toFixed(1);}).join(' ');
 if(!rows.length){el.textContent='No activity.';}
 else{el.innerHTML='<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none">'+
-  '<polyline fill="none" stroke="#3b82f6" stroke-width="2" points="'+pts+'"/></svg>';}""",
+  '<polyline fill="none" stroke="#0A3F9F" stroke-width="2" points="'+pts+'"/></svg>';}""",
     },
     {
         "id": "policy_treemap",
@@ -1740,15 +1740,15 @@ else{el.innerHTML='<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none">'+
         "jinja": """<h2>Policy load by device</h2>
 <div id="tm" class="tm"></div>""",
         "css": """.tm{display:flex;flex-wrap:wrap;gap:6px}
-.tm .tile{border-radius:10px;padding:12px;color:#fff;display:flex;flex-direction:column;justify-content:center;min-width:70px;min-height:60px}
+.tm .tile{border-radius:10px;padding:12px;background:var(--fw-accent);color:#fff;display:flex;flex-direction:column;justify-content:center;min-width:70px;min-height:60px}
 .tm .tn{font-size:12px;opacity:.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tm .tc{font-size:22px;font-weight:700}
-.tm .empty{color:#94a3b8}""",
+.tm .empty{color:var(--fw-text-secondary)}""",
         "js": """var rows=(window.pluginData.server_policies_full||{}).rows||[];
 var by={};rows.forEach(function(r){var k=r.device||r.appliance_id||'?';by[k]=(by[k]||0)+1;});
 var keys=Object.keys(by).sort(function(a,b){return by[b]-by[a];});
 var max=Math.max(1,...keys.map(function(k){return by[k];}));
-var pal=['#3b82f6','#6366f1','#8b5cf6','#a855f7','#ec4899','#10b981'];
+var pal=['#0A3F9F','#1F5FBF','#4C2A85','#3D4550','#C4401A','#15692A'];
 var el=document.getElementById('tm');
 if(!keys.length){el.innerHTML='<div class="empty">No cached policies.</div>';}
 keys.forEach(function(k,i){var flex=Math.max(1,Math.round(by[k]/max*4));

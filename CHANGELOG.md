@@ -6,6 +6,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+
+- **Report Studio views and widgets render in SATOM's light look.** The
+  sandboxed plugin frame dropped its dark default: it now carries every
+  `--fw-*` token with the active **Settings › Appearance** theme on top, so a
+  customer theme reaches plugins, plus a small class kit (`.fw-card`,
+  `.fw-badge-*`, `.fw-table`, `.btn-fw-*`, `.fw-alert-*`, base typography),
+  all inlined. The frame's Content-Security-Policy is unchanged. The built-in
+  examples and the render-error card moved to the light palette. A view
+  written with light-on-dark colours keeps them; the editor's contrast
+  warnings point at those lines.
+
+### Added
+
+- **Plugin CSS rules and their linter** (`app/services/plugin_css.py`, pure
+  standard library, for the rules pack). Errors: `@import`, non-`data:`
+  `url()`, `expression(`, `javascript:`, `behavior` / `-moz-binding`,
+  `position: fixed`, non-`data:` `@font-face` sources, more than 256 KiB.
+  Warnings: more than 20 `!important`, text colours below 4.5:1 on white,
+  `z-index` above 1000. The plugin editor lists the findings for the saved
+  stylesheet. Documented in the user guide, Report Studio, *Plugin CSS rules*.
+
 ## [4.0.3] - 2026-10-25
 
 One Mass Deploy fix, found while verifying 4.0.2 on a live node.

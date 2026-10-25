@@ -557,6 +557,13 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>One API library build's endpoints, or with <code>?endpoint=</code> that endpoint's fields (§17)</td>
 </tr>
 <tr>
+<td><code>GET</code></td>
+<td><code>/builder/data</code></td>
+<td>read</td>
+<td>owner is a Plugin Studio author</td>
+<td>This server's rows for the Builder's test data: datasets scoped to the owner, data stores, <code>satom_select</code> lists (§17)</td>
+</tr>
+<tr>
 <td><code>POST</code></td>
 <td><code>/builder/validate</code></td>
 <td>write</td>
@@ -1656,6 +1663,14 @@ copied verbatim from this server. <code>rules.json</code> lists them under <code
                                          &quot;measured&quot;: true, &quot;vendor_only&quot;: false,
                                          &quot;cli_measured&quot;: true, &quot;in_fleet&quot;: true}]}}}
 </code></pre>
+<p><code>datasets</code> is every dataset a plugin can read in the token's ADOM (built-in,
+administrator and device-object, user guide §23.1.1). Each entry carries
+<code>source</code> (<code>builtin</code> | <code>admin</code> | <code>objects</code>), <code>group</code> (for pickers), <code>product</code>
+('' = any), <code>columns</code>, <code>relations</code> (<code>[{"column", "to", "to_column",
+"inferred"}]</code>) and <code>masked</code> (the fields read as <code>********</code>); a built-in one its
+fixed <code>sql</code>, an administrator one its <code>spec</code> (the Report Builder query, which a
+package carries in <code>dataset_defs</code>), a device-object one its <code>object</code>
+(<code>{"product", "layer", "logical_name"}</code>).</p>
 <p><code>fortinet</code> covers the token's ADOM (every product for <code>global</code>).</p>
 <h3 id="get-builderlibraryfortinetproductversion"><code>GET /builder/library/fortinet/&lt;product&gt;/&lt;version&gt;</code></h3>
 <p>One build of the API library: <code>{"product", "version", "endpoints": [{"endpoint",
@@ -1664,6 +1679,30 @@ copied verbatim from this server. <code>rules.json</code> lists them under <code
 where <code>status</code> is <code>measured</code>, <code>blind</code>, <code>absent</code> or <code>unmeasured</code> (an empty
 <code>fields</code> is "unknown" unless the status is <code>measured</code>). A product outside the
 token's ADOM is 403 <code>wrong_product</code>.</p>
+<h3 id="get-builderdata"><code>GET /builder/data</code></h3>
+<p>This server's rows, for the Builder's test data (contract §15). <code>read</code>
+scope; the owner must be a Plugin Studio author (<code>studio.script_library</code>),
+else 403 <code>owner_forbidden</code>. Query: <code>datasets</code> and <code>stores</code> (comma lists;
+empty = none; <code>stores</code> absent = all; <code>datasets</code> absent = the built-in and
+administrator datasets, a device-object dataset only when named), <code>limit</code>
+(rows per table, 1 to 2000, default 200).</p>
+<pre><code class="language-json">{&quot;format&quot;: &quot;satom.builder-data/1&quot;, &quot;satom_version&quot;: &quot;4.3.0&quot;, &quot;product&quot;: &quot;fortiweb&quot;,
+ &quot;taken_at&quot;: &quot;2026-10-25T14:00:00+00:00&quot;, &quot;limit&quot;: 200,
+ &quot;datasets&quot;: {&quot;fleet_appliances&quot;: {&quot;columns&quot;: [&quot;id&quot;, &quot;name&quot;, &quot;kind&quot;, &quot;firmware&quot;, &quot;host&quot;, &quot;port&quot;],
+                                   &quot;rows&quot;: [{&quot;id&quot;: &quot;1&quot;, &quot;name&quot;: &quot;fwb-a&quot;, &quot;...&quot;: &quot;...&quot;}],
+                                   &quot;total&quot;: 1, &quot;truncated&quot;: false}},
+ &quot;stores&quot;: {&quot;owners&quot;: {&quot;columns&quot;: [{&quot;name&quot;: &quot;ip&quot;, &quot;label&quot;: &quot;IP&quot;, &quot;type&quot;: &quot;text&quot;, &quot;required&quot;: true}],
+                       &quot;rows&quot;: [{&quot;ip&quot;: &quot;192.0.2.7&quot;, &quot;_id&quot;: 1}], &quot;total&quot;: 1, &quot;truncated&quot;: false}},
+ &quot;sources&quot;: {&quot;appliances&quot;: [{&quot;value&quot;: &quot;1&quot;, &quot;label&quot;: &quot;fwb-a (fortiweb, 192.0.2.11)&quot;}]},
+ &quot;unknown&quot;: {&quot;datasets&quot;: [], &quot;stores&quot;: []}}
+</code></pre>
+<p>Dataset rows are what a view rendered here shows the token's owner: the
+fixed query through the masked read-only path (values as text, as a view
+sees them), cut to the owner's visible appliances and ADOM, the audit log
+only with <code>audit.view</code>. Store rows carry the declared columns and <code>_id</code>.
+<code>sources</code> are the <code>satom_select</code> lists, scoped the same way. The answer
+stays under 3 MB: a table that does not fit is cut (<code>truncated</code>). One audit
+line <code>builder.data</code> with the row counts per table.</p>
 <h3 id="post-buildervalidate"><code>POST /builder/validate</code></h3>
 <p>A dry run: the package is checked with the <strong>builder</strong> rules against this
 server and nothing is written. HTTP 200 even when <code>ok</code> is false:</p>

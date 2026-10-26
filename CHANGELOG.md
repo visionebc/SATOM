@@ -113,6 +113,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **The loop the author guide describes now works as written.** Plugin
+  Studio's guide says one call per item is "a `set` counter, a decision, the
+  step, the counter + 1", but a `set` step's literal `"0"` is the TEXT '0':
+  `{{ ips[i] }}` then finds nothing and `{{ i + 1 }}` fails (the SATOM
+  Builder's AI wrote exactly that three times in a row). The guide now says
+  the counter starts as `{{ 0 }}` and grows with `{{ i + 1 }}`, and an
+  expression like `ips[i]` that finds nothing because `i` is text says so
+  and how to write it.
 - **A FortiGate SATOM manages is in the fleet.** The API library still said
   "SATOM does not manage FortiGates" (`CATALOG_ONLY_PRODUCTS`), so no
   FortiGate build was ever `in_fleet` -- not on the API versions page, not in

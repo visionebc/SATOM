@@ -983,7 +983,9 @@ def author_guide(target: dict) -> str:
       "`{\"key\": \"members\", \"kind\": \"set\", \"params\": {\"name\": \"members\", "
       "\"value\": \"{{ appliances | selectattr('ip') | map(attribute='ip') | list }}\"}}`. "
       "One call per item is a loop in the diagram (a `set` counter, a `decision`, the step, "
-      "the counter + 1) or a script step. `connection`, `store` and `script` name an object "
+      "the counter + 1) or a script step: the counter starts as `\"{{ 0 }}\"` (a literal "
+      "`\"0\"` is the TEXT '0', which cannot index a list nor add 1), grows with "
+      "`\"{{ i + 1 }}\"` and reads an item as `{{ ips[i] }}`. `connection`, `store` and `script` name an object "
       "of the package or the server: a literal name, never a template. A json parameter may "
       "also be ONE expression for the whole value (`\"body\": \"{{ payload }}\"`, with "
       "`payload` an object a `set` step built); `| tojson` is not needed.")

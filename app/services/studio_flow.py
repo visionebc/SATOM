@@ -167,6 +167,21 @@ def render_path(value, scope: dict):
         _BUDGET.reset(token)
 
 
+_INDEX = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\[\s*([A-Za-z_][A-Za-z0-9_]*)\s*\]")
+
+
+def _index_hint(expr: str, scope: dict) -> str:
+    """Why ``items[i]`` found nothing, when it is the usual reason: the list
+    is there and ``i`` is TEXT (a ``set`` step's literal ``"0"``)."""
+    for name, idx in _INDEX.findall(expr or ""):
+        seq, key = scope.get(name), scope.get(idx)
+        if isinstance(seq, (list, tuple)) and isinstance(key, str):
+            return (" (%s is the text %r, and a list is indexed by a number: start the "
+                    "counter with a set step's value \"{{ 0 }}\", not \"0\", and grow it with "
+                    "\"{{ %s + 1 }}\")" % (idx, key[:20], idx))
+    return ""
+
+
 def render(value, scope: dict):
     """*value* with every template rendered against *scope*. See module doc."""
     if isinstance(value, str):
@@ -178,7 +193,8 @@ def render(value, scope: dict):
             if m and "{{" not in m.group(1) and "}}" not in m.group(1):
                 rv = _ENV.compile_expression(m.group(1).strip(), undefined_to_none=False)(**scope)
                 if isinstance(rv, Undefined):
-                    raise FlowError("%s is not defined" % m.group(1).strip())
+                    raise FlowError("%s is not defined%s" % (m.group(1).strip(),
+                                                            _index_hint(m.group(1), scope)))
                 return rv
             return _text(_ENV, value, scope)
         except FlowError:

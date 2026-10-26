@@ -61,7 +61,7 @@ from ..extensions import db
 # FortiAnalyzer/FortiAuthenticator the first sync after it was added.
 # ``answered`` (which tables answered this sweep) is the same kind of fact, and
 # it also moves with a transient per-table error.
-VOLATILE_KEYS = ("generated_at", "errors", "shapes", "answered")
+VOLATILE_KEYS = ("generated_at", "errors", "shapes", "answered", "_library")
 
 # --- Nested volatility -----------------------------------------------------
 # VOLATILE_KEYS is top-level only, and that was not enough: the fields that

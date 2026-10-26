@@ -514,6 +514,19 @@ def snapshot_from_fgt(appliance, *, timeout: float = 20.0) -> dict:
                 break
         if consecutive >= _SWEEP_ABORT_AFTER:
             break
+    # What the REST GET itself returned, BEFORE any CLI field is merged in:
+    # the API library learns the build's REST fields from it (persist_snapshot
+    # ingests it, then drops it -- it is never part of the JSON or the SoT).
+    library = {"firmware": str(getattr(appliance, "firmware", "") or ""),
+               "endpoint_status": {}, "sections": {"rest": {}}}
+    for label, tables in sections.items():
+        for name, rows in tables.items():
+            path = paths.get(name)
+            if path:
+                library["endpoint_status"][path] = {
+                    "urn": "/api/v2/cmdb/" + path, "section": label,
+                    "verdict": "ok", "rows": len(rows)}
+                library["sections"]["rest"][path] = [dict(r) for r in rows]
     if consecutive < _SWEEP_ABORT_AFTER and sections:
         cli_tables: dict = {}
         fgt_merge_cli_only(appliance, sections, paths, errors, scrub=scrub,
@@ -526,6 +539,7 @@ def snapshot_from_fgt(appliance, *, timeout: float = 20.0) -> dict:
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
         "section_count": len(sections), "sections": sections, "errors": errors,
+        "_library": library,
         "answered": answered,
     }
 
@@ -869,6 +883,7 @@ def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
     from . import device_store
 
     session = session or db.session
+    library = snapshot.pop("_library", None)
     run = SyncRun(appliance_id=getattr(appliance, "id", None), section="_all",
                   trigger=_fit(trigger, SyncRun.trigger),
                   user_label=_fit(user_label, SyncRun.user_label), status="ok")
@@ -913,7 +928,31 @@ def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
         run.detail = f"{type(exc).__name__}: {exc}"[:240]
     run.finished_at = datetime.utcnow()
     session.commit()
+    if library and run.status == "ok":
+        _library_ingest(appliance, library)
     return run
+
+
+def _library_ingest(appliance, library: dict) -> None:
+    """File the REST rows a sweep read as API-library evidence of the build
+    (``api_library.evidence_from_sweep``, the path the FortiWeb rediscovery
+    takes). FortiGate's only REST evidence was its ``?action=schema``, which
+    omits fields the GET returns (``web-svc-auto-restart`` on 8.0.1), so the
+    library called them CLI-only. Never sinks the sync."""
+    from ..extensions import db
+    from . import api_library
+    try:
+        product = str(getattr(appliance, "kind", "") or "")
+        device = {"appliance_id": appliance.id, "name": appliance.name,
+                  "serial": str(getattr(appliance, "serial", "") or ""),
+                  "model": str(getattr(appliance, "model", "") or ""),
+                  "hw_type": str(getattr(appliance, "hw_type", "") or ""),
+                  "firmware_raw": str(getattr(appliance, "firmware", "") or "")}
+        ref = "sync:%d@%s" % (appliance.id, library.get("firmware") or "unversioned")
+        doc = api_library.evidence_from_sweep(product, library, device, ref)
+        api_library.ingest(doc)
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
 
 
 def sync_device(appliance, *, publish: bool = False, user_label: str | None = None,

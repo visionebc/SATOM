@@ -99,6 +99,7 @@ _PATH_ID_TEXT = {
     ("list", "DELETE"): ": delete EVERY entry the query selects (bulk)",
     ("detail", "GET"): ": one, by id", ("detail", "PUT"): ": replace one",
     ("detail", "PATCH"): ": change some fields of one", ("detail", "DELETE"): ": delete one",
+    ("detail", "POST"): ": post to one (an action on it)",
 }
 #: a collection whose schema was not read: the methods every resource had
 _PATH_ID_DEFAULT = {"list": ("GET", "POST"), "detail": ("GET", "PUT", "PATCH", "DELETE")}
@@ -135,7 +136,7 @@ def _path_id_ops(path: str, what: str, tag: str, kind: str | None, attrs: dict) 
     out = []
     for scope, where in (("list", base), ("detail", item)):
         for m in use[scope]:
-            out.append(_op(m, where, what + _PATH_ID_TEXT[(scope, m)], tag,
+            out.append(_op(m, where, what + _PATH_ID_TEXT.get((scope, m), ": " + m), tag,
                            m in ("POST", "PUT", "PATCH")))
     return out
 

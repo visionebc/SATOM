@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#450---2026-10-26">[4.5.0] - 2026-10-26</a>
       <a href="#440---2026-10-26">[4.4.0] - 2026-10-26</a>
       <a href="#430---2026-10-25">[4.3.0] - 2026-10-25</a>
       <a href="#420---2026-10-25">[4.2.0] - 2026-10-25</a>
@@ -104,7 +105,6 @@
       <a href="#260---2026-10-02">[2.6.0] - 2026-10-02</a>
       <a href="#250---2026-10-01">[2.5.0] - 2026-10-01</a>
       <a href="#241---2026-09-29">[2.4.1] - 2026-09-29</a>
-      <a href="#240---2026-09-28">[2.4.0] - 2026-09-28</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,6 +112,25 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="450---2026-10-26">[4.5.0] - 2026-10-26</h2>
+<p><strong>Plugin Studio apps that act on their own, against the real device API.</strong> An
+app runs on a schedule from <strong>Automations</strong> ("Run a Plugin Studio app"), reads
+the devices SATOM manages in its diagram (<em>Read SATOM's appliances</em>, with
+<code>version</code> and DNS names resolved), and an app package carries its automations
+(installed switched off). <strong>SATOM's API library becomes API Catalog versions</strong>
+for every device kind -- FortiGate (3,806 endpoints on 8.0.1, list items as
+child tables), FortiWeb, FortiADC (with its <code>?pkey=</code> child tables),
+FortiAuthenticator (in the shape each resource was measured) and FortiAnalyzer
+(one JSON-RPC endpoint and the urls its body may name) -- so a pinned
+connection can no longer call an invented path, and the author guide says how
+each device answers. A node under API load <strong>keeps its console</strong> (gthread
+workers, nginx <code>/api/v1</code> limits, per-token limits, DB caps); one appliance
+never gets two SATOM sessions; FortiADC rules through the API come from the
+cache; <strong>FortiGate and FortiAuthenticator are swept completely</strong>. Fixed: an
+invalid FortiADC licence read as an empty box, FortiAuthenticator's token
+policy failing every sweep, FortiGate REST fields reported "CLI only", the
+author guide's loop, a decision comparing a boolean with <code>true</code>, and false
+problems on a select written <code>"choices"</code>.</p>
 <h3 id="added">Added</h3>
 <ul>
 <li><strong>Every device kind gets an API Catalog version that matches the device,

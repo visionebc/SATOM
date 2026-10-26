@@ -6,6 +6,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-10-26
+
+**Plugin Studio apps that act on their own, against the real device API.** An
+app runs on a schedule from **Automations** ("Run a Plugin Studio app"), reads
+the devices SATOM manages in its diagram (*Read SATOM's appliances*, with
+`version` and DNS names resolved), and an app package carries its automations
+(installed switched off). **SATOM's API library becomes API Catalog versions**
+for every device kind -- FortiGate (3,806 endpoints on 8.0.1, list items as
+child tables), FortiWeb, FortiADC (with its `?pkey=` child tables),
+FortiAuthenticator (in the shape each resource was measured) and FortiAnalyzer
+(one JSON-RPC endpoint and the urls its body may name) -- so a pinned
+connection can no longer call an invented path, and the author guide says how
+each device answers. A node under API load **keeps its console** (gthread
+workers, nginx `/api/v1` limits, per-token limits, DB caps); one appliance
+never gets two SATOM sessions; FortiADC rules through the API come from the
+cache; **FortiGate and FortiAuthenticator are swept completely**. Fixed: an
+invalid FortiADC licence read as an empty box, FortiAuthenticator's token
+policy failing every sweep, FortiGate REST fields reported "CLI only", the
+author guide's loop, a decision comparing a boolean with `true`, and false
+problems on a select written `"choices"`.
+
 ### Added
 
 - **Every device kind gets an API Catalog version that matches the device,

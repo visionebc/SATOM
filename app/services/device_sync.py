@@ -476,6 +476,7 @@ def snapshot_from_fgt(appliance, *, timeout: float = 20.0) -> dict:
     answered: dict[str, str] = {}   # every table that answered, empty ones too
     consecutive = 0
     seen: set[str] = set()
+    paths: dict[str, str] = {}      # table name -> cmdb path, for the CLI merge
     for g in fgt_menu.visible_menu():
         for item in g.items:
             for path, _label in item.tabs:
@@ -501,6 +502,7 @@ def snapshot_from_fgt(appliance, *, timeout: float = 20.0) -> dict:
                     continue
                 consecutive = 0
                 answered[name] = g.label
+                paths[name] = path
                 if isinstance(results, dict):
                     rows = [scrub(results)]
                 else:
@@ -512,12 +514,204 @@ def snapshot_from_fgt(appliance, *, timeout: float = 20.0) -> dict:
                 break
         if consecutive >= _SWEEP_ABORT_AFTER:
             break
+    if consecutive < _SWEEP_ABORT_AFTER and sections:
+        cli_tables: dict = {}
+        fgt_merge_cli_only(appliance, sections, paths, errors, scrub=scrub,
+                           cli_tables=cli_tables)
+        for ep, rows in sorted(cli_tables.items()):
+            answered[ep] = "CLI"
+            sections.setdefault("CLI", {})[ep] = rows
+            total += len(rows)
     return {
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
         "section_count": len(sections), "sections": sections, "errors": errors,
         "answered": answered,
     }
+
+
+_ENC_VALUE = re.compile(r"^(?:ENC|SH2)\s")
+
+
+def normalise_vdom_chains(rows: dict, vdom: str | None) -> dict:
+    """``show full-configuration`` chains of a multi-VDOM FortiGate without
+    their wrapper: ``config global`` blocks lose it, the blocks of *vdom*
+    (``root`` when unset) lose ``config vdom / edit <vdom>``, other VDOMs are
+    dropped. A single-VDOM box (``vdom=0`` in the header) has neither wrapper
+    and passes through unchanged."""
+    want = (vdom or "root").strip() or "root"
+    out: dict = {}
+    for chain, lines in rows.items():
+        if chain and chain[0] == ("global", None):
+            chain = chain[1:]
+        elif chain and chain[0][0] == "vdom":
+            if chain[0][1] != want:
+                continue
+            chain = chain[1:]
+        if chain:
+            out.setdefault(chain, lines)
+    return out
+
+
+def fgt_merge_cli_only(appliance, sections: dict, paths: dict, errors: list, *,
+                       scrub=lambda r: r, text: str | None = None,
+                       cli_tables: dict | None = None) -> int:
+    """Add the fields only the CLI serves to the REST rows of a FortiGate sweep.
+
+    FortiGate 8.0.1 (fgt02) has 166 such fields in 76 tables -- the API
+    library's ``cli_only`` / ``hidden`` channels of the build. The REST sweep
+    never saw them, so the cache, the JSON backup and the SoT store did not
+    hold them and the "Not in GUI, but in CLI" sections read them live. ONE
+    read-only ``show full-configuration`` (1.4 MB in 1.8 s on fgt02) is parsed
+    once, and each table's CLI-only fields are merged into its REST rows by
+    the table key (``edit <key>``); a singleton's into its one row. Secrets
+    (``cli_writer.is_secret``, ``ENC`` values) are never merged, and every
+    merged row goes through the sweep's own scrub. Returns the fields merged.
+
+    *text*: an already-read dump (tests). Best effort: the REST rows stand on
+    their own, a CLI failure is one ``errors`` entry (``cli:full-configuration``)."""
+    from ..registry import loader
+    from . import api_library, cli_writer
+    try:
+        channels = (api_library.channels_at("fortigate", loader.version_of(appliance))
+                    .get("endpoints") or {})
+    except Exception as exc:  # noqa: BLE001 — no library for the build: nothing to merge
+        errors.append({"endpoint": "cli:full-configuration",
+                       "error": f"API library unavailable: {exc}"[:160]})
+        return 0
+    wanted: dict[str, dict] = {}            # table name -> {rest field: cli field}
+    for name, path in paths.items():
+        fields = (channels.get(path) or {}).get("fields") or {}
+        cli = {f: str((d.get("attrs") or {}).get("cli_name") or f)
+               for f, d in fields.items()
+               if (d or {}).get("channel") in ("cli_only", "hidden")
+               and not cli_writer.is_secret(f, (d or {}).get("attrs"))}
+        if cli:
+            wanted[name] = cli
+    if not wanted and cli_tables is None:
+        return 0
+    if text is None:
+        try:
+            w = cli_writer.CliWriter(appliance, audit=False)
+            sess = w._reader_factory()
+            sess.connect()
+            try:
+                text = sess.run_readonly("show full-configuration")
+            finally:
+                try:
+                    sess.close()
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception as exc:  # noqa: BLE001 — SSH unreachable: REST rows stand
+            errors.append({"endpoint": "cli:full-configuration",
+                           "error": f"{type(exc).__name__}: {exc}"[:160]})
+            return 0
+    chains = normalise_vdom_chains(cli_writer.show_rows(text or ""),
+                                   getattr(appliance, "vdom", None))
+    if cli_tables is not None:
+        cli_tables.update(_fgt_cli_only_tables(appliance, chains, paths))
+    merged = 0
+    for label, tables in sections.items():
+        for name, rows in tables.items():
+            cli = wanted.get(name)
+            if not cli:
+                continue
+            try:
+                split = cli_writer.split_payload(appliance, paths[name], {})
+            except Exception as exc:  # noqa: BLE001
+                errors.append({"endpoint": name, "error": f"CLI path: {exc}"[:160]})
+                continue
+            obj = split.get("object") or {}
+            cli_path = " ".join(str(obj.get("cli_path") or "").split())
+            mkey_field = str(obj.get("mkey") or "")
+            if not cli_path or obj.get("parent"):
+                continue
+            singleton = obj.get("kind") == cli_writer.cli_schema.KIND_SINGLETON
+            for i, row in enumerate(rows):
+                key = None if singleton else str(row.get(mkey_field, "")) if mkey_field else None
+                if not singleton and not key:
+                    continue
+                lines = chains.get(((cli_path, key),))
+                if lines is None:
+                    continue
+                vals = cli_writer.row_values(lines, cli_path)["values"]
+                add = {}
+                for rest_name, cli_name in cli.items():
+                    if rest_name in row:
+                        continue
+                    # the library spells a CLI-only field as the CLI tree
+                    # names it (bgp_debug_flags) while `show` prints
+                    # bgp-debug-flags: either spelling is the same field
+                    got = next((c for c in (cli_name, cli_name.replace("_", "-"),
+                                            cli_name.replace("-", "_")) if c in vals), None)
+                    if got is None:
+                        continue
+                    v = vals[got]
+                    if isinstance(v, str) and _ENC_VALUE.search(v.strip()):
+                        continue
+                    add[rest_name] = v
+                if add:
+                    rows[i] = scrub({**row, **add})
+                    merged += len(add)
+    return merged
+
+
+_PEM_PRIVATE = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY", re.I)
+
+
+def _fgt_cli_value_ok(name: str, value) -> bool:
+    from . import cli_writer
+    if cli_writer.is_secret(name):
+        return False
+    if isinstance(value, str) and (_ENC_VALUE.search(value.strip()) or _PEM_PRIVATE.search(value)):
+        return False
+    return True
+
+
+def _fgt_cli_only_tables(appliance, chains: dict, paths: dict) -> dict[str, list]:
+    """``{"cli:<config path>": rows}`` of every top-level configuration table
+    in the dump that the REST sweep does not read (the sweep reads the 43
+    tables of SATOM's FortiGate menu; ``show full-configuration`` on fgt02
+    prints 676). A row is ``{field: value}`` plus ``_edit`` (its CLI key) for a
+    table; a nested ``config`` block is a list under its words. Secrets are
+    dropped exactly as in the merge."""
+    from . import cli_writer
+    covered = set()
+    for _name, path in paths.items():
+        try:
+            o = (cli_writer.split_payload(appliance, path, {}).get("object") or {})
+        except Exception:  # noqa: BLE001
+            continue
+        covered.add(" ".join(str(o.get("cli_path") or "").split()))
+    nodes: dict = {}
+    for chain, lines in chains.items():
+        words, key = chain[-1]
+        vals = cli_writer.row_values(lines, words)["values"]
+        row = {k: v for k, v in vals.items() if _fgt_cli_value_ok(k, v)}
+        if key is not None:
+            row["_edit"] = key
+        elif not row:
+            # a table's own ``config <words>`` line (its rows are the chains
+            # with an edit key below it), or an empty block: not a row
+            nodes[chain] = None
+            continue
+        nodes[chain] = row
+    out: dict[str, list] = {}
+    for chain in sorted(nodes, key=len):
+        row = nodes[chain]
+        if row is None:
+            continue
+        if len(chain) == 1:
+            path = chain[0][0]
+            if path in covered:
+                continue
+            out.setdefault("cli:" + path, []).append(row)
+            continue
+        # the row (or settings block) the nested ``config`` sits in
+        parent = nodes.get(chain[:-1])
+        if isinstance(parent, dict):
+            parent.setdefault(chain[-1][0], []).append(row)
+    return out
 
 
 def sweep_tables(product: str, appliances=()) -> dict[str, str]:

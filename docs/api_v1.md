@@ -123,8 +123,9 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `POST` | `/waf/exceptions` | write | `waf_exception_draft` (+ `waf_exception_apply` for `"apply": true`) | File a WAF carve-out (§6) |
 | `DELETE` | `/waf/exceptions/<id>` | write | `waf_exception_draft` | Withdraw one **you** authored, from desired state only (§6) |
 | `GET`  | `/adc/rule-types` | read | — | The allow-list of FortiADC rule types (§7) |
-| `GET`  | `/adc/rules` | read | — | FortiADC rules of a type, read from the appliance (§7) |
+| `GET`  | `/adc/rules` | read | — | FortiADC rules of a type, from SATOM's device cache (`live=1`: the appliance) (§7) |
 | `POST` | `/adc/rules` | write | `adc_rule_draft` (+ `adc_rule_apply` for `"apply": true`) | Create a FortiADC rule (§7) |
+| `DELETE` | `/adc/rules` | write | `adc_rule_apply` | Delete a FortiADC rule this token created (§7) |
 | `GET`  | `/ui/themes` | read | — | The theme names on this node and which one is active (§8) |
 | `GET`  | `/ui/theme` | read | — | One theme as a `satom.ui-theme/2` document: tokens, logo and favicon; the active theme, or `?name=` (§8) |
 | `GET`  | `/system/nodes` | read | `metrics`, only on a capability-restricted token | CPU, memory and disk of every SATOM node now, graded (§9). **Global** token only |
@@ -523,10 +524,34 @@ straight to the appliance because there is no desired-state store for it. So:
   re-read failed). An appliance that accepted the POST and does not hold the
   object answers `502 not_applied`, with `verify.mismatch` naming each field
   the appliance holds differently.
-* **There is no DELETE.** Without a store there is no recorded author, so
-  "delete only what you created" cannot be proven, and an endpoint that cannot
-  tell your object from an operator's is a way to remove someone else's
-  protection. Withdrawal is an operator action.
+* **Reads come from SATOM's device cache**, not from the appliance.
+  `GET /adc/rules?appliance_id=<id>&logical=<type>` answers from the hourly
+  sweep (kept current by write-through after every write SATOM makes), with
+  `source: "cache"`, `as_of` (when the sweep read it, UTC) and `stale`. `stale`
+  is `true`, with `stale_reason` and `sync_failing_since`, when the device's
+  latest sync failed or the cache is older than the Monitoring staleness
+  threshold: the rules are still returned, never silently. A table the last
+  sweep could not read answers `503 not_cached` instead of older rows; a device
+  never swept is read live once. An empty `rules` list from the cache means the
+  sweep read the table and it was empty.
+* `live=1` reads the appliance (`source: "live"`). Live reads are limited to 20
+  per minute per token, share one appliance session between identical callers
+  for 5 seconds (`shared: true`), and count against the appliance's session cap
+  (below).
+* **The appliance's session cap.** SATOM opens at most
+  `api.device_concurrency` (default 2) sessions at a time to one appliance for
+  API reads and writes, across all its workers. A call over the cap answers
+  `429 device_busy` with a `Retry-After` header straight away — retry after
+  that many seconds; nothing was sent.
+* **DELETE only what your token created.**
+  `DELETE /adc/rules?appliance_id=<id>&logical=<type>&mkey=<name>` (or the same
+  fields in a JSON body), with `adc_rule_apply`. SATOM records the author and
+  the fields of every rule created through this API; anything else — an
+  operator's rule, another token's — is refused with `403 not_owner`. A rule
+  that an operator has edited since (a field you sent now holds another value)
+  is refused with `409 modified_since_created` and `changed[]`. A rule already
+  gone from the appliance answers `200` with `already_absent: true`. The delete
+  is read back like a create.
 * An AppID-scoped token cannot use this surface at all: AppID scope resolves to
   FortiWeb server policies and is unprovable here.
 
@@ -544,8 +569,12 @@ straight to the appliance because there is no desired-state store for it. So:
 | 403 | `wpp_shared_denied` | The profile is bound to a policy outside the scope |
 | 403 | `wpp_scope_unprovable` | SATOM cannot prove the profile is unshared (no cache) |
 | 403 | `not_appid_scopable` | An AppID-scoped token on the FortiADC surface |
+| 403 | `not_owner` | DELETE of an ADC rule this token did not create through the API |
 | 409 | `template_locked` | The profile is template-managed; templates stay clean |
 | 409 | `already_exists` | An ADC object of that name is already on the appliance |
+| 409 | `modified_since_created` | The ADC rule was edited since this token created it (`changed[]`) |
+| 429 | `device_busy` | The appliance already has its cap of SATOM sessions; retry after `Retry-After` seconds |
+| 503 | `not_cached` | The last sweep could not read this table; retry with `live=1` |
 | 500 | `registry_mismatch` | The rule type resolved to an endpoint SATOM cannot address — report it; retrying will not help |
 | 502 | `device_unreachable` | SATOM could not open a session to the appliance |
 | 502 | `device_error` | The appliance rejected or could not serve the write |

@@ -313,8 +313,11 @@ def _adc_logical(appliance, entity: str) -> str:
 
 
 def _adc_cache(appliance, op: str, entity: str, mkey: str, obj, session=None) -> bool:
-    """Keep SATOM's FortiADC copy current — only for a type the sweep cached
-    on this device (no cached row of the type = SATOM holds no copy)."""
+    """Keep SATOM's FortiADC copy current — only for a type the sweep READ on
+    this device: one with a cached row, or one the last good sweep answered
+    empty (``DeviceCoverage``). Before the coverage row, the first object
+    created in an empty table was never cached, so a cache read kept saying
+    the table was empty until the next hourly sweep."""
     aid = getattr(appliance, "id", None)
     # No name is fine for ONE case: a settings singleton (``system_global``)
     # updated in place — the sweep caches it under ``mkey=''``.
@@ -328,8 +331,15 @@ def _adc_cache(appliance, op: str, entity: str, mkey: str, obj, session=None) ->
     try:
         held = (session.query(DeviceObject.id)
                 .filter_by(appliance_id=aid, logical_name=logical, depth=0).first())
+        section = None
         if held is None:
-            return False
+            from .device_sync import coverage_for
+            cov = coverage_for(aid, session=session)
+            section = ((cov.tables or {}).get(logical) if cov is not None else None)
+            if not section:
+                return False
+            if op == "delete":
+                return False      # an empty table: nothing cached to drop
         if op == "delete":
             # By logical AND mkey: ``write_through.local_delete`` maps a
             # collection through the FortiWeb registry, and with no match it
@@ -349,7 +359,8 @@ def _adc_cache(appliance, op: str, entity: str, mkey: str, obj, session=None) ->
         if isinstance(obj, dict) and obj:
             if not mkey:
                 return wt.local_refresh(aid, logical, "", obj, session=session) > 0
-            return bool(wt.local_insert(aid, logical, str(mkey), obj, session=session))
+            return bool(wt.local_insert(aid, logical, str(mkey), obj, session=session,
+                                        section=section))
     except Exception as exc:  # noqa: BLE001 — a stale row is refreshed by the next sweep
         log.warning("device_verify ADC cache %s/%s: %s", logical, mkey, exc)
         try:

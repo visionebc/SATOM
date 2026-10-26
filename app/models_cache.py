@@ -178,3 +178,57 @@ class InventorySnapshot(db.Model):
         db.UniqueConstraint("snapshot_date", "appliance_id", "object_type",
                             name="uq_inventory_snapshot_day_dev_type"),
     )
+
+
+class DeviceCoverage(db.Model):
+    """Which tables the last good sweep of a device READ, empty ones included.
+
+    ``device_objects`` only holds rows, so a table the device answered with
+    nothing and a table SATOM never asked look the same there. A cache read
+    that must say "this device has no WAF exceptions" (rather than "SATOM does
+    not know") needs the difference, and so does write-through: an object
+    created in a table that was empty had no cached sibling to copy its section
+    from, so it was never cached at all. One row per device, replaced by every
+    successful sweep (``services.device_sync.persist_snapshot``).
+
+    ``tables`` is ``{logical: section}`` of every endpoint that answered;
+    ``failed`` is ``{logical: error}`` of the ones that did not (a failed table
+    keeps whatever rows an earlier sweep cached, and a reader must not present
+    those as current)."""
+    __tablename__ = "device_coverage"
+
+    appliance_id = db.Column(db.Integer,
+                             db.ForeignKey("appliances.id", ondelete="CASCADE"),
+                             primary_key=True)
+    layer = db.Column(db.String(16), nullable=False, default="config")
+    swept_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    build = db.Column(db.String(32), nullable=False, default="")
+    tables = db.Column(JSONType, nullable=False, default=dict)
+    failed = db.Column(JSONType, nullable=False, default=dict)
+
+
+class ApiObjectAuthor(db.Model):
+    """Who created an object that SATOM wrote straight to a device for an API token.
+
+    FortiWeb carve-outs carry their author in their desired-state row
+    (``WppException.author``). FortiADC rules go straight to the appliance, so
+    without this row "delete only what you created" was unprovable and the API
+    offered no DELETE. ``sent`` is what the token asked for: a delete is refused
+    when the object on the device no longer matches it (an operator edited or
+    re-created it under the same name)."""
+    __tablename__ = "api_object_authors"
+    __table_args__ = (
+        db.UniqueConstraint("appliance_id", "logical", "mkey",
+                            name="uq_api_object_author"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    appliance_id = db.Column(db.Integer,
+                             db.ForeignKey("appliances.id", ondelete="CASCADE"),
+                             nullable=False, index=True)
+    product = db.Column(db.String(32), nullable=False, default="fortiadc")
+    logical = db.Column(db.String(128), nullable=False)
+    mkey = db.Column(db.String(256), nullable=False)
+    author = db.Column(db.String(64), nullable=False)
+    sent = db.Column(JSONType, nullable=False, default=dict)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

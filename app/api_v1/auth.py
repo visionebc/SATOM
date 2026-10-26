@@ -26,6 +26,27 @@ def _bearer() -> str:
     return ""
 
 
+def rate_key() -> str:
+    """Flask-Limiter key for /api/v1: the presented token's public id.
+
+    The limiter keyed every API limit on the client IP. Behind a NAT or a CI
+    runner farm, unrelated integrations shared one bucket and starved each
+    other, while one token spread over many hosts was never limited at all. The
+    public id is the non-secret half of ``fmk_<public_id>_<secret>``; a request
+    without a parseable token falls back to the IP (it is about to get a 401).
+    Runs BEFORE ``token_required`` (the limiter decorator is outermost), so it
+    reads the header, never ``g.api_token``."""
+    from ..extensions import real_client_ip
+    from ..models_api_token import parse_token
+    try:
+        public_id, _secret = parse_token(_bearer())
+    except Exception:  # noqa: BLE001 — malformed: limited by address
+        public_id = None
+    if public_id:
+        return "tok:" + str(public_id)[:32]
+    return "ip:" + str(real_client_ip() or "")
+
+
 def _err(status: int, code: str, message: str):
     resp = jsonify({"error": code, "message": message})
     resp.status_code = status

@@ -70,6 +70,7 @@ def snapshot_from_device(appliance, *, timeout: float = 20.0) -> dict:
     sections: dict = {}
     total = 0
     errors: list[dict] = []
+    answered: dict[str, str] = {}   # every table that answered, empty ones too
     consecutive = 0
     for ep in plan:
         # list_with_error surfaces device-level refusals (license lock -20010,
@@ -88,6 +89,7 @@ def snapshot_from_device(appliance, *, timeout: float = 20.0) -> dict:
                 break
             continue
         consecutive = 0
+        answered[ep["name"]] = ep["section"]
         rows = [r for r in rows if isinstance(r, dict)]
         if rows:
             sections.setdefault(ep["section"], {})[ep["name"]] = rows
@@ -96,6 +98,7 @@ def snapshot_from_device(appliance, *, timeout: float = 20.0) -> dict:
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
         "section_count": len(sections), "sections": sections, "errors": errors,
+        "answered": answered,
     }
 
 
@@ -116,6 +119,7 @@ def snapshot_from_adc(appliance, *, timeout: float = 20.0) -> dict:
     sections: dict = {}
     total = 0
     errors: list[dict] = []
+    answered: dict[str, str] = {}   # every table that answered, empty ones too
     consecutive = 0
     for ep in plan:
         try:
@@ -131,6 +135,7 @@ def snapshot_from_adc(appliance, *, timeout: float = 20.0) -> dict:
                 break
             continue
         consecutive = 0
+        answered[ep["name"]] = ep["section"]
         rows = [r for r in rows if isinstance(r, dict)]
         if rows:
             sections.setdefault(ep["section"], {})[ep["name"]] = rows
@@ -139,6 +144,7 @@ def snapshot_from_adc(appliance, *, timeout: float = 20.0) -> dict:
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
         "section_count": len(sections), "sections": sections, "errors": errors,
+        "answered": answered,
     }
 
 
@@ -205,6 +211,7 @@ def snapshot_from_faz(appliance, *, timeout: float = 20.0) -> dict:
     shapes: dict[str, str] = {}   # every answered table, empty ones too (Naming)
     total = 0
     errors: list[dict] = []
+    answered: dict[str, str] = {}   # every table that answered, empty ones too
     consecutive = 0
     for name in sorted(reg):
         if name in _FAZ_SOT_EXCLUDE:
@@ -223,6 +230,7 @@ def snapshot_from_faz(appliance, *, timeout: float = 20.0) -> dict:
                 break
             continue
         consecutive = 0
+        answered[name] = section_of.get(name, "Other")
         rows = [scrub(r) for r in rows if isinstance(r, dict)]
         if rows:
             sections.setdefault(section_of.get(name, "Other"), {})[name] = rows
@@ -235,6 +243,7 @@ def snapshot_from_faz(appliance, *, timeout: float = 20.0) -> dict:
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
         "section_count": len(sections), "sections": sections, "errors": errors,
+        "answered": answered,
         "shapes": shapes,
     }
 
@@ -282,6 +291,7 @@ def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
     shapes: dict[str, str] = {}   # every answered table, empty ones too (Naming)
     total = 0
     errors: list[dict] = []
+    answered: dict[str, str] = {}   # every table that answered, empty ones too
     consecutive = 0
     for name in sorted(reg):
         if name in _FAC_SOT_EXCLUDE:
@@ -301,6 +311,7 @@ def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
                 break
             continue
         consecutive = 0
+        answered[name] = section_of.get(name, "Other")
         rows = [r for r in rows if isinstance(r, dict)]
         if rows:
             sections.setdefault(section_of.get(name, "Other"), {})[name] = rows
@@ -311,6 +322,7 @@ def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
         "section_count": len(sections), "sections": sections, "errors": errors,
+        "answered": answered,
         "shapes": shapes,
     }
 
@@ -338,6 +350,7 @@ def snapshot_from_fgt(appliance, *, timeout: float = 20.0) -> dict:
     sections: dict = {}
     total = 0
     errors: list[dict] = []
+    answered: dict[str, str] = {}   # every table that answered, empty ones too
     consecutive = 0
     seen: set[str] = set()
     for g in fgt_menu.visible_menu():
@@ -364,6 +377,7 @@ def snapshot_from_fgt(appliance, *, timeout: float = 20.0) -> dict:
                         break
                     continue
                 consecutive = 0
+                answered[name] = g.label
                 if isinstance(results, dict):
                     rows = [scrub(results)]
                 else:
@@ -379,6 +393,7 @@ def snapshot_from_fgt(appliance, *, timeout: float = 20.0) -> dict:
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
         "section_count": len(sections), "sections": sections, "errors": errors,
+        "answered": answered,
     }
 
 
@@ -487,6 +502,43 @@ def _fit(value, column):
     return text[:limit] if limit else text
 
 
+def record_coverage(appliance, snapshot: dict, *, session=None) -> None:
+    """Replace the device's :class:`DeviceCoverage` row from a good sweep.
+
+    A snapshot without ``answered`` (an imported or git-backfilled tree) says
+    nothing about what the device served, so the existing row is kept."""
+    from ..extensions import db
+    from ..models_cache import DeviceCoverage
+    answered = snapshot.get("answered")
+    aid = getattr(appliance, "id", None)
+    if aid is None or not isinstance(answered, dict):
+        return
+    from ..registry import loader
+    session = session or db.session
+    failed = {str(e.get("endpoint")): str(e.get("error") or "")[:160]
+              for e in (snapshot.get("errors") or [])
+              if isinstance(e, dict) and e.get("endpoint") and e.get("endpoint") != "_sweep"}
+    row = session.get(DeviceCoverage, aid) or DeviceCoverage(appliance_id=aid)
+    row.layer = "config"
+    row.swept_at = datetime.utcnow()
+    row.build = _fit(loader.version_of(appliance) or "", DeviceCoverage.build) or ""
+    row.tables = dict(answered)
+    row.failed = failed
+    session.add(row)
+
+
+def coverage_for(appliance_id: int, *, session=None):
+    """The device's :class:`DeviceCoverage` row, or None (never swept with it)."""
+    from ..extensions import db
+    from ..models_cache import DeviceCoverage
+    session = session or db.session
+    try:
+        return session.get(DeviceCoverage, appliance_id)
+    except Exception:  # noqa: BLE001 — a reader degrades to "not known"
+        session.rollback()
+        return None
+
+
 def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
                      trigger: str = "manual", user_label: str | None = None,
                      publish: bool = False, session=None):
@@ -506,6 +558,7 @@ def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
         res = device_store.ingest_snapshot(appliance.id, snapshot, source=source,
                                            session=session)
         changed = sum(1 for v in res.values() if v.get("changed"))
+        record_coverage(appliance, snapshot, session=session)
         p = write_device_json(appliance, snapshot)
         run.changed = changed
         run.detail = (f"{snapshot.get('total_objects', 0)} objects, "

@@ -67,8 +67,12 @@ NODE_LOCAL_TABLES = frozenset({
 #: device cache again; the rest the target produces itself.
 LEFT_BEHIND = {
     "backups": ("config_backups",),
-    "config history": ("sot_version", "exception_version"),
+    # api_object_authors: who created a FortiADC rule through the API. It names
+    # the source's appliances by id; left behind, a token on the target simply
+    # cannot delete a rule it did not create THERE (fails closed).
+    "config history": ("sot_version", "exception_version", "api_object_authors"),
     "device cache": (
+        "device_coverage",
         "device_snapshots", "device_objects", "device_server_policies",
         "device_server_pools", "device_web_protection_profiles",
         "device_certificate", "device_hardware", "appliance_nics",

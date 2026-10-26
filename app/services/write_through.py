@@ -204,11 +204,16 @@ def local_subrows(appliance_id, logical, mkey, subtable, rows, *, session=None) 
     return len(fresh)
 
 
-def local_insert(appliance_id, logical, mkey, payload, *, session=None) -> bool:
+def local_insert(appliance_id, logical, mkey, payload, *, session=None,
+                 section: str | None = None) -> bool:
     """Cache a top-level object just created on the device (config layer),
     with the cache identity (section, urn, snapshot) of a sibling of the same
     type. False when there is no sibling to copy it from or it is already
-    cached (then :func:`local_refresh` applies)."""
+    cached (then :func:`local_refresh` applies).
+
+    ``section``: the table had no sibling because it was EMPTY when last swept
+    (the caller read that from ``DeviceCoverage``) -- cache the object under
+    that section, without a snapshot id, instead of not at all."""
     from ..extensions import db
     from ..models_cache import DeviceObject
     session = session or db.session
@@ -219,10 +224,14 @@ def local_insert(appliance_id, logical, mkey, payload, *, session=None) -> bool:
     sib = (session.query(DeviceObject)
            .filter_by(appliance_id=appliance_id, logical_name=logical, depth=0,
                       layer="config").first())
-    if sib is None:
+    if sib is None and not section:
         return False
-    obj = DeviceObject(appliance_id=appliance_id, snapshot_id=sib.snapshot_id, parent_id=None,
-                       layer="config", section=sib.section, logical_name=logical, urn=sib.urn,
+    obj = DeviceObject(appliance_id=appliance_id,
+                       snapshot_id=sib.snapshot_id if sib is not None else None,
+                       parent_id=None, layer="config",
+                       section=sib.section if sib is not None else section,
+                       logical_name=logical,
+                       urn=sib.urn if sib is not None else None,
                        mkey=str(mkey), payload=dict(payload), depth=0,
                        idx=(session.query(DeviceObject)
                             .filter_by(appliance_id=appliance_id, logical_name=logical,

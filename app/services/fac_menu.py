@@ -91,12 +91,14 @@ _MENU = (
     )),
     Group('authentication', 'Authentication', 'bi-person-badge', (
         Item('account-policies', 'User Account Policies', 'bi-shield-lock',
-             'Password policies and lockout thresholds. The GUI also carries '
-             'General, Custom User Fields, Token policy, Trusted Subnets and '
-             'Adaptive MFA Rules under this pane — none of them is a REST '
-             'resource on 8.0.3.',
+             'Password policies, lockout thresholds and the token policy '
+             '(OTP drift, push, offline and emergency codes). The GUI also '
+             'carries General, Custom User Fields, Trusted Subnets and '
+             'Adaptive MFA Rules under this pane — GUI-only on 8.0.3, read by '
+             'the configuration sweep through the GUI.',
              (('policy_password', 'Passwords'),
-              ('policy_user_lockout', 'Lockouts'))),
+              ('policy_user_lockout', 'Lockouts'),
+              ('userfortitokenpolicy', 'Token policy'))),
         Item('user-management', 'User Management', 'bi-people',
              'Local, remote (LDAP/RADIUS) and IAM identities, their groups and '
              'memberships, MAC-authenticated devices and FortiToken '

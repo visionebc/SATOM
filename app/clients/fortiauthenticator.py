@@ -181,6 +181,12 @@ class FortiAuthenticatorClient(BaseClient):
 
     def _list_path(self, path: str, **params):
         first, err = self._call('GET', path, params={'limit': _PAGE_SIZE, **params})
+        if err and not params and 'unknown fields: limit' in str(err):
+            # A settings singleton that validates its query string refuses the
+            # page size: ``userfortitokenpolicy`` answers HTTP 400 "Request
+            # contains unknown fields: limit" (fac01 8.0.3, 2026-10-26). A
+            # singleton has nothing to page -- ask again without it.
+            first, err = self._call('GET', path)
         if err:
             return [], err, ""
         if first is None:

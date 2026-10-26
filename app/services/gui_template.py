@@ -247,7 +247,20 @@ def _display(field: dict, row: dict, dev: dict):
         return [{"label": r["label"], "key": r["key"], "value": row.get(r["key"], "")}
                 for r in field["rows"]]
     if key is None:
-        return None
+        # A control with no API on the build (FortiAuthenticator GUI-only
+        # pages): since 2026-10-26 the sweep reads its form, so the row holds
+        # the control's own value under its form name, and ``_labels`` what a
+        # select shows for it.
+        name = field.get("gui_name")
+        if field.get("key_from") != "gui-only" or not name or name not in (row or {}):
+            return None
+        v = row.get(name)
+        lab = (row.get("_labels") or {}).get(name)
+        if lab not in (None, "") and not isinstance(v, bool):
+            return lab
+        if isinstance(v, list):
+            return ", ".join(str(x) for x in v)
+        return v
     v = row.get(key)
     if kind in ("select", "radio"):
         for o in _options(field, dev):

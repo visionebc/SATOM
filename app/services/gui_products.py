@@ -699,6 +699,10 @@ class FortiAuthenticatorAdapter(Adapter):
         return "" if v in (None, "") else str(v)
 
     def mkey_of(self, row, endpoint=""):
+        if is_gui_only(endpoint) and (row or {}).get("_id") not in (None, ""):
+            # a GUI-only object: its Django primary key, from the change-list
+            # link the sweep followed (names need not be unique)
+            return str(row["_id"])
         if is_cli(endpoint) or "_edit" in (row or {}):
             v = (row or {}).get("_edit")
             return "" if v in (None, "") else str(v)
@@ -717,12 +721,25 @@ class FortiAuthenticatorAdapter(Adapter):
         return base.rstrip("/") + "/%s/" % quote(str(mkey), safe="")
 
     def rows(self, appliance, endpoint):
-        if not endpoint or is_gui_only(endpoint):
+        if not endpoint:
             return [], None
-        if is_cli(endpoint):
-            got, err = self.cli_rows(appliance, endpoint)
-            return got, {"generated_at": None, "source": "live-cli", "cached": False,
-                         "error": err}
+        if is_gui_only(endpoint) or is_cli(endpoint):
+            # Since 2026-10-26 the configuration sweep reads both (CLI over a
+            # read-only SSH session, GUI-only pages through the read-only GUI
+            # reader) and caches them under the endpoint itself.
+            from . import cache_reads
+            got = cache_reads.read_table(appliance, endpoint)
+            if got["status"] == "ok":
+                return got["rows"], {"generated_at": got["as_of"], "source": "cache",
+                                     "cached": True, "stale": got["stale"],
+                                     "error": got["reason"] if got["stale"] else None}
+            if is_cli(endpoint):
+                rows, err = self.cli_rows(appliance, endpoint)
+                return rows, {"generated_at": None, "source": "live-cli", "cached": False,
+                              "error": err}
+            return [], {"generated_at": got["as_of"], "source": "cache", "cached": False,
+                        "error": got["error"] or got["reason"]
+                        or "not read by the configuration sweep yet"}
         logical, path = self.resolve(appliance, endpoint)
         if logical:
             from . import read_layer

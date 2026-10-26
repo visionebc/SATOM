@@ -1960,7 +1960,10 @@ def _gx_object(appl, page, tpl, match, name):
     if form:
         # a settings form (``~`` in its URLs): the one object of its endpoint
         obj = None
-        if coll and not gui_products.is_gui_only(coll):
+        if coll:
+            # a GUI-only settings form is in SATOM's cache too since 2026-10-26
+            # (FortiAuthenticator: the sweep reads the form); other products'
+            # GUI-only forms answer no rows and stay empty, as before
             rows, _meta = ad.rows(appl, coll)
             obj = rows[0] if rows else None
         main = view['form']

@@ -259,6 +259,16 @@ _FAC_SOT_EXCLUDE = {
     "cert_scep_requests",
 }
 
+# FortiAuthenticator resources that answer GET with 405: POST-only actions
+# (authenticate, push a token, upgrade...), measured on fac01 8.0.3 build0099
+# (2026-10-26) when the 8.0.3 baseline was promoted to the 52 measured names.
+# Not configuration, so the sweep does not ask and Naming does not list them;
+# a 405 from a resource NOT listed here (a later build) is skipped the same way.
+_FAC_POST_ONLY = frozenset({
+    "auth", "emergencytoken", "idpsessiondata", "licensing", "localapiadmin",
+    "offlinehotpupdate", "offlineotp", "realmauth", "ssoauth", "system", "upgrade",
+})
+
 
 def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
     """Live, read-only sweep of a FortiAuthenticator unit -> snapshot dict.
@@ -294,11 +304,16 @@ def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
     answered: dict[str, str] = {}   # every table that answered, empty ones too
     consecutive = 0
     for name in sorted(reg):
-        if name in _FAC_SOT_EXCLUDE:
+        if name in _FAC_SOT_EXCLUDE or name in _FAC_POST_ONLY:
             continue
         rows, err, shape = client.list_with_shape(name)
         if shape:
             shapes[name] = shape
+        if err and str(err).startswith("405"):
+            # Served, not readable: a POST-only action resource (auth, system,
+            # upgrade, ... -- 11 of the 52 on 8.0.3, measured on fac01). It is
+            # neither configuration nor a failure.
+            continue
         if err:
             errors.append({"endpoint": name, "error": str(err)[:160]})
             consecutive += 1
@@ -318,6 +333,8 @@ def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
             total += len(rows)
     # No logout: FortiAuthenticator authenticates each request with the API key
     # (HTTP Basic), so there is no session to release.
+    if consecutive < _SWEEP_ABORT_AFTER:
+        total += _fac_beyond_rest(appliance, sections, answered, errors, shapes)
     return {
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
@@ -325,6 +342,112 @@ def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
         "answered": answered,
         "shapes": shapes,
     }
+
+
+#: Wall-clock budget of the GUI part of one FortiAuthenticator sweep.
+FAC_GUI_BUDGET_S = 240
+
+
+def fac_beyond_rest_endpoints(appliance) -> dict[str, str]:
+    """``{endpoint: section}`` of every view of the device's build that the
+    REST API does not serve: ``cli:<object>`` (5 on 8.0.3) and
+    ``gui:/<path>/`` (the GUI-only pages: 72 of 93 on 8.0.3). Taken from the
+    GUI layouts SATOM holds for that build -- the pages the harvester crawl
+    measured, never a guessed path. Sections are the layout's menu group."""
+    from . import gui_pages, gui_store
+    product = "fortiauthenticator"
+    fw = gui_store.firmware_of(appliance)
+    out: dict[str, str] = {}
+    try:
+        entries = gui_pages.entries(fw, product)
+    except Exception:  # noqa: BLE001 — no layouts on this node: nothing beyond REST
+        return out
+    for e in entries:
+        tpl, _m = gui_pages.template(e["page"], fw, product)
+        if not tpl:
+            continue
+        section = str((tpl.get("menu_path") or ["Other"])[0] or "Other")
+        eps = [v.get("endpoint") for v in tpl.get("views") or [] if isinstance(v, dict)]
+        eps.append(tpl.get("endpoint"))
+        eps += [d.get("endpoint") for d in (tpl.get("dialogs") or {}).values()
+                if isinstance(d, dict)]
+        for ep in eps:
+            if not isinstance(ep, str) or "<" in ep:
+                continue
+            if ep.startswith("cli:") or (ep.startswith("gui:/") and ep.endswith("/")):
+                out.setdefault(ep, section)
+    return out
+
+
+def _fac_beyond_rest(appliance, sections: dict, answered: dict, errors: list,
+                     shapes: dict) -> int:
+    """Sweep what FortiAuthenticator serves outside its REST API: the CLI-only
+    objects (``show full-configuration`` over SSH) and the GUI-only pages
+    (``clients.fortiauthenticator_gui``). Both read-only; secrets dropped by
+    both readers. Returns the objects added. A GUI that refuses the login is
+    one error per GUI endpoint (coverage says ``failed``), never a guess."""
+    import time
+    from ..clients.fortiauthenticator_gui import FacGuiError, FacGuiReader
+    from .gui_products import FortiAuthenticatorAdapter
+    eps = fac_beyond_rest_endpoints(appliance)
+    added = 0
+    ad = FortiAuthenticatorAdapter()
+    for ep, section in sorted(eps.items()):
+        if not ep.startswith("cli:"):
+            continue
+        try:
+            rows, err = ad.cli_rows(appliance, ep)
+        except Exception as exc:  # noqa: BLE001 — one object never sinks the sweep
+            rows, err = [], f"{type(exc).__name__}: {exc}"
+        if err:
+            errors.append({"endpoint": ep, "error": str(err)[:160]})
+            continue
+        answered[ep] = section
+        rows = [r for r in rows if isinstance(r, dict)]
+        shapes[ep] = "table" if any("_edit" in r for r in rows) else "singleton"
+        if rows:
+            sections.setdefault(section, {})[ep] = rows
+            added += len(rows)
+    gui = {ep: s for ep, s in eps.items() if ep.startswith("gui:/")}
+    if not gui:
+        return added
+    if not getattr(appliance, "has_ssh_password", False) and not getattr(appliance, "ssh_password_enc", None):
+        for ep in sorted(gui):
+            errors.append({"endpoint": ep, "error": "no GUI login configured "
+                           "(set the CLI / GUI admin password on the appliance)"})
+        return added
+    deadline = time.monotonic() + FAC_GUI_BUDGET_S
+    paths = {ep[len("gui:"):]: ep for ep in gui}
+    try:
+        with FacGuiReader(appliance, allowed=paths) as rd:
+            for path, ep in sorted(paths.items()):
+                if time.monotonic() > deadline:
+                    errors.append({"endpoint": ep, "error": "GUI budget exhausted "
+                                   f"({FAC_GUI_BUDGET_S} s): not read this sweep"})
+                    continue
+                try:
+                    got = rd.read_page(path, deadline=deadline)
+                except FacGuiError as exc:
+                    errors.append({"endpoint": ep, "error": str(exc)[:160]})
+                    continue
+                if got["truncated"]:
+                    errors.append({"endpoint": ep, "error": "truncated: the change "
+                                   f"forms of {got['total']} objects did not all fit "
+                                   "in this sweep (list columns kept for the rest)"})
+                answered[ep] = gui[ep]
+                shapes[ep] = "table" if got["kind"] == "list" else "singleton"
+                if got["rows"]:
+                    sections.setdefault(gui[ep], {})[ep] = got["rows"]
+                    added += len(got["rows"])
+    except FacGuiError as exc:
+        for ep in sorted(gui):
+            if ep not in answered:
+                errors.append({"endpoint": ep, "error": str(exc)[:160]})
+    except Exception as exc:  # noqa: BLE001 — transport: the REST half stands
+        for ep in sorted(gui):
+            if ep not in answered:
+                errors.append({"endpoint": ep, "error": f"{type(exc).__name__}: {exc}"[:160]})
+    return added
 
 
 def snapshot_from_fgt(appliance, *, timeout: float = 20.0) -> dict:
@@ -424,11 +547,14 @@ def sweep_tables(product: str, appliances=()) -> dict[str, str]:
         from . import fac_menu, faz_menu
         faz = product == "fortianalyzer"
         section_of = _menu_sections(faz_menu.menu if faz else fac_menu.visible_menu)
-        exclude = _FAZ_SOT_EXCLUDE if faz else _FAC_SOT_EXCLUDE
+        exclude = _FAZ_SOT_EXCLUDE if faz else (_FAC_SOT_EXCLUDE | _FAC_POST_ONLY)
         for a in appliances:
             for name in loader.registry_for(product, loader.version_of(a)):
                 if name not in exclude:
                     out.setdefault(name, section_of.get(name, "Other"))
+            if not faz:
+                for ep, section in fac_beyond_rest_endpoints(a).items():
+                    out.setdefault(ep, section)
     return out
 
 

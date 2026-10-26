@@ -332,7 +332,24 @@ def cell(row: dict, col: dict, labels: dict | None = None):
     not tie to a REST key (``unmatched``) stays empty rather than guessing.
     ``<key>_val`` is not used: on some collections it is an index."""
     if col.get("unmatched"):
-        return ""
+        # A GUI-only column (FortiAuthenticator pages with no API): the sweep
+        # keeps the text the device's own change list shows (``_list``) and
+        # the form value; anything else stays empty rather than guessed.
+        name = col.get("gui_name")
+        if col.get("key_from") != "gui-only" or not name:
+            return ""
+        shown = (row.get("_list") or {}).get(name)
+        if shown not in (None, ""):
+            return shown
+        v = row.get(name)
+        lab = (row.get("_labels") or {}).get(name)
+        if lab not in (None, "") and not isinstance(v, bool):
+            return lab
+        if isinstance(v, bool):
+            return "Yes" if v else "No"
+        if isinstance(v, list):
+            return ", ".join(str(x) for x in v)
+        return "" if v is None else v
     k = col.get("id")
     v = row.get(k)
     lab = (labels or {}).get(k) or {}

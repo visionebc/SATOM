@@ -177,9 +177,15 @@ def input_problems(entries: list[dict], fields: list[dict]) -> list[tuple[str, s
         for f in fields or []:
             if not isinstance(f, dict) or not f.get("required"):
                 continue
-            if f.get("name") not in e["inputs"] and f.get("default") in (None, ""):
+            given = e["inputs"].get(f.get("name"))
+            if (given is None or (isinstance(given, str) and not given.strip())) \
+                    and f.get("default") in (None, ""):
+                # an empty value is not given: the run would stop at "is required"
+                # every time (Builder lab, 2026-10-26: "inputs": {"group": ""})
                 out.append((where, "form field %r is required and has no default: the "
-                                   "automation must give it in inputs" % f.get("name")))
+                                   "automation must give it a value in inputs%s"
+                            % (f.get("name"), " (it is empty)" if f.get("name") in e["inputs"]
+                               else "")))
     return out
 
 

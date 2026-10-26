@@ -121,6 +121,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   the counter starts as `{{ 0 }}` and grows with `{{ i + 1 }}`, and an
   expression like `ips[i]` that finds nothing because `i` is text says so
   and how to write it.
+- **An automation's empty value for a required field is refused.** An app
+  package's automation with `"inputs": {"group": ""}` passed the rules and
+  would stop at "is required" on every scheduled run; empty (or blank) now
+  counts as not given (rule `app.automations`), as in the Builder's editor.
 - **A FortiGate SATOM manages is in the fleet.** The API library still said
   "SATOM does not manage FortiGates" (`CATALOG_ONLY_PRODUCTS`), so no
   FortiGate build was ever `in_fleet` -- not on the API versions page, not in

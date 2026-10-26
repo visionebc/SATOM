@@ -202,9 +202,12 @@ def render(value, scope: dict):
         except SecurityError as exc:
             raise FlowError("template refused by the sandbox: %s" % exc) from None
         except TemplateError as exc:
-            raise FlowError("template error in %r: %s" % (value[:80], exc)) from None
+            # items[i].ip with a text i: "'list object' has no attribute '0'"
+            raise FlowError("template error in %r: %s%s" % (value[:80], exc,
+                                                          _index_hint(value, scope))) from None
         except Exception as exc:  # noqa: BLE001 -- e.g. a ZeroDivisionError in an expression
-            raise FlowError("template error in %r: %s" % (value[:80], exc)) from None
+            raise FlowError("template error in %r: %s%s" % (value[:80], exc,
+                                                          _index_hint(value, scope))) from None
         finally:
             _BUDGET.reset(token)
     if isinstance(value, list):

@@ -258,7 +258,11 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
                 created.append("API %s %s (%d endpoints, published)"
                                % (a.slug, v.version, len(v.operations)))
             else:
-                kept.append("API %s %s (exists, %s)" % (a.slug, v.version, v.status))
+                added = LIB.refresh(v, api, by) if (api.get("source") == LIB.SOURCE
+                                                    and a.slug in LIB.STYLES) else 0
+                kept.append("API %s %s (exists, %s%s)" % (
+                    a.slug, v.version, v.status,
+                    "; %d endpoint(s) added from SATOM's API library" % added if added else ""))
         for c in body.get("connections") or []:
             if SC.get(str(c.get("slug") or "")) is not None:
                 kept.append("connection %s (exists: its URL and secret are this server's)"

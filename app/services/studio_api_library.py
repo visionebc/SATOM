@@ -17,7 +17,8 @@ How each product addresses one object:
   object is ``GET``/``PUT`` on the path; a list field with its own key (an
   address group's ``member``) is a child table:
   ``GET``/``POST <path>/{<mkey>}/<field>`` (POST adds ONE entry, the others
-  stay) and ``GET``/``DELETE <path>/{<mkey>}/<field>/{<field>_<key>}``.
+  stay) and ``GET``/``DELETE <path>/{<mkey>}/<field>/{<field>_<key>}`` (GET
+  answers 404 when the item is not in the list: measured on fgt02 8.0.1).
 * **FortiWeb** ``/api/v2.0/cmdb/<path>`` and **FortiADC** ``/api/<name>``:
   the object's key travels as ``?mkey=``, so every method is on the one path.
 * **FortiAuthenticator** ``/api/v1/<resource>/``: ``GET``/``POST`` on the
@@ -125,6 +126,9 @@ def _ops_for(product: str, version: str, name: str, urn: str, section: str,
                         _op("POST", child, "%s: add ONE item to the %s list of one entry "
                             "(the others stay; body {\"%s\": ...})" % (what, field, ckey),
                             tag, True),
+                        _op("GET", "%s/{%s}" % (child, cph),
+                            "%s: one item of the %s list of one entry (404 = not in the list)"
+                            % (what, field), tag),
                         _op("DELETE", "%s/{%s}" % (child, cph),
                             "%s: remove one item from the %s list of one entry"
                             % (what, field), tag)]
@@ -223,6 +227,29 @@ def _vkey(v: str):
     return SAPI._vkey(v)
 
 
+def refresh(v, entry_: dict, by: str) -> int:
+    """Add to a library version the endpoints a newer build of the list has.
+    -> how many were added. ONLY additive and only for ``source ==
+    "library"``: a person's published version never changes, and no endpoint
+    an app may call is ever taken away -- a library version is SATOM's
+    measurement of a firmware build, and it can only learn more about it
+    (2026-10-26: the GET of a list item was added after a1 had published
+    FortiGate 8.0.1 without it)."""
+    import json as _json
+    from ..extensions import db
+    if v.source != SOURCE:
+        return 0
+    have = {(o["method"], o["path"]) for o in v.operations}
+    new = [o for o in entry_.get("operations") or [] if (o["method"], o["path"]) not in have]
+    if not new:
+        return 0
+    v.operations_json = _json.dumps(S.clean_operations(list(v.operations) + new))
+    v.notes = str(entry_.get("notes") or v.notes)[:8000]
+    v.updated_by = by
+    db.session.commit()
+    return len(new)
+
+
 def ensure(product: str, version: str, by: str):
     """The published API Catalog version of one build, created when missing.
     -> ``(StudioApiVersion, created: bool)``."""
@@ -236,6 +263,7 @@ def ensure(product: str, version: str, by: str):
                                   % (product, ", ".join(sorted(other))))
         v = SAPI.get_version(a, version)
         if v is not None:
+            refresh(v, entry(product, version), by)
             return v, False
     e = entry(product, version)
     if a is None:

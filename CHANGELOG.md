@@ -29,6 +29,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   arrow. Measured on a1: FortiGate 8.0.1 is 3,715 endpoints (428 tables, 186
   settings objects, 91 lists), so one API version may now hold 5,000 (was
   3,000), and the guide names a pinned connection's endpoints only up to 60.
+  A list item has its GET too (`.../addrgrp/{name}/member/{item}` answers 404
+  when the item is not in the list, measured on fgt02), so an app can check
+  before it adds. A version built from the library may only ever GAIN
+  endpoints: "Add from SATOM's API library" and an import of a newer list of
+  the same build add what is new and never take one away -- a person's
+  published version still never changes.
 
 - **A busy API no longer takes the console with it.** Asked: "what happens if
   SATOM is used heavily through the API, hundreds of parallel requests -- how

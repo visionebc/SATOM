@@ -142,7 +142,15 @@ def firmware_check(id):
         return jsonify({"error": code, "message": msg}), 403
 
     a = visible_appliance_or_404(id, user=_owner())
-    res = firmware_probe.refresh(a)
+    from ..services import device_gate
+    try:
+        with device_gate.slot(a.id):
+            res = firmware_probe.refresh(a)
+    except device_gate.Busy as busy:
+        resp = jsonify({"error": "device_busy", "message": str(busy),
+                        "retry_after": busy.retry_after})
+        resp.headers["Retry-After"] = str(busy.retry_after)
+        return resp, 429
     if not res.get("ok"):
         log_action("api.firmware_check_failed", target=f"appliance:{a.id}",
                    extra=audit_extra(appliance=a.name, reason=res.get("error"),

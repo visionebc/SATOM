@@ -786,6 +786,31 @@ def tighten_data_dir(st):
     st.step("data/ permissions", ok, detail)
 
 
+def converge_nginx(st):
+    """[SATOM-API-LIMITS] Bring the vhost to the shape the installer now emits.
+
+    Runs ``satom execute repair nginx --yes`` (from the root-owned CLI copy
+    refreshed just before): adds the /api/v1 connection and rate limits to a
+    vhost built by an older installer, and the Host header fix. The CLI runs
+    ``nginx -t`` and restores every file on failure, so this can only leave
+    the old, working configuration. NON-FATAL, like tighten_data_dir.
+    """
+    cli = "/usr/local/sbin/satom"
+    st.begin("nginx vhost")
+    try:
+        p = subprocess.run([cli, "execute", "repair", "nginx", "--yes"],
+                           capture_output=True, text=True, timeout=120)
+        out = (p.stdout or p.stderr or "").strip()
+        ok = p.returncode == 0
+        detail = out[-300:] if ok else (
+            "%s -- the update itself is fine; retry with: "
+            "sudo %s execute repair nginx --yes" % (out[-250:], cli))
+    except Exception as exc:  # noqa: BLE001
+        ok, detail = False, "%s -- retry with: sudo %s execute repair nginx --yes" % (
+            str(exc)[:200], cli)
+    st.step("nginx vhost", ok, detail)
+
+
 def route_audit_ok():
     """Every ``url_for()`` endpoint written in a template exists in the url_map.
 
@@ -1209,6 +1234,7 @@ def process(req_path):
                 _sh.rmtree(stage_root, ignore_errors=True)
         # After the CLI refresh: the verb it runs ships with this release.
         tighten_data_dir(st)
+        converge_nginx(st)
 
         new = git("rev-parse", "HEAD").stdout.strip()
         restart_and_validate(st, is_standby, app_was_active,
@@ -2213,6 +2239,7 @@ def package_change(req_path):
                 import shutil as _sh
                 _sh.rmtree(stage_root, ignore_errors=True)
         tighten_data_dir(st)
+        converge_nginx(st)
 
         # -- 10. restart and prove it works ----------------------------------
         restart_and_validate(st, is_standby, app_was_active,

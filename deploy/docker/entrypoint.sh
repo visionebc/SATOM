@@ -146,15 +146,14 @@ case "$role" in
         reject_placeholder_secrets
         wait_for_db
         migrate_primary
-        # --timeout must stay ABOVE the advisor provider timeout
-        # (app/services/advisor_providers.py DEFAULT_TIMEOUT), exactly as in
-        # deploy/satom.service: below it a slow model has its worker killed
-        # first and the operator gets a dropped connection instead of the
-        # provider's own "request timed out".
+        # Worker model, threads and timeouts: deploy/gunicorn.conf.py, as in
+        # deploy/satom.service (gthread; SATOM_WEB_WORKERS / SATOM_WEB_THREADS
+        # / SATOM_WEB_TIMEOUT override it). The web role caps a single SQL
+        # statement; the scheduler role does not.
+        export SATOM_DB_STATEMENT_TIMEOUT_MS="${SATOM_DB_STATEMENT_TIMEOUT_MS:-60000}"
         exec gunicorn \
-            --workers "${SATOM_WEB_WORKERS:-4}" \
+            --config /opt/satom/deploy/gunicorn.conf.py \
             --bind "0.0.0.0:8000" \
-            --timeout "${SATOM_WEB_TIMEOUT:-600}" \
             --access-logfile - \
             --error-logfile - \
             wsgi:app

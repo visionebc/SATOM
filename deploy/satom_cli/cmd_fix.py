@@ -25,7 +25,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from . import cmd_checks, cmd_ops, dbq
-from .cmd_checks import NGINX_VHOST_DIRS, satom_vhosts
+from .cmd_checks import (NGINX_VHOST_DIRS, add_api_limits, api_limits_conf_path,
+                         api_limits_zones_text, satom_vhosts)
 from .context import UNITS, app_cmd, app_env, run
 from .cmd_execute import _app_call
 from .render import Result
@@ -528,6 +529,10 @@ def repair_nginx(ctx, args):
                      r"\1$http_host;", txt)
         if new != txt:
             plan.append((str(path), "Host $host -> $http_host"))
+        limited = add_api_limits(new)
+        if limited != new:
+            plan.append((str(path), "/api/v1: connection and rate limits [SATOM-API-LIMITS]"))
+            new = limited
         if fqdn:
             def _add(m, _path=path):
                 indent, names = m.group(1), m.group(2)
@@ -552,6 +557,12 @@ def repair_nginx(ctx, args):
             uniq.append(row)
     plan = uniq
 
+    zones = Path(api_limits_conf_path())
+    need_zones = any("satom_api_total" in t for _p, t in targets) \
+        or any("satom_api_total" in n for _p, _o, n in staged)
+    if need_zones and not zones.exists():
+        plan.append((str(zones), "create the /api/v1 limit zones [SATOM-API-LIMITS]"))
+
     if not plan:
         r.rows("", [("state", "already correct - nothing to repair")])
         return r
@@ -565,6 +576,10 @@ def repair_nginx(ctx, args):
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     backups = []
+    zones_written = False
+    if need_zones and not zones.exists():
+        zones.write_text(api_limits_zones_text())
+        zones_written = True
     for path, old, new in staged:
         bak = Path("/root") / ("%s.pre-repair-nginx-%s" % (path.name, stamp))
         bak.write_text(old)
@@ -576,6 +591,8 @@ def repair_nginx(ctx, args):
         # turns the next unrelated reload into an outage.
         for path, old, _bak in backups:
             path.write_text(old)
+        if zones_written:
+            zones.unlink()
         r.status = "bad"
         r.lines("nginx -t FAILED - every file restored",
                 (err or out_).splitlines()[:10])

@@ -284,11 +284,21 @@ def waf_create_exception():
                           "goes in. The record was still saved as desired state.")
         return jsonify(out), 400
 
+    from ..services import device_gate
     from ..services.fortiweb_ops import FortiWebOps
-    res = exception_inject.apply_injection(
-        FortiWebOps(appliance), exc_type=exc_type, payload=payload,
-        target=target, dry_run=False,
-        create_container=bool(body.get("create_container")))
+    try:
+        # at most api.device_concurrency SATOM sessions to one FortiWeb
+        with device_gate.slot(appliance.id):
+            res = exception_inject.apply_injection(
+                FortiWebOps(appliance), exc_type=exc_type, payload=payload,
+                target=target, dry_run=False,
+                create_container=bool(body.get("create_container")))
+    except device_gate.Busy as busy:
+        out.update(ok=False, applied=False, error="device_busy", message=str(busy),
+                   retry_after=busy.retry_after)
+        resp = jsonify(out)
+        resp.headers["Retry-After"] = str(busy.retry_after)
+        return resp, 429
     out.update(applied=True, ok=bool(res["ok"]), steps=res["steps"],
                already_present=bool(res["already_present"]),
                plan=_plan_json(res["plan"]))

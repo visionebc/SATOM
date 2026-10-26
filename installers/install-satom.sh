@@ -1958,12 +1958,15 @@ fi
 
 # nginx: TLS on the chosen port with the node certificate.
 # Debian/Ubuntu use sites-available/enabled; the other families use conf.d.
+NGZCONF=/etc/nginx/conf.d/satom-api-limits.conf
 if [ -d /etc/nginx/sites-enabled ]; then
     NGXCONF=/etc/nginx/sites-available/satom.conf
+    mkdir -p /etc/nginx/conf.d
 elif [ -d /etc/nginx/vhosts.d ]; then
     # openSUSE/SLES: vhosts.d is included ONCE; conf.d appears twice in the
     # stock nginx.conf, so a file there gets parsed twice.
     NGXCONF=/etc/nginx/vhosts.d/satom.conf
+    NGZCONF=/etc/nginx/vhosts.d/satom-api-limits.conf
 else
     mkdir -p /etc/nginx/conf.d
     NGXCONF=/etc/nginx/conf.d/satom.conf
@@ -1990,6 +1993,18 @@ REDIR_PORT=""
 if [ "$WEB_PORT" != "443" ]; then REDIR_PORT=":${WEB_PORT}"; fi
 write_satom_vhost() {
     local dflt="$1"
+# [SATOM-API-LIMITS] Zones of the /api/v1 limits, in a file of their own in a
+# directory nginx includes ONCE in its http block ($NGZCONF, chosen with
+# $NGXCONF: openSUSE's stock nginx.conf includes conf.d twice, and a zone
+# defined twice fails the whole configuration). deploy/satom_cli/cmd_checks.py
+# holds the same lines; 'satom execute repair nginx' brings older vhosts here.
+cat > "$NGZCONF" <<'NGZ'
+# [SATOM-API-LIMITS] Written by SATOM (installer / 'satom execute repair nginx').
+# The /api/v1 location of the SATOM vhost uses these zones.
+limit_conn_zone $server_name zone=satom_api_total:1m;
+limit_conn_zone $binary_remote_addr zone=satom_api_client:10m;
+limit_req_zone $binary_remote_addr zone=satom_api_rate:10m rate=50r/s;
+NGZ
 cat > "$NGXCONF" <<NGX
 server {
     listen ${WEB_PORT} ssl http2${dflt};
@@ -2004,6 +2019,23 @@ server {
     # sees and therefore cannot explain.
     client_max_body_size 400M;
     add_header Strict-Transport-Security "max-age=31536000" always;
+    # [SATOM-API-LIMITS] /api/v1 may hold at most 16 of the 32 gunicorn
+    # threads, so the console always answers; per client 8 in flight and 50/s.
+    # Over a limit: 429 at once, nothing queued in Python.
+    location ^~ /api/v1/ {
+        limit_conn satom_api_total 16;
+        limit_conn satom_api_client 8;
+        limit_req zone=satom_api_rate burst=100 nodelay;
+        limit_conn_status 429;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_hide_header Strict-Transport-Security;
+        proxy_set_header Host \$http_host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 120s;
+    }
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_hide_header Strict-Transport-Security;

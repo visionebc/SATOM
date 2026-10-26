@@ -642,6 +642,92 @@ def cert_san_names(path):
     return names
 
 
+# [SATOM-API-LIMITS] /api/v1 may hold at most API_CONN_TOTAL of the gunicorn
+# threads (deploy/gunicorn.conf.py: 4 workers x 8 = 32), so the console always
+# has the rest; per client address 8 requests in flight and 50/s (burst 100).
+# Over a limit nginx answers 429 at once -- nothing queues in Python. Per-TOKEN
+# limits are the application's (app/api_v1/auth.py rate_key). The zones live
+# in a file of their own that nginx includes once (api_limits_conf_path), so
+# two vhosts never define them twice.
+API_LIMITS_CONF = "/etc/nginx/conf.d/satom-api-limits.conf"
+#: openSUSE/SLES: the stock nginx.conf includes conf.d TWICE (a zone defined
+#: twice fails the whole config) and vhosts.d once -- the installer's choice.
+API_LIMITS_CONF_SUSE = "/etc/nginx/vhosts.d/satom-api-limits.conf"
+
+
+def api_limits_conf_path() -> str:
+    """Where the zones file belongs on THIS node (the installer's rule)."""
+    if not Path("/etc/nginx/sites-enabled").is_dir() and Path("/etc/nginx/vhosts.d").is_dir():
+        return API_LIMITS_CONF_SUSE
+    return API_LIMITS_CONF
+API_CONN_TOTAL = 16
+API_LIMITS_ZONES = (
+    "limit_conn_zone $server_name zone=satom_api_total:1m;",
+    "limit_conn_zone $binary_remote_addr zone=satom_api_client:10m;",
+    "limit_req_zone $binary_remote_addr zone=satom_api_rate:10m rate=50r/s;",
+)
+API_LIMITS_DIRECTIVES = (
+    "limit_conn satom_api_total %d;" % API_CONN_TOTAL,
+    "limit_conn satom_api_client 8;",
+    "limit_req zone=satom_api_rate burst=100 nodelay;",
+    "limit_conn_status 429;",
+    "limit_req_status 429;",
+)
+
+
+def api_limits_zones_text() -> str:
+    return ("# [SATOM-API-LIMITS] Written by SATOM (installer / 'satom execute "
+            "repair nginx').\n# The /api/v1 location of the SATOM vhost uses "
+            "these zones.\n" + "\n".join(API_LIMITS_ZONES) + "\n")
+
+
+def api_limits_missing(text: str) -> bool:
+    """A vhost proxying to the local gunicorn whose /api/v1 is unlimited."""
+    return bool(re.search(r"proxy_pass\s+http://127\.0\.0\.1:8000", text or "")) \
+        and "satom_api_total" not in (text or "")
+
+
+def _block_end(text: str, open_brace: int) -> int:
+    depth = 0
+    for i in range(open_brace, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
+
+
+def add_api_limits(text: str) -> str:
+    """*text* with a ``location ^~ /api/v1/`` block in front of every
+    ``location /`` that proxies to the local gunicorn: the same proxy settings
+    plus :data:`API_LIMITS_DIRECTIVES`. Unchanged when already present. Pure."""
+    if not api_limits_missing(text):
+        return text
+    out, pos = [], 0
+    for m in re.finditer(r"^([ \t]*)location\s+/\s*\{", text, re.M):
+        if m.start() < pos:
+            continue
+        brace = text.index("{", m.start())
+        end = _block_end(text, brace)
+        if end < 0:
+            break
+        body = text[brace + 1:end]
+        if not re.search(r"proxy_pass\s+http://127\.0\.0\.1:8000", body):
+            continue
+        indent = m.group(1)
+        inner = indent + "    "
+        limits = "".join("\n%s%s" % (inner, d) for d in API_LIMITS_DIRECTIVES)
+        block = ("%s# [SATOM-API-LIMITS] zones: satom-api-limits.conf\n%slocation ^~ /api/v1/ {%s%s}\n"
+                 % (indent, indent, limits, body.rstrip(" \t") + indent))
+        out.append(text[pos:m.start()])
+        out.append(block)
+        pos = m.start()
+    out.append(text[pos:])
+    return "".join(out)
+
+
 def satom_vhosts():
     """(path, text) of every vhost that proxies to the local gunicorn."""
     out = []
@@ -750,6 +836,19 @@ def nginx(ctx, args):
             r.note("A vhost passes `Host $host`, which strips the port. Every "
                    "POST behind a non-standard port fails CSRF and reports a "
                    "stale form. Fix: `satom execute repair nginx --yes`.")
+        # [SATOM-API-LIMITS] An unlimited /api/v1 lets one integration take
+        # every gunicorn thread, and the console stops answering with it.
+        unlimited = [n for n, t in proxied if api_limits_missing(t)]
+        zones_ok = Path(api_limits_conf_path()).exists()
+        r.rows("/api/v1 limits", [
+            (n, "MISSING" if n in unlimited else ("present" if zones_ok
+                                                  else "present, zones file MISSING"))
+            for n, t in proxied if "127.0.0.1:8000" in t])
+        if unlimited or (not zones_ok and any("satom_api_total" in t for _n, t in proxied)):
+            r.worst("warn")
+            r.note("/api/v1 has no connection / rate limits: one API client "
+                   "can hold every web thread and the console with it. "
+                   "Fix: `satom execute repair nginx --yes`.")
 
     # [SATOM-SERVED-NAMES] What the vhost serves and what the certificate
     # covers have to be the SAME set. The installer minted both from

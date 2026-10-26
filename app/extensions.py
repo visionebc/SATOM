@@ -97,7 +97,19 @@ db: SQLAlchemy = SQLAlchemy()
 migrate: Migrate = Migrate()
 login_manager: LoginManager = LoginManager()
 csrf: CSRFProtect = CSRFProtect()
-limiter: Limiter = Limiter(key_func=real_client_ip)
+def limit_key() -> str:
+    """The limiter's key: the API token on ``/api/v1`` (``api_v1.auth.rate_key``
+    -- integrations behind one NAT no longer share a bucket, one token spread
+    over many hosts no longer escapes it), the client IP everywhere else
+    (login and the console keep their per-address limits)."""
+    from flask import request
+    if request.blueprint == "api_v1":
+        from .api_v1.auth import rate_key
+        return rate_key()
+    return real_client_ip()
+
+
+limiter: Limiter = Limiter(key_func=limit_key)
 # Locale selector is wired in the factory (app/__init__.py), not here:
 # it has to read the signed-in user's stored preference, and this module
 # must stay importable without the ORM.

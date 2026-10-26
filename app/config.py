@@ -35,6 +35,48 @@ def _append_env(var: str, value: str) -> None:
     os.environ[var] = value
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name) or default)
+    except ValueError:
+        return default
+
+
+def _engine_options(uri: str) -> dict:
+    """SQLAlchemy engine options, sized for the gthread web workers.
+
+    ``pool_size`` + ``max_overflow`` per PROCESS: 4 web workers x (10 + 5) +
+    the scheduler stays under Postgres' default max_connections (100).
+    ``pool_timeout`` is short on purpose: a request that cannot get a
+    connection in 10 s answers an error instead of holding a thread for the
+    default 30 s while more requests queue behind it.
+
+    ``SATOM_DB_STATEMENT_TIMEOUT_MS`` (set by satom.service only -- the web
+    processes) caps one SQL statement; ``idle_in_transaction_session_timeout``
+    ends a transaction a crashed request left open. Postgres only."""
+    opts: dict = {
+        # pool_pre_ping: a connection checked out of the pool is validated with
+        # a cheap SELECT 1 first, so a Postgres restart / idle-timeout kill
+        # never surfaces as a user-facing OperationalError. pool_recycle keeps
+        # connections younger than typical firewall/PG idle timeouts.
+        "pool_pre_ping": True,
+        "pool_recycle": 1800,
+    }
+    if not uri.startswith("postgresql"):
+        return opts
+    opts.update(pool_size=_env_int("SATOM_DB_POOL_SIZE", 10),
+                max_overflow=_env_int("SATOM_DB_MAX_OVERFLOW", 5),
+                pool_timeout=_env_int("SATOM_DB_POOL_TIMEOUT", 10))
+    pg = []
+    st = _env_int("SATOM_DB_STATEMENT_TIMEOUT_MS", 0)
+    if st > 0:
+        pg.append("-c statement_timeout=%d" % st)
+        pg.append("-c idle_in_transaction_session_timeout=%d" % max(st * 5, 300000))
+    if pg:
+        opts["connect_args"] = {"options": " ".join(pg)}
+    return opts
+
+
 class Config:
     SECRET_KEY: str = _ensure_secret_key()
     # NOTE: this SQLite default is a DEV/TEST fallback only. Production
@@ -45,14 +87,8 @@ class Config:
         "sqlite:////opt/satom/data/fortinet.db",
     )
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
-    # pool_pre_ping: a connection checked out of the pool is validated with a
-    # cheap SELECT 1 first, so a Postgres restart / idle-timeout kill never
-    # surfaces as a user-facing OperationalError. pool_recycle keeps
-    # connections younger than typical firewall/PG idle timeouts.
-    SQLALCHEMY_ENGINE_OPTIONS: dict = {
-        "pool_pre_ping": True,
-        "pool_recycle": 1800,
-    }
+    SQLALCHEMY_ENGINE_OPTIONS: dict = _engine_options(
+        os.environ.get("SQLALCHEMY_DATABASE_URI", ""))
     SESSION_COOKIE_SECURE: bool = True
     SESSION_COOKIE_HTTPONLY: bool = True
     SESSION_COOKIE_SAMESITE: str = "Lax"

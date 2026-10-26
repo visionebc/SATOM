@@ -4,9 +4,11 @@ Separate from the internal ``app.api`` blueprint (which is session-authed and
 serves the frontend). This one is CSRF-exempt (tokens carry no CSRF) and every
 view authenticates via :func:`app.api_v1.auth.token_required`.
 """
+import os
+
 from flask import Blueprint
 
-from ..extensions import csrf
+from ..extensions import csrf, limiter
 # Importing the model registers ``api_tokens`` on the metadata so the app
 # factory's ``db.create_all()`` provisions the table (Postgres, no migration).
 from .. import models_api_token  # noqa: F401
@@ -15,6 +17,13 @@ bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 
 # Token auth replaces CSRF for this surface.
 csrf.exempt(bp)
+
+# Every /api/v1 route, limited per TOKEN (api_v1.auth.rate_key): 25 of the 57
+# routes had no limit of their own, so one integration in a loop could take
+# the node's whole worker pool. The routes that already carry a stricter
+# limit keep it. SATOM_API_RATE_LIMIT in .env changes the ceiling.
+API_RATE_LIMIT = os.environ.get("SATOM_API_RATE_LIMIT") or "600 per minute"
+limiter.limit(lambda: API_RATE_LIMIT)(bp)
 
 from . import routes  # noqa: E402,F401
 # Object-write resources. Imported AFTER ``routes`` so the blueprint-level JSON

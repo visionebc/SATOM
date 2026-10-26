@@ -5715,6 +5715,57 @@ API Catalog</strong> keeps it, one entry per <strong>version</strong> of it — 
    later changes go into a new version. <strong>Deprecate</strong> marks a version you want
    people to move off; it keeps working.</li>
 </ol>
+<p><strong>Add from SATOM's API library</strong> turns one firmware build SATOM knows into a
+published version without typing an endpoint: API <code>fortigate</code> (or
+<code>fortiweb</code>, <code>fortiadc</code>, <code>fortiauthenticator</code>), version = the build
+(<code>8.0.1</code>), every REST endpoint the API library says that build serves —
+measured on devices, from schemas and vendor documentation; the endpoints
+measured absent on it are left out, and the builds your fleet runs are listed
+first. How each product addresses one object:</p>
+<table>
+<thead>
+<tr>
+<th>Product</th>
+<th>A table</th>
+<th>A settings object</th>
+<th>A list inside an entry</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FortiGate (<code>/api/v2/cmdb/&lt;path&gt;</code>)</td>
+<td><code>GET</code>/<code>POST &lt;path&gt;</code>, <code>GET</code>/<code>PUT</code>/<code>DELETE &lt;path&gt;/{&lt;key&gt;}</code></td>
+<td><code>GET</code>/<code>PUT &lt;path&gt;</code></td>
+<td><code>GET</code>/<code>POST &lt;path&gt;/{&lt;key&gt;}/&lt;list&gt;</code> adds ONE item (the others stay), <code>DELETE &lt;path&gt;/{&lt;key&gt;}/&lt;list&gt;/{&lt;item&gt;}</code></td>
+</tr>
+<tr>
+<td>FortiWeb, FortiADC</td>
+<td>every method on <code>&lt;path&gt;</code>, the entry as <code>?mkey=</code></td>
+<td><code>GET</code>/<code>PUT &lt;path&gt;</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>FortiAuthenticator</td>
+<td><code>GET</code>/<code>POST &lt;resource&gt;/</code>, <code>GET</code>/<code>PUT</code>/<code>PATCH</code>/<code>DELETE &lt;resource&gt;/{id}/</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>An object whose kind the library has not measured gets both shapes. A
+FortiGate <code>PUT</code> that sends a list (an address group's <code>member</code>) replaces the
+whole list, which is why the list's own endpoint is there: adding one address
+to a group is <code>POST /api/v2/cmdb/firewall/addrgrp/{name}/member</code> with
+<code>{"name": "&lt;address&gt;"}</code>, and <code>GET .../addrgrp/{name}/member/{item}</code> answers
+404 when the item is not in the group, so an app checks before it adds. A
+version built from the library only ever gains endpoints: choosing the same
+build again (the page says how many were added) or importing an app package
+with a newer list of it adds what is new and never removes one; a version a
+person made never changes. FortiAnalyzer is not offered: it speaks JSON-RPC,
+where every call is <code>POST /jsonrpc</code>. An app package that uses such a version
+carries it (marked as built from the library) and the import creates it when
+the server lacks it; an API of the same id that a person made cannot take a
+library version.</p>
 <p><strong>Compare two versions</strong> on the API page lists the endpoints removed (calls to
 them break), changed (method, path, parameters or body) and added. <strong>Endpoints
 (JSON)</strong> downloads a version's list in the shape the manual editor saves, to

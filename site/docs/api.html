@@ -565,6 +565,13 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 </tr>
 <tr>
 <td><code>GET</code></td>
+<td><code>/builder/library/fortinet/&lt;product&gt;/&lt;version&gt;/catalog</code></td>
+<td>read</td>
+<td>the product is the token's ADOM (any, for <code>global</code>)</td>
+<td>That build as an API Catalog version, as an app package carries it (contract §19)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
 <td><code>/builder/data</code></td>
 <td>read</td>
 <td>owner is a Plugin Studio author</td>
@@ -1779,6 +1786,23 @@ target does.</p>
 where <code>status</code> is <code>measured</code>, <code>blind</code>, <code>absent</code> or <code>unmeasured</code> (an empty
 <code>fields</code> is "unknown" unless the status is <code>measured</code>). A product outside the
 token's ADOM is 403 <code>wrong_product</code>.</p>
+<h3 id="get-builderlibraryfortinetproductversioncatalog"><code>GET /builder/library/fortinet/&lt;product&gt;/&lt;version&gt;/catalog</code></h3>
+<p>The same build as an API Catalog version (contract §19), exactly as an app
+package carries it in <code>"apis"</code>: <code>{"api": {"slug": "fortigate", "version":
+"8.0.1", "name", "owner", "docs_url", "description", "base_path", "operations":
+[...], "notes", "source": "library"}}</code>. A connection pinned to <code>api</code> +
+<code>api_version</code> may call these endpoints and no other: the package check
+(<code>app.definition</code>, "is not an endpoint") and the connection broker enforce it.
+FortiGate tables are <code>&lt;path&gt;</code> and <code>&lt;path&gt;/{&lt;mkey&gt;}</code>, settings objects
+<code>&lt;path&gt;</code>, and a list with its own key a child table
+(<code>&lt;path&gt;/{name}/member</code>: POST adds one item; <code>&lt;path&gt;/{name}/member/{item}</code>:
+GET answers 404 when the item is not in the list, DELETE removes it); a
+version built from the library only ever gains endpoints on import; FortiWeb and FortiADC take the
+key as <code>?mkey=</code>; FortiAuthenticator is <code>&lt;resource&gt;/</code> and <code>&lt;resource&gt;/{id}/</code>.
+Endpoints the build does not serve are left out. 404 <code>not_measured</code> for a
+build the library has not measured, 422 <code>no_paths</code> for FortiAnalyzer
+(JSON-RPC: every call is <code>POST /jsonrpc</code>), 403 <code>wrong_product</code> outside the
+token's ADOM.</p>
 <h3 id="get-builderdata"><code>GET /builder/data</code></h3>
 <p>This server's rows, for the Builder's test data (contract §15). <code>read</code>
 scope; the owner must be a Plugin Studio author (<code>studio.script_library</code>),
@@ -1845,6 +1869,11 @@ that already exists is ignored and reported in <code>kept</code>. A refusal is 4
  &quot;kept&quot;: [], &quot;todo&quot;: [&quot;review the diagram, test it and Publish ...&quot;], &quot;problems&quot;: [],
  &quot;warnings&quot;: [], &quot;signed_by&quot;: &quot;publisher&quot;, &quot;signer&quot;: &quot;&lt;key id&gt;&quot;, &quot;policy&quot;: &quot;builder&quot;}
 </code></pre>
+<p>An app package's connection may be pinned to a build of SATOM's API library
+(contract §19): <code>"api": "fortigate", "api_version": "8.0.1"</code> with the <code>"apis"</code>
+entry that <code>GET /builder/library/fortinet/fortigate/8.0.1/catalog</code> serves
+(<code>"source": "library"</code>). Every <code>api_call</code> step must then call one of those
+endpoints, and the import creates the version when this server lacks it.</p>
 <p>An app package may carry <code>automations</code> (contract §18): the app on a
 schedule. The import creates each as a <strong>switched-off</strong> automation of
 Automations (action <code>plugin_app</code>, "Run a Plugin Studio app") that runs the

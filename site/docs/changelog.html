@@ -114,7 +114,37 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>A busy API no longer takes the console with it.</strong> Asked: "what happens if
+<li>
+<p><strong>A plugin that calls a FortiGate can no longer invent its path.</strong> Asked
+  (about the SATOM Builder): "the API pack should go to the Builder, so it has
+  every API and knows how to work with them". The API library becomes API
+  Catalog versions: <strong>Plugin Studio &gt; API Catalog &gt; Add from SATOM's API
+  library</strong> publishes one firmware build (API <code>fortigate</code>, version <code>8.0.1</code>)
+  with every REST endpoint the library says it serves -- tables with their
+  <code>{key}</code> path, settings objects, and a list inside an entry (an address
+  group's <code>member</code>) as its own endpoint, whose POST adds one item where a PUT
+  of the entry replaces the whole list; FortiWeb and FortiADC keep the key in
+  <code>?mkey=</code>, FortiAuthenticator is <code>&lt;resource&gt;/{id}/</code>; endpoints the build does
+  not serve are left out. Pinned to it, a connection's <code>Call an API</code> steps
+  must name one of those endpoints (a problem that blocks publishing, and the
+  broker refuses the rest). For the Builder (contract section 19):
+  <code>GET /api/v1/builder/library/fortinet/&lt;product&gt;/&lt;build&gt;/catalog</code> serves the
+  build exactly as an app package carries it in <code>"apis"</code> (marked
+  <code>"source": "library"</code>, kept through export and import), and the author
+  guide says how to call a Fortinet device: the pin, the child table to add
+  one item, the address that must exist first, the 404 that takes the error
+  arrow. Measured on a1: FortiGate 8.0.1 is 3,715 endpoints (428 tables, 186
+  settings objects, 91 lists), so one API version may now hold 5,000 (was
+  3,000), and the guide names a pinned connection's endpoints only up to 60.
+  A list item has its GET too (<code>.../addrgrp/{name}/member/{item}</code> answers 404
+  when the item is not in the list, measured on {device}), so an app can check
+  before it adds. A version built from the library may only ever GAIN
+  endpoints: "Add from SATOM's API library" and an import of a newer list of
+  the same build add what is new and never take one away -- a person's
+  published version still never changes.</p>
+</li>
+<li>
+<p><strong>A busy API no longer takes the console with it.</strong> Asked: "what happens if
   SATOM is used heavily through the API, hundreds of parallel requests -- how
   do we protect it so it does not go down?". The web server runs gthread
   workers (4 x 8 threads, <code>deploy/gunicorn.conf.py</code>) instead of four
@@ -128,7 +158,8 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   this release it answered in 6-13 ms through both. Older vhosts are brought
   to this shape by <code>satom execute repair nginx</code> (run by the update runner
   after every update); <code>satom get system health</code> warns while <code>/api/v1</code> is
-  unlimited.</li>
+  unlimited.</p>
+</li>
 <li><strong>One appliance, two SATOM sessions.</strong> Every API call that opens a session
   to a device (firmware-check, a WAF carve-out apply, a FortiADC rule create /
   delete / live read) goes through a per-appliance cap shared by all workers
@@ -200,11 +231,32 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>A FortiADC with an invalid licence was "a box with nothing configured".</strong>
+<li><strong>The loop the author guide describes now works as written.</strong> Plugin
+  Studio's guide says one call per item is "a <code>set</code> counter, a decision, the
+  step, the counter + 1", but a <code>set</code> step's literal <code>"0"</code> is the TEXT '0':
+  <code>{{ ips[i] }}</code> then finds nothing and <code>{{ i + 1 }}</code> fails (the SATOM
+  Builder's AI wrote exactly that three times in a row). The guide now says
+  the counter starts as <code>{{ 0 }}</code> and grows with <code>{{ i + 1 }}</code>, and an
+  expression like <code>ips[i]</code> that finds nothing because <code>i</code> is text says so
+  and how to write it.</li>
+<li><strong>An automation's empty value for a required field is refused.</strong> An app
+  package's automation with <code>"inputs": {"group": ""}</code> passed the rules and
+  would stop at "is required" on every scheduled run; empty (or blank) now
+  counts as not given (rule <code>app.automations</code>), as in the Builder's editor.</li>
+<li>
+<p><strong>A FortiGate SATOM manages is in the fleet.</strong> The API library still said
+  "SATOM does not manage FortiGates" (<code>CATALOG_ONLY_PRODUCTS</code>), so no
+  FortiGate build was ever <code>in_fleet</code> -- not on the API versions page, not in
+  the Builder's Library -- although {device} runs 8.0.1. FortiGate is a managed
+  product of the library now.</p>
+</li>
+<li>
+<p><strong>A FortiADC with an invalid licence was "a box with nothing configured".</strong>
   {device} answers every read with HTTP 200 and <code>{"payload": "Invalid VM
   License"}</code>; the client read the sentence as data, so the sweep said "device
   returned no objects" and the API would have answered <code>rules: []</code>. It is now
-  a device refusal with the device's own words.</li>
+  a device refusal with the device's own words.</p>
+</li>
 <li><strong>FortiAuthenticator's token policy failed every sweep</strong> with "unknown
   fields: limit": the settings singleton refuses the page size; it is asked
   again without it. The 11 POST-only action resources the 8.0.3 baseline now

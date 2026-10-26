@@ -49,6 +49,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
     references a real server by `real_server_id`, it is not an inline ip:port.
     The Builder's AI wrote `{"member_ip", "member_port"}` on the lab, and
     nothing said otherwise.
+  - A *Decision* that compares a boolean with the word `true` or `false`
+    (`{{ ip in ips }}` equals `true`) compares them as booleans: as text,
+    `True` never equalled `true`, and the Builder's AI wrote an app that would
+    have created the same FortiADC real server every day.
   - Also measured: fortiadc10 answers every REST call "Invalid VM License".
 
 - **A plugin that calls a FortiGate can no longer invent its path.** Asked

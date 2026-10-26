@@ -595,6 +595,14 @@ def _compare(left, op, right) -> bool:
         except (TypeError, ValueError):
             a, b = str(left), str(right)
         return a > b if op == "greater" else a < b
+    # a test the author writes as `{{ ip in ips }}` equals "true" renders a
+    # boolean, and "True" == "true" is false as text: it never matched, so an
+    # app on a schedule created the same entry every day (Builder lab,
+    # 2026-10-26). A boolean against the words true/false compares as booleans.
+    for b, t in ((left, right), (right, left)):
+        if isinstance(b, bool) and isinstance(t, str) and t.strip().lower() in ("true", "false"):
+            same = b == (t.strip().lower() == "true")
+            return same if op == "equals" else not same
     same = left == right or (left is not None and right is not None and str(left) == str(right))
     return same if op == "equals" else not same
 

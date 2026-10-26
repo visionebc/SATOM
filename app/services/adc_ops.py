@@ -123,10 +123,10 @@ def make_fetcher(appliance):
         err = client._device_error(resp)
         if err:
             raise RuntimeError(err)
-        rows = client._payload(resp)
-        if isinstance(rows, dict):
-            rows = [rows]
-        return rows if isinstance(rows, list) else []
+        rows, err = client._read_rows(resp)
+        if err:
+            raise RuntimeError(err)
+        return rows
 
     return _fetch
 
@@ -194,10 +194,10 @@ def make_probe(appliance):
         err = client._device_error(resp)
         if err:
             return [], "error", str(err)[:200]
-        rows = client._payload(resp)
-        if isinstance(rows, dict):
-            rows = [rows]
-        return (rows if isinstance(rows, list) else []), "ok", ""
+        rows, err = client._read_rows(resp)
+        if err:
+            return [], "error", err
+        return rows, "ok", ""
 
     return _probe
 

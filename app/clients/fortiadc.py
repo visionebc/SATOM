@@ -90,7 +90,28 @@ class FortiADCClient(BaseClient):
             # FortiADC signals refusals as a negative integer payload.
             if isinstance(p, int) and p < 0:
                 return f"device errcode {p}"
+            # A VM whose license is invalid or expired answers EVERY read with
+            # HTTP 200 and a sentence instead of data -- measured on
+            # fortiadc10 (7.6.7, 2026-10-26): {"payload": "Invalid VM License"}.
+            # Read as data it became an empty table, so a locked box looked
+            # like a box with nothing configured.
+            if isinstance(p, str) and "licen" in p.lower():
+                return f"device refused: {p.strip()[:200]}"
         return None
+
+    @staticmethod
+    def _read_rows(resp):
+        """``(rows, error)`` of a successful read. A collection or singleton
+        read answers a list or an object; a bare string where data belongs is
+        the device talking, not a table, and is surfaced as the error."""
+        rows = FortiADCClient._payload(resp)
+        if isinstance(rows, dict):
+            return [rows], None
+        if isinstance(rows, list):
+            return rows, None
+        if isinstance(rows, str) and rows.strip():
+            return [], f"device returned a message instead of data: {rows.strip()[:200]}"
+        return [], None
 
     @staticmethod
     def _payload(resp):
@@ -118,10 +139,7 @@ class FortiADCClient(BaseClient):
         err = self._device_error(resp)
         if err:
             return [], err
-        rows = self._payload(resp)
-        if isinstance(rows, dict):
-            rows = [rows]
-        return (rows if isinstance(rows, list) else []), None
+        return self._read_rows(resp)
 
     def get_object(self, logical: str, mkey: str, **params):
         resp = self._api('GET', self._resolve(logical),

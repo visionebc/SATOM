@@ -97,6 +97,11 @@ RULES = (
     ("app.form_refs", BUILDER, "Every form.<field> the diagram reads is a field of the form."),
     ("app.design", BUILDER, "The design places existing fields, Output steps and images."),
     ("design.contrast", WARNING, "Colour pairs of the design that are hard to read."),
+    ("app.automations", ALL, "Each automation (app.json automations, at most 10) has a name, "
+     "a recurring schedule (interval of 5 minutes or more, daily, weekly, monthly or cron) and "
+     "inputs that are fields of the form, with every required field given."),
+    ("app.automations_off", WARNING, "Automations arrive switched off: an administrator turns "
+     "them on in Automations once the app is published."),
     ("asset.name", ALL, "Every assets/* image matches its SHA-256 name."),
     ("asset.image", ALL, "Every assets/* member is a PNG, JPEG, GIF or WebP image within the "
      "size and count limits."),
@@ -593,6 +598,12 @@ def _app_rules(body, files: dict, target: dict | None, r: _Report, summary: dict
         fields = SA.clean_fields(spec.get("fields") or [], ch)
     except SA.AppError as exc:
         r.add("app.definition", "app.fields", str(exc))
+        # The cross checks below still see the fields the author wrote: an
+        # empty form made every {{ form.x }} "not a field" and buried the one
+        # real problem under false ones (found 2026-10-25).
+        raw = spec.get("fields")
+        fields = [f for f in raw if isinstance(f, dict) and f.get("name")] \
+            if isinstance(raw, list) else []
     try:
         SA.clean_actions(spec.get("actions") or [], ch)
     except SA.AppError as exc:
@@ -618,6 +629,20 @@ def _app_rules(body, files: dict, target: dict | None, r: _Report, summary: dict
                 r.add("app.design", "app.design", p)
             for w in D.warnings(design):
                 r.add("design.contrast", "app.design", w)
+    # automations (contract section 18) ------------------------------------------
+    from . import plugin_automations as PA
+    autos, bad = PA.clean_entries(body.get("automations"))
+    for where, msg in bad:
+        r.add("app.automations", where, msg)
+    for where, msg in PA.input_problems(autos, fields):
+        r.add("app.automations", where, msg)
+    if autos:
+        r.add("app.automations_off", "automations",
+              "%d automation(s) arrive switched off: an administrator turns them on in "
+              "Automations once the app is published" % len(autos))
+        creates += ["automation %s (%s, off)" % (e["name"], PA.describe(e["schedule_kind"],
+                                                                          e["schedule"]))
+                    for e in autos]
     if summary is not None:
         creates += ["image %s" % n.split("/", 1)[1] for n in sorted(files)
                     if n.startswith("assets/")]
@@ -806,7 +831,21 @@ def schema(target: dict) -> dict:
         "methods": list(_api_spec().METHODS), "param_in": list(_api_spec().PARAM_IN),
         "reserved_vars": list(F.RESERVED_VARS),
         "patterns": patterns(),
+        "automations": _automation_schema(),
     }
+
+
+def _automation_schema() -> dict:
+    """Contract section 18: what an app package's ``automations`` may hold."""
+    from . import plugin_automations as PA
+    return {"schedule_kinds": list(PA.PACKAGE_KINDS), "max": PA.MAX_PER_APP,
+            "min_interval_minutes": PA.MIN_INTERVAL_MINUTES,
+            "units": ["minutes", "hours", "days"], "weekdays": "0 = Monday ... 6 = Sunday",
+            "shapes": {"interval": {"every": 1, "unit": "hours"}, "daily": {"time": "02:00"},
+                       "weekly": {"weekday": 0, "time": "02:00"},
+                       "monthly": {"day": 1, "time": "02:00"},
+                       "cron": {"expr": "0 2 * * *"}},
+            "arrive": "off"}
 
 
 def _api_spec():
@@ -851,8 +890,10 @@ def author_guide(target: dict) -> str:
     for k in PKG.KIND_ORDER:
         g = PKG.KIND_GUIDE[k]
         w("- `%s`: %s For: %s. Example: \"%s\"." % (k, g["what"], g["use_for"], g["example"]))
-    w("- Rule of thumb: %s If the request needs SATOM's data and the package is an app, "
-      "say so and name the kind it needs; never say the data does not exist." % PKG.KIND_RULE)
+    w("- Rule of thumb: %s An app that acts on SATOM's devices reads them with the "
+      "`satom_appliances` step; if a request only SHOWS other SATOM data (rules, policies, "
+      "objects) and the package is an app, say a view does that; never say the data does not "
+      "exist." % PKG.KIND_RULE)
     w("")
     w("## Rules the importer applies")
     w("")
@@ -900,7 +941,8 @@ def author_guide(target: dict) -> str:
     w("## Apps (app.json)")
     w("")
     w("`{\"app\": {slug, name, icon, description, fields, graph, actions, design}, "
-      "\"stores\": [...], \"connections\": [...], \"apis\": [...], \"scripts\": [...]}`")
+      "\"stores\": [...], \"connections\": [...], \"apis\": [...], \"scripts\": [...], "
+      "\"automations\": [...]}`")
     w("")
     w("### Form fields")
     w("")
@@ -908,6 +950,11 @@ def author_guide(target: dict) -> str:
         ", ".join("`%s`" % t for t in sc["field_types"]),
         ", ".join("`%s`" % t for t in sc["list_types"]),
         ", ".join("`%s`" % s["key"] for s in sc["satom_sources"])))
+    w("")
+    w("A field is `{name, label, type, required, help, default}` plus, by type: `select` -> "
+      "`options` (ONE text, one option per line -- not a list, not `choices`); "
+      "`satom_select` -> `source`; `store_select` -> `store`, `value_col`, `label_col`; "
+      "`api_select` -> `connection`, `path`, `list_path`, `value_key`, `label_key`.")
     w("")
     w("### Diagram")
     w("")
@@ -942,6 +989,24 @@ def author_guide(target: dict) -> str:
     for a in sc["action_kinds"]:
         w("- `%s` -- %s: %s" % (a["key"], a["label"],
                                  ", ".join("`%s`" % p["name"] for p in a["params"])))
+    w("")
+    au = sc["automations"]
+    w("### Automations (the app on a schedule)")
+    w("")
+    w("An app that must run on its own -- every day, every hour -- carries `\"automations\": "
+      "[{name, schedule_kind, schedule, inputs, description}]` in app.json (at most %d). "
+      "`schedule_kind` is one of %s; `schedule` is %s (times are HH:MM on the server's clock; "
+      "weekday %s; an interval is at least %d minutes). `inputs` fills the form, because "
+      "nobody is there to type it: every key is a field, every required field without a "
+      "default is given. On the server each one is an automation of Automations (action "
+      "\"Run a Plugin Studio app\") that runs the PUBLISHED app as the user who imported "
+      "it; it arrives switched off. To act on the devices SATOM manages, start the diagram "
+      "with a `satom_appliances` step (the device list, e.g. every FortiWeb with its `ip`) "
+      "and compare it with what the other system has before writing, so a second run "
+      "changes nothing."
+      % (au["max"], ", ".join("`%s`" % k for k in au["schedule_kinds"]),
+         "; ".join("%s `%s`" % (k, json.dumps(v)) for k, v in au["shapes"].items()),
+         au["weekdays"], au["min_interval_minutes"]))
     w("")
     w("### Data stores, connections, API versions")
     w("")

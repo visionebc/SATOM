@@ -3158,6 +3158,24 @@ System Automations to Automations.
   | Device operations | `reboot`, `ha_failover` — fixed date/time, approved Change Request only |
   | Certificates | the three `cert_manager_*` renewals (server / client+server / client), `cert_lifecycle` (the revoke-and-cleanup sweep, approved Change Request only) |
   | Escape hatch | `custom_rest` — any FortiWeb REST request you define; GET is a live read, writes go through the snapshot + audit + dry-run path; approved Change Request only |
+  | Plugin Studio | `plugin_app` — **Run a Plugin Studio app** on this schedule (see below) |
+
+  **A Plugin Studio app on a schedule.** Pick *Run a Plugin Studio app*, the
+  app, and its **form values** (JSON): nobody fills in the form when it runs
+  on its own, so every required field is given here. The run is the app's
+  *published* version (a script app: its script's), started as the user who
+  saved the automation -- a device step still needs that user's
+  `config_write`, and an app that user may not use is refused, not run as
+  somebody else. The shortest interval is 5 minutes. The app's page
+  (Plugin Studio › Apps) lists its automations, and **deleting the app
+  deletes them**. An app package -- one exported here or built in SATOM
+  Builder -- can bring its automations: the import creates them **switched
+  off** (the app itself lands as a draft); turn them on once the app is
+  published. One that already exists keeps this server's schedule, values
+  and on/off. Example: an app whose diagram reads *every FortiWeb* with the
+  *Read SATOM's appliances* step, compares their IPs with a FortiGate address
+  group through an HTTP connection, and adds the missing ones -- daily at
+  02:00.
 
   **Who authorizes what.** An operator can *schedule* a reboot, an upgrade,
   an HA failover, a certificate lifecycle sweep or a custom REST call; it
@@ -4372,12 +4390,16 @@ show the difference where you choose:
   without a WAF profile: 3.*
 - **App** (Plugin Studio): a form and a diagram of steps that *do* things --
   call an API, write data stores, run a sandboxed script, act on appliances,
-  ask for approval. It cannot read SATOM's datasets. *Publish a site: reserve
-  the IP in DDI, create the FortiWeb policy, ask for approval.*
+  ask for approval. It reads the list of devices SATOM manages (the *Read
+  SATOM's appliances* step) but not the other datasets, and it can run on a
+  schedule from **Automations** with no person filling in the form. *Publish a
+  site: reserve the IP in DDI, create the FortiWeb policy, ask for approval* --
+  or, every day, *put the IP of every FortiWeb in a FortiGate address group*.
 
 Rule of thumb: show or search what SATOM already knows, a view (or a widget);
-do something -- create, change, call another system, ask for approval -- an
-app. SATOM Builder shows the same words, and its AI gets them in the author
+do something -- create, change, call another system, ask for approval, keep
+something in step on a schedule -- an app (with an automation for the
+schedule). SATOM Builder shows the same words, and its AI gets them in the author
 guide.
 
 > **Renamed on 2026-10-22.** *Python Studio* is now **Plugin Studio** — it
@@ -5235,6 +5257,7 @@ a whole provisioning chain is one diagram whose failures the author routes:
 
 | Step | What it does | Undo |
 |---|---|---|
+| *Read SATOM's appliances* | The devices SATOM manages as a list -- `id`, `name`, `kind`, `firmware`, `host`, `port`, `ip` (the host when it is an address; never a DNS lookup), `zone`, `line`, `department`, `maintenance` -- filtered by product and classification, by name. In a run started by a person: the devices of their ADOM; on a schedule: the whole fleet. It only reads | — |
 | *Render names* | Object names from patterns (`spo-{extra}-{service}-{port}`, `vs-{spo}`); an empty value takes its dash with it; a name FortiWeb would refuse is an error | — |
 | *DDI: reserve an address* | One A record (IPAM) in one DDI unit: an existing record of that name is **reused** (never deleted by a rollback); else the next free address of the first subnet that has one (`/api/dnsrr/allocate`), or a given address registered as is (the same IP in another unit). The record read back decides, not the answer's status words | *DDI: release* |
 | *DDI: reserve by rules* | One reservation per rule row, in its order (the master unit first); `ip_from` reuses the address another unit of the step got. If one rule fails, what the step created is released before it ends in error. **Mode *given***: the addresses typed in the form (`{"internal": …, "external": …}`, keyed by unit or role) — the DDI is not called at all, each rule takes its unit's or role's address (or `ip_from`'s), a rule left without one is an error, and nothing typed is an error too (never a quiet reservation). A release keeps them: *given in the form, never reserved* | *DDI: release* |

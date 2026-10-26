@@ -27739,3 +27739,150 @@ msgstr "signiert von %(who)s"
 
 msgid "trusted publisher"
 msgstr "vertrauenswürdiger Herausgeber"
+
+msgid "Add one"
+msgstr "Eine hinzufügen"
+
+msgid "Nobody fills in the form when it runs on a schedule: give every required field here."
+msgstr "Bei einer geplanten Ausführung füllt niemand das Formular aus: Geben Sie hier jedes Pflichtfeld an."
+
+msgid "On a schedule (Automations):"
+msgstr "Nach Zeitplan (Automatisierungen):"
+
+msgid "Plugin Studio app"
+msgstr "Plugin-Studio-App"
+
+msgid "The published version runs, as the user who saves this automation. Every app that runs this way is listed on its app page (Plugin Studio › Apps)."
+msgstr "Es läuft die veröffentlichte Version, als der Benutzer, der diese Automatisierung speichert. Jede so ausgeführte App wird auf ihrer App-Seite aufgeführt (Plugin Studio › Apps)."
+
+msgid "script app"
+msgstr "Skript-App"
+
+msgid "— select an app —"
+msgstr "— App auswählen —"
+
+msgid "A change applies to them at their next render."
+msgstr "Eine Änderung gilt für sie beim nächsten Rendern."
+
+msgid "A letter, then lowercase letters, digits and _. It never changes: plugins name the dataset by it."
+msgstr "Ein Buchstabe, dann Kleinbuchstaben, Ziffern und _. Er ändert sich nie: Plugins benennen das Dataset damit."
+
+msgid "A plugin never runs SQL: it declares the datasets it reads and SATOM hands it the rows, cut to the ADOM and devices of whoever opens it. Build a dataset here with the same no-SQL query builder as reports; once published, every plugin editor and SATOM Builder offer it (key admin_<name>)."
+msgstr "Ein Plugin führt nie SQL aus: Es deklariert die Datasets, die es liest, und SATOM übergibt ihm die Zeilen, beschränkt auf die ADOM und die Geräte der Person, die es öffnet. Erstellen Sie hier ein Dataset mit demselben SQL-freien Abfrage-Builder wie bei Berichten; nach der Veröffentlichung bieten es jeder Plugin-Editor und SATOM Builder an (Schlüssel admin_<name>)."
+
+msgid "Administrator › Database › Plugin datasets: build a query without SQL and publish it to every plugin and SATOM Builder"
+msgstr "Administrator › Datenbank › Plugin-Datasets: eine Abfrage ohne SQL erstellen und für alle Plugins und SATOM Builder veröffentlichen"
+
+msgid "Approve and publish"
+msgstr "Genehmigen und veröffentlichen"
+
+msgid "Browse tables"
+msgstr "Tabellen durchsuchen"
+
+msgid "Browse the %(n)d datasets"
+msgstr "Die %(n)d Datasets durchsuchen"
+
+msgid "Build a query without SQL; publish it and every plugin editor and SATOM Builder offer it. A plugin reads it as"
+msgstr "Erstellen Sie eine Abfrage ohne SQL; veröffentlichen Sie sie, und jeder Plugin-Editor und SATOM Builder bieten sie an. Ein Plugin liest sie als"
+
+msgid "Build the query (no SQL)"
+msgstr "Abfrage erstellen (ohne SQL)"
+
+msgid "Built-in datasets, the ones an administrator published (Administrator › Database › Plugin datasets) and one per object type the device cache holds. A view declares the ones it reads and gets them as"
+msgstr "Integrierte Datasets, die von einem Administrator veröffentlichten (Administrator › Datenbank › Plugin-Datasets) und eines pro Objekttyp im Geräte-Cache. Eine Ansicht deklariert die, die sie liest, und erhält sie als"
+
+msgid "Came in with an imported package: review the query, then publish it."
+msgstr "Kam mit einem importierten Paket: Prüfen Sie die Abfrage und veröffentlichen Sie sie dann."
+
+msgid "Creating and publishing plugin datasets needs the Plugin Studio permission (studio.plugin_studio)."
+msgstr "Das Erstellen und Veröffentlichen von Plugin-Datasets erfordert die Plugin-Studio-Berechtigung (studio.plugin_studio)."
+
+msgid "Datasets plugins can read on this server:"
+msgstr "Datasets, die Plugins auf diesem Server lesen können:"
+
+msgid "Description (what a plugin author reads in the picker and the Library)"
+msgstr "Beschreibung (was ein Plugin-Autor in der Auswahl und in der Bibliothek liest)"
+
+msgid "Edit plugin dataset"
+msgstr "Plugin-Dataset bearbeiten"
+
+msgid "For"
+msgstr "Für"
+
+msgid "Generate joined datasets"
+msgstr "Verknüpfte Datasets erzeugen"
+
+msgid "New plugin dataset"
+msgstr "Neues Plugin-Dataset"
+
+msgid "No plugin datasets built here yet."
+msgstr "Hier wurden noch keine Plugin-Datasets erstellt."
+
+msgid "Plugin datasets"
+msgstr "Plugin-Datasets"
+
+msgid "Plugin datasets, by ADOM"
+msgstr "Plugin-Datasets nach ADOM"
+
+msgid "Plugins can already read the built-in and device-object datasets. Build one here when a plugin needs something else: a join, a filter, a total."
+msgstr "Plugins können die integrierten und die Geräteobjekt-Datasets bereits lesen. Erstellen Sie hier eines, wenn ein Plugin etwas anderes braucht: eine Verknüpfung, einen Filter, eine Summe."
+
+msgid "Query"
+msgstr "Abfrage"
+
+msgid "Query as JSON (advanced: base, joins, columns, filters, group_by, order_by, limit)"
+msgstr "Abfrage als JSON (fortgeschritten: base, joins, columns, filters, group_by, order_by, limit)"
+
+msgid "Read by these plugins:"
+msgstr "Gelesen von diesen Plugins:"
+
+msgid "Review its query and preview, then save it as published: until then the plugins that read it get no rows from it."
+msgstr "Prüfen Sie Abfrage und Vorschau und speichern Sie es dann als veröffentlicht: bis dahin erhalten die Plugins, die es lesen, keine Zeilen daraus."
+
+msgid "Rule of thumb"
+msgstr "Faustregel"
+
+msgid "Search datasets"
+msgstr "Datasets suchen"
+
+msgid "Search datasets, keys, columns…"
+msgstr "Datasets, Schlüssel, Spalten suchen…"
+
+msgid "Search datasets: name, key, column"
+msgstr "Datasets suchen: Name, Schlüssel, Spalte"
+
+msgid "Search tables, columns, descriptions…"
+msgstr "Tabellen, Spalten, Beschreibungen suchen…"
+
+msgid "Show diagram"
+msgstr "Diagramm anzeigen"
+
+msgid "The SQL it compiles to (read-only, for reading; the query below is what is saved)"
+msgstr "Das SQL, zu dem sie kompiliert wird (schreibgeschützt, zum Lesen; gespeichert wird die Abfrage unten)"
+
+msgid "The query runs as the read-only console role, credential tables and sensitive columns refused; SATOM adds the ADOM of whoever opens the plugin to every table, and keeps only the devices that person may see."
+msgstr "Die Abfrage läuft mit der schreibgeschützten Konsolenrolle, Anmeldedaten-Tabellen und sensible Spalten werden abgelehnt; SATOM fügt jeder Tabelle die ADOM der Person hinzu, die das Plugin öffnet, und behält nur die Geräte, die diese Person sehen darf."
+
+msgid "This dataset came in with an imported package"
+msgstr "Dieses Dataset kam mit einem importierten Paket"
+
+msgid "To show or search what SATOM already knows (which rules use an IP, a report), build a view in Report Studio instead."
+msgstr "Um anzuzeigen oder zu suchen, was SATOM bereits weiß (welche Regeln eine IP verwenden, ein Bericht), erstellen Sie stattdessen eine Ansicht in Report Studio."
+
+msgid "Unpublish"
+msgstr "Veröffentlichung aufheben"
+
+msgid "View, widget or app: which one?"
+msgstr "Ansicht, Widget oder App: welche?"
+
+msgid "Writes, published and one ADOM each, the joins the device cache allows: every list with its parent, every field that names another object resolved, and the common chains (which rules use an address, which groups hold it...). Never overwrites: only keys that do not exist yet; a deleted one comes back if you run it again."
+msgstr "Schreibt, veröffentlicht und mit je einer ADOM, die Verknüpfungen, die der Geräte-Cache erlaubt: jede Liste mit ihrem Elternobjekt, jedes Feld, das ein anderes Objekt nennt, aufgelöst, und die üblichen Ketten (welche Regeln eine Adresse verwenden, welche Gruppen sie enthalten...). Überschreibt nie: nur Schlüssel, die noch nicht existieren; ein gelöschtes kommt zurück, wenn Sie es erneut ausführen."
+
+msgid "device-object datasets, one per object type the device cache holds"
+msgstr "Geräteobjekt-Datasets, eines pro Objekttyp im Geräte-Cache"
+
+msgid "e.g. Server policies per device"
+msgstr "z. B. Server Policies pro Gerät"
+
+msgid "published here"
+msgstr "hier veröffentlicht"

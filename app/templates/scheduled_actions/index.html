@@ -149,7 +149,7 @@
               </span>
             {% endif %}
           </td>
-          <td style="font-size:13px;">{{ row.action_label }}</td>
+          <td style="font-size:13px;">{{ row.action_label }}{% if row.app %}: <a href="{{ url_for('studio.app_edit', slug=row.app) }}"><code>{{ row.app }}</code></a>{% endif %}</td>
           <td style="font-size:13px;">{{ row.schedule }}</td>
           <td style="font-size:13px;">
             {% if row.target_count %}

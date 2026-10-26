@@ -714,6 +714,7 @@ def app_edit(slug):
     from ..models_studio import UserGroup
     from ..services import studio_apps as SA
     from ..services import studio_design as D
+    from ..services import plugin_automations as PA
     from ..services import studio_flow as F
     a = _app_or_404(slug)
     if a.kind == "script":  # its form, code and versions live in the script editor
@@ -728,7 +729,8 @@ def app_edit(slug):
         runs=SA.recent_runs(a, current_user), used_by=SA.used_by("app", slug),
         template=SA.is_template(a), design_schema=D.schema(), design=a.design or D.empty(),
         assets=[_asset_json(a, r) for r in D.assets_of(a.id)],
-        output_titles=D.output_titles(a.graph))
+        output_titles=D.output_titles(a.graph), automations=PA.linked(slug),
+        automation_when=lambda r: PA.describe(r.schedule_kind, r.schedule_dict))
 
 
 @bp.route("/apps/<slug>/settings", methods=["POST"])

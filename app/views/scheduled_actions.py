@@ -282,6 +282,46 @@ def _custom_rest_params() -> dict:
     return params
 
 
+def _plugin_app_params(action: ScheduledAction) -> dict | None:
+    """The params of a ``plugin_app`` row from its card: the app, the form
+    values, and the owner -- the user saving it, who the run is started as
+    (services.plugin_automations). None (and a flash) when unusable."""
+    from ..services import studio_apps as SA
+    slug = (request.form.get('plugin_app') or '').strip()
+    a = SA.get(slug) if slug else None
+    if a is None:
+        flash('Pick the Plugin Studio app this automation runs.', 'danger')
+        return None
+    raw = (request.form.get('plugin_inputs') or '').strip()
+    try:
+        inputs = json.loads(raw) if raw else {}
+    except (ValueError, TypeError):
+        inputs = None
+    if not isinstance(inputs, dict):
+        flash('Form values must be a JSON object of field: value.', 'danger')
+        return None
+    if a.kind != 'script':
+        from ..services import plugin_automations as PA
+        fields = (a.published or {}).get('fields') or a.fields
+        bad = PA.input_problems([{'name': action.name or 'this automation',
+                                  'inputs': inputs}], fields)
+        if bad:
+            flash('; '.join(m for _w, m in bad), 'danger')
+            return None
+    stored = action.params_dict if action.id is not None else {}
+    out = {'app': a.slug, 'inputs': inputs, 'owner': current_user.username}
+    if stored.get('description'):
+        out['description'] = stored['description']
+    return out
+
+
+def _plugin_app_choices() -> list[dict]:
+    from ..models_studio import StudioApp
+    rows = StudioApp.query.filter_by(enabled=True).order_by(StudioApp.name).all()
+    return [{'slug': a.slug, 'name': a.name, 'kind': a.kind,
+             'published': bool(a.kind == 'script' or a.published)} for a in rows]
+
+
 def _schedule_summary(kind: str, spec: dict) -> str:
     """One-line, human description of a schedule for the list page."""
     spec = spec or {}
@@ -458,6 +498,19 @@ def _apply_form(action: ScheduledAction) -> bool:
             flash('Cron expression: %s' % exc, 'danger')
             return False
 
+    if spec.key == 'plugin_app':
+        params = _plugin_app_params(action)
+        if params is None:
+            return False
+        if kind == 'interval':
+            from ..services import plugin_automations as PA
+            minutes = max(1, _to_int(schedule.get('every'), 1)) * {
+                'minutes': 1, 'hours': 60, 'days': 1440}.get(schedule.get('unit'), 1)
+            if minutes < PA.MIN_INTERVAL_MINUTES:
+                flash('An app runs at most every %d minutes.' % PA.MIN_INTERVAL_MINUTES,
+                      'danger')
+                return False
+
     action.name = name[:128]
     action.action = spec.key
     action.scope = spec.scope              # scope is derived from the spec
@@ -468,7 +521,7 @@ def _apply_form(action: ScheduledAction) -> bool:
             flash('Custom REST: an endpoint (registry key or /api/... path) is required.', 'danger')
             return False
         params = custom
-    else:
+    elif spec.key != 'plugin_app':
         params = _parse_params()
     action.params = json.dumps(_keep_binding(action, params))
     action.schedule_kind = kind
@@ -514,11 +567,14 @@ def _form_context(action: ScheduledAction | None) -> dict:
         tz_name=_tz(),
         params_text=(json.dumps(action.params_dict, indent=2)
                      if action and action.params_dict
-                     and action.action != 'custom_rest' else ''),
+                     and action.action not in ('custom_rest', 'plugin_app') else ''),
         weekdays=WEEKDAYS,
         registry_endpoints=get_all_endpoints(),
         custom_params=(action.params_dict
                        if action and action.action == 'custom_rest' else {}),
+        plugin_apps=_plugin_app_choices(),
+        plugin_params=(action.params_dict
+                       if action and action.action == 'plugin_app' else {}),
     )
 
 
@@ -593,6 +649,8 @@ def _index():
             'orphan': spec is None,
             'schedule': _schedule_summary(a.schedule_kind, a.schedule_dict),
             'target_count': len(a.targets_list),
+            # the app a plugin_app row runs, linked from the list
+            'app': (a.params_dict.get('app') or '') if a.action == 'plugin_app' else '',
         }
         # The universe this page COULD draw, so "N of M" can never read N > M:
         # with the cross-scope facet on, the other half is part of M.

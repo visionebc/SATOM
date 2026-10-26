@@ -109,6 +109,38 @@
         </div>
       </div>
 
+      <div class="fw-card mt-3" id="pluginAppCard" style="display:none;">
+        <div class="fw-card-header">
+          <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Plugin Studio app') }}</span>
+        </div>
+        <div class="fw-card-body">
+          <div class="mb-3">
+            <label class="fw-form-label" for="pluginAppSelect">{{ _('App') }} <span class="text-danger">*</span></label>
+            <select class="form-select" name="plugin_app" id="pluginAppSelect">
+              <option value="">{{ _('— select an app —') }}</option>
+              {% for ap in plugin_apps %}
+              <option value="{{ ap.slug }}" {{ 'selected' if plugin_params.get('app') == ap.slug else '' }}>
+                {{ ap.name }} ({{ ap.slug }}{% if ap.kind == 'script' %}, {{ _('script app') }}{% elif not ap.published %}, {{ _('not published') }}{% endif %})
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">
+              {{ _('The published version runs, as the user who saves this automation. Every app that runs this way is listed on its app page (Plugin Studio › Apps).') }}
+            </div>
+          </div>
+          <div class="mb-1">
+            <label class="fw-form-label" for="pluginInputs">{{ _('Form values (JSON)') }}</label>
+            <textarea class="form-control" name="plugin_inputs" id="pluginInputs" rows="4" spellcheck="false"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
+                      placeholder='{"group": "satom-fortiwebs"}'>{% if plugin_params.get('inputs') %}{{ plugin_params.get('inputs') | tojson(indent=2) }}{% endif %}</textarea>
+            <div class="form-text">
+              {{ _('Nobody fills in the form when it runs on a schedule: give every required field here.') }}
+              {% if plugin_params.get('owner') %}{{ _('Runs as') }} <strong>{{ plugin_params.get('owner') }}</strong>.{% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="fw-card mt-3" id="customCard" style="display:none;">
         <div class="fw-card-header">
           <span class="fw-card-title"><i class="bi bi-braces me-2 text-accent"></i>{{ _('Custom REST request') }}</span>
@@ -343,8 +375,11 @@ function onActionChange() {
   var cc = document.getElementById('customCard');
   if (cc) { cc.style.display = isCustom ? '' : 'none'; }
   if (isCustom) { renderRecipeChips(); updateCustomPreview(); }
+  var isApp = (sel.value === 'plugin_app');
+  var pc = document.getElementById('pluginAppCard');
+  if (pc) { pc.style.display = isApp ? '' : 'none'; }
   var gp = document.getElementById('genericParams');
-  if (gp) { gp.style.display = isCustom ? 'none' : ''; }
+  if (gp) { gp.style.display = (isCustom || isApp) ? 'none' : ''; }
 
   var kindSel = document.getElementById('scheduleKind');
   var forcedNote = document.getElementById('forcedNote');

@@ -830,7 +830,9 @@ def walk(graph: dict, ctx: Ctx, on_step=None, resume: dict | None = None) -> dic
             # A runbook step whose result later steps name by default
             # ({{ appliance.host }}) saves it even when the draft never set
             # the field: the default is part of what the step promises.
-            target = target or C.DEFAULT_SAVE_AS.get(node.get("kind"))
+            from . import studio_satom as S
+            target = (target or C.DEFAULT_SAVE_AS.get(node.get("kind"))
+                      or S.DEFAULT_SAVE_AS.get(node.get("kind")))
             if target and value is not None:
                 if not _VAR_RE.match(str(target)) or target in RESERVED_VARS:
                     raise FlowError("%r is not a usable variable name" % target)
@@ -903,10 +905,12 @@ def analyze(graph: dict, choices: dict | None = None, fields=None) -> dict:
     start = next((n.get("key") for n in nodes if n.get("kind") == "start"), None)
     reachable = _reach(edges, start) if start else set()
     form_names = {f.get("name") for f in fields or [] if isinstance(f, dict)}
+    from . import studio_checks as C
     saved = set()
     for n in nodes:
         p = n.get("params") or {}
         t = p.get("name") if n.get("kind") == "set" else p.get("save_as")
+        t = t or C.DEFAULT_SAVE_AS.get(n.get("kind")) or S.DEFAULT_SAVE_AS.get(n.get("kind"))
         if t:
             saved.add(str(t))
     builtin = set(RESERVED_VARS) | {"last_error", "last_response", "last_script",

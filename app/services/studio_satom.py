@@ -69,8 +69,19 @@ SOURCES = (
     ("segments", "Network segments"),
 )
 SOURCE_KEYS = tuple(k for k, _ in SOURCES)
-KIND_KEYS = ("render_names", "ddi_reserve", "ddi_reserve_set", "ddi_release",
-             "fortiweb_pick", "certificate", "fortiweb_spo", "fortiweb_spo_remove")
+KIND_KEYS = ("satom_appliances", "render_names", "ddi_reserve", "ddi_reserve_set",
+             "ddi_release", "fortiweb_pick", "certificate", "fortiweb_spo",
+             "fortiweb_spo_remove")
+#: The variable a SATOM step saves its result under when the draft names
+#: none (a step later steps read by that name: ``{{ appliances }}``).
+DEFAULT_SAVE_AS = {"satom_appliances": "appliances"}
+#: The products ``satom_appliances`` filters on ('' = every product).
+APPLIANCE_KINDS = ("fortiweb", "fortigate", "fortiadc", "fortianalyzer", "fortiauthenticator")
+#: What each appliance of ``satom_appliances`` carries: the columns of the
+#: ``fleet_appliances`` dataset, the classification, and ``ip`` (the host when
+#: it is an address, else empty -- never a DNS lookup).
+APPLIANCE_COLUMNS = ("id", "name", "kind", "firmware", "host", "port", "ip", "zone", "line",
+                     "department", "maintenance")
 
 _SPO_ORDER = ("vserver", "vip", "pool", "pserver", "policy")
 
@@ -84,6 +95,17 @@ def kinds(ch: dict | None = None) -> list:
     conn = lambda: P("connection", "DDI connection", "select", True,  # noqa: E731
                      tuple(ch.get("http", ())), help="A Studio HTTP connection to the DDI API.")
     return [
+        K("satom_appliances", "Read SATOM's appliances", GROUP,
+          "The devices SATOM manages, as a list -- for an app that runs on a schedule "
+          "(Automations) or compares the fleet with something else: each one is "
+          "{%s}. It reads, it never changes anything." % ", ".join(APPLIANCE_COLUMNS),
+          [P("product", "Product", "select", choices=("",) + APPLIANCE_KINDS,
+             help="e.g. fortiweb; empty = every product."),
+           P("zone", "Zone", help="empty = any"), P("line", "Line"),
+           P("department", "Department"),
+           P("maintenance", "Devices in maintenance", "select", choices=("include", "skip"),
+             default="include"),
+           F._save_as("appliances")]),
         K("render_names", "Render names", GROUP,
           "Build object names from patterns -- {extra}, {service}, {port}, {dns}, {spo} or any "
           "value you pass. An empty value takes its dash with it (spo-{extra}-x with no extra "
@@ -578,6 +600,63 @@ def appliance_of(raw, kind: str = "fortiweb"):
     return a
 
 
+def _ip_of(host) -> str:
+    """The host when it is an IPv4/IPv6 address, else '' (no DNS lookup: a
+    scheduled run must not depend on, or leak names to, a resolver)."""
+    h = str(host or "").strip().strip("[]")
+    try:
+        return str(ipaddress.ip_address(h))
+    except ValueError:
+        return ""
+
+
+def appliance_row(a) -> dict:
+    """One appliance as ``satom_appliances`` hands it over (APPLIANCE_COLUMNS)."""
+    get = (a.get if isinstance(a, dict) else lambda k, d=None: getattr(a, k, d))
+    row = {k: get(k) for k in ("id", "name", "kind", "firmware", "host", "port", "zone",
+                                "line", "department")}
+    row["kind"] = row["kind"] or "fortiweb"
+    for k in ("firmware", "host", "zone", "line", "department"):
+        row[k] = "" if row[k] is None else str(row[k])
+    row["ip"] = _ip_of(row["host"])
+    row["maintenance"] = bool(get("maintenance", False))
+    return {k: row[k] for k in APPLIANCE_COLUMNS}
+
+
+def select_appliances(rows, *, product="", zone="", line="", department="",
+                      maintenance="include") -> list[dict]:
+    """Pure: *rows* (models or dicts) filtered and shaped, sorted by name."""
+    product = str(product or "").strip().lower()
+    if product and product not in APPLIANCE_KINDS:
+        raise F.FlowError("product %r: one of %s, or empty for every product"
+                          % (product, ", ".join(APPLIANCE_KINDS)))
+    if maintenance not in ("include", "skip", "", None):
+        raise F.FlowError("devices in maintenance: include or skip")
+
+    def match(val, want):
+        return not want or str(val or "").strip().lower() == str(want).strip().lower()
+    out = []
+    for a in rows or []:
+        r = appliance_row(a)
+        if product and r["kind"] != product:
+            continue
+        if not (match(r["zone"], zone) and match(r["line"], line)
+                and match(r["department"], department)):
+            continue
+        if maintenance == "skip" and r["maintenance"]:
+            continue
+        out.append(r)
+    return sorted(out, key=lambda r: str(r["name"] or "").lower())
+
+
+def _fleet_rows() -> list:
+    """Seam: every managed device (no cluster rows), the person's ADOM in a
+    request, the whole fleet in a scheduled run. The SATOM Builder replaces it
+    with its test data."""
+    from ..models import Appliance
+    return _visible(Appliance.query.filter_by(is_cluster=False)).all()
+
+
 def fleet_order(kind: str = "fortiweb") -> list:
     """The fleet list order: by name, case-insensitive."""
     from ..models import Appliance
@@ -989,6 +1068,13 @@ def _s(node, ctx, name, default="") -> str:
 
 def run(node: dict, ctx) -> tuple:
     kind = node.get("kind")
+    if kind == "satom_appliances":
+        rows = select_appliances(
+            _fleet_rows(), product=F._p(node, "product", ""), zone=_s(node, ctx, "zone"),
+            line=_s(node, ctx, "line"), department=_s(node, ctx, "department"),
+            maintenance=F._p(node, "maintenance", "include") or "include")
+        prod = F._p(node, "product", "") or "every product"
+        return "ok", rows, "%d appliance(s), %s" % (len(rows), prod)
     if kind == "fortiweb_pick":
         choice, skipped = pick_fortiweb(
             zone=_s(node, ctx, "zone"), line=_s(node, ctx, "line"),

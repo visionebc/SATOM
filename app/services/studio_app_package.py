@@ -11,7 +11,8 @@ carries ``app.json``::
      "connections": [{slug, name, kind, base_url, auth, username, header_name,
                       token_url, verify_tls, timeout, api, api_version}],
      "apis":        [{slug, name, owner, docs_url, description,
-                      version, base_path, operations}]}
+                      version, base_path, operations}],
+     "automations": [{name, schedule_kind, schedule, inputs, description}]}
 
 INSTALL RULES -- what an import may and may not overwrite
 ---------------------------------------------------------
@@ -27,6 +28,11 @@ INSTALL RULES -- what an import may and may not overwrite
   connection is never changed -- its URL and credentials are this server's.
 * **API Catalog versions** are created and published when missing; a version
   that exists is frozen by design and is kept.
+* **Automations** (``"automations"``, contract section 18): the app on a
+  schedule, as ``plugin_app`` rows of Automations -- created SWITCHED OFF, run
+  as the importing user once an administrator turns them on; one that exists
+  (same app and name) keeps this server's schedule, inputs and on/off
+  (:mod:`plugin_automations`).
 * **Scripts** (``"scripts"``: the Script Library scripts the diagram's
   ``script`` steps run, with their published files and settings) are created
   when missing and published as version 1 for ``admins``. An existing script
@@ -163,6 +169,10 @@ def build_body(a) -> dict:
             "stores": stores, "connections": conns, "apis": list(apis.values())}
     if scripts:
         body["scripts"] = scripts
+    from . import plugin_automations as PA
+    autos = PA.export(a.slug)
+    if autos:
+        body["automations"] = autos
     return body
 
 
@@ -321,11 +331,19 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
                                  graph=spec.get("graph") or {},
                                  actions=spec.get("actions") or [],
                                  design=spec.get("design") or {}, by=by)
+        from . import plugin_automations as PA
+        autos, _bad = PA.clean_entries(body.get("automations"))   # preflight refused bad ones
+        got = PA.install(slug, autos, by=by)
+        created += got["created"]
+        kept += got["kept"]
+        warnings += got["warnings"]
+        db.session.commit()
     except (SA.AppError, SS.StoreError, SC.ConnectionError_, SAPI.ApiError, KeyError,
             D.DesignError, SL.ScriptError) as exc:
         db.session.rollback()
         raise AppPackageError("the app package could not be installed: %s" % exc) from None
     if a.status != "published":
         todo.append("review the diagram, test it and Publish (Plugin Studio › Apps › %s)" % slug)
+    todo += got["todo"]
     return {"app": a, "created": created, "kept": kept, "todo": todo, "warnings": warnings,
             "problems": SA.problems(a) if problems is not None else []}

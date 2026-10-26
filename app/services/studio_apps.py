@@ -190,7 +190,8 @@ def clean_fields(fields, ch: dict | None = None) -> list[dict]:
         if typ == "select":
             opts = [o.strip() for o in str(f.get("options") or "").splitlines() if o.strip()]
             if not opts:
-                raise AppError("field %s: a list needs options, one per line" % name)
+                raise AppError('field %s: a select needs "options", a text with one option per '
+                               'line%s' % (name, ' (not "choices")' if "choices" in f else ""))
             c["options"] = "\n".join(opts[:MAX_OPTIONS])
         if typ == "store_select":
             for k in ("store", "value_col"):
@@ -585,6 +586,8 @@ def delete(a: StudioApp) -> None:
     from . import token_grants
     D.delete_assets(a.id)  # SQLite (tests) does not cascade
     token_grants.forget("app", a.id, a.slug)  # API tokens granted it lose the grant
+    from . import plugin_automations as PA
+    PA.delete_for_app(a.slug)   # an automation of a missing app fails nightly
     db.session.delete(a)
     db.session.commit()
 
@@ -808,11 +811,14 @@ def remove(a: StudioApp) -> dict:
         if meta:
             SL.delete(a.script_slug)
             SV.forget(a.script_slug, names)
+        from . import plugin_automations as PA
         from . import token_grants
         token_grants.forget("app", a.id, a.slug)
+        autos = PA.delete_for_app(a.slug)   # an automation of a missing app fails nightly
         db.session.delete(a)
         db.session.commit()
-        return {"script": a.script_slug, "runs": runs, "credentials": names}
+        return {"script": a.script_slug, "runs": runs, "credentials": names,
+                "automations": autos}
     from . import studio_examples as EX
     from . import studio_store as SS
     from ..models_studio import StudioRow
@@ -822,6 +828,8 @@ def remove(a: StudioApp) -> dict:
     D.delete_assets(a.id)
     from . import token_grants
     token_grants.forget("app", a.id, a.slug)  # API tokens granted it lose the grant
+    from . import plugin_automations as PA
+    autos = PA.delete_for_app(a.slug)   # an automation of a missing app fails nightly
     db.session.delete(a)
     db.session.flush()
     gone = []
@@ -834,7 +842,7 @@ def remove(a: StudioApp) -> dict:
             db.session.delete(st)
             gone.append(slug)
     db.session.commit()
-    return {"runs": runs, "stores": gone, "shared": shared}
+    return {"runs": runs, "stores": gone, "shared": shared, "automations": autos}
 
 
 # --------------------------------------------------------------------------- #

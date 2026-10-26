@@ -1189,6 +1189,15 @@ that already exists is ignored and reported in `kept`. A refusal is 422
  "warnings": [], "signed_by": "publisher", "signer": "<key id>", "policy": "builder"}
 ```
 
+An app package may carry `automations` (contract §18): the app on a
+schedule. The import creates each as a **switched-off** automation of
+Automations (action `plugin_app`, "Run a Plugin Studio app") that runs the
+published app as the importing user; `created` lists them
+(`"automation Daily sync (daily at 02:00, off)"`) and `todo` asks to switch
+them on once the app is published. An automation that already exists (same
+app, same name) keeps this server's schedule, inputs and on/off, with a
+warning when the package's differ.
+
 ### `GET /builder/publishers` · `POST /builder/publishers`
 
 `GET` lists the registered publisher keys as a JSON array: `[{"key_id",

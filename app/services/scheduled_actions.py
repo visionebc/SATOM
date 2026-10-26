@@ -694,6 +694,15 @@ USER_ACTIONS: list[ActionSpec] = [
                 "'auto apply' is enabled.",
     ),
     ActionSpec(
+        "plugin_app", "Run a Plugin Studio app", "user", needs_targets=False,
+        products=("fortiweb", "fortigate", "fortiadc", "fortianalyzer", "fortiauthenticator"),
+        summary="Run the PUBLISHED version of a Plugin Studio app (a script app: its "
+                "script) on this schedule, as the user who saved the automation, with "
+                "the form values below -- e.g. every day, put the IP of every FortiWeb "
+                "in a FortiGate address group. An app package can bring its own "
+                "automations: they arrive switched off (services.plugin_automations).",
+    ),
+    ActionSpec(
         "custom_rest", "Custom REST call", "user", needs_targets=True,
         danger=True,
         requires_change_request=True,
@@ -1224,6 +1233,9 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_cert_manager(key, appliance, params, dry_run)
         if key == "custom_rest":
             return _do_custom_rest(appliance, params, dry_run)
+        if key == "plugin_app":
+            from . import plugin_automations
+            return plugin_automations.run(params, dry_run)
         if key in ("policy_set_status", "backend_set_status", "backend_set_config", "swap_certificate"):
             return _do_user_op(key, appliance, params, dry_run)
         return {"ok": False, "summary": f"No executor for {key!r}.", "log": ""}
@@ -2277,6 +2289,7 @@ def _run_targets(action_row, spec: ActionSpec, params: dict, *,
     fails: list[str] = []
     lines: list[str] = []
     planned = len(targets)
+    last_summary = ""
     # The row's id travels with the params so an executor that records
     # provenance can name the action
     # that fired it. Underscored: not an operator field, never validated.
@@ -2287,6 +2300,7 @@ def _run_targets(action_row, spec: ActionSpec, params: dict, *,
         total += 1
         progress = _progress_open(run, appliance, total, planned)
         out = run_action(spec, appliance, params, dry_run=False)
+        last_summary = str(out.get("summary") or "")
         _progress_close(progress, bool(out.get("ok")), out.get("summary", ""))
         if out.get("ok"):
             ok_n += 1
@@ -2299,6 +2313,10 @@ def _run_targets(action_row, spec: ActionSpec, params: dict, *,
 
     status = "ok" if (total and ok_n == total) else ("failed" if total else "skipped")
     summary = f"{spec.label}: {ok_n}/{total} ok"
+    if not spec.needs_targets and total == 1 and last_summary:
+        # One run, no device: "0/1 ok (failed: (no device))" hid the only thing
+        # the history needs -- why. Say what the executor said.
+        summary = f"{spec.label}: {last_summary}"
     parked = _parked_targets(action_row, spec) if trigger != "manual" else []
     if parked:
         summary += " (maintenance, skipped: " + ", ".join(sorted(parked)) + ")"

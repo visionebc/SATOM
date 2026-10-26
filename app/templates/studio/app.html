@@ -227,6 +227,11 @@
         {% else %}<button type="button" class="btn btn-outline-danger btn-sm" id="ap-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete app') }}</button>{% endif %}
       </div>
       {% if used_by %}<div class="form-text">{{ _('Run by other apps:') }} {{ used_by|join(', ') }}</div>{% endif %}
+      <div class="form-text" id="ap-automations"><i class="bi bi-calendar2-check me-1"></i>{{ _('On a schedule (Automations):') }}
+        {% for r in automations %}<a href="{{ url_for('automations.edit', id=r.id) }}">{{ r.name }}</a>
+          ({{ automation_when(r) }}, {{ _('on') if r.enabled else _('off') }}){{ ',' if not loop.last }}
+        {% else %}{{ _('none') }}.{% endfor %}
+        <a class="ms-1" href="{{ url_for('automations.new') }}">{{ _('Add one') }}</a></div>
     </div></div>
     <div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Runs') }}</span></div>
       <div class="fw-table-wrapper mb-0" style="border:0;border-radius:0;"><table class="fw-table">

@@ -20,6 +20,40 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Builder's AI names the kind a request needs instead of saying the data does
   not exist. One text: `plugin_package.KIND_GUIDE` / `KIND_RULE` (the Builder
   carries the same words).
+- **A Plugin Studio app on a schedule, from Automations.** Requested: "every
+  time a FortiWeb is added to SATOM, send a rule to the FortiGate that adds
+  its IP to a specific group" -- SATOM Builder's AI sent the author to a view,
+  which can neither run on its own nor write -- and then "the schedule joins
+  the Automations section; what comes with the plugin is linked to
+  Automations so it runs". Automations gains the action **Run a Plugin Studio
+  app** (`plugin_app`): the app's published version (a script app: its
+  script), with the form values the automation stores, started as the user
+  who saved it (a device step still needs that user's `config_write`); at most
+  every 5 minutes. The app's page lists its automations and deleting the app
+  deletes them. An app package can carry `automations` (contract section
+  18): checked by the rules (`app.automations`, `app.automations_off`),
+  imported **switched off** next to the draft app, kept as this server has
+  them on a later import, exported back. API tokens reach it only with the
+  `app_arm` capability granted explicitly.
+- **Plugin Studio step "Read SATOM's appliances"** (`satom_appliances`): the
+  devices SATOM manages as a list (`id`, `name`, `kind`, `firmware`, `host`,
+  `port`, `ip`, `zone`, `line`, `department`, `maintenance`) for a diagram
+  that compares the fleet with another system -- e.g. every FortiWeb's IP
+  against a FortiGate address group. `ip` is the host when it is an address,
+  never a DNS lookup; a scheduled run sees the whole fleet, a person's run
+  their ADOM.
+
+### Fixed
+
+- **An app package with a select written `"choices"` was reported with false
+  problems.** When the form did not pass its own check, the cross checks ran
+  against an empty form and every `{{ form.x }}` was "not a field" -- the one
+  real problem buried under false ones, and the AI repeated the same answer
+  three rounds. The checks now keep the fields the author wrote, the error
+  names `"options"` (and `"choices"` when that was used), and the author guide
+  gives the shape of every list field type.
+- **The history of a no-device automation said "0/1 ok (failed: (no
+  device))".** A single run with no device now shows what it reported.
 
 ## [4.4.0] - 2026-10-26
 

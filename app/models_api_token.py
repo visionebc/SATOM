@@ -287,6 +287,9 @@ ACTION_CAPABILITY = {
     "schema_harvest": "api_library",
     "schema_watch": "api_library",
     "netbox_reconcile": "netbox",
+    # a Plugin Studio app on a schedule runs ARMED: the same grant as an armed
+    # run through /api/v1/apps (explicit only, see the gate below)
+    "plugin_app": "app_arm",
 }
 
 # Capabilities that act on ONE concrete server policy, so an AppID scope can be
@@ -407,7 +410,10 @@ class ApiToken(db.Model):
         """
         tag = ACTION_CAPABILITY.get(action_key)
         caps = self.capability_list
-        if (tag is None or tag in CATALOG_EXPLICIT_CAPABILITIES) and not caps:
+        # An explicit-only tag (app_arm) on a catalog action is never reached
+        # through the empty-list default either.
+        if (tag is None or tag in CATALOG_EXPLICIT_CAPABILITIES
+                or tag in EXPLICIT_ONLY_CAPABILITIES) and not caps:
             owner = self.owner
             if owner is None or not owner.can("user_manage"):
                 if tag:

@@ -971,6 +971,17 @@ def author_guide(target: dict) -> str:
       "{\"store\": \"<store>\", \"filter\": {\"ip\": \"{{ form.ip }}\"}, "
       "\"save_as\": \"rows\"}, \"x\": 200, \"y\": 0}`")
     w("")
+    w("Parameters of kind `json` (body, query, values, filter, inputs...) are parsed as JSON "
+      "BEFORE any template is rendered: a template goes only INSIDE a JSON string, never "
+      "around keys or items (`{\"name\": \"{{ form.ip }}\"}`, not `{% for %}` building JSON). "
+      "A string that is exactly one expression keeps the value's type, so a list is sent as "
+      "`{\"member\": \"{{ members }}\"}`; build that list first with a `set` step, e.g. "
+      "`{\"key\": \"members\", \"kind\": \"set\", \"params\": {\"name\": \"members\", "
+      "\"value\": \"{{ appliances | selectattr('ip') | map(attribute='ip') | list }}\"}}`. "
+      "One call per item is a loop in the diagram (a `set` counter, a `decision`, the step, "
+      "the counter + 1) or a script step. `connection`, `store` and `script` name an object "
+      "of the package or the server: a literal name, never a template.")
+    w("")
     for k in sc["step_kinds"]:
         w("- `%s` -- %s (%s%s). %s" % (k["key"], k["label"], k["group"],
                                        ", writes" if k["writes"] else "", k["summary"]))

@@ -441,7 +441,32 @@ Every error is JSON with an `error` code (and usually a `message`).
 | 409 | `busy` | Too many rehearsals are running at once; retry (§17) |
 | 422 | `package_refused` | The import was refused; `problems` lists why (§17) |
 | 400 | `invalid_key` | The publisher key is not the base64 of a raw 32-byte Ed25519 key (§17) |
-| 429 | `rate_limited` | Too many requests (run is 30/min) |
+| 429 | `rate_limited` | Too many requests for this token (see *Rate limits* below) |
+| 429 | `device_busy` | The appliance already has its cap of SATOM sessions; retry after `Retry-After` seconds (firmware-check, WAF apply, FortiADC rules) |
+
+### Rate limits and the appliance session cap
+
+Limits are counted **per token** (the public half of `fmk_<id>_<secret>`),
+not per address: two integrations behind one NAT do not share a budget, and
+one token used from many hosts does not escape it.
+
+* Every `/api/v1` route: **600 requests per minute** per token (an
+  administrator can change it with `SATOM_API_RATE_LIMIT`). Routes that do
+  more work keep their own, lower limit (runs 30/min, firmware-check 10/min,
+  live FortiADC reads 20/min).
+* In front of the application, nginx answers **429 at once** — before any
+  work is done — when one client address has more than **8 requests in
+  flight** or sends more than **50 per second** (bursts of 100), and when the
+  API as a whole already holds **16** requests: the console always keeps the
+  rest of the node's capacity.
+* A call that would open a session to an appliance (firmware-check, a WAF
+  carve-out apply, a FortiADC rule create, delete or `live=1` read) waits for
+  none: when SATOM already has `api.device_concurrency` (default **2**)
+  sessions to that appliance, it answers `429 device_busy` with
+  `Retry-After`. Nothing was sent to the device.
+
+A `429` always means *retry later*; honour `Retry-After` when present and back
+off exponentially otherwise.
 
 Object authoring answers with these too, plus its own set — see
 **§7 → Additional error codes** for the full list.

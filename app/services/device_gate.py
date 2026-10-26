@@ -48,10 +48,13 @@ class Busy(Exception):
 
 
 def limit() -> int:
-    """The configured cap (1..20), default :data:`DEFAULT_LIMIT`."""
+    """The configured cap (1..20): the ``api.device_concurrency`` app setting,
+    else ``SATOM_API_DEVICE_CONCURRENCY`` in .env, else :data:`DEFAULT_LIMIT`."""
+    import os
     try:
         from ..models import AppSetting
-        v = int(str(AppSetting.get(SETTING_KEY) or DEFAULT_LIMIT).strip())
+        raw = AppSetting.get(SETTING_KEY) or os.environ.get("SATOM_API_DEVICE_CONCURRENCY")
+        v = int(str(raw or DEFAULT_LIMIT).strip())
     except Exception:  # noqa: BLE001 — a bad setting never opens the gate wider
         v = DEFAULT_LIMIT
     return max(1, min(20, v))

@@ -8,6 +8,52 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **A busy API no longer takes the console with it.** Asked: "what happens if
+  SATOM is used heavily through the API, hundreds of parallel requests -- how
+  do we protect it so it does not go down?". The web server runs gthread
+  workers (4 x 8 threads, `deploy/gunicorn.conf.py`) instead of four
+  single-request workers; nginx lets `/api/v1` hold at most 16 of the 32
+  threads, and one client 8 in flight and 50/s, answering 429 at once over
+  that; every `/api/v1` route is limited per token (600/min; the limiter keys
+  the API on the token, not the address); each web process caps its database
+  pool and stops a single SQL statement after 60 s. Measured on a node of the
+  primary's size: 64 API clients in a loop took the console from 5 ms to
+  1.1 s per page and 20 reads of a dead appliance stopped it entirely; with
+  this release it answered in 6-13 ms through both. Older vhosts are brought
+  to this shape by `satom execute repair nginx` (run by the update runner
+  after every update); `satom get system health` warns while `/api/v1` is
+  unlimited.
+- **One appliance, two SATOM sessions.** Every API call that opens a session
+  to a device (firmware-check, a WAF carve-out apply, a FortiADC rule create /
+  delete / live read) goes through a per-appliance cap shared by all workers
+  (`api.device_concurrency`, default 2); a call over it gets `429
+  device_busy` with `Retry-After` instead of a queued worker.
+- **FortiADC rules through the API come from SATOM's cache.** Asked: "why does
+  SATOM forward API reads to the device -- writes yes, but queries?".
+  `GET /api/v1/adc/rules` answers from the hourly sweep with `source`,
+  `as_of` and `stale` (a failing sync or an old cache is flagged, never
+  hidden); `live=1` reads the appliance, shared between identical callers
+  for 5 s. Every sweep now records which tables answered, empty ones included
+  (`device_coverage`), so "none" and "not known" are told apart, and
+  write-through also caches the first object created in an empty table.
+- **DELETE of a FortiADC rule the token created.** The API records who
+  created each FortiADC rule (`api_object_authors`); `DELETE
+  /api/v1/adc/rules` removes it for that token only, and refuses one an
+  operator has edited since.
+- **FortiAuthenticator, all of it.** Asked: "it has to cover everything in
+  FortiAuthenticator even if it is not used". The sweep reads the REST
+  resources (now including the token policy), the five objects only the CLI
+  serves and the 72 pages only the GUI serves (remote LDAP / RADIUS / SAML /
+  OAuth servers, realms, CAs, FSSO, guest portals, TACACS+ servers...)
+  through a read-only GUI session with the appliance's CLI / GUI admin login:
+  fac01 went from 20 to 385 cached objects, and those pages now show their
+  values. The GUI reader only reads (the login form is its one POST), refuses
+  any action path and never stores a secret.
+- **FortiGate, all of it.** The sweep adds, from one read-only `show
+  full-configuration`, every configuration table SATOM's FortiGate menu does
+  not read (362 more on fgt02) and merges CLI-only fields into the REST rows;
+  multi-VDOM dumps keep the global section and the appliance's VDOM.
+
 - **View, widget or app: SATOM says which one a request needs.** Requested:
   "put the difference between widget, app and view in SATOM and in the
   Builder: why a search is not an app". Report Studio's editor (next to the
@@ -44,6 +90,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   their ADOM.
 
 ### Fixed
+
+- **A FortiADC with an invalid licence was "a box with nothing configured".**
+  fortiadc10 answers every read with HTTP 200 and `{"payload": "Invalid VM
+  License"}`; the client read the sentence as data, so the sweep said "device
+  returned no objects" and the API would have answered `rules: []`. It is now
+  a device refusal with the device's own words.
+- **FortiAuthenticator's token policy failed every sweep** with "unknown
+  fields: limit": the settings singleton refuses the page size; it is asked
+  again without it. The 11 POST-only action resources the 8.0.3 baseline now
+  names (405 on GET) are neither swept nor counted as failures.
+- **The API library called REST fields of FortiGate "CLI only"**
+  (`web-svc-auto-restart` on 8.0.1): its only REST evidence was the schema,
+  which omits them. The sweep's own GET rows are now filed as evidence.
+- **The guard against object capabilities on the action path was red on
+  `main`** since the scheduled Plugin Studio app (`plugin_app` -> `app_arm`);
+  it now allows exactly that sanctioned overlap.
 
 - **An app package with a select written `"choices"` was reported with false
   problems.** When the form did not pass its own check, the cross checks ran

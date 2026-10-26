@@ -3478,9 +3478,12 @@ Network, Shared Resources, User Authentication, System, Log & Report. That
 curated menu is the **fallback**: a FortiADC whose firmware build has a measured
 layout in the knowledge packs draws its own menu instead, like the FortiWeb,
 FortiGate and FortiAuthenticator ADOMs (§3.2). On those measured pages rows are
-read live from the device's REST API (SATOM keeps no FortiADC configuration
-cache for them), and a write runs dry first, then sends, records the change and
-audits it; secrets are never echoed back.
+read live from the device's REST API, and a write runs dry first, then sends,
+records the change and audits it; secrets are never echoed back. The hourly
+configuration sweep still keeps a cached copy of every table it reads — empty
+tables included, so "this unit has none" and "SATOM does not know" are told
+apart — and the API's FortiADC rule reads answer from it (§18 and the API
+manual §7).
 
 - **Child tables** (pool members, BFD interfaces, HA monitor lists…) are edited
   from their parent's dialog: **Create New**, **Edit** and **Delete row** write
@@ -3557,6 +3560,32 @@ the whole menu as a grid.
 - **Rows** come from the SATOM cache (the FAC sweep), else live from the unit.
   Objects are addressed by their detail URL, because RADIUS clients serve no
   `id`. A device refusal is shown as an error, never as an empty table.
+- **The sweep reads the whole unit, not only its REST API.** FortiAuthenticator's
+  REST API is a user-management API: on 8.0.3 it serves 37 configuration
+  resources, while 72 of the 93 pages of its GUI have no REST resource behind
+  them (remote LDAP / RADIUS / SAML / OAuth servers, realms, certificate
+  authorities, FSSO, guest portals, TACACS+ servers…). The hourly sweep now
+  reads all three channels: the REST resources, the five objects only the CLI
+  serves (DNS, interfaces, static routes, global settings, HA — `show
+  full-configuration` over a read-only SSH session) and the **GUI-only pages**
+  — every page the layouts of the unit's build describe, through a read-only
+  GUI session (on fac01: 20 → 385 objects). Those pages now show their values
+  from SATOM's cache; they stay read-only (**"No API on this build (GUI
+  only)"**).
+  - The GUI reader logs in with the appliance's **CLI / GUI admin login**
+    (*Appliances → edit → SSH / CLI login*), because the REST API key does
+    not open the GUI. Without it, each GUI page is listed as *not read* with
+    the reason, and the REST and CLI parts are still swept.
+  - It only **reads**: one request is not a GET — the login form — and it
+    requests only the page paths of the layouts and the change forms their
+    lists link to. A path that names an action (delete, export, backup,
+    logout…) is refused before anything is sent. It logs out at the end.
+  - It never stores a **secret**: password fields, fields named secret /
+    password / key / token and masked values are dropped, in forms and in
+    list columns alike.
+  - A list longer than 500 objects keeps its list columns for all of them
+    and its full form for the first 500, and the sweep says so; the GUI part
+    of one sweep stops after 240 s and lists the pages it did not reach.
 - **Writes** follow the FortiWeb routine: **dry run** (the exact request, sent
   nowhere), review, **apply**, read back from the unit, and any field the unit
   stored differently is reported as **drift**. Every apply is audited with a
@@ -3639,8 +3668,21 @@ can take them out of the menu.
 ### 17.4 FortiGate
 
 The `/fgt/` ADOM (since 3.0) reads a FortiGate live over the FortiOS REST API.
-SATOM keeps no FortiGate configuration cache. Since the FortiGate GUI layouts
-arrived, the pages a measured layout draws can also write, dry-run first.
+Since the FortiGate GUI layouts arrived, the pages a measured layout draws can
+also write, dry-run first.
+
+**The configuration sweep reads the whole unit.** The hourly sweep reads the
+cmdb tables of SATOM's FortiGate menu over REST (43) and then, with ONE
+read-only `show full-configuration` over SSH (1.4 MB in under 2 s on a lab
+unit), every other configuration table the unit holds (on fgt02, 8.0.1: 362
+more, 2 253 rows) — so the cache, the JSON backup and the configuration
+history hold all of it, not only what the menu shows. Fields the API library
+knows are served by the CLI only are merged into the REST rows when the
+unit's configuration prints them. Secrets are never stored (password-type
+fields, `ENC` values, private keys). A multi-VDOM unit keeps the global
+section and its own VDOM (`root` when the appliance names none). The sweep's
+REST rows also teach the API library the fields the GET really returns, so a
+REST field is no longer offered as "CLI only".
 
 - **Dashboard** (Operations → Dashboard, and the page the ADOM opens on) — the
   FortiGate device picker (*Select*), the live **Unit status** of the selected
@@ -3752,6 +3794,44 @@ the audit log only with `audit.view`, sensitive columns masked), the rows of
 the data stores (declared columns and `_id`, never who edited them) and the
 lists of `satom_select` fields, at most 2,000 rows per table. Each call
 leaves an audit line `builder.data` with the row counts.
+
+**Load protection: what a busy API can and cannot take from the node.** An
+integration in a loop, or a hundred of them, must not take the console with
+it. Since this release:
+
+- **Threads, not four workers.** The web server runs 4 processes × 8 threads
+  (32 requests in flight) instead of 4 single-request workers. On a lab node
+  of a1's size, 64 API clients in a loop used to push the console to ~1.1 s
+  per page and 20 reads of a dead appliance stopped it entirely; with this
+  release the console answered in 6–13 ms through both.
+- **The API never holds the whole node.** nginx lets `/api/v1` hold at most
+  16 of the 32 threads, and one client address 8 in flight and 50 requests
+  per second; over that it answers **429** before any work starts.
+- **Limits per token**, not per address: 600 requests per minute on every API
+  route, lower on the routes that do more work (API manual §5).
+- **One appliance, two sessions.** Any API call that would open a session to a
+  device goes through a per-appliance cap (default 2); a call over it is told
+  to retry (`429 device_busy`) instead of queueing — a slow or dead box can
+  no longer pile up waiting requests.
+- **Reads from the cache.** FortiADC rule reads through the API answer from
+  SATOM's device cache with its age (`as_of`, `stale`); `live=1` asks the
+  appliance (API manual §7). A token can also delete a FortiADC rule it
+  created, and only that.
+- **Database.** Each web process uses at most 15 database connections and
+  gives up waiting for one after 10 s; a single SQL statement of a web
+  request stops after 60 s, so a runaway query cannot hold a thread forever.
+
+Nodes installed before this release get the nginx part on their next update
+(the update runner runs `satom execute repair nginx`), or at once with
+`sudo satom execute repair nginx --yes` (it shows the plan without `--yes`,
+tests the configuration and restores every file if the test fails).
+`satom get system health` warns about a vhost whose `/api/v1` is unlimited.
+The numbers can be changed in `/opt/satom/.env`: `SATOM_WEB_WORKERS`,
+`SATOM_WEB_THREADS`, `SATOM_WEB_TIMEOUT`, `SATOM_API_RATE_LIMIT`
+(e.g. `1200 per minute`), `SATOM_API_DEVICE_CONCURRENCY`,
+`SATOM_DB_POOL_SIZE`, `SATOM_DB_MAX_OVERFLOW`, `SATOM_DB_POOL_TIMEOUT`,
+`SATOM_DB_STATEMENT_TIMEOUT_MS`; restart with `satom execute restart-all`.
+Keep the 16-thread API cap below `SATOM_WEB_WORKERS × SATOM_WEB_THREADS`.
 
 **Which ADOM a Builder plugin lands in.** A plugin installs in one ADOM and
 reads only the datasets that ADOM offers; one that reads FortiGate and

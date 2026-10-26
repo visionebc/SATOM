@@ -3503,8 +3503,28 @@ System Automations to Automations.</p>
 <td>Escape hatch</td>
 <td><code>custom_rest</code> — any FortiWeb REST request you define; GET is a live read, writes go through the snapshot + audit + dry-run path; approved Change Request only</td>
 </tr>
+<tr>
+<td>Plugin Studio</td>
+<td><code>plugin_app</code> — <strong>Run a Plugin Studio app</strong> on this schedule (see below)</td>
+</tr>
 </tbody>
 </table>
+<p><strong>A Plugin Studio app on a schedule.</strong> Pick <em>Run a Plugin Studio app</em>, the
+  app, and its <strong>form values</strong> (JSON): nobody fills in the form when it runs
+  on its own, so every required field is given here. The run is the app's
+  <em>published</em> version (a script app: its script's), started as the user who
+  saved the automation -- a device step still needs that user's
+  <code>config_write</code>, and an app that user may not use is refused, not run as
+  somebody else. The shortest interval is 5 minutes. The app's page
+  (Plugin Studio › Apps) lists its automations, and <strong>deleting the app
+  deletes them</strong>. An app package -- one exported here or built in SATOM
+  Builder -- can bring its automations: the import creates them <strong>switched
+  off</strong> (the app itself lands as a draft); turn them on once the app is
+  published. One that already exists keeps this server's schedule, values
+  and on/off. Example: an app whose diagram reads <em>every FortiWeb</em> with the
+  <em>Read SATOM's appliances</em> step, compares their IPs with a FortiGate address
+  group through an HTTP connection, and adds the missing ones -- daily at
+  02:00.</p>
 <p><strong>Who authorizes what.</strong> An operator can <em>schedule</em> a reboot, an upgrade,
   an HA failover, a certificate lifecycle sweep or a custom REST call; it
   <em>runs</em> only bound to an approved Change Request, inside its window — and
@@ -3847,9 +3867,12 @@ Network, Shared Resources, User Authentication, System, Log &amp; Report. That
 curated menu is the <strong>fallback</strong>: a FortiADC whose firmware build has a measured
 layout in the knowledge packs draws its own menu instead, like the FortiWeb,
 FortiGate and FortiAuthenticator ADOMs (§3.2). On those measured pages rows are
-read live from the device's REST API (SATOM keeps no FortiADC configuration
-cache for them), and a write runs dry first, then sends, records the change and
-audits it; secrets are never echoed back.</p>
+read live from the device's REST API, and a write runs dry first, then sends,
+records the change and audits it; secrets are never echoed back. The hourly
+configuration sweep still keeps a cached copy of every table it reads — empty
+tables included, so "this unit has none" and "SATOM does not know" are told
+apart — and the API's FortiADC rule reads answer from it (§18 and the API
+manual §7).</p>
 <ul>
 <li><strong>Child tables</strong> (pool members, BFD interfaces, HA monitor lists…) are edited
   from their parent's dialog: <strong>Create New</strong>, <strong>Edit</strong> and <strong>Delete row</strong> write
@@ -3927,6 +3950,32 @@ the whole menu as a grid.</p>
 <li><strong>Rows</strong> come from the SATOM cache (the FAC sweep), else live from the unit.
   Objects are addressed by their detail URL, because RADIUS clients serve no
   <code>id</code>. A device refusal is shown as an error, never as an empty table.</li>
+<li><strong>The sweep reads the whole unit, not only its REST API.</strong> FortiAuthenticator's
+  REST API is a user-management API: on 8.0.3 it serves 37 configuration
+  resources, while 72 of the 93 pages of its GUI have no REST resource behind
+  them (remote LDAP / RADIUS / SAML / OAuth servers, realms, certificate
+  authorities, FSSO, guest portals, TACACS+ servers…). The hourly sweep now
+  reads all three channels: the REST resources, the five objects only the CLI
+  serves (DNS, interfaces, static routes, global settings, HA — <code>show
+  full-configuration</code> over a read-only SSH session) and the <strong>GUI-only pages</strong>
+  — every page the layouts of the unit's build describe, through a read-only
+  GUI session (on {device}: 20 → 385 objects). Those pages now show their values
+  from SATOM's cache; they stay read-only (<strong>"No API on this build (GUI
+  only)"</strong>).</li>
+<li>The GUI reader logs in with the appliance's <strong>CLI / GUI admin login</strong>
+    (<em>Appliances → edit → SSH / CLI login</em>), because the REST API key does
+    not open the GUI. Without it, each GUI page is listed as <em>not read</em> with
+    the reason, and the REST and CLI parts are still swept.</li>
+<li>It only <strong>reads</strong>: one request is not a GET — the login form — and it
+    requests only the page paths of the layouts and the change forms their
+    lists link to. A path that names an action (delete, export, backup,
+    logout…) is refused before anything is sent. It logs out at the end.</li>
+<li>It never stores a <strong>secret</strong>: password fields, fields named secret /
+    password / key / token and masked values are dropped, in forms and in
+    list columns alike.</li>
+<li>A list longer than 500 objects keeps its list columns for all of them
+    and its full form for the first 500, and the sweep says so; the GUI part
+    of one sweep stops after 240 s and lists the pages it did not reach.</li>
 <li><strong>Writes</strong> follow the FortiWeb routine: <strong>dry run</strong> (the exact request, sent
   nowhere), review, <strong>apply</strong>, read back from the unit, and any field the unit
   stored differently is reported as <strong>drift</strong>. Every apply is audited with a
@@ -4028,8 +4077,20 @@ can take them out of the menu.</p>
 </ul>
 <h3 id="174-fortigate">17.4 FortiGate</h3>
 <p>The <code>/fgt/</code> ADOM (since 3.0) reads a FortiGate live over the FortiOS REST API.
-SATOM keeps no FortiGate configuration cache. Since the FortiGate GUI layouts
-arrived, the pages a measured layout draws can also write, dry-run first.</p>
+Since the FortiGate GUI layouts arrived, the pages a measured layout draws can
+also write, dry-run first.</p>
+<p><strong>The configuration sweep reads the whole unit.</strong> The hourly sweep reads the
+cmdb tables of SATOM's FortiGate menu over REST (43) and then, with ONE
+read-only <code>show full-configuration</code> over SSH (1.4 MB in under 2 s on a lab
+unit), every other configuration table the unit holds (on {device}, 8.0.1: 362
+more, 2 253 rows) — so the cache, the JSON backup and the configuration
+history hold all of it, not only what the menu shows. Fields the API library
+knows are served by the CLI only are merged into the REST rows when the
+unit's configuration prints them. Secrets are never stored (password-type
+fields, <code>ENC</code> values, private keys). A multi-VDOM unit keeps the global
+section and its own VDOM (<code>root</code> when the appliance names none). The sweep's
+REST rows also teach the API library the fields the GET really returns, so a
+REST field is no longer offered as "CLI only".</p>
 <ul>
 <li><strong>Dashboard</strong> (Operations → Dashboard, and the page the ADOM opens on) — the
   FortiGate device picker (<em>Select</em>), the live <strong>Unit status</strong> of the selected
@@ -4136,6 +4197,43 @@ the audit log only with <code>audit.view</code>, sensitive columns masked), the 
 the data stores (declared columns and <code>_id</code>, never who edited them) and the
 lists of <code>satom_select</code> fields, at most 2,000 rows per table. Each call
 leaves an audit line <code>builder.data</code> with the row counts.</p>
+<p><strong>Load protection: what a busy API can and cannot take from the node.</strong> An
+integration in a loop, or a hundred of them, must not take the console with
+it. Since this release:</p>
+<ul>
+<li><strong>Threads, not four workers.</strong> The web server runs 4 processes × 8 threads
+  (32 requests in flight) instead of 4 single-request workers. On a lab node
+  of a1's size, 64 API clients in a loop used to push the console to ~1.1 s
+  per page and 20 reads of a dead appliance stopped it entirely; with this
+  release the console answered in 6–13 ms through both.</li>
+<li><strong>The API never holds the whole node.</strong> nginx lets <code>/api/v1</code> hold at most
+  16 of the 32 threads, and one client address 8 in flight and 50 requests
+  per second; over that it answers <strong>429</strong> before any work starts.</li>
+<li><strong>Limits per token</strong>, not per address: 600 requests per minute on every API
+  route, lower on the routes that do more work (API manual §5).</li>
+<li><strong>One appliance, two sessions.</strong> Any API call that would open a session to a
+  device goes through a per-appliance cap (default 2); a call over it is told
+  to retry (<code>429 device_busy</code>) instead of queueing — a slow or dead box can
+  no longer pile up waiting requests.</li>
+<li><strong>Reads from the cache.</strong> FortiADC rule reads through the API answer from
+  SATOM's device cache with its age (<code>as_of</code>, <code>stale</code>); <code>live=1</code> asks the
+  appliance (API manual §7). A token can also delete a FortiADC rule it
+  created, and only that.</li>
+<li><strong>Database.</strong> Each web process uses at most 15 database connections and
+  gives up waiting for one after 10 s; a single SQL statement of a web
+  request stops after 60 s, so a runaway query cannot hold a thread forever.</li>
+</ul>
+<p>Nodes installed before this release get the nginx part on their next update
+(the update runner runs <code>satom execute repair nginx</code>), or at once with
+<code>sudo satom execute repair nginx --yes</code> (it shows the plan without <code>--yes</code>,
+tests the configuration and restores every file if the test fails).
+<code>satom get system health</code> warns about a vhost whose <code>/api/v1</code> is unlimited.
+The numbers can be changed in <code>/opt/satom/.env</code>: <code>SATOM_WEB_WORKERS</code>,
+<code>SATOM_WEB_THREADS</code>, <code>SATOM_WEB_TIMEOUT</code>, <code>SATOM_API_RATE_LIMIT</code>
+(e.g. <code>1200 per minute</code>), <code>SATOM_API_DEVICE_CONCURRENCY</code>,
+<code>SATOM_DB_POOL_SIZE</code>, <code>SATOM_DB_MAX_OVERFLOW</code>, <code>SATOM_DB_POOL_TIMEOUT</code>,
+<code>SATOM_DB_STATEMENT_TIMEOUT_MS</code>; restart with <code>satom execute restart-all</code>.
+Keep the 16-thread API cap below <code>SATOM_WEB_WORKERS × SATOM_WEB_THREADS</code>.</p>
 <p><strong>Which ADOM a Builder plugin lands in.</strong> A plugin installs in one ADOM and
 reads only the datasets that ADOM offers; one that reads FortiGate and
 FortiWeb datasets together installs in <strong>Global</strong> and is opened from the
@@ -4940,6 +5038,29 @@ others, and without being given user administration.</p>
 </tr>
 </tbody>
 </table>
+<p><strong>View, widget or app: which one?</strong> Report Studio and Plugin Studio's <em>New app</em>
+show the difference where you choose:</p>
+<ul>
+<li><strong>View</strong> (Report Studio): a page that <em>reads</em> SATOM's data -- every dataset:
+  the device cache (FortiGate rules and addresses, FortiWeb policies, FortiADC
+  pools...), the fleet, the administrator datasets -- and shows it, filtered by
+  input parameters such as an IP. It never changes anything. <em>Which firewall
+  rules use this IP?</em></li>
+<li><strong>Widget</strong> (Report Studio): a view sized for a dashboard tile. <em>Server policies
+  without a WAF profile: 3.</em></li>
+<li><strong>App</strong> (Plugin Studio): a form and a diagram of steps that <em>do</em> things --
+  call an API, write data stores, run a sandboxed script, act on appliances,
+  ask for approval. It reads the list of devices SATOM manages (the <em>Read
+  SATOM's appliances</em> step) but not the other datasets, and it can run on a
+  schedule from <strong>Automations</strong> with no person filling in the form. <em>Publish a
+  site: reserve the IP in DDI, create the FortiWeb policy, ask for approval</em> --
+  or, every day, <em>put the IP of every FortiWeb in a FortiGate address group</em>.</li>
+</ul>
+<p>Rule of thumb: show or search what SATOM already knows, a view (or a widget);
+do something -- create, change, call another system, ask for approval, keep
+something in step on a schedule -- an app (with an automation for the
+schedule). SATOM Builder shows the same words, and its AI gets them in the author
+guide.</p>
 <blockquote>
 <p><strong>Renamed on 2026-10-22.</strong> <em>Python Studio</em> is now <strong>Plugin Studio</strong> — it
 accepts Python code only — and the custom-view studio that carried that
@@ -5800,6 +5921,11 @@ a whole provisioning chain is one diagram whose failures the author routes:</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><em>Read SATOM's appliances</em></td>
+<td>The devices SATOM manages as a list -- <code>id</code>, <code>name</code>, <code>kind</code>, <code>firmware</code>, <code>host</code>, <code>port</code>, <code>ip</code> (the host when it is an address; never a DNS lookup), <code>zone</code>, <code>line</code>, <code>department</code>, <code>maintenance</code> -- filtered by product and classification, by name. In a run started by a person: the devices of their ADOM; on a schedule: the whole fleet. It only reads</td>
+<td>—</td>
+</tr>
 <tr>
 <td><em>Render names</em></td>
 <td>Object names from patterns (<code>spo-{extra}-{service}-{port}</code>, <code>vs-{spo}</code>); an empty value takes its dash with it; a name FortiWeb would refuse is an error</td>

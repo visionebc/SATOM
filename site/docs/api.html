@@ -302,7 +302,7 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td><code>/adc/rules</code></td>
 <td>read</td>
 <td>—</td>
-<td>FortiADC rules of a type, read from the appliance (§7)</td>
+<td>FortiADC rules of a type, from SATOM's device cache (<code>live=1</code>: the appliance) (§7)</td>
 </tr>
 <tr>
 <td><code>POST</code></td>
@@ -310,6 +310,13 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>write</td>
 <td><code>adc_rule_draft</code> (+ <code>adc_rule_apply</code> for <code>"apply": true</code>)</td>
 <td>Create a FortiADC rule (§7)</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/adc/rules</code></td>
+<td>write</td>
+<td><code>adc_rule_apply</code></td>
+<td>Delete a FortiADC rule this token created (§7)</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
@@ -1004,10 +1011,37 @@ curl -s -H &quot;Authorization: Bearer $TOKEN&quot; $BASE/actions/runs/99 | jq
 <tr>
 <td>429</td>
 <td><code>rate_limited</code></td>
-<td>Too many requests (run is 30/min)</td>
+<td>Too many requests for this token (see <em>Rate limits</em> below)</td>
+</tr>
+<tr>
+<td>429</td>
+<td><code>device_busy</code></td>
+<td>The appliance already has its cap of SATOM sessions; retry after <code>Retry-After</code> seconds (firmware-check, WAF apply, FortiADC rules)</td>
 </tr>
 </tbody>
 </table>
+<h3 id="rate-limits-and-the-appliance-session-cap">Rate limits and the appliance session cap</h3>
+<p>Limits are counted <strong>per token</strong> (the public half of <code>fmk_&lt;id&gt;_&lt;secret&gt;</code>),
+not per address: two integrations behind one NAT do not share a budget, and
+one token used from many hosts does not escape it.</p>
+<ul>
+<li>Every <code>/api/v1</code> route: <strong>600 requests per minute</strong> per token (an
+  administrator can change it with <code>SATOM_API_RATE_LIMIT</code>). Routes that do
+  more work keep their own, lower limit (runs 30/min, firmware-check 10/min,
+  live FortiADC reads 20/min).</li>
+<li>In front of the application, nginx answers <strong>429 at once</strong> — before any
+  work is done — when one client address has more than <strong>8 requests in
+  flight</strong> or sends more than <strong>50 per second</strong> (bursts of 100), and when the
+  API as a whole already holds <strong>16</strong> requests: the console always keeps the
+  rest of the node's capacity.</li>
+<li>A call that would open a session to an appliance (firmware-check, a WAF
+  carve-out apply, a FortiADC rule create, delete or <code>live=1</code> read) waits for
+  none: when SATOM already has <code>api.device_concurrency</code> (default <strong>2</strong>)
+  sessions to that appliance, it answers <code>429 device_busy</code> with
+  <code>Retry-After</code>. Nothing was sent to the device.</li>
+</ul>
+<p>A <code>429</code> always means <em>retry later</em>; honour <code>Retry-After</code> when present and back
+off exponentially otherwise.</p>
 <p>Object authoring answers with these too, plus its own set — see
 <strong>§7 → Additional error codes</strong> for the full list.</p>
 <p>Every authenticated call and every run is <strong>audited</strong> (who, when, which token),
@@ -1089,10 +1123,34 @@ straight to the appliance because there is no desired-state store for it. So:</p
   re-read failed). An appliance that accepted the POST and does not hold the
   object answers <code>502 not_applied</code>, with <code>verify.mismatch</code> naming each field
   the appliance holds differently.</li>
-<li><strong>There is no DELETE.</strong> Without a store there is no recorded author, so
-  "delete only what you created" cannot be proven, and an endpoint that cannot
-  tell your object from an operator's is a way to remove someone else's
-  protection. Withdrawal is an operator action.</li>
+<li><strong>Reads come from SATOM's device cache</strong>, not from the appliance.
+  <code>GET /adc/rules?appliance_id=&lt;id&gt;&amp;logical=&lt;type&gt;</code> answers from the hourly
+  sweep (kept current by write-through after every write SATOM makes), with
+  <code>source: "cache"</code>, <code>as_of</code> (when the sweep read it, UTC) and <code>stale</code>. <code>stale</code>
+  is <code>true</code>, with <code>stale_reason</code> and <code>sync_failing_since</code>, when the device's
+  latest sync failed or the cache is older than the Monitoring staleness
+  threshold: the rules are still returned, never silently. A table the last
+  sweep could not read answers <code>503 not_cached</code> instead of older rows; a device
+  never swept is read live once. An empty <code>rules</code> list from the cache means the
+  sweep read the table and it was empty.</li>
+<li><code>live=1</code> reads the appliance (<code>source: "live"</code>). Live reads are limited to 20
+  per minute per token, share one appliance session between identical callers
+  for 5 seconds (<code>shared: true</code>), and count against the appliance's session cap
+  (below).</li>
+<li><strong>The appliance's session cap.</strong> SATOM opens at most
+  <code>api.device_concurrency</code> (default 2) sessions at a time to one appliance for
+  API reads and writes, across all its workers. A call over the cap answers
+  <code>429 device_busy</code> with a <code>Retry-After</code> header straight away — retry after
+  that many seconds; nothing was sent.</li>
+<li><strong>DELETE only what your token created.</strong>
+  <code>DELETE /adc/rules?appliance_id=&lt;id&gt;&amp;logical=&lt;type&gt;&amp;mkey=&lt;name&gt;</code> (or the same
+  fields in a JSON body), with <code>adc_rule_apply</code>. SATOM records the author and
+  the fields of every rule created through this API; anything else — an
+  operator's rule, another token's — is refused with <code>403 not_owner</code>. A rule
+  that an operator has edited since (a field you sent now holds another value)
+  is refused with <code>409 modified_since_created</code> and <code>changed[]</code>. A rule already
+  gone from the appliance answers <code>200</code> with <code>already_absent: true</code>. The delete
+  is read back like a create.</li>
 <li>An AppID-scoped token cannot use this surface at all: AppID scope resolves to
   FortiWeb server policies and is unprovable here.</li>
 </ul>
@@ -1157,6 +1215,11 @@ straight to the appliance because there is no desired-state store for it. So:</p
 <td>An AppID-scoped token on the FortiADC surface</td>
 </tr>
 <tr>
+<td>403</td>
+<td><code>not_owner</code></td>
+<td>DELETE of an ADC rule this token did not create through the API</td>
+</tr>
+<tr>
 <td>409</td>
 <td><code>template_locked</code></td>
 <td>The profile is template-managed; templates stay clean</td>
@@ -1165,6 +1228,21 @@ straight to the appliance because there is no desired-state store for it. So:</p
 <td>409</td>
 <td><code>already_exists</code></td>
 <td>An ADC object of that name is already on the appliance</td>
+</tr>
+<tr>
+<td>409</td>
+<td><code>modified_since_created</code></td>
+<td>The ADC rule was edited since this token created it (<code>changed[]</code>)</td>
+</tr>
+<tr>
+<td>429</td>
+<td><code>device_busy</code></td>
+<td>The appliance already has its cap of SATOM sessions; retry after <code>Retry-After</code> seconds</td>
+</tr>
+<tr>
+<td>503</td>
+<td><code>not_cached</code></td>
+<td>The last sweep could not read this table; retry with <code>live=1</code></td>
 </tr>
 <tr>
 <td>500</td>
@@ -1767,6 +1845,14 @@ that already exists is ignored and reported in <code>kept</code>. A refusal is 4
  &quot;kept&quot;: [], &quot;todo&quot;: [&quot;review the diagram, test it and Publish ...&quot;], &quot;problems&quot;: [],
  &quot;warnings&quot;: [], &quot;signed_by&quot;: &quot;publisher&quot;, &quot;signer&quot;: &quot;&lt;key id&gt;&quot;, &quot;policy&quot;: &quot;builder&quot;}
 </code></pre>
+<p>An app package may carry <code>automations</code> (contract §18): the app on a
+schedule. The import creates each as a <strong>switched-off</strong> automation of
+Automations (action <code>plugin_app</code>, "Run a Plugin Studio app") that runs the
+published app as the importing user; <code>created</code> lists them
+(<code>"automation Daily sync (daily at 02:00, off)"</code>) and <code>todo</code> asks to switch
+them on once the app is published. An automation that already exists (same
+app, same name) keeps this server's schedule, inputs and on/off, with a
+warning when the package's differ.</p>
 <h3 id="get-builderpublishers--post-builderpublishers"><code>GET /builder/publishers</code> · <code>POST /builder/publishers</code></h3>
 <p><code>GET</code> lists the registered publisher keys as a JSON array: <code>[{"key_id",
 "label", "enabled", "created_at"}]</code>. <code>POST</code> (admin scope, super-admin owner)

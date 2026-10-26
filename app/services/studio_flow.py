@@ -198,10 +198,24 @@ def render(value, scope: dict):
     return value
 
 
+def one_expression(text) -> bool:
+    """True for a parameter that is exactly ONE template expression
+    (``{{ payload }}``): it is rendered whole and keeps the value's type."""
+    if not isinstance(text, str):
+        return False
+    m = _ONE_EXPR.match(text)
+    return bool(m) and "{{" not in m.group(1) and "}}" not in m.group(1)
+
+
 def parse_json_param(text, what: str):
     if text is None or (isinstance(text, str) and not text.strip()):
         return None
     if not isinstance(text, str):
+        return text
+    if one_expression(text):
+        # a whole JSON value built by an expression ({{ payload }}, or
+        # {{ x | tojson }}): rendered later, see _json (2026-10-26: the
+        # natural way to send a list or an object a set step built)
         return text
     try:
         return json.loads(text)
@@ -534,7 +548,15 @@ def _p(node, name, default=""):
 
 
 def _json(node, ctx, name, what):
-    return render(parse_json_param(_p(node, name, None), what), ctx.scope())
+    raw = _p(node, name, None)
+    val = render(parse_json_param(raw, what), ctx.scope())
+    if one_expression(raw) and isinstance(val, str):
+        # {{ x | tojson }} renders text: the JSON it holds is the value
+        try:
+            return json.loads(val)
+        except ValueError:
+            raise FlowError("%s: %s gave text that is not JSON" % (what, raw.strip()[:80])) from None
+    return val
 
 
 def _compare(left, op, right) -> bool:

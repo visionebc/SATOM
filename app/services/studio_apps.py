@@ -212,7 +212,9 @@ def clean_fields(fields, ch: dict | None = None) -> list[dict]:
             from . import studio_satom as S
             src = str(f.get("source") or "")
             if src not in S.SOURCE_KEYS:
-                raise AppError("field %s: pick what the SATOM list shows" % name)
+                raise AppError("field %s: pick what the SATOM list shows -- source is one of %s%s"
+                               % (name, ", ".join(S.SOURCE_KEYS),
+                                  " (not %r)" % src if src else ""))
             c["source"] = src
         if typ in LIST_TYPES and f.get("search"):
             c["search"] = True

@@ -54,6 +54,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   gives the shape of every list field type.
 - **The history of a no-device automation said "0/1 ok (failed: (no
   device))".** A single run with no device now shows what it reported.
+- **A JSON parameter of a diagram step may be one expression for the whole
+  value** (`"body": "{{ payload }}"`, also `{{ x | tojson }}`): it is rendered
+  keeping its type instead of being refused as invalid JSON -- found when
+  SATOM Builder's AI built a FortiGate request body from a list three rounds
+  running. The author guide now says that JSON parameters are JSON before
+  templates, that a list comes from a `set` step, and that connection, store
+  and script names are literal; a `satom_select` field with a wrong source
+  names the right ones.
 
 ## [4.4.0] - 2026-10-26
 

@@ -5167,7 +5167,12 @@ An object whose kind the library has not measured gets both shapes. A
 FortiGate `PUT` that sends a list (an address group's `member`) replaces the
 whole list, which is why the list's own endpoint is there: adding one address
 to a group is `POST /api/v2/cmdb/firewall/addrgrp/{name}/member` with
-`{"name": "<address>"}`. FortiAnalyzer is not offered: it speaks JSON-RPC,
+`{"name": "<address>"}`, and `GET .../addrgrp/{name}/member/{item}` answers
+404 when the item is not in the group, so an app checks before it adds. A
+version built from the library only ever gains endpoints: choosing the same
+build again (the page says how many were added) or importing an app package
+with a newer list of it adds what is new and never removes one; a version a
+person made never changes. FortiAnalyzer is not offered: it speaks JSON-RPC,
 where every call is `POST /jsonrpc`. An app package that uses such a version
 carries it (marked as built from the library) and the import creates it when
 the server lacks it; an API of the same id that a person made cannot take a

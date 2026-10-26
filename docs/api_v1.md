@@ -1170,7 +1170,9 @@ package carries it in `"apis"`: `{"api": {"slug": "fortigate", "version":
 (`app.definition`, "is not an endpoint") and the connection broker enforce it.
 FortiGate tables are `<path>` and `<path>/{<mkey>}`, settings objects
 `<path>`, and a list with its own key a child table
-(`<path>/{name}/member`: POST adds one item); FortiWeb and FortiADC take the
+(`<path>/{name}/member`: POST adds one item; `<path>/{name}/member/{item}`:
+GET answers 404 when the item is not in the list, DELETE removes it); a
+version built from the library only ever gains endpoints on import; FortiWeb and FortiADC take the
 key as `?mkey=`; FortiAuthenticator is `<resource>/` and `<resource>/{id}/`.
 Endpoints the build does not serve are left out. 404 `not_measured` for a
 build the library has not measured, 422 `no_paths` for FortiAnalyzer

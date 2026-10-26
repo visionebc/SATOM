@@ -256,6 +256,44 @@ def builder_library_build(product, version):
     return jsonify(res)
 
 
+@bp.route("/builder/library/fortinet/<product>/<version>/catalog", methods=["GET"])
+@token_required("read")
+def builder_library_catalog(product, version):
+    """One build of the API library as an API Catalog version, exactly as an
+    app package carries it in ``"apis"`` (contract §19). A connection pinned
+    to ``api: <product>, api_version: <version>`` may call these endpoints
+    and no other: the package check and the broker enforce it.
+
+    Responses:
+        200: ``{"api": {slug, name, owner, docs_url, description, version,
+             base_path, operations, notes, source}}``.
+        400: The version is malformed (``bad_request``).
+        403: The product is not the token's ADOM (``wrong_product``).
+        404: The build is not measured (``not_measured``).
+        422: The product has no endpoint list by path (FortiAnalyzer speaks
+             JSON-RPC: ``no_paths``).
+    """
+    import re
+    from ..services import builder_library as BL
+    from ..services import studio_api_library as LIB
+    refused = _adom_refusal()
+    if refused:
+        return refused
+    if product not in BL.products_for(_product(), _owner()):
+        return _err(403, "wrong_product", "The token's ADOM does not cover %s." % product[:40])
+    if not re.match(r"^[0-9A-Za-z._-]{1,32}$", version):
+        return _err(400, "bad_request", "Malformed version.")
+    with _as_owner():
+        try:
+            res = {"api": LIB.entry(product, version)}
+        except LIB.LibraryApiError as exc:
+            code = "no_paths" if product not in LIB.STYLES else "not_measured"
+            return _err(422 if code == "no_paths" else 404, code, str(exc))
+        _audit("builder.library.catalog", target="%s %s" % (product, version),
+               endpoints=len(res["api"]["operations"]))
+    return jsonify(res)
+
+
 @bp.route("/builder/data", methods=["GET"])
 @limiter.limit("30/minute")
 @token_required("read")

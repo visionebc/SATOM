@@ -247,7 +247,7 @@
           <i class="bi bi-journal-code text-accent" style="font-size:18px;"></i>
           <span>{{ _('APIs someone publishes, one entry per version: import its OpenAPI or Swagger document, or type the endpoints in. A published version never changes. Pin an HTTP connection to a version and app steps and scripts can call its endpoints by id, and only those.') }}</span>
         </div></div>
-        <div class="d-flex mb-2"><button type="button" class="btn btn-fw-primary btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#apiNewModal"><i class="bi bi-plus-lg me-1"></i>{{ _('New API') }}</button></div>
+        <div class="d-flex mb-2 gap-2"><button type="button" class="btn btn-outline-secondary btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#apiLibModal" {{ 'disabled' if not library_offer }}><i class="bi bi-collection me-1"></i>{{ _("Add from SATOM's API library") }}</button><button type="button" class="btn btn-fw-primary btn-sm" data-bs-toggle="modal" data-bs-target="#apiNewModal"><i class="bi bi-plus-lg me-1"></i>{{ _('New API') }}</button></div>
         <div class="fw-table-wrapper">
           <table class="fw-table" id="apiTable">
             <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Owner') }}</th><th>{{ _('Latest published') }}</th><th>{{ _('Versions') }}</th><th>{{ _('Connections') }}</th><th>{{ _('Last change') }}</th></tr></thead>
@@ -375,6 +375,29 @@
   </div></div>
 </div>
 {% endfor %}
+<div class="modal fade fw-modal" id="apiLibModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title"><i class="bi bi-collection me-2"></i>{{ _("Add from SATOM's API library") }}</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button></div>
+    <form method="post" action="{{ url_for('studio.api_from_library') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="modal-body">
+        <p style="font-size:13px;">{{ _('One firmware build becomes a published API version with every REST endpoint that build serves. Pin a connection to it and an app step can call those endpoints and no other: a path that is not one blocks publishing.') }}</p>
+        <label class="fw-form-label" for="apiLibPick">{{ _('Product and build') }}</label>
+        <select class="form-select" id="apiLibPick" name="pick" required>
+          {% for p in library_offer %}<optgroup label="{{ p.name }}">
+            {% for v in p.versions %}<option value="{{ p.product }}@{{ v.version }}">{{ p.name }} {{ v.version }}{% if v.build %} ({{ v.build }}){% endif %}{% if v.in_fleet %} — {{ _('in the fleet') }}{% endif %}</option>{% endfor %}
+          </optgroup>{% endfor %}
+        </select>
+        <div class="form-text">{{ _('FortiAnalyzer is not offered: it speaks JSON-RPC, where every call is the same path.') }}</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button class="btn btn-fw-primary" type="submit"><i class="bi bi-plus-lg me-1"></i>{{ _('Create') }}</button>
+      </div>
+    </form>
+  </div></div>
+</div>
 <script type="application/json" id="ex-config">{{ {'install': url_for('studio.example_install', key='KEY'), 'back': url_for('studio.index', pane='examples')}|tojson }}</script>
 <script type="application/json" id="ap-config">{{ {'enable': url_for('studio.app_enable', slug='SLUG'), 'reset': url_for('studio.app_reset', slug='SLUG'), 'delete': url_for('studio.app_delete', slug='SLUG'), 'back': url_for('studio.index', pane='apps')}|tojson }}</script>
 <script src="{{ asset('js/studio_apps_list.js') }}" nonce="{{ csp_nonce }}"></script>

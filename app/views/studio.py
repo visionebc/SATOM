@@ -64,8 +64,13 @@ def index():
     from ..services import studio_apis as SAPI
     from ..services import studio_connections as SC
     from ..services import studio_store as SS
-    apis = []
+    apis, library_offer = [], []
     if can_library:
+        from ..services import studio_api_library as LIB
+        try:
+            library_offer = LIB.offered()
+        except Exception:  # noqa: BLE001 -- the API library is optional here
+            db.session.rollback()
         for a in SAPI.list_apis():
             vs = SAPI.versions(a)
             lt = SAPI.latest(a)
@@ -81,7 +86,7 @@ def index():
         can_console=can_console, can_library=can_library,
         stores=SS.list_stores() if can_library else [],
         connections=SC.list_connections() if can_library else [],
-        apis=apis,
+        apis=apis, library_offer=library_offer,
         apps=SA.list_rows() if can_library else [],
         runs=SL.recent_runs(limit=15) if can_library else [],
         datasets=PD.picker() if can_console else [],
@@ -482,6 +487,30 @@ def api_create():
         return redirect(url_for("studio.index", pane="apis"))
     log_action("studio.api.create", target=slug)
     return redirect(url_for("studio.api", slug=slug))
+
+
+@bp.route("/apis/from-library", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def api_from_library():
+    """One build of SATOM's API library as a published API Catalog version
+    (contract section 19)."""
+    from flask_babel import gettext
+    from ..extensions import db
+    from ..services import studio_api_library as LIB
+    product, _sep, version = (request.form.get("pick") or "").partition("@")
+    try:
+        v, created = LIB.ensure(product.strip(), version.strip(), _who())
+    except (LIB.LibraryApiError, ValueError) as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for("studio.index", pane="apis"))
+    log_action("studio.api.from_library", target="%s %s" % (v.api.slug, v.version),
+               extra={"created": created, "endpoints": len(v.operations)})
+    if not created:
+        flash(gettext("%(api)s %(v)s is already in the API Catalog.", api=v.api.slug,
+                      v=v.version), "info")
+    return redirect(url_for("studio.api_version", slug=v.api.slug, version=v.version))
 
 
 @bp.route("/apis/<slug>")

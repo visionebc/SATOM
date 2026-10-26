@@ -89,7 +89,7 @@ PRODUCTS = _lib.PRODUCTS
 CATALOG_ONLY_PRODUCTS = _lib.CATALOG_ONLY_PRODUCTS
 
 # Kind string on ``Appliance`` per product key. Catalog-only products have no
-# appliance rows (SATOM does not manage FortiGates), so they have no kind.
+# appliance rows, so they have no kind.
 _KIND_FOR = {p: p for p in PRODUCTS if p not in CATALOG_ONLY_PRODUCTS}
 
 # Products the rediscovery sweep walks (``rediscovery.plan_for`` has a plan

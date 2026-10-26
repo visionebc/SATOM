@@ -161,6 +161,7 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/builder/rules-pack` | read | — | SATOM's package rules, with the runtime the Builder tests with, as a zip, header `X-Satom-Rules-Sha256` (§17) |
 | `GET`  | `/builder/library` | read | — | Structure a plugin builds on: datasets and their columns, data stores, API Catalog, API library builds (§17) |
 | `GET`  | `/builder/library/fortinet/<product>/<version>` | read | the product is the token's ADOM (any, for `global`) | One API library build's endpoints, or with `?endpoint=` that endpoint's fields (§17) |
+| `GET`  | `/builder/library/fortinet/<product>/<version>/catalog` | read | the product is the token's ADOM (any, for `global`) | That build as an API Catalog version, as an app package carries it (contract §19) |
 | `GET`  | `/builder/data` | read | owner is a Plugin Studio author | This server's rows for the Builder's test data: datasets scoped to the owner, data stores, `satom_select` lists (§17) |
 | `POST` | `/builder/validate` | write | — | Check a package with the builder rules; writes nothing (§17) |
 | `POST` | `/builder/rehearse` | write | owner is a Plugin Studio author | Walk a package's app **unarmed**, or render a view; installs nothing (§17) |
@@ -1159,6 +1160,23 @@ where `status` is `measured`, `blind`, `absent` or `unmeasured` (an empty
 `fields` is "unknown" unless the status is `measured`). A product outside the
 token's ADOM is 403 `wrong_product`.
 
+### `GET /builder/library/fortinet/<product>/<version>/catalog`
+
+The same build as an API Catalog version (contract §19), exactly as an app
+package carries it in `"apis"`: `{"api": {"slug": "fortigate", "version":
+"8.0.1", "name", "owner", "docs_url", "description", "base_path", "operations":
+[...], "notes", "source": "library"}}`. A connection pinned to `api` +
+`api_version` may call these endpoints and no other: the package check
+(`app.definition`, "is not an endpoint") and the connection broker enforce it.
+FortiGate tables are `<path>` and `<path>/{<mkey>}`, settings objects
+`<path>`, and a list with its own key a child table
+(`<path>/{name}/member`: POST adds one item); FortiWeb and FortiADC take the
+key as `?mkey=`; FortiAuthenticator is `<resource>/` and `<resource>/{id}/`.
+Endpoints the build does not serve are left out. 404 `not_measured` for a
+build the library has not measured, 422 `no_paths` for FortiAnalyzer
+(JSON-RPC: every call is `POST /jsonrpc`), 403 `wrong_product` outside the
+token's ADOM.
+
 ### `GET /builder/data`
 
 This server's rows, for the Builder's test data (contract §15). `read`
@@ -1242,6 +1260,12 @@ that already exists is ignored and reported in `kept`. A refusal is 422
  "kept": [], "todo": ["review the diagram, test it and Publish ..."], "problems": [],
  "warnings": [], "signed_by": "publisher", "signer": "<key id>", "policy": "builder"}
 ```
+
+An app package's connection may be pinned to a build of SATOM's API library
+(contract §19): `"api": "fortigate", "api_version": "8.0.1"` with the `"apis"`
+entry that `GET /builder/library/fortinet/fortigate/8.0.1/catalog` serves
+(`"source": "library"`). Every `api_call` step must then call one of those
+endpoints, and the import creates the version when this server lacks it.
 
 An app package may carry `automations` (contract §18): the app on a
 schedule. The import creates each as a **switched-off** automation of

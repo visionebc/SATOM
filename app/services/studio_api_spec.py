@@ -29,7 +29,8 @@ from urllib.parse import quote
 
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 PARAM_IN = ("path", "query", "header", "body")
-MAX_OPERATIONS = 3000
+#: A FortiGate build from SATOM's API library is about 3,700 endpoints.
+MAX_OPERATIONS = 5000
 MAX_SPEC_BYTES = 8 * 1024 * 1024
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")

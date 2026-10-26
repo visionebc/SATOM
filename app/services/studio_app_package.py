@@ -11,7 +11,7 @@ carries ``app.json``::
      "connections": [{slug, name, kind, base_url, auth, username, header_name,
                       token_url, verify_tls, timeout, api, api_version}],
      "apis":        [{slug, name, owner, docs_url, description,
-                      version, base_path, operations}],
+                      version, base_path, operations[, source, notes]}],
      "automations": [{name, schedule_kind, schedule, inputs, description}]}
 
 INSTALL RULES -- what an import may and may not overwrite
@@ -162,6 +162,8 @@ def build_body(a) -> dict:
                 "slug": v.api.slug, "name": v.api.name, "owner": v.api.owner,
                 "docs_url": v.api.docs_url, "description": v.api.description,
                 "version": v.version, "base_path": v.base_path, "operations": v.operations}
+            if v.source == "library":
+                apis[(v.api.slug, v.version)].update(source=v.source, notes=v.notes or "")
         conns.append(d)
     body = {"app": {"slug": a.slug, "name": a.name, "icon": a.icon,
                     "description": a.description, "fields": a.fields,
@@ -205,6 +207,7 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
     from ..extensions import db
     from . import package_check as PC
     from . import script_library as SL
+    from . import studio_api_library as LIB
     from . import studio_apis as SAPI
     from . import studio_apps as SA
     from . import studio_connections as SC
@@ -247,7 +250,10 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
             if v is None:
                 v = SAPI.create_version(a, str(api["version"]), by)
                 SAPI.save_draft(v, operations=api.get("operations") or [],
-                                base_path=api.get("base_path") or "", by=by)
+                                base_path=api.get("base_path") or "",
+                                notes=api.get("notes") if api.get("notes") else None, by=by)
+                if api.get("source") == LIB.SOURCE and a.slug in LIB.STYLES:
+                    v.source = LIB.SOURCE       # built from an API library (section 19)
                 SAPI.publish(v, by)
                 created.append("API %s %s (%d endpoints, published)"
                                % (a.slug, v.version, len(v.operations)))

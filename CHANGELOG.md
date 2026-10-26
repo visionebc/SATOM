@@ -8,6 +8,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **A plugin that calls a FortiGate can no longer invent its path.** Asked
+  (about the SATOM Builder): "the API pack should go to the Builder, so it has
+  every API and knows how to work with them". The API library becomes API
+  Catalog versions: **Plugin Studio > API Catalog > Add from SATOM's API
+  library** publishes one firmware build (API `fortigate`, version `8.0.1`)
+  with every REST endpoint the library says it serves -- tables with their
+  `{key}` path, settings objects, and a list inside an entry (an address
+  group's `member`) as its own endpoint, whose POST adds one item where a PUT
+  of the entry replaces the whole list; FortiWeb and FortiADC keep the key in
+  `?mkey=`, FortiAuthenticator is `<resource>/{id}/`; endpoints the build does
+  not serve are left out. Pinned to it, a connection's `Call an API` steps
+  must name one of those endpoints (a problem that blocks publishing, and the
+  broker refuses the rest). For the Builder (contract section 19):
+  `GET /api/v1/builder/library/fortinet/<product>/<build>/catalog` serves the
+  build exactly as an app package carries it in `"apis"` (marked
+  `"source": "library"`, kept through export and import), and the author
+  guide says how to call a Fortinet device: the pin, the child table to add
+  one item, the address that must exist first, the 404 that takes the error
+  arrow. Measured on a1: FortiGate 8.0.1 is 3,715 endpoints (428 tables, 186
+  settings objects, 91 lists), so one API version may now hold 5,000 (was
+  3,000), and the guide names a pinned connection's endpoints only up to 60.
+
 - **A busy API no longer takes the console with it.** Asked: "what happens if
   SATOM is used heavily through the API, hundreds of parallel requests -- how
   do we protect it so it does not go down?". The web server runs gthread
@@ -90,6 +112,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   their ADOM.
 
 ### Fixed
+
+- **A FortiGate SATOM manages is in the fleet.** The API library still said
+  "SATOM does not manage FortiGates" (`CATALOG_ONLY_PRODUCTS`), so no
+  FortiGate build was ever `in_fleet` -- not on the API versions page, not in
+  the Builder's Library -- although fgt02 runs 8.0.1. FortiGate is a managed
+  product of the library now.
 
 - **A FortiADC with an invalid licence was "a box with nothing configured".**
   fortiadc10 answers every read with HTTP 200 and `{"payload": "Invalid VM

@@ -279,8 +279,8 @@ Both require `registry_edit`. That is deliberate: the page exists to drive the
 soft-delete toggle of §1.5, and its Apply POST performs exactly that write —
 no more permission than editing a row by hand, and no less.
 
-FortiAuthenticator and FortiAnalyzer have a catalog but **no sweep plan**, so
-they have no reconcile page: there is no evidence to read back.
+FortiAuthenticator, FortiAnalyzer and FortiGate have a catalog but **no sweep
+plan**, so they have no reconcile page: there is no evidence to read back.
 
 ### 6.1 Two signals that must never be collapsed
 

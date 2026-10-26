@@ -27923,3 +27923,22 @@ msgstr "es. Server policy per dispositivo"
 
 msgid "published here"
 msgstr "pubblicato qui"
+
+msgid "Add from SATOM's API library"
+msgstr "Aggiungi dalla libreria API di SATOM"
+
+msgid "One firmware build becomes a published API version with every REST endpoint that build serves. Pin a connection to it and an app step can call those endpoints and no other: a path that is not one blocks publishing."
+msgstr "Una build del firmware diventa una versione API pubblicata con ogni endpoint REST che quella build offre. Associa una connessione a essa e un passo dell'app può chiamare quegli endpoint e nessun altro: un percorso che non ne fa parte blocca la pubblicazione."
+
+msgid "Product and build"
+msgstr "Prodotto e build"
+
+msgid "in the fleet"
+msgstr "nella flotta"
+
+msgid "FortiAnalyzer is not offered: it speaks JSON-RPC, where every call is the same path."
+msgstr "FortiAnalyzer non è offerto: usa JSON-RPC, dove ogni chiamata è lo stesso percorso."
+
+#, python-format
+msgid "%(api)s %(v)s is already in the API Catalog."
+msgstr "%(api)s %(v)s è già nell'API Catalog."

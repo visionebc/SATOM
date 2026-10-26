@@ -52,7 +52,9 @@ from . import firmware_versions as fv
 
 PRODUCTS = ("fortiweb", "fortiadc", "fortiauthenticator", "fortianalyzer", "fortigate")
 #: SATOM does not manage these; the library only holds their API catalogue.
-CATALOG_ONLY_PRODUCTS = ("fortigate",)
+#: Empty since SATOM manages FortiGates: a product here has no appliance
+#: rows, so its builds can never read as ``in_fleet``.
+CATALOG_ONLY_PRODUCTS = ()
 
 SOURCE_SWEEP = "sweep"
 SOURCE_SCHEMA = "schema"

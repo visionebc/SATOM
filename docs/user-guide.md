@@ -5149,6 +5149,30 @@ API Catalog** keeps it, one entry per **version** of it — `inventory 1.0`,
    later changes go into a new version. **Deprecate** marks a version you want
    people to move off; it keeps working.
 
+**Add from SATOM's API library** turns one firmware build SATOM knows into a
+published version without typing an endpoint: API `fortigate` (or
+`fortiweb`, `fortiadc`, `fortiauthenticator`), version = the build
+(`8.0.1`), every REST endpoint the API library says that build serves —
+measured on devices, from schemas and vendor documentation; the endpoints
+measured absent on it are left out, and the builds your fleet runs are listed
+first. How each product addresses one object:
+
+| Product | A table | A settings object | A list inside an entry |
+|---|---|---|---|
+| FortiGate (`/api/v2/cmdb/<path>`) | `GET`/`POST <path>`, `GET`/`PUT`/`DELETE <path>/{<key>}` | `GET`/`PUT <path>` | `GET`/`POST <path>/{<key>}/<list>` adds ONE item (the others stay), `DELETE <path>/{<key>}/<list>/{<item>}` |
+| FortiWeb, FortiADC | every method on `<path>`, the entry as `?mkey=` | `GET`/`PUT <path>` | — |
+| FortiAuthenticator | `GET`/`POST <resource>/`, `GET`/`PUT`/`PATCH`/`DELETE <resource>/{id}/` | — | — |
+
+An object whose kind the library has not measured gets both shapes. A
+FortiGate `PUT` that sends a list (an address group's `member`) replaces the
+whole list, which is why the list's own endpoint is there: adding one address
+to a group is `POST /api/v2/cmdb/firewall/addrgrp/{name}/member` with
+`{"name": "<address>"}`. FortiAnalyzer is not offered: it speaks JSON-RPC,
+where every call is `POST /jsonrpc`. An app package that uses such a version
+carries it (marked as built from the library) and the import creates it when
+the server lacks it; an API of the same id that a person made cannot take a
+library version.
+
 **Compare two versions** on the API page lists the endpoints removed (calls to
 them break), changed (method, path, parameters or body) and added. **Endpoints
 (JSON)** downloads a version's list in the shape the manual editor saves, to

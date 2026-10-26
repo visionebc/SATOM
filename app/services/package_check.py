@@ -869,6 +869,10 @@ def patterns() -> dict:
             "variable": F._VAR_RE.pattern, "operation_id": _api_spec()._ID_RE.pattern}
 
 
+#: A pinned connection's endpoints are listed in the guide up to this many.
+GUIDE_MAX_OPS = 60
+
+
 def author_guide(target: dict) -> str:
     """Markdown generated FROM the rules and limits above, never written by
     hand: the fixed part of every AI prompt the Builder sends."""
@@ -1031,6 +1035,34 @@ def author_guide(target: dict) -> str:
     w("- API version: `{slug, name, owner, docs_url, description, version, base_path, "
       "operations: [{id, method, path, summary, params, body}]}`, at least one endpoint.")
     w("")
+    from . import studio_api_library as LIB
+    w("### Calling a Fortinet device (SATOM's API library)")
+    w("")
+    w("- Pin the HTTP connection to SATOM's API library: `\"api\": \"<product>\", "
+      "\"api_version\": \"<firmware build>\"` with product %s (the builds are in the Library; "
+      "use the one the fleet runs). The package's `apis` entry for it is that build exactly as "
+      "SATOM serves it (`GET /api/v1/builder/library/fortinet/<product>/<build>/catalog`; the "
+      "Builder adds it, never write it by hand). Every `api_call` method + path must then be an "
+      "endpoint of that build, or the package is refused -- never invent a path."
+      % ", ".join("`%s`" % k for k in LIB.STYLES))
+    w("- FortiGate, `/api/v2/cmdb/<path>`, auth `bearer` (a REST API administrator's token): a "
+      "table is GET/POST `<path>` and GET/PUT/DELETE `<path>/{<mkey>}`; a settings object is "
+      "GET/PUT `<path>`; `?vdom=<name>` in the query picks the VDOM. A PUT that sends a list "
+      "field (an address group's `member`) REPLACES the whole list: to add ONE item POST "
+      "`{\"name\": \"<item>\"}` to the child table `<path>/{<mkey>}/<list>` "
+      "(`/api/v2/cmdb/firewall/addrgrp/{name}/member`), and DELETE "
+      "`<path>/{<mkey>}/<list>/{<item>}` removes one; the others stay. A group lists address "
+      "objects by name, so the address exists first: POST `/api/v2/cmdb/firewall/address` "
+      "`{\"name\": \"<name>\", \"subnet\": \"<ip> 255.255.255.255\"}`. A POST of a name "
+      "that exists fails, so read first: GET `<path>/{<mkey>}` answering 404 takes the step's "
+      "`error` arrow (the status is in `last_response.status`). Results are in `results` "
+      "(`\"extract\": \"results\"`).")
+    w("- FortiWeb `/api/v2.0/cmdb/<path>` and FortiADC `/api/<name>`: the entry's key is the "
+      "query `?mkey=<key>` on the same path (GET one, PUT, DELETE); POST adds. "
+      "FortiAuthenticator `/api/v1/<resource>/`: GET/POST, and GET/PUT/PATCH/DELETE "
+      "`<resource>/{id}/`. FortiAnalyzer speaks JSON-RPC (every call is POST `/jsonrpc`): "
+      "its connection is not pinned.")
+    w("")
     w("### Scripts")
     w("")
     w("`{slug, name, description, files: {\"main.py\": ...}, settings: {fields, timeout, "
@@ -1045,9 +1077,15 @@ def author_guide(target: dict) -> str:
                        ("scripts", "Published scripts"), ("apps", "Apps")):
         w("- %s: %s" % (label, ", ".join("`%s`" % x for x in ch.get(key) or []) or "none"))
     for conn, cat in sorted((ch.get("catalog") or {}).items()):
+        ops = cat.get("ops") or []
+        if len(ops) > GUIDE_MAX_OPS:
+            # a library build is thousands of endpoints: the Library lists them
+            w("- `%s` is pinned to API %s %s: %d endpoints (the Library lists them)"
+              % (conn, cat.get("api"), cat.get("version"), len(ops)))
+            continue
         w("- `%s` is pinned to API %s %s: %s" % (conn, cat.get("api"), cat.get("version"), ", ".join(
             "`%s` %s %s" % (o.get("id"), o.get("method"), o.get("path"))
-            for o in cat.get("ops") or [])))
+            for o in ops)))
     w("")
     w("## Limits")
     w("")

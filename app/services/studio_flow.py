@@ -699,10 +699,12 @@ def _run_step(node: dict, ctx: Ctx):
         from . import studio_connections as SC
         c = _connection(node, "http")
         method, path = _endpoint(node, ctx, c)
+        body = _json(node, ctx, "body", "Body")
+        _rpc_check(c, method, path, body)
         try:
             r = SC.http_call(c, method, path,
                              query=_json(node, ctx, "query", "Query string"),
-                             body=_json(node, ctx, "body", "Body"))
+                             body=body)
         except SC.ConnectionError_ as exc:
             raise FlowError(str(exc)) from None
         body = r.get("json") if "json" in r else r.get("text")
@@ -722,6 +724,20 @@ def _run_step(node: dict, ctx: Ctx):
     if kind in S.KIND_KEYS:
         return S.run(node, ctx)
     raise FlowError("unknown step kind %r" % kind)
+
+
+def _rpc_check(c, method: str, path: str, body) -> None:
+    """A JSON-RPC endpoint of the connection's API Catalog version
+    (FortiAnalyzer ``POST /jsonrpc``) is reached only at the urls it lists."""
+    from . import studio_api_spec as SP
+    from . import studio_apis as SA
+    cat = SA.catalog_of(c)
+    if cat is None:
+        return
+    miss = SP.rpc_problem(SP.find(cat["operations"], method, path), body)
+    if miss:
+        raise FlowError("%s in API %s %s (connection %s)"
+                        % (miss, cat["api"], cat["version"], c.slug))
 
 
 def _endpoint(node, ctx, c) -> tuple[str, str]:

@@ -5717,7 +5717,7 @@ API Catalog</strong> keeps it, one entry per <strong>version</strong> of it — 
 </ol>
 <p><strong>Add from SATOM's API library</strong> turns one firmware build SATOM knows into a
 published version without typing an endpoint: API <code>fortigate</code> (or
-<code>fortiweb</code>, <code>fortiadc</code>, <code>fortiauthenticator</code>), version = the build
+<code>fortiweb</code>, <code>fortiadc</code>, <code>fortiauthenticator</code>, <code>fortianalyzer</code>), version = the build
 (<code>8.0.1</code>), every REST endpoint the API library says that build serves —
 measured on devices, from schemas and vendor documentation; the endpoints
 measured absent on it are left out, and the builds your fleet runs are listed
@@ -5739,16 +5739,28 @@ first. How each product addresses one object:</p>
 <td><code>GET</code>/<code>POST &lt;path&gt;/{&lt;key&gt;}/&lt;list&gt;</code> adds ONE item (the others stay), <code>DELETE &lt;path&gt;/{&lt;key&gt;}/&lt;list&gt;/{&lt;item&gt;}</code></td>
 </tr>
 <tr>
-<td>FortiWeb, FortiADC</td>
+<td>FortiWeb</td>
 <td>every method on <code>&lt;path&gt;</code>, the entry as <code>?mkey=</code></td>
 <td><code>GET</code>/<code>PUT &lt;path&gt;</code></td>
-<td>—</td>
+<td>its own path (<code>server-pool/pserver-list?mkey=&lt;pool&gt;</code>)</td>
+</tr>
+<tr>
+<td>FortiADC</td>
+<td>every method on <code>&lt;path&gt;</code>, the entry as <code>?mkey=</code></td>
+<td><code>GET</code>/<code>PUT &lt;path&gt;</code></td>
+<td>a child table, from SATOM's registry: <code>/api/&lt;parent&gt;_child_&lt;table&gt;?pkey=&lt;parent entry&gt;</code> (one row <code>&amp;mkey=</code>)</td>
 </tr>
 <tr>
 <td>FortiAuthenticator</td>
-<td><code>GET</code>/<code>POST &lt;resource&gt;/</code>, <code>GET</code>/<code>PUT</code>/<code>PATCH</code>/<code>DELETE &lt;resource&gt;/{id}/</code></td>
-<td>—</td>
-<td>—</td>
+<td>a collection: <code>&lt;resource&gt;/</code> and <code>&lt;resource&gt;/{id}/</code> with the methods its schema allows</td>
+<td>a single object: <code>GET</code>/<code>PUT</code>/<code>PATCH &lt;resource&gt;/</code></td>
+<td>an action (no GET): its writes on <code>&lt;resource&gt;/</code></td>
+</tr>
+<tr>
+<td>FortiAnalyzer (JSON-RPC)</td>
+<td>one endpoint, <code>POST /jsonrpc</code>; the body's <code>params[].url</code> must be one of the build's urls (a table also at <code>&lt;url&gt;/{&lt;key&gt;}</code>, any ADOM as <code>adom/&lt;name&gt;</code>)</td>
+<td></td>
+<td></td>
 </tr>
 </tbody>
 </table>
@@ -5761,8 +5773,14 @@ to a group is <code>POST /api/v2/cmdb/firewall/addrgrp/{name}/member</code> with
 version built from the library only ever gains endpoints: choosing the same
 build again (the page says how many were added) or importing an app package
 with a newer list of it adds what is new and never removes one; a version a
-person made never changes. FortiAnalyzer is not offered: it speaks JSON-RPC,
-where every call is <code>POST /jsonrpc</code>. An app package that uses such a version
+person made never changes (a FortiAnalyzer version only ever gains urls).
+A FortiAuthenticator build shows each resource in the shape its schema
+harvest measured; one harvested before 2026-10-26 offers every shape until
+its next harvest. How each device answers a missing entry differs and an app
+that reads before it writes must know it: FortiGate 404 and FortiWeb HTTP 500
+<code>errcode -3</code> take the step's error arrow, <strong>FortiADC answers HTTP 200 with
+<code>{"payload": null}</code></strong>, FortiAuthenticator 404, FortiAnalyzer HTTP 200 with
+<code>status.code -3</code> inside <code>result</code>. An app package that uses such a version
 carries it (marked as built from the library) and the import creates it when
 the server lacks it; an API of the same id that a person made cannot take a
 library version.</p>
@@ -5974,7 +5992,7 @@ a whole provisioning chain is one diagram whose failures the author routes:</p>
 <tbody>
 <tr>
 <td><em>Read SATOM's appliances</em></td>
-<td>The devices SATOM manages as a list -- <code>id</code>, <code>name</code>, <code>kind</code>, <code>firmware</code>, <code>host</code>, <code>port</code>, <code>ip</code> (the host when it is an address; never a DNS lookup), <code>zone</code>, <code>line</code>, <code>department</code>, <code>maintenance</code> -- filtered by product and classification, by name. In a run started by a person: the devices of their ADOM; on a schedule: the whole fleet. It only reads</td>
+<td>The devices SATOM manages as a list -- <code>id</code>, <code>name</code>, <code>kind</code>, <code>firmware</code>, <code>host</code>, <code>port</code>, <code>ip</code>, <code>zone</code>, <code>line</code>, <code>department</code>, <code>maintenance</code>, <code>version</code> (X.Y.Z of the running firmware, also when the raw firmware string is empty), <code>ip_source</code> (<code>host</code> = the host is written as an address, <code>dns</code> = <em>Names to addresses</em> resolved the name SATOM reaches the device by, empty = no address) -- filtered by product and classification, by name. In a run started by a person: the devices of their ADOM; on a schedule: the whole fleet. It only reads</td>
 <td>—</td>
 </tr>
 <tr>

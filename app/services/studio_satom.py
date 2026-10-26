@@ -78,10 +78,13 @@ DEFAULT_SAVE_AS = {"satom_appliances": "appliances"}
 #: The products ``satom_appliances`` filters on ('' = every product).
 APPLIANCE_KINDS = ("fortiweb", "fortigate", "fortiadc", "fortianalyzer", "fortiauthenticator")
 #: What each appliance of ``satom_appliances`` carries: the columns of the
-#: ``fleet_appliances`` dataset, the classification, and ``ip`` (the host when
-#: it is an address, else empty -- never a DNS lookup).
+#: ``fleet_appliances`` dataset, the classification, ``version`` (X.Y.Z of the
+#: running firmware), ``ip`` and where it came from (``ip_source``: ``host``
+#: when the host is written as an address, ``dns`` when the step resolved the
+#: name SATOM reaches the device by, empty when there is none).
 APPLIANCE_COLUMNS = ("id", "name", "kind", "firmware", "host", "port", "ip", "zone", "line",
-                     "department", "maintenance")
+                     "department", "maintenance", "version", "ip_source")
+_VERSION_RE = re.compile(r"\d+\.\d+(?:\.\d+)?")
 
 _SPO_ORDER = ("vserver", "vip", "pool", "pserver", "policy")
 
@@ -105,6 +108,10 @@ def kinds(ch: dict | None = None) -> list:
            P("department", "Department"),
            P("maintenance", "Devices in maintenance", "select", choices=("include", "skip"),
              default="include"),
+           P("resolve", "Names to addresses", "select", choices=("yes", "no"), default="yes",
+             help="yes: a device SATOM reaches by name (fortiadc11.example.com) gets the "
+                  "address SATOM's resolver gives (ip_source dns); no: ip only for hosts "
+                  "written as an address."),
            F._save_as("appliances")]),
         K("render_names", "Render names", GROUP,
           "Build object names from patterns -- {extra}, {service}, {port}, {dns}, {spo} or any "
@@ -601,8 +608,9 @@ def appliance_of(raw, kind: str = "fortiweb"):
 
 
 def _ip_of(host) -> str:
-    """The host when it is an IPv4/IPv6 address, else '' (no DNS lookup: a
-    scheduled run must not depend on, or leak names to, a resolver)."""
+    """The host when it is an IPv4/IPv6 address, else '' (no lookup here: this
+    is the pure half; ``satom_appliances`` resolves names with
+    :func:`_resolve` when the step asks for it)."""
     h = str(host or "").strip().strip("[]")
     try:
         return str(ipaddress.ip_address(h))
@@ -619,8 +627,43 @@ def appliance_row(a) -> dict:
     for k in ("firmware", "host", "zone", "line", "department"):
         row[k] = "" if row[k] is None else str(row[k])
     row["ip"] = _ip_of(row["host"])
+    row["ip_source"] = "host" if row["ip"] else ""
     row["maintenance"] = bool(get("maintenance", False))
+    # ``firmware`` is the raw string a probe stored and can be empty while the
+    # version is known (fortiweb19, 2026-10-26: firmware NULL, model 8.0.6)
+    m = _VERSION_RE.search(row["firmware"])
+    row["version"] = str(get("fw_version", "") or "") or (m.group(0) if m else "")
+    if not row["firmware"]:
+        row["firmware"] = row["version"]
     return {k: row[k] for k in APPLIANCE_COLUMNS}
+
+
+def _resolve(host: str) -> str:
+    """Seam: the address SATOM's resolver gives *host* (IPv4 first), '' when
+    it gives none. The same lookup SATOM makes to reach the device."""
+    import socket
+    try:
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except (OSError, UnicodeError, ValueError):
+        return ""
+    addrs = [i[4][0] for i in infos if i and i[4]]
+    v4 = [a for a in addrs if ":" not in a]
+    return (v4 or addrs or [""])[0]
+
+
+def resolve_names(rows: list[dict]) -> list[dict]:
+    """*rows* whose ``ip`` is empty and whose host is a name, with the
+    address the name resolves to (``ip_source`` ``dns``). One lookup per name."""
+    seen: dict = {}
+    for r in rows:
+        if r.get("ip") or not r.get("host"):
+            continue
+        h = r["host"]
+        if h not in seen:
+            seen[h] = _resolve(h)
+        if seen[h]:
+            r["ip"], r["ip_source"] = seen[h], "dns"
+    return rows
 
 
 def select_appliances(rows, *, product="", zone="", line="", department="",
@@ -1073,8 +1116,12 @@ def run(node: dict, ctx) -> tuple:
             _fleet_rows(), product=F._p(node, "product", ""), zone=_s(node, ctx, "zone"),
             line=_s(node, ctx, "line"), department=_s(node, ctx, "department"),
             maintenance=F._p(node, "maintenance", "include") or "include")
+        if (F._p(node, "resolve", "yes") or "yes") == "yes":
+            resolve_names(rows)
         prod = F._p(node, "product", "") or "every product"
-        return "ok", rows, "%d appliance(s), %s" % (len(rows), prod)
+        named = sum(1 for r in rows if r["ip_source"] == "dns")
+        return "ok", rows, "%d appliance(s), %s%s" % (
+            len(rows), prod, ", %d ip(s) from DNS" % named if named else "")
     if kind == "fortiweb_pick":
         choice, skipped = pick_fortiweb(
             zone=_s(node, ctx, "zone"), line=_s(node, ctx, "line"),

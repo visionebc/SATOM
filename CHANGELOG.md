@@ -8,6 +8,43 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Every device kind gets an API Catalog version that matches the device,
+  not just FortiGate.** Asked: "are all the other device types fine?" --
+  measured on a1 the same day, three were not:
+  - **FortiADC** had no child table: the library sweep never reads
+    `<parent>_child_<table>` (each needs `?pkey=<parent entry>`), so a pinned
+    connection refused the commonest write -- a real server into a pool. The
+    27 child tables of each build now come from SATOM's registry for that
+    build (the map SATOM's own client calls) when their parent table is in
+    the library: POST `/api/load_balance_pool_child_pool_member?pkey=<pool>`.
+  - **FortiAuthenticator** offered every resource in every shape: the schema
+    harvest measured the shape and the allowed methods and the library
+    dropped them on ingest. The harvest now keeps them on the fact and a
+    version offers what was measured: a collection with exactly its methods
+    (`localusers`: PATCH, not PUT, on one user; DELETE on the collection is
+    the bulk delete), a single object (`systeminfo`) at `<resource>/` only, an
+    action (`auth`) without GET. A build harvested before this keeps every
+    shape until its next harvest.
+  - **FortiAnalyzer** had no version at all (JSON-RPC: one HTTP endpoint). Its
+    version is ONE operation, POST `/jsonrpc`, whose `rpc` lists the urls the
+    build serves (238 on 7.6.7: the library's `/cli/global` objects, a table
+    also at `/{key}`, and the `/dvmdb`, `/logview`, `/report`... urls SATOM's
+    registry calls, any ADOM). The body's `params[].url` must be one of them:
+    in the package check (with `{{ }}` matching anything), in the app step
+    and in the script broker, which refuse before anything is sent. A library
+    version of it only ever learns urls, like the others learn endpoints.
+  - The author guide says how each kind answers, measured with GETs on
+    fortiweb19, fortiadc11, fac01 and faz02: FortiWeb a missing entry is HTTP
+    500 `errcode -3` (the error arrow), **FortiADC a missing entry is HTTP 200
+    `{"payload": null}` (not the error arrow: test the payload)**,
+    FortiAuthenticator 404, FortiAnalyzer HTTP 200 with `status.code -3`.
+  - *Read SATOM's appliances* gives `version` (X.Y.Z) and `firmware` falls
+    back to it: fortiweb19 had an empty firmware string while SATOM knew 8.0.6.
+    *Names to addresses* (default yes) gives a device reached by name the
+    address SATOM's resolver gives it, with `ip_source` (`host`/`dns`/empty):
+    an app over "the IP of every FortiADC" no longer skips fortiadc11.
+  - Also measured: fortiadc10 answers every REST call "Invalid VM License".
+
 - **A plugin that calls a FortiGate can no longer invent its path.** Asked
   (about the SATOM Builder): "the API pack should go to the Builder, so it has
   every API and knows how to work with them". The API library becomes API

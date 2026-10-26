@@ -464,7 +464,8 @@ def _app_rules(body, files: dict, target: dict | None, r: _Report, summary: dict
                       "on this server: publish it there first" % ((slug,) + key))
             elif key in pkg_ops:
                 catalog[slug] = {"api": key[0], "version": key[1],
-                                 "ops": [{k: o[k] for k in ("id", "method", "path", "summary")}
+                                 "ops": [dict({k: o[k] for k in ("id", "method", "path", "summary")},
+                                              **({"rpc": o["rpc"]} if o.get("rpc") else {}))
                                          for o in pkg_ops[key]]}
             elif target is not None and not exists and key not in ex_versions:
                 r.add("connection.pin_missing", where, "API %s %s is neither in the package nor "
@@ -1060,11 +1061,29 @@ def author_guide(target: dict) -> str:
       "that exists fails, so read first: GET `<path>/{<mkey>}` answering 404 takes the step's "
       "`error` arrow (the status is in `last_response.status`). Results are in `results` "
       "(`\"extract\": \"results\"`).")
-    w("- FortiWeb `/api/v2.0/cmdb/<path>` and FortiADC `/api/<name>`: the entry's key is the "
-      "query `?mkey=<key>` on the same path (GET one, PUT, DELETE); POST adds. "
-      "FortiAuthenticator `/api/v1/<resource>/`: GET/POST, and GET/PUT/PATCH/DELETE "
-      "`<resource>/{id}/`. FortiAnalyzer speaks JSON-RPC (every call is POST `/jsonrpc`): "
-      "its connection is not pinned.")
+    w("- FortiWeb `/api/v2.0/cmdb/<path>`: the entry's key is the query `?mkey=<key>` on the "
+      "same path (GET one, PUT, DELETE); POST adds. A sub-table is its own path "
+      "(`/api/v2.0/cmdb/server-policy/server-pool/pserver-list?mkey=<pool>`). Results are in "
+      "`results` (a list, or one object with `?mkey=`); an entry that does not exist answers "
+      "HTTP 500 `{\"results\": {\"errcode\": -3}}` (the step's `error` arrow).")
+    w("- FortiADC `/api/<name>`: `?mkey=<key>` like FortiWeb, results in `payload`. A child "
+      "table is its own path with the parent entry in `?pkey=`: a real server into a pool is "
+      "POST `/api/load_balance_pool_child_pool_member?pkey=<pool>`, one row "
+      "`?pkey=<pool>&mkey=<id>`. An entry that does not exist answers HTTP 200 with "
+      "`{\"payload\": null}` -- NOT the error arrow: read first and test the payload "
+      "(`{{ resp.payload }}` empty). A write answers a number in `payload` (negative = refused).")
+    w("- FortiAuthenticator `/api/v1/<resource>/`, in the shape the build serves (the Library "
+      "says which): a collection is `<resource>/` (`objects` + `meta`; `?limit=` pages, default "
+      "20) and `<resource>/{id}/` with only the methods it allows (`localusers`: PATCH, not PUT, "
+      "on one user); a single object (`systeminfo`) is read and changed at `<resource>/`; an "
+      "action (`auth`) only takes its writes. A missing id answers 404.")
+    w("- FortiAnalyzer speaks JSON-RPC: pin the connection to `fortianalyzer` like the others "
+      "and every call is POST `/jsonrpc` with body `{\"method\": \"get\", \"params\": "
+      "[{\"url\": \"/dvmdb/adom/{{ form.adom }}/device\"}]}` (`set`/`add`/`update`/"
+      "`delete`/`exec` write; `data` beside `url`). Each `url` must be one the build serves "
+      "(the Library lists them; any ADOM as `adom/<name>`). The answer is HTTP 200 "
+      "`{\"result\": [{\"status\": {\"code\": 0}, \"data\": ...}]}` also when it "
+      "failed: test `result[0].status.code` (-3 = does not exist).")
     w("")
     w("### Scripts")
     w("")
@@ -1088,6 +1107,8 @@ def author_guide(target: dict) -> str:
             continue
         w("- `%s` is pinned to API %s %s: %s" % (conn, cat.get("api"), cat.get("version"), ", ".join(
             "`%s` %s %s" % (o.get("id"), o.get("method"), o.get("path"))
+            + (" (JSON-RPC: the body's params[].url is one of %d urls; the Library lists them)"
+               % len(o["rpc"]) if o.get("rpc") else "")
             for o in ops)))
     w("")
     w("## Limits")

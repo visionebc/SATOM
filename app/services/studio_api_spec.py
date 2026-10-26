@@ -94,11 +94,144 @@ def clean_operation(raw: dict) -> dict:
         if (name, "path") not in seen:
             params.append({"name": name, "in": "path", "required": True, "type": "string"})
             seen.add((name, "path"))
-    return {"id": oid, "method": method, "path": path,
-            "summary": _CTRL.sub(" ", str(raw.get("summary") or "")).strip()[:300],
-            "params": params, "body": bool(raw.get("body")),
-            "tags": [str(t)[:64] for t in (raw.get("tags") or []) if str(t).strip()][:10],
-            "deprecated": bool(raw.get("deprecated"))}
+    out = {"id": oid, "method": method, "path": path,
+           "summary": _CTRL.sub(" ", str(raw.get("summary") or "")).strip()[:300],
+           "params": params, "body": bool(raw.get("body")),
+           "tags": [str(t)[:64] for t in (raw.get("tags") or []) if str(t).strip()][:10],
+           "deprecated": bool(raw.get("deprecated"))}
+    if raw.get("rpc") is not None:
+        out["rpc"] = clean_rpc(raw.get("rpc"))
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  JSON-RPC endpoints (FortiAnalyzer)                                          #
+# --------------------------------------------------------------------------- #
+#: A JSON-RPC API is ONE HTTP endpoint (``POST /jsonrpc``); what it reaches is
+#: the ``url`` of each entry of the body's ``params``. Such an operation lists
+#: those URLs in ``rpc`` (``{name}`` = any one segment, like a path), and a
+#: request whose body names another URL is not an endpoint of the version.
+RPC_VERBS = ("get", "set", "add", "update", "delete", "exec", "clone", "move", "replace")
+MAX_RPC_URLS = 4000
+
+
+def clean_rpc(raw) -> list[str]:
+    if not isinstance(raw, list) or not raw:
+        raise SpecError("rpc is a list of JSON-RPC urls")
+    if len(raw) > MAX_RPC_URLS:
+        raise SpecError("more than %d JSON-RPC urls in one endpoint" % MAX_RPC_URLS)
+    out = set()
+    for u in raw:
+        try:
+            out.add(clean_path(u))
+        except SpecError as exc:
+            raise SpecError("rpc url: %s" % exc) from None
+    return sorted(out)
+
+
+def _quote_bare_templates(text: str) -> str:
+    """*text* with every ``{{ ... }}`` / ``{% ... %}`` that stands OUTSIDE a JSON
+    string turned into one (``"data": {{ payload }}`` -> ``"data": "{{ payload }}"``);
+    those inside a string are left as they are."""
+    out, i, n, in_str = [], 0, len(text), False
+    while i < n:
+        ch = text[i]
+        if in_str:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            i += 1
+            continue
+        m = _TEMPLATE.match(text, i)
+        if m:
+            out.append(json.dumps(m.group(0)))
+            i = m.end()
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _rpc_body(body, template: bool):
+    """The JSON-RPC request as an object, or None. A step's body is JSON text
+    that may hold ``{{ ... }}``: inside a string it stays text (and matches
+    anything), a whole value (``"data": {{ payload }}``) is read as a string."""
+    if isinstance(body, dict):
+        return body
+    if not isinstance(body, str) or not body.strip():
+        return None
+    texts = [body]
+    if template:
+        texts.append(_quote_bare_templates(body))
+    for t in texts:
+        try:
+            doc = json.loads(t)
+        except ValueError:
+            continue
+        return doc if isinstance(doc, dict) else None
+    return None
+
+
+def rpc_url_known(urls: list[str], url: str, *, template: bool = False) -> bool:
+    url = str(url or "").split("?", 1)[0]
+    if template:
+        url = _TEMPLATE.sub(_WILD, url)
+    want = _segments(url)
+    for have_path in urls or []:
+        have = _segments(have_path)
+        if len(have) == len(want) and all(_seg_match(w, h) for w, h in zip(want, have)):
+            return True
+    return False
+
+
+def rpc_near(urls: list[str], url: str, n: int = 3) -> list[str]:
+    """The catalog's urls closest to *url* (same first segments first)."""
+    want = _segments(str(url or ""))
+
+    def score(u):
+        have = _segments(u)
+        same = 0
+        for w, h in zip(want, have):
+            if w != h and not _PLACEHOLDER.fullmatch(h):
+                break
+            same += 1
+        return (-same, abs(len(have) - len(want)), u)
+    return sorted(urls or [], key=score)[:n]
+
+
+def rpc_problem(op: dict | None, body, *, template: bool = False) -> str:
+    """'' when *body* is a JSON-RPC request to urls of *op* (or *op* is not a
+    JSON-RPC endpoint), else what is wrong -- with the closest urls."""
+    urls = (op or {}).get("rpc")
+    if not urls:
+        return ""
+    doc = _rpc_body(body, template)
+    shape = ('a JSON-RPC body {"method": "get", "params": [{"url": "..."}]}')
+    if doc is None:
+        return "%s %s needs %s" % (op.get("method"), op.get("path"), shape)
+    verb = str(doc.get("method") or "")
+    if not (template and _TEMPLATE.search(verb)) and verb.lower() not in RPC_VERBS:
+        return "JSON-RPC method %r: one of %s" % (verb[:40], ", ".join(RPC_VERBS))
+    params = doc.get("params")
+    if not isinstance(params, list) or not params:
+        return "the JSON-RPC params are a list: %s" % shape
+    for p in params:
+        url = p.get("url") if isinstance(p, dict) else None
+        if not isinstance(url, str) or not url.strip():
+            return "every JSON-RPC param needs its url: %s" % shape
+        if not rpc_url_known(urls, url, template=template):
+            return ("JSON-RPC url %s is not an endpoint of this version (closest: %s)"
+                    % (url[:160], ", ".join(rpc_near(urls, url)) or "none"))
+    return ""
 
 
 def clean_operations(raw_list) -> list[dict]:
@@ -293,7 +426,7 @@ def label(op: dict) -> str:
 # --------------------------------------------------------------------------- #
 #  comparing two versions                                                      #
 # --------------------------------------------------------------------------- #
-_COMPARED = ("method", "path", "params", "body", "deprecated")
+_COMPARED = ("method", "path", "params", "body", "deprecated", "rpc")
 
 
 def diff(old: list[dict], new: list[dict]) -> dict:
@@ -325,7 +458,12 @@ def _norm(v):
 # --------------------------------------------------------------------------- #
 def compact(operations: list[dict]) -> list[dict]:
     """The fields the broker and ``.operations()`` need."""
-    return [{"id": o["id"], "method": o["method"], "path": o["path"],
+    out = []
+    for o in operations or []:
+        c = {"id": o["id"], "method": o["method"], "path": o["path"],
              "summary": o.get("summary", ""), "body": bool(o.get("body")),
              "params": [p for p in o.get("params") or [] if p.get("in") in ("path", "query")]}
-            for o in operations or []]
+        if o.get("rpc"):
+            c["rpc"] = list(o["rpc"])
+        out.append(c)
+    return out

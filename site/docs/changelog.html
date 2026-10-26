@@ -114,6 +114,44 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>Every device kind gets an API Catalog version that matches the device,
+  not just FortiGate.</strong> Asked: "are all the other device types fine?" --
+  measured on a1 the same day, three were not:</li>
+<li><strong>FortiADC</strong> had no child table: the library sweep never reads
+    <code>&lt;parent&gt;_child_&lt;table&gt;</code> (each needs <code>?pkey=&lt;parent entry&gt;</code>), so a pinned
+    connection refused the commonest write -- a real server into a pool. The
+    27 child tables of each build now come from SATOM's registry for that
+    build (the map SATOM's own client calls) when their parent table is in
+    the library: POST <code>/api/load_balance_pool_child_pool_member?pkey=&lt;pool&gt;</code>.</li>
+<li><strong>FortiAuthenticator</strong> offered every resource in every shape: the schema
+    harvest measured the shape and the allowed methods and the library
+    dropped them on ingest. The harvest now keeps them on the fact and a
+    version offers what was measured: a collection with exactly its methods
+    (<code>localusers</code>: PATCH, not PUT, on one user; DELETE on the collection is
+    the bulk delete), a single object (<code>systeminfo</code>) at <code>&lt;resource&gt;/</code> only, an
+    action (<code>auth</code>) without GET. A build harvested before this keeps every
+    shape until its next harvest.</li>
+<li><strong>FortiAnalyzer</strong> had no version at all (JSON-RPC: one HTTP endpoint). Its
+    version is ONE operation, POST <code>/jsonrpc</code>, whose <code>rpc</code> lists the urls the
+    build serves (238 on 7.6.7: the library's <code>/cli/global</code> objects, a table
+    also at <code>/{key}</code>, and the <code>/dvmdb</code>, <code>/logview</code>, <code>/report</code>... urls SATOM's
+    registry calls, any ADOM). The body's <code>params[].url</code> must be one of them:
+    in the package check (with <code>{{ }}</code> matching anything), in the app step
+    and in the script broker, which refuse before anything is sent. A library
+    version of it only ever learns urls, like the others learn endpoints.</li>
+<li>The author guide says how each kind answers, measured with GETs on
+    {device}, {device}, {device} and {device}: FortiWeb a missing entry is HTTP
+    500 <code>errcode -3</code> (the error arrow), <strong>FortiADC a missing entry is HTTP 200
+    <code>{"payload": null}</code> (not the error arrow: test the payload)</strong>,
+    FortiAuthenticator 404, FortiAnalyzer HTTP 200 with <code>status.code -3</code>.</li>
+<li><em>Read SATOM's appliances</em> gives <code>version</code> (X.Y.Z) and <code>firmware</code> falls
+    back to it: {device} had an empty firmware string while SATOM knew 8.0.6.
+    <em>Names to addresses</em> (default yes) gives a device reached by name the
+    address SATOM's resolver gives it, with <code>ip_source</code> (<code>host</code>/<code>dns</code>/empty):
+    an app over "the IP of every FortiADC" no longer skips {device}.</li>
+<li>
+<p>Also measured: {device} answers every REST call "Invalid VM License".</p>
+</li>
 <li>
 <p><strong>A plugin that calls a FortiGate can no longer invent its path.</strong> Asked
   (about the SATOM Builder): "the API pack should go to the Builder, so it has

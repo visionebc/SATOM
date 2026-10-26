@@ -270,8 +270,8 @@ def builder_library_catalog(product, version):
         400: The version is malformed (``bad_request``).
         403: The product is not the token's ADOM (``wrong_product``).
         404: The build is not measured (``not_measured``).
-        422: The product has no endpoint list by path (FortiAnalyzer speaks
-             JSON-RPC: ``no_paths``).
+        422: The product has no API Catalog form (``no_paths``). FortiAnalyzer
+             has one since 2026-10-26: ``POST /jsonrpc`` with its urls in ``rpc``.
     """
     import re
     from ..services import builder_library as BL

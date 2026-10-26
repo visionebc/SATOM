@@ -226,14 +226,17 @@ def _endpoint(resource: str, urn: str, responses: dict) -> dict:
 
     rows = None
     sample = None
+    shape = "action" if status == 405 else None
     if status == 200:
         if isinstance(body, dict) and isinstance(body.get("objects"), list) \
                 and isinstance(body.get("meta"), dict):
             total = body["meta"].get("total_count")
             rows = int(total) if isinstance(total, int) else len(body["objects"])
             sample = body["objects"][0] if body["objects"] else None
+            shape = "collection"
         elif isinstance(body, dict):
             rows, sample = 1, body          # singleton: one bare object
+            shape = "singleton"
         elif body is None:
             rows = 0
 
@@ -270,6 +273,11 @@ def _endpoint(resource: str, urn: str, responses: dict) -> dict:
           "schema_status": sch.get("status"), "field_origin": origin or None}
     if methods is not None:
         ep["methods"] = methods
+    # Kept on the library fact (``attrs``) so the API Catalog version of the
+    # build offers each resource in the shape it was measured in, not both.
+    attrs = {k: v for k, v in (("shape", shape), ("methods", methods)) if v}
+    if attrs:
+        ep["attrs"] = attrs
     if row_check is not None:
         ep["row_check"] = row_check
     if verdict == "error":

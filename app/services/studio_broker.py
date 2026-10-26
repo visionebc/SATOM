@@ -237,6 +237,12 @@ class ConnectionBroker:
             return {"error": "connection %s is not pinned to an API Catalog version, so it "
                              "has no endpoint %s" % (key, req.get("operation"))}
         body = req.get("json") if req.get("json") is not None else req.get("data")
+        if cat is not None:
+            miss = SP.rpc_problem(SP.find(cat.get("operations"), method, path), body)
+            if miss:
+                self._note("connection %s %s %s refused: %s" % (key, method, path[:120], miss[:160]))
+                return {"error": "%s in API %s %s (connection %s)"
+                                 % (miss, cat.get("api"), cat.get("version"), key)}
         verify = self.verify if definition.get("verify_tls", True) else False
         try:
             res = H.http_request(

@@ -297,11 +297,15 @@ def endpoint_problem(ops: list[dict], params: dict) -> str:
     """'' when an api_call step's endpoint exists in *ops*, else what is wrong."""
     oid = str(params.get("operation") or "").strip()
     if oid:
-        return "" if S.by_id(ops, oid) else "endpoint %s does not exist" % oid
+        op = S.by_id(ops, oid)
+        if op is None:
+            return "endpoint %s does not exist" % oid
+        return S.rpc_problem(op, params.get("body"), template=True)
     method = (params.get("method") or "GET").upper()
     path = str(params.get("path") or "")
-    if S.find(ops, method, path, template=True):
-        return ""
+    op = S.find(ops, method, path, template=True)
+    if op:
+        return S.rpc_problem(op, params.get("body"), template=True)
     return "%s %s is not an endpoint" % (method, path or "/")
 
 
@@ -314,6 +318,8 @@ def choices() -> dict:
         cat = catalog_of(c)
         if cat:
             out[c.slug] = {"api": cat["api"], "version": cat["version"],
-                           "ops": [{"id": o["id"], "method": o["method"], "path": o["path"],
-                                    "summary": o["summary"]} for o in cat["operations"]]}
+                           "ops": [dict({"id": o["id"], "method": o["method"], "path": o["path"],
+                                         "summary": o["summary"]},
+                                        **({"rpc": o["rpc"]} if o.get("rpc") else {}))
+                                   for o in cat["operations"]]}
     return out

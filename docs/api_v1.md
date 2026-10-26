@@ -1173,11 +1173,17 @@ FortiGate tables are `<path>` and `<path>/{<mkey>}`, settings objects
 (`<path>/{name}/member`: POST adds one item; `<path>/{name}/member/{item}`:
 GET answers 404 when the item is not in the list, DELETE removes it); a
 version built from the library only ever gains endpoints on import; FortiWeb and FortiADC take the
-key as `?mkey=`; FortiAuthenticator is `<resource>/` and `<resource>/{id}/`.
-Endpoints the build does not serve are left out. 404 `not_measured` for a
-build the library has not measured, 422 `no_paths` for FortiAnalyzer
-(JSON-RPC: every call is `POST /jsonrpc`), 403 `wrong_product` outside the
-token's ADOM.
+key as `?mkey=`, a FortiADC child table is `/api/<parent>_child_<table>` with
+`?pkey=<parent entry>` (from SATOM's registry for the build);
+FortiAuthenticator is `<resource>/` and `<resource>/{id}/` in the shape the
+build measured (a collection with the methods its schema allows, a single
+object at `<resource>/` only, an action without GET). FortiAnalyzer
+(JSON-RPC) is ONE operation, `POST /jsonrpc`, with `"rpc": [urls]`: each
+`params[].url` of the request body must be one of them (package check, app
+step and broker). Endpoints the build does not serve are left out. 404
+`not_measured` for a build the library has not measured, 422 `no_paths` for
+a product with no API Catalog form, 403 `wrong_product` outside the token's
+ADOM.
 
 ### `GET /builder/data`
 

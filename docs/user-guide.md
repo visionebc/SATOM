@@ -5151,7 +5151,7 @@ API Catalog** keeps it, one entry per **version** of it — `inventory 1.0`,
 
 **Add from SATOM's API library** turns one firmware build SATOM knows into a
 published version without typing an endpoint: API `fortigate` (or
-`fortiweb`, `fortiadc`, `fortiauthenticator`), version = the build
+`fortiweb`, `fortiadc`, `fortiauthenticator`, `fortianalyzer`), version = the build
 (`8.0.1`), every REST endpoint the API library says that build serves —
 measured on devices, from schemas and vendor documentation; the endpoints
 measured absent on it are left out, and the builds your fleet runs are listed
@@ -5160,8 +5160,10 @@ first. How each product addresses one object:
 | Product | A table | A settings object | A list inside an entry |
 |---|---|---|---|
 | FortiGate (`/api/v2/cmdb/<path>`) | `GET`/`POST <path>`, `GET`/`PUT`/`DELETE <path>/{<key>}` | `GET`/`PUT <path>` | `GET`/`POST <path>/{<key>}/<list>` adds ONE item (the others stay), `DELETE <path>/{<key>}/<list>/{<item>}` |
-| FortiWeb, FortiADC | every method on `<path>`, the entry as `?mkey=` | `GET`/`PUT <path>` | — |
-| FortiAuthenticator | `GET`/`POST <resource>/`, `GET`/`PUT`/`PATCH`/`DELETE <resource>/{id}/` | — | — |
+| FortiWeb | every method on `<path>`, the entry as `?mkey=` | `GET`/`PUT <path>` | its own path (`server-pool/pserver-list?mkey=<pool>`) |
+| FortiADC | every method on `<path>`, the entry as `?mkey=` | `GET`/`PUT <path>` | a child table, from SATOM's registry: `/api/<parent>_child_<table>?pkey=<parent entry>` (one row `&mkey=`) |
+| FortiAuthenticator | a collection: `<resource>/` and `<resource>/{id}/` with the methods its schema allows | a single object: `GET`/`PUT`/`PATCH <resource>/` | an action (no GET): its writes on `<resource>/` |
+| FortiAnalyzer (JSON-RPC) | one endpoint, `POST /jsonrpc`; the body's `params[].url` must be one of the build's urls (a table also at `<url>/{<key>}`, any ADOM as `adom/<name>`) | | |
 
 An object whose kind the library has not measured gets both shapes. A
 FortiGate `PUT` that sends a list (an address group's `member`) replaces the
@@ -5172,8 +5174,14 @@ to a group is `POST /api/v2/cmdb/firewall/addrgrp/{name}/member` with
 version built from the library only ever gains endpoints: choosing the same
 build again (the page says how many were added) or importing an app package
 with a newer list of it adds what is new and never removes one; a version a
-person made never changes. FortiAnalyzer is not offered: it speaks JSON-RPC,
-where every call is `POST /jsonrpc`. An app package that uses such a version
+person made never changes (a FortiAnalyzer version only ever gains urls).
+A FortiAuthenticator build shows each resource in the shape its schema
+harvest measured; one harvested before 2026-10-26 offers every shape until
+its next harvest. How each device answers a missing entry differs and an app
+that reads before it writes must know it: FortiGate 404 and FortiWeb HTTP 500
+`errcode -3` take the step's error arrow, **FortiADC answers HTTP 200 with
+`{"payload": null}`**, FortiAuthenticator 404, FortiAnalyzer HTTP 200 with
+`status.code -3` inside `result`. An app package that uses such a version
 carries it (marked as built from the library) and the import creates it when
 the server lacks it; an API of the same id that a person made cannot take a
 library version.
@@ -5366,7 +5374,7 @@ a whole provisioning chain is one diagram whose failures the author routes:
 
 | Step | What it does | Undo |
 |---|---|---|
-| *Read SATOM's appliances* | The devices SATOM manages as a list -- `id`, `name`, `kind`, `firmware`, `host`, `port`, `ip` (the host when it is an address; never a DNS lookup), `zone`, `line`, `department`, `maintenance` -- filtered by product and classification, by name. In a run started by a person: the devices of their ADOM; on a schedule: the whole fleet. It only reads | — |
+| *Read SATOM's appliances* | The devices SATOM manages as a list -- `id`, `name`, `kind`, `firmware`, `host`, `port`, `ip`, `zone`, `line`, `department`, `maintenance`, `version` (X.Y.Z of the running firmware, also when the raw firmware string is empty), `ip_source` (`host` = the host is written as an address, `dns` = *Names to addresses* resolved the name SATOM reaches the device by, empty = no address) -- filtered by product and classification, by name. In a run started by a person: the devices of their ADOM; on a schedule: the whole fleet. It only reads | — |
 | *Render names* | Object names from patterns (`spo-{extra}-{service}-{port}`, `vs-{spo}`); an empty value takes its dash with it; a name FortiWeb would refuse is an error | — |
 | *DDI: reserve an address* | One A record (IPAM) in one DDI unit: an existing record of that name is **reused** (never deleted by a rollback); else the next free address of the first subnet that has one (`/api/dnsrr/allocate`), or a given address registered as is (the same IP in another unit). The record read back decides, not the answer's status words | *DDI: release* |
 | *DDI: reserve by rules* | One reservation per rule row, in its order (the master unit first); `ip_from` reuses the address another unit of the step got. If one rule fails, what the step created is released before it ends in error. **Mode *given***: the addresses typed in the form (`{"internal": …, "external": …}`, keyed by unit or role) — the DDI is not called at all, each rule takes its unit's or role's address (or `ip_from`'s), a rule left without one is an error, and nothing typed is an error too (never a quiet reservation). A release keeps them: *given in the form, never reserved* | *DDI: release* |

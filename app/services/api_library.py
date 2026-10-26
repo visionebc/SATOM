@@ -1496,6 +1496,28 @@ def endpoints_at(product: str, version) -> dict:
     return {name: _endpoint_summary(name, by_src) for name, by_src in sorted(state.items())}
 
 
+def rest_attrs(product: str, version) -> dict:
+    """``{endpoint: attrs}`` a REST source measured on one build (FortiAuthenticator:
+    ``shape`` collection|singleton|action and the ``methods`` its schema
+    allows). The most recent fact wins per key; empty for an unmeasured build
+    and for products whose REST evidence carries no attrs."""
+    b = _build_row(product, version)
+    if b is None:
+        return {}
+    out: dict = {}
+    rows = db.session.execute(
+        select(ApiLibEndpoint.name, ApiLibEndpointFact.attrs)
+        .join(ApiLibEndpoint, ApiLibEndpoint.id == ApiLibEndpointFact.endpoint_id)
+        .where(ApiLibEndpointFact.build_id == b.id,
+               ApiLibEndpointFact.source.in_(REST_SOURCES),
+               ApiLibEndpointFact.attrs.isnot(None))
+        .order_by(ApiLibEndpointFact.last_seen))
+    for name, attrs in rows:
+        if isinstance(attrs, dict) and attrs:
+            out.setdefault(name, {}).update(attrs)
+    return out
+
+
 def fields_at(product: str, endpoint: str, version) -> dict:
     """Fields ``endpoint`` serves on ``version``, with an honest status.
 
@@ -2891,6 +2913,6 @@ __all__ = [
     "CHANNELS", "EXCEPTION_REASONS", "FIELD_ATTR_KEYS", "urn_key", "channels_at",
     "version_key", "content_hash", "ingest",
     "evidence_from_sweep", "evidence_from_schema_dir", "evidence_from_legacy_matrix",
-    "backfill", "products", "builds", "endpoints_at", "fields_at", "compare",
+    "backfill", "products", "builds", "endpoints_at", "rest_attrs", "fields_at", "compare",
     "field_history", "resolve_appliance", "matrix_doc",
 ]

@@ -43,6 +43,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
     *Names to addresses* (default yes) gives a device reached by name the
     address SATOM's resolver gives it, with `ip_source` (`host`/`dns`/empty):
     an app over "the IP of every FortiADC" no longer skips fortiadc11.
+  - The Builder's library fields answer (`/builder/library/fortinet/fortiadc/<build>?endpoint=`)
+    carries `create` for the FortiADC objects SATOM itself creates: the fields a
+    create needs and the order (verified live on fadc 8.0.3) -- a pool member
+    references a real server by `real_server_id`, it is not an inline ip:port.
+    The Builder's AI wrote `{"member_ip", "member_port"}` on the lab, and
+    nothing said otherwise.
   - Also measured: fortiadc10 answers every REST call "Invalid VM License".
 
 - **A plugin that calls a FortiGate can no longer invent its path.** Asked

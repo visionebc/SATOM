@@ -105,7 +105,20 @@ def fortinet_endpoints(product: str, version: str) -> dict:
 
 
 def fortinet_fields(product: str, version: str, endpoint: str) -> dict:
+    """The endpoint's fields on the build (contract section 14). A FortiADC
+    endpoint SATOM itself creates objects on also carries ``create``: the
+    fields a create needs and the dependency chain, verified live on fadc 8.0.3
+    (``adc_objform``) -- a pool member references a real server by
+    ``real_server_id``, it is not an inline ip:port (contract section 19.1)."""
     from . import api_library as L
     res = L.fields_at(product, endpoint, version)
-    return {"product": product, "version": version, "endpoint": endpoint,
-            "status": res.get("status"), "fields": res.get("fields") or {}}
+    out = {"product": product, "version": version, "endpoint": endpoint,
+           "status": res.get("status"), "fields": res.get("fields") or {}}
+    if product == "fortiadc":
+        from . import adc_objform as O
+        spec = O.CREATE_FIELDS.get(endpoint)
+        if spec:
+            out["create"] = {"fields": [{k: f[k] for k in ("key", "required", "default", "help")
+                                         if k in f} for f in spec],
+                             "hint": O.create_hint(endpoint), "verified_on": "8.0.3"}
+    return out

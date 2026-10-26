@@ -1799,7 +1799,10 @@ FortiGate tables are <code>&lt;path&gt;</code> and <code>&lt;path&gt;/{&lt;mkey&
 GET answers 404 when the item is not in the list, DELETE removes it); a
 version built from the library only ever gains endpoints on import; FortiWeb and FortiADC take the
 key as <code>?mkey=</code>, a FortiADC child table is <code>/api/&lt;parent&gt;_child_&lt;table&gt;</code> with
-<code>?pkey=&lt;parent entry&gt;</code> (from SATOM's registry for the build);
+<code>?pkey=&lt;parent entry&gt;</code> (from SATOM's registry for the build; its fields
+answer, <code>?endpoint=load_balance_pool_child_pool_member</code>, carries <code>create</code>: the
+fields a create needs, verified on fadc 8.0.3 -- <code>real_server_id</code>, an existing
+real server);
 FortiAuthenticator is <code>&lt;resource&gt;/</code> and <code>&lt;resource&gt;/{id}/</code> in the shape the
 build measured (a collection with the methods its schema allows, a single
 object at <code>&lt;resource&gt;/</code> only, an action without GET). FortiAnalyzer

@@ -149,6 +149,12 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
     <em>Names to addresses</em> (default yes) gives a device reached by name the
     address SATOM's resolver gives it, with <code>ip_source</code> (<code>host</code>/<code>dns</code>/empty):
     an app over "the IP of every FortiADC" no longer skips {device}.</li>
+<li>The Builder's library fields answer (<code>/builder/library/fortinet/fortiadc/&lt;build&gt;?endpoint=</code>)
+    carries <code>create</code> for the FortiADC objects SATOM itself creates: the fields a
+    create needs and the order (verified live on fadc 8.0.3) -- a pool member
+    references a real server by <code>real_server_id</code>, it is not an inline ip:port.
+    The Builder's AI wrote <code>{"member_ip", "member_port"}</code> on the lab, and
+    nothing said otherwise.</li>
 <li>
 <p>Also measured: {device} answers every REST call "Invalid VM License".</p>
 </li>

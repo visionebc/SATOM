@@ -27940,5 +27940,5 @@ msgid "FortiAnalyzer is not offered: it speaks JSON-RPC, where every call is the
 msgstr "FortiAnalyzer non è offerto: usa JSON-RPC, dove ogni chiamata è lo stesso percorso."
 
 #, python-format
-msgid "%(api)s %(v)s is already in the API Catalog."
-msgstr "%(api)s %(v)s è già nell'API Catalog."
+msgid "%(api)s %(v)s is already in the API Catalog: %(n)d endpoint(s) added from SATOM's API library (none is ever removed)."
+msgstr "%(api)s %(v)s è già nell'API Catalog: %(n)d endpoint aggiunti dalla libreria API di SATOM (nessuno viene mai rimosso)."

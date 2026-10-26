@@ -499,17 +499,23 @@ def api_from_library():
     from ..extensions import db
     from ..services import studio_api_library as LIB
     product, _sep, version = (request.form.get("pick") or "").partition("@")
+    from ..services import studio_apis as SAPI
+    a0 = SAPI.get(product.strip())
+    v0 = SAPI.get_version(a0, version.strip()) if a0 is not None else None
+    before = len(v0.operations) if v0 is not None else 0
     try:
         v, created = LIB.ensure(product.strip(), version.strip(), _who())
     except (LIB.LibraryApiError, ValueError) as exc:
         db.session.rollback()
         flash(str(exc), "danger")
         return redirect(url_for("studio.index", pane="apis"))
+    added = 0 if created else len(v.operations) - before
     log_action("studio.api.from_library", target="%s %s" % (v.api.slug, v.version),
-               extra={"created": created, "endpoints": len(v.operations)})
+               extra={"created": created, "endpoints": len(v.operations), "added": added})
     if not created:
-        flash(gettext("%(api)s %(v)s is already in the API Catalog.", api=v.api.slug,
-                      v=v.version), "info")
+        flash(gettext("%(api)s %(v)s is already in the API Catalog: %(n)d endpoint(s) added "
+                      "from SATOM's API library (none is ever removed).", api=v.api.slug,
+                      v=v.version, n=added), "info")
     return redirect(url_for("studio.api_version", slug=v.api.slug, version=v.version))
 
 

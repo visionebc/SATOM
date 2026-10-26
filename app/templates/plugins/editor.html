@@ -71,6 +71,10 @@
             </select></div>
           <div class="col-sm-3"><label class="fw-form-label">{{ _('Icon') }}</label>
             <input class="form-control fw-form-control" name="icon" id="fld-icon" value="{{ plugin.icon if plugin else 'bi-puzzle' }}"></div>
+          <div class="col-12" id="fld-kind-help">
+            {% from "_plugin_kinds.html" import kind_explainer %}
+            {{ kind_explainer(plugin.kind if plugin else 'view') }}
+          </div>
         </div>
 
         <div class="mb-3">

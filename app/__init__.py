@@ -1072,6 +1072,11 @@ def create_app(config_override: object | None = None) -> Flask:
         raw = unquote(request.cookies.get('fw_nav_dev_closed', '') or '')
         return str(name) not in raw.split('|')
     app.jinja_env.globals['nav_device_open'] = _nav_device_open
+    # view / widget / app, explained where a kind is chosen (_plugin_kinds.html)
+    from .services import plugin_package as _pkg
+    app.jinja_env.globals['plugin_kind_order'] = _pkg.KIND_ORDER
+    app.jinja_env.globals['plugin_kind_guide'] = _pkg.KIND_GUIDE
+    app.jinja_env.globals['plugin_kind_rule'] = _pkg.KIND_RULE
 
     # -- timezone-aware timestamp filter ---------------------------------
     @app.template_filter('localtime')

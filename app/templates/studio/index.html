@@ -359,6 +359,12 @@
         <div class="form-check">
           <input class="form-check-input" type="radio" name="kind" id="{{ mid }}-script" value="script">
           <label class="form-check-label" for="{{ mid }}-script"><strong>{{ _('Script') }}</strong> — {{ _('Python code with a form, run in the sandbox') }}</label></div>
+        <div class="fw-alert fw-alert-info mt-3 mb-0" id="{{ mid }}-kind-note" style="font-size:12.5px;">
+          {{ plugin_kind_guide['app']['what'] }}
+          {{ _('To show or search what SATOM already knows (which rules use an IP, a report), build a view in Report Studio instead.') }}
+          {% from "_plugin_kinds.html" import kind_explainer %}
+          {{ kind_explainer('app') }}
+        </div>
         {% endif %}
       </div>
       <div class="modal-footer">

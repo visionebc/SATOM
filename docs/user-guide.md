@@ -4360,6 +4360,26 @@ others, and without being given user administration.
 | **Report Studio** | `/plugins` | Server-rendered custom views/widgets, published as **Custom Views** |
 | **Lua Studio** | `/lua` | Device scripts for FortiWeb *Web Scripting* and FortiADC *Scripting* |
 
+**View, widget or app: which one?** Report Studio and Plugin Studio's *New app*
+show the difference where you choose:
+
+- **View** (Report Studio): a page that *reads* SATOM's data -- every dataset:
+  the device cache (FortiGate rules and addresses, FortiWeb policies, FortiADC
+  pools...), the fleet, the administrator datasets -- and shows it, filtered by
+  input parameters such as an IP. It never changes anything. *Which firewall
+  rules use this IP?*
+- **Widget** (Report Studio): a view sized for a dashboard tile. *Server policies
+  without a WAF profile: 3.*
+- **App** (Plugin Studio): a form and a diagram of steps that *do* things --
+  call an API, write data stores, run a sandboxed script, act on appliances,
+  ask for approval. It cannot read SATOM's datasets. *Publish a site: reserve
+  the IP in DDI, create the FortiWeb policy, ask for approval.*
+
+Rule of thumb: show or search what SATOM already knows, a view (or a widget);
+do something -- create, change, call another system, ask for approval -- an
+app. SATOM Builder shows the same words, and its AI gets them in the author
+guide.
+
 > **Renamed on 2026-10-22.** *Python Studio* is now **Plugin Studio** — it
 > accepts Python code only — and the custom-view studio that carried that
 > name is now **Report Studio**. Only the labels changed: the pages

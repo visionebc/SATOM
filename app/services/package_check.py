@@ -845,6 +845,15 @@ def author_guide(target: dict) -> str:
       "the members it lists. Kinds: `view` and `widget` (body.jinja, style.css, script.js) "
       "and `app` (app.json plus assets/<sha256>.<png|jpg|gif|webp>). `code` is refused.")
     w("")
+    from . import plugin_package as PKG
+    w("## Which kind")
+    w("")
+    for k in PKG.KIND_ORDER:
+        g = PKG.KIND_GUIDE[k]
+        w("- `%s`: %s For: %s. Example: \"%s\"." % (k, g["what"], g["use_for"], g["example"]))
+    w("- Rule of thumb: %s If the request needs SATOM's data and the package is an app, "
+      "say so and name the kind it needs; never say the data does not exist." % PKG.KIND_RULE)
+    w("")
     w("## Rules the importer applies")
     w("")
     w("| Rule | Refuses | What it requires |")

@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **View, widget or app: SATOM says which one a request needs.** Requested:
+  "put the difference between widget, app and view in SATOM and in the
+  Builder: why a search is not an app". Report Studio's editor (next to the
+  kind) and Plugin Studio's *New app* now explain each kind -- what it is,
+  what it is for, an example -- with the rule of thumb: *show or search what
+  SATOM already knows: a view (or a widget on a dashboard); do something --
+  create, change, call another system, ask for approval: an app*. *New app*
+  adds that an app cannot read SATOM's datasets and that a search is a view.
+  The author guide (rules pack) gains a *Which kind* section, so SATOM
+  Builder's AI names the kind a request needs instead of saying the data does
+  not exist. One text: `plugin_package.KIND_GUIDE` / `KIND_RULE` (the Builder
+  carries the same words).
+
 ## [4.4.0] - 2026-10-26
 
 Every product's cached objects reach the no-SQL query builder, grouped per

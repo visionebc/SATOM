@@ -1541,6 +1541,100 @@ ACTION_PROFILES: dict = {
             ),
         },
     },
+    # -------------------------------------------------------------- plugin_app
+    "plugin_app": {
+        "de": {
+            "label": "Plugin-Studio-App ausführen",
+            "purpose": (
+                "Ausführung der VERÖFFENTLICHTEN Version einer Plugin-Studio-App "
+                "(bei einer Skript-App: ihr Skript) mit den im Change Request "
+                "hinterlegten Formularwerten, im Namen des Benutzers, der die "
+                "Automatisierung gespeichert hat. WAS die App bewirkt, ergibt "
+                "sich aus der App selbst; SATOM leitet daraus keine fachliche "
+                "Absicht ab."),
+            "justification": (
+                "Die App wurde in Plugin Studio erstellt und veröffentlicht, ist "
+                "aber kein geprüfter Standardablauf von SATOM. Deshalb wird ihre "
+                "Ausführung einzeln freigegeben: der Prüfer bewertet die "
+                "veröffentlichte Version und die Formularwerte."),
+            "impact": (
+                "Die Auswirkung hängt von der App ab. Eine App, die nur liest "
+                "oder berichtet, verändert nichts; eine App, die schreibt (z. B. "
+                "Adressen in eine Adressgruppe einer FortiGate), verändert die "
+                "Konfiguration der von ihr angesprochenen Geräte. SATOM gibt "
+                "bewusst KEINE Ausfallzeit an, weil jede Angabe geraten wäre."),
+            "downtime": (
+                "unbekannt — vom Prüfer anhand der veröffentlichten App und "
+                "ihrer Formularwerte zu bestimmen"),
+            "risk": (
+                "Das Risiko ergibt sich aus der App. Skripte laufen in der "
+                "Sandbox von SATOM ohne Datenbankzugriff; Schreibzugriffe auf "
+                "Geräte laufen über die Verbindungen der App. Eine App ohne "
+                "veröffentlichte Version wird nicht ausgeführt."),
+            "rollback": (
+                "Bei einer lesenden App ist kein Rollback erforderlich.",
+                "Bei einer schreibenden App: die von ihr geänderten Objekte "
+                "anhand ihres Laufprotokolls auf den Vorher-Zustand "
+                "zurücksetzen; ersatzweise Konfiguration aus dem Backup "
+                "wiederherstellen.",
+            ),
+            "work": (
+                "Veröffentlichte Version der App und die Formularwerte prüfen.",
+                "App ausführen (geplant oder manuell).",
+                "Laufprotokoll und Ergebnis dem Change Request beifügen.",
+            ),
+            "validation": (
+                "Der Lauf ist ohne Fehler beendet und sein Ergebnis entspricht "
+                "der im Change Request beschriebenen Erwartung.",
+                "Jeder unten aufgeführte veröffentlichte Dienst antwortet wie "
+                "vor dem Change.",
+            ),
+        },
+        "en": {
+            "label": "Run a Plugin Studio app",
+            "purpose": (
+                "Run the PUBLISHED version of a Plugin Studio app (for a script "
+                "app: its script) with the form values on the change request, "
+                "as the user who saved the automation. WHAT the app does "
+                "follows from the app itself; SATOM does not derive an intent "
+                "from it."),
+            "justification": (
+                "The app was authored and published in Plugin Studio but is "
+                "not a reviewed SATOM standard procedure. That is why running "
+                "it is approved individually: the reviewer judges the "
+                "published version and the form values."),
+            "impact": (
+                "The impact depends on the app. An app that only reads or "
+                "reports changes nothing; an app that writes (for example, "
+                "addresses into a FortiGate address group) changes the "
+                "configuration of the devices it addresses. SATOM deliberately "
+                "states NO downtime, because any figure would be a guess."),
+            "downtime": (
+                "unknown - to be determined by the reviewer from the published "
+                "app and its form values"),
+            "risk": (
+                "The risk follows from the app. Scripts run in SATOM's sandbox "
+                "without database access; device writes go through the app's "
+                "connections. An app with no published version does not run."),
+            "rollback": (
+                "For an app that only reads, no rollback is needed.",
+                "For an app that writes: return the objects it changed to "
+                "their previous state from its run log; failing that, restore "
+                "the configuration from the backup.",
+            ),
+            "work": (
+                "Review the app's published version and the form values.",
+                "Run the app (scheduled or by hand).",
+                "Attach the run log and result to the change request.",
+            ),
+            "validation": (
+                "The run finished without errors and its result matches the "
+                "expectation described on the change request.",
+                "Every published service listed below answers as it did "
+                "before the change.",
+            ),
+        },
+    },
     # ------------------------------------------------------------ ha_failover
     "ha_failover": {
         "de": {

@@ -326,7 +326,7 @@ def _dataset_form(ds):
     from ..services.plugin_datasets import PRODUCTS
     return render_template("database/plugin_dataset_edit.html", ds=ds,
                            table_names=[t["name"] for t in rel["tables"]],
-                           builder_catalog=report_builder.catalog(), products=PRODUCTS,
+                           builder_catalog=report_builder.catalog(), dataset_products=PRODUCTS,
                            used_by=_dataset_usage().get(ds.key, []) if ds else [])
 
 

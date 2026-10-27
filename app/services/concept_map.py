@@ -634,6 +634,9 @@ PAGES: tuple[dict, ...] = (
     _p("plugins.gallery", "Plugin Gallery", "dev",
        "gallery published plugin browse custom view share",
        "Published custom views, for everyone."),
+    _p("plugins.publishers", "Trusted publishers", "dev",
+       "trusted publisher ed25519 key signature builder signed plugin package",
+       "Publisher keys whose signed views and widgets SATOM accepts into testing."),
     _p("scripts.index", "Plugins", "automation",
        "plugins scripts run operator form schedule cron saved run python",
        "Run the plugins (scripts) your administrators published, now or on a schedule."),
@@ -769,6 +772,7 @@ EXCLUDED: dict[str, str] = {
     "cert_manager.new": "create form of cert_manager.index",
     "change_requests.new": "create form of change_requests.index",
     "database.report_new": "create form of database.index",
+    "database.plugin_dataset_new": "create form of database.index (Plugin datasets)",
     "lua_studio.new": "create form of lua_studio.index",
     # Verbs of artifacts.inventory. They were reachable from artifacts.index
     # and from artifacts.manage before; index is reference-only and manage was

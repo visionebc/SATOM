@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {#- A Plugin dataset (models.PluginDataset, services.plugin_datasets): a Report
     Builder query an administrator publishes for plugins and SATOM Builder.
-    Context: ds (or None), builder_catalog, table_names, products, used_by. -#}
+    Context: ds (or None), builder_catalog, table_names, dataset_products, used_by. -#}
 {% block title %}{{ 'Edit plugin dataset' if ds else 'New plugin dataset' }} — Database{% endblock %}
 {% block content %}
 <div class="fw-page-header">
@@ -44,7 +44,7 @@
       <label class="form-label small text-muted" for="pd-product">{{ _('ADOM') }}</label>
       <select id="pd-product" class="form-select form-select-sm">
         <option value="">{{ _('Every ADOM') }}</option>
-        {% for p in products %}<option value="{{ p }}" {{ 'selected' if ds and ds.product == p }}>{{ p }}</option>{% endfor %}
+        {% for p in dataset_products %}<option value="{{ p }}" {{ 'selected' if ds and ds.product == p }}>{{ p }}</option>{% endfor %}
       </select>
     </div>
     <div class="col-md-2">

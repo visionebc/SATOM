@@ -280,9 +280,33 @@ def delete_template(template_id: int) -> bool:
     return True
 
 
-def approve_template(template_id: int, reviewer: str) -> Template:
+#: Recorded on the review event of an approval by the template's own author.
+SELF_APPROVAL_NOTE = ("Self-approved: Settings › General allows administrators "
+                      "to approve their own changes.")
+
+
+def self_approval_allowed(user) -> bool:
+    """True when *user* may approve their own template: Settings › General ›
+    *Administrators may approve their own changes* is on (SA-0008) AND *user*
+    is an administrator (``user_manage``). Everyone else stays under the
+    four-eyes rule, whatever the switch says."""
+    from ..models import Permission
+    from . import settings_store
+    try:
+        is_admin = bool(user is not None and user.can(Permission.USER_MANAGE))
+    except Exception:  # noqa: BLE001 — an anonymous/odd user is not an admin
+        is_admin = False
+    return is_admin and settings_store.admin_self_approval()
+
+
+def approve_template(template_id: int, reviewer: str, *, self_ok: bool = False) -> Template:
     """Mark a template APPROVED (fleet-deployable). Clears any prior rejection
-    reason. Raises ``ValueError`` if the template does not exist."""
+    reason. Raises ``ValueError`` if the template does not exist.
+
+    ``self_ok`` lets the author approve their own template; the caller passes
+    :func:`self_approval_allowed` of the signed-in user. The API never does:
+    a token approving the template it authored is exactly what four-eyes is
+    for."""
     row = db.session.get(Template, template_id)
     if row is None:
         raise ValueError(f"Template {template_id} not found")
@@ -292,14 +316,18 @@ def approve_template(template_id: int, reviewer: str) -> Template:
     # device unchecked. A template with no recorded author (legacy) is not
     # self-approvable by anyone, so it is left alone.
     author = (row.author or "").strip()
-    if author and author == (reviewer or "").strip():
+    own = bool(author) and author == (reviewer or "").strip()
+    if own and not self_ok:
         raise ValueError("You cannot approve your own template — it must be "
-                         "reviewed by someone else.")
+                         "reviewed by someone else. An administrator can allow "
+                         "administrators to approve their own changes in "
+                         "Settings › General.")
     row.status = Template.STATUS_APPROVED
     row.reject_reason = ""
     row.reviewed_by = (reviewer or "").strip()
     row.reviewed_at = datetime.utcnow()
-    _record_review_event(row.id, TemplateReviewEvent.ACTION_APPROVE, reviewer)
+    _record_review_event(row.id, TemplateReviewEvent.ACTION_APPROVE, reviewer,
+                         SELF_APPROVAL_NOTE if own else "")
     db.session.commit()
     return row
 

@@ -2587,8 +2587,23 @@ type. **Adopt & adapt** opens it in an editor under the row: change a part
 scheme**. For a **builds names** entry, Adopt is greyed out when the found
 pattern carries a token SATOM cannot fill in (hover for the reason) — adapt it
 instead. The ✕ clears the entry. **All devices (fleet view)** shows whether the
-devices agree and your scheme pattern; **Export CSV** lists every exception. A
-device without a configuration tree offers **Sync device** (read-only).
+devices agree and your scheme pattern; **Export CSV** lists every exception.
+
+The line above the table says where the names come from: **Source: SATOM's
+cache — last sweep** *time* (and its trigger, usually `scheduled`), with a
+**stale** badge and its reason when the device's newest sync failed or the
+sweep is older than the product's staleness threshold (Monitoring →
+Thresholds). Both sync buttons run as a **background job** (Jobs dock), never
+inside the page's request:
+
+- **Sync device** checks SATOM's cache first. When it is current, nothing is
+  read from the device and the answer says how old the cache is; when it is
+  stale (or SATOM never swept the device), the device is swept read-only.
+- **Read the device now** sweeps the device read-only even when the cache is
+  current — for a change made on the device since the last sweep.
+
+This is the same for every device ADOM (FortiWeb, FortiADC, FortiGate,
+FortiAnalyzer, FortiAuthenticator).
 
 ## 14. Monitoring: fleet health, metrics & probes
 
@@ -6094,6 +6109,16 @@ Application name (browser title and top bar), environment (which drives the
 - **Log Levels** and **Log Format** — which severities are written to the
   application log file and how (plain, detailed, or JSON lines). Applied at
   start-up and immediately on save.
+- **Administrators may approve their own changes** — off by default: a template
+  (Template Library) or a system profile (System Provisioning) must be approved
+  by someone other than its author (four-eyes), and the author's attempt is
+  refused with *"You cannot approve your own template"*. Switched on, an
+  administrator (`user_manage`) may approve what they wrote; the approval
+  history of the template records *"Self-approved: Settings › General allows
+  administrators to approve their own changes."* and the audit entry says
+  *self-approved by its author*. Users who are not administrators, and API
+  tokens (`/api/v1/intent/templates/<id>/approve`), always need a second
+  person. Saving the General form is audited with the switch's state.
 
 The status-poll interval and raw-JSON toggle that used to sit here were removed:
 nothing ever read them. A separate card opts an admin in or out of

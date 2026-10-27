@@ -6,6 +6,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Settings › General › Administrators may approve their own changes**
+  (SA-0008: "allow or refuse admins approving their own changes, for example
+  in templates"). Off by default, so the four-eyes rule stays as it was. On:
+  an administrator may approve a template or system profile they authored; the
+  approval history records it as a self-approval and the audit entry says so.
+  Non-administrators and API tokens still need a second person.
+
+### Changed
+- **Naming › Discovery: Sync runs as a job and reads SATOM's cache first**
+  (SA-0007: "the sync should create a job, not run in the browser, and check
+  what SATOM has in the cache instead of going straight to the device — in
+  every ADOM"). *Sync device* is now a background job (the `naming`
+  blueprint joins the device-job wrapper; its settings posts stay
+  synchronous). When the device's cache is current by the product's
+  staleness threshold, nothing is read from the device and the answer says
+  how old the cache is; a stale or missing cache is swept read-only. A new
+  *Read the device now* button sweeps on demand, also as a job. The page
+  shows its source (SATOM's cache, last sweep and trigger) and a *stale*
+  badge. Measured: Discovery itself made 0 device calls in all five device
+  ADOMs before and after.
+
 ## [4.5.0] - 2026-10-26
 
 **Plugin Studio apps that act on their own, against the real device API.** An

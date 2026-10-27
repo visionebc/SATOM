@@ -976,6 +976,7 @@ def save_general():
             timezone=request.form.get('timezone', ''),
             log_format=request.form.get('log_format', 'detailed'),
             env_mode=request.form.get('env_mode', ''),
+            admin_self_approval=request.form.get('admin_self_approval') == '1',
         )
         # Take effect now: the idle lock re-reads its timeout, and the log
         # file handler gets the new levels/format (this worker; the others
@@ -984,7 +985,9 @@ def save_general():
         from ..errors import apply_log_settings
         session_lock.invalidate_cache()
         apply_log_settings()
-        log_action('settings.general', detail='Updated general settings')
+        log_action('settings.general', detail='Updated general settings; administrators '
+                   + ('MAY' if store.admin_self_approval() else 'may NOT')
+                   + ' approve their own changes')
         flash('General settings saved.', 'success')
     except Exception as exc:  # noqa: BLE001
         flash(f'Failed to save settings: {exc}', 'danger')

@@ -357,12 +357,15 @@ def delete(template_id: int):
 @require_permission('operations.template_approve')
 def approve_profile(template_id: int):
     """Approve a pending system-profile template."""
-    from ..services.templates import approve_template
+    from ..services.templates import approve_template, self_approval_allowed
     _system_template_or_404(template_id)
     try:
-        row = approve_template(template_id, reviewer=current_user.username)
+        row = approve_template(template_id, reviewer=current_user.username,
+                               self_ok=self_approval_allowed(current_user))
         log_action('provisioning.approve', target=row.name,
-                   detail=f'v{row.version}')
+                   detail=f'v{row.version}'
+                          + ('; self-approved by its author'
+                             if (row.author or '').strip() == current_user.username else ''))
         flash(f'Approved "{row.name}" v{row.version} — now selectable for baselines.', 'success')
     except ValueError as exc:
         flash(f'Could not approve: {exc}', 'danger')

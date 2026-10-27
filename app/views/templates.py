@@ -459,7 +459,8 @@ def approve(template_id: int):
               'Protection Profile template only, as "fleet" or "selected".', 'danger')
         return redirect(_safe_next(url_for('templates.index')))
     try:
-        row = lib.approve_template(template_id, reviewer=current_user.username)
+        row = lib.approve_template(template_id, reviewer=current_user.username,
+                                   self_ok=lib.self_approval_allowed(current_user))
     except ValueError as exc:
         flash(f'Could not approve template: {exc}', 'danger')
         return redirect(_safe_next(url_for('templates.index')))
@@ -477,7 +478,9 @@ def approve(template_id: int):
     log_action('template.approve', target=f'{row.kind}/{row.name}',
                detail=f'version {row.version} validated for '
                       f'{",".join(sorted(verdicts)) or "no build"}'
-                      + (f'; does NOT fit {",".join(bad)}' if bad else ''))
+                      + (f'; does NOT fit {",".join(bad)}' if bad else '')
+                      + ('; self-approved by its author' if
+                         (row.author or '').strip() == current_user.username else ''))
     flash(f'Approved "{row.name}" v{row.version} — validated for '
           f'{", ".join(sorted(verdicts)) or "no known build"}.', 'success')
     if bad:

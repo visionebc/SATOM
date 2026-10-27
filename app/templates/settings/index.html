@@ -108,6 +108,15 @@
                   <div class="form-text">{{ _('Which severities are written to the application log') }}</div>
                 </div>
 
+                <div class="col-12" id="general-self-approval">
+                  <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" role="switch" name="admin_self_approval" value="1"
+                           id="adminSelfApproval" {{ 'checked' if settings.admin_self_approval else '' }}>
+                    <label class="form-check-label fw-form-label mb-0" for="adminSelfApproval">{{ _('Administrators may approve their own changes') }}</label>
+                  </div>
+                  <div class="form-text">{{ _('Off (default): a template or system profile must be approved by someone other than its author (four-eyes). On: an administrator may approve what they wrote; the approval history records it as a self-approval. Non-administrators and API tokens always need a second person.') }}</div>
+                </div>
+
               </div>
 
               <button type="submit" class="btn btn-fw-primary">

@@ -31,6 +31,7 @@ K_ALLOWED_USERS_LEGACY = "access.allowed_users"     # REMOVED gate; see below
 K_TIMEZONE = "general.timezone"                     # IANA tz name, e.g. Europe/Zurich
 K_LOG_FORMAT = "general.log_format"                 # plain | detailed | json
 K_ENV_MODE = "general.env_mode"                     # production | development
+K_SELF_APPROVAL = "general.admin_self_approval"     # "1" / "0" (SA-0008)
 
 LOG_LEVELS_ALL = ["DEBUG", "INFO", "WARNING", "ERROR"]
 LOG_LEVELS_DEFAULT = ["INFO", "WARNING", "ERROR"]
@@ -66,6 +67,8 @@ DEFAULTS = {
     # "detailed" is the format the log file has always been written in.
     K_LOG_FORMAT: "detailed",
     K_ENV_MODE: "development",
+    # Four-eyes by default: an author may not approve their own template.
+    K_SELF_APPROVAL: "0",
 }
 
 
@@ -81,6 +84,14 @@ def env_mode() -> str:
 def save_env_mode(mode: str) -> None:
     mode = (mode or "").strip().lower()
     set_str(K_ENV_MODE, mode if mode in ENV_MODES else "development")
+
+
+def admin_self_approval() -> bool:
+    """Settings › General › *Administrators may approve their own changes*
+    (SA-0008). Off by default: the four-eyes rule of
+    ``templates.approve_template`` holds unless an administrator turns it off
+    here. Replicated like every app setting."""
+    return (get_str(K_SELF_APPROVAL) or "0") == "1"
 
 
 # ---- low-level ------------------------------------------------------------
@@ -189,6 +200,7 @@ def general() -> dict[str, Any]:
         "timezone": _valid_tz(get_str(K_TIMEZONE)),
         "log_format": (get_str(K_LOG_FORMAT) or "detailed") if (get_str(K_LOG_FORMAT) or "detailed") in LOG_FORMATS else "detailed",
         "env_mode": env_mode(),
+        "admin_self_approval": admin_self_approval(),
     }
 
 
@@ -302,10 +314,13 @@ def normalise_default_kind(value: Any) -> str:
 def save_general(app_name: str, default_kind: str, session_timeout: Any,
                  poll_interval: Any = None, show_raw_config: bool | None = None,
                  log_levels: list[str] | None = None, timezone: str = "",
-                 log_format: str = "detailed", env_mode: str = "") -> None:
+                 log_format: str = "detailed", env_mode: str = "",
+                 admin_self_approval: bool | None = None) -> None:
     """Persist the General tab. ``session_timeout`` is enforced as the idle
     session lock (app/auth/session_lock.py); log levels/format are applied to
     the application log (app/errors.py:apply_log_settings).
+    ``admin_self_approval`` is written only when given (a caller that does not
+    know the switch leaves it as it is).
 
     ``poll_interval`` and ``show_raw_config`` are retired -- nothing ever read
     them -- and are no longer on the form. They are only written when a caller
@@ -322,6 +337,8 @@ def save_general(app_name: str, default_kind: str, session_timeout: Any,
     set_str(K_LOG_FORMAT, log_format if log_format in LOG_FORMATS else "detailed")
     if env_mode:
         save_env_mode(env_mode)
+    if admin_self_approval is not None:
+        set_str(K_SELF_APPROVAL, "1" if admin_self_approval else "0")
 
 
 # ---- Naming ---------------------------------------------------------------

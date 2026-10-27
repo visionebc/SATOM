@@ -153,7 +153,7 @@ def _slug(text: str) -> str:
     if not s[0].isalpha():
         s = "d_" + s
     if len(s) > 60:
-        s = s[:51].rstrip("_") + "_" + hashlib.sha1(text.encode()).hexdigest()[:8]
+        s = s[:51].rstrip("_") + "_" + hashlib.sha1(text.encode(), usedforsecurity=False).hexdigest()[:8]
     return s
 
 

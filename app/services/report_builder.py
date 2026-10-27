@@ -345,9 +345,13 @@ def sql_ident(name: str) -> str:
     share their first 63: cut, they became the same alias and the query
     failed with ``DuplicateAlias``. A longer name becomes its first 50
     characters plus a hash -- deterministic, so every reference agrees."""
-    if len(name.encode()) <= _PG_MAX_IDENT:
-        return name
-    return name[:50] + "_" + hashlib.sha1(name.encode()).hexdigest()[:12]
+    if len(name.encode()) > _PG_MAX_IDENT:
+        # an identifier shortener, not a security use
+        name = name[:50] + "_" + hashlib.sha1(name.encode(), usedforsecurity=False).hexdigest()[:12]
+    # Every caller writes the result between double quotes: a quote inside a
+    # name (a device field name is the device's string) must be doubled, or
+    # it ends the identifier early.
+    return name.replace('"', '""')
 
 
 def _quote_ident(table: str, col: str) -> str:

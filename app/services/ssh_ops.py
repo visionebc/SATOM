@@ -293,6 +293,24 @@ class FortiWebReadonlySSH:
 
     # -- lifecycle --------------------------------------------------------
     def connect(self) -> "FortiWebReadonlySSH":
+        # One visible step inside a device job (job_progress): login, banner
+        # and pager take ~3.5 s per session and used to be a silent gap
+        # before the first command's step.
+        from . import job_progress
+        sink = job_progress.current()
+        if sink is None:
+            return self._connect()
+        sink.before_call(f"ssh://{self.appliance.host}:{int(self.appliance.ssh_port or 22)}")
+        started = time.monotonic()
+        try:
+            out = self._connect()
+        except Exception as exc:
+            sink.after_call("SSH", "connect", None, started, error=exc)
+            raise
+        sink.after_call("SSH", "connect", "ok", started)
+        return out
+
+    def _connect(self) -> "FortiWebReadonlySSH":
         import paramiko  # lazy: keeps the import cost off non-SSH paths
 
         known = _data_dir() / "known_hosts"

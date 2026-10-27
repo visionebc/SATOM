@@ -28,6 +28,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   badge. Measured: Discovery itself made 0 device calls in all five device
   ADOMs before and after.
 
+### Fixed
+- **A FortiAuthenticator sync job now shows everything it does to the box.**
+  The GUI half of the sweep (login, every page read, logout) and each SSH
+  login were not reported to the job, so the dock sat on the last REST call
+  for ~15 s on fac01 while the device was still being read. Every GUI
+  request and every SSH login is now a step, with its status and time, like
+  the REST calls and SSH commands. No secret reaches a step.
+- **The FortiAuthenticator GUI reader honours the fleet trust store.** With
+  *Verify TLS* on, it validated against the public roots only, so a
+  company-signed FortiAuthenticator passed the REST half of the sweep and
+  failed the GUI half with a TLS error. It now uses the same rule as every
+  other device client.
+
 ## [4.5.0] - 2026-10-26
 
 **Plugin Studio apps that act on their own, against the real device API.** An

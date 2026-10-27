@@ -324,30 +324,62 @@ class FacGuiReader:
         return False
 
     def login(self) -> None:
-        self._c = httpx.Client(verify=self._verify, timeout=self.timeout,
+        self._c = httpx.Client(verify=self._verify_target(), timeout=self.timeout,
                                follow_redirects=False)
         url = self.base + "/login/?next=/"
-        r = self._c.get(url)
-        self.requests += 1
+        r = self._send("GET", url)
         m = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', r.text or "")
         data = {"username": self._user, "password": self._secret, "next": "/"}
         if m:
             data["csrfmiddlewaretoken"] = m.group(1)
-        r = self._c.post(url, data=data, headers={"Referer": url})
-        self.requests += 1
+        r = self._send("POST", url, data=data, headers={"Referer": url})
         loc = r.headers.get("location") or ""
         if r.status_code not in (301, 302) or "/login" in loc:
             self.close(logout=False)
             raise FacGuiError("the GUI refused the login of %r (HTTP %s)"
                               % (self._user, r.status_code))
 
+    def _verify_target(self):
+        """Same rule as ``clients.base.BaseClient``: ``verify_ssl`` on means
+        validate against the fleet trust store (public roots + imported CAs),
+        never the public roots alone -- a company-signed FortiAuthenticator
+        passed its REST half and failed this GUI half with a TLS error."""
+        if not self._verify:
+            return False
+        try:
+            from ..services import trust_store
+            return trust_store.verify_param()
+        except Exception:  # noqa: BLE001 — never falls back to False
+            return True
+
+    def _send(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """Every GUI request, login and logout included, is one visible step
+        of the device job it runs in (``services.job_progress``), like the
+        REST and SSH calls of the same sweep. Until 2026-10-27 this reader
+        talked to the box unseen: ~12 s of a fac01 sync left no step."""
+        from ..services import job_progress
+        sink = job_progress.current()
+        if sink is not None:
+            sink.before_call(self.base)
+        label = "GUI " + url[len(self.base):]
+        started = time.monotonic()
+        try:
+            r = self._c.request(method, url, **kwargs)
+        except Exception as exc:
+            if sink is not None:
+                sink.after_call(method, label, None, started, error=exc)
+            raise
+        self.requests += 1
+        if sink is not None:
+            sink.after_call(method, label, r.status_code, started)
+        return r
+
     def close(self, logout: bool = True) -> None:
         if self._c is None:
             return
         try:
             if logout:
-                self._c.get(self.base + "/logout/")
-                self.requests += 1
+                self._send("GET", self.base + "/logout/")
         except Exception:  # noqa: BLE001 — the session expires on its own
             pass
         finally:
@@ -360,8 +392,7 @@ class FacGuiReader:
             raise FacGuiError("refused to GET %s: %s" % (path, why))
         if self._c is None:
             raise FacGuiError("not logged in")
-        r = self._c.get(self.base + path)
-        self.requests += 1
+        r = self._send("GET", self.base + path)
         if r.status_code in (301, 302) and "/login" in (r.headers.get("location") or ""):
             raise FacGuiError("the session expired")
         if r.status_code != 200:

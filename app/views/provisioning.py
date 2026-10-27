@@ -22,7 +22,7 @@ from flask import (Blueprint, abort, flash, redirect, render_template, request,
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
-from ..models import Appliance, Permission, Template, UserSetting
+from ..models import Appliance, Permission, Template, UserSetting, db
 from ..models import visible_appliances, visible_appliance_or_404
 from ..services import provisioning as prov
 from ..services.audit import log_action
@@ -520,13 +520,18 @@ def baseline_detail(baseline_id: int):
     devices = B.matching_devices(row, visible_appliances())
     assigned = B.assigned_templates(row)
     available = B.available_templates_for_combo(row)
+    # Every visible device of the baseline's product: the picker for an
+    # apply to chosen devices, in scope or not.
+    candidates = [a for a in visible_appliances().order_by(Appliance.name).all()
+                  if B.same_product(row, a)]
     return render_template('provisioning/baseline_detail.html',
                            baseline=row,
                            assigned=assigned,
                            available=available,
                            assigned_groups=B.group_by_section(assigned),
                            available_groups=B.group_by_section(available),
-                           devices=devices)
+                           devices=devices, candidates=candidates,
+                           in_scope={a.id for a in devices})
 
 
 @bp.route('/baselines/<int:baseline_id>/assign', methods=['POST'])
@@ -631,21 +636,29 @@ def baseline_delete(baseline_id: int):
     return redirect(url_for('provisioning.baselines'))
 
 
-@bp.route('/baselines/<int:baseline_id>/apply', methods=['POST'])
-@login_required
-@require_permission(Permission.CONFIG_WRITE)
-def baseline_apply(baseline_id: int):
-    """Two-phase apply of a whole baseline to its scope-matched devices.
+def _int_list(values) -> list[int]:
+    out = []
+    for value in values:
+        try:
+            out.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return out
 
-    First POST (no ``confirm``) -> dry-run preview over the matching devices.
-    Second POST (``confirm=1``) -> canary-gated live write of every composing
-    template, device by device."""
-    row = B.get_baseline(baseline_id)
-    if row is None:
-        abort(404)
-    devices = B.matching_devices(row, visible_appliances())
+
+def _rollout(*, name: str, composing: list, devices: list, heading: str,
+             scope_text: str, form_action: str, hidden: dict, back_url: str,
+             meta: dict, warnings=(), on_done=None, after_start=None):
+    """Two-phase rollout of ``composing`` templates to ``devices`` — the one
+    path every baseline apply takes (a combo's scope, devices picked by hand,
+    or one device's full baseline).
+
+    First POST (no ``confirm``) -> dry-run preview. Second POST
+    (``confirm=1``) -> the same guards as ever (unset variables, firmware
+    check) and a canary-gated background job. ``hidden`` travels with the
+    confirm form so the second POST targets exactly what was previewed."""
     device_ids = [a.id for a in devices]
-    parts = B.baseline_push_parts(row)
+    parts = B.template_push_parts(composing)
     items = [it for _t, its in parts for it in its]
     confirm = request.form.get('confirm') == '1'
     # each composing template renders its {{ variables }} from its own binding
@@ -653,13 +666,12 @@ def baseline_apply(baseline_id: int):
     missing_why = tb.missing_text(missing_vars, {a.id: a.name for a in devices})
 
     if not device_ids:
-        flash(f'Baseline "{row.name}" matches no devices for its scope.', 'warning')
-        return redirect(url_for('provisioning.baselines'))
+        flash(f'Baseline "{name}" matches no devices for its scope.', 'warning')
+        return redirect(back_url)
     if not items:
-        flash(f'Baseline "{row.name}" has no composing templates.', 'warning')
-        return redirect(url_for('provisioning.baselines'))
+        flash(f'Baseline "{name}" has no composing templates.', 'warning')
+        return redirect(back_url)
 
-    composing = B.assigned_templates(row)
     if not confirm:
         compat = [tc.for_appliances(t, devices, require_validated=True)
                   for t in composing]
@@ -668,40 +680,44 @@ def baseline_apply(baseline_id: int):
         if missing_vars:
             flash(f'The live rollout will be refused: {missing_why}. Set the values '
                   'on the device bindings first.', 'danger')
-        log_action('baseline.apply.preview', target=row.name,
+        log_action('baseline.apply.preview', target=name,
                    detail=f'devices={device_ids} items={len(items)} '
                           f'compat_blocked={any(c["blocked"] for c in compat)}')
         return render_template('provisioning/baseline_apply.html',
-                               phase='preview', baseline=row, devices=devices,
+                               phase='preview', name=name, heading=heading,
+                               scope_text=scope_text, devices=devices,
+                               composing=composing, form_action=form_action,
+                               hidden=hidden, back_url=back_url,
+                               warnings=list(warnings),
                                preview=preview, result=None, item_count=len(items),
                                compat_reports=compat,
                                can_override=current_user.can('operations.template_approve'))
 
     if missing_vars:
-        log_action('baseline.apply.refused', target=row.name,
+        log_action('baseline.apply.refused', target=name,
                    detail=('variables unset: ' + missing_why)[:1500])
-        flash(f'Baseline rollout "{row.name}" refused — {missing_why}. Set the '
+        flash(f'Baseline rollout "{name}" refused — {missing_why}. Set the '
               'values on the device bindings, then apply.', 'danger')
-        return redirect(url_for('provisioning.baselines'))
+        return redirect(back_url)
     # A baseline is a fleet rollout of approved templates: every composing
-    # template must fit every matching device's build (or be overridden).
+    # template must fit every target device's build (or be overridden).
     refused = []
     skips = []
     for t in composing:
         allowed, compat = tc.enforce(
             t, devices, user=current_user,
             override_reason=request.form.get('override_reason', ''),
-            require_validated=True, action=f'baseline.apply:{row.name}')
+            require_validated=True, action=f'baseline.apply:{name}')
         skips.append(compat.get('skips'))
         if not allowed:
             refused.extend(compat['blocks'])
     if refused:
-        log_action('baseline.apply.refused', target=row.name,
+        log_action('baseline.apply.refused', target=name,
                    detail='firmware check: ' + ' | '.join(refused)[:1500])
         flash('Baseline rollout refused by the firmware compatibility check: '
               + '; '.join(refused[:4]) + (' (+%d more)' % (len(refused) - 4)
                                           if len(refused) > 4 else ''), 'danger')
-        return redirect(url_for('provisioning.baselines'))
+        return redirect(back_url)
 
     # Confirmed live apply — background job (same rationale as templates.apply:
     # a fleet rollout must not run inside an HTTP request). Progress + result
@@ -710,17 +726,146 @@ def baseline_apply(baseline_id: int):
     from ..services.bulk import start_apply_job
     job = start_apply_job(
         current_app._get_current_object(),
-        title=f'Apply baseline "{row.name}" to {len(devices)} device(s)',
+        title=f'Apply baseline "{name}" to {len(devices)} device(s)',
         items=items, device_ids=device_ids,
         by=getattr(current_user, 'username', '') or '',
-        meta={'baseline_id': row.id, 'name': row.name},
-        audit_action='baseline.apply', audit_target=row.name,
-        skips=tc.merge_skips(skips), items_by_device=items_by_device or None)
-    log_action('baseline.apply.start', target=row.name,
+        meta=meta, audit_action='baseline.apply', audit_target=name,
+        skips=tc.merge_skips(skips), items_by_device=items_by_device or None,
+        on_done=on_done)
+    if after_start is not None:
+        after_start(job)
+    log_action('baseline.apply.start', target=name,
                detail=f'devices={device_ids} items={len(items)} job={job["id"]}')
-    flash(f'Baseline rollout "{row.name}" started for {len(devices)} device(s) '
+    flash(f'Baseline rollout "{name}" started for {len(devices)} device(s) '
           '— progress appears in the job dock (bottom right).', 'info')
-    return redirect(url_for('provisioning.baselines'))
+    return redirect(back_url)
+
+
+@bp.route('/baselines/<int:baseline_id>/apply', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def baseline_apply(baseline_id: int):
+    """Two-phase apply of a whole baseline.
+
+    ``mode=scope`` (default): every visible device its zone / line /
+    department matches. ``mode=selected`` + ``device_ids``: the devices the
+    operator picked, classified into the combo or not — but never a device
+    of another product, and never one this session cannot see."""
+    row = B.get_baseline(baseline_id)
+    if row is None:
+        abort(404)
+    detail_url = url_for('provisioning.baseline_detail', baseline_id=row.id)
+    warnings = []
+    if request.form.get('mode') == 'selected':
+        ids = _int_list(request.form.getlist('device_ids'))
+        if not ids:
+            flash('Select at least one device.', 'warning')
+            return redirect(detail_url)
+        devices = (visible_appliances().filter(Appliance.id.in_(ids))
+                   .order_by(Appliance.name).all())
+        wrong = [a.name for a in devices if not B.same_product(row, a)]
+        if wrong:
+            flash(f'Baseline "{row.name}" is a {row.product or "fortiweb"} baseline; '
+                  f'refused for {", ".join(wrong)}.', 'danger')
+            return redirect(detail_url)
+        outside = [a.name for a in devices if not B.baseline_covers(row, a)]
+        if outside:
+            warnings.append('Outside this combo\'s zone / line / department: '
+                            + ', '.join(outside) + '. Their classification is '
+                            'not changed by this apply.')
+        hidden = {'mode': 'selected', 'device_ids': [a.id for a in devices]}
+        back_url = detail_url
+    else:
+        devices = B.matching_devices(row, visible_appliances())
+        hidden = {}
+        back_url = url_for('provisioning.baselines')
+    return _rollout(
+        name=row.name, composing=B.assigned_templates(row), devices=devices,
+        heading=f'Apply baseline — {row.name}',
+        scope_text=(f'Scope: zone={row.zone or "any"} · line={row.line or "any"} · '
+                    f'department={row.department or "any"}'),
+        form_action=url_for('provisioning.baseline_apply', baseline_id=row.id),
+        hidden=hidden, back_url=back_url, warnings=warnings,
+        meta={'baseline_id': row.id, 'name': row.name})
+
+
+def _provision_run_for(appliance, run_id):
+    """The Device Provisioning run that onboarded ``appliance``, or None. A
+    run of another ADOM, or of another machine, is never linked."""
+    if not run_id:
+        return None
+    from ..models_provision import ProvisionRun
+    from ..services import product_scope
+    run = db.session.get(ProvisionRun, run_id)
+    if (run is None or run.appliance_id != appliance.id
+            or not product_scope.visible_product(run.product)):
+        return None
+    return run
+
+
+@bp.route('/device/<int:appliance_id>/baseline', methods=['GET', 'POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def device_baseline(appliance_id: int):
+    """Everything a device's baseline holds, applied to that one device.
+
+    GET shows what will be pushed and why (every combo its classification
+    falls into, or the one baseline picked). POST runs the shared two-phase
+    rollout. With ``run_id`` the rollout closes that Device Provisioning
+    run's ``profile_applied`` step when the job finishes."""
+    ap = visible_appliance_or_404(appliance_id)
+    baseline_id = _int_list([request.values.get('baseline_id')])
+    baseline_id = baseline_id[0] if baseline_id else None
+    run_ids = _int_list([request.values.get('run_id')])
+    run = _provision_run_for(ap, run_ids[0] if run_ids else None)
+    res = B.device_templates(ap, baseline_id)
+    page_url = url_for('provisioning.device_baseline', appliance_id=ap.id,
+                       baseline_id=baseline_id or None,
+                       run_id=run.id if run else None)
+
+    if request.method == 'GET':
+        choices = [b for b in B.list_baselines() if B.same_product(b, ap)]
+        return render_template('provisioning/device_baseline.html',
+                               appliance=ap, res=res, run=run,
+                               baseline_id=baseline_id, choices=choices,
+                               groups=B.group_by_section(res['templates']))
+
+    if res['error']:
+        flash(res['error'], 'danger')
+        return redirect(page_url)
+    if not res['templates']:
+        flash(f'Nothing to apply to {ap.name}: no baseline with approved templates '
+              'covers its zone / line / department. Classify the device or pick '
+              'a baseline.', 'warning')
+        return redirect(page_url)
+    if run is not None and run.status in ('done', 'aborted'):
+        flash(f'Provisioning run "{run.name}" is {run.status}; the rollout is '
+              'not linked to it.', 'warning')
+        run = None
+
+    names = ', '.join(b.name for b in res['baselines'])
+    hidden = {}
+    if baseline_id:
+        hidden['baseline_id'] = baseline_id
+    on_done = after_start = None
+    if run is not None:
+        from ..services import provision_runner as pr
+        hidden['run_id'] = run.id
+        run_id = run.id
+        on_done = lambda job_id, summary: pr.baseline_finished(run_id, job_id, summary)  # noqa: E731
+        after_start = lambda job: pr.baseline_started(run_id, job['id'])  # noqa: E731
+    return _rollout(
+        name=f'{ap.name} baseline', composing=res['templates'], devices=[ap],
+        heading=f'Apply full baseline — {ap.name}',
+        scope_text=(f'From: {names} · device zone={ap.zone or "none"} · '
+                    f'line={ap.line or "none"} · department={ap.department or "none"}'),
+        form_action=url_for('provisioning.device_baseline', appliance_id=ap.id),
+        hidden=hidden, back_url=page_url,
+        warnings=([f'Left out (no longer approved): {", ".join(res["skipped"])}']
+                  if res['skipped'] else []),
+        meta={'appliance_id': ap.id, 'baselines': [b.id for b in res['baselines']],
+              'run_id': run.id if run else None},
+        on_done=on_done, after_start=after_start)
 
 
 @bp.route('/templates/<int:template_id>/combos', methods=['POST'])

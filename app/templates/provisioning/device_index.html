@@ -207,6 +207,38 @@
         </div>
       </div>
 
+      <div class="col-12"><hr class="my-1">
+        <div class="small text-muted">{{ _('Baseline: the machine is registered with this classification, and at the profile_applied step SATOM shows every template of every combo it falls into. Nothing is written until you review the dry-run and confirm.') }}</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Zone') }}</label>
+        <select class="form-select form-select-sm" name="zone">
+          <option value="">{{ _('(none)') }}</option>
+          {% for v in (classification.zones or []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Line') }}</label>
+        <select class="form-select form-select-sm" name="line">
+          <option value="">{{ _('(none)') }}</option>
+          {% for v in (classification.lines or []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Department') }}</label>
+        <select class="form-select form-select-sm" name="department">
+          <option value="">{{ _('(none)') }}</option>
+          {% for v in (classification.departments or []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Baseline') }}</label>
+        <select class="form-select form-select-sm" name="baseline_id">
+          <option value="">{{ _('From the classification') }}</option>
+          {% for b in baselines %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+        </select>
+      </div>
+
       <div class="col-12 text-end">
         <button type="button" class="btn btn-sm btn-outline-secondary" id="dp-cancel">{{ _('Cancel') }}</button>
         <button type="submit" class="btn btn-sm btn-fw-primary">{{ _('Create run') }}</button>

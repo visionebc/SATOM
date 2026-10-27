@@ -378,6 +378,13 @@
             </div>
             <div class="col-12">
               <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="apply_baseline" id="add-apply-baseline" value="1">
+                <label class="form-check-label" for="add-apply-baseline"><i class="bi bi-layers me-1"></i>{{ _('Then apply its full baseline') }}
+                  <span class="text-muted">{{ _('— every combo its zone / line / department falls into; you see the dry-run and confirm before anything is written') }}</span></label>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="verify_ssl" id="verify_ssl" checked>
                 <label class="form-check-label" for="verify_ssl">
                   {{ _('Verify SSL certificate') }}

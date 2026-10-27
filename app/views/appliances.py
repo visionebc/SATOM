@@ -331,6 +331,10 @@ def create():
           + (' Monitoring warning: ' + '; '.join(prov['errors'])
              if prov.get('errors') else ''),
           'warning' if prov.get('errors') else 'success')
+    if request.form.get('apply_baseline') in ('1', 'on'):
+        # Shows what the device's classification pulls in; nothing is written
+        # until the operator previews and confirms there.
+        return redirect(url_for('provisioning.device_baseline', appliance_id=appliance.id))
     return redirect(url_for('appliances.detail', id=appliance.id))
 
 

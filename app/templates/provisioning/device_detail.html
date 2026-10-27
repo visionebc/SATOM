@@ -30,6 +30,23 @@
 </div>
 {% endif %}
 
+{% if run.appliance_id and 'profile_applied' in plan and run.status not in ('done', 'aborted')
+      and current_user.can('config_write') %}
+<div class="fw-card mb-3">
+  <div class="fw-card-body d-flex flex-wrap align-items-center gap-2">
+    <div class="small">
+      {{ _('Baseline') }}: {{ _('zone') }} <strong>{{ run.zone or _('none') }}</strong> ·
+      {{ _('line') }} <strong>{{ run.line or _('none') }}</strong> ·
+      {{ _('department') }} <strong>{{ run.department or _('none') }}</strong>
+      {% if run.baseline_job_id %} · {{ _('rollout job') }} <code>{{ run.baseline_job_id }}</code>{% endif %}
+    </div>
+    <a class="btn btn-sm btn-fw-primary ms-auto"
+       href="{{ url_for('provisioning.device_baseline', appliance_id=run.appliance_id, run_id=run.id, baseline_id=run.baseline_id or None) }}">
+      <i class="bi bi-layers me-1"></i>{{ _('Apply baseline…') }}</a>
+  </div>
+</div>
+{% endif %}
+
 <div class="fw-card mb-3">
   <div class="fw-card-header"><span><i class="bi bi-list-ol me-1"></i>{{ _('Pipeline') }}</span></div>
   <div class="fw-card-body">

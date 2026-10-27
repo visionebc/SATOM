@@ -1,38 +1,58 @@
 {% extends "base.html" %}
 {% import "partials/_template_compat.html" as tcx with context %}
-{% block title %}Apply baseline {{ baseline.name }}{% endblock %}
+{% block title %}{{ heading }}{% endblock %}
 {% block content %}
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>
-      Apply baseline — {{ baseline.name }}</h1>
+      {{ heading }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Scope: zone={{ baseline.zone or 'any' }} · line={{ baseline.line or 'any' }} ·
-      department={{ baseline.department or 'any' }} · {{ item_count }} item(s).</p>
+      {{ scope_text }} · {{ composing|length }} template(s) · {{ item_count }} item(s).</p>
   </div>
 </div>
 
-<div class="card mb-3" style="max-width: 1000px;">
-  <div class="card-header">Matching devices ({{ devices|length }})</div>
-  <ul class="list-group list-group-flush">
-    {% for a in devices %}<li class="list-group-item">{{ a.name }}
-      <span class="text-muted small">{{ a.host }}</span></li>{% endfor %}
-  </ul>
+{% for w in warnings %}
+<div class="alert alert-warning py-2" style="max-width:1000px;font-size:13px;"><i class="bi bi-exclamation-triangle me-1"></i>{{ w }}</div>
+{% endfor %}
+
+<div class="row g-3 mb-3" style="max-width: 1000px;">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header">{{ _('Target devices') }} ({{ devices|length }})</div>
+      <ul class="list-group list-group-flush">
+        {% for a in devices %}<li class="list-group-item">{{ a.name }}
+          <span class="text-muted small">{{ a.host }}</span></li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header">{{ _('Templates pushed, in order') }} ({{ composing|length }})</div>
+      <ul class="list-group list-group-flush">
+        {% for t in composing %}<li class="list-group-item">{{ t.name }}
+          <span class="text-muted small">{{ t.kind }} · v{{ t.version }}</span></li>{% endfor %}
+      </ul>
+    </div>
+  </div>
 </div>
 
 {% if phase == 'preview' %}
   <div class="alert alert-secondary" style="max-width:1000px;"><pre class="mb-0" style="max-height:340px;overflow:auto;">{{ preview|tojson(indent=2) }}</pre></div>
-  <form method="post" action="{{ url_for('provisioning.baseline_apply', baseline_id=baseline.id) }}"
-        data-fw-confirm-form="Write baseline {{ baseline.name }} to {{ devices|length }} device(s)? Canary first.">
+  <form method="post" action="{{ form_action }}"
+        data-fw-confirm-form="Write {{ name }} to {{ devices|length }} device(s)? Canary first.">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="confirm" value="1">
+    {% for k, v in hidden.items() %}
+      {% if v is iterable and v is not string %}{% for one in v %}<input type="hidden" name="{{ k }}" value="{{ one }}">{% endfor %}
+      {% else %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}
+    {% endfor %}
     {% if compat_reports %}<div style="max-width:1000px;">{{ tcx.compat_panel(compat_reports, can_override) }}</div>{% endif %}
     <button class="btn btn-warning" type="submit">
       <i class="bi bi-cloud-upload"></i> {{ _('Confirm live apply (canary-gated)') }}</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('provisioning.baselines') }}">{{ _('Cancel') }}</a>
+    <a class="btn btn-outline-secondary" href="{{ back_url }}">{{ _('Cancel') }}</a>
   </form>
 {% else %}
   <div class="alert alert-info" style="max-width:1000px;"><pre class="mb-0" style="max-height:340px;overflow:auto;">{{ result|tojson(indent=2) }}</pre></div>
-  <a class="btn btn-fw-primary" href="{{ url_for('provisioning.baselines') }}">{{ _('Back to baselines') }}</a>
+  <a class="btn btn-fw-primary" href="{{ back_url }}">{{ _('Back') }}</a>
 {% endif %}
 {% endblock %}

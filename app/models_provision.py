@@ -207,6 +207,16 @@ class ProvisionRun(db.Model):
 
     profile_id = db.Column(db.Integer)   # SystemProfile handed to /provisioning
 
+    #: Classification the onboarded Appliance gets. It is what decides which
+    #: baseline combos the machine falls into at ``profile_applied``.
+    zone = db.Column(db.String(128), default="")
+    line = db.Column(db.String(128), default="")
+    department = db.Column(db.String(128), default="")
+    #: One baseline picked instead of the classification's combos (optional).
+    baseline_id = db.Column(db.Integer)
+    #: The job that pushed the baseline, once the operator confirmed it.
+    baseline_job_id = db.Column(db.String(64), default="")
+
     step = db.Column(db.String(32), nullable=False, default="draft")
     status = db.Column(db.String(16), nullable=False, default="draft")
     vm_ref = db.Column(db.Text, default="")     # JSON VmRef — the undo handle
@@ -269,6 +279,10 @@ class ProvisionRun(db.Model):
             "node": self.node or "", "datastore": self.datastore or "",
             "network": self.network or "", "appliance_id": self.appliance_id,
             "target_id": self.target_id, "firmware_id": self.firmware_id,
+            "zone": self.zone or "", "line": self.line or "",
+            "department": self.department or "",
+            "baseline_id": self.baseline_id,
+            "baseline_job_id": self.baseline_job_id or "",
             "created_by": self.created_by or "",
             "created_at": self.created_at.isoformat() if self.created_at else "",
             "updated_at": self.updated_at.isoformat() if self.updated_at else "",

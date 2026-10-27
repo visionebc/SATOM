@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}{{ appliance.name }} — {{ _('Baseline') }}{% endblock %}
+{% block content %}
+<div class="fw-breadcrumb mb-1">
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}">{{ appliance.name }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('provisioning.baselines') }}">{{ _('Baselines') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Full baseline') }}</span>
+</div>
+
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-layers me-2 text-accent"></i>{{ _('Full baseline') }} — {{ appliance.name }}</h1>
+    <p class="mb-0" style="font-size:13px;">
+      <span class="fw-badge fw-badge-primary me-1">{{ _('Zone') }}: {{ appliance.zone or _('none') }}</span>
+      <span class="fw-badge fw-badge-secondary me-1">{{ _('Line') }}: {{ appliance.line or _('none') }}</span>
+      <span class="fw-badge fw-badge-secondary me-1">{{ _('Dept') }}: {{ appliance.department or _('none') }}</span>
+      <span class="text-muted ms-2">{{ appliance.kind }} · {{ appliance.host }}</span>
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-secondary" href="{{ url_for('appliances.detail', id=appliance.id) }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
+  </div>
+</div>
+
+{% if run %}
+<div class="alert alert-info py-2" style="font-size:13px;">
+  <i class="bi bi-hdd-network me-1"></i>{{ _('Linked to Device Provisioning run') }}
+  <a href="{{ url_for('device_provision.detail', run_id=run.id) }}">{{ run.name }}</a>:
+  {{ _('when the rollout finishes, the run\'s profile_applied step closes with its result.') }}
+</div>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><i class="bi bi-funnel me-2"></i>{{ _('Which baseline') }}</div>
+  <div class="fw-card-body">
+    <form method="get" class="d-flex flex-wrap gap-2 align-items-end">
+      {% if run %}<input type="hidden" name="run_id" value="{{ run.id }}">{% endif %}
+      <div>
+        <select class="form-select form-select-sm" name="baseline_id" style="min-width:320px;">
+          <option value="">{{ _('Every combo its zone / line / department falls into') }}</option>
+          {% for b in choices %}
+          <option value="{{ b.id }}" {% if baseline_id == b.id %}selected{% endif %}>{{ b.name }} ({{ b.items|length }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-sm btn-fw-secondary">{{ _('Show') }}</button>
+    </form>
+  </div>
+</div>
+
+{% if res.error %}
+<div class="alert alert-danger py-2" style="font-size:13px;">{{ res.error }}</div>
+{% else %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><i class="bi bi-grid-3x3-gap me-2"></i>{{ _('Baselines used') }}
+        <span class="fw-badge fw-badge-secondary ms-1">{{ res.baselines|length }}</span></div>
+      <div class="fw-card-body">
+        {% if not res.baselines %}
+          <p class="text-muted mb-0" style="font-size:13px;">{{ _('No baseline covers this device\'s classification. Set its zone / line / department on the device, or pick a baseline above.') }}</p>
+        {% else %}
+          <p class="text-muted" style="font-size:12px;">{{ _('Least specific first: where two combos carry the same template, the more specific one\'s version is pushed.') }}</p>
+          {% for b in res.baselines %}
+          <div class="mb-1"><a href="{{ url_for('provisioning.baseline_detail', baseline_id=b.id) }}">{{ b.name }}</a>
+            <span class="text-muted small">({{ b.items|length }})</span></div>
+          {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><i class="bi bi-check2-square me-2"></i>{{ _('Templates to push') }}
+        <span class="fw-badge fw-badge-primary ms-1">{{ res.templates|length }}</span></div>
+      <div class="fw-card-body">
+        {% if res.skipped %}
+        <div class="alert alert-warning py-1" style="font-size:12px;">{{ _('Left out (no longer approved):') }} {{ res.skipped|join(', ') }}</div>
+        {% endif %}
+        {% if not res.templates %}
+          <p class="text-muted mb-0" style="font-size:13px;">{{ _('Nothing to push.') }}</p>
+        {% else %}
+          {% for key, label, items in groups %}
+          <h3 style="font-size:13px; margin:4px 0 6px;"><i class="bi bi-folder2-open me-2 text-accent"></i>{{ label }}</h3>
+          <table class="fw-table mb-2">
+            <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Ver') }}</th><th>{{ _('From') }}</th></tr></thead>
+            <tbody>
+            {% for t in items %}
+              <tr><td class="fw-semibold">{{ t.name }}</td><td style="font-size:12px;">{{ t.kind }}</td>
+                <td>v{{ t.version }}</td><td style="font-size:12px;">{{ res.source.get(t.id, '') }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% endfor %}
+          <form method="post" action="{{ url_for('provisioning.device_baseline', appliance_id=appliance.id) }}" class="mt-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if baseline_id %}<input type="hidden" name="baseline_id" value="{{ baseline_id }}">{% endif %}
+            {% if run %}<input type="hidden" name="run_id" value="{{ run.id }}">{% endif %}
+            <button class="btn btn-fw-primary"><i class="bi bi-eye me-1"></i>{{ _('Preview the full baseline (dry-run)…') }}</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

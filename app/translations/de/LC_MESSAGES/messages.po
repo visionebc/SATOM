@@ -27905,3 +27905,111 @@ msgstr "FortiAnalyzer wird nicht angeboten: Es spricht JSON-RPC, bei dem jeder A
 #, python-format
 msgid "%(api)s %(v)s is already in the API Catalog: %(n)d endpoint(s) added from SATOM's API library (none is ever removed)."
 msgstr "%(api)s %(v)s ist bereits im API Catalog: %(n)d Endpunkt(e) aus der API-Bibliothek von SATOM hinzugefügt (keiner wird je entfernt)."
+
+msgid "Administrators may approve their own changes"
+msgstr "Administratoren dürfen ihre eigenen Änderungen genehmigen"
+
+msgid "Apply baseline…"
+msgstr "Baseline anwenden…"
+
+msgid "Apply full baseline…"
+msgstr "Vollständige Baseline anwenden…"
+
+msgid "Apply to chosen devices"
+msgstr "Auf ausgewählte Geräte anwenden"
+
+msgid "Baseline"
+msgstr "Baseline"
+
+msgid "Baseline: the machine is registered with this classification, and at the profile_applied step SATOM shows every template of every combo it falls into. Nothing is written until you review the dry-run and confirm."
+msgstr "Baseline: Die Maschine wird mit dieser Klassifizierung registriert, und im Schritt profile_applied zeigt SATOM jedes Template jeder Kombination, in die sie fällt. Nichts wird geschrieben, bevor Sie den Probelauf geprüft und bestätigt haben."
+
+msgid "Baselines used"
+msgstr "Verwendete Baselines"
+
+msgid "Every combo its zone / line / department falls into"
+msgstr "Jede Kombination, in die Zone / Linie / Abteilung fallen"
+
+msgid "Every template of every combo this device is classified into — dry-run first"
+msgstr "Jedes Template jeder Kombination, in die dieses Gerät eingestuft ist — zuerst der Probelauf"
+
+msgid "From the classification"
+msgstr "Aus der Klassifizierung"
+
+msgid "Full baseline"
+msgstr "Vollständige Baseline"
+
+msgid "Least specific first: where two combos carry the same template, the more specific one's version is pushed."
+msgstr "Am wenigsten spezifisch zuerst: Enthalten zwei Kombinationen dasselbe Template, wird die Version der spezifischeren übertragen."
+
+msgid "Left out (no longer approved):"
+msgstr "Ausgelassen (nicht mehr genehmigt):"
+
+msgid "Linked to Device Provisioning run"
+msgstr "Verknüpft mit dem Device-Provisioning-Lauf"
+
+msgid "No baseline covers this device's classification. Set its zone / line / department on the device, or pick a baseline above."
+msgstr "Keine Baseline deckt die Klassifizierung dieses Geräts ab. Legen Sie Zone / Linie / Abteilung am Gerät fest oder wählen Sie oben eine Baseline."
+
+msgid "No registered device matches this combo's scope yet. Classify a device into it, or use Apply to chosen devices above."
+msgstr "Noch kein registriertes Gerät entspricht dem Geltungsbereich dieser Kombination. Ordnen Sie ein Gerät zu oder verwenden Sie oben „Auf ausgewählte Geräte anwenden“."
+
+msgid "Nothing to push."
+msgstr "Nichts zu übertragen."
+
+msgid "Off (default): a template or system profile must be approved by someone other than its author (four-eyes). On: an administrator may approve what they wrote; the approval history records it as a self-approval. Non-administrators and API tokens always need a second person."
+msgstr "Aus (Standard): Ein Template oder Systemprofil muss von jemand anderem als dem Autor genehmigt werden (Vier-Augen-Prinzip). Ein: Ein Administrator darf genehmigen, was er geschrieben hat; der Genehmigungsverlauf vermerkt es als Selbstgenehmigung. Nicht-Administratoren und API-Tokens benötigen immer eine zweite Person."
+
+msgid "Preview apply to selected…"
+msgstr "Anwendung auf Auswahl vorab prüfen…"
+
+msgid "Preview the full baseline (dry-run)…"
+msgstr "Vollständige Baseline vorab prüfen (Probelauf)…"
+
+msgid "Read the device now"
+msgstr "Gerät jetzt lesen"
+
+msgid "Runs as a background job. Checks SATOM’s cache first: when it is current, nothing is read from the device; when it is stale, the device is swept (read-only)."
+msgstr "Läuft als Hintergrundauftrag. Prüft zuerst den Cache von SATOM: Ist er aktuell, wird nichts vom Gerät gelesen; ist er veraltet, wird das Gerät abgefragt (nur lesend)."
+
+msgid "Runs as a background job: a read-only sweep of the device now, even when SATOM’s cache is current (for changes made on the device since the last sweep)."
+msgstr "Läuft als Hintergrundauftrag: eine nur lesende Abfrage des Geräts jetzt, auch wenn der Cache von SATOM aktuell ist (für Änderungen am Gerät seit der letzten Abfrage)."
+
+msgid "Source: SATOM’s cache"
+msgstr "Quelle: Cache von SATOM"
+
+msgid "Templates pushed, in order"
+msgstr "Übertragene Templates, in Reihenfolge"
+
+msgid "Templates to push"
+msgstr "Zu übertragende Templates"
+
+msgid "Then apply its full baseline"
+msgstr "Danach die vollständige Baseline anwenden"
+
+msgid "Which baseline"
+msgstr "Welche Baseline"
+
+msgid "any device of this product, classified into this combo or not — dry-run first"
+msgstr "jedes Gerät dieses Produkts, ob in diese Kombination eingestuft oder nicht — zuerst der Probelauf"
+
+msgid "department"
+msgstr "Abteilung"
+
+msgid "in scope"
+msgstr "im Geltungsbereich"
+
+msgid "last sweep"
+msgstr "letzte Abfrage"
+
+msgid "rollout job"
+msgstr "Rollout-Auftrag"
+
+msgid "when the rollout finishes, the run's profile_applied step closes with its result."
+msgstr "wenn der Rollout abgeschlossen ist, wird der Schritt profile_applied des Laufs mit seinem Ergebnis geschlossen."
+
+msgid "zone"
+msgstr "Zone"
+
+msgid "— every combo its zone / line / department falls into; you see the dry-run and confirm before anything is written"
+msgstr "— jede Kombination, in die Zone / Linie / Abteilung fallen; Sie sehen den Probelauf und bestätigen, bevor etwas geschrieben wird"

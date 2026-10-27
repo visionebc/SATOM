@@ -1974,6 +1974,14 @@ def create_app(config_override: object | None = None) -> Flask:
                 # than claiming a backend id nobody recorded.
                 ('ip_backend_id', 'INTEGER'),
                 ('dns_backend_id', 'INTEGER'),
+                # --- baseline at profile_applied (2026-10-27) ---
+                # '' / NULL on older runs is the truth: they were created
+                # without a classification and never pushed a baseline.
+                ('zone', "VARCHAR(128) DEFAULT ''"),
+                ('line', "VARCHAR(128) DEFAULT ''"),
+                ('department', "VARCHAR(128) DEFAULT ''"),
+                ('baseline_id', 'INTEGER'),
+                ('baseline_job_id', "VARCHAR(64) DEFAULT ''"),
             ],
             'templates': [
                 ('exceptions', 'TEXT'),

@@ -127,8 +127,30 @@
     {% for d in devices %}<span class="fw-badge fw-badge-secondary me-1 mb-1 d-inline-block">{{ d.name }}</span>{% endfor %}
   </div>
 </div>
-{% else %}
+{% endif %}
+{% if assigned and candidates %}
+<div class="fw-card mt-3" id="apply-chosen">
+  <div class="fw-card-header"><i class="bi bi-ui-checks me-2"></i>{{ _('Apply to chosen devices') }}
+    <span class="text-muted ms-2" style="font-size:11px; font-weight:400;">{{ _('any device of this product, classified into this combo or not — dry-run first') }}</span></div>
+  <div class="fw-card-body">
+    <form method="post" action="{{ url_for('provisioning.baseline_apply', baseline_id=baseline.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="mode" value="selected">
+      <div class="d-flex flex-wrap gap-3 mb-2">
+        {% for d in candidates %}
+        <label class="form-check-label" style="font-size:13px;">
+          <input class="form-check-input me-1" type="checkbox" name="device_ids" value="{{ d.id }}">{{ d.name }}
+          {% if d.id in in_scope %}<span class="fw-badge fw-badge-success ms-1">{{ _('in scope') }}</span>{% endif %}
+        </label>
+        {% endfor %}
+      </div>
+      <button class="btn btn-fw-secondary btn-sm"><i class="bi bi-eye me-1"></i>{{ _('Preview apply to selected…') }}</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% if not devices %}
 <div class="alert alert-warning mt-3 py-2" style="font-size:13px;">
-  <i class="bi bi-exclamation-triangle me-1"></i>{{ _('No registered device matches this combo\'s scope yet — nothing to apply to until a device is classified into it.') }}</div>
+  <i class="bi bi-exclamation-triangle me-1"></i>{{ _('No registered device matches this combo\'s scope yet. Classify a device into it, or use Apply to chosen devices above.') }}</div>
 {% endif %}
 {% endblock %}

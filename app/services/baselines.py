@@ -313,6 +313,9 @@ def matching_devices(baseline: Baseline, query=None) -> list[Appliance]:
     ``visible_appliances()`` so a baseline never reaches a device the user
     cannot see (another ADOM, maintenance)."""
     q = Appliance.query if query is None else query
+    # One product per baseline: from the Global ADOM a FortiWeb combo with
+    # the same zone as a FortiADC would otherwise push FortiWeb writes to it.
+    q = q.filter(Appliance.kind == (getattr(baseline, "product", "") or "fortiweb"))
     if (baseline.zone or "").strip():
         q = q.filter(Appliance.zone == baseline.zone)
     if (baseline.line or "").strip():
@@ -322,17 +325,14 @@ def matching_devices(baseline: Baseline, query=None) -> list[Appliance]:
     return q.order_by(Appliance.name).all()
 
 
-def baseline_push_parts(baseline: Baseline) -> list:
-    """``[(template, push items)]`` of every composing template, in baseline
-    order (section by section): each template's ``{{ variables }}`` render
-    from ITS bindings (``template_bindings.render_parts_for_devices``)."""
+def template_push_parts(templates) -> list:
+    """``[(template, push items)]`` for the given templates, in order: each
+    template's ``{{ variables }}`` render from ITS bindings
+    (``template_bindings.render_parts_for_devices``)."""
     from .bulk import iter_push_items
     from . import provisioning as prov
     parts: list = []
-    for link in baseline.items:
-        t = db.session.get(Template, link.template_id)
-        if t is None:
-            continue
+    for t in templates:
         if t.kind == Template.KIND_SYSTEM:
             # A system profile body is {"items": [...]}: build its writes the
             # way System Provisioning does, or the combo pushes nothing.
@@ -342,9 +342,101 @@ def baseline_push_parts(baseline: Baseline) -> list:
     return parts
 
 
+def baseline_push_parts(baseline: Baseline) -> list:
+    """``[(template, push items)]`` of every composing template, in baseline
+    order (section by section)."""
+    return template_push_parts(assigned_templates(baseline))
+
+
 def baseline_push_items(baseline: Baseline) -> list:
     """Every composing template's writes flattened, in baseline order."""
     return [it for _t, items in baseline_push_parts(baseline) for it in items]
+
+
+# --------------------------------------------------------------------------- #
+#  Device -> its baseline (every combo its classification falls into)          #
+# --------------------------------------------------------------------------- #
+FACETS = ("zone", "line", "department")
+
+
+def same_product(baseline: Baseline, appliance: Appliance) -> bool:
+    """A baseline composes templates of ONE product; a FortiWeb combo never
+    reaches a FortiADC. Rows predating the column read as FortiWeb."""
+    return ((baseline.product or "fortiweb").lower()
+            == (appliance.kind or "fortiweb").lower())
+
+
+def baseline_covers(baseline: Baseline, appliance: Appliance) -> bool:
+    """True when the device's classification falls inside the baseline scope:
+    every facet the baseline sets must equal the device's ("" = any)."""
+    for f in FACETS:
+        want = (getattr(baseline, f, "") or "").strip()
+        if want and want != (getattr(appliance, f, "") or "").strip():
+            return False
+    return True
+
+
+def _specificity(baseline: Baseline) -> int:
+    return sum(1 for f in FACETS if (getattr(baseline, f, "") or "").strip())
+
+
+def device_baselines(appliance: Appliance) -> list[Baseline]:
+    """Every baseline the device's classification falls into, least specific
+    first (``Any / Any / Dept`` before ``DMZ / Web / Dept``), so the most
+    specific combo is applied last and wins where two set the same thing."""
+    rows = [b for b in list_baselines()
+            if same_product(b, appliance) and baseline_covers(b, appliance)]
+    return sorted(rows, key=lambda b: (_specificity(b), b.name or ""))
+
+
+def device_templates(appliance: Appliance, baseline_id: int | None = None) -> dict:
+    """The full baseline of ONE device, resolved from what is configured.
+
+    Default: the union of every combo the device's zone / line / department
+    falls into (:func:`device_baselines`). ``baseline_id`` narrows it to one
+    baseline the operator picked — it may sit outside the device's
+    classification (that is the point of picking it), but never outside its
+    product.
+
+    One template per (kind, name): when two combos carry the same template,
+    the MORE SPECIFIC combo's version is the one pushed; at equal
+    specificity the newer version wins. Templates that are no longer
+    approved are left out and named in ``skipped``.
+
+    Returns ``{"baselines", "templates", "source", "skipped", "error"}`` —
+    ``source`` maps template id -> the baseline name it came from.
+    """
+    out = {"baselines": [], "templates": [], "source": {}, "skipped": [],
+           "error": ""}
+    if baseline_id:
+        b = get_baseline(int(baseline_id))
+        if b is None:
+            out["error"] = f"Baseline #{baseline_id} does not exist in this ADOM."
+            return out
+        if not same_product(b, appliance):
+            out["error"] = (f'Baseline "{b.name}" is a {b.product or "fortiweb"} '
+                            f'baseline; {appliance.name} is a {appliance.kind}.')
+            return out
+        rows = [b]
+    else:
+        rows = device_baselines(appliance)
+    out["baselines"] = rows
+
+    chosen: dict[tuple[str, str], tuple[int, Template, str]] = {}
+    for b in rows:
+        spec = _specificity(b)
+        for t in assigned_templates(b):
+            if t.status != Template.STATUS_APPROVED:
+                out["skipped"].append(f"{t.name} v{t.version} ({t.status})")
+                continue
+            key = (t.kind or "", t.name or "")
+            prev = chosen.get(key)
+            if (prev is None or spec > prev[0]
+                    or (spec == prev[0] and (t.version or 0) > (prev[1].version or 0))):
+                chosen[key] = (spec, t, b.name)
+    out["templates"] = [t for _s, t, _n in chosen.values()]
+    out["source"] = {t.id: n for _s, t, n in chosen.values()}
+    return out
 
 
 # --------------------------------------------------------------------------- #

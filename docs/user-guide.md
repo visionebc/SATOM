@@ -7593,9 +7593,50 @@ this scope have".
   starts, with the devices and variables named (no override).
 - A baseline that matches no devices, or that has no composing templates, says so
   and does nothing.
+- **Apply to chosen devices** (on a combo's page) applies the combo to the
+  devices you tick instead of its scope — classified into it or not. The
+  preview names the ones outside the combo's zone / line / department; their
+  classification is not changed. A device of another product is refused, and
+  ticking nothing is refused (it never falls back to the scope).
+- Only devices of the baseline's product are ever matched: a FortiWeb combo
+  never reaches a FortiADC with the same zone.
 
 The filter (zone / line / department / name) can be **saved to your account** and
 is restored on your next visit.
+
+#### 28.4.1 A device's full baseline
+
+**Appliances › (device) › Apply full baseline…** opens everything that device
+should carry: every combo its zone / line / department falls into, least
+specific first (*Any / Any / Ops* before *DMZ / Web / Ops*). When two combos
+carry the same template, the **more specific combo's version** is pushed (at
+equal specificity, the newer version). Templates no longer approved are left out
+and named. *Which baseline* lets you pick one baseline instead — outside the
+device's classification if you want, never outside its product.
+
+**Preview the full baseline** runs the same two-phase apply as a combo: a
+dry-run of every template on that one device, then a confirmed, canary-gated
+background job with the variable and firmware checks.
+
+Adding a device: tick **Then apply its full baseline** in the *Add Appliance*
+dialog and SATOM opens this page for the new device after saving it. Nothing is
+written until you preview and confirm.
+
+#### 28.4.2 From Device Provisioning
+
+A Device Provisioning run (§21) can carry the machine's
+**zone / line / department** and, optionally, one **baseline**. The
+registered appliance gets that classification, and the `profile_applied`
+step:
+
+- with a baseline to apply → **pauses** with *baseline ready: N template(s)
+  from …*. The run page shows **Apply baseline…**, which opens the device's
+  full-baseline page linked to the run. Nothing is written by the step itself.
+- once you confirm, the rollout job closes the step: success → `done`;
+  canary abort, stop or failures → `failed` with the reason (open the page again
+  to retry; only the newest rollout counts). **Resume** while the job runs says
+  it is still running.
+- with no baseline covering the machine → the run finishes as before.
 
 ## 29. Template library & the section catalog
 

@@ -8,6 +8,7 @@
     {{ maintenance_toggle(appliance, 'detail', 'labeled') }}
     {% if current_user.can('config_write') %}
     <a href="{{ url_for('appliances.edit', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">{{ _('Edit') }}</a>
+    <a href="{{ url_for('provisioning.device_baseline', appliance_id=appliance.id) }}" class="btn fw-btn-secondary btn-sm" title="{{ _('Every template of every combo this device is classified into — dry-run first') }}"><i class="bi bi-layers me-1"></i>{{ _('Apply full baseline…') }}</a>
     {% endif %}
     <button class="btn fw-btn-primary btn-sm" data-js="test-conn">{{ _('Test Connection') }}</button>
   </div>

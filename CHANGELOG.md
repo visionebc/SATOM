@@ -7,6 +7,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **A device's full baseline, applied to the device you choose** (request:
+  "in System Provisioning there is no way to push complete templates to a
+  machine — do both, and I need to add a machine and apply its whole
+  baseline according to what I have"). Three ways in, one rollout path
+  (dry-run, variable and firmware checks, canary-gated background job):
+  - **Appliances › Apply full baseline…** — every combo the device's zone /
+    line / department falls into, least specific first; the more specific
+    combo's version wins a template both carry. Or pick one baseline.
+  - **Add Appliance › Then apply its full baseline** opens that page for the
+    new device; nothing is written before the preview and confirmation.
+  - **Baselines › (combo) › Apply to chosen devices** — the combo on ticked
+    devices, in its scope or not (named in the preview); another product is
+    refused.
+  - **Device Provisioning** runs carry zone / line / department and an
+    optional baseline; the appliance is registered with that classification
+    and `profile_applied` pauses with the baseline until you confirm it from
+    the run. The rollout job closes the step (`done`, or `failed` with the
+    reason).
 - **Settings › General › Administrators may approve their own changes**
   (SA-0008: "allow or refuse admins approving their own changes, for example
   in templates"). Off by default, so the four-eyes rule stays as it was. On:
@@ -29,6 +47,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   ADOMs before and after.
 
 ### Fixed
+- **A baseline only matches devices of its own product.** From the Global
+  ADOM a FortiWeb combo could match a FortiADC with the same zone and push
+  FortiWeb writes to it.
+- **A semi-mode Device Provisioning run that paused again after Resume** fell
+  back to the first-boot handoff message on the next Resume instead of
+  continuing.
+- Seven SA-0007 / SA-0008 strings (Naming Discovery, self-approval setting)
+  had no Spanish, German, French or Italian translation.
 - **A FortiAuthenticator sync job now shows everything it does to the box.**
   The GUI half of the sweep (login, every page read, logout) and each SSH
   login were not reported to the job, so the dock sat on the last REST call

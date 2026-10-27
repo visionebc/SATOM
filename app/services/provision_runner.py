@@ -359,7 +359,11 @@ def _step_onboarded(run: ProvisionRun) -> StepResult:
         return StepResult(False, "run has no product/ADOM — cannot decide "
                                  "what kind of appliance this is")
     ap = Appliance(name=run.name, host=run.mgmt_ip, kind=kind,
-                   username=run.admin_user or "admin")
+                   username=run.admin_user or "admin",
+                   # The classification decides which baseline combos the
+                   # machine falls into at profile_applied.
+                   zone=(run.zone or None), line=(run.line or None),
+                   department=(run.department or None))
     # Setter encrypts. A factory appliance presents a self-signed certificate,
     # so verification starts off — the same trap that has stalled every new
     # device on this fleet (fadc, fortiweb08, fac01). Import the device CA in
@@ -385,20 +389,91 @@ def _step_cert_installed(run: ProvisionRun) -> StepResult:
 
 
 def _step_profile_applied(run: ProvisionRun) -> StepResult:
-    """Hand over to the CONFIG provisioning module that already exists.
+    """Push the machine's full baseline — after the operator approves it.
 
-    Deliberately a handoff and not a reimplementation: ``/web/provisioning``
-    already does dry-run, canary, snapshot and approval for exactly this, and
-    a second copy of that logic would drift from the reviewed one.
+    The baseline is every combo the run's zone / line / department falls
+    into (or the one baseline picked on the run). The step never writes by
+    itself: it pauses with what will be pushed, the operator reviews the
+    dry-run and confirms on the device's baseline page, and the rollout job
+    closes this step (:func:`baseline_finished`). That page is the shared
+    two-phase path (dry-run, variables, firmware check, canary), not a
+    second copy of it.
     """
-    if not run.profile_id:
-        return StepResult(True, "no system profile selected — configuration "
-                                "left to the operator")
+    from ..models import Appliance
+    if run.baseline_job_id:
+        from . import jobs
+        job = jobs.get_job(run.baseline_job_id) or {}
+        status = job.get("status") or "missing"
+        if status == jobs.SUCCESS:
+            return StepResult(True, f"baseline applied (job {run.baseline_job_id})")
+        if status in (jobs.PENDING, jobs.RUNNING, jobs.PAUSING, jobs.PAUSED,
+                      jobs.CANCELLING):
+            return StepResult(True, f"baseline rollout {run.baseline_job_id} is "
+                                    f"{status} — resume when it finishes", stop=True)
+        return StepResult(False, f"baseline rollout {run.baseline_job_id} ended "
+                                 f"{status}: {job.get('error') or job.get('message') or ''}"
+                                 " — open the baseline page to retry")
     if not run.appliance_id:
         return StepResult(False, "not onboarded yet")
-    return StepResult(
-        True, f"ready for profile #{run.profile_id} — apply it from "
-              "Provisioning with dry-run and approval")
+    ap = db.session.get(Appliance, run.appliance_id)
+    if ap is None:
+        return StepResult(False, f"appliance #{run.appliance_id} no longer exists")
+    from . import baselines
+    res = baselines.device_templates(ap, run.baseline_id)
+    if res["error"]:
+        return StepResult(False, res["error"])
+    if res["templates"]:
+        names = ", ".join(b.name for b in res["baselines"])
+        return StepResult(
+            True, f"baseline ready: {len(res['templates'])} template(s) from "
+                  f"{names} — open Apply baseline on this run, review the "
+                  "dry-run and confirm; nothing is written until you do",
+            stop=True)
+    if run.profile_id:
+        return StepResult(
+            True, f"no baseline covers this machine; ready for profile "
+                  f"#{run.profile_id} — apply it from Provisioning with dry-run "
+                  "and approval")
+    return StepResult(True, "no baseline covers this machine's zone / line / "
+                            "department — configuration left to the operator")
+
+
+def baseline_started(run_id: int, job_id: str) -> None:
+    """The operator confirmed the run's baseline: remember the job, so a
+    Resume reads its outcome instead of offering the push again."""
+    run = db.session.get(ProvisionRun, run_id)
+    if run is None:
+        return
+    run.baseline_job_id = job_id
+    run.add_log("profile_applied", True, f"baseline rollout started (job {job_id})")
+    if run.status in ("paused", "failed", "draft"):
+        run.status = "paused"
+        run.error = (f"baseline rollout {job_id} running — the run closes "
+                     "when it finishes")
+    db.session.commit()
+
+
+def baseline_finished(run_id: int, job_id: str, summary: dict) -> None:
+    """Close ``profile_applied`` with the rollout's outcome (called by the
+    job worker). Every mode that has the step ends ``profile_applied ->
+    done``, so success finishes the run here rather than re-planning it."""
+    run = db.session.get(ProvisionRun, run_id)
+    if run is None or run.baseline_job_id != job_id:
+        return  # a newer rollout took over this run
+    ok = (not summary.get("aborted") and not summary.get("cancelled")
+          and summary.get("ok") == summary.get("total") and summary.get("total"))
+    if ok:
+        run.add_log("profile_applied", True, f"baseline applied (job {job_id})")
+        run.add_log("done", True, "pipeline complete")
+        run.step, run.status, run.error = "done", "done", ""
+    else:
+        why = ("cancelled" if summary.get("cancelled") else
+               "aborted at the canary" if summary.get("aborted") else
+               f"{summary.get('ok', 0)}/{summary.get('total', 0)} device(s) ok")
+        msg = f"baseline rollout {job_id} {why} — open the baseline page to retry"
+        run.add_log("profile_applied", False, msg)
+        run.status, run.error = "failed", msg
+    db.session.commit()
 
 
 STEP_FUNCS: dict[str, Callable[[ProvisionRun], StepResult]] = {
@@ -434,7 +509,10 @@ def advance(run: ProvisionRun, *, max_steps: int = 20) -> ProvisionRun:
     if run.status in ("done", "aborted"):
         return run
     resume = MODE_RESUME_STEPS.get(run.mode)
-    if resume and plan and run.step == plan[-1]:
+    if resume and plan and (run.step == plan[-1] or run.step in resume):
+        # Also when a resumed run paused again INSIDE the resume steps (the
+        # baseline waits for approval at profile_applied): without the
+        # resume steps in the plan, the next Resume re-paused at the handoff.
         # The handoff was reached on an earlier pass: this call is the
         # operator's Resume, so the plan continues past it.
         plan += list(resume)
@@ -477,6 +555,13 @@ def advance(run: ProvisionRun, *, max_steps: int = 20) -> ProvisionRun:
         run.add_log(nxt, res.ok, res.detail)
         if not res.ok:
             run.status = "failed"
+            run.error = res.detail
+            db.session.commit()
+            return run
+        if res.stop:
+            # A planned pause: the step has not happened yet (it waits for
+            # the operator), so the run stays BEFORE it and Resume re-runs it.
+            run.status = "paused"
             run.error = res.detail
             db.session.commit()
             return run

@@ -90,8 +90,12 @@ def index():
     except Exception:  # noqa: BLE001 — firmware split may predate this node
         fw = []
 
+    from ..services import baselines as B
+    from ..services import settings_store
     return render_template(
         "provisioning/device_index.html",
+        classification=settings_store.all_classification(),
+        baselines=B.list_baselines(),
         runs=runs, targets=targets, modes=modes, mode_steps=MODE_STEPS,
         mode_stop=MODE_STOP_REASON, install_images=fw,
         has_hypervisor=bool(targets),
@@ -168,8 +172,11 @@ def create():
             setattr(run, attr, int(f.get(key) or default))
         except ValueError:
             setattr(run, attr, default)
+    for attr in ("zone", "line", "department"):
+        setattr(run, attr, (f.get(attr) or "").strip()[:128])
     for attr, key in (("firmware_id", "firmware_id"),
-                      ("profile_id", "profile_id")):
+                      ("profile_id", "profile_id"),
+                      ("baseline_id", "baseline_id")):
         v = f.get(key) or ""
         setattr(run, attr, int(v) if str(v).isdigit() else None)
     # IPAM is opt-in per run: only then is the address ours to release on

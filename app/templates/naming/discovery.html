@@ -63,7 +63,10 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="product" value="{{ current_product }}">
         <input type="hidden" name="appliance" value="{{ selected.id }}">
-        <button type="submit" class="btn btn-sm btn-outline-secondary" title="{{ _('Read-only sweep of the device; refreshes the configuration tree Discovery reads.') }}"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Sync device') }}</button>
+        <div class="btn-group btn-group-sm">
+          <button type="submit" class="btn btn-outline-secondary" title="{{ _('Runs as a background job. Checks SATOM’s cache first: when it is current, nothing is read from the device; when it is stale, the device is swept (read-only).') }}"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Sync device') }}</button>
+          <button type="submit" name="force" value="1" class="btn btn-outline-secondary" title="{{ _('Runs as a background job: a read-only sweep of the device now, even when SATOM’s cache is current (for changes made on the device since the last sweep).') }}"><i class="bi bi-hdd-network me-1"></i>{{ _('Read the device now') }}</button>
+        </div>
       </form>
       {% endif %}
       {% if fleet %}
@@ -91,6 +94,10 @@
       <span><strong>{{ analysis.user_objects }}</strong> {{ _('team objects') }}</span>
       <span class="text-muted"><strong>{{ analysis.factory_objects }}</strong> {{ _('vendor objects excluded') }}</span>
       {% if analysis.generated_at %}<span class="text-muted">{{ _('Configuration read') }} {{ analysis.generated_at[:16] | replace('T', ' ') }} UTC</span>{% endif %}
+      {% if cache %}
+      <span id="nd-cache" class="text-muted"><i class="bi bi-database me-1"></i>{{ _('Source: SATOM’s cache') }}{% if cache.as_of %} — {{ _('last sweep') }} {{ cache.as_of.strftime('%Y-%m-%d %H:%M') }} UTC{% if cache.trigger %} ({{ cache.trigger }}){% endif %}{% endif %}</span>
+      {% if cache.stale %}<span class="fw-badge fw-badge-warning" title="{{ cache.reason }}">{{ _('stale') }}: {{ cache.reason }}</span>{% endif %}
+      {% endif %}
     </div>
 
     <div class="fw-table-wrapper">

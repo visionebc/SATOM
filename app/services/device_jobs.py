@@ -69,6 +69,8 @@ DEVICE_BLUEPRINTS = frozenset({
     "attack_search", "txn_trace", "lua_studio", "api_explorer", "analysis",
     "logs", "scout", "reach_batch", "config_compare", "artifacts",
     "container_ops", "sentinel", "deep_monitor", "service_monitor",
+    # Naming › Discovery's "Sync device" sweeps the box (SA-0007)
+    "naming",
 })
 
 #: endpoint -> why it stays synchronous.
@@ -85,6 +87,9 @@ EXCLUDED = {
     "service_monitor.discover": "already a background job",
     "signatures.sync": "already a background job",
     "console.bundle": "streams a support bundle download",
+    "naming.save": "a settings edit; never reaches a device",
+    "naming.preview": "computes a name preview; never reaches a device",
+    "naming.discovery_adopt": "a settings edit; never reaches a device",
 }
 
 #: Human titles for the most used actions; the rest are derived from the
@@ -102,6 +107,7 @@ TITLES = {
     "appliances.failover_run": "HA failover",
     "appliances.create": "Add appliance",
     "appliances.edit_save": "Save appliance",
+    "naming.discovery_sync": "Sync device (Naming Discovery)",
 }
 
 # Endpoint names that only READ from the device. They never queue behind a

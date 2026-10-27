@@ -471,9 +471,11 @@ def discovery():
     fleet, selected = _discovery_context(model)
     analysis, fleet_rows, missing = None, None, []
     show_factory = request.args.get("factory") == "1"
+    cache = None
     if selected is not None:
         analysis = _analysis_of(model, selected)
         _annotate(analysis, product, model)
+        cache = _cache_state(selected, product)
     elif fleet:
         have = {a["appliance_id"] for a in model["analyses"]}
         missing = [a.name for a in fleet if a.id not in have]
@@ -486,7 +488,7 @@ def discovery():
         current_product=product,
         product_label=dict(_device_products()).get(product, product),
         fleet=fleet, selected=selected,
-        analysis=analysis, fleet_rows=fleet_rows, missing=missing,
+        analysis=analysis, fleet_rows=fleet_rows, missing=missing, cache=cache,
         show_factory=show_factory, proto_words=_proto_words(),
         factory_source=(nd.factory_catalog().get(product) or {}).get("measured_on", ""),
     )
@@ -567,12 +569,43 @@ def discovery_adopt():
     return redirect(back)
 
 
+def _cache_state(appliance, product: str) -> dict:
+    """What SATOM's cache holds for *appliance*: the last good sweep
+    (``as_of``, ``trigger``) and whether it is still fresh by the product's
+    Monitoring staleness rule (``cache_reads.freshness``: the newest sync
+    failed, or the sweep is older than ``stale_hours``). Discovery reads that
+    cache; the device is swept only when it is stale or on an explicit
+    "Read the device now"."""
+    from ..extensions import db
+    from ..models_cache import SyncRun
+    from ..services import cache_reads
+    try:
+        last_ok = (SyncRun.query.filter_by(appliance_id=appliance.id, status="ok")
+                   .order_by(SyncRun.started_at.desc()).first())
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+        last_ok = None
+    as_of = (last_ok.finished_at or last_ok.started_at) if last_ok is not None else None
+    if as_of is None:
+        return {"as_of": None, "trigger": "", "stale": True,
+                "reason": "SATOM has no successful sweep of this device yet"}
+    fresh = cache_reads.freshness(appliance.id, as_of, product=product)
+    return {"as_of": as_of, "trigger": last_ok.trigger or "",
+            "stale": bool(fresh.get("stale")), "reason": fresh.get("reason") or ""}
+
+
 @bp.route('/discovery/sync', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def discovery_sync():
-    """Refresh one device's configuration tree (the read-only sweep every
-    other page uses) so Discovery reads today's names."""
+    """Bring Discovery up to date for one device, cache first (SA-0007).
+
+    Runs as a background job (``device_jobs`` wraps this blueprint), never in
+    the browser's request. When SATOM's cache of the device is still fresh
+    (:func:`_cache_state`) nothing is read from the device: Discovery already
+    reads that cache, and the answer says how old it is. The device is swept
+    (read-only) only when the cache is stale or ``force=1`` ("Read the device
+    now")."""
     from flask_login import current_user
     from ..errors import ServiceError, service_call
     from ..services import device_sync
@@ -582,6 +615,13 @@ def discovery_sync():
     if selected is None:
         flash('Pick one device to sync.', 'warning')
         return redirect(url_for('naming.discovery', product=product))
+    state = _cache_state(selected, product)
+    if request.form.get("force") != "1" and not state["stale"] and _tree_path(selected).exists():
+        flash(f'{selected.name}: SATOM’s cache is current (last sweep '
+              f'{state["as_of"]:%Y-%m-%d %H:%M} UTC, {state["trigger"] or "sync"}) and '
+              'Discovery already reads it — nothing was read from the device. Use '
+              '“Read the device now” for changes made on the device since then.', 'info')
+        return redirect(url_for('naming.discovery', product=product, appliance=selected.id))
     try:
         run = service_call(device_sync.sync_device, selected,
                            user_label=getattr(current_user, "username", None),

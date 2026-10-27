@@ -6,6 +6,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-10-27
+
+**A device's full baseline, applied where you choose.** Every combo an
+appliance's zone / line / department falls into is resolved into one baseline
+(the most specific combo wins a template two of them carry) and pushed to that
+appliance with the usual dry-run, variable and firmware checks and a canary
+job — from the appliance, right after adding it, from a combo onto devices you
+pick, or from Device Provisioning, whose `profile_applied` step now waits for
+the baseline's approval. Naming Discovery syncs as a cache-first job, and
+administrators may approve their own changes when Settings allows it.
+
+
 ### Added
 - **A device's full baseline, applied to the device you choose** (request:
   "in System Provisioning there is no way to push complete templates to a
@@ -47,6 +59,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   ADOMs before and after.
 
 ### Fixed
+- **Database › Plugin datasets: the form kept the sidebar's ADOM list.** The
+  page passed its own `products` to the template and replaced the layout's.
+- **A change request for *Run a Plugin Studio app* gets its own document**
+  (purpose, impact, rollback, validation in English and German) instead of
+  "Action without a profile".
+- **SQL built from cached device field names quotes them safely:** a double
+  quote inside a field name is doubled instead of ending the identifier.
+- **The concept map lists Plugins › Trusted publishers.**
 - **A baseline only matches devices of its own product.** From the Global
   ADOM a FortiWeb combo could match a FortiADC with the same zone and push
   FortiWeb writes to it.

@@ -7386,7 +7386,9 @@ holds: give such people apps whose writes go through a change request.</p>
 <p>You can create Apps-only accounts by hand (Access → Users, with an Apps only
 profile) and share apps with them; they sign in on the console page or on an
 app's page and land on My apps.</p>
-<p><strong>2. Directory connections</strong> (Access → Directory connections). Any number of
+<p><strong>2. Directory connections</strong> (Plugin Studio → <em>Sign-in directories</em>, or
+Access → Directory connections — the same list, for users with <em>user
+management</em>). Any number of
 directory servers an app's sign-in may prove people against, independent of
 Settings → Authentication (which they never change):</p>
 <ul>
@@ -7406,7 +7408,10 @@ Settings → Authentication (which they never change):</p>
   that made accounts cannot be deleted — disable it (its accounts then cannot
   sign in).</li>
 </ul>
-<p><strong>3. App sign-in</strong> (Access → App sign-in → <em>app</em>). Tick <em>People sign in to this
+<p><strong>3. App sign-in</strong> (Plugin Studio → Apps → <em>app</em> → <strong>Sign-in</strong> tab; a script
+app has the same tab in its script editor; or Access → App sign-in → <em>app</em>).
+Plugin Studio authors without <em>user management</em> see the tab read only — who
+may sign in to an app is an administrator's decision. Tick <em>People sign in to this
 app on its own page</em> and add <strong>rules</strong>, tried in order — the first that accepts
 signs the person in, and nothing else is tried after them (never the console
 sign-in):</p>
@@ -7450,6 +7455,16 @@ next sign-in; <strong>Revoke</strong> on the app's page closes it at once.</p>
 the app when the session may use it and the app's sign-in page otherwise; the
 page wears the app's Design colours. An expired or idle-locked session on an
 app page comes back to that app's sign-in, and <em>Sign out</em> returns there too.</p>
+<p><strong>In the app package.</strong> Export carries the sign-in in <code>app.json</code> as
+<code>"signin"</code>: the rules with each directory connection by <strong>id and kind</strong>, the
+groups and filters, the 2FA tick, the Apps only profile <strong>by name</strong> and
+<em>New accounts wait</em>. Never a server, a bind account or a secret, and never
+the on/off. An import brings it <strong>switched off</strong> (turn it on in the app's
+Sign-in tab once the app is published); a rule whose connection this server
+does not have — or has with another kind — is left out with a warning and a
+to-do to create it; an app that already has sign-in rules here keeps them.
+The SATOM Builder edits the same <code>"signin"</code> in its <strong>Sign-in</strong> tab, offering
+the directory connections and profiles of the target SATOM.</p>
 <p>Every step is audited: <code>login.app.ok</code> / <code>login.app.fail</code> (with the rule each
 connection answered, never a password), <code>login.app.provision</code>,
 <code>login.app.2fa_enrol</code>, <code>app.signin.save</code>, <code>app.grant.revoke</code>,

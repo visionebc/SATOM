@@ -43,15 +43,17 @@ from __future__ import annotations
 import ipaddress
 import re
 
+from . import studio_dns as DNS
 from . import studio_flow as F
 
 GROUP = "satom"
 
 #: Steps that change something outside the run (rehearsal describes them).
+#: The DNS & LB Lookup steps live in their own module (``studio_dns``).
 WRITE_KINDS = ("ddi_reserve", "ddi_reserve_set", "ddi_release", "certificate",
-               "fortiweb_spo", "fortiweb_spo_remove")
+               "fortiweb_spo", "fortiweb_spo_remove") + DNS.WRITE_KINDS
 #: Of those, the ones that write to an appliance (need config_write).
-DEVICE_KINDS = ("certificate", "fortiweb_spo", "fortiweb_spo_remove")
+DEVICE_KINDS = ("certificate", "fortiweb_spo", "fortiweb_spo_remove") + DNS.DEVICE_KINDS
 
 #: ``satom_select`` form-field sources: what a list field may offer.
 SOURCES = (
@@ -67,14 +69,16 @@ SOURCES = (
     ("lines", "Classification: lines"),
     ("departments", "Classification: departments"),
     ("segments", "Network segments"),
+    ("lb_appliances", "FortiWeb and FortiADC appliances"),
+    ("dns_backends", "DNS backends (Settings > DNS Records)"),
 )
 SOURCE_KEYS = tuple(k for k, _ in SOURCES)
 KIND_KEYS = ("satom_appliances", "render_names", "ddi_reserve", "ddi_reserve_set",
              "ddi_release", "fortiweb_pick", "certificate", "fortiweb_spo",
-             "fortiweb_spo_remove")
+             "fortiweb_spo_remove") + DNS.KIND_KEYS
 #: The variable a SATOM step saves its result under when the draft names
 #: none (a step later steps read by that name: ``{{ appliances }}``).
-DEFAULT_SAVE_AS = {"satom_appliances": "appliances"}
+DEFAULT_SAVE_AS = {"satom_appliances": "appliances", **DNS.DEFAULT_SAVE_AS}
 #: The products ``satom_appliances`` filters on ('' = every product).
 APPLIANCE_KINDS = ("fortiweb", "fortigate", "fortiadc", "fortianalyzer", "fortiauthenticator")
 #: What each appliance of ``satom_appliances`` carries: the columns of the
@@ -238,7 +242,7 @@ def kinds(ch: dict | None = None) -> list:
           "For the error branch of a diagram.",
           [P("spo", "Created policy", required=True, help="e.g. {{ spo_internal }}"),
            F._save_as("removed")], writes=True),
-    ]
+    ] + DNS.kinds()
 
 
 def choices() -> dict:
@@ -1008,6 +1012,8 @@ def rehearse(node: dict, ctx) -> tuple:
     ``{{ certificate.name }}``) render instead of failing on a key that only
     a real run would have produced. The placeholders say what they stand for."""
     kind = node.get("kind")
+    if kind in DNS.KIND_KEYS:
+        return DNS.rehearse(node, ctx)
     if kind == "ddi_reserve":
         ip = _s(node, ctx, "ip") or PENDING_IP
         v = {"unit": _s(node, ctx, "unit"), "name": _s(node, ctx, "name"), "ip": ip,
@@ -1111,6 +1117,8 @@ def _s(node, ctx, name, default="") -> str:
 
 def run(node: dict, ctx) -> tuple:
     kind = node.get("kind")
+    if kind in DNS.KIND_KEYS:
+        return DNS.run(node, ctx)
     if kind == "satom_appliances":
         rows = select_appliances(
             _fleet_rows(), product=F._p(node, "product", ""), zone=_s(node, ctx, "zone"),
@@ -1334,6 +1342,20 @@ def source_options(source: str) -> tuple[list[dict], str]:
         rows = _visible(Appliance.query.filter_by(is_cluster=False)).order_by(Appliance.name).all()
         return [{"value": str(a.id), "label": "%s (%s, %s)" % (a.name, a.kind, a.host)}
                 for a in rows], ""
+    if source == "lb_appliances":
+        # What a decommission can act on (DNS & LB Lookup's own rule).
+        from sqlalchemy import or_
+        from ..models import Appliance
+        kind = or_(Appliance.kind.in_(("fortiweb", "fortiadc")), Appliance.kind.is_(None),
+                   Appliance.kind == "")  # no kind = a FortiWeb-era row
+        rows = (_visible(Appliance.query.filter(Appliance.is_cluster.is_(False), kind))
+                .order_by(Appliance.name).all())
+        return [{"value": str(a.id), "label": "%s (%s, %s)" % (a.name, a.kind, a.host)}
+                for a in rows], ""
+    if source == "dns_backends":
+        from . import dns_providers
+        return [{"value": str(r.id), "label": r.name}
+                for r in dns_providers.enabled_backends("dns")], ""
     if source in ("fortiweb_pools", "fortiweb_interfaces", "fortiweb_certificates"):
         return _fleet_objects(source), ""
     if source == "wpp_templates":

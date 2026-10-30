@@ -60,7 +60,11 @@ BRANCH_KEYS = tuple(b["key"] for b in BRANCHES)
 RESERVED_VARS = ("form", "vars", "run", "outputs", "event")
 DECISION_OPS = ("equals", "not_equals", "contains", "greater", "less", "empty",
                 "not_empty", "true")
-OUTPUT_VIEWS = ("auto", "table", "list", "keyvalue", "text", "json")
+#: ``plan``: a decommission plan (items, warnings, counts) -- the DNS & LB
+#: Lookup page's confirmation view.
+OUTPUT_VIEWS = ("auto", "table", "list", "keyvalue", "text", "json", "plan")
+#: Buttons one Output row may carry (``row_actions``).
+MAX_ROW_ACTIONS = 8
 STORE_MODES = ("insert", "update", "upsert", "delete")
 
 #: Items every ``range()`` of ONE rendered value may produce together. The
@@ -301,7 +305,14 @@ def kinds(choices: dict | None = None) -> list[Kind]:
         Kind("output", "Output", "flow", "Show a value to the user when the run ends.",
              [Param("value", "Value", required=True, help="e.g. {{ rows }}"),
               Param("title", "Title"),
-              Param("view", "Show as", "select", choices=OUTPUT_VIEWS, default="auto")]),
+              Param("view", "Show as", "select", choices=OUTPUT_VIEWS, default="auto"),
+              Param("row_actions", "Row buttons (JSON)", "json",
+                    help='For a table: buttons on every row, {{ row }} being that row. '
+                         '[{"label": "Edit", "app": "<app id>", "inputs": {"name": '
+                         '"{{ row.name }}"}}, {"label": "Open", "url": "{{ row._url }}"}] -- '
+                         'an app opens its form in a window over this page, filled in; a '
+                         'url is a SATOM path. "when": "{{ row.x }}" shows a button only '
+                         'where it is true. Columns starting with _ are not shown.')]),
         Kind("store_query", "Read a data store", "data", "Rows of a data store that match a filter.",
              [Param("store", "Data store", "select", True, tuple(ch.get("stores", ()))),
               Param("filter", "Filter (JSON)", "json",
@@ -578,6 +589,71 @@ def _json(node, ctx, name, what):
     return val
 
 
+def _shown(v) -> bool:
+    return bool(v) and str(v).strip().lower() not in ("false", "no", "0", "none")
+
+
+def _apps_for_buttons(slugs, ctx) -> set | None:
+    """The apps among *slugs* the person running may open here (published,
+    enabled, theirs to use, shown in the run's ADOM). ``None`` = no person
+    to ask (a schedule): every button stays, the click asks again."""
+    u = ctx.user_obj
+    if u is None:
+        return None
+    from . import studio_apps as SA
+    from .studio_dns import run_product
+    product, out = run_product(ctx), set()
+    for slug in slugs:
+        a = SA.get(slug)
+        if a is None or a.kind == "script" or not SA.can_use(u, a):
+            continue
+        if SA.is_author(u) or (a.enabled and a.published and a.status == "published"
+                               and SA.shown_in(a, product)):
+            out.add(slug)
+    return out
+
+
+def row_actions(raw, value, scope: dict, ctx) -> list:
+    """An Output's ``row_actions``: each row of the table gets ``_actions``,
+    the buttons rendered with ``{{ row }}`` = that row. An app button opens
+    that app's form, filled in with ``inputs``, over the run page; the app
+    checks its own access and its steps their permissions when it RUNS --
+    a button is a shortcut, never a grant. A url must be a SATOM path."""
+    spec = parse_json_param(raw, "Row buttons")
+    if not isinstance(spec, list) or not all(isinstance(a, dict) for a in spec):
+        raise FlowError("row buttons are a list of objects")
+    if len(spec) > MAX_ROW_ACTIONS:
+        raise FlowError("at most %d row buttons" % MAX_ROW_ACTIONS)
+    if not isinstance(value, list) or not all(isinstance(r, dict) for r in value):
+        raise FlowError("row buttons need a table: a list of objects")
+    for a in spec:
+        if bool(a.get("app")) == bool(a.get("url")):
+            raise FlowError("each row button has an app or a url (one of them)")
+    usable = _apps_for_buttons({str(a["app"]) for a in spec if a.get("app")}, ctx)
+    out = []
+    for row in value:
+        s = dict(scope, row=row)
+        acts = []
+        for a in spec:
+            if "when" in a and not _shown(render(a["when"], s)):
+                continue
+            label = str(render(a.get("label") or "", s) or "").strip()[:40] or "Open"
+            if a.get("app"):
+                slug = str(a["app"])
+                if usable is not None and slug not in usable:
+                    continue
+                inputs = render(a.get("inputs") or {}, s)
+                if not isinstance(inputs, dict):
+                    raise FlowError("row button %s: inputs are an object" % label)
+                acts.append({"label": label, "app": slug, "inputs": inputs})
+                continue
+            url = str(render(a["url"], s) or "").strip()
+            if url.startswith("/") and not url.startswith("//") and "\\" not in url:
+                acts.append({"label": label, "url": url})
+        out.append(dict(row, _actions=acts))
+    return out
+
+
 def _compare(left, op, right) -> bool:
     if op == "empty":
         return left in (None, "", [], {})
@@ -641,6 +717,8 @@ def _run_step(node: dict, ctx: Ctx):
         raise FlowError(str(render(_p(node, "message"), scope)))
     if kind == "output":
         value = render(_p(node, "value"), scope)
+        if str(_p(node, "row_actions", "") or "").strip():
+            value = row_actions(_p(node, "row_actions"), value, scope, ctx)
         _size_ok(value)
         ctx.outputs.append({"key": node.get("key") or "",
                             "title": str(render(_p(node, "title"), scope) or ""),
@@ -979,7 +1057,8 @@ def analyze(graph: dict, choices: dict | None = None, fields=None) -> dict:
         if t:
             saved.add(str(t))
     builtin = set(RESERVED_VARS) | {"last_error", "last_response", "last_script",
-                                    "last_process", "range", "true", "false", "none"}
+                                    "last_process", "last_answer", "range", "true",
+                                    "false", "none"}
     writers = {n.get("key") for n in nodes if step_writes(n)}
     steps, warnings = [], []
     for n in nodes:

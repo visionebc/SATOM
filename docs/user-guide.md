@@ -2326,6 +2326,10 @@ against what the devices say.
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
+  The same tool also exists as **three Plugin Studio apps** (template bundle
+  *DNS & LB Lookup*, §23.8): the lookup, DNS Records and the decommission,
+  with the same permissions and the same ADOM scoping. The page stays; use
+  whichever you prefer, or copy the apps and change them.
 - **Where these live:** Backend Reachability, Config Compare, Path Diagnostics,
   the **Transaction Tracer** (§37.3) and Scout sit together under
   **Operations › Troubleshooting** in every ADOM (since 2026-10-14; the tracer
@@ -5289,7 +5293,10 @@ The editor has seven tabs:
 - **Diagram** — a diagram editor. Steps: *Start*, *End*, *Activity*, *Set a
   variable*, *Decision* (equals, not equals, contains, greater, less, empty,
   not empty, true → yes / no), *Fail* (stop with a message), *Output* (a value
-  shown as a table, list, key/value, text or JSON), *Read a data store*,
+  shown as a table, list, key/value, text, JSON or a decommission **plan**;
+  columns whose name starts with `_` are kept for the app and never shown,
+  downloaded or copied; **Row buttons** put buttons on every row of a table,
+  below), *Read a data store*,
   *Write a data store* (insert, update, upsert, delete), *Query a database*,
   *Call an API* (with *Keep only (JSON path)*) and *Run a script* (the
   published version of a Script Library script, with its form values), the
@@ -5309,7 +5316,33 @@ The editor has seven tabs:
   blocks and coloured (below).
 - **Actions** — buttons under the output of a finished run: *Save to a data
   store*, *Download* (CSV or JSON), *Send to a connection*, *Run another app
-  with the output*, *Raise a change request*. Each can ask for confirmation.
+  with the output*, *Raise a change request*, **Copy to the clipboard**
+  (*text* as it is, *tsv* — a table with a header, pasted straight into a
+  spreadsheet — or *JSON*; up to 512 KiB) and **Open another app's form
+  here** (that app's form opens in a window over the run page, filled in
+  with the values you give it; the person checks them and presses *Run*,
+  and follows the run in the same window). Each can ask for confirmation.
+  Copy and Open happen in the browser: SATOM renders the text and the values
+  from the run when it draws the page, with the same checks as any action.
+
+**Row buttons** (*Output* → *Row buttons (JSON)*, 2026-10-30). One button per
+row of a table, `{{ row }}` being that row:
+
+```json
+[{"label": "Edit", "app": "ex-dns-records",
+  "inputs": {"operation": "update", "id": "{{ row.id }}", "name": "{{ row.name }}"}},
+ {"label": "Open policy", "url": "{{ row._url }}", "when": "{{ row._url }}"}]
+```
+
+An **app** button opens that app's form over the run page, filled in with
+`inputs`; a button inside that window opens the next app in the same window.
+A **url** button opens a SATOM page in a new tab — only a SATOM path
+(`/…`) is kept; anything else (`https://…`, `//…`, `javascript:`) is dropped.
+`when` shows the button only on the rows where it is true. A button for an app
+the person may not use (access list, unpublished, disabled, another ADOM) is
+not drawn, and a button is never a permission: the app checks its access
+again when it runs, and each of its steps its own permission. At most 8
+buttons per row.
 - **Test** — runs the saved draft, as a **rehearsal** by default: steps that
   write (data store writes, SQL with writes allowed, API calls other than GET,
   the SATOM steps that reserve, issue or create) are described, not executed.
@@ -5398,6 +5431,19 @@ a whole provisioning chain is one diagram whose failures the author routes:
 | *Certificate (issue or reuse)* | Mode *issue*: issues with the chosen provider and deploys to the appliance. *existing*: deploys a certificate the Certificate Manager already holds. *device*: uses a local certificate that is already on the appliance — checked on the device, nothing is written. An internal-only provider refuses a non-Internal zone (*device*: only when the Certificate Manager knows the certificate). Never revoked by a diagram | — |
 | *FortiWeb: create the server policy* | Virtual server, VIP, server pool and members, then the policy (WPP template, certificate) — the SPO wizard's endpoints and writer. **Port**: 443 with a certificate / 80 without = the predefined service; any other port gets a custom service (`HTTPS-<port>` / `HTTP-<port>`, or the name in `names.service`), reused when the device has it. **Server pool *existing***: the pool is bound, nothing of it is written or removed, and the run checks it is ON the device before writing anything (the device when it answers, else the local cache — said in the step log); a new pool needs at least one real server. If one object fails, what the step wrote is deleted again | *FortiWeb: remove* |
 | *FortiWeb: remove a created policy* | Deletes, newest first, what a create step of this run wrote | — |
+| *DNS: look names up* | Every enabled resolver (Administrator › Objects › DNS Resolvers) for each name, as the DNS & LB Lookup page does (at most 50 names, `name TYPE` accepted, optional TTL). Saves `rows` (a column per resolver), `answers`, `unresolved` and `tsv` — the page's *Copy DNS* text. No resolver configured is an **error**, never an empty table. Needs `network.view` | — |
+| *LB: match names to the fleet* | Each name matched to this ADOM's FortiWeb server policies and FortiADC virtual servers **from the device cache** (never the device). Saves `rows` (the page's columns, `Path` = policy › pool › members with their status, and `_aid`, `_policy`, `_hostname`, `_url` for buttons), `gateways`, `unmatched`, `not_found` (no answer and no match, when given the DNS result) and `tsv` (*Copy LB*). A cache that cannot be read is an **error**. Needs `network.view` | — |
+| *DNS records: list* | The records one DNS backend (Settings › DNS Records) holds for a name or zone, with its capabilities. Two or more DNS backends and none named is refused — never the first one. Needs `user_manage` | — |
+| *DNS records: create, change or delete* | Writes one record (`create` needs name and value; `update` / `delete` the record id). Audited like the page. Needs `user_manage` | — |
+| *Decommission: plan* | What retiring a service removes and keeps, with warnings, blockers and the plan's fingerprint (the page's planner; reads only). Only a FortiWeb or FortiADC of the run's ADOM. Needs `config_write` | — |
+| *Decommission: apply the plan* | Plans again and executes only with the fingerprint the person saw, when nothing blocks and every warning was acknowledged (an *Ask a person* step with *Must be acknowledged*). A failed apply keeps its per-step results readable on the error arrow (`{{ decommission.results }}`). Audited like the page. Needs `config_write` | — |
+
+**The DNS & LB Lookup steps answer for the person who runs the app.** Each
+asks that person for the permission the page's own route asks, so an app
+shared with more people never widens who looks names up, edits a record or
+retires a service. They run in the run's ADOM and as its user — the same
+product scoping, ADOM confinement and maintenance visibility as the page —
+and a run without a person (a schedule, an event) is refused.
 
 The DDI steps use a Studio HTTP connection; pinned to an API Catalog version,
 they reach only its endpoints. The steps that write to an **appliance** run
@@ -5570,7 +5616,13 @@ activities of an appliance), as automatic as the steps allow:
   *Erledigt* for a task). The person who started the run or a Plugin Studio
   author answers, minutes or hours later; the run continues along that arrow
   with everything it had saved. A published run does not continue if the
-  app was published again meanwhile.
+  app was published again meanwhile. **Must be acknowledged** (a list, e.g.
+  the plan's warnings) draws one tick box per item, and *Yes* is accepted
+  only when every box is ticked; **Blocks the Yes answer** (a list) refuses
+  *Yes* while it is not empty — only *No* can be answered. SATOM checks both
+  when the answer arrives, not only in the browser. The answer is saved as
+  `{{ last_answer }}`: `answer`, `acknowledged` (the ticked texts),
+  `all_acknowledged`, `by` and `note`.
 - **Simulate** (Diagram tab) walks the saved draft end to end as a
   rehearsal: nothing is written to a device, the checks really look (they
   only read), each question stops in the panel for your answer — or tick
@@ -5594,6 +5646,28 @@ until you open the connection, set the address and paste the token.
 | **NetBox: who owns this IP address?** | A script that calls a connection, and an app whose diagram **runs that script**. | connection `ex-netbox`, script `ex-netbox-ip-owner`, app `ex-ip-owner` |
 | **Explain a flow (FortiGate + NetBox)** | One script, **two connections**: who owns both ends and which rule decides the flow. Keeps working when NetBox is down. | script and app `ex-traffic-explainer` (+ the two connections) |
 | **Data stores: site contacts** | No external system: a list field fed by a data store, a query, an upsert. Published at once (every ADOM, Studio authors), so it appears under **Operations → Plugins**. | data store `ex-site-contacts` (3 sample rows), apps `ex-site-contact`, `ex-site-contact-edit` |
+| **DNS & LB Lookup (the page as three apps)** | The DNS & LB Lookup page rebuilt from the SATOM steps, with nothing to configure (SATOM's own resolvers and DNS backends). Published at once (every ADOM, Studio authors). | apps `ex-dns-lb-lookup`, `ex-dns-records`, `ex-dns-decommission` |
+
+**DNS & LB Lookup as apps** (operator request, 2026-10-30: "the whole DNS & LB
+Lookup section as an app in Plugin Studio — keep Copy, the record editor and
+the decommission confirmation"). The page under Fleet › DNS Lookup stays.
+
+- **DNS & LB Lookup** (`ex-dns-lb-lookup`): the page's form (names, *Show LB
+  matches*, *Quick LB*, *Exact match*, *Show TTL*). Outputs: the DNS answers
+  with a **Records** button on each name, the LB matches with **Open policy**
+  and **Decommission** on each match, *Quick LB* (gateways) and *Not found in
+  any source*. A cache that cannot be read shows *LB matching failed* and the
+  DNS half still appears, as on the page. Actions: **Copy DNS** and **Copy
+  LB** (the page's tab-separated text), **DNS Records**, and a CSV download of
+  each table.
+- **DNS Records** (`ex-dns-records`): *list* shows a name's records with
+  **Edit** and **Delete** on each row — each opens this same app filled in
+  with that record — and *New record*; *create*, *update* and *delete* write
+  and then list the name again.
+- **Decommission a service** (`ex-dns-decommission`): the plan (what is
+  deleted, unbound and kept, and why), then **Decommission / Cancel** with a
+  tick box per warning; a blocker refuses *Decommission*. The apply step
+  plans again and refuses a plan that changed since it was shown.
 
 The **Console** pane has two examples in its *Studio* group: the fleet
 inventory printed as CSV (paste it into a data store's *Import CSV*) and every
@@ -9962,8 +10036,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (130 today) or **excluded with a written
-   reason** (174 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (131 today) or **excluded with a written
+   reason** (175 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

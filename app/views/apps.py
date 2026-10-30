@@ -84,6 +84,24 @@ def page(slug):
                            fields_by_name={f["name"]: f for f in fields}, all_runs=runs)
 
 
+@bp.route("/<slug>/form.json")
+@login_required
+def form_json(slug):
+    """An app's form, for a row button or an Open app action: the run page
+    opens it over itself, filled in, and runs it there. The same 404 as the
+    app's page for anyone who may not open it; the run checks again."""
+    a = _usable_or_404(slug)
+    if not a.published:
+        return jsonify({"ok": False, "error": "%s has no published version yet" % a.name}), 400
+    from flask import url_for
+    fields = SA.form_view(a.published.get("fields") or [])
+    return jsonify({"ok": True, "slug": a.slug, "name": a.name, "icon": a.icon,
+                    "description": a.description or "",
+                    "html": render_template("apps/_form.html", fields=fields, prefix="m-"),
+                    "run_url": url_for("apps.run", slug=a.slug),
+                    "page_url": url_for("apps.page", slug=a.slug)})
+
+
 @bp.route("/<slug>/assets/<sha>")
 @login_required
 def asset(slug, sha):
@@ -147,11 +165,13 @@ def answer(rid):
     value = str(body.get("answer") or "")
     step = (SA.waiting_step(r) or {}).get("key", "")
     try:
-        SA.answer(a, r, value, user=current_user, note=str(body.get("note") or "")[:400])
+        SA.answer(a, r, value, user=current_user, note=str(body.get("note") or "")[:400],
+                  acks=body.get("acks") if isinstance(body.get("acks"), list) else None)
     except SA.AppError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
-    log_action("studio.app.answer", target=a.slug, extra={"run": rid, "step": step,
-                                                          "answer": value})
+    log_action("studio.app.answer", target=a.slug, extra={
+        "run": rid, "step": step, "answer": value,
+        "acknowledged": len(body.get("acks") or []) if isinstance(body.get("acks"), list) else 0})
     return jsonify({"ok": True})
 
 

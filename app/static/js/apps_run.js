@@ -46,6 +46,49 @@
     if (v === false) return '—';
     return esc(v);
   }
+  /* Row buttons: an app opens its form over this page (openApp), a url is a
+     SATOM path the server already checked. */
+  function rowButtons(acts) {
+    return (acts || []).map(function (a) {
+      if (a.url) {
+        return '<a class="btn btn-sm btn-outline-primary py-0 px-2 me-1" style="font-size:11px;" target="_blank" rel="noopener" href="' +
+          esc(a.url) + '">' + esc(a.label) + ' <i class="bi bi-box-arrow-up-right"></i></a>';
+      }
+      return '<button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" style="font-size:11px;" data-open-app="' +
+        esc(a.app) + '" data-inputs="' + esc(JSON.stringify(a.inputs || {})) + '">' + esc(a.label) + '</button>';
+    }).join('');
+  }
+  /* A decommission plan (Output "Show as: plan"): what goes, what stays and
+     why, and the warnings -- the DNS & LB Lookup page's confirmation view. */
+  var ACTION_BADGE = { 'delete': 'danger', unbind: 'warning', keep: 'secondary' };
+  function planHtml(p) {
+    if (!p || typeof p !== 'object' || !Array.isArray(p.items)) return view({ value: p, view: 'json' });
+    var t = p.target || {}, c = p.counts || {}, titles = {};
+    (p.stages || []).forEach(function (s) { titles[s.key] = s.title; });
+    var h = '<div class="mb-2" style="font-size:13px;"><strong>' + esc(t.product || '') + ' ' + esc(t.appliance || '') + '</strong> › ' +
+      esc(t.policy || '') + (t.hostname ? ' <span class="text-muted">(' + esc(t.hostname) + ')</span>' : '') + '</div>' +
+      '<div class="d-flex flex-wrap gap-2 mb-2">' +
+      '<span class="fw-badge fw-badge-danger">' + (c['delete'] || 0) + ' delete</span>' +
+      '<span class="fw-badge fw-badge-warning">' + (c.unbind || 0) + ' unbind</span>' +
+      '<span class="fw-badge fw-badge-secondary">' + (c.keep || 0) + ' keep</span>' +
+      (p.blocked ? '<span class="fw-badge fw-badge-danger">BLOCKED</span>' : '') + '</div>';
+    (p.warnings || []).forEach(function (w) {
+      h += '<div class="alert ' + (w.blocking ? 'alert-danger' : 'alert-warning') + ' py-1 px-2 mb-1" style="font-size:12px;"><strong>' +
+        (w.blocking ? 'Blocker' : 'Warning') + ':</strong> ' + esc(w.text) + '</div>';
+    });
+    var last = null;
+    h += '<div class="fw-table-wrapper mb-0"><table class="fw-table"><thead><tr><th>Object</th><th>Kind</th><th>Action</th><th>Why</th><th>Still used by</th></tr></thead><tbody>';
+    p.items.forEach(function (i) {
+      if (i.stage !== last) {
+        last = i.stage;
+        h += '<tr><td colspan="5" style="background:var(--fw-surface-alt,#F3F6FC);font-weight:600;font-size:12px;">' + esc(titles[i.stage] || i.stage) + '</td></tr>';
+      }
+      h += '<tr><td>' + esc(i.label) + '</td><td>' + esc(i.kind) + '</td><td><span class="fw-badge fw-badge-' + (ACTION_BADGE[i.action] || 'secondary') + '">' +
+        esc(i.action) + '</span></td><td>' + esc(i.reason || '') + '</td><td>' + esc((i.holders || []).join(', ')) + '</td></tr>';
+    });
+    if (!p.items.length) h += '<tr><td colspan="5" class="text-muted p-2">Nothing to remove.</td></tr>';
+    return h + '</tbody></table></div>';
+  }
   function view(o) {
     var v = o.value, kind = o.view || 'auto';
     if (kind === 'auto') {
@@ -54,12 +97,22 @@
       else if (v && typeof v === 'object') kind = 'keyvalue';
       else kind = 'text';
     }
+    if (kind === 'plan') return planHtml(v);
     if (kind === 'table') {
-      var rows = Array.isArray(v) ? v : [v], cols = [];
-      rows.forEach(function (r) { if (r && typeof r === 'object') Object.keys(r).forEach(function (k) { if (cols.indexOf(k) < 0) cols.push(k); }); });
+      /* Columns starting with _ are the app's (ids, row buttons), not shown;
+         a row's _actions are its buttons (an Output's row_actions). */
+      var rows = Array.isArray(v) ? v : [v], cols = [], btns = false;
+      rows.forEach(function (r) {
+        if (!r || typeof r !== 'object') return;
+        Object.keys(r).forEach(function (k) { if (k.charAt(0) !== '_' && cols.indexOf(k) < 0) cols.push(k); });
+        if (Array.isArray(r._actions) && r._actions.length) btns = true;
+      });
       return '<div class="fw-table-wrapper mb-0"><table class="fw-table"><thead><tr>' +
-        cols.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
-        (rows.map(function (r) { return '<tr>' + cols.map(function (c) { return '<td>' + cell(r ? r[c] : '') + '</td>'; }).join('') + '</tr>'; }).join('') ||
+        cols.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') + (btns ? '<th></th>' : '') + '</tr></thead><tbody>' +
+        (rows.map(function (r) {
+          return '<tr>' + cols.map(function (c) { return '<td>' + cell(r ? r[c] : '') + '</td>'; }).join('') +
+            (btns ? '<td style="white-space:nowrap;">' + rowButtons(r && r._actions) + '</td>' : '') + '</tr>';
+        }).join('') ||
           '<tr><td class="text-muted p-2">No rows.</td></tr>') + '</tbody></table></div>' +
         '<div class="text-muted small mt-1">' + rows.length + ' row(s)</div>';
     }
@@ -100,9 +153,20 @@
         (w.time ? '<span class="fw-badge fw-badge-secondary"><i class="bi bi-clock me-1"></i>' + esc(w.time) + '</span>' : '') + '</div>';
     }
     if (w.doc) h += '<div class="p-2 my-2" style="white-space:pre-line;font-size:12.5px;background:var(--fw-surface-alt,#F3F6FC);border:1px solid var(--fw-border,#DFE1E6);border-radius:6px;">' + esc(w.doc) + '</div>';
+    /* The Ask step's gate: blockers refuse Yes; every warning must be ticked
+       (the server checks both again, studio_apps.answer). */
+    var blocked = (w.blockers || []).length > 0, acks = w.acknowledge || [];
+    (w.blockers || []).forEach(function (b) {
+      h += '<div class="alert alert-danger py-1 px-2 my-1" style="font-size:12px;"><strong>Blocker:</strong> ' + esc(b) + '</div>';
+    });
+    acks.forEach(function (a, i) {
+      h += '<div class="form-check my-1" style="font-size:12.5px;"><input class="form-check-input" type="checkbox" data-ack="' + i + '" id="sapp-ack-' + i + '">' +
+        '<label class="form-check-label" for="sapp-ack-' + i + '"><strong>Warning:</strong> ' + esc(a) + ' — I have read this</label></div>';
+    });
     if (w.can_answer) {
       h += '<div class="d-flex flex-wrap gap-2 align-items-center mt-2"><input class="form-control form-control-sm" data-answer-note maxlength="400" placeholder="Note (optional)" style="max-width:320px;">' +
-        '<button type="button" class="btn btn-sm btn-success" data-answer="yes">' + esc(w.pass_label || 'Yes') + '</button>' +
+        '<button type="button" class="btn btn-sm btn-success" data-answer="yes"' + (blocked || acks.length ? ' disabled' : '') +
+        (blocked ? ' title="Blocked: see above"' : '') + '>' + esc(w.pass_label || 'Yes') + '</button>' +
         (w.buttons === 'one' ? '' : '<button type="button" class="btn btn-sm btn-danger" data-answer="no">' + esc(w.fail_label || 'No') + '</button>') +
         '<span data-answer-msg class="small"></span></div>';
     } else {
@@ -118,6 +182,14 @@
   function actionsHtml(d) {
     if (!d.actions || !d.actions.length) return '';
     return '<div class="d-flex flex-wrap gap-2 my-2" data-actions>' + d.actions.map(function (a) {
+      var off = a.error ? ' disabled title="' + esc(a.error) + '"' : '';
+      if (a.kind === 'copy') {
+        return '<button type="button" class="btn btn-sm btn-outline-secondary" data-copy="' + esc(a.key) + '"' + off + '><i class="bi bi-clipboard me-1"></i>' + esc(a.label) + '</button>';
+      }
+      if (a.kind === 'open_app') {
+        return '<button type="button" class="btn btn-sm btn-outline-primary" data-open-app="' + esc(a.app || '') + '" data-inputs="' +
+          esc(JSON.stringify(a.inputs || {})) + '"' + off + '>' + esc(a.label) + '</button>';
+      }
       return '<button type="button" class="btn btn-sm btn-outline-primary" data-act="' + esc(a.key) + '" data-kind="' + esc(a.kind) +
         '" data-confirm="' + (a.confirm ? '1' : '') + '" data-label="' + esc(a.label) + '">' + esc(a.label) + '</button>';
     }).join('') + '</div><div data-act-msg style="font-size:12px;"></div>';
@@ -201,17 +273,33 @@
     /* In the app editor, the same run is laid over the diagram: each step
        coloured by how it ended, its detail in the inspector. */
     if (window.SatomProcEditor && d.steps) window.SatomProcEditor.overlay(d.steps);
+    gateYes(box);
     if (box._sappWired) return;
     box._sappWired = true;
+    box.addEventListener('change', function (e) {
+      if (e.target && e.target.hasAttribute && e.target.hasAttribute('data-ack')) gateYes(box);
+    });
     box.addEventListener('click', function (e) {
       var ans = e.target.closest('[data-answer]');
       if (ans && box.contains(ans)) {
         var note = box.querySelector('[data-answer-note]'), am = box.querySelector('[data-answer-msg]');
+        var acks = Array.prototype.filter.call(box.querySelectorAll('[data-ack]'), function (x) { return x.checked; })
+          .map(function (x) { return +x.getAttribute('data-ack'); });
         Array.prototype.forEach.call(box.querySelectorAll('[data-answer]'), function (x) { x.disabled = true; });
-        answer(box, ans.getAttribute('data-answer'), note ? note.value : '').catch(function (err) {
+        answer(box, ans.getAttribute('data-answer'), note ? note.value : '', acks).catch(function (err) {
           Array.prototype.forEach.call(box.querySelectorAll('[data-answer]'), function (x) { x.disabled = false; });
+          gateYes(box);
           if (am) am.innerHTML = '<span style="color:#8B1C2A;">' + esc(err.message) + '</span>';
         });
+        return;
+      }
+      var cp = e.target.closest('[data-copy]');
+      if (cp && box.contains(cp)) { copyAction(box, cp); return; }
+      var op = e.target.closest('[data-open-app]');
+      if (op && box.contains(op)) {
+        var vals = {};
+        try { vals = JSON.parse(op.getAttribute('data-inputs') || '{}'); } catch (x) { vals = {}; }
+        openApp(op.getAttribute('data-open-app'), vals);
         return;
       }
       var b = e.target.closest('[data-act]'); if (!b || !box.contains(b)) return;
@@ -230,20 +318,117 @@
     });
   }
 
-  function answer(box, value, note) {
+  function answer(box, value, note, acks) {
     var run = box._sappRun;
-    return post('/apps/runs/' + run.id + '/answer', { answer: value, note: note || '' }).then(function () {
+    return post('/apps/runs/' + run.id + '/answer', { answer: value, note: note || '', acks: acks || [] }).then(function () {
       follow(box, box._sappUrl, box._sappAuto);
+    });
+  }
+  /* Yes stays off while a blocker stands or a warning is not ticked. */
+  function gateYes(box) {
+    var d = box._sappRun, w = d && d.waiting, yes = box.querySelector('[data-answer="yes"]');
+    if (!w || !yes) return;
+    var all = Array.prototype.every.call(box.querySelectorAll('[data-ack]'), function (x) { return x.checked; });
+    yes.disabled = (w.blockers || []).length > 0 || !all;
+  }
+
+  /* Copy: the text was rendered by the server (run_json) from this run. */
+  function copyAction(box, b) {
+    var act = ((box._sappRun || {}).actions || []).filter(function (a) { return a.key === b.getAttribute('data-copy'); })[0];
+    var msg = box.querySelector('[data-act-msg]');
+    if (!act || act.error) { if (msg) msg.innerHTML = '<span style="color:#8B1C2A;">' + esc(act ? act.error : 'nothing to copy') + '</span>'; return; }
+    var done = function () {
+      var old = b.textContent;
+      b.textContent = act.label + ' — copied';
+      window.setTimeout(function () { b.textContent = old; }, 1600);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(act.text || '').then(done, function () { legacyCopy(act.text || '') && done(); });
+    } else if (legacyCopy(act.text || '')) done();
+  }
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (x) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  /* Another app's form over this page, filled in (a row button or an Open
+     app action); Run follows that run in the same window. A button inside
+     it opens the next app in the same window. */
+  var modalEl = null;
+  function modal() {
+    if (modalEl) return modalEl;
+    modalEl = document.createElement('div');
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.innerHTML = '<div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">' +
+      '<div class="modal-header py-2"><h5 class="modal-title" style="font-size:15px;" data-m-title></h5>' +
+      '<a class="ms-3 small" data-m-page target="_blank" rel="noopener">Open the app page</a>' +
+      '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>' +
+      '<div class="modal-body" style="font-size:13px;"><div class="row g-3"><div class="col-lg-4"><form data-m-form></form>' +
+      '<button type="button" class="btn btn-fw-primary btn-sm mt-1" data-m-run><i class="bi bi-play-fill me-1"></i>Run</button></div>' +
+      '<div class="col-lg-8"><div data-m-out class="text-muted">Check the values and press Run.</div></div></div></div></div></div>';
+    document.body.appendChild(modalEl);
+    modalEl.querySelector('[data-m-run]').addEventListener('click', function () {
+      var form = modalEl.querySelector('[data-m-form]'), out = modalEl.querySelector('[data-m-out]'), btn = this;
+      if (form.reportValidity && !form.reportValidity()) return;
+      btn.disabled = true;
+      out.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm"></span> Starting…</span>';
+      post(modalEl._runUrl, { inputs: formValues(form) }).then(function (d) {
+        btn.disabled = false;
+        follow(out, d.status_url);
+      }).catch(function (err) {
+        btn.disabled = false;
+        out.innerHTML = '<div class="alert alert-danger py-2" style="font-size:13px;">' + esc(err.message) + '</div>';
+      });
+    });
+    return modalEl;
+  }
+  function fillForm(form, vals) {
+    Object.keys(vals || {}).forEach(function (k) {
+      Array.prototype.forEach.call(form.querySelectorAll('[name]'), function (el) {
+        if (el.name !== k) return;
+        var v = vals[k];
+        if (el.type === 'checkbox') el.checked = v === true || v === 'true' || v === 'yes' || v === 'on' || v === 1 || v === '1';
+        else el.value = v === null || v === undefined ? '' : String(v);
+      });
+    });
+  }
+  function openApp(slug, vals) {
+    var m = modal(), out = m.querySelector('[data-m-out]');
+    m.querySelector('[data-m-title]').textContent = 'Loading…';
+    m.querySelector('[data-m-form]').innerHTML = '';
+    out.innerHTML = '<span class="text-muted">Check the values and press Run.</span>';
+    out._sappRun = null; out._sappGen = (out._sappGen || 0) + 1;
+    var shown = window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal.getOrCreateInstance(m) : null;
+    if (shown) shown.show(); else m.style.display = 'block';
+    getJSON('/apps/' + encodeURIComponent(slug) + '/form.json').then(function (d) {
+      if (!d.ok) throw new Error(d.error || 'the app cannot be opened');
+      m.querySelector('[data-m-title]').innerHTML = '<i class="bi ' + esc(d.icon || 'bi-app') + ' me-2"></i>' + esc(d.name);
+      m.querySelector('[data-m-page]').href = d.page_url;
+      var form = m.querySelector('[data-m-form]');
+      form.innerHTML = d.html;
+      fillForm(form, vals);
+      m._runUrl = d.run_url;
+    }).catch(function (err) {
+      m.querySelector('[data-m-title]').textContent = 'Cannot open the app';
+      out.innerHTML = '<div class="alert alert-danger py-2" style="font-size:13px;">' +
+        esc(/404/.test(err.message) ? 'You may not use this app here.' : err.message) + '</div>';
     });
   }
 
   /* autoYes(): the Simulate panel's "answer Yes to every question" -- each
      question is answered yes as soon as the walk reaches it. */
   function follow(box, url, autoYes) {
-    var n = 0;
+    var n = 0, gen = box._sappGen = (box._sappGen || 0) + 1;
     box._sappUrl = url; box._sappAuto = autoYes;
     (function tick() {
       getJSON(url).then(function (d) {
+        if (box._sappGen !== gen) return;   /* another run took this box over */
         draw(box, d);
         if (d.status === 'running' && n++ < 900) window.setTimeout(tick, n < 10 ? 700 : 2000);
         else if (d.status === 'waiting' && d.waiting && d.waiting.can_answer && autoYes && autoYes()) {

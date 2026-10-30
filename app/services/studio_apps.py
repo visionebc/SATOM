@@ -57,7 +57,10 @@ FIELD_TYPES = ("text", "textarea", "number", "select", "checkbox", "password", "
                "store_select", "api_select", "satom_select")
 #: The list types; any of them may add a search box over its choices (``search``).
 LIST_TYPES = ("select", "store_select", "api_select", "satom_select")
-ACTION_KINDS = ("save_store", "download", "send", "run_app", "change_request")
+ACTION_KINDS = ("save_store", "download", "send", "run_app", "change_request", "copy",
+                "open_app")
+#: Text a Copy action may put on the clipboard.
+MAX_COPY = 512 * 1024
 MAX_FIELDS = 40
 MAX_ACTIONS = 20
 MAX_OPTIONS = 500
@@ -77,7 +80,9 @@ OPTIONS_TTL = 60.0
 _OPTIONS_CACHE: dict = {}
 _OPTIONS_LOCK = threading.Lock()
 #: Actions that may run again on the same run: they change nothing.
-REPEATABLE_ACTIONS = ("download",)
+REPEATABLE_ACTIONS = ("download", "copy", "open_app")
+#: Drawn in the browser from what ``run_json`` hands over; never POSTed.
+CLIENT_ACTIONS = ("copy", "open_app")
 #: Test seam: run in the request thread instead of a background thread.
 RUN_INLINE = False
 
@@ -373,6 +378,15 @@ def action_schema(ch: dict | None = None) -> list[dict]:
         {"key": "run_app", "label": "Run another app with the output", "params": [
             T("app", "App", k="select", c=ch.get("apps", ())),
             T("inputs", "Its form values (JSON)", "", '{}', "json")]},
+        {"key": "open_app", "label": "Open another app's form here", "params": [
+            T("app", "App", k="select", c=ch.get("apps", ())),
+            T("inputs", "Filled in with (JSON)", "The form opens over this page with these "
+              "values; the person checks them and presses Run.", '{}', "json")]},
+        {"key": "copy", "label": "Copy to the clipboard", "params": [
+            T("format", "Format", "text: the value as it is; tsv: a table as tab-separated "
+              "lines with a header (spreadsheet paste); json.", k="select",
+              c=("text", "tsv", "json"), d="text"),
+            T("value", "Value", "", "{{ outputs[0].value }}")]},
         {"key": "change_request", "label": "Raise a change request", "params": [
             T("action", "Change type", k="select", c=ch.get("cr_actions", ())),
             T("title", "Title", d="{{ run.user }}: change from an app"),
@@ -1091,7 +1105,19 @@ def waiting_step(run: StudioAppRun) -> dict | None:
     return None
 
 
-def answer(a: StudioApp, run: StudioAppRun, value: str, *, user, note: str = "") -> StudioAppRun:
+def gate_of(run: StudioAppRun, st: dict | None) -> dict:
+    """What the waiting Ask step's answer must respect: ``{acknowledge,
+    blockers}`` (``studio_checks.ASK_GATE``), empty lists when it set none."""
+    from . import studio_checks as C
+    g = run.vars.get(C.ASK_GATE) if st is not None else None
+    if not isinstance(g, dict) or g.get("key") != st.get("key"):
+        return {"acknowledge": [], "blockers": []}
+    return {"acknowledge": list(g.get("acknowledge") or []),
+            "blockers": list(g.get("blockers") or [])}
+
+
+def answer(a: StudioApp, run: StudioAppRun, value: str, *, user, note: str = "",
+           acks=None) -> StudioAppRun:
     """Answer the "Ask a person" step a run waits on and keep walking.
 
     The walk is rebuilt from what the run SAVED: its form values, its
@@ -1112,6 +1138,21 @@ def answer(a: StudioApp, run: StudioAppRun, value: str, *, user, note: str = "")
     if "_truncated" in vars_:
         raise AppError("run #%d saved more data than a waiting run can keep; start a new run"
                        % run.id)
+    gate = gate_of(run, st)
+    try:
+        ticked = sorted({int(i) for i in (acks or [])})
+    except (TypeError, ValueError):
+        raise AppError("acknowledgements are the numbers of the ticked warnings") from None
+    every = ticked == list(range(len(gate["acknowledge"])))
+    if value == "yes" and gate["blockers"]:
+        raise AppError("Yes is blocked: " + "; ".join(gate["blockers"]))
+    if value == "yes" and not every:
+        raise AppError("tick every warning before answering %s" % (st.get("label") or "Yes"))
+    vars_["last_answer"] = {
+        "step": st.get("key"), "answer": value, "by": getattr(user, "username", ""),
+        "note": note, "all_acknowledged": value == "yes" and every,
+        "acknowledged": [gate["acknowledge"][i] for i in ticked
+                         if 0 <= i < len(gate["acknowledge"])]}
     run.status = "running"
     vars_[SEGMENT_VAR] = datetime.utcnow().isoformat(timespec="seconds")
     run.vars_json = json.dumps(vars_, default=str)
@@ -1246,15 +1287,82 @@ def run_json(run: StudioAppRun, a: StudioApp, user) -> dict:
                         "fail_label": str(p.get("fail_label") or "No"),
                         "buttons": str(p.get("buttons") or "two"),
                         "can_answer": may_see_run(user, run),
+                        **gate_of(run, st),
                         **d["docs"].get(st.get("key"), {})}
     if run.status == "done" and run.armed:
         try:
             acts = definition(a, run.version == 0).get("actions") or []
         except AppError:
             acts = []
-        d["actions"] = [{"key": x["key"], "label": x["label"], "kind": x["kind"],
-                         "confirm": x.get("confirm", False)} for x in acts]
+        d["actions"] = [_action_json(a, x, run, user) for x in acts]
     return d
+
+
+def _action_json(a: StudioApp, act: dict, run: StudioAppRun, user) -> dict:
+    """An action as the run page draws it. Copy and Open app happen in the
+    browser, so what they need is rendered here, from the run the person
+    already sees: the clipboard text, the app and its filled-in values --
+    after the same checks as an action the server runs (:func:`_action`)."""
+    out = {"key": act["key"], "label": act["label"], "kind": act["kind"],
+           "confirm": act.get("confirm", False)}
+    if act["kind"] not in CLIENT_ACTIONS:
+        return out
+    try:
+        p = _action(a, run, act["key"]).get("params") or {}
+        if act["kind"] == "copy":
+            out["text"] = copy_text(_r(p.get("value") or "{{ outputs[0].value }}", _scope(run)),
+                                    p.get("format") or "text")
+        else:
+            other = get(p.get("app") or "")
+            if other is None or not can_use(user, other) or other.kind == "script":
+                out["error"] = "app %s is not yours to open" % (p.get("app") or "?")
+            else:
+                inputs = _r(F.parse_json_param(p.get("inputs") or "{}", "Filled in with"),
+                            _scope(run)) or {}
+                if not isinstance(inputs, dict):
+                    raise AppError("the values to fill in are an object")
+                out.update(app=other.slug, inputs=inputs)
+    except (AppError, F.FlowError) as exc:
+        out["error"] = str(exc)
+    return out
+
+
+def _visible_cols(rows: list) -> list:
+    """The columns of a table as it is shown: ``_`` columns (row buttons,
+    ids an app keeps for itself) are the app's, not the reader's."""
+    cols = []
+    for r in rows:
+        for k in r:
+            if k not in cols and not str(k).startswith("_"):
+                cols.append(k)
+    return cols
+
+
+def _cell(v) -> str:
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, default=str)
+    return "" if v is None else str(v)
+
+
+def copy_text(value, fmt: str) -> str:
+    """What a Copy action puts on the clipboard."""
+    if fmt == "json":
+        s = json.dumps(value, indent=2, default=str)
+    elif fmt == "tsv":
+        rows = value if isinstance(value, list) else [value]
+        rows = [r if isinstance(r, dict) else {"value": r} for r in rows]
+        cols = _visible_cols(rows)
+        clean = lambda v: _cell(v).replace("\t", " ").replace("\r", " ").replace("\n", " ")  # noqa: E731
+        s = "\n".join(["\t".join(cols)] + ["\t".join(clean(r.get(c)) for c in cols) for r in rows])
+    elif isinstance(value, str):
+        s = value
+    elif isinstance(value, list) and all(not isinstance(x, (dict, list)) for x in value):
+        s = "\n".join(_cell(x) for x in value)
+    else:
+        s = json.dumps(value, indent=2, default=str)
+    if len(s) > MAX_COPY:
+        raise AppError("more than %d KiB to copy: use a download" % (MAX_COPY // 1024))
+    return s
 
 
 def result_layout(a: StudioApp, version: int) -> str:
@@ -1357,11 +1465,7 @@ def download(a: StudioApp, run: StudioAppRun, key: str) -> tuple[str, bytes, str
     from .csv_safe import spreadsheet_safe
     rows = value if isinstance(value, list) else [value]
     rows = [r if isinstance(r, dict) else {"value": r} for r in rows]
-    cols = []
-    for r in rows:
-        for k in r:
-            if k not in cols:
-                cols.append(k)
+    cols = _visible_cols(rows)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(cols)
@@ -1377,6 +1481,8 @@ def run_action(a: StudioApp, run: StudioAppRun, key: str, *, user, product: str)
     act = _action(a, run, key)
     p, scope = act["params"], _scope(run)
     kind = act["kind"]
+    if kind in CLIENT_ACTIONS:
+        raise AppError("%s happens in the browser" % act["label"])
     try:
         if kind == "save_store":
             from . import studio_store as SS

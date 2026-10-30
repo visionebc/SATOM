@@ -99,7 +99,16 @@ def kinds() -> list:
               Param("fail_label", "No button", default="No"),
               Param("buttons", "Buttons", "select", choices=("two", "one"), default="two",
                     help="one: a single button (the Yes button, e.g. 'Done') that "
-                         "follows the yes arrow.")]),
+                         "follows the yes arrow."),
+              Param("acknowledge", "Must be acknowledged",
+                    help="A list of warnings, e.g. {{ plan.warnings | rejectattr('blocking') "
+                         "| map(attribute='text') | list }}: each one is a tick box, and Yes "
+                         "is accepted only with every box ticked. The answer is saved as "
+                         "{{ last_answer }} (answer, acknowledged, all_acknowledged, by, note)."),
+              Param("blockers", "Blocks the Yes answer",
+                    help="A list, e.g. {{ plan.warnings | selectattr('blocking') "
+                         "| map(attribute='text') | list }}: while it is not empty, Yes is "
+                         "refused and only No can be answered.")]),
         Kind("activity", "Activity", "flow",
              "A documented box that passes at once — a heading such as "
              "'1 Connectivity tests'. Its instructions show on the run."),
@@ -126,6 +135,27 @@ def appliance_dict(row) -> dict:
     return {k: getattr(row, k, None) for k in APPLIANCE_FIELDS}
 
 
+#: Where an Ask step leaves what its answer must respect (``acknowledge``,
+#: ``blockers``); ``studio_apps.answer`` enforces it, the run page draws it.
+ASK_GATE = "_ask_gate"
+MAX_GATE_ITEMS = 50
+
+
+def _texts(v) -> list[str]:
+    """A list parameter as short texts: a list (of texts, or of objects with
+    a ``text``), or one text; empty values dropped."""
+    if v is None or v == "":
+        return []
+    items = v if isinstance(v, (list, tuple)) else [v]
+    out = []
+    for x in items:
+        t = x.get("text") if isinstance(x, dict) else x
+        t = str(t if t is not None else "").strip()
+        if t:
+            out.append(t[:500])
+    return out[:MAX_GATE_ITEMS]
+
+
 def _int(v, default):
     try:
         return int(str(v).strip())
@@ -146,6 +176,9 @@ def run(node, ctx):
         return "ok", None, first[:200]
 
     if kind == "ask":
+        ctx.vars[ASK_GATE] = {"key": node.get("key") or "",
+                              "acknowledge": _texts(P("acknowledge")),
+                              "blockers": _texts(P("blockers"))}
         return WAIT, None, str(P("prompt") or "")
 
     if kind == "appliance_load":

@@ -6,6 +6,46 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **DNS & LB Lookup as Plugin Studio apps** (request: "I want the whole DNS &
+  LB Lookup section to be an app in Plugin Studio — the page stays, and keep
+  Copy, editing a record from its row and the decommission confirmation").
+  Plugin Studio › Examples › *DNS & LB Lookup* installs three published
+  template apps: **DNS & LB Lookup** (`ex-dns-lb-lookup`: DNS answers per
+  resolver, LB matches from the device cache, Quick LB, Not found; Copy DNS /
+  Copy LB; Records, Open policy and Decommission on each row), **DNS Records**
+  (`ex-dns-records`: list, then Edit / Delete on each record, create, update,
+  delete) and **Decommission a service** (`ex-dns-decommission`: the plan,
+  a tick box per warning, apply). The page under Fleet › DNS Lookup is
+  unchanged.
+- **Six SATOM steps** behind them, adapters over the modules the page uses:
+  *DNS: look names up*, *LB: match names to the fleet*, *DNS records: list*,
+  *DNS records: create, change or delete*, *Decommission: plan* and
+  *Decommission: apply the plan*. Each asks the user who runs the app for
+  the page route's permission (`network.view`, `user_manage`,
+  `config_write`) and runs in the run's ADOM as that user, so an app never
+  widens access or sees another ADOM's fleet; a run with no person (a
+  schedule, an event) is refused.
+- **Plugin Studio: Copy to the clipboard** action (text, tab-separated table
+  or JSON) and **Open another app's form here** (the form opens over the run
+  page, filled in, and the run is followed in the same window).
+- **Plugin Studio: row buttons** on an Output table (*Row buttons (JSON)*): an
+  app opened filled in with the row's values, or a SATOM page; `when` per
+  button; no button for an app the person may not use; only SATOM paths.
+- **Plugin Studio: Output "plan" view** (a decommission plan: delete / unbind
+  / keep per stage, warnings and blockers).
+- **Plugin Studio: Ask a person — Must be acknowledged / Blocks the Yes
+  answer.** One tick box per warning; *Yes* is refused on the server until
+  every one is ticked, and refused outright while a blocker stands. The
+  answer is saved as `{{ last_answer }}`.
+
+### Changed
+- Plugin Studio tables, CSV downloads and copies leave out columns whose name
+  starts with `_` (the app's own ids and row buttons), as *Save to a data
+  store* already did.
+- Installing an example creates all of its apps before saving any, so an app
+  may open another app of the same bundle.
+
 ## [4.6.0] - 2026-10-27
 
 **A device's full baseline, applied where you choose.** Every combo an

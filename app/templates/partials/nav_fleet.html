@@ -61,7 +61,13 @@
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
   <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Fleet Objects') }}</span></a>
 {% endif %}
-{% if may_open('dns_tool.index') %}
+{# DNS Lookup: not in the Global block (operator, 2026-10-30: "it is also in
+   the Global section and should not be there any more") -- there DNS & LB
+   Lookup is the plugins dns-lb-lookup / dns-records / dns-decommission under
+   Global > Plugins, right below. The device ADOMs keep the page here, and
+   Administrator > System keeps the administrator's door; the page keeps
+   answering by URL. #}
+{% if _pk != 'global' and may_open('dns_tool.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' and request.endpoint != 'dns_tool.resolvers' else '' }}" href="{{ url_for('dns_tool.index') }}">
   <i class="bi bi-globe fw-nav-icon"></i><span>{{ _('DNS Lookup') }}</span></a>
 {% endif %}

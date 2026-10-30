@@ -331,11 +331,13 @@
           <th>Errors</th><th>Discards</th></tr></thead>
         <tbody>
           {% for i in metrics.interfaces %}
-          <tr><td>{{ i.iface }}</td><td>{{ i.dir }}</td><td>{{ pd_fmt(i.bps, 'bit/s') }}</td>
-            <td>{{ pd_fmt(i.pps, '') }}</td>
-            {# "—" = not collected (errors/discards come from SNMP only), never 0 #}
-            <td>{% if i.errors %}<span class="fw-badge fw-badge-danger">{{ pd_fmt(i.errors, '') }}</span>{% else %}{{ pd_fmt(i.errors, '') }}{% endif %}</td>
-            <td>{% if i.discards %}<span class="fw-badge fw-badge-warning">{{ pd_fmt(i.discards, '') }}</span>{% else %}{{ pd_fmt(i.discards, '') }}{% endif %}</td></tr>
+          <tr><td>{{ i.iface }}</td><td>{{ i.dir }}</td><td>{{ pd_fmt(i.get('bps'), 'bit/s') }}</td>
+            {# .get(), not attribute access: a reading that was not collected is
+               ABSENT from the row, and an absent key reaches pd_fmt as Jinja's
+               Undefined (a 500 on 2026-10-30). "—" = not collected, never 0. #}
+            <td>{{ pd_fmt(i.get('pps'), '') }}</td>
+            <td>{% if i.get('errors') %}<span class="fw-badge fw-badge-danger">{{ pd_fmt(i.get('errors'), '') }}</span>{% else %}{{ pd_fmt(i.get('errors'), '') }}{% endif %}</td>
+            <td>{% if i.get('discards') %}<span class="fw-badge fw-badge-warning">{{ pd_fmt(i.get('discards'), '') }}</span>{% else %}{{ pd_fmt(i.get('discards'), '') }}{% endif %}</td></tr>
           {% endfor %}
         </tbody>
       </table>

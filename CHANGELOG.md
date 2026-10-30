@@ -201,9 +201,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   (request: "remove that section and make the menus there expandable").
   Apps, Data stores, Connections and API Catalog have a caret that unfolds
   their items, each a link to its page; Apps unfold by menu group, each group
-  folding on its own. Clicking an entry still shows its pane and unfolds it.
-  Everything starts folded and the browser remembers what you opened. Below
-  1400 px the Explorer stays the one-line strip of tabs, without the items.
+  folding on its own. It works as an accordion (follow-up request: "when a
+  submenu opens the others should collapse, and the menu we are in should be
+  highlighted"): opening an entry, by a click on it or on its caret, shows its
+  pane, highlights it and folds the others; the entry of the pane you are on
+  is drawn open, and one menu group is open at a time. Below 1400 px the
+  Explorer stays the one-line strip of tabs, without the items. The *Menu
+  group* filter of Apps is always shown (it used to appear only once a group
+  existed, so it looked missing).
 - User guide §33 rewritten as *Scout — the operations assistant*: tools,
   the troubleshooting workflow, provider choice, what every exchange leaves
   behind, and what is planned. §13 describes Path Diagnostics, its saved

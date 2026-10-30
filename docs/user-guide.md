@@ -6665,7 +6665,9 @@ You can create Apps-only accounts by hand (Access → Users, with an Apps only
 profile) and share apps with them; they sign in on the console page or on an
 app's page and land on My apps.
 
-**2. Directory connections** (Access → Directory connections). Any number of
+**2. Directory connections** (Plugin Studio → *Sign-in directories*, or
+Access → Directory connections — the same list, for users with *user
+management*). Any number of
 directory servers an app's sign-in may prove people against, independent of
 Settings → Authentication (which they never change):
 
@@ -6685,7 +6687,10 @@ Settings → Authentication (which they never change):
   that made accounts cannot be deleted — disable it (its accounts then cannot
   sign in).
 
-**3. App sign-in** (Access → App sign-in → *app*). Tick *People sign in to this
+**3. App sign-in** (Plugin Studio → Apps → *app* → **Sign-in** tab; a script
+app has the same tab in its script editor; or Access → App sign-in → *app*).
+Plugin Studio authors without *user management* see the tab read only — who
+may sign in to an app is an administrator's decision. Tick *People sign in to this
 app on its own page* and add **rules**, tried in order — the first that accepts
 signs the person in, and nothing else is tried after them (never the console
 sign-in):
@@ -6716,6 +6721,17 @@ The link to hand out is shown on the page: `https://<node>/a/<app>/`. It opens
 the app when the session may use it and the app's sign-in page otherwise; the
 page wears the app's Design colours. An expired or idle-locked session on an
 app page comes back to that app's sign-in, and *Sign out* returns there too.
+
+**In the app package.** Export carries the sign-in in `app.json` as
+`"signin"`: the rules with each directory connection by **id and kind**, the
+groups and filters, the 2FA tick, the Apps only profile **by name** and
+*New accounts wait*. Never a server, a bind account or a secret, and never
+the on/off. An import brings it **switched off** (turn it on in the app's
+Sign-in tab once the app is published); a rule whose connection this server
+does not have — or has with another kind — is left out with a warning and a
+to-do to create it; an app that already has sign-in rules here keeps them.
+The SATOM Builder edits the same `"signin"` in its **Sign-in** tab, offering
+the directory connections and profiles of the target SATOM.
 
 Every step is audited: `login.app.ok` / `login.app.fail` (with the rule each
 connection answered, never a password), `login.app.provision`,

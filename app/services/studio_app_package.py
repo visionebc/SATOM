@@ -12,7 +12,8 @@ carries ``app.json``::
                       token_url, verify_tls, timeout, api, api_version}],
      "apis":        [{slug, name, owner, docs_url, description,
                       version, base_path, operations[, source, notes]}],
-     "automations": [{name, schedule_kind, schedule, inputs, description}]}
+     "automations": [{name, schedule_kind, schedule, inputs, description}],
+     "signin":      {rules: [{connection, kind, ...}], profile, require_approval}}
 
 INSTALL RULES -- what an import may and may not overwrite
 ---------------------------------------------------------
@@ -33,6 +34,11 @@ INSTALL RULES -- what an import may and may not overwrite
   as the importing user once an administrator turns them on; one that exists
   (same app and name) keeps this server's schedule, inputs and on/off
   (:mod:`plugin_automations`).
+* **Sign-in** (``"signin"``, contract section 20): the app's own sign-in
+  rules, naming directory connections by id and kind -- never a server or a
+  secret. They arrive SWITCHED OFF; a rule whose connection this server lacks
+  is left out with a warning; an app with rules here keeps them
+  (:func:`app_signin.install`).
 * **Scripts** (``"scripts"``: the Script Library scripts the diagram's
   ``script`` steps run, with their published files and settings) are created
   when missing and published as version 1 for ``admins``. An existing script
@@ -178,6 +184,10 @@ def build_body(a) -> dict:
     autos = PA.export(a.slug)
     if autos:
         body["automations"] = autos
+    from . import app_signin as AS
+    signin = AS.export(a)
+    if signin:
+        body["signin"] = signin
     return body
 
 
@@ -249,6 +259,7 @@ def _server_refusal(body: dict) -> None:
 def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
     """Install an app package. ``{app, created, kept, todo, problems, warnings}``."""
     from ..extensions import db
+    from . import app_signin as AS
     from . import package_check as PC
     from . import script_library as SL
     from . import studio_api_library as LIB
@@ -393,12 +404,16 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
         from . import plugin_automations as PA
         autos, _bad = PA.clean_entries(body.get("automations"))   # preflight refused bad ones
         got = PA.install(slug, autos, by=by)
+        signin, _bad = AS.clean_package(body.get("signin"))        # preflight refused bad ones
+        si = AS.install(a, signin)
+        for k in ("created", "kept", "warnings", "todo"):
+            got[k] = got[k] + si[k]
         created += got["created"]
         kept += got["kept"]
         warnings += got["warnings"]
         db.session.commit()
     except (SA.AppError, SS.StoreError, SC.ConnectionError_, SAPI.ApiError, KeyError,
-            D.DesignError, SL.ScriptError) as exc:
+            D.DesignError, SL.ScriptError, AS.PolicyError) as exc:
         db.session.rollback()
         raise AppPackageError("the app package could not be installed: %s" % exc) from None
     if a.status != "published":

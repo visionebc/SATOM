@@ -119,23 +119,33 @@ def signin_index():
     return render_template("directory_connections/signin_index.html", rows=rows)
 
 
+def signin_context(a, *, directories_url: str = "") -> dict:
+    """What ``directory_connections/_signin_policy.html`` draws for app *a* --
+    here and in Plugin Studio > Apps > <app> > Sign-in. ``can_edit`` is the
+    permission every save and revoke route below demands."""
+    conns = [{"id": c.id, "slug": c.slug, "name": c.name, "kind": c.kind,
+              "kind_label": DC.KIND_LABELS.get(c.kind, c.kind), "enabled": bool(c.enabled)}
+             for c in DC.all_connections()]
+    return {"policy": AS.policy_of(a), "conns": conns,
+            "apps_profiles": [p for p in Profile.query.order_by(Profile.name).all()
+                              if p.is_apps_only],
+            "grants": AS.grants_of_app(a), "open": AS.is_open(a),
+            "runnable": SA._runnable_app(a),
+            "can_edit": bool(current_user.can(Permission.USER_MANAGE)),
+            "directories_url": directories_url,
+            "login_url": url_for("apps_portal.entry", slug=a.slug, _external=True)}
+
+
 @bp.route("/app-signin/<slug>")
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def signin_edit(slug):
     a = SA.get(slug) or abort(404)
-    pol = AS.policy_of(a)
-    conns = [{"id": c.id, "slug": c.slug, "name": c.name, "kind": c.kind,
-              "kind_label": DC.KIND_LABELS.get(c.kind, c.kind), "enabled": bool(c.enabled)}
-             for c in DC.all_connections()]
-    profiles = [p for p in Profile.query.order_by(Profile.name).all() if p.is_apps_only]
     return render_template(
-        "directory_connections/signin_edit.html", a=a, policy=pol, conns=conns,
-        apps_profiles=profiles, grants=AS.grants_of_app(a),
+        "directory_connections/signin_edit.html", a=a,
         groups=UserGroup.query.order_by(UserGroup.name).all(),
         users=User.query.filter_by(is_active=True).order_by(User.username).all(),
-        open=AS.is_open(a), runnable=SA._runnable_app(a),
-        login_url=url_for("apps_portal.entry", slug=a.slug, _external=True))
+        **signin_context(a, directories_url=url_for("directory_connections.index")))
 
 
 @bp.route("/app-signin/<slug>/save", methods=["POST"])

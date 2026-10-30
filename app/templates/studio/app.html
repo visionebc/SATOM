@@ -25,8 +25,8 @@
 
 <ul class="nav nav-tabs mb-3" role="tablist">
   {% for id, icon, label in [('settings', 'bi-sliders', _('Settings')), ('form', 'bi-ui-checks', _('Form')), ('diagram', 'bi-diagram-3', _('Diagram')), ('design', 'bi-palette', _('Design')),
-                             ('actions', 'bi-lightning', _('Actions')), ('test', 'bi-play-circle', _('Test')), ('publish', 'bi-rocket-takeoff', _('Publish'))] %}
-  <li class="nav-item"><button class="nav-link {{ 'active' if loop.first }}" data-bs-toggle="tab" data-bs-target="#ap-tab-{{ id }}" type="button"><i class="bi {{ icon }} me-1"></i>{{ label }}</button></li>
+                             ('actions', 'bi-lightning', _('Actions')), ('signin', 'bi-door-open', _('Sign-in')), ('test', 'bi-play-circle', _('Test')), ('publish', 'bi-rocket-takeoff', _('Publish'))] %}
+  <li class="nav-item"><button class="nav-link {{ 'active' if loop.first }}" id="ap-tabbtn-{{ id }}" data-bs-toggle="tab" data-bs-target="#ap-tab-{{ id }}" type="button"><i class="bi {{ icon }} me-1"></i>{{ label }}{% if id == 'signin' and policy.enabled %} <span class="fw-badge fw-badge-success ms-1">{{ _('on') }}</span>{% endif %}</button></li>
   {% endfor %}
 </ul>
 
@@ -49,7 +49,7 @@
         <label class="form-label small d-block">{{ _('Who may use it') }}</label>
         <p class="text-muted" style="font-size:12px;">{{ _('The groups and the people ticked here, plus every Plugin Studio author. Nobody else sees the menu entry or can open the app.') }}
           {% if current_user.can('user_manage') %}<a href="{{ url_for('user_groups.index') }}">{{ _('Manage groups') }}</a> ·
-          <a href="{{ url_for('directory_connections.signin_edit', slug=a.slug) }}">{{ _('Own sign-in for people outside SATOM') }}</a>{% endif %}</p>
+          {% endif %}{{ _('People outside SATOM: tab Sign-in.') }}</p>
         <div class="row">
           <div class="col-md-6"><div class="text-muted small mb-1">{{ _('Groups') }}</div>
             <div style="max-height:240px;overflow:auto;">
@@ -196,6 +196,12 @@
         <button type="button" class="btn btn-primary btn-sm ms-auto" id="ap-save-actions"><i class="bi bi-save me-1"></i>{{ _('Save actions') }}</button>
       </div>
     </div></div>
+  </div>
+
+  {# -------------------------------------------------------------- signin #}
+  <div class="tab-pane fade" id="ap-tab-signin">
+    <p class="text-muted" style="font-size:12px;">{{ _('The app\'s own sign-in page, for people who have no SATOM console account: who may sign in (a directory group, a FortiAuthenticator group or local accounts), how it is proven and the Apps only profile their account gets. They see this app and nothing else of SATOM. The page opens once the app is published. The rules travel in the app package; an import brings them switched off.') }}</p>
+    {% include "directory_connections/_signin_policy.html" %}
   </div>
 
   {# ---------------------------------------------------------------- test #}

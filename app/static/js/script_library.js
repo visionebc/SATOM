@@ -994,6 +994,13 @@
   openFile(current);
   setDirty(false);
   // #history / #compare (the library's row actions) open the Versions tab.
+  // #signin opens the Sign-in tab (a save there reloads the page onto it).
+  if (window.location.hash === '#signin' && $('sl-tabbtn-signin') && window.bootstrap) {
+    window.bootstrap.Tab.getOrCreateInstance($('sl-tabbtn-signin')).show();
+  }
+  if ($('sl-tabbtn-signin')) {
+    $('sl-tabbtn-signin').addEventListener('shown.bs.tab', function () { history.replaceState(null, '', '#signin'); });
+  }
   if (window.location.hash === '#history' || window.location.hash === '#compare') {
     var tabBtn = document.querySelector('[data-bs-target="#sl-tab-versions"]');
     if (tabBtn && window.bootstrap) window.bootstrap.Tab.getOrCreateInstance(tabBtn).show();

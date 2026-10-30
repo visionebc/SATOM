@@ -36,9 +36,10 @@ def _bounded_bodies():
     return refuse_larger_than(MAX_BODY)
 CONSOLE = "studio.python_console"
 LIBRARY = "studio.script_library"
+USER_MANAGE = "user_manage"   # models.Permission.USER_MANAGE: Access > Directory connections
 #: "scripts" is gone (2026-10-23: every script is an app); an old link to it
 #: lands on Apps.
-PANES = ("apps", "console", "stores", "connections", "apis", "examples")
+PANES = ("apps", "console", "stores", "connections", "directories", "apis", "examples")
 
 
 def _who() -> str:
@@ -56,8 +57,12 @@ def index():
     pane = request.args.get("pane")
     if pane == "scripts":
         pane = "apps"
+    # Sign-in directories are Access > Directory connections, drawn here too:
+    # the same permission as there (user management) decides who sees them.
+    can_directories = bool(can_library and current_user.can(USER_MANAGE))
     if pane not in PANES or (pane != "console" and not can_library) \
-            or (pane == "console" and not can_console):
+            or (pane == "console" and not can_console) \
+            or (pane == "directories" and not can_directories):
         pane = "apps" if can_library else "console"
     from ..extensions import db
     from ..services import studio_apps as SA
@@ -92,7 +97,16 @@ def index():
         datasets=PD.picker() if can_console else [],
         examples=py_examples.all_examples() if can_console else [],
         bundles=_bundles() if can_library else [],
-        sandbox_ok=sandbox.available())
+        sandbox_ok=sandbox.available(), can_directories=can_directories,
+        **(_directories() if can_directories else {"conns": [], "kinds": []}))
+
+
+def _directories() -> dict:
+    """What directory_connections/_manage.html draws in the Sign-in directories pane."""
+    from ..services import directory_connections as DC
+    return {"conns": [DC.public(c) for c in DC.all_connections()],
+            "kinds": [(k, DC.KIND_LABELS[k]) for k in DC.KINDS],
+            "dc_back": url_for("studio.index", pane="directories")}
 
 
 @bp.get("/icons.json")
@@ -763,6 +777,7 @@ def app_edit(slug):
     from ..services import studio_design as D
     from ..services import plugin_automations as PA
     from ..services import studio_flow as F
+    from . import directory_connections as DCV
     a = _app_or_404(slug)
     if a.kind == "script":  # its form, code and versions live in the script editor
         return redirect(url_for("script_library.edit", slug=a.script_slug))
@@ -777,7 +792,9 @@ def app_edit(slug):
         template=SA.is_template(a), design_schema=D.schema(), design=a.design or D.empty(),
         assets=[_asset_json(a, r) for r in D.assets_of(a.id)],
         output_titles=D.output_titles(a.graph), automations=PA.linked(slug),
-        automation_when=lambda r: PA.describe(r.schedule_kind, r.schedule_dict))
+        automation_when=lambda r: PA.describe(r.schedule_kind, r.schedule_dict),
+        with_access=False,
+        **DCV.signin_context(a, directories_url=url_for("studio.index", pane="directories")))
 
 
 @bp.route("/apps/<slug>/settings", methods=["POST"])

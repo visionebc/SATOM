@@ -69,6 +69,10 @@
           <i class="bi bi-table me-2"></i>{{ _('Data stores') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ stores|length }}</span></a>
         <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'connections' }}" data-bs-toggle="list" href="#studio-pane-connections" role="tab" data-pane="connections">
           <i class="bi bi-plug me-2"></i>{{ _('Connections') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ connections|length }}</span></a>
+        {% if can_directories %}
+        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'directories' }}" data-bs-toggle="list" href="#studio-pane-directories" role="tab" data-pane="directories">
+          <i class="bi bi-diagram-2 me-2"></i>{{ _('Sign-in directories') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ conns|length }}</span></a>
+        {% endif %}
         <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'apis' }}" data-bs-toggle="list" href="#studio-pane-apis" role="tab" data-pane="apis">
           <i class="bi bi-journal-code me-2"></i>{{ _('API Catalog') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ apis|length }}</span></a>
         <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'examples' }}" data-bs-toggle="list" href="#studio-pane-examples" role="tab" data-pane="examples">
@@ -241,6 +245,16 @@
           </table>
         </div>
       </div>
+
+      {% if can_directories %}
+      <div class="tab-pane fade {{ 'show active' if pane == 'directories' }}" id="studio-pane-directories" role="tabpanel">
+        <div class="fw-card sl-how"><div class="fw-card-body py-2 d-flex gap-2" style="font-size:12px;">
+          <i class="bi bi-diagram-2 text-accent" style="font-size:18px;"></i>
+          <span>{{ _('The Active Directory, LDAP and RADIUS (FortiAuthenticator) servers an app\'s own sign-in proves people against -- each with its own address, bind account and secret, never shown again. Which groups of which server may use an app is set in the app\'s Sign-in tab. The same list as Administrator > Access > Directory connections; app steps never see these secrets.') }}</span>
+        </div></div>
+        {% include "directory_connections/_manage.html" %}
+      </div>
+      {% endif %}
 
       <div class="tab-pane fade {{ 'show active' if pane == 'apis' }}" id="studio-pane-apis" role="tabpanel">
         <div class="fw-card sl-how"><div class="fw-card-body py-2 d-flex gap-2" style="font-size:12px;">

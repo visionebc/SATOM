@@ -20,14 +20,12 @@ code on purpose, and a secret that proves who may sign in must not be.
 from __future__ import annotations
 
 import json
-import re
 
 from ..extensions import db
 from ..models_studio import DirectoryConnection, StudioApp
+from .app_signin_rules import KIND_LABELS, SLUG_RE  # noqa: F401 -- one source, packed for the Builder
 
-SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{1,38}[a-z0-9]$")
 KINDS = DirectoryConnection.KINDS
-KIND_LABELS = {"ad": "Active Directory", "ldap": "LDAP", "radius": "RADIUS / FortiAuthenticator"}
 
 #: The non-secret settings each kind keeps, with their type.
 _FIELDS = {

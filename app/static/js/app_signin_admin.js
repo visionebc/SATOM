@@ -1,5 +1,8 @@
-/* Administrator > Access > App sign-in > <app> (directory_connections/signin_edit.html):
- * the app's sign-in rules, its access list and its grants.
+/* An app's own sign-in (directory_connections/_signin_policy.html), drawn by
+ * Administrator > Access > App sign-in > <app> -- with the app's access list
+ * (withAccess) -- and by Plugin Studio > Apps > <app> > Sign-in, where the
+ * access list is the Settings tab's and is never sent from here.
+ * Read only (canEdit false): rules are drawn, nothing can be changed.
  * Server side: app/views/directory_connections.py, services/app_signin.py. */
 (function () {
   'use strict';
@@ -30,6 +33,7 @@
   var CONNS = {};
   CFG.conns.forEach(function (c) { CONNS[String(c.id)] = c; });
   var rules = (CFG.policy.rules || []).map(function (r) { return JSON.parse(JSON.stringify(r)); });
+  var EDIT = CFG.canEdit !== false;
 
   function lines(v) { return (v || []).join('\n'); }
   function unlines(s) { return String(s || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean); }
@@ -61,7 +65,7 @@
       del.appendChild(el('i', { 'class': 'bi bi-trash' }));
       del.addEventListener('click', function () { rules.splice(i, 1); render(); });
       tools.appendChild(del);
-      head.appendChild(tools);
+      if (EDIT) head.appendChild(tools);
       body.appendChild(head);
       var row = el('div', { 'class': 'row g-2', style: 'font-size:12px;' });
       if (c && (c.kind === 'ad' || c.kind === 'ldap')) {
@@ -107,6 +111,7 @@
     });
   }
   render();
+  if (!EDIT) return;
 
   $('si-add').addEventListener('click', function () {
     var v = $('si-add-conn').value;
@@ -120,11 +125,14 @@
   $('si-save').addEventListener('click', function () {
     $('si-err').textContent = '';
     var pid = $('si-profile').value;
-    post(CFG.save, {
+    var body = {
       policy: { enabled: $('si-enabled').checked, rules: rules, profile_id: pid ? +pid : null,
-                require_approval: $('si-approval').checked },
-      access: { groups: checked('.si-group'), users: checked('.si-user') }
-    }).then(function () { window.location.reload(); })
+                require_approval: $('si-approval').checked }
+    };
+    // Only the admin page draws the access list: sending an empty one from the
+    // Studio tab would unshare the app from everybody.
+    if (CFG.withAccess) body.access = { groups: checked('.si-group'), users: checked('.si-user') };
+    post(CFG.save, body).then(function () { window.location.reload(); })
       .catch(function (e) { $('si-err').textContent = e.message; });
   });
   document.querySelectorAll('.si-revoke').forEach(function (b) {

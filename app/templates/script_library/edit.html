@@ -34,6 +34,7 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-settings" type="button"><i class="bi bi-sliders me-1"></i>{{ _('Settings') }}</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-test" type="button"><i class="bi bi-play-circle me-1"></i>{{ _('Test') }}</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-versions" type="button"><i class="bi bi-tags me-1"></i>{{ _('Versions & runs') }}</button></li>
+  {% if signin_app %}<li class="nav-item"><button class="nav-link" id="sl-tabbtn-signin" data-bs-toggle="tab" data-bs-target="#sl-tab-signin" type="button"><i class="bi bi-door-open me-1"></i>{{ _('Sign-in') }}{% if policy.enabled %} <span class="fw-badge fw-badge-success ms-1">{{ _('on') }}</span>{% endif %}</button></li>{% endif %}
   {% if console %}
   <li class="nav-item ms-auto"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-console" type="button" title="{{ _('Try code against the fleet data without saving it in the script') }}"><i class="bi bi-terminal me-1"></i>{{ _('Console') }}</button></li>
   {% endif %}
@@ -200,6 +201,13 @@
   </div>
 
   {# ------------------------------------------------------------ versions #}
+  {% if signin_app %}
+  <div class="tab-pane fade" id="sl-tab-signin">
+    <p class="text-muted" style="font-size:12px;">{{ _('The app\'s own sign-in page, for people who have no SATOM console account: who may sign in (a directory group, a FortiAuthenticator group or local accounts), how it is proven and the Apps only profile their account gets. They see this app and nothing else of SATOM. The page opens once the app is published. The rules travel in the app package; an import brings them switched off.') }}
+      {% if current_user.can('user_manage') %}<a href="{{ url_for('directory_connections.signin_edit', slug=signin_app.slug) }}">{{ _('Who may use it with a SATOM account: Access > App sign-in') }}</a>{% endif %}</p>
+    {% set a = signin_app %}{% include "directory_connections/_signin_policy.html" %}
+  </div>
+  {% endif %}
   <div class="tab-pane fade" id="sl-tab-versions">
     <div class="fw-card mb-3">
       <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">

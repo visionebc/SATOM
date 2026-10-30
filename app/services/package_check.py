@@ -102,6 +102,15 @@ RULES = (
      "inputs that are fields of the form, with every required field given."),
     ("app.automations_off", WARNING, "Automations arrive switched off: an administrator turns "
      "them on in Automations once the app is published."),
+    ("app.signin", ALL, "The app's own sign-in (app.json signin, at most 10 rules) names each "
+     "directory connection by id and kind (ad, ldap, radius) or is local, with only the keys of "
+     "its kind: LDAP filter and group DNs for AD/LDAP, groups for RADIUS -- never a server, an "
+     "account or a secret."),
+    ("app.signin_off", WARNING, "The sign-in arrives switched off: an administrator turns it on "
+     "in the app's Sign-in tab once the app is published."),
+    ("app.signin_connection", WARNING, "A rule whose directory connection this server does not "
+     "have, or has with another kind, is left out on import; an app that has sign-in rules here "
+     "keeps them."),
     ("asset.name", ALL, "Every assets/* image matches its SHA-256 name."),
     ("asset.image", ALL, "Every assets/* member is a PNG, JPEG, GIF or WebP image within the "
      "size and count limits."),
@@ -644,6 +653,36 @@ def _app_rules(body, files: dict, target: dict | None, r: _Report, summary: dict
         creates += ["automation %s (%s, off)" % (e["name"], PA.describe(e["schedule_kind"],
                                                                           e["schedule"]))
                     for e in autos]
+    # sign-in (contract section 20) ----------------------------------------------
+    from . import app_signin_rules as AS
+    signin, bad = AS.clean_package(body.get("signin"))
+    for where, msg in bad:
+        r.add("app.signin", where, msg)
+    if signin and signin["rules"]:
+        r.add("app.signin_off", "signin",
+              "the sign-in (%d rule(s)) arrives switched off: an administrator turns it on in "
+              "the app's Sign-in tab once the app is published" % len(signin["rules"]))
+        if target is not None:
+            dirs = ex.get("directory_connections")
+            for i, rule in enumerate(signin["rules"]):
+                if rule["kind"] == "local" or not isinstance(dirs, dict):
+                    continue          # a SATOM older than section 20 lists none: say nothing
+                have = dirs.get(rule["connection"])
+                if not isinstance(have, dict):
+                    r.add("app.signin_connection", "signin.rules[%d]" % i,
+                          "directory connection %s does not exist on this server: the rule is "
+                          "left out on import (create it in Plugin Studio > Sign-in directories)"
+                          % rule["connection"])
+                elif have.get("kind") != rule["kind"]:
+                    r.add("app.signin_connection", "signin.rules[%d]" % i,
+                          "directory connection %s is %s on this server, not %s: the rule is "
+                          "left out on import" % (rule["connection"], have.get("kind"),
+                                                  rule["kind"]))
+            if slug in ex_apps and (ex_apps[slug] or {}).get("signin"):
+                keeps.append("sign-in of app %s (exists: this server's rules are kept)" % slug)
+            else:
+                creates.append("sign-in of app %s (%d rule(s), off)" % (slug,
+                                                                        len(signin["rules"])))
     if summary is not None:
         creates += ["image %s" % n.split("/", 1)[1] for n in sorted(files)
                     if n.startswith("assets/")]
@@ -833,7 +872,24 @@ def schema(target: dict) -> dict:
         "reserved_vars": list(F.RESERVED_VARS),
         "patterns": patterns(),
         "automations": _automation_schema(),
+        "signin": _signin_schema(target),
     }
+
+
+def _signin_schema(target: dict) -> dict:
+    """Contract section 20: what an app package's ``signin`` may hold, and the
+    directory connections and Apps only profiles this server has (names and
+    kinds only -- never a server, an account or a secret)."""
+    from . import app_signin_rules as AS
+    ex = (target or {}).get("existing") or {}
+    return {"kinds": list(AS.PACKAGE_KINDS), "max_rules": AS.MAX_RULES,
+            "max_groups": AS.MAX_GROUPS,
+            "keys": {k: list(v) for k, v in AS.KIND_KEYS.items()},
+            "kind_labels": dict(AS.KIND_LABELS, local="Local SATOM accounts"),
+            "connection_pattern": AS.SLUG_RE.pattern,
+            "connections": ex.get("directory_connections") or {},
+            "profiles": list(ex.get("apps_only_profiles") or []),
+            "arrive": "off"}
 
 
 def _automation_schema() -> dict:
@@ -1027,6 +1083,29 @@ def author_guide(target: dict) -> str:
       % (au["max"], ", ".join("`%s`" % k for k in au["schedule_kinds"]),
          "; ".join("%s `%s`" % (k, json.dumps(v)) for k, v in au["shapes"].items()),
          au["weekdays"], au["min_interval_minutes"]))
+    w("")
+    si = sc["signin"]
+    w("### Sign-in (people outside SATOM)")
+    w("")
+    w("An app some people without a SATOM console account must use -- another team, a "
+      "supplier -- carries `\"signin\": {rules, profile, require_approval}` in app.json: the "
+      "app gets its own sign-in page and those people see that app and nothing else of SATOM. "
+      "`rules` (at most %d, tried in order, the first that accepts wins) are "
+      "`{connection, kind, require_2fa, ...}`: `kind` %s; `connection` is the id of a "
+      "directory connection of that kind on the server (for `local`: `\"local\"`, SATOM's own "
+      "accounts). AD/LDAP rules may add `ldap_filter` (one filter in parentheses) and "
+      "`group_dns` (member of any; AD counts nested groups); RADIUS rules `radius_groups` "
+      "(FortiAuthenticator Fortinet-Group-Name). `profile` names an Apps only profile for "
+      "the accounts a sign-in creates. Never a server, a bind account or a secret: the "
+      "administrator keeps those on the server. It arrives switched off." % (
+          si["max_rules"], ", ".join("`%s`" % k for k in si["kinds"])))
+    if si["connections"]:
+        w("- Directory connections on this server: %s." % ", ".join(
+            "`%s` (%s)" % (k, (v or {}).get("kind")) for k, v in sorted(si["connections"].items())))
+    if si["profiles"]:
+        w("- Apps only profiles on this server: %s." % ", ".join("`%s`" % p for p in si["profiles"]))
+    w("- Only when the request asks for it: an app without `signin` is used by SATOM users the "
+      "app is shared with.")
     w("")
     w("### Data stores, connections, API versions")
     w("")

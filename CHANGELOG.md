@@ -7,6 +7,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **An app's sign-in lives in Plugin Studio and travels in its package**
+  (request: "I don't see it -- this configuration should be inside Plugin
+  Studio so it can be added, otherwise it is harder for the user, and this
+  part must also be registered in the Builder"). Plugin Studio → Apps →
+  *app* gets a **Sign-in** tab (rules, Apps only profile, approval, the
+  people who signed in, Revoke), and a script app the same tab in its script
+  editor; Plugin Studio gets a **Sign-in directories** pane with the
+  directory connections (add, edit, test). Both are the Access pages drawn
+  in Plugin Studio: same routes, same *user management* permission -- an
+  author without it sees the tab read only. `app.json` carries `"signin"`
+  (contract section 20): connections by id and kind, the profile by name,
+  never a server, an account, a secret or the on/off; the import brings it
+  switched off, leaves out (with a warning and a to-do) a rule whose
+  connection this server lacks or has with another kind, and keeps the
+  rules an app already has. New package rules `app.signin`,
+  `app.signin_off`, `app.signin_connection`; the Builder's target lists the
+  directory connections (id and kind only) and the Apps only profiles, and
+  the author guide describes the sign-in.
 - **Scout correlates logs, incidents, jobs and the audit log** (request:
   "do the next stage, and add an extra source where it checks logs, a
   Splunk or similar, as optional — for products such as Cisco we will not

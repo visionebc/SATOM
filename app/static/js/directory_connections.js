@@ -1,5 +1,7 @@
-/* Administrator > Access > Directory connections (directory_connections/index.html):
- * create, edit, test and delete. Server side: app/views/directory_connections.py.
+/* Directory connections (directory_connections/_manage.html), on
+ * Administrator > Access > Directory connections and on Plugin Studio > Sign-in
+ * directories: create, edit, test and delete. After a change the page goes
+ * to CFG.back (Plugin Studio: its pane) or reloads. Server side: app/views/directory_connections.py.
  * The secret is write-only: the page never receives it. */
 (function () {
   'use strict';
@@ -9,6 +11,7 @@
   var meta = document.querySelector('meta[name="csrf-token"]');
   var CSRF = meta ? meta.getAttribute('content') : '';
   function $(id) { return document.getElementById(id); }
+  function done() { if (CFG.back) window.location.href = CFG.back; else window.location.reload(); }
   function post(url, body) {
     return fetch(url, {
       method: 'POST', credentials: 'same-origin',
@@ -70,7 +73,7 @@
     BOOL.forEach(function (k) { cfg[k] = $('dc-' + k).checked; });
     post(CFG.save, { id: editing, name: $('dc-name').value, slug: $('dc-slug').value, kind: $('dc-kind').value,
                      cfg: cfg, secret: $('dc-secret').value, enabled: $('dc-enabled').checked })
-      .then(function () { window.location.reload(); })
+      .then(function () { done(); })
       .catch(function (e) { $('dc-err').textContent = e.message; });
   });
   document.querySelectorAll('.dc-test').forEach(function (b) {
@@ -96,7 +99,7 @@
   document.querySelectorAll('.dc-del').forEach(function (b) {
     b.addEventListener('click', function () {
       if (!window.confirm('Delete the connection ' + b.getAttribute('data-name') + '?')) return;
-      post(CFG.base + b.getAttribute('data-id') + '/delete').then(function () { window.location.reload(); })
+      post(CFG.base + b.getAttribute('data-id') + '/delete').then(function () { done(); })
         .catch(function (e) { $('dc-msg').innerHTML = '<span style="color:#8B1C2A;"></span>'; $('dc-msg').firstChild.textContent = e.message; });
     });
   });

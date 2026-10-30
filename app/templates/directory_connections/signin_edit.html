@@ -1,46 +1,18 @@
 {% extends "base.html" %}
 {% block title %}{{ a.name }} — App sign-in{% endblock %}
 {% block content %}
-{# Administrator > Access > App sign-in > <app> (views.directory_connections.signin_edit). #}
+{# Administrator > Access > App sign-in > <app> (views.directory_connections.signin_edit).
+   The sign-in itself is the partial Plugin Studio > Apps > <app> > Sign-in draws too. #}
 <div class="fw-page-header d-flex align-items-start">
   <div>
     <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('directory_connections.signin_index') }}">{{ _('App sign-in') }}</a> › {{ a.slug }}</div>
     <h1 class="fw-page-title"><i class="bi {{ a.icon }} me-2 text-accent"></i>{{ a.name }}</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">
-      {% if open %}<span class="fw-badge fw-badge-success">{{ _('sign-in open') }}</span> <code>{{ login_url }}</code>
-      {% elif policy.enabled %}<span class="fw-badge fw-badge-warning">{{ _('enabled, waiting') }}</span> {{ _('The app is disabled or not published: the page stays closed until it is.') }}
-      {% else %}<span class="fw-badge fw-badge-secondary">{{ _('no own sign-in') }}</span>{% endif %}
-      {% if policy.problem %}<span class="fw-badge fw-badge-danger ms-1">{{ _('stored policy is invalid:') }} {{ policy.problem }}</span>{% endif %}
-    </p>
   </div>
-  {% if a.kind == 'flow' %}<div class="ms-auto"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.app_edit', slug=a.slug) }}"><i class="bi bi-pencil me-1"></i>{{ _('Edit in Plugin Studio') }}</a></div>{% endif %}
+  {% if a.kind == 'flow' %}<div class="ms-auto"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.app_edit', slug=a.slug) }}#signin"><i class="bi bi-pencil me-1"></i>{{ _('Edit in Plugin Studio') }}</a></div>{% endif %}
 </div>
-<div id="si-msg" class="mb-2" style="font-size:12px;"></div>
-
 <div class="row g-3">
   <div class="col-xl-7">
-    <div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-door-open me-2 text-accent"></i>{{ _('Own sign-in page') }}</span></div>
-      <div class="fw-card-body" style="font-size:13px;">
-        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="si-enabled" {{ 'checked' if policy.enabled }}><label class="form-check-label" for="si-enabled"><strong>{{ _('People sign in to this app on its own page') }}</strong></label></div>
-        <p class="text-muted" style="font-size:12px;">{{ _('Rules are tried in order and the first that accepts signs the person in; nothing else is tried after them (never the console sign-in). A person a directory accepts becomes the account user@connection, with the Apps only profile below, and may use this app; signing in to another app is another sign-in with that app\'s rules.') }}</p>
-        <div id="si-rules"></div>
-        <div class="d-flex gap-2 mt-2">
-          <select class="form-select form-select-sm" id="si-add-conn" style="max-width:320px;">
-            <option value="local">{{ _('Local SATOM accounts') }}</option>
-            {% for c in conns %}<option value="{{ c.id }}">{{ c.name }} ({{ c.kind_label }}){% if not c.enabled %} — {{ _('disabled') }}{% endif %}</option>{% endfor %}
-          </select>
-          <button type="button" class="btn btn-outline-primary btn-sm" id="si-add"><i class="bi bi-plus-lg me-1"></i>{{ _('Add rule') }}</button>
-          {% if not conns %}<a class="small align-self-center" href="{{ url_for('directory_connections.index') }}">{{ _('Add a directory connection first') }}</a>{% endif %}
-        </div>
-        <hr>
-        <div class="row g-2">
-          <div class="col-md-7"><label class="fw-form-label" for="si-profile">{{ _('Profile of the accounts a sign-in creates') }}</label>
-            <select class="form-select form-select-sm" id="si-profile"><option value="">—</option>
-              {% for p in apps_profiles %}<option value="{{ p.id }}" {{ 'selected' if policy.profile_id == p.id }}>{{ p.name }}</option>{% endfor %}</select>
-            <div class="form-text">{% if apps_profiles %}{{ _('Only Apps only profiles can be chosen.') }}{% else %}{{ _('Create a profile with Type: Apps only first (Access > Profiles).') }}{% endif %}</div></div>
-          <div class="col-md-5 d-flex align-items-end"><div class="form-check"><input class="form-check-input" type="checkbox" id="si-approval" {{ 'checked' if policy.require_approval }}><label class="form-check-label" for="si-approval">{{ _('New accounts wait for an administrator (Users)') }}</label></div></div>
-        </div>
-      </div></div>
+    {% set with_access = True %}{% set can_edit = True %}{% include "directory_connections/_signin_policy.html" %}
   </div>
   <div class="col-xl-5">
     <div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-people me-2 text-accent"></i>{{ _('Shared with (no sign-in rule needed)') }}</span></div>
@@ -56,27 +28,4 @@
       </div></div>
   </div>
 </div>
-<div class="d-flex gap-2 mt-3"><button type="button" class="btn btn-fw-primary btn-sm" id="si-save"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button><span id="si-err" class="align-self-center" style="font-size:12px;color:#8B1C2A;"></span></div>
-
-<div class="fw-card mt-3"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-person-check me-2 text-accent"></i>{{ _('People who signed in to this app') }}</span></div>
-  <div class="fw-card-body p-0">
-    <table class="fw-table mb-0"><thead><tr><th>{{ _('Account') }}</th><th>{{ _('Last sign-in through this app') }}</th><th>{{ _('State') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
-      <tbody>
-      {% for g in grants %}
-        <tr><td><code>{{ g.username }}</code></td><td style="font-size:13px;">{{ g.granted_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
-          <td>{% if g.active %}<span class="fw-badge fw-badge-success">{{ _('active') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('disabled / pending') }}</span>{% endif %}</td>
-          <td class="actions-col"><button type="button" class="btn btn-sm btn-outline-danger si-revoke" data-uid="{{ g.user_id }}" data-name="{{ g.username }}">{{ _('Revoke') }}</button></td></tr>
-      {% else %}
-        <tr><td colspan="4" class="text-muted p-3">{{ _('Nobody yet.') }}</td></tr>
-      {% endfor %}
-      </tbody></table>
-    <div class="text-muted p-2" style="font-size:11px;">{{ _('Revoking takes effect on the next page they open. A person still in the directory group gets it back by signing in again: remove them from the group, or disable the account in Users.') }}</div>
-  </div></div>
-
-<script type="application/json" id="si-config">{{ {
-  'policy': policy, 'conns': conns,
-  'save': url_for('directory_connections.signin_save', slug=a.slug),
-  'revoke': url_for('directory_connections.signin_revoke', slug=a.slug, uid=0)[:-8]
-}|tojson }}</script>
-<script src="{{ asset('js/app_signin_admin.js') }}" nonce="{{ csp_nonce }}"></script>
 {% endblock %}

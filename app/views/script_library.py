@@ -152,7 +152,13 @@ def edit(slug):
     from ..services import plugin_datasets as PD
     from ..services import studio_examples as EX
     console = current_user.can("studio.python_console")
+    from ..models_studio import StudioApp
+    from . import directory_connections as DCV
+    signin_app = StudioApp.query.filter_by(kind="script", script_slug=slug).first()
+    signin = DCV.signin_context(signin_app, directories_url=url_for(
+        "studio.index", pane="directories")) if signin_app is not None else {}
     return render_template("script_library/edit.html", script=script,
+                           signin_app=signin_app, with_access=False, **signin,
                            console=console, template=EX.is_template("script", slug),
                            datasets=PD.picker() if console else [],
                            examples=py_examples.all_examples() if console else [],

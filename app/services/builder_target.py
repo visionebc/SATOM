@@ -4,7 +4,8 @@
 and, unchanged, the ``target`` argument of ``package_check.check()``: this
 server's version, the picker values its app editor offers, the Examples
 templates, the Studio objects that already exist (no row data, never a
-secret -- only whether a connection HAS one), the enabled publishers that
+secret -- only whether a connection HAS one; directory connections by id and
+kind only, contract section 20), the enabled publishers that
 apply to the ADOM, and the schema computed from all of that.
 
 The same function feeds the console's import wizard, so a package is judged
@@ -112,10 +113,12 @@ def existing() -> dict:
     from . import studio_apis as SAPI
     from . import studio_apps as SA
     from . import studio_connections as SC
+    from . import app_signin as AS
     apps = {}
     for a in StudioApp.query.order_by(StudioApp.slug).all():
         apps[a.slug] = {"kind": a.kind or "flow", "pkg_version": a.pkg_version or "",
-                        "status": a.status or "draft", "template": SA.is_template(a)}
+                        "status": a.status or "draft", "template": SA.is_template(a),
+                        "signin": bool(AS.policy_of(a)["rules"])}
     stores = {}
     for s in StudioDataStore.query.order_by(StudioDataStore.slug).all():
         stores[s.slug] = {"columns": [{"name": c.get("name"), "type": c.get("type")}
@@ -135,7 +138,20 @@ def existing() -> dict:
     except Exception:  # noqa: BLE001 -- a broken library dir lists no script
         pass
     return {"apps": apps, "stores": stores, "connections": conns,
-            "api_versions": versions, "scripts": scripts}
+            "api_versions": versions, "scripts": scripts,
+            **sign_in_directories()}
+
+
+def sign_in_directories() -> dict:
+    """Contract section 20: the directory connections an app's sign-in may name
+    (id -> kind) and the Apps only profiles, by name. Never a server, a bind
+    account or a secret."""
+    from ..models import Profile
+    from . import directory_connections as DC
+    return {"directory_connections": {c.slug: {"kind": c.kind}
+                                      for c in DC.all_connections()},
+            "apps_only_profiles": sorted(p.name for p in Profile.query.all()
+                                         if p.is_apps_only)}
 
 
 def publishers(product: str | None) -> list[dict]:

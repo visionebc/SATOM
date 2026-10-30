@@ -25,6 +25,21 @@ profile. The qualified name is the whole defence against takeover: a directory
 ``jdoe`` can never be served the console's ``jdoe``, two directories never
 share a row, and such a row is only ever proven by its own connection.
 
+IN AN APP PACKAGE (contract section 20)
+---------------------------------------
+``app.json`` may carry ``"signin"``: the rules with the directory connection
+by its id (slug) and kind, never a server, bind account or secret; the
+profile by name::
+
+    {"rules": [{"connection": "corp-ad" | "local", "kind": "ad"|"ldap"|"radius"|"local",
+                "ldap_filter", "group_dns", "radius_groups", "require_2fa"}],
+     "profile": "<Apps only profile name>", "require_approval": bool}
+
+The import brings it SWITCHED OFF -- opening an app to people outside SATOM
+is an administrator's act on this server, as switching on an automation is.
+A rule whose connection this server does not have (or has with another kind)
+is left out with a warning; an app that already has rules here keeps them.
+
 WHAT A SIGN-IN GRANTS
 ---------------------
 Signing in through app A proves A and nothing else: A's id goes into the
@@ -36,7 +51,6 @@ next sign-in. Another app is another sign-in, with that app's rules.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -48,29 +62,14 @@ from . import directory_auth
 from . import directory_connections as DC
 
 SESSION_KEY = "app_proofs"
-MAX_RULES = 10
-_FILTER_RE = re.compile(r"^\(.*\)$", re.S)
-
-
-class PolicyError(ValueError):
-    """A sign-in policy that cannot be saved."""
+# The rules that need no server (the Builder runs them from the rules pack).
+from .app_signin_rules import (KIND_KEYS, MAX_GROUPS, MAX_RULES, PACKAGE_KINDS,  # noqa: F401
+                               PolicyError, clean_package, kind_parts)
 
 
 # --------------------------------------------------------------------------- #
 #  policy                                                                      #
 # --------------------------------------------------------------------------- #
-def _balanced(flt: str) -> bool:
-    depth = 0
-    for ch in flt:
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            if depth < 0:
-                return False
-    return depth == 0
-
-
 def _clean_rule(raw: dict) -> dict:
     if not isinstance(raw, dict):
         raise PolicyError("a rule must be an object")
@@ -83,20 +82,7 @@ def _clean_rule(raw: dict) -> dict:
     if conn is None:
         raise PolicyError("a rule names a directory connection that does not exist")
     out["connection_id"] = conn.id
-    if conn.kind in ("ad", "ldap"):
-        flt = str(raw.get("ldap_filter") or "").strip()
-        if flt and (not _FILTER_RE.match(flt) or not _balanced(flt) or len(flt) > 1000):
-            raise PolicyError("LDAP filter: one filter in parentheses, e.g. (department=NOC)")
-        dns = [str(x).strip() for x in raw.get("group_dns") or [] if str(x).strip()]
-        if any(len(d) > 500 or "=" not in d for d in dns):
-            raise PolicyError("group DN: a distinguished name such as CN=noc,OU=Groups,DC=corp,DC=local")
-        out["ldap_filter"] = flt
-        out["group_dns"] = dns[:20]
-    else:
-        groups = [str(x).strip() for x in raw.get("radius_groups") or [] if str(x).strip()]
-        if any(len(g) > 120 for g in groups):
-            raise PolicyError("RADIUS group: at most 120 characters")
-        out["radius_groups"] = groups[:20]
+    out.update(kind_parts(conn.kind, raw))
     return out
 
 
@@ -152,6 +138,89 @@ def is_open(a: StudioApp) -> bool:
     """The app has a sign-in page to show at all."""
     from .studio_apps import _runnable_app
     return bool(_runnable_app(a) and policy_of(a)["enabled"])
+
+
+# --------------------------------------------------------------------------- #
+#  the app package (contract section 20)                                       #
+# --------------------------------------------------------------------------- #
+def export(a: StudioApp) -> dict | None:
+    """The app's sign-in as a package carries it, or None when it has no rules.
+    Never ``enabled`` (the import switches it off anyway), never a server."""
+    from ..models import Profile
+    pol = policy_of(a)
+    if not pol["rules"]:
+        return None
+    rules = []
+    for r in pol["rules"]:
+        if r["connection_id"] == "local":
+            rules.append({"connection": "local", "kind": "local",
+                          "require_2fa": r["require_2fa"]})
+            continue
+        conn = DC.get(r["connection_id"])
+        if conn is None:
+            continue
+        rules.append(dict({"connection": conn.slug, "kind": conn.kind,
+                           "require_2fa": r["require_2fa"]},
+                          **{k: r.get(k) for k in KIND_KEYS[conn.kind]}))
+    prof = db.session.get(Profile, pol["profile_id"]) if pol["profile_id"] else None
+    return {"rules": rules, "profile": prof.name if prof is not None else "",
+            "require_approval": pol["require_approval"]}
+
+
+def install(a: StudioApp, spec: dict | None) -> dict:
+    """Apply a package's ``signin`` (from :func:`clean_package`) to app *a*,
+    SWITCHED OFF. ``{created, kept, warnings, todo}``. No commit."""
+    from ..models import Profile
+    out = {"created": [], "kept": [], "warnings": [], "todo": []}
+    if not spec or not spec.get("rules"):
+        return out
+    here = policy_of(a)
+    if here["rules"]:
+        out["kept"].append("sign-in of app %s (exists: this server's rules and on/off are "
+                           "kept)" % a.slug)
+        mine = export(a) or {}
+        if [dict(r) for r in mine.get("rules") or []] != [dict(r) for r in spec["rules"]]:
+            out["warnings"].append("app %s has other sign-in rules here: this server's are "
+                                   "kept" % a.slug)
+        return out
+    rules, left_out = [], []
+    by_slug = {c.slug: c for c in DC.all_connections()}
+    for r in spec["rules"]:
+        if r["kind"] == "local":
+            rules.append({"connection_id": "local", "require_2fa": r["require_2fa"]})
+            continue
+        conn = by_slug.get(r["connection"])
+        if conn is None or conn.kind != r["kind"]:
+            why = "does not exist here" if conn is None else "is %s here, not %s" % (
+                conn.kind, r["kind"])
+            out["warnings"].append("sign-in rule for directory connection %s (%s) left out: "
+                                   "it %s" % (r["connection"], r["kind"], why))
+            left_out.append(r["connection"])
+            continue
+        rules.append(dict({"connection_id": conn.id, "require_2fa": r["require_2fa"]},
+                          **{k: r.get(k) for k in KIND_KEYS[conn.kind]}))
+    prof = Profile.query.filter_by(name=spec.get("profile") or "").first() \
+        if spec.get("profile") else None
+    if prof is not None and not prof.is_apps_only:
+        out["warnings"].append("profile %s is not an Apps only profile here: choose one in the "
+                               "app's Sign-in tab" % prof.name)
+        prof = None
+    elif spec.get("profile") and prof is None:
+        out["warnings"].append("profile %s does not exist here: choose an Apps only profile in "
+                               "the app's Sign-in tab" % spec["profile"])
+    pol = clean_policy({"enabled": False, "rules": rules,
+                        "profile_id": prof.id if prof is not None else None,
+                        "require_approval": spec.get("require_approval")})
+    a.login_json = json.dumps(pol, sort_keys=True)
+    if rules:
+        out["created"].append("sign-in of app %s (%d rule(s), off)" % (a.slug, len(rules)))
+    for slug in left_out:
+        out["todo"].append("create directory connection %s (Plugin Studio › Sign-in "
+                           "directories) and add its rule in the Sign-in tab of app %s"
+                           % (slug, a.slug))
+    out["todo"].append("an administrator turns the sign-in of app %s on (Plugin Studio › Apps › "
+                       "%s › Sign-in) once it is published" % (a.slug, a.slug))
+    return out
 
 
 # --------------------------------------------------------------------------- #

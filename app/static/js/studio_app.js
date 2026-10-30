@@ -272,4 +272,17 @@
   });
 
   drawFields(); drawActions(); loadTestForm();
+
+  // #<tab> in the address opens that tab (Access > App sign-in links to
+  // #signin), and the open tab is kept there so a reload after a save --
+  // the Sign-in tab reloads -- lands on it again.
+  var openTab = /^#([a-z]+)$/.exec(window.location.hash || '');
+  if (openTab && $('ap-tabbtn-' + openTab[1]) && window.bootstrap) {
+    window.bootstrap.Tab.getOrCreateInstance($('ap-tabbtn-' + openTab[1])).show();
+  }
+  document.querySelectorAll('[id^="ap-tabbtn-"]').forEach(function (b) {
+    b.addEventListener('shown.bs.tab', function () {
+      history.replaceState(null, '', '#' + b.id.slice('ap-tabbtn-'.length));
+    });
+  });
 })();

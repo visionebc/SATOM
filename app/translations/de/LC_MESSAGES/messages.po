@@ -28318,3 +28318,35 @@ msgstr "Eigene Anmeldung für Personen außerhalb von SATOM"
 #: app/templates/users/_panel.html
 msgid "Made by an app's own sign-in; signs in only there, through its directory connection"
 msgstr "Von der eigenen Anmeldung einer App angelegt; meldet sich nur dort an, über ihre Verzeichnisverbindung"
+
+#: app/templates/directory_connections/_signin_policy.html
+msgid "Read only: changing who signs in to an app needs the user management permission (an administrator)."
+msgstr "Nur lesen: Wer sich an einer App anmelden darf, ändert nur, wer die Berechtigung Benutzerverwaltung hat (ein Administrator)."
+
+#: app/templates/directory_connections/_signin_policy.html
+msgid "Save sign-in"
+msgstr "Anmeldung speichern"
+
+#: app/templates/script_library/edit.html
+msgid "Sign-in"
+msgstr "Anmeldung"
+
+#: app/templates/script_library/edit.html
+msgid "The app's own sign-in page, for people who have no SATOM console account: who may sign in (a directory group, a FortiAuthenticator group or local accounts), how it is proven and the Apps only profile their account gets. They see this app and nothing else of SATOM. The page opens once the app is published. The rules travel in the app package; an import brings them switched off."
+msgstr "Die eigene Anmeldeseite der App für Personen ohne SATOM-Konsolenkonto: wer sich anmelden darf (eine Verzeichnisgruppe, eine FortiAuthenticator-Gruppe oder lokale Konten), wie das geprüft wird und welches Nur-Apps-Profil ihr Konto erhält. Sie sehen diese App und sonst nichts von SATOM. Die Seite öffnet sich, sobald die App veröffentlicht ist. Die Regeln reisen im App-Paket mit; ein Import bringt sie ausgeschaltet."
+
+#: app/templates/script_library/edit.html
+msgid "Who may use it with a SATOM account: Access > App sign-in"
+msgstr "Wer sie mit einem SATOM-Konto nutzen darf: Zugriff > App-Anmeldung"
+
+#: app/templates/studio/app.html
+msgid "People outside SATOM: tab Sign-in."
+msgstr "Personen außerhalb von SATOM: Reiter Anmeldung."
+
+#: app/templates/studio/index.html
+msgid "Sign-in directories"
+msgstr "Anmeldeverzeichnisse"
+
+#: app/templates/studio/index.html
+msgid "The Active Directory, LDAP and RADIUS (FortiAuthenticator) servers an app's own sign-in proves people against -- each with its own address, bind account and secret, never shown again. Which groups of which server may use an app is set in the app's Sign-in tab. The same list as Administrator > Access > Directory connections; app steps never see these secrets."
+msgstr "Die Active-Directory-, LDAP- und RADIUS-Server (FortiAuthenticator), gegen die die eigene Anmeldung einer App Personen prüft -- jeder mit eigener Adresse, eigenem Bind-Konto und Geheimnis, das nie wieder angezeigt wird. Welche Gruppen welches Servers eine App nutzen dürfen, legt der Reiter Anmeldung der App fest. Dieselbe Liste wie Administrator > Zugriff > Verzeichnisverbindungen; App-Schritte sehen diese Geheimnisse nie."

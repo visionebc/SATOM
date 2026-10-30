@@ -664,12 +664,26 @@ def extract_tool_calls(text: str) -> list[dict]:
     instead of an error.
     """
     m = re.search(r"```" + TOOL_FENCE + r"\s*\n(.*?)```", text or "", re.DOTALL)
-    if not m:
-        return []
-    try:
-        data = json.loads(m.group(1).strip())
-    except (ValueError, TypeError):
-        return []
+    if m:
+        try:
+            data = json.loads(m.group(1).strip())
+        except (ValueError, TypeError):
+            return []
+    else:
+        # Measured 2026-10-30 with gpt-oss:120b: the model wrote the call as
+        # BARE JSON with no fence, then invented the tool's result -- a fake
+        # <<<UNTRUSTED>>> block listing appliances that do not exist -- and
+        # SATOM ran nothing. A reply that STARTS with a tool object is a call;
+        # everything after that object is discarded with the rest of the
+        # round, so a fabricated "result" can never reach the operator as the
+        # answer. JSON quoted later in prose is still prose.
+        head = (text or "").lstrip()
+        if not head.startswith(("{", "[")):
+            return []
+        try:
+            data, _end = json.JSONDecoder().raw_decode(head)
+        except ValueError:
+            return []
     items = data if isinstance(data, list) else [data]
     calls = []
     for it in items:
@@ -1144,7 +1158,11 @@ def _run_exchange(conv_id: int, username: str, text: str,
 
             joined = "\n\n".join(blocks)
             bytes_sent += len(joined.encode())
-            history.append({"role": "assistant", "content": final_text})
+            # The round goes back to the model as the CALL alone, never as the
+            # text it wrote: a model that invented the result after its call
+            # would otherwise read its own fabrication next to the real one.
+            history.append({"role": "assistant", "content": "```" + TOOL_FENCE + "\n"
+                            + json.dumps(calls, ensure_ascii=False) + "\n```"})
             history.append({"role": "user", "content": joined})
             final_text = ""
     except ProviderError as exc:

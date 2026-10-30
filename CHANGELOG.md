@@ -7,6 +7,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **SATOM Builder opens what this server already has** (request: "I still
+  don't see SATOM's plugins in the Builder; they should all be there"). Two
+  read-only API routes for the Builder (contract §21): `GET
+  /api/v1/builder/plugins` lists every Plugin Studio app and the Report
+  Studio plugins of the call's ADOM, each with whether the Builder can open
+  it and, when not, why (a script app, a `code` plugin, a Report Studio
+  plugin when the token's owner is not a super-admin); `GET
+  /api/v1/builder/plugins/<kind>/<slug>/package` sends one of them as the
+  console's unsigned export (connections without secrets). The token's owner
+  must be a Plugin Studio author. The Builder's *Open from SATOM* page uses
+  them.
 - **Scout proposes a Path Diagnostics walk; the operator runs it** (request:
   "do everything and leave nothing pending" — the next stage was a walk Scout
   asks for and the operator confirms). A new proposal kind, `path_walk`:

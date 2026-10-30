@@ -3856,6 +3856,18 @@ the data stores (declared columns and `_id`, never who edited them) and the
 lists of `satom_select` fields, at most 2,000 rows per table. Each call
 leaves an audit line `builder.data` with the row counts.
 
+**What the Builder opens from this server** (`/builder/plugins`, `read` token,
+owner a Plugin Studio author). The Builder's *Open from SATOM* page lists
+every Plugin Studio app here and the Report Studio plugins of the token's
+ADOM, and opens the ones the author picks as Builder projects. Each one is
+fetched as the console's **Export** button writes it (unsigned, connections
+without their secrets, stores with their rows, automations and sign-in). Not
+every item can open, and the list says why: a script app (its code is a
+Script Library script), a `code` plugin, or a Report Studio plugin when the
+token's owner is not a super-admin (the console's export needs
+`studio.plugin_studio` too). Audit lines `builder.plugins` (the list) and
+`builder.plugin_export` (one per package).
+
 **Load protection: what a busy API can and cannot take from the node.** An
 integration in a loop, or a hundred of them, must not take the console with
 it. Since this release:

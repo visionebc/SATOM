@@ -163,6 +163,8 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/builder/library/fortinet/<product>/<version>` | read | the product is the token's ADOM (any, for `global`) | One API library build's endpoints, or with `?endpoint=` that endpoint's fields (§17) |
 | `GET`  | `/builder/library/fortinet/<product>/<version>/catalog` | read | the product is the token's ADOM (any, for `global`) | That build as an API Catalog version, as an app package carries it (contract §19) |
 | `GET`  | `/builder/data` | read | owner is a Plugin Studio author | This server's rows for the Builder's test data: datasets scoped to the owner, data stores, `satom_select` lists (§17) |
+| `GET`  | `/builder/plugins` | read | owner is a Plugin Studio author | The plugins and apps this server has, each with `openable` (and `why` when not) (contract §21) |
+| `GET`  | `/builder/plugins/<kind>/<slug>/package` | read | owner is a Plugin Studio author; a view/widget needs a super-admin owner | One of them as the console's unsigned export (contract §21) |
 | `POST` | `/builder/validate` | write | — | Check a package with the builder rules; writes nothing (§17) |
 | `POST` | `/builder/rehearse` | write | owner is a Plugin Studio author | Walk a package's app **unarmed**, or render a view; installs nothing (§17) |
 | `POST` | `/builder/import` | admin | owner is a super-admin (`studio.plugin_studio`) | Import a package: the console's import path, secrets for new connections (§17) |
@@ -1216,6 +1218,33 @@ only with `audit.view`. Store rows carry the declared columns and `_id`.
 `sources` are the `satom_select` lists, scoped the same way. The answer
 stays under 3 MB: a table that does not fit is cut (`truncated`). One audit
 line `builder.data` with the row counts per table.
+
+### `GET /builder/plugins` and `GET /builder/plugins/<kind>/<slug>/package`
+
+What SATOM Builder opens as projects (contract §21). `read` scope; the owner
+must be a Plugin Studio author (`studio.script_library`), else 403
+`owner_forbidden`.
+
+```json
+{"format": "satom.builder-plugins/1", "satom_version": "4.7.0",
+ "items": [{"kind": "app", "slug": "dns-lb-lookup", "name": "DNS & LB Lookup",
+            "icon": "bi-diagram-3", "description": "", "version": "1.0.0",
+            "status": "published", "app_kind": "flow", "template": false,
+            "signed": true, "updated_at": "2026-10-30T11:02:00Z", "adom": "",
+            "openable": true},
+           {"kind": "app", "slug": "netbox-ip-owner", "app_kind": "script",
+            "openable": false, "why": "A script app: its code is a Script Library script, ..."}],
+ "counts": {"total": 2, "openable": 1}}
+```
+
+Every Plugin Studio app is listed; Report Studio plugins follow the call's
+ADOM (`?adom=` with a Global token). Not openable, with the reason: a script
+app, a `code` plugin, a Report Studio view or widget when the owner is not a
+super-admin. `…/<kind>/<slug>/package` (`kind` = `app`, `view` or `widget`)
+answers `application/zip`: the unsigned `satom.plugin/1` package the
+console's **Export** writes. 404 `not_found` (none here, another ADOM's
+plugin, wrong kind), 409 `not_openable` (exists but cannot open; `message`
+says why). Audit lines `builder.plugins` and `builder.plugin_export`.
 
 ### `POST /builder/validate`
 

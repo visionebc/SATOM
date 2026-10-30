@@ -12,6 +12,10 @@ runs with that person's RBAC and ADOM, and SATOM stays the authority:
 * ``GET /builder/data`` -- this server's rows for the Builder's test data:
   datasets as a render here shows the owner, data stores, ``satom_select``
   lists; the owner must be a Plugin Studio author (§15);
+* ``GET /builder/plugins[/<kind>/<slug>/package]`` -- the plugins and apps
+  this server has, and one of them as an unsigned package, so the Builder
+  opens them as projects (§21). The owner must be a Plugin Studio author;
+  a Report Studio plugin's package also needs a super-admin owner;
 * ``POST /builder/validate`` -- ``package_check.check`` with the ``builder``
   policy; nothing is written (§4);
 * ``POST /builder/rehearse`` -- an unarmed walk of the package's app against
@@ -324,6 +328,76 @@ def builder_data():
                         request.args.get("limit", BD.DEFAULT_LIMIT))
         _audit("builder.data", target=_product(), limit=res["limit"], **BD.counts(res))
     return jsonify(res)
+
+
+@bp.route("/builder/plugins", methods=["GET"])
+@limiter.limit("30/minute")
+@token_required("read")
+def builder_plugins():
+    """The plugins and apps this server has, for the Builder to open (contract §21).
+
+    Every Plugin Studio app and every Report Studio plugin of the call's ADOM,
+    each with ``openable`` -- and ``why`` when the Builder cannot open it (a
+    ``code`` plugin, a script app, a Report Studio plugin for an owner who is
+    not a super-admin). The owner must be a Plugin Studio author.
+
+    Responses:
+        200: ``satom.builder-plugins/1``: ``{"items": [{"kind", "slug", "name", "version", "status", "openable", ...}], "counts"}``.
+        403: The owner is not a Plugin Studio author (``owner_forbidden``), or the ADOM (``wrong_product``).
+    """
+    from ..services import builder_plugins as BPl
+    from ..services import studio_apps as SA
+    refused = _adom_refusal()
+    if refused:
+        return refused
+    if not SA.is_author(_owner()):
+        return _err(403, "owner_forbidden", "The token's owner is not a Plugin Studio "
+                    "author (studio.script_library).")
+    with _as_owner():
+        res = BPl.listing(_owner())
+        _audit("builder.plugins", target=_product(), **res["counts"])
+    return jsonify(res)
+
+
+@bp.route("/builder/plugins/<kind>/<slug>/package", methods=["GET"])
+@limiter.limit("60/minute")
+@token_required("read")
+def builder_plugin_package(kind, slug):
+    """One plugin or app as an unsigned ``satom.plugin/1`` package (contract §21).
+
+    The same bytes as the console's *Export*: a Plugin Studio app with its data
+    stores, connections WITHOUT secrets, API Catalog versions, automations
+    and sign-in; a Report Studio view or widget with its files. ``kind`` is
+    ``app``, ``view`` or ``widget``.
+
+    Responses:
+        200: ``application/zip``, ``Content-Disposition`` names ``<slug>-<version>.satomplugin``.
+        403: The owner is not a Plugin Studio author (``owner_forbidden``), or the ADOM (``wrong_product``).
+        404: No such plugin or app here (``not_found``).
+        409: It exists but the Builder cannot open it (``not_openable``); ``message`` says why.
+    """
+    from ..services import builder_plugins as BPl
+    from ..services import studio_apps as SA
+    refused = _adom_refusal()
+    if refused:
+        return refused
+    if not SA.is_author(_owner()):
+        return _err(403, "owner_forbidden", "The token's owner is not a Plugin Studio "
+                    "author (studio.script_library).")
+    with _as_owner():
+        try:
+            got = BPl.package(_owner(), kind, slug)
+        except BPl.NotOpenable as exc:
+            return _err(409, "not_openable", str(exc))
+        if got is None:
+            return _err(404, "not_found", "No %s %r on this server." % (kind[:16], slug[:120]))
+        name, data = got
+        _audit("builder.plugin_export", target=slug, kind=kind, bytes=len(data))
+    resp = make_response(data)
+    resp.headers["Content-Type"] = "application/zip"
+    resp.headers["Content-Disposition"] = 'attachment; filename="%s"' % name
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
 
 
 @bp.route("/builder/validate", methods=["POST"])

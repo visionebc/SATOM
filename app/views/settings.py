@@ -3564,6 +3564,8 @@ def ai_flags():
     if "external" in body:
         kwargs["external"] = bool(body["external"])
     ai_advisor.set_flags(**kwargs)
+    log_action('settings.ai_flags', 'scout',
+               {k.rstrip('_'): v for k, v in kwargs.items()})
     return jsonify(ok=True)
 
 
@@ -3582,6 +3584,10 @@ def ai_provider_save():
             api_key=body.get("api_key") or None)
     except ValueError as exc:
         return jsonify(ok=False, error=str(exc)), 400
+    # Where the model calls go is the audit question; the key never is.
+    log_action('settings.ai_provider_save', key, {
+        'kind': body.get("kind", ""), 'base_url': body.get("base_url", ""),
+        'model': body.get("model", ""), 'api_key_set': bool(body.get("api_key"))})
     return jsonify(ok=True)
 
 
@@ -3590,6 +3596,7 @@ def ai_provider_save():
 @require_permission('advisor.configure')
 def ai_provider_delete(key):
     ai_advisor.delete_provider(key)
+    log_action('settings.ai_provider_delete', key)
     return jsonify(ok=True)
 
 
@@ -3598,7 +3605,9 @@ def ai_provider_delete(key):
 @require_permission('advisor.configure')
 def ai_default():
     body = request.get_json(silent=True) or {}
-    store.set_str(ai_advisor.K_DEFAULT_PROVIDER, (body.get("key") or "").strip())
+    key = (body.get("key") or "").strip()
+    store.set_str(ai_advisor.K_DEFAULT_PROVIDER, key)
+    log_action('settings.ai_default', key)
     return jsonify(ok=True)
 
 

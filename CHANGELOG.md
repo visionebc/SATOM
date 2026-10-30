@@ -69,6 +69,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - Installing an example creates all of its apps before saving any, so an app
   may open another app of the same bundle.
 
+### Fixed
+- Changing Scout in **Settings → AI → Scout ▸ Providers** now leaves a row in
+  the Audit Log: `settings.ai_flags`, `settings.ai_provider_save` (kind,
+  base URL, model and whether a key was set, never the key),
+  `settings.ai_default` and `settings.ai_provider_delete`. Until now, which
+  endpoint the assistant sends to could change with no trace.
+- User guide §33 named the old Scout ladder *Fault Isolation* (§12); it is
+  **Path Diagnostics** (§13), and it never calls Scout's AI providers.
+
 ## [4.6.0] - 2026-10-27
 
 **A device's full baseline, applied where you choose.** Every combo an

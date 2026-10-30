@@ -4389,7 +4389,11 @@ source of the vendor release notes (§22.4).
 It never carries a configuration value or a device name.
 
 1. **Pick a pack.** The release you run carries its own (*this release*); you
-   can also upload one downloaded from the release page. The list shows one
+   can also upload one downloaded from the release page. **Upload** (one
+   card, one file at a time) takes the three files the page uses and routes
+   each by its name: `satom-update-<version>.tar.gz` goes to *Offline update
+   package* and its preflight, `satom-apipack-<version>.tar.gz` (the API pack
+   of a release) and `satom-kbpack-<date>.tar.gz` (a kbpack) to this list. The list shows one
    row per pack (name, lane, source, size) across the whole card, and only the
    newest shipped pack of each series: the older ones a development checkout
    keeps in `api-packs/` are counted under the table, never listed — a release
@@ -4424,7 +4428,9 @@ update imports the release's own pack on the primary by itself, and the page
 shows a notice while a shipped pack is pending. Details:
 [api-library.md §12](api-library.md).
 
-**Knowledge packs** (`satom-apipack-kb-YYYYMMDD[.N]`) are written by the SATOM
+**Knowledge packs**, called **kbpacks** (`satom-kbpack-YYYYMMDD[.N]`; named
+`satom-apipack-kb-...` before 2026-10-30, a name still read and stored
+under the new one) are written by the SATOM
 team's separate harvester tool rather than by a node: the CLI schema, hidden
 fields and REST fields of every firmware build measured in the team's lab, the
 vendor release notes of FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer
@@ -4464,7 +4470,7 @@ lanes with the same content sections:
 | Lane | What it is | How it arrives |
 |---|---|---|
 | **API pack** | Pinned to a SATOM release (`satom-apipack-<version>`) | Inside the update; imported by the update on the primary |
-| **Knowledge pack** | Rolling (`satom-apipack-kb-YYYYMMDD[.N]`), published whenever the knowledge changes | The knowledge feed, or an upload |
+| **Knowledge pack (kbpack)** | Rolling (`satom-kbpack-YYYYMMDD[.N]`), published whenever the knowledge changes | The knowledge feed, or an upload |
 
 The **Knowledge packs** card on Software Update shows, per lane, the pack
 installed on this node, its date and its age (a **stale** badge after 30 days),
@@ -4511,8 +4517,8 @@ work without it.
 **Air-gapped network.** On a machine with Internet access, download the pack
 named by the feed and its `.sha256` file from the release page (the card links
 both after **Check now**), verify the checksum, carry the file over and upload
-it under **API library packs** (`/self-update/apipack/upload`), then import it
-there — or run `sudo satom execute apipack import <file> --yes`. The signature
+it in the page's **Upload** card, then import it under **API packs & kbpacks**
+— or run `sudo satom execute apipack import <file> --yes`. The signature
 check is the same.
 
 From the console:

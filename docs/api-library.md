@@ -1022,7 +1022,7 @@ cumulative, so:
 
 | | release pack | knowledge pack |
 |---|---|---|
-| name | `satom-apipack-<x.y.z>` | `satom-apipack-kb-YYYYMMDD[.N]` (`.10` sorts after `.2`) |
+| name | `satom-apipack-<x.y.z>` | `satom-kbpack-YYYYMMDD[.N]` (`.10` sorts after `.2`; `satom-apipack-kb-...` before 2026-10-30, still read) |
 | kept in `api-packs/` | every release | only the newest |
 | imported by *shipped* | the newest, first | the newest, second |
 
@@ -1112,7 +1112,7 @@ Every pack is a **full snapshot** of what the SATOM Knowledge Harvester knows
 | Lane | Name | Published | Pinned to |
 |---|---|---|---|
 | `api_pack` | `satom-apipack-<SATOM version>` | at every SATOM release, inside the release (`api-packs/`) | the SATOM release (`pinned_to`) |
-| `knowledge` | `satom-apipack-kb-YYYYMMDD[.N]` | whenever the knowledge changes | nothing (`pinned_to` is `""`) |
+| `knowledge` | `satom-kbpack-YYYYMMDD[.N]` | whenever the knowledge changes | nothing (`pinned_to` is `""`) |
 
 A third lane, `harvester`, exists only between the harvester and the
 publisher. SATOM never imports it and refuses it with a message that says so.
@@ -1707,7 +1707,7 @@ A node that has never run a build can still know it: the separate
 vendor documentation and public collections, and publishes the result as
 signed packs in two lanes with the same sections (§12): the **API pack**
 pinned to each SATOM release and the rolling **knowledge pack**
-(`satom-apipack-kb-YYYYMMDD[.N]`). The `library` section carries evidence of the
+(`satom-kbpack-YYYYMMDD[.N]`). The `library` section carries evidence of the
 sources `cli_tree`, `cli_full`, `sweep`, `schema` and `vendor_doc`; `docs`
 carries the vendor release notes and field schemas.
 

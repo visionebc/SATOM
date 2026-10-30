@@ -75,7 +75,7 @@ LANE_API_PACK = "api_pack"
 LANE_KNOWLEDGE = "knowledge"
 LANES = (LANE_API_PACK, LANE_KNOWLEDGE)
 LANE_LABELS = {LANE_API_PACK: "API pack (pinned to the release)",
-               LANE_KNOWLEDGE: "Knowledge pack (rolling)"}
+               LANE_KNOWLEDGE: "kbpack (rolling knowledge)"}
 
 #: Knowledge older than this gets a warning badge next to what it feeds.
 STALE_DAYS = 30
@@ -85,7 +85,7 @@ MAX_FEED_BYTES = 64 * 1024
 #: Same ceiling as an uploaded pack (api_pack.MAX_UPLOAD_BYTES).
 MAX_PACK_BYTES = 200 * 1024 * 1024
 
-PACK_FILE_RE = re.compile(r"^satom-apipack-[A-Za-z0-9._-]{1,64}\.tar\.gz$")
+PACK_FILE_RE = re.compile(r"^satom-(?:apipack|kbpack)-[A-Za-z0-9._-]{1,64}\.tar\.gz$")
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 _KB_DATE_RE = re.compile(r"^kb-(\d{8})(?:\.\d+)?$")
 
@@ -207,11 +207,19 @@ def parse_feed(raw: bytes, url: str = "") -> dict:
         doc = doc["pack"]
     if not isinstance(doc, dict):
         raise KnowledgeFeedError("the knowledge feed is not a JSON object")
+    # 2026-10-30: knowledge packs are satom-kbpack-*. A feed keeps the old
+    # name at the top level for nodes that predate it, and names the kbpack
+    # in a "kbpack" block (file/url/sha256/size/sha256_url) that wins here.
+    if isinstance(doc.get("kbpack"), dict):
+        doc = dict(doc, **{k: v for k, v in doc["kbpack"].items()
+                           if k in ("file", "url", "sha256", "size", "sha256_url")})
     name = str(doc.get("file") or "")
     if not PACK_FILE_RE.match(name):
-        raise KnowledgeFeedError("the feed names %r, which is not an API pack" % name[:80])
+        raise KnowledgeFeedError("the feed names %r, which is not a pack file" % name[:80])
     version = str(doc.get("version") or "")
-    if name != "satom-apipack-%s.tar.gz" % version:
+    from . import api_pack
+    if name not in ("%s.tar.gz" % api_pack.pack_stem(version),
+                    "satom-apipack-%s.tar.gz" % version):
         raise KnowledgeFeedError("the feed version %r does not match its pack %s"
                                  % (version[:40], name))
     link = str(doc.get("url") or "")
@@ -245,8 +253,16 @@ def fetch_feed(url: str = "", timeout: float = 10) -> dict:
 # ---------------------------------------------------------------------------
 # what this node holds
 # ---------------------------------------------------------------------------
+def staged_name(feed: dict) -> str:
+    """The name a feed's pack is staged under on this node: the current file
+    name (``satom-kbpack-...``) even when the feed still names the old one."""
+    from . import api_pack
+    return api_pack.canonical_name(feed["file"])
+
+
 def _version_of(name: str) -> str:
-    return (name or "")[len("satom-apipack-"):-len(".tar.gz")]
+    from . import api_pack
+    return api_pack._pack_version(name or "")
 
 
 def version_key(version: str):
@@ -328,7 +344,7 @@ def installed(history: list | None = None, now: datetime | None = None,
                 or (cur and version_key(_version_of(name)) <= version_key(cur["version"]))):
             continue
         cover = api_pack._covered_by(p, full)
-        rec = next((r for r in full if r["pack"] == cover), None)
+        rec = next((r for r in full if api_pack.canonical_name(r["pack"]) == cover), None)
         if rec:
             cur = best[LANE_API_PACK] = {
                 "pack": name, "version": _version_of(name), "lane": LANE_API_PACK,
@@ -373,7 +389,7 @@ def compare(feed: dict, inst: dict | None = None) -> dict:
     inst = inst if inst is not None else installed()
     have = inst.get(LANE_KNOWLEDGE)
     newer = have is None or version_key(feed["version"]) > version_key(have["version"])
-    return {"newer": newer, "installed": have, "staged": _staged(feed["file"])}
+    return {"newer": newer, "installed": have, "staged": _staged(staged_name(feed))}
 
 
 def check(url: str = "", timeout: float = 10) -> dict:
@@ -463,7 +479,7 @@ def run(*, url: str = "", do_download: bool = True, do_import: bool = True,
     if not res["reachable"]:
         return _record(dict(base, status=ST_ERROR, message=res["error"]))
     feed = res["feed"]
-    base.update(pack=feed["file"], version=feed["version"])
+    base.update(pack=staged_name(feed), version=feed["version"])
     if not res["newer"]:
         have = res["installed"].get(LANE_KNOWLEDGE) or {}
         return _record(dict(base, status=ST_CURRENT,
@@ -487,9 +503,9 @@ def run(*, url: str = "", do_download: bool = True, do_import: bool = True,
         return _record(dict(base, status=ST_DOWNLOADED,
                             message="Downloaded %s; import it from Software Update "
                                     "or with 'satom execute knowledge fetch --import "
-                                    "--yes'." % feed["file"]))
+                                    "--yes'." % staged_name(feed)))
     try:
-        out = import_staged(feed["file"], actor=actor, progress=progress)
+        out = import_staged(staged_name(feed), actor=actor, progress=progress)
     except Exception as exc:  # noqa: BLE001 — refused signature, schema, standby
         return _record(dict(base, status=ST_FAILED,
                             message="Import refused: %s" % exc))
@@ -497,11 +513,11 @@ def run(*, url: str = "", do_download: bool = True, do_import: bool = True,
         return _record(dict(base, status=ST_FAILED, imported=out.get("imported", 0),
                             errors=out["errors"],
                             message="%d item(s) of %s failed to import; %d imported."
-                                    % (out["errors"], feed["file"], out.get("imported", 0))))
+                                    % (out["errors"], staged_name(feed), out.get("imported", 0))))
     return _record(dict(base, status=ST_IMPORTED, imported=out.get("imported", 0),
                         errors=0,
                         message="Imported %s: %d new item(s)."
-                                % (feed["file"], out.get("imported", 0))))
+                                % (staged_name(feed), out.get("imported", 0))))
 
 
 def _size(n: int) -> str:

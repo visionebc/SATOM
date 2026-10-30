@@ -197,6 +197,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   list from.
 
 ### Changed
+- **Knowledge packs are kbpacks: `satom-kbpack-YYYYMMDD[.N].tar.gz`**
+  (request: "the API pack stays the API pack; the knowledge one must stop
+  saying API pack: call it kbpack"). The file of the rolling knowledge lane
+  was named like an API pack (`satom-apipack-kb-...`). Its version is still
+  `kb-YYYYMMDD[.N]`; only the file name changes. The old name is still read
+  everywhere (upload, feed, `satom execute apipack import`), and an upload or
+  a feed download under it is stored as `satom-kbpack-...`, so a node shows one
+  name for one pack. A schema /2 pack named `satom-kbpack-*` whose manifest is
+  not of the knowledge lane is refused. The knowledge feed may name the
+  kbpack in a `kbpack` block (`file`, `url`, `sha256`, `size`, `sha256_url`)
+  that wins over the top-level file, which stays the old name for nodes on
+  4.6.0 and older. New provenance strings read `pack:knowledge:satom-kbpack-...`;
+  rows written before keep theirs. The page says *kbpack* where it said
+  *knowledge pack (satom-harvester)*; the pack card is *API packs & kbpacks*.
+- **One Upload for the three files** (request: "it should be one file upload
+  that takes the three: the SATOM update, the kbpack and the API pack").
+  Settings › Software Update has an **Upload** card (`POST
+  /self-update/upload`, `user_manage`) that routes the file by its name:
+  `satom-update-<version>.tar.gz` to the offline package staging and its
+  preflight, `satom-apipack-<version>.tar.gz` and `satom-kbpack-<date>.tar.gz`
+  to the pack list; any other name is refused and nothing is written. The
+  separate upload forms of *Offline update package* and the pack card point
+  to it; their routes stay for scripts.
 - **Software Update fits a laptop screen** (request: "check every card, they
   don't look right at my resolution"). *API library packs* lists its packs as
   one table across the whole card (pack, lane, source, size) instead of a

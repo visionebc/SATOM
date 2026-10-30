@@ -21,7 +21,7 @@ are its packs.
 collect                          snapshot + gate               publish (two lanes, same content)
 lab devices (SSH, REST, --+                                    api_pack  : satom-apipack-<SATOM version>
  read-only)               |--> evidence, release notes,  -->     inside each release (api-packs/)
-vendor documentation    --+    field schemas, CLI coverage,    knowledge : satom-apipack-kb-YYYYMMDD[.N]
+vendor documentation    --+    field schemas, CLI coverage,    knowledge : satom-kbpack-YYYYMMDD[.N]  
 public vendor collections-+    factory profiles, renames,         the knowledge feed (rolling)
 earlier signed packs    --+    baselines, signature metadata   each lane signed with its own key
 ```
@@ -98,7 +98,7 @@ refusing the whole pack:
 ## 3. From snapshot to published pack
 
 1. **Snapshot.** One harvester run builds every section into one snapshot,
-   named `satom-apipack-kb-YYYYMMDD[.N]`, with a date-free
+   named `satom-kbpack-YYYYMMDD[.N]`, with a date-free
    `content_fingerprint` (identical content, identical value).
 2. **Content gate.** The snapshot is compared with the previous **approved**
    snapshot, per section, kind, product and build or version. Additions only:

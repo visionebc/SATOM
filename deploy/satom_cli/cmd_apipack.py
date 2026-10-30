@@ -21,7 +21,17 @@ from pathlib import Path
 from .context import app_cmd, app_copy, app_env, chown_app, run
 from .render import Result
 
-PACK_RE = re.compile(r"^satom-apipack-[A-Za-z0-9._-]{1,64}\.tar\.gz$")
+#: ``satom-apipack-<x.y.z>`` (API pack) or ``satom-kbpack-<date>`` (knowledge
+#: pack, 2026-10-30; ``satom-apipack-kb-*`` before) -- as app/services/api_pack.py.
+PACK_RE = re.compile(r"^satom-(?:apipack|kbpack)-[A-Za-z0-9._-]{1,64}\.tar\.gz$")
+
+
+def _version(name):
+    """``4.6.0`` / ``kb-20261024.1`` of a pack file name (both knowledge names)."""
+    stem = name[:-len(".tar.gz")] if name.endswith(".tar.gz") else name
+    if stem.startswith("satom-kbpack-"):
+        return "kb-" + stem[len("satom-kbpack-"):]
+    return stem[len("satom-apipack-"):] if stem.startswith("satom-apipack-") else stem
 SECTIONS = ("library", "docs", "cli-coverage", "factory", "field-map", "baselines",
             "signature-meta")
 USAGE = ("execute apipack import <file.tar.gz|shipped> [--yes] "
@@ -78,13 +88,13 @@ def _series(name, path=None):
     m = _manifest(path) if path is not None else {}
     if m.get("schema") == "satom.api-pack/2" and isinstance(m.get("lane"), str) and m["lane"]:
         return m["lane"] if m["lane"] in SERIES else "harvester"
-    return "knowledge" if name[len("satom-apipack-"):].startswith("kb-") else "release"
+    return "knowledge" if _version(name).startswith("kb-") else "release"
 
 
 def _version_key(name):
     """Tagged parts, so ``kb-20261007.3`` and ``2.12.0`` never compare a word
     with a number (a plain list did: TypeError the day a kb pack shipped)."""
-    ver = name[len("satom-apipack-"):-len(".tar.gz")]
+    ver = _version(name)
     return tuple((0, int(x), "") if x.isdigit() else (1, 0, x)
                  for x in re.split(r"[.-]", ver))
 
@@ -107,7 +117,8 @@ def _upload_dir(ctx):
 def _packs(d):
     if not d.is_dir():
         return []
-    return sorted((p for p in d.glob("satom-apipack-*.tar.gz")
+    return sorted((p for p in list(d.glob("satom-apipack-*.tar.gz"))
+                   + list(d.glob("satom-kbpack-*.tar.gz"))
                    if p.is_file() and PACK_RE.match(p.name)),
                   key=lambda p: _version_key(p.name))
 
@@ -244,9 +255,10 @@ def show_apipacks(ctx, args):
             rec = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        prov = rec.get("provenance") or "pack:%s:satom-apipack-%s" % (
-            "knowledge" if str(rec.get("version") or "").startswith("kb-") else "api_pack",
-            rec.get("version"))
+        _v = str(rec.get("version") or "")
+        prov = rec.get("provenance") or "pack:%s:%s" % (
+            "knowledge" if _v.startswith("kb-") else "api_pack",
+            "satom-kbpack-" + _v[3:] if _v.startswith("kb-") else "satom-apipack-" + _v)
         hist.append((f.name.split("-", 1)[0], "%s: %s imported, %s failed (%s) [%s]" % (
             rec.get("version"), rec.get("imported", 0), rec.get("errors", 0),
             rec.get("actor") or "?", prov)))
@@ -313,7 +325,8 @@ def import_apipack(ctx, args):
             return Result("bad", "apipack import").lines("", ["%s is not a file" % src])
         if not PACK_RE.match(src.name):
             return Result("bad", "apipack import").lines("", [
-                "%r is not an API pack name (satom-apipack-<version>.tar.gz)" % src.name])
+                "%r is not a pack name (satom-apipack-<version>.tar.gz or "
+                "satom-kbpack-<date>.tar.gz)" % src.name])
         srcs = [src]
 
     products = _opt_list(args, "--product")

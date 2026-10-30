@@ -154,7 +154,15 @@ _IMPLICIT_KIND = {SECTION_LIBRARY: KIND_EVIDENCE, SECTION_CLI: KIND_CLI}
 ORIGIN_PREFIX = "apipack:"
 WITNESS_PREFIX = "witness-"
 
-PACK_NAME_RE = re.compile(r"^satom-apipack-[A-Za-z0-9._-]{1,64}\.tar\.gz$")
+#: Pack file names. An API pack is ``satom-apipack-<x.y.z>.tar.gz``; a
+#: knowledge pack is ``satom-kbpack-YYYYMMDD[.N].tar.gz`` (2026-10-30; its
+#: version is still ``kb-YYYYMMDD[.N]``). The old knowledge name
+#: ``satom-apipack-kb-...`` is still read, and an upload under it is stored
+#: under the new one.
+APIPACK_PREFIX = "satom-apipack-"
+KBPACK_PREFIX = "satom-kbpack-"
+PACK_NAME_RE = re.compile(r"^satom-(?:apipack|kbpack)-[A-Za-z0-9._-]{1,64}\.tar\.gz$")
+PACK_NAME_HINT = "satom-apipack-<version>.tar.gz or satom-kbpack-<date>.tar.gz"
 _VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _IPV4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
 #: Keys whose string value is a device name by construction.
@@ -832,7 +840,7 @@ def _manifest_meta(manifest: dict) -> dict:
     if not isinstance(version, str) or not _VERSION_RE.match(version):
         raise PackError("pack manifest has no valid version (%r)" % (version,))
     schema = manifest.get("schema")
-    meta = {"schema": schema, "version": version, "name": "satom-apipack-%s" % version,
+    meta = {"schema": schema, "version": version, "name": pack_stem(version),
             "min_satom": "", "publisher": "", "content_fingerprint": "", "snapshot": {},
             "pinned_to": ""}
     if schema == SCHEMA_V2:
@@ -903,7 +911,7 @@ def _open(path, tmp: Path, trust_dir) -> tuple:
     """``(pkg_dir, manifest, key, meta)`` of a verified pack, or PackError."""
     path = Path(path)
     if not PACK_NAME_RE.match(path.name):
-        raise PackError("%r is not an API pack name (satom-apipack-<version>.tar.gz)" % path.name)
+        raise PackError("%r is not a pack name (%s)" % (path.name, PACK_NAME_HINT))
     try:
         pkg = up.extract_package(path, tmp)
         manifest = up.read_manifest(pkg)
@@ -913,6 +921,10 @@ def _open(path, tmp: Path, trust_dir) -> tuple:
     if manifest.get("product") != PRODUCT:
         raise PackError("pack is for product %r, not %s" % (manifest.get("product"), PRODUCT))
     meta = _manifest_meta(manifest)
+    if path.name.startswith(KBPACK_PREFIX) and \
+            pack_series(path.name, manifest) != SERIES_KNOWLEDGE:
+        raise PackError("%s is named as a kbpack but holds a %s pack; nothing was imported"
+                        % (path.name, pack_series(path.name, manifest)))
     mine = _satom_version()
     if meta["min_satom"] and up.compare_versions(meta["min_satom"], mine) > 0:
         raise PackError("pack %s needs SATOM %s or newer; this node runs %s. Update SATOM "
@@ -977,7 +989,7 @@ def provenance_parts(prov: str) -> tuple:
 
 
 def _version_key_of(name: str):
-    return _pack_version_key("%s.tar.gz" % name) if name.startswith("satom-apipack-") \
+    return _pack_version_key("%s.tar.gz" % name) if name.startswith((APIPACK_PREFIX, KBPACK_PREFIX)) \
         else ((1, 0, name),)
 
 
@@ -1030,7 +1042,7 @@ def evidence_provenance(origin_ref: str) -> str:
     if len(parts) >= 3 and parts[0] in LANES:
         return "%s%s:%s" % (PROV_PREFIX, parts[0], parts[1])
     ver = parts[0]
-    return "%s%s:satom-apipack-%s" % (PROV_PREFIX, _legacy_lane(ver), ver)
+    return "%s%s:%s" % (PROV_PREFIX, _legacy_lane(ver), pack_stem(ver))
 
 
 class _Ledger:
@@ -1092,7 +1104,7 @@ def _legacy_owners() -> dict:
         if not isinstance(rec, dict) or rec.get("lane"):
             continue        # 3.0 logs: the ledger itself is authoritative
         ver = str(rec.get("version") or "")
-        prov = "%s%s:satom-apipack-%s" % (PROV_PREFIX, _legacy_lane(ver), ver)
+        prov = "%s%s:%s" % (PROV_PREFIX, _legacy_lane(ver), pack_stem(ver))
         for it in rec.get("items") or []:
             res = it.get("result") if isinstance(it, dict) else None
             if not isinstance(res, dict) or not it.get("imported"):
@@ -1707,7 +1719,8 @@ def _source_dir(source: str) -> Path:
 #:   api_pack  schema /2, lane ``api_pack``: a satom-harvester snapshot pinned
 #:             to a SATOM release (3.0+). Same lineage as ``release``: the
 #:             3.0 pack supersedes the 2.x ones;
-#:   knowledge ``satom-apipack-kb-YYYYMMDD[.N]``: /1 kb packs and /2 packs of
+#:   knowledge ``satom-kbpack-YYYYMMDD[.N]`` (``satom-apipack-kb-...`` before
+#:             2026-10-30; version ``kb-YYYYMMDD[.N]``): /1 kb packs and /2 packs of
 #:             lane ``knowledge`` — the rolling satom-harvester snapshot.
 SERIES_RELEASE = "release"
 SERIES_API_PACK = LANE_API_PACK
@@ -1721,12 +1734,39 @@ _LINEAGE_ORDER = (SERIES_API_PACK, SERIES_KNOWLEDGE, SERIES_TRANSPORT)
 KNOWLEDGE_PREFIX = "kb-"
 SERIES_LABELS = {SERIES_RELEASE: "release pack",
                  SERIES_API_PACK: "API pack (pinned to a SATOM release)",
-                 SERIES_KNOWLEDGE: "knowledge pack (satom-harvester)",
+                 SERIES_KNOWLEDGE: "kbpack (knowledge, satom-harvester)",
                  SERIES_TRANSPORT: "harvester transport pack (not importable)"}
 
 
 def _pack_version(name: str) -> str:
-    return name[len("satom-apipack-"):-len(".tar.gz")]
+    """``4.6.0`` of ``satom-apipack-4.6.0.tar.gz``; ``kb-20261024.1`` of
+    ``satom-kbpack-20261024.1.tar.gz`` and of the old ``satom-apipack-kb-...``."""
+    stem = name[:-len(".tar.gz")] if name.endswith(".tar.gz") else name
+    if stem.startswith(KBPACK_PREFIX):
+        return KNOWLEDGE_PREFIX + stem[len(KBPACK_PREFIX):]
+    return stem[len(APIPACK_PREFIX):] if stem.startswith(APIPACK_PREFIX) else stem
+
+
+def pack_stem(version: str) -> str:
+    """The file stem a pack of ``version`` carries: knowledge versions
+    (``kb-...``) are ``satom-kbpack-<date>``, the rest ``satom-apipack-<v>``."""
+    v = str(version or "")
+    if v.startswith(KNOWLEDGE_PREFIX):
+        return KBPACK_PREFIX + v[len(KNOWLEDGE_PREFIX):]
+    return APIPACK_PREFIX + v
+
+
+def canonical_name(name: str) -> str:
+    """The current file name of a pack file name (old knowledge names map to
+    ``satom-kbpack-...``; anything else is returned unchanged)."""
+    if PACK_NAME_RE.match(name or ""):
+        return pack_stem(_pack_version(name)) + ".tar.gz"
+    return name or ""
+
+
+def _pack_files(d: Path) -> list:
+    return [p for p in list(d.glob(APIPACK_PREFIX + "*.tar.gz")) + list(d.glob(KBPACK_PREFIX + "*.tar.gz"))
+            if p.is_file() and PACK_NAME_RE.match(p.name)]
 
 
 _PEEK: dict = {}
@@ -1814,8 +1854,7 @@ def list_packs() -> list:
         d = _source_dir(source)
         if not d.is_dir():
             continue
-        found = [p for p in d.glob("satom-apipack-*.tar.gz")
-                 if p.is_file() and PACK_NAME_RE.match(p.name)]
+        found = _pack_files(d)
         man = {p.name: peek_manifest(p) for p in found}
         series_of = {p.name: pack_series(p.name, man[p.name]) for p in found}
         if source == SOURCE_SHIPPED:
@@ -1838,7 +1877,7 @@ def list_packs() -> list:
                         "pinned_to": str(m.get("pinned_to") or ""),
                         "min_satom": str(m.get("min_satom") or ""),
                         "snapshot": _snapshot_of(m),
-                        "imported": p.name in done,
+                        "imported": canonical_name(p.name) in done,
                         "superseded": source == SOURCE_SHIPPED and _lineage(series) in seen,
                         "mtime": datetime.utcfromtimestamp(int(st.st_mtime)).isoformat() + "Z"})
             seen.add(_lineage(series))
@@ -1852,7 +1891,7 @@ def resolve_pack(source: str, name: str) -> Path:
     directory, so ``../`` or an absolute path can never reach the filesystem.
     """
     if not PACK_NAME_RE.match(name or ""):
-        raise PackError("%r is not an API pack name (satom-apipack-<version>.tar.gz)" % name)
+        raise PackError("%r is not a pack name (%s)" % (name, PACK_NAME_HINT))
     p = _source_dir(source) / name
     if not p.is_file():
         raise PackError("no %s pack named %s on this node" % (source, name))
@@ -1864,7 +1903,10 @@ def save_upload(stream, filename: str) -> dict:
     every time, against the trust store as it is then."""
     name = os.path.basename(filename or "")
     if not PACK_NAME_RE.match(name):
-        raise PackError("%r is not an API pack name (satom-apipack-<version>.tar.gz)" % name)
+        raise PackError("%r is not a pack name (%s)" % (name, PACK_NAME_HINT))
+    name = canonical_name(name)          # an old satom-apipack-kb-* upload
+    if not PACK_NAME_RE.match(name):
+        raise PackError("%r is not a pack name (%s)" % (name, PACK_NAME_HINT))
     d = upload_dir()
     part = d / (".%s.part" % name)
     size = 0
@@ -1882,7 +1924,7 @@ def save_upload(stream, filename: str) -> dict:
         os.replace(part, d / name)
     finally:
         part.unlink(missing_ok=True)
-    kept = sorted((p for p in d.glob("satom-apipack-*.tar.gz") if p.name != name),
+    kept = sorted((p for p in _pack_files(d) if p.name != name),
                   key=lambda p: p.stat().st_mtime, reverse=True)
     for old in kept[KEEP_UPLOADS - 1:]:
         old.unlink(missing_ok=True)
@@ -1945,12 +1987,13 @@ def import_history(limit: int = 10) -> list:
             at = stamp
         ver = str(rec.get("version") or "")
         lane = rec.get("lane") or _legacy_lane(ver)
-        out.append({"at": at, "version": rec.get("version"), "pack": rec.get("pack"),
+        out.append({"at": at, "version": rec.get("version"),
+                    "pack": canonical_name(rec.get("pack") or "") or rec.get("pack"),
                     "actor": rec.get("actor") or "", "imported": rec.get("imported", 0),
                     "errors": rec.get("errors", 0), "lane": lane,
                     "schema": rec.get("schema") or SCHEMA_V1,
                     "provenance": rec.get("provenance")
-                    or "%s%s:satom-apipack-%s" % (PROV_PREFIX, lane, ver),
+                    or "%s%s:%s" % (PROV_PREFIX, lane, pack_stem(ver)),
                     "warnings": len(rec.get("warnings") or []),
                     "partial": bool(rec.get("partial")),
                     "content_fingerprint": str(rec.get("content_fingerprint") or ""),
@@ -1968,7 +2011,7 @@ def _imported_names() -> set:
     """Packs this node has fully imported: a logged full pass with no failed
     item. A run that only took ticked items, or where an item failed, leaves
     the pack pending so the next update (or ``import shipped``) retries it."""
-    return {rec["pack"] for rec in _full_imports()}
+    return {canonical_name(rec["pack"]) for rec in _full_imports()}
 
 
 def _covered_by(pack: dict, imported: list) -> str:
@@ -1981,9 +2024,9 @@ def _covered_by(pack: dict, imported: list) -> str:
     for rec in imported:
         other = _snapshot_of(rec)
         if fp and other["content_fingerprint"] == fp:
-            return rec["pack"]
+            return canonical_name(rec["pack"])
         if isinstance(run, int) and isinstance(other["run_id"], int) and other["run_id"] >= run:
-            return rec["pack"]
+            return canonical_name(rec["pack"])
     return ""
 
 
@@ -2005,8 +2048,9 @@ def pending_shipped(packs: list | None = None) -> list:
     if not shipped:
         return []
     full = _full_imports()
-    done = {rec["pack"] for rec in full}
-    out = [p for p in shipped if p["name"] not in done and not _covered_by(p, full)]
+    done = {canonical_name(rec["pack"]) for rec in full}
+    out = [p for p in shipped
+           if canonical_name(p["name"]) not in done and not _covered_by(p, full)]
     return sorted(out, key=lambda p: _shipped_order(p["name"], p.get("series")))
 
 

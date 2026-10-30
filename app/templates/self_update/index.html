@@ -241,6 +241,37 @@
   </div>
 </div>
 
+{# One upload for the three files (2026-10-30), routed by name in
+   views.self_update.upload_any. #}
+<div class="card mb-3" id="upload">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-upload me-1"></i>{{ _('Upload') }}</strong>
+    <span class="text-muted small">{{ _('for nodes with no internet: one file at a time') }}</span>
+  </div>
+  <div class="card-body">
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('self_update.upload_any') }}"
+          class="d-flex flex-wrap align-items-end gap-2 mb-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div style="min-width:18rem;flex:1 1 18rem;">
+        <label class="form-label small mb-1" for="up-file">{{ _('File') }}</label>
+        <input class="form-control form-control-sm" type="file" id="up-file" name="file"
+               accept=".gz,.tgz,application/gzip">
+      </div>
+      <button class="btn btn-fw-primary btn-sm" type="submit">
+        <i class="bi bi-upload me-1"></i>{{ _('Upload & check') }}</button>
+    </form>
+    <table class="table table-sm small mb-0" id="up-kinds">
+      <tbody>
+        <tr><td class="text-nowrap"><code>satom-update-&lt;version&gt;.tar.gz</code></td>
+            <td>{{ _('SATOM update: staged under Offline update package, with its preflight, then Apply.') }}</td></tr>
+        <tr><td class="text-nowrap"><code>satom-apipack-&lt;version&gt;.tar.gz</code></td>
+            <td>{{ _('API pack of a SATOM release: listed under API packs & kbpacks, then Import selected.') }}</td></tr>
+        <tr><td class="text-nowrap"><code>satom-kbpack-&lt;date&gt;.tar.gz</code></td>
+            <td>{{ _('kbpack (rolling knowledge): listed under API packs & kbpacks, then Import selected. Its .sha256 is published next to it.') }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 <div class="row g-3">
   <!-- ==================== offline update package ==================== -->
   <div class="col-12">
@@ -301,16 +332,8 @@
         <div class="row g-3">
           <!-- upload -->
           <div class="col-lg-5">
-            <form method="post" enctype="multipart/form-data"
-                  action="{{ url_for('self_update.package_upload') }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <label class="form-label small mb-1" for="pkg-file">
-                Upload <code>satom-update-&lt;version&gt;.tar.gz</code></label>
-              <input class="form-control form-control-sm mb-2" type="file"
-                     id="pkg-file" name="package" accept=".gz,.tgz,application/gzip">
-              <button class="btn btn-fw-primary btn-sm" type="submit">
-                <i class="bi bi-upload me-1"></i>Upload &amp; check</button>
-            </form>
+            <div class="small text-muted">{{ _('Upload a') }} <code>satom-update-&lt;version&gt;.tar.gz</code>
+              {{ _('in') }} <a href="#upload">{{ _('Upload') }}</a>.</div>
 
             {% if uploads %}
             <div class="mt-3">
@@ -371,7 +394,7 @@
   <div class="col-12">
     <div class="card mb-3">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <strong><i class="bi bi-journal-code me-1"></i>{{ _('API library packs') }}</strong>
+        <strong><i class="bi bi-journal-code me-1"></i>{{ _('API packs & kbpacks') }}</strong>
         <span class="text-muted small">{{ _('vendor API knowledge for nodes with no appliance, no internet or no crawler') }}</span>
       </div>
       <div class="card-body">
@@ -389,7 +412,7 @@
           <div class="alert alert-info py-2 small" id="apk-pending"><i class="bi bi-info-circle me-1"></i>
             {{ _('This release ships packs that have not been imported on this node yet:') }}
             {% for p in api_packs.pending %}
-              <code>{{ p.name }}</code>{% if p.series == 'knowledge' %} ({{ _('knowledge pack (satom-harvester)') }}){% endif %}
+              <code>{{ p.name }}</code>{% if p.series == 'knowledge' %} ({{ _('kbpack') }}){% endif %}
               — <a href="{{ url_for('self_update.index', apipack='shipped:' + p.name, _anchor='api-packs') }}">{{ _('Review and import it') }}</a>{% if not loop.last %};{% endif %}
             {% endfor %}
             {{ _('— or all of them from the console:') }} <code>sudo satom execute apipack import shipped --yes</code></div>
@@ -414,7 +437,7 @@
                     <span class="font-monospace">{{ p.name }}</span></button></td>
                 <td><div class="d-flex flex-wrap gap-1">
                 {% if p.series == 'knowledge' %}
-                <span class="fw-badge fw-badge-info apk-kb text-nowrap" title="{{ _('Rolling snapshot built by satom-harvester from lab schema dumps and vendor documentation, signed with the knowledge key. Each knowledge pack carries everything the older ones did.') }} {{ p.provenance }}">{{ _('knowledge pack (satom-harvester)') }}</span>
+                <span class="fw-badge fw-badge-info apk-kb text-nowrap" title="{{ _('Rolling snapshot built by satom-harvester from lab schema dumps and vendor documentation, signed with the knowledge key. Each knowledge pack carries everything the older ones did.') }} {{ p.provenance }}">{{ _('kbpack') }}</span>
                 {% elif p.series == 'api_pack' %}
                 <span class="fw-badge fw-badge-success apk-lane text-nowrap" title="{{ _('satom-harvester snapshot pinned to this SATOM release, signed with the API pack key.') }} {{ p.provenance }}">{{ _('API pack') }}{% if p.pinned_to %} · {{ p.pinned_to }}{% endif %}</span>
                 {% endif %}
@@ -452,18 +475,7 @@
         {% endif %}
 
         <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
-          <form method="post" enctype="multipart/form-data" action="{{ url_for('self_update.apipack_upload') }}"
-                class="d-flex flex-wrap align-items-end gap-2">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div>
-              <label class="form-label small mb-1" for="apk-file">
-                {{ _('Upload') }} <code>satom-apipack-&lt;version&gt;.tar.gz</code></label>
-              <input class="form-control form-control-sm" type="file" id="apk-file"
-                     name="apipack" accept=".gz,.tgz,application/gzip">
-            </div>
-            <button class="btn btn-fw-primary btn-sm" type="submit">
-              <i class="bi bi-upload me-1"></i>{{ _('Upload & check') }}</button>
-          </form>
+          <div class="small text-muted">{{ _('Upload an API pack or a kbpack in') }} <a href="#upload">{{ _('Upload') }}</a>.</div>
           <form method="post" action="{{ url_for('self_update.apipack_purge') }}" id="apk-purge"
                 onsubmit="return confirm('{{ _('Remove the uploaded packs a newer one replaces?') }}');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -537,12 +549,12 @@
   <div class="col-12">
     <div class="fw-card mb-3">
       <div class="fw-card-header d-flex justify-content-between align-items-center">
-        <span class="fw-card-title"><i class="bi bi-book me-2 text-accent"></i>{{ _('Knowledge packs') }}</span>
+        <span class="fw-card-title"><i class="bi bi-book me-2 text-accent"></i>{{ _('kbpacks (rolling knowledge)') }}</span>
         <span class="text-muted small">{{ _('release notes, upgrade advice and signature metadata — from signed packs') }}</span>
       </div>
       <div class="fw-card-body">
         <p class="text-muted small">
-          {{ _('SATOM no longer reads vendor web sites. Release notes, the Upgrade Advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling knowledge pack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins.') }}
+          {{ _('SATOM no longer reads vendor web sites. Release notes, the Upgrade Advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling kbpack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins.') }}
         </p>
         {% if knowledge.error %}
           <div class="alert alert-danger py-2 small"><i class="bi bi-exclamation-octagon me-1"></i>{{ knowledge.error }}</div>
@@ -606,10 +618,10 @@
               <div class="small" id="kn-progress-msg"></div>
             </div>
             <div class="small text-muted mt-2">
-              <i class="bi bi-wifi-off me-1"></i>{{ _('Air-gapped network? Download the pack and its .sha256 on a machine with internet') }}
+              <i class="bi bi-wifi-off me-1"></i>{{ _('Air-gapped network? Download the kbpack (satom-kbpack-<date>.tar.gz) and its .sha256 on a machine with internet') }}
               (<a href="{{ knowledge.feed_url }}" rel="noopener noreferrer" target="_blank" id="kn-manual-link">{{ _('feed') }}</a><span id="kn-manual-pack"></span>),
-              {{ _('then upload it under') }} <a href="#api-packs">{{ _('API library packs') }}</a>
-              (<code>{{ url_for('self_update.apipack_upload') }}</code>) {{ _('or run') }}
+              {{ _('then upload it in') }} <a href="#upload">{{ _('Upload') }}</a>
+              {{ _('and import it under') }} <a href="#api-packs">{{ _('API packs & kbpacks') }}</a>, {{ _('or run') }}
               <code>sudo satom execute apipack import &lt;file&gt; --yes</code>.
             </div>
           </div>

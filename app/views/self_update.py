@@ -7,6 +7,8 @@ web worker is never the thing restarting itself.
 """
 from __future__ import annotations
 
+import os
+
 from flask import (Blueprint, render_template, request, redirect, url_for,
                    flash, jsonify, current_app)
 from flask_login import login_required, current_user
@@ -398,6 +400,53 @@ def package_upload():
     flash("Staged %s. Review the preflight below before applying."
           % info["name"], "success")
     return redirect(url_for("self_update.index", pkg=info["name"]))
+
+
+#: The three files the page takes, by name (the single Upload card).
+UPLOAD_KINDS = ("satom-update-<version>.tar.gz", "satom-apipack-<version>.tar.gz",
+                "satom-kbpack-<date>.tar.gz")
+
+
+@bp.route("/upload", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def upload_any():
+    """One upload for the three files: an update package goes to staging and
+    its preflight, an API pack or a kbpack to the pack list (each still
+    verified on import). Routed by the file name, never by its content."""
+    from ..services import api_pack
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("Choose a file to upload.", "danger")
+        return redirect(url_for("self_update.index", _anchor="upload"))
+    base = os.path.basename(f.filename.replace("\\", "/"))
+    if base.startswith("satom-update-"):
+        try:
+            info = upkg.save_upload(f.stream, f.filename)
+        except upkg.PackageError as exc:
+            flash("Upload rejected: %s" % exc, "danger")
+            return redirect(url_for("self_update.index", _anchor="upload"))
+        except OSError as exc:
+            flash("Upload failed: %s" % exc, "danger")
+            return redirect(url_for("self_update.index", _anchor="upload"))
+        log_action("update_package.upload", target=info["name"],
+                   extra={"size": info["size"]})
+        flash("Staged %s. Review the preflight below before applying."
+              % info["name"], "success")
+        return redirect(url_for("self_update.index", pkg=info["name"]))
+    if api_pack.PACK_NAME_RE.match(base):
+        try:
+            info = api_pack.save_upload(f.stream, f.filename)
+        except (api_pack.PackError, OSError) as exc:
+            flash("Pack upload rejected: %s" % exc, "danger")
+            return redirect(url_for("self_update.index", _anchor="upload"))
+        log_action("apipack.upload", target=info["name"], extra={"size": info["size"]})
+        flash("Staged %s. Pick the items to import below." % info["name"], "success")
+        return redirect(url_for("self_update.index", apipack="uploaded:" + info["name"],
+                                _anchor="api-packs"))
+    flash("%r is none of the files this page takes: %s." % (base[:120], ", ".join(UPLOAD_KINDS)),
+          "danger")
+    return redirect(url_for("self_update.index", _anchor="upload"))
 
 
 @bp.route("/package/preflight/<name>")

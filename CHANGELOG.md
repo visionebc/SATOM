@@ -35,8 +35,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - **Plugin Studio: Output "plan" view** (a decommission plan: delete / unbind
   / keep per stage, warnings and blockers).
 - **Plugin Studio: Ask a person — Must be acknowledged / Blocks the Yes
-  answer.** One tick box per warning; *Yes* is refused on the server until
-  every one is ticked, and refused outright while a blocker stands. The
+  answer / Type to confirm.** One tick box per warning; *Yes* is refused on
+  the server until every one is ticked, while a blocker stands, and until the
+  confirmation text (the decommission app: the policy name) is typed. The
   answer is saved as `{{ last_answer }}`.
 
 - **Apps for people outside the console, with their own sign-in** (request:

@@ -163,9 +163,13 @@
       h += '<div class="form-check my-1" style="font-size:12.5px;"><input class="form-check-input" type="checkbox" data-ack="' + i + '" id="sapp-ack-' + i + '">' +
         '<label class="form-check-label" for="sapp-ack-' + i + '"><strong>Warning:</strong> ' + esc(a) + ' — I have read this</label></div>';
     });
+    if (w.can_answer && w.confirm_text) {
+      h += '<input class="form-control form-control-sm mt-2" data-typed autocomplete="off" style="max-width:320px;" placeholder="Type ' +
+        esc(w.confirm_text) + ' to confirm">';
+    }
     if (w.can_answer) {
       h += '<div class="d-flex flex-wrap gap-2 align-items-center mt-2"><input class="form-control form-control-sm" data-answer-note maxlength="400" placeholder="Note (optional)" style="max-width:320px;">' +
-        '<button type="button" class="btn btn-sm btn-success" data-answer="yes"' + (blocked || acks.length ? ' disabled' : '') +
+        '<button type="button" class="btn btn-sm btn-success" data-answer="yes"' + (blocked || acks.length || w.confirm_text ? ' disabled' : '') +
         (blocked ? ' title="Blocked: see above"' : '') + '>' + esc(w.pass_label || 'Yes') + '</button>' +
         (w.buttons === 'one' ? '' : '<button type="button" class="btn btn-sm btn-danger" data-answer="no">' + esc(w.fail_label || 'No') + '</button>') +
         '<span data-answer-msg class="small"></span></div>';
@@ -279,6 +283,9 @@
     box.addEventListener('change', function (e) {
       if (e.target && e.target.hasAttribute && e.target.hasAttribute('data-ack')) gateYes(box);
     });
+    box.addEventListener('input', function (e) {
+      if (e.target && e.target.hasAttribute && e.target.hasAttribute('data-typed')) gateYes(box);
+    });
     box.addEventListener('click', function (e) {
       var ans = e.target.closest('[data-answer]');
       if (ans && box.contains(ans)) {
@@ -286,7 +293,8 @@
         var acks = Array.prototype.filter.call(box.querySelectorAll('[data-ack]'), function (x) { return x.checked; })
           .map(function (x) { return +x.getAttribute('data-ack'); });
         Array.prototype.forEach.call(box.querySelectorAll('[data-answer]'), function (x) { x.disabled = true; });
-        answer(box, ans.getAttribute('data-answer'), note ? note.value : '', acks).catch(function (err) {
+        var typedEl = box.querySelector('[data-typed]');
+        answer(box, ans.getAttribute('data-answer'), note ? note.value : '', acks, typedEl ? typedEl.value : '').catch(function (err) {
           Array.prototype.forEach.call(box.querySelectorAll('[data-answer]'), function (x) { x.disabled = false; });
           gateYes(box);
           if (am) am.innerHTML = '<span style="color:#8B1C2A;">' + esc(err.message) + '</span>';
@@ -318,18 +326,21 @@
     });
   }
 
-  function answer(box, value, note, acks) {
+  function answer(box, value, note, acks, typed) {
     var run = box._sappRun;
-    return post('/apps/runs/' + run.id + '/answer', { answer: value, note: note || '', acks: acks || [] }).then(function () {
+    return post('/apps/runs/' + run.id + '/answer', { answer: value, note: note || '', acks: acks || [], typed: typed || '' }).then(function () {
       follow(box, box._sappUrl, box._sappAuto);
     });
   }
-  /* Yes stays off while a blocker stands or a warning is not ticked. */
+  /* Yes stays off while a blocker stands, a warning is not ticked or the
+     text to confirm is not typed. */
   function gateYes(box) {
     var d = box._sappRun, w = d && d.waiting, yes = box.querySelector('[data-answer="yes"]');
     if (!w || !yes) return;
     var all = Array.prototype.every.call(box.querySelectorAll('[data-ack]'), function (x) { return x.checked; });
-    yes.disabled = (w.blockers || []).length > 0 || !all;
+    var typed = box.querySelector('[data-typed]');
+    var ok = !w.confirm_text || (typed && typed.value.trim() === w.confirm_text);
+    yes.disabled = (w.blockers || []).length > 0 || !all || !ok;
   }
 
   /* Copy: the text was rendered by the server (run_json) from this run. */

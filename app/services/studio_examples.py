@@ -596,7 +596,8 @@ DNS_DECOM_GRAPH = {
            acknowledge="{{ plan.warnings | rejectattr('blocking') | map(attribute='text') "
                        "| list }}",
            blockers="{{ plan.warnings | selectattr('blocking') | map(attribute='text') "
-                    "| list }}"),
+                    "| list }}",
+           confirm_text="{{ plan.target.policy }}"),
         _n("apply", "dns_decommission_apply", "Apply the confirmed plan", 300, 390,
            appliance="{{ form.appliance }}", policy="{{ form.policy }}",
            hostname="{{ form.hostname }}", confirm="{{ plan.fingerprint }}",

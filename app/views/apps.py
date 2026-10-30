@@ -175,7 +175,8 @@ def answer(rid):
     step = (SA.waiting_step(r) or {}).get("key", "")
     try:
         SA.answer(a, r, value, user=current_user, note=str(body.get("note") or "")[:400],
-                  acks=body.get("acks") if isinstance(body.get("acks"), list) else None)
+                  acks=body.get("acks") if isinstance(body.get("acks"), list) else None,
+                  typed=str(body.get("typed") or "")[:200])
     except SA.AppError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     log_action("studio.app.answer", target=a.slug, extra={

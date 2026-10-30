@@ -1170,17 +1170,19 @@ def waiting_step(run: StudioAppRun) -> dict | None:
 
 def gate_of(run: StudioAppRun, st: dict | None) -> dict:
     """What the waiting Ask step's answer must respect: ``{acknowledge,
-    blockers}`` (``studio_checks.ASK_GATE``), empty lists when it set none."""
+    blockers, confirm_text}`` (``studio_checks.ASK_GATE``), empty when it set
+    none."""
     from . import studio_checks as C
     g = run.vars.get(C.ASK_GATE) if st is not None else None
     if not isinstance(g, dict) or g.get("key") != st.get("key"):
-        return {"acknowledge": [], "blockers": []}
+        return {"acknowledge": [], "blockers": [], "confirm_text": ""}
     return {"acknowledge": list(g.get("acknowledge") or []),
-            "blockers": list(g.get("blockers") or [])}
+            "blockers": list(g.get("blockers") or []),
+            "confirm_text": str(g.get("confirm_text") or "")}
 
 
 def answer(a: StudioApp, run: StudioAppRun, value: str, *, user, note: str = "",
-           acks=None) -> StudioAppRun:
+           acks=None, typed: str = "") -> StudioAppRun:
     """Answer the "Ask a person" step a run waits on and keep walking.
 
     The walk is rebuilt from what the run SAVED: its form values, its
@@ -1211,6 +1213,8 @@ def answer(a: StudioApp, run: StudioAppRun, value: str, *, user, note: str = "",
         raise AppError("Yes is blocked: " + "; ".join(gate["blockers"]))
     if value == "yes" and not every:
         raise AppError("tick every warning before answering %s" % (st.get("label") or "Yes"))
+    if value == "yes" and gate["confirm_text"] and str(typed or "").strip() != gate["confirm_text"]:
+        raise AppError("type %s to confirm" % gate["confirm_text"])
     vars_["last_answer"] = {
         "step": st.get("key"), "answer": value, "by": getattr(user, "username", ""),
         "note": note, "all_acknowledged": value == "yes" and every,

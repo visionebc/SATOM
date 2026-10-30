@@ -108,7 +108,10 @@ def kinds() -> list:
               Param("blockers", "Blocks the Yes answer",
                     help="A list, e.g. {{ plan.warnings | selectattr('blocking') "
                          "| map(attribute='text') | list }}: while it is not empty, Yes is "
-                         "refused and only No can be answered.")]),
+                         "refused and only No can be answered."),
+              Param("confirm_text", "Type to confirm",
+                    help="e.g. {{ plan.target.policy }}: Yes is accepted only when the "
+                         "person types exactly this text.")]),
         Kind("activity", "Activity", "flow",
              "A documented box that passes at once — a heading such as "
              "'1 Connectivity tests'. Its instructions show on the run."),
@@ -178,7 +181,8 @@ def run(node, ctx):
     if kind == "ask":
         ctx.vars[ASK_GATE] = {"key": node.get("key") or "",
                               "acknowledge": _texts(P("acknowledge")),
-                              "blockers": _texts(P("blockers"))}
+                              "blockers": _texts(P("blockers")),
+                              "confirm_text": str(P("confirm_text") or "").strip()[:200]}
         return WAIT, None, str(P("prompt") or "")
 
     if kind == "appliance_load":

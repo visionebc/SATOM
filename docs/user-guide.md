@@ -5619,8 +5619,10 @@ activities of an appliance), as automatic as the steps allow:
   app was published again meanwhile. **Must be acknowledged** (a list, e.g.
   the plan's warnings) draws one tick box per item, and *Yes* is accepted
   only when every box is ticked; **Blocks the Yes answer** (a list) refuses
-  *Yes* while it is not empty — only *No* can be answered. SATOM checks both
-  when the answer arrives, not only in the browser. The answer is saved as
+  *Yes* while it is not empty — only *No* can be answered; **Type to
+  confirm** accepts *Yes* only when the person types that exact text (e.g. the
+  policy name). SATOM checks all three when the answer arrives, not only in
+  the browser. The answer is saved as
   `{{ last_answer }}`: `answer`, `acknowledged` (the ticked texts),
   `all_acknowledged`, `by` and `note`.
 - **Simulate** (Diagram tab) walks the saved draft end to end as a
@@ -5666,7 +5668,8 @@ the decommission confirmation"). The page under Fleet › DNS Lookup stays.
   and then list the name again.
 - **Decommission a service** (`ex-dns-decommission`): the plan (what is
   deleted, unbound and kept, and why), then **Decommission / Cancel** with a
-  tick box per warning; a blocker refuses *Decommission*. The apply step
+  tick box per warning and the policy name to type back, as on the page; a
+  blocker refuses *Decommission*. The apply step
   plans again and refuses a plan that changed since it was shown.
 
 The **Console** pane has two examples in its *Studio* group: the fleet

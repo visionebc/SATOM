@@ -37,6 +37,17 @@ class PathDiagReport(db.Model):
     report_json = db.Column(db.Text, nullable=False, default="{}")
     metrics_json = db.Column(db.Text, nullable=False, default="{}")
 
+    @classmethod
+    def prune(cls, older_than_days: int) -> int:
+        """Delete reports older than ``older_than_days``; 0 keeps everything.
+        Returns how many rows went. The caller commits."""
+        if not older_than_days or older_than_days <= 0:
+            return 0
+        from datetime import timedelta
+        cutoff = datetime.utcnow() - timedelta(days=int(older_than_days))
+        return cls.query.filter(cls.created_at < cutoff).delete(
+            synchronize_session=False)
+
     def report(self) -> dict:
         try:
             return json.loads(self.report_json or "{}")

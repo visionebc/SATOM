@@ -170,15 +170,36 @@ def context(device: str, policy: str, window_minutes: int,
                                   "note": note})
             out["flags"] += [_flag_text(title, r) for r in have if r["flag"]]
 
-        iface = []
+        iface: dict = {}
+
+        def _put(m, direction, key, v):
+            row = iface.setdefault((m.get("iface") or "?", direction),
+                                   {"iface": m.get("iface") or "?", "dir": direction})
+            row[key] = v
+
         for direction, name in (("rx", "satom_iface_rx_bytes_total"),
                                 ("tx", "satom_iface_tx_bytes_total")):
             for m, v in _scalar_rows(
                     "rate(%s[%dm]) * 8" % (_sel(name, {"device": device}), w), ts):
-                iface.append({"iface": m.get("iface") or "?", "dir": direction,
-                              "bps": v})
-        iface.sort(key=lambda r: (r["iface"], r["dir"]))
-        out["interfaces"] = iface
+                _put(m, direction, "bps", v)
+        for direction, name in (("rx", "satom_iface_rx_packets_total"),
+                                ("tx", "satom_iface_tx_packets_total")):
+            for m, v in _scalar_rows(
+                    "rate(%s[%dm])" % (_sel(name, {"device": device}), w), ts):
+                _put(m, direction, "pps", v)
+        # Errors and discards exist only over SNMP (IF-MIB): increase over the
+        # WINDOW, so a single burst is visible, and any non-zero is flagged.
+        for direction, prefix in (("rx", "satom_snmp_if_in_"), ("tx", "satom_snmp_if_out_")):
+            for key in ("errors", "discards"):
+                for m, v in _scalar_rows(
+                        "increase(%s[%dm])" % (_sel(prefix + key + "_total",
+                                                    {"device": device}), w), ts):
+                    _put(m, direction, key, v)
+                    if v and v >= 1:
+                        out["flags"].append(
+                            "%s %s %s: %d %s in the window (SNMP)"
+                            % (device, m.get("iface") or "?", direction, round(v), key))
+        out["interfaces"] = sorted(iface.values(), key=lambda r: (r["iface"], r["dir"]))
     except StoreDown as exc:
         out.update(status="error",
                    detail="The metrics store did not answer: %s" % exc)

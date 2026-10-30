@@ -71,6 +71,11 @@ MAX_CONNECTIONS = 64
 QUEUE_MAX = 20000           # messages waiting for the next tick
 SOURCE_REFRESH_S = 300
 TEXT_MAX = 300
+#: Distinct unknown senders remembered by address. A count without an address
+#: answers nothing: on 2026-10-30 the page said "1185 unknown_source" for days
+#: while the sender was a device de-registered a week earlier and still pointed
+#: at this receiver. Bounded so a scan of the port cannot grow it.
+STRANGERS_MAX = 32
 
 SEVERITIES = ("emerg", "alert", "crit", "err", "warning", "notice", "info", "debug")
 FACILITIES = ("kern", "user", "mail", "daemon", "auth", "syslog", "lpr", "news",
@@ -275,6 +280,7 @@ class Receiver:
         self.dropped: dict[str, int] = collections.Counter()
         self.per_device: dict[str, dict] = {}
         self.ring: collections.deque = collections.deque(maxlen=RING_MAX)
+        self.strangers: dict[str, dict] = {}
         self.received = 0
         self._since_flush: set[str] = set()
 
@@ -367,7 +373,11 @@ class Receiver:
         if len(self._conns) >= MAX_CONNECTIONS or not self._allowed(peer[0]):
             # A sender we would drop every message from does not get a socket.
             with self._lock:
-                self.dropped["unknown_source" if self._allowed(peer[0]) is None else "too_many_connections"] += 1
+                if self._allowed(peer[0]) is None:
+                    self.dropped["unknown_source"] += 1
+                    self._note_stranger(peer[0])
+                else:
+                    self.dropped["too_many_connections"] += 1
             conn.close()
             return
         conn.setblocking(False)
@@ -408,6 +418,20 @@ class Receiver:
             pass
         self._conns.pop(conn, None)
 
+    def _note_stranger(self, ip: str) -> None:
+        """Count a dropped sender by address (caller holds the lock). When the
+        table is full the least recently seen address makes room, so a sender
+        that is still sending always stays listed."""
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        st = self.strangers.get(ip)
+        if st is None:
+            if len(self.strangers) >= STRANGERS_MAX:
+                oldest = min(self.strangers, key=lambda k: self.strangers[k]["last_at"])
+                self.strangers.pop(oldest, None)
+            st = self.strangers[ip] = {"count": 0, "first_at": now, "last_at": now}
+        st["count"] += 1
+        st["last_at"] = now
+
     # -- attribution -------------------------------------------------------
     def _allowed(self, ip: str):
         """``(name, kind)`` for a known appliance, ``(ip, "unregistered")``
@@ -430,6 +454,7 @@ class Receiver:
         if who is None:
             with self._lock:
                 self.dropped["unknown_source"] += 1
+                self._note_stranger(ip)
             return False
         if len(raw) > MAX_MESSAGE:
             with self._lock:
@@ -485,6 +510,8 @@ class Receiver:
             return {"running": self.running, "bind": "%s:%d" % (self.bind_host, self.bind_port),
                     "tcp": self.tcp, "started_at": self.started_at, "error": self.error,
                     "received": self.received, "dropped": dict(self.dropped),
+                    "strangers": [dict(v, ip=k) for k, v in sorted(
+                        self.strangers.items(), key=lambda kv: -kv[1]["count"])],
                     "per_device": {k: dict(v) for k, v in self.per_device.items()},
                     "known_sources": len(self.sources),
                     # The deque is the bound (maxlen); nothing re-slices here,
@@ -524,6 +551,33 @@ def known_sources() -> dict[str, dict]:
             for ip in addrs:
                 out[ip] = {"name": a.name, "kind": a.kind}
     return out
+
+
+def name_strangers(strangers: list[dict]) -> list[dict]:
+    """Say which retired device an unknown sender used to be.
+
+    A live appliance's address is never a stranger (it is on the allow-list),
+    so an address here that matches a RETIRED identity is almost always a
+    device that was de-registered and still has this receiver as its syslog
+    target -- the fix is on the device, not here. Addresses are reused, so the
+    most recently retired identity with that host wins. Never raises."""
+    if not strangers:
+        return strangers
+    try:
+        from ..models_identity import DeviceIdentity
+        rows = (DeviceIdentity.query
+                .filter(DeviceIdentity.retired_at.isnot(None),
+                        DeviceIdentity.host.in_([s["ip"] for s in strangers]))
+                .order_by(DeviceIdentity.retired_at.asc()).all())
+    except Exception:  # noqa: BLE001
+        return strangers
+    by_host = {r.host: r for r in rows}       # ascending: the newest wins
+    for s in strangers:
+        r = by_host.get(s["ip"])
+        if r is not None:
+            s["retired_name"] = r.name or r.slug
+            s["retired_at"] = r.retired_at.isoformat(timespec="seconds")
+    return strangers
 
 
 def node_role() -> str:
@@ -600,6 +654,7 @@ def service_tick(flush=None) -> dict:
             fl = flush or _default_flush
             _last_flush = fl(lines)
             state.update(_RECEIVER.snapshot())
+            state["strangers"] = name_strangers(state.get("strangers") or [])
             state["flush"] = _last_flush
         else:
             state["running"] = False

@@ -215,7 +215,10 @@ class AdvisorProposal(db.Model):
     see the module docstring."""
     __tablename__ = "advisor_proposals"
 
-    KINDS = ("waf_exception", "lua_script")
+    #: ``path_walk`` is not a draft: applying it opens Path Diagnostics with
+    #: the form filled in, and it becomes ``applied`` only when the operator
+    #: actually walks it (``applied_ref`` = ``path_report:<id>``).
+    KINDS = ("waf_exception", "lua_script", "path_walk")
     STATUSES = ("pending", "applied", "dismissed")
 
     id = db.Column(db.Integer, primary_key=True)

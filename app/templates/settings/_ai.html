@@ -22,7 +22,13 @@
           <input class="form-check-input" type="checkbox" id="ai-flag-external" data-flag="external">
           <label class="form-check-label" for="ai-flag-external">{{ _('Allow external providers') }}</label>
         </div>
+        <div class="d-flex align-items-center gap-2">
+          <label class="form-label mb-0" for="ai-tool-rounds">{{ _('Tool rounds per question') }}</label>
+          <input type="number" class="form-control form-control-sm" style="width:5rem" id="ai-tool-rounds" min="1" max="12" step="1">
+          <span class="text-secondary small" id="ai-tool-rounds-result"></span>
+        </div>
       </div>
+      <div class="form-text">{{ _('Each round is one model call that may run several read-only tools. When the rounds are spent Scout answers from what it has and says which checks it could not make. Default 6; 1–12.') }}</div>
     </div>
   </div>
 
@@ -79,14 +85,22 @@
         <div class="col-md-6"><label class="form-label" for="ai-ls-kind">{{ _('Kind') }}</label>
           <select class="form-select" id="ai-ls-kind">
             <option value="splunk">{{ _('Splunk (REST search export, port 8089) — unverified on a live Splunk') }}</option>
+            <option value="elastic">{{ _('Elasticsearch / OpenSearch / Wazuh indexer (_search, port 9200) — unverified on a live cluster') }}</option>
           </select>
         </div>
         <div class="col-md-6"><label class="form-label" for="ai-ls-url">{{ _('Management URL') }}</label><input class="form-control" id="ai-ls-url" placeholder="https://splunk.example.com:8089"></div>
-        <div class="col-md-6"><label class="form-label" for="ai-ls-token">{{ _('Token') }} <span class="text-secondary">{{ _('(Bearer; blank = keep)') }}</span></label><input type="password" class="form-control" id="ai-ls-token" autocomplete="off"></div>
-        <div class="col-md-8"><label class="form-label" for="ai-ls-prefix">{{ _('Search prefix') }}</label><input class="form-control" id="ai-ls-prefix" placeholder="index=network (sourcetype=cisco:asa OR sourcetype=cisco:ios)">
-          <div class="form-text" style="font-size:11.5px">{{ _('Written by you, used as is at the start of every search. Scout only adds a device clause and one quoted term after it.') }}</div></div>
+        <div class="col-md-4"><label class="form-label" for="ai-ls-token">{{ _('Token') }} <span class="text-secondary">{{ _('(blank = keep)') }}</span></label><input type="password" class="form-control" id="ai-ls-token" autocomplete="off"></div>
+        <div class="col-md-2"><label class="form-label" for="ai-ls-auth">{{ _('Auth') }}</label>
+          <select class="form-select" id="ai-ls-auth">
+            <option value="bearer">{{ _('Bearer (Splunk)') }}</option>
+            <option value="apikey">{{ _('API key (Elastic)') }}</option>
+            <option value="basic">{{ _('Basic user:password') }}</option>
+          </select></div>
+        <div class="col-md-8"><label class="form-label" for="ai-ls-prefix">{{ _('Search prefix (Splunk) / index pattern (Elastic)') }}</label><input class="form-control" id="ai-ls-prefix" placeholder="index=network (sourcetype=cisco:asa OR sourcetype=cisco:ios)">
+          <div class="form-text" style="font-size:11.5px">{{ _('Splunk: written by you, used as is at the start of every search; Scout only adds a device clause and one quoted term after it. Elastic/OpenSearch: the index pattern searched (for example logs-* or wazuh-alerts-*); Scout only adds a time range, a device clause and one phrase.') }}</div></div>
         <div class="col-md-4"><label class="form-label" for="ai-ls-field">{{ _('Device field') }}</label><input class="form-control" id="ai-ls-field" placeholder="host">
           <div class="form-text" style="font-size:11.5px">{{ _('Matched against the appliance name and management address. Blank = never filter by appliance.') }}</div></div>
+        <div class="col-md-4"><label class="form-label" for="ai-ls-timefield">{{ _('Time field (Elastic)') }}</label><input class="form-control" id="ai-ls-timefield" placeholder="@timestamp"></div>
       </div>
       <div class="d-flex flex-wrap gap-4 mt-2">
         <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="ai-ls-verify" checked><label class="form-check-label" for="ai-ls-verify">{{ _('Verify TLS against the trust store') }}</label></div>
@@ -124,6 +138,7 @@
       document.getElementById('ai-flag-enabled').checked = !!d.enabled;
       document.getElementById('ai-flag-tools').checked = !!d.tools_on;
       document.getElementById('ai-flag-external').checked = !!d.external_on;
+      document.getElementById('ai-tool-rounds').value = d.tool_rounds;
       var list = document.getElementById('ai-provider-list');
       list.innerHTML = '';
       (d.providers||[]).forEach(function(p){
@@ -189,6 +204,8 @@
     document.getElementById('ai-ls-verify').checked = s ? s.verify_tls !== false : true;
     document.getElementById('ai-ls-enabled').checked = s ? s.enabled !== false : true;
     document.getElementById('ai-ls-token').value = '';
+    document.getElementById('ai-ls-timefield').value = s ? (s.time_field || '@timestamp') : '@timestamp';
+    document.getElementById('ai-ls-auth').value = s ? (s.auth || (s.kind === 'elastic' ? 'apikey' : 'bearer')) : 'bearer';
   }
 
   document.addEventListener('click', function(ev){
@@ -222,6 +239,8 @@
         verify_tls: document.getElementById('ai-ls-verify').checked,
         enabled: document.getElementById('ai-ls-enabled').checked,
         token: document.getElementById('ai-ls-token').value,
+        time_field: document.getElementById('ai-ls-timefield').value.trim() || '@timestamp',
+        auth: document.getElementById('ai-ls-auth').value,
       };
       api('/settings/ai/logsource/save', {method:'POST', body: JSON.stringify(body)}).then(function(d){
         if (!d.ok) { document.getElementById('ai-ls-result').textContent = d.error || 'save failed'; return; }
@@ -236,6 +255,13 @@
     if (!t.matches('[data-flag]')) return;
     var body = {}; body[t.getAttribute('data-flag')] = t.checked;
     api('/settings/ai/flags', {method:'POST', body: JSON.stringify(body)}).then(refresh);
+  });
+
+  document.getElementById('ai-tool-rounds').addEventListener('change', function(ev){
+    var out = document.getElementById('ai-tool-rounds-result');
+    api('/settings/ai/flags', {method:'POST', body: JSON.stringify({tool_rounds: ev.target.value})})
+      .then(function(d){ out.textContent = d.ok ? 'saved' : (d.error || 'not saved'); refresh(); })
+      .catch(function(){ out.textContent = 'not saved — no answer from SATOM'; });
   });
 
   function openForm(p){

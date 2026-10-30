@@ -178,7 +178,18 @@
 
   function renderProposals(props){
     elProposals.innerHTML = '';
+    props.filter(function(p){ return p.kind === 'path_walk' && p.status === 'applied'; }).forEach(function(p){
+      var m = /^path_report:(\d+)$/.exec(p.applied_ref || '');
+      if (!m) return;
+      var line = document.createElement('div');
+      line.className = 'adv-proposal-card small';
+      line.innerHTML = '<i class="bi bi-binoculars me-1"></i>Path Diagnostics walk <strong>' + esc(p.title) +
+        '</strong> ran: <a href="/scout/reports/' + m[1] + '" target="_blank" rel="noopener">report #' + m[1] +
+        '</a>. Ask Scout to read it.';
+      elProposals.appendChild(line);
+    });
     props.filter(function(p){ return p.status === 'pending'; }).forEach(function(p){
+      var walk = p.kind === 'path_walk';
       var card = document.createElement('div');
       card.className = 'adv-proposal-card';
       card.innerHTML =
@@ -186,7 +197,8 @@
         '<div><span class="fw-badge fw-badge-secondary">' + esc(p.kind) + '</span> <strong>' + esc(p.title) + '</strong>' +
         '<div class="text-secondary" style="font-size:12px">' + esc(p.rationale) + '</div></div>' +
         '<div class="d-flex gap-2">' +
-        '<button type="button" class="btn btn-sm btn-fw-primary" data-act="apply-proposal" data-pid="' + p.id + '">Apply as draft</button>' +
+        '<button type="button" class="btn btn-sm btn-fw-primary" data-act="apply-proposal" data-pid="' + p.id + '">' +
+          (walk ? 'Open Path Diagnostics' : 'Apply as draft') + '</button>' +
         '<button type="button" class="btn btn-sm btn-fw-outline" data-act="dismiss-proposal" data-pid="' + p.id + '">Dismiss</button>' +
         '</div></div>' +
         '<pre style="font-size:11px;margin-top:8px;white-space:pre-wrap">' + esc(JSON.stringify(p.payload, null, 2)) + '</pre>';
@@ -503,6 +515,10 @@
       var verb = act === 'apply-proposal' ? 'apply' : 'dismiss';
       api('/advisor/' + cid + '/proposal/' + pid + '/' + verb,
           {method: 'POST', body: JSON.stringify({})}).then(function(d){
+        // A walk proposal opens the filled-in form in a new tab; the walk is
+        // the operator's click there, and the card turns into a report link
+        // once it ran.
+        if (d.ok && d.open_url) window.open(d.open_url, '_blank', 'noopener');
         if (d.ok) loadConversation(cid);
         else pendingError(d.error || ('could not ' + verb + ' the proposal'));
       });

@@ -246,6 +246,10 @@ def tools():
 def _can_apply(prop: AdvisorProposal) -> bool:
     if prop.kind == "waf_exception":
         return current_user.can(Permission.CONFIG_WRITE)
+    if prop.kind == "path_walk":
+        # The same gate as the Path Diagnostics page itself.
+        from ..services import scout_config
+        return scout_config.enabled() and current_user.can(Permission.VIEW)
     if prop.kind == "lua_script":
         # Same super-admin gate the manual Lua Studio form requires — an AI
         # proposal must never be an easier path to a Lua draft than typing
@@ -266,6 +270,8 @@ def apply_proposal(cid, pid):
         ref = svc.apply_proposal(prop, applied_by=current_user.username)
     except ValueError as exc:
         return jsonify(ok=False, error=str(exc)), 400
+    if prop.kind == "path_walk":
+        return jsonify(ok=True, open_url=ref)
     return jsonify(ok=True, applied_ref=ref)
 
 

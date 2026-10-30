@@ -47,6 +47,7 @@ GROUPS = (
     ("switch", "Availability"),
     ("walk", "Walk defaults"),
     ("border", "Border correlation (FortiAnalyzer)"),
+    ("history", "Saved reports"),
 )
 
 #: One entry per SITE setting. ``kind`` drives the widget and the coercion.
@@ -162,6 +163,21 @@ SPEC: list[dict] = [
              "get an answer' is not the same statement as 'there was no "
              "traffic', and rung 7 is the one rung where confusing the two "
              "would exonerate a firewall."},
+
+    # ── history ─────────────────────────────────────────────────────────────
+    {"key": "report_retention_days", "kind": "int", "group": "history",
+     "default": 0, "min": 0, "max": 3650,
+     "label": "Keep saved reports for (days, 0 = forever)",
+     "help": "Reports older than this are deleted when the next walk is saved. "
+             "0 keeps every report.",
+     "hint": "Every walk is saved with its metrics panel so the evidence behind "
+             "a verdict can be shown weeks later; that is the point of saving "
+             "it, so the shipped default keeps everything. A report is a few "
+             "tens of kilobytes. Pruning runs when a walk is saved, on the node "
+             "that saves it -- a site where nobody walks does not grow, and "
+             "nothing is deleted on the standby, whose database is a read-only "
+             "replica. The audit row of a pruned walk stays: it names the "
+             "report id, and the report page then answers 404."},
 ]
 
 _BY_KEY = {s["key"]: s for s in SPEC}

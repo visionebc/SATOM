@@ -451,8 +451,13 @@ def _collect_interfaces(appliance, params, ts) -> list:
         link_up = 1 if str(row.get("link", "")).lower() in ("up", "1", "true") else 0
         lines.append(vm_store.line("satom_iface_up", L, link_up, ts))
         # Cumulative counters — rate() in MetricsQL turns them into bandwidth.
+        # ``rx``/``tx`` are PACKET counts: read on fortiweb19 (FortiWeb 8.0.6,
+        # 2026-10-30) beside rx_bytes/tx_bytes, ~93-128 bytes a unit. The same
+        # rows carry no error or drop field -- those come from SNMP only.
         for metric, key in (("satom_iface_rx_bytes_total", "rx_bytes"),
-                            ("satom_iface_tx_bytes_total", "tx_bytes")):
+                            ("satom_iface_tx_bytes_total", "tx_bytes"),
+                            ("satom_iface_rx_packets_total", "rx"),
+                            ("satom_iface_tx_packets_total", "tx")):
             val = _num(row.get(key))
             if val is not None:
                 lines.append(vm_store.line(metric, L, val, ts))

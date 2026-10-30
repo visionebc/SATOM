@@ -64,6 +64,7 @@ from .advisor_providers import (
 # ---------------------------------------------------------------------------
 K_ENABLED = "ai.enabled"                  # "1"/"0" — feature master switch
 K_TOOLS_ENABLED = "ai.tools_enabled"      # "1"/"0" — mode C, off by default
+K_TOOL_ROUNDS = "ai.tool_rounds"          # int, see tool_rounds()
 K_EXTERNAL_ALLOWED = "ai.external_allowed"  # "1"/"0" — extra gate before ANY
                                              # non-local provider may be used,
                                              # even if one is configured
@@ -78,11 +79,24 @@ DEFAULT_OLLAMA_URL = "http://localhost:11434"
 PROPOSAL_FENCE = "satom-proposal"
 TOOL_FENCE = "satom-tool"
 
-# A tool exchange costs a full model round-trip. Four is enough to chain
-# "which appliances exist -> its policies -> that policy's health" and still
-# bounded: without a cap a model that keeps re-asking the same tool turns one
-# operator question into an unbounded spend on a shared GPU host.
-MAX_TOOL_ROUNDS = 4
+# A tool exchange costs a full model round-trip. Bounded: without a cap a
+# model that keeps re-asking the same tool turns one operator question into an
+# unbounded spend on a shared GPU host. Four was the first default; measured
+# 2026-10-30 an incident investigation (report -> metrics -> logs -> incidents
+# -> jobs -> audit -> health) needs six, and at four the live run stopped
+# before it reached the device health. Configurable in Settings -> AI.
+DEFAULT_TOOL_ROUNDS = 6
+MIN_TOOL_ROUNDS = 1
+MAX_TOOL_ROUNDS = 12
+# How many calls one tool block may carry (a JSON list), independent of rounds.
+MAX_CALLS_PER_BLOCK = 6
+# Said to the model when its rounds are spent and it still asked for a tool:
+# one more round, with no tools, to answer from what it already has. Without
+# it the saved reply was the raw tool-call block -- JSON instead of an answer.
+BUDGET_SPENT_PROMPT = (
+    "Your tool budget for this question is spent; no more tools will run. "
+    "Answer now from the results you already have. Say plainly which checks "
+    "you could not make, so the operator can ask for them next.")
 # Per-result cap. Truncation is announced IN BAND (see _tool_result_text) so
 # the model knows it is reasoning about a partial list instead of concluding
 # the list is short.
@@ -106,8 +120,9 @@ SYSTEM_PROMPT = (
     "When a service is reported broken: read the newest Path Diagnostics "
     "report for that object (its verdict is a measurement; do not contradict "
     "it — explain it), then the metrics around it, the device health and the "
-    "recent configuration changes. If there is no recent report, ask the "
-    "operator to run Path Diagnostics on that object; you cannot run it. "
+    "recent configuration changes. If there is no recent report, propose "
+    "a walk (kind path_walk, below): you cannot run it, the operator runs it "
+    "with one click, and you read the report afterwards. "
     "Then correlate: the logs of the same window from every source "
     "(search_logs with the report_id), open Sentinel incidents, the alerts, the jobs "
     "SATOM ran against the box and the audit log (who changed what, when). For a "
@@ -129,6 +144,11 @@ SYSTEM_PROMPT = (
     "For kind=lua_script, payload is "
     '{"target": "fortiweb"|"fortiadc", "name": "<script name>", '
     '"deploy_object": "<device scripting object name>", "code": "<lua source>"}.\n'
+    "For kind=path_walk (a FortiWeb or FortiADC appliance_id), payload is "
+    '{"policy": "<server policy / virtual server name>", '
+    '"hostname": "<optional Host header>", "path": "<optional URL path>", '
+    '"window_minutes": <optional int, 1-1440>}. A walk is not a draft: '
+    "the operator runs it, then asks you to read the report.\n"
     "This block is a PROPOSAL, not an action — SATOM stores it as a draft the "
     "operator must explicitly approve before anything is written anywhere. "
     "Never claim you already applied, saved, or deployed something.\n\n"
@@ -250,6 +270,29 @@ def tools_enabled() -> bool:
 
 def external_allowed() -> bool:
     return sstore.get_str(K_EXTERNAL_ALLOWED, "0") == "1"
+
+
+def tool_rounds() -> int:
+    """Tool rounds one question may use, clamped to [MIN, MAX] whatever is
+    stored -- a hand-edited setting must not make the loop unbounded."""
+    try:
+        n = int(sstore.get_str(K_TOOL_ROUNDS, str(DEFAULT_TOOL_ROUNDS)))
+    except (TypeError, ValueError):
+        n = DEFAULT_TOOL_ROUNDS
+    return max(MIN_TOOL_ROUNDS, min(MAX_TOOL_ROUNDS, n))
+
+
+def set_tool_rounds(n) -> int:
+    """Store the round budget. Raises ValueError outside [MIN, MAX]."""
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        raise ValueError("tool rounds must be a whole number") from None
+    if not MIN_TOOL_ROUNDS <= n <= MAX_TOOL_ROUNDS:
+        raise ValueError("tool rounds must be between %d and %d"
+                         % (MIN_TOOL_ROUNDS, MAX_TOOL_ROUNDS))
+    sstore.set_str(K_TOOL_ROUNDS, str(n))
+    return n
 
 
 def set_flags(*, enabled_: bool | None = None, tools: bool | None = None,
@@ -743,7 +786,7 @@ def extract_tool_calls(text: str) -> list[dict]:
         args = it.get("args") or it.get("arguments") or {}
         if isinstance(name, str) and name and isinstance(args, dict):
             calls.append({"tool": name, "args": args})
-    return calls[:MAX_TOOL_ROUNDS]
+    return calls[:MAX_CALLS_PER_BLOCK]
 
 
 def _tool_result_text(name: str, args: dict, payload: dict) -> str:
@@ -1160,6 +1203,8 @@ def _run_exchange(conv_id: int, username: str, text: str,
 
     stopped_by_operator = False
     empty_retried = False
+    budget = tool_rounds()
+    budget_spent = False
     try:
         while True:
             yield ("status", {"phase": "thinking", "round": rounds + 1})
@@ -1193,8 +1238,24 @@ def _run_exchange(conv_id: int, username: str, text: str,
                 continue
 
             calls = extract_tool_calls(final_text) if tools_enabled() else []
-            if not calls or rounds >= MAX_TOOL_ROUNDS:
+            if not calls:
                 break
+            if budget_spent:
+                # Asked for a tool again after being told the budget is gone:
+                # say so instead of saving a tool-call block as the answer.
+                final_text = (
+                    "Scout used all %d tool rounds for this question without "
+                    "reaching an answer. Ask a narrower question (one device, "
+                    "one object, one time window), or raise the limit under "
+                    "Settings -> AI -> Scout." % budget)
+                break
+            if rounds >= budget:
+                budget_spent = True
+                history.append({"role": "assistant", "content": "```" + TOOL_FENCE + "\n"
+                                + json.dumps(calls, ensure_ascii=False) + "\n```"})
+                history.append({"role": "user", "content": BUDGET_SPENT_PROMPT})
+                final_text = ""
+                continue
             rounds += 1
 
             blocks = []
@@ -1322,6 +1383,8 @@ def validate_proposal_payload(kind: str, appliance_id: int | None, payload: dict
         if not isinstance(fields, dict):
             return ["fields must be an object"]
         return wpp_exceptions.validate_payload(exc_type, fields)
+    if kind == "path_walk":
+        return _validate_path_walk(appliance_id, payload)
     if kind == "lua_script":
         target = payload.get("target", "")
         if target not in LuaScript.TARGETS:
@@ -1334,6 +1397,76 @@ def validate_proposal_payload(kind: str, appliance_id: int | None, payload: dict
     return [f"unknown proposal kind {kind!r}"]
 
 
+def _validate_path_walk(appliance_id, payload: dict) -> list[str]:
+    errs = []
+    if not isinstance(appliance_id, int) or isinstance(appliance_id, bool) or appliance_id <= 0:
+        errs.append("appliance_id must be the id of a FortiWeb or FortiADC")
+    policy = payload.get("policy")
+    if not isinstance(policy, str) or not policy.strip() or len(policy) > 256:
+        errs.append("policy is required (the object to walk, at most 256 characters)")
+    for k in ("hostname", "path"):
+        v = payload.get(k, "")
+        if not isinstance(v, str) or len(v) > 512:
+            errs.append(f"{k} must be text of at most 512 characters")
+    wm = payload.get("window_minutes")
+    if wm not in (None, "") and (not isinstance(wm, int) or isinstance(wm, bool)
+                                 or not 1 <= wm <= 1440):
+        errs.append("window_minutes must be a whole number between 1 and 1440")
+    return errs
+
+
+def path_walk_url(prop: AdvisorProposal) -> str:
+    """The Path Diagnostics form, filled in from a path_walk proposal.
+
+    Opening the form is all applying does: the walk itself is the operator's
+    click on that page, through the same route, permission and ADOM scoping as
+    a walk typed by hand -- an AI proposal is never an easier path to device
+    reads than the form. The proposal id rides along so the walk can name it.
+    """
+    from urllib.parse import urlencode
+    from flask import url_for
+    p = prop.payload_dict()
+    q = {"appliance_id": prop.appliance_id, "policy": p.get("policy", ""),
+         "proposal": prop.id}
+    for k in ("hostname", "path", "window_minutes"):
+        if p.get(k) not in (None, ""):
+            q[k] = p[k]
+    return url_for("scout.index") + "?" + urlencode(q)
+
+
+def link_walk(proposal_id, *, appliance_id: int, report_id: int, username: str,
+              may_see_all: bool) -> AdvisorProposal | None:
+    """Mark a path_walk proposal applied by the walk it asked for.
+
+    Only the conversation's owner (or a user administrator) can close it, only
+    while it is pending, and only with a walk of the SAME appliance -- an id
+    edited in the query string cannot attach somebody else's proposal, or
+    attach a report about another device. Returns the proposal, or None."""
+    try:
+        pid = int(proposal_id or 0)
+    except (TypeError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+    prop = db.session.get(AdvisorProposal, pid)
+    if (prop is None or prop.kind != "path_walk" or prop.status != "pending"
+            or prop.appliance_id != appliance_id):
+        return None
+    conv = db.session.get(AdvisorConversation, prop.conversation_id)
+    if conv is None or (conv.username != username and not may_see_all):
+        return None
+    prop.status = "applied"
+    prop.applied_ref = f"path_report:{report_id}"
+    prop.decided_at = datetime.utcnow()
+    prop.decided_by = username
+    db.session.commit()
+    from .audit import log_action
+    log_action("advisor.proposal_apply", target=prop.applied_ref,
+               extra={"proposal_id": prop.id, "kind": prop.kind,
+                      "conversation_id": prop.conversation_id})
+    return prop
+
+
 def apply_proposal(prop: AdvisorProposal, *, applied_by: str) -> str:
     """Turn an approved proposal into a DRAFT row. Returns a human-readable
     reference. Raises on validation failure — the caller (the view) already
@@ -1344,6 +1477,14 @@ def apply_proposal(prop: AdvisorProposal, *, applied_by: str) -> str:
     errors = validate_proposal_payload(prop.kind, prop.appliance_id, payload)
     if errors:
         raise ValueError("; ".join(errors))
+
+    if prop.kind == "path_walk":
+        # Nothing is written here: the proposal stays pending until the walk
+        # runs (link_walk). Visibility is checked now so the button cannot
+        # open a form for a device this ADOM cannot see.
+        from ..models import visible_appliance_or_404
+        visible_appliance_or_404(prop.appliance_id)
+        return path_walk_url(prop)
 
     if prop.kind == "waf_exception":
         from ..models import visible_appliance_or_404

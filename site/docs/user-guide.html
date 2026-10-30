@@ -2548,13 +2548,25 @@ against what the devices say.</p>
     collectors wrote to the metrics store over the walk's own window against
     the seven days before it: the appliance's CPU, memory, sessions and new
     connections; the object's status, throughput, sessions, transactions and
-    client/server/application response times; the interface rates; and the
-    status of each collector. A reading <strong>2×</strong> its 7-day average (or that far
+    client/server/application response times; per interface the bit rate,
+    packets per second, and — when the appliance is polled over SNMP — the
+    errors and discards in the window; and the status of each collector. A reading <strong>2×</strong> its 7-day average (or that far
     below it, where a drop is the symptom, such as throughput) is flagged.
     The panel is context: it never changes the verdict. A failed collector or
     a metrics store that does not answer is shown as <strong>METRICS ERROR</strong>, and an
     appliance with no scrape target as <strong>not collected</strong> — neither is a quiet
-    table. Packet, error and drop counters are not collected.
+    table. Any interface error or discard in the window is flagged. Errors and
+    discards come from SNMP only (IF-MIB; FortiWeb's REST interface rows have
+    packets but no error or drop field), so without SNMP on the appliance
+    those columns show "—": not collected, not zero.
+  - <strong>Opened from Scout.</strong> When Scout proposes a walk (§33.6), <em>Open Path
+    Diagnostics</em> opens this form filled in, with a note that nothing runs
+    until you press <strong>Walk</strong>. The saved report then links back to the
+    conversation.
+  - <strong>Retention.</strong> Settings → Path Diagnostics → Saved reports → <em>Keep saved
+    reports for</em> (days; default 0 = forever). Older reports are deleted when
+    the next walk is saved, on the node that saves it; the Audit Log rows of
+    pruned walks stay.
   - Scout (§33) reads these reports and metrics to explain a fault; it does
     not run walks.
 - <strong>Backend Reachability</strong> — paste or upload a list of
@@ -10265,7 +10277,12 @@ external providers</strong> is on). Until then it is not drawn at all, whatever
 Settings › Appearance › Sidebar menu says; <code>/advisor</code> still opens by URL and
 says what is missing. Settings is the way in on a fresh install: opening this
 tab seeds the disabled <code>ollama-local</code> provider.</p>
-<p>Every change on this tab is in the Audit Log (§34): <code>settings.ai_flags</code>,
+<p><strong>Tool rounds per question</strong> (1–12, default 6): each round is one model call
+that may run several read-only tools. When the rounds are spent, Scout gets
+one more round without tools to answer from what it has and to say which
+checks it could not make — it never saves a tool call as its answer.</p>
+<p>Every change on this tab is in the Audit Log (§34): <code>settings.ai_flags</code>
+(including the tool rounds),
 <code>settings.ai_provider_save</code> (kind, base URL, model and whether a key was set —
 never the key), <code>settings.ai_default</code> and <code>settings.ai_provider_delete</code>.</p>
 <h3 id="332-providers">33.2 Providers</h3>
@@ -10439,7 +10456,7 @@ are <strong>not</strong> "no logs". Two limits to keep in mind: the syslog recei
 only its last 500 messages (it is a ring buffer, not a log store), and the
 FortiAnalyzer search has not yet been proved against a live analyzer in the
 lab — the result says so.</p>
-<h4 id="log-sources--splunk-and-other-siems-optional">Log sources — Splunk and other SIEMs (optional)</h4>
+<h4 id="log-sources--splunk-elasticsearchopensearch-optional">Log sources — Splunk, Elasticsearch/OpenSearch (optional)</h4>
 <p>A service path is rarely all Fortinet. The switch, router or firewall in
 front of a FortiWeb (a Cisco, typically) logs to your SIEM, not to a
 FortiAnalyzer, so without it Scout cannot see the hop most likely to be at
@@ -10455,23 +10472,31 @@ fault. <strong>Settings → AI → Log sources</strong> lets an administrator
 <tbody>
 <tr>
 <td>Kind</td>
-<td><code>splunk</code> — the REST search export (<code>/services/search/jobs/export</code>, management port 8089). Marked <em>unverified on a live Splunk</em>: it is tested against simulated answers only.</td>
+<td><code>splunk</code> — the REST search export (<code>/services/search/jobs/export</code>, management port 8089). <code>elastic</code> — Elasticsearch, OpenSearch or a Wazuh indexer (<code>POST /&lt;index&gt;/_search</code>, port 9200). Both are marked <em>unverified on a live instance</em>: they are tested against simulated answers only.</td>
 </tr>
 <tr>
 <td>Management URL</td>
-<td>For example <code>https://splunk.example.com:8089</code>.</td>
+<td>For example <code>https://splunk.example.com:8089</code> or <code>https://siem.example.com:9200</code>.</td>
 </tr>
 <tr>
 <td>Token</td>
-<td>A Splunk authentication token (sent as <code>Authorization: Bearer</code>), stored encrypted and never shown again. Use a role that can only search.</td>
+<td>Stored encrypted and never shown again. Splunk: an authentication token. Elastic: an API key (the base64 <code>id:key</code>) or <code>user:password</code>. Use a role that can only search.</td>
 </tr>
 <tr>
-<td>Search prefix</td>
-<td>Written by you and used as is at the start of every search — for example <code>index=network (sourcetype=cisco:asa OR sourcetype=cisco:ios)</code>.</td>
+<td>Auth</td>
+<td><em>Bearer</em> (Splunk), <em>API key</em> (<code>Authorization: ApiKey …</code>) or <em>Basic user:password</em> (the usual on OpenSearch and Wazuh).</td>
+</tr>
+<tr>
+<td>Search prefix / index pattern</td>
+<td>Splunk: written by you and used as is at the start of every search — for example <code>index=network (sourcetype=cisco:asa OR sourcetype=cisco:ios)</code>. Elastic: the index pattern searched, for example <code>logs-*</code> or <code>wazuh-alerts-*</code>.</td>
 </tr>
 <tr>
 <td>Device field</td>
-<td>The field matched against the appliance name and management address (<code>host</code> by default). Blank = never filter by appliance.</td>
+<td>The field matched against the appliance name and management address (<code>host</code> by default; <code>agent.name</code> or <code>host.name</code> are common on Elastic). Blank = never filter by appliance.</td>
+</tr>
+<tr>
+<td>Time field (Elastic)</td>
+<td>The timestamp field the window is applied to (<code>@timestamp</code> by default).</td>
 </tr>
 <tr>
 <td>Verify TLS</td>
@@ -10483,7 +10508,11 @@ fault. <strong>Settings → AI → Log sources</strong> lets an administrator
 "&lt;term&gt;" | head N</code> over the window. Scout's text only ever becomes <strong>one
 quoted term</strong>: quotes and backslashes are escaped and new lines flattened,
 so it cannot close the quote and pipe into a command that writes
-(<code>| delete</code>, <code>| outputlookup</code>, <code>| collect</code>, <code>| sendemail</code>). <strong>Test</strong> runs
+(<code>| delete</code>, <code>| outputlookup</code>, <code>| collect</code>, <code>| sendemail</code>). On Elastic the
+query is a JSON bool query built by SATOM — a time range, a device clause and
+one <code>multi_match</code> phrase — so Scout's text is a value, never <code>query_string</code>
+syntax with operators; an answer that timed out or has failed shards is an
+<strong>error</strong>, not a shorter list. <strong>Test</strong> runs
 the prefix over the last 15 minutes with <code>| head 1</code>. Saving, deleting and
 testing a source each leave an Audit Log row (<code>settings.ai_logsource_*</code>,
 without the token).</p>
@@ -10501,7 +10530,8 @@ sources can answer for it.</p>
    {device}, policy shop-prod"</em>.</li>
 <li>Scout reads, in this order: the newest report for that object, the metrics
    around it, the device health, and recent configuration changes. If there is
-   no recent report it asks you to run one — it cannot run it itself.
+   no recent report it <strong>proposes a walk</strong> (33.6): you open it, check the
+   fields and press <strong>Walk</strong>; then ask Scout to read the new report.
    Then it correlates: the logs of the walk's window from every source,
    open Sentinel incidents, your alerts, the jobs SATOM ran against the box and the
    Audit Log (who changed what, and when).</li>
@@ -10529,9 +10559,9 @@ Local Ollama has no such prompt: it never leaves the LAN, so there is nothing
 to preview.</p>
 <h3 id="336-proposals--how-a-chat-turns-into-a-change">33.6 Proposals — how a chat turns into a change</h3>
 <p>When the model suggests a concrete change, it appears as a card under the
-conversation with the exact JSON it proposed, <strong>Apply as draft</strong> and
-<strong>Dismiss</strong>. Apply requires the SAME permission the manual form already
-needs:</p>
+conversation with the exact JSON it proposed, <strong>Apply as draft</strong> (or <strong>Open
+Path Diagnostics</strong>) and <strong>Dismiss</strong>. Apply requires the SAME permission the
+manual form already needs:</p>
 <ul>
 <li>A WAF/signature exception needs <code>config_write</code> and creates a row on the
   <strong>Exceptions</strong> page for that appliance, in the state it would be in had you
@@ -10539,6 +10569,14 @@ needs:</p>
   later step on that page.</li>
 <li>A Lua script needs <code>studio.lua_studio</code> (super-admin) and creates a
   <strong>draft</strong> script in Lua Studio, linted the same way a manually typed one is.</li>
+<li>A <strong>Path Diagnostics walk</strong> (<code>path_walk</code>) needs what the Path Diagnostics
+  page needs (the feature switched on, and the appliance visible in your
+  ADOM). <em>Open Path Diagnostics</em> opens the form filled in, in a new tab;
+  nothing runs until you press <strong>Walk</strong> there. The walk then closes the
+  proposal with its report (<code>path_report:&lt;id&gt;</code>), and the card turns into a
+  link to that report. A proposal id edited into the URL attaches nothing: a
+  walk of another appliance, another user's conversation or a proposal
+  already applied leaves it as it was.</li>
 </ul>
 <p>Dismissing a proposal just marks it dismissed — nothing was ever written
 anywhere. Both actions are audited (<code>advisor.proposal_apply</code>,
@@ -10580,12 +10618,10 @@ only one: even a fooled model has no write path (33.6).</p>
 <h3 id="339-what-scout-does-not-do-yet">33.9 What Scout does not do yet</h3>
 <p>These are planned, in this order, and are <strong>not</strong> available today:</p>
 <ul>
-<li><strong>Run a Path Diagnostics walk on request</strong> — as a job you confirm, with
-  every device call recorded, never on Scout's own initiative.</li>
-<li><strong>More SIEM kinds</strong> as log sources (Elastic/OpenSearch, Graylog). Only
-  Splunk exists today.</li>
-<li><strong>Packet, error and drop counters</strong> per interface. SATOM does not collect
-  them today; the metrics panel says so.</li>
+<li><strong>More SIEM kinds</strong> as log sources (Graylog, Loki). Splunk and
+  Elasticsearch/OpenSearch exist today, both unverified on a live instance.</li>
+<li><strong>Errors and discards without SNMP.</strong> FortiWeb's REST interface rows do not
+  carry them (8.0.6); until a build does, they need SNMP on the appliance.</li>
 </ul>
 <h3 id="troubleshooting">Troubleshooting</h3>
 <table>

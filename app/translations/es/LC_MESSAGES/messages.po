@@ -28423,3 +28423,52 @@ msgstr "Se compara con el nombre del appliance y su dirección de gestión. Vac�
 #: app/templates/settings/_ai.html
 msgid "Verify TLS against the trust store"
 msgstr "Verificar TLS contra el almacén de confianza"
+
+#: app/templates/settings/_ai.html
+msgid "API key (Elastic)"
+msgstr "Clave de API (Elastic)"
+
+#: app/templates/settings/_ai.html
+msgid "Basic user:password"
+msgstr "Basic usuario:contraseña"
+
+#: app/templates/settings/_ai.html
+msgid "Bearer (Splunk)"
+msgstr "Bearer (Splunk)"
+
+#: app/templates/monitoring/collection.html
+msgid "Dropped senders (not a registered appliance):"
+msgstr "Remitentes descartados (no son un appliance registrado):"
+
+#: app/templates/settings/_ai.html
+msgid "Each round is one model call that may run several read-only tools. When the rounds are spent Scout answers from what it has and says which checks it could not make. Default 6; 1–12."
+msgstr "Cada ronda es una llamada al modelo que puede ejecutar varias herramientas de solo lectura. Cuando se agotan las rondas, Scout responde con lo que tiene y dice qué comprobaciones no pudo hacer. Por defecto 6; 1–12."
+
+#: app/templates/settings/_ai.html
+msgid "Elasticsearch / OpenSearch / Wazuh indexer (_search, port 9200) — unverified on a live cluster"
+msgstr "Elasticsearch / OpenSearch / indexador de Wazuh (_search, puerto 9200) — sin verificar en un clúster real"
+
+#: app/templates/monitoring/collection.html
+msgid "message(s)"
+msgstr "mensaje(s)"
+
+#: app/templates/settings/_ai.html
+msgid "Search prefix (Splunk) / index pattern (Elastic)"
+msgstr "Prefijo de búsqueda (Splunk) / patrón de índice (Elastic)"
+
+#: app/templates/settings/_ai.html
+msgid "Splunk: written by you, used as is at the start of every search; Scout only adds a device clause and one quoted term after it. Elastic/OpenSearch: the index pattern searched (for example logs-* or wazuh-alerts-*); Scout only adds a time range, a device clause and one phrase."
+msgstr "Splunk: lo escribe usted y se usa tal cual al inicio de cada búsqueda; Scout solo añade después una cláusula de dispositivo y un término entre comillas. Elastic/OpenSearch: el patrón de índice que se busca (por ejemplo logs-* o wazuh-alerts-*); Scout solo añade un rango de tiempo, una cláusula de dispositivo y una frase."
+
+#: app/templates/settings/_ai.html
+msgid "Time field (Elastic)"
+msgstr "Campo de tiempo (Elastic)"
+
+#: app/templates/settings/_ai.html
+msgid "Tool rounds per question"
+msgstr "Rondas de herramientas por pregunta"
+
+#: app/templates/monitoring/collection.html
+#, python-format
+msgid "was %(name)s, de-registered %(when)s — remove this receiver from its syslog settings, or register it again"
+msgstr "era %(name)s, dado de baja el %(when)s — quite este receptor de su configuración syslog o vuelva a registrarlo"

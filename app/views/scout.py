@@ -153,6 +153,13 @@ def _save(appl, target, opts, report: dict, metrics: dict) -> PathDiagReport:
         report_json=json.dumps(report, default=str),
         metrics_json=json.dumps(metrics, default=str))
     db.session.add(row)
+    # Retention runs here, where reports are written: on the node that writes
+    # them, and never on a read-only standby (Settings -> Path Diagnostics).
+    try:
+        PathDiagReport.prune(int(scout_config.get("report_retention_days") or 0))
+    except Exception:  # noqa: BLE001 -- a report is never lost to its own pruning
+        db.session.rollback()
+        db.session.add(row)
     db.session.commit()
     return row
 
@@ -205,6 +212,7 @@ def index():
         "report": None,
         "metrics": None,
         "saved": None,
+        "proposal": None,
         "pd_fmt": scout_metrics.fmt,
         "recent": [],
         "error": "",
@@ -216,7 +224,10 @@ def index():
                  "hostname": request.values.get("hostname", ""),
                  "port": request.values.get("port", ""),
                  "scheme": request.values.get("scheme", "https"),
-                 "path": request.form.get("path", "/"),
+                 "path": request.values.get("path", "/"),
+                 # Set when the form was opened from a Scout proposal; the
+                 # walk then closes that proposal with its report.
+                 "proposal": request.values.get("proposal", ""),
                  # A checkbox that was cleared and posted sends nothing,
                  # which is indistinguishable from "not on this form". On a
                  # POST the absence therefore means OFF; only a GET may fall
@@ -224,7 +235,7 @@ def index():
                  # untick a box the site pre-ticks.
                  "use_ssh": (bool(request.form.get("use_ssh")) if posted
                              else bool(dflt["use_ssh"])),
-                 "window_minutes": request.form.get(
+                 "window_minutes": request.values.get(
                      "window_minutes", str(dflt["window_minutes"])),
                  "analyzer_id": request.form.get("analyzer_id", ""),
                  "faz_adom": request.form.get("faz_adom", dflt["faz_adom"]),
@@ -297,13 +308,19 @@ def index():
     metrics = scout_metrics.context(appl.name, target.policy,
                                     report["options"]["window_minutes"])
     saved = _save(appl, target, opts, report, metrics)
-    ctx.update(report=report, metrics=metrics, saved=saved)
+    from ..services import advisor as advisor_svc
+    proposal = advisor_svc.link_walk(
+        request.form.get("proposal"), appliance_id=appl.id, report_id=saved.id,
+        username=getattr(current_user, "username", "") or "",
+        may_see_all=current_user.can(Permission.USER_MANAGE))
+    ctx.update(report=report, metrics=metrics, saved=saved, proposal=proposal)
     log_action("scout.walk",
                "appliance=%s object=%r verdict=%s" % (
                    appl.name, target.policy,
                    report["verdict"].get("layer") or "no fault localised"),
                {"report_id": saved.id, "job_id": saved.job_id,
-                "metrics": metrics.get("status")})
+                "metrics": metrics.get("status"),
+                "proposal_id": proposal.id if proposal else None})
     return render_template("scout/index.html", **ctx)
 
 
@@ -326,11 +343,13 @@ def report_view(rid: int):
     form = {"appliance_id": str(row.appliance_id or ""), "policy": row.policy,
             "hostname": "", "port": "", "scheme": "https", "path": "/",
             "use_ssh": False, "window_minutes": str(row.window_minutes or ""),
-            "analyzer_id": "", "faz_adom": "", "faz_devid": "", "faz_vdom": ""}
+            "analyzer_id": "", "faz_adom": "", "faz_devid": "", "faz_vdom": "",
+            "proposal": ""}
     return render_template(
         "scout/index.html", appliances=_candidates(), analyzers=_analyzers(),
         field_help=scout_config.walk_help(), report=rep_,
         metrics=row.metrics(), saved=row, recent=[], error="", form=form,
+        proposal=None,
         pd_fmt=scout_metrics.fmt,
         PASS=sl.PASS, FAIL=sl.FAIL, WARN=sl.WARN, UNKNOWN=sl.UNKNOWN,
         SKIPPED=sl.SKIPPED)

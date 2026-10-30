@@ -232,6 +232,14 @@ exact table an operator filting in a form by hand would create**:
   same way Lua Studio lints a manually-typed script. It is exactly as far
   from a device as a script someone pasted into the editor and hasn't
   deployed yet.
+- `kind: path_walk` (2026-10-30) → **nothing is written**. Apply returns the
+  Path Diagnostics form URL filled in from the payload (appliance, object,
+  Host, path, window) plus the proposal id; the operator presses **Walk**
+  there, through the same route, permission and ADOM scoping as a
+  hand-typed walk. Saving that walk's report closes the proposal
+  (`link_walk`: owner or user admin, still pending, SAME appliance; else it
+  attaches nothing) with `applied_ref = path_report:<id>`. An AI proposal is
+  never an easier path to device reads than the form.
 
 **The permission required to apply a proposal is the SAME permission the
 manual form already requires** — never looser:
@@ -241,6 +249,8 @@ manual form already requires** — never looser:
 - `lua_script` → `studio.lua_studio` (Lua Studio is super-admin-only; an AI
   proposal must not be an easier path to a Lua draft than typing it in by
   hand).
+- `path_walk` → the Path Diagnostics gate: the feature switched on and
+  `view`, with the appliance visible in the ADOM.
 
 A malformed or schema-invalid block is silently **not** turned into a
 proposal — the chat reply itself still reaches the operator, but nothing
@@ -337,14 +347,23 @@ jobs and the Audit Log.
 **Log sources** (`services/log_sources.py`, Settings → AI → Log sources):
 an OPTIONAL external SIEM for the non-Fortinet hops of a path (a Cisco in
 front of a FortiWeb logs to the customer's SIEM, never to a FortiAnalyzer).
-Kind `splunk` only (REST `search/jobs/export`), unverified against a live
-Splunk. Token Fernet-encrypted per source; TLS verified against the trust
+Kinds `splunk` (REST `search/jobs/export`) and `elastic` (Elasticsearch /
+OpenSearch / Wazuh indexer `POST /<index>/_search`; ApiKey or Basic; the
+model's text is a `multi_match` phrase VALUE in a JSON body, never
+`query_string`; `timed_out` or failed shards is an error), both unverified
+against a live instance. Token Fernet-encrypted per source; TLS verified against the trust
 store unless an admin switched it off for that source; the model's text
 only ever becomes ONE quoted SPL term (`spl_literal`), so it cannot pipe
 into a writing command; every source reports a status (`ok`, `no_match`,
 `error`, `not_configured`, `disabled`, `forbidden`) and a failure is never
-an empty list. A new kind = one `_search_<kind>` function + a `KINDS`
-entry.
+an empty list. A new kind = one `_query_<kind>` (the query text the
+operator sees) + one `_search_<kind>` function + a `KINDS` entry.
+
+**Round budget.** `ai.tool_rounds` (Settings → AI → Scout, 1–12, default 6,
+clamped whatever is stored). At the cap the model gets ONE extra round with
+`BUDGET_SPENT_PROMPT` and no tools; a tool block after that is replaced by a
+sentence saying the rounds ran out — before 2026-10-30 the saved reply was
+the raw tool-call block.
 Evidence and inference are reported separately; a failed collector or a
 rung that could not look is said in words.
 
@@ -352,18 +371,18 @@ rung that could not look is said in words.
 
 | Stage | Adds | Boundary |
 |---|---|---|
-| 2b | `run_path_diagnostics` — Scout *asks* for a walk; the operator confirms; it runs as the normal job with every device call recorded | Never on Scout's initiative; same permission as the page |
+| ~~2b~~ | Done 2026-10-30: proposal kind `path_walk` — Scout asks, the operator opens the filled form and presses Walk | Never on Scout's initiative; same permission as the page |
 | ~~2c~~ | Done 2026-10-30: Sentinel incidents, alerts, jobs and the Audit Log | |
 | ~~3~~ | Done 2026-10-30: `search_logs` (Sentinel, syslog, FortiAnalyzer, external SIEM) | |
-| 3a | More log-source kinds (Elastic/OpenSearch, Graylog); a live Splunk measurement | |
-| 3b | Per-interface packet, error and drop counters | A new collector; each counter verified on the exact build first (`api_library`), marked *unverified on this build* otherwise |
+| 3a | Elastic/OpenSearch done 2026-10-30 (unverified live); left: Graylog/Loki, a live Splunk and a live OpenSearch measurement | Needs a reachable instance |
+| ~~3b~~ | Done 2026-10-30: packets from the REST rows (FortiWeb 8.0.6 `rx`/`tx`, read on fortiweb19); errors/discards over SNMP IF-MIB only (the REST rows have none) | IF-MIB columns unverified on a live Fortinet SNMP agent |
 
 ## What this explicitly does not do (yet)
 
 - Tool calling (mode C) is a fixed, hand-written catalog (above) — not
   open-ended function calling against arbitrary SATOM APIs.
 - Scout cannot run a Path Diagnostics walk or any other device action; it
-  asks the operator to (stage 2b above).
+  proposes a walk the operator runs (`path_walk`, above).
 - Attachable context is a curated picker (exceptions, Lua scripts, a SoT
   search), not "attach any page."
 

@@ -113,7 +113,12 @@ def line(name: str, labels: dict, value, ts_ms: int | None = None) -> str:
     lab = ",".join('%s="%s"' % (k, escape_label(v))
                    for k, v in sorted(labels.items()) if v is not None)
     ts = " %d" % (ts_ms if ts_ms is not None else int(time.time() * 1000))
-    return "%s{%s} %s%s" % (name, lab, ("%g" % num), ts)
+    # %.15g, not %g: %g keeps SIX significant digits, so a byte counter of
+    # 2687240704 was stored as 2.68724e+09 and rate() over it moved in steps of
+    # ten kilobytes (measured in the store 2026-10-30: 550529000 for a counter
+    # the device reported as 550442541). 15 digits are exact for every integer
+    # a counter reaches and still print 0.1 as 0.1.
+    return "%s{%s} %s%s" % (name, lab, ("%.15g" % num), ts)
 
 
 def ingest(lines: list) -> dict:

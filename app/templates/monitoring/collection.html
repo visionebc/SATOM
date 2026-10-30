@@ -256,6 +256,15 @@
             {% if sl.known_sources is defined %}· {{ _('Known senders:') }} {{ sl.known_sources }}{% endif %}
             {% if sl.checked_at %}· {{ _('Journalled:') }} {{ sl.checked_at|replace('T', ' ') }}{% endif %}
           </div>
+          {% if sl.strangers %}
+          <div class="small mt-1" id="mc-syslog-strangers">
+            <span class="text-danger">{{ _('Dropped senders (not a registered appliance):') }}</span>
+            {% for s in sl.strangers[:10] %}
+            <div><code>{{ s.ip }}</code> · {{ s.count }} {{ _('message(s)') }} · {{ _('last') }} {{ (s.last_at or '')|replace('T', ' ') }}
+              {% if s.retired_name %}· <strong>{{ _('was %(name)s, de-registered %(when)s — remove this receiver from its syslog settings, or register it again', name=s.retired_name, when=(s.retired_at or '')[:10]) }}</strong>{% endif %}</div>
+            {% endfor %}
+          </div>
+          {% endif %}
           {% if sl.per_device %}
           <table class="table table-sm small mb-1 mt-1">
             <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Messages') }}</th><th>{{ _('Last') }}</th><th>{{ _('Severity') }}</th></tr></thead>

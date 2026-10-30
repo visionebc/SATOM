@@ -7,6 +7,39 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Scout proposes a Path Diagnostics walk; the operator runs it** (request:
+  "do everything and leave nothing pending" — the next stage was a walk Scout
+  asks for and the operator confirms). A new proposal kind, `path_walk`:
+  *Open Path Diagnostics* opens the form filled in (appliance, object,
+  Host, window) in a new tab with a note that nothing runs until **Walk** is
+  pressed. The walk goes through the same route, permission and ADOM scoping
+  as a hand-typed one; when it is saved it closes the proposal
+  (`path_report:<id>`, Audit Log `advisor.proposal_apply`), the report links
+  back to the conversation, and the chat shows the report to read. A
+  proposal id edited in the URL attaches nothing (other device, other
+  user's conversation, already applied, not a walk).
+- **Settings → AI → Scout: tool rounds per question** (1–12, default **6**,
+  was a fixed 4 — a full investigation needs six). When the rounds are spent
+  Scout gets one more round without tools to answer from what it has and
+  name the checks it could not make.
+- **Log sources: Elasticsearch / OpenSearch / Wazuh indexer** (`_search`,
+  index pattern, API key or Basic auth, configurable time field). Scout's
+  text is a phrase value inside a JSON query — never `query_string` syntax;
+  a timed-out answer or failed shards is an error, not a quieter result.
+  Unverified against a live cluster (the lab's only OpenSearch, the Wazuh
+  indexer, is on a powered-off host) and labelled so.
+- **Path Diagnostics: report retention** (Settings → Path Diagnostics →
+  Saved reports; default 0 = keep every report). Pruning runs when a walk
+  is saved, never on the read-only standby.
+- **Interface packets, errors and discards.** The REST interface collector
+  now also stores packets (`satom_iface_{rx,tx}_packets_total`; FortiWeb
+  8.0.6 rows carry `rx`/`tx` packet counts, read on fortiweb19). Those rows
+  have no error or drop field, so the SNMP collector reads IF-MIB
+  `ifIn/OutErrors`, `ifIn/OutDiscards` and the 64-bit unicast packet
+  counters (`satom_snmp_if_*_total`, skipped when the agent does not serve
+  them — unverified on a live Fortinet SNMP agent). The Path Diagnostics
+  metrics panel shows packets/s, errors and discards per interface and
+  flags any error or discard in the window.
 - **An app's sign-in lives in Plugin Studio and travels in its package**
   (request: "I don't see it -- this configuration should be inside Plugin
   Studio so it can be added, otherwise it is harder for the user, and this
@@ -147,6 +180,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   may open another app of the same bundle.
 
 ### Fixed
+- **Metric values lost precision on the way to the store.** Every value was
+  written with `%g`, which keeps six significant digits: a byte counter in
+  the hundreds of millions was stored rounded to the nearest thousand, so
+  rates over it moved in steps. Values are now written with 15 significant
+  digits.
+- **Deleting an appliance closes its live Sentinel incidents** (open,
+  verifying, mitigated) with a note naming the device. They used to stay
+  open forever, out of every screen and every close button, and counted as
+  open by the sweep (three of a device deleted in August). The three
+  existing ones were closed the same way.
+- **The syslog receiver names the senders it drops.** The page said only
+  "N unknown_source"; it now lists each dropped address with its count and
+  last message, and says when the address belonged to a de-registered
+  device that still has this receiver as its syslog target (found: a lab
+  FortiWeb removed on 2026-10-24, still sending every ~3 minutes).
+- **Scout saved a tool call as its answer** when it reached the round limit
+  still asking for a tool; the reply is now an answer, or a sentence saying
+  the rounds ran out.
 - An icon name the font does not draw (`bi-shield-search` matches the
   `bi-…` pattern and shows as a blank) is no longer accepted silently.
   Saving a Plugin Studio app refuses it; a Report Studio save keeps the body

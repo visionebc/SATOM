@@ -245,10 +245,49 @@ def deregister(appliance, note: str = "de-registered from SATOM") -> str:
         retire(name, note=note)
     except Exception:  # noqa: BLE001 -- never block a delete on bookkeeping
         db.session.rollback()
+    close_incidents_of(appliance.id, name)
     datasheets.delete(appliance.id)
     db.session.delete(appliance)
     db.session.commit()
     return name
+
+
+#: Note written on every incident closed because its device was deleted.
+DEVICE_REMOVED_NOTE = ("Closed automatically: device %s was removed from SATOM, "
+                       "so nobody can open, verify or mitigate this incident.")
+
+
+def close_incidents_of(appliance_id: int, name: str) -> int:
+    """Close the live Sentinel incidents of a device that is being deleted.
+
+    ``sentinel_incident.appliance_id`` is ON DELETE SET NULL, and the console
+    lists an incident only when its appliance is visible -- so before this, an
+    open incident of a deleted device stayed ``open`` forever, out of every
+    screen and every close button, and still counted in the sweep's
+    ``open_incidents`` (2026-10-30: three of fortiweb13's, deleted in August).
+    Closed with a note, not deleted: the timeline is still the record of what
+    happened. Returns how many were closed; never blocks the delete."""
+    from ..extensions import db
+    from ..models_sentinel import SentinelIncident
+    from .sentinel import incident as inc_svc
+    try:
+        # A savepoint: a failure here must undo only these closes, not the
+        # identity bookkeeping the caller already did in this transaction.
+        with db.session.begin_nested():
+            live = (SentinelIncident.query
+                    .filter(SentinelIncident.appliance_id == appliance_id,
+                            SentinelIncident.status.in_(LIVE_INCIDENT_STATUSES))
+                    .all())
+            for inc in live:
+                inc_svc.close(inc, SentinelIncident.STATUS_CLOSED, by="satom",
+                              note=DEVICE_REMOVED_NOTE % name)
+        return len(live)
+    except Exception:  # noqa: BLE001 -- never block a delete on bookkeeping
+        return 0
+
+
+#: Incident states somebody still has to act on.
+LIVE_INCIDENT_STATUSES = ("open", "verifying", "mitigated")
 
 
 def reconcile() -> dict:

@@ -41,8 +41,21 @@ management port 8089, ``output_mode=json`` = one JSON object per line).
 # against simulated responses. The UI labels the kind "unverified on a live
 # Splunk" until it is measured.
 
-Adding a kind = one ``_search_<kind>`` function returning ``(rows, error)`` and
-one entry in :data:`KINDS`; Scout's tool and the settings page need no change.
+``elastic`` -- Elasticsearch or OpenSearch ``POST /<index>/_search`` (Elastic
+Cloud, Elastic SIEM, OpenSearch, a Wazuh indexer). ``search_prefix`` holds the
+INDEX PATTERN (``logs-*``, ``wazuh-alerts-*``); the query is a JSON bool query
+built here, the model's text only ever lands as the value of a ``match_phrase``
+/ ``multi_match`` phrase -- never query_string syntax, which has operators.
+Auth: ``ApiKey`` header (Elastic API key, base64 ``id:key``) or HTTP Basic
+(``user:password``, the usual on OpenSearch/Wazuh). A 200 with ``timed_out``
+or failed shards is an ERROR: a partial answer is not a clean one.
+# TODO verify: Elasticsearch 8.x / OpenSearch 2.x _search -- the lab's only
+# OpenSearch (the Wazuh indexer, CT 249 on hypervisor06) was powered off when this was
+# written (2026-10-30); exercised only against simulated responses.
+
+Adding a kind = one ``_query_<kind>`` (builds the query text shown to the
+operator) + one ``_search_<kind>`` returning ``(rows, error)`` + one entry in
+:data:`KINDS`; Scout's tool and the settings page need no change.
 """
 from __future__ import annotations
 
@@ -57,7 +70,13 @@ K_SOURCES = "scout.log_sources"           # JSON list of source dicts (no secret
 
 KINDS = {
     "splunk": {"label": "Splunk (REST search export)", "verified": False},
+    "elastic": {"label": "Elasticsearch / OpenSearch (_search)", "verified": False},
 }
+
+#: How the stored secret is presented. Splunk: always Bearer. Elastic: an API
+#: key or ``user:password`` Basic.
+AUTHS = ("bearer", "apikey", "basic")
+_INDEX_RE = re.compile(r"^[a-z0-9*][a-z0-9_.*,-]{0,199}$")
 
 DEFAULT_TIMEOUT = 20.0
 DEFAULT_LIMIT = 50
@@ -66,6 +85,7 @@ MAX_FIELD_CHARS = 400
 
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 _FIELD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:-]{0,63}$")
+_TIME_FIELD_RE = re.compile(r"^@?[A-Za-z_][A-Za-z0-9_.:-]{0,63}$")
 
 
 def _secret_key(key: str) -> str:
@@ -100,8 +120,18 @@ def enabled_sources() -> list[dict]:
     return [s for s in list_sources() if s.get("enabled") is not False]
 
 
-def validate(*, key: str, kind: str, base_url: str, device_field: str = "") -> list[str]:
+def validate(*, key: str, kind: str, base_url: str, device_field: str = "",
+             search_prefix: str = "", time_field: str = "@timestamp",
+             auth: str = "") -> list[str]:
     errors = []
+    if kind == "elastic":
+        if not _INDEX_RE.match((search_prefix or "").strip()):
+            errors.append("index pattern is required for Elasticsearch/OpenSearch "
+                          "(lowercase; letters, digits, * , . _ -; e.g. logs-*)")
+        if not _TIME_FIELD_RE.match(time_field or ""):
+            errors.append("time field must be a plain field name (for example @timestamp)")
+        if auth not in ("apikey", "basic"):
+            errors.append("auth must be apikey or basic for Elasticsearch/OpenSearch")
     if not _KEY_RE.match(key or ""):
         errors.append("key must be a lowercase slug (a-z, 0-9, - and _; max 40)")
     if kind not in KINDS:
@@ -116,8 +146,12 @@ def validate(*, key: str, kind: str, base_url: str, device_field: str = "") -> l
 def save_source(*, key: str, kind: str, label: str, base_url: str,
                 search_prefix: str = "", device_field: str = "host",
                 verify_tls: bool = True, token: str | None = None,
-                enabled: bool = True) -> None:
-    errors = validate(key=key, kind=kind, base_url=base_url, device_field=device_field)
+                enabled: bool = True, time_field: str = "@timestamp",
+                auth: str = "") -> None:
+    time_field = (time_field or "@timestamp").strip()
+    auth = (auth or ("bearer" if kind == "splunk" else "")).strip()
+    errors = validate(key=key, kind=kind, base_url=base_url, device_field=device_field,
+                      search_prefix=search_prefix, time_field=time_field, auth=auth)
     if errors:
         raise ValueError("; ".join(errors))
     rows = sstore.get_json(K_SOURCES, [])
@@ -129,6 +163,7 @@ def save_source(*, key: str, kind: str, label: str, base_url: str,
         "search_prefix": (search_prefix or "").strip()[:500],
         "device_field": (device_field or "").strip(),
         "verify_tls": bool(verify_tls), "enabled": bool(enabled),
+        "time_field": time_field, "auth": auth,
     })
     sstore.set_json(K_SOURCES, rows)
     if token:
@@ -220,6 +255,114 @@ def _epoch(dt: datetime) -> int:
     return int(dt.timestamp())
 
 
+def _query_splunk(src, device_terms, query, limit, start, end):
+    return build_spl(src, device_terms=device_terms, query=query, limit=limit)
+
+
+def build_es_query(src: dict, *, device_terms=(), query: str = "",
+                   limit: int = DEFAULT_LIMIT, start: datetime, end: datetime) -> dict:
+    """The ``_search`` body. Every operator- or model-supplied string is a
+    VALUE inside JSON (``match_phrase`` / ``multi_match`` type phrase): there
+    is no query syntax for it to escape into, unlike ``query_string``."""
+    tf = src.get("time_field") or "@timestamp"
+    filt = [{"range": {tf: {"gte": _iso(start), "lte": _iso(end),
+                            "format": "strict_date_optional_time"}}}]
+    must = []
+    field = (src.get("device_field") or "").strip()
+    terms = [str(t).strip()[:300] for t in (device_terms or ()) if str(t or "").strip()]
+    if field and terms:
+        must.append({"bool": {"should": [{"match_phrase": {field: t}} for t in terms],
+                              "minimum_should_match": 1}})
+    q = re.sub(r"[\r\n\t]+", " ", (query or "")).strip()[:300]
+    if q:
+        must.append({"multi_match": {"query": q, "type": "phrase", "lenient": True}})
+    return {"size": int(limit), "sort": [{tf: {"order": "desc", "unmapped_type": "date"}}],
+            "track_total_hits": False,
+            "query": {"bool": {"filter": filt, "must": must}}}
+
+
+def _query_elastic(src, device_terms, query, limit, start, end):
+    return json.dumps(build_es_query(src, device_terms=device_terms, query=query,
+                                     limit=limit, start=start, end=end),
+                      separators=(",", ":"))
+
+
+def _iso(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _flatten(obj: dict, prefix: str = "", depth: int = 0) -> dict:
+    """``{"agent": {"name": "x"}}`` -> ``{"agent.name": "x"}``, four levels
+    deep; anything deeper stays as its JSON text, then gets clipped."""
+    out = {}
+    for k, v in obj.items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict) and depth < 3:
+            out.update(_flatten(v, key + ".", depth + 1))
+        elif isinstance(v, dict):
+            out[key] = json.dumps(v, default=str)[:MAX_FIELD_CHARS]
+        else:
+            out[key] = v
+    return out
+
+
+def parse_es_response(status: int, body: str) -> tuple[list[dict], str | None]:
+    """Rows from ``hits.hits[]._source`` (flattened, clipped, at most 40 fields
+    a row). An HTTP error, a ``timed_out`` answer or failed shards is an error:
+    a partial answer read as complete is the "logs are clean" lie."""
+    try:
+        obj = json.loads(body or "")
+    except ValueError:
+        return [], f"answered HTTP {status} with a body that is not JSON"
+    if not isinstance(obj, dict):
+        return [], "answered with an unexpected JSON shape"
+    if status >= 400 or "error" in obj:
+        err = obj.get("error")
+        reason = (err.get("reason") or err.get("type")) if isinstance(err, dict) else err
+        return [], f"answered HTTP {status}" + (f" -- {str(reason)[:200]}" if reason else "")
+    problems = []
+    if obj.get("timed_out"):
+        problems.append("the search timed out (partial results)")
+    shards = obj.get("_shards") or {}
+    if isinstance(shards, dict) and int(shards.get("failed") or 0) > 0:
+        problems.append(f"{shards.get('failed')} of {shards.get('total')} shard(s) failed")
+    hits = ((obj.get("hits") or {}).get("hits")) if isinstance(obj.get("hits"), dict) else None
+    if not isinstance(hits, list):
+        return [], "the answer has no hits.hits list"
+    rows = []
+    for h in hits:
+        src = h.get("_source") if isinstance(h, dict) else None
+        if not isinstance(src, dict):
+            continue
+        flat = _flatten(src)
+        rows.append({k: _clip(v) for k, v in list(flat.items())[:40]})
+    if problems:
+        return rows, "; ".join(problems)
+    return rows, None
+
+
+def _search_elastic(src, token, body, start, end, timeout, transport):
+    import base64
+    import httpx
+    from . import trust_store
+    index = (src.get("search_prefix") or "").strip()
+    url = src["base_url"].rstrip("/") + "/" + index + "/_search"
+    if src.get("auth") == "basic":
+        auth = "Basic " + base64.b64encode(token.encode()).decode()
+    else:
+        auth = "ApiKey " + token
+    verify = trust_store.verify_param() if src.get("verify_tls", True) else False
+    post = transport or httpx.post
+    r = post(url, content=body, timeout=timeout, verify=verify,
+             headers={"Authorization": auth, "Content-Type": "application/json"},
+             params={"ignore_unavailable": "true", "allow_partial_search_results": "true"})
+    if r.status_code in (401, 403):
+        return [], f"the cluster refused the credentials (HTTP {r.status_code})"
+    return parse_es_response(r.status_code, r.text)
+
+
 def _search_splunk(src, token, spl, start, end, timeout, transport):
     import httpx
     from . import trust_store
@@ -253,9 +396,10 @@ def search(src: dict, *, device_terms=(), query: str = "", start: datetime,
     kind = src.get("kind")
     # Looked up by name at call time: one function per kind, nothing cached.
     fn = globals().get(f"_search_{kind}") if kind in KINDS else None
-    if fn is None:
+    qfn = globals().get(f"_query_{kind}") if kind in KINDS else None
+    if fn is None or qfn is None:
         return [], f"unknown log source kind {kind!r}", ""
-    spl = build_spl(src, device_terms=device_terms, query=query, limit=limit)
+    spl = qfn(src, device_terms, query, limit, start, end)
     token = _token(src.get("key", ""))
     if not token:
         return [], "no token stored for this source (or it no longer decrypts)", spl
@@ -266,6 +410,6 @@ def search(src: dict, *, device_terms=(), query: str = "", start: datetime,
     return rows[:limit], err, spl
 
 
-__all__ = ["KINDS", "list_sources", "get_source", "enabled_sources", "validate",
-           "save_source", "delete_source", "spl_literal", "build_spl",
-           "parse_splunk_export", "search"]
+__all__ = ["KINDS", "AUTHS", "list_sources", "get_source", "enabled_sources",
+           "validate", "save_source", "delete_source", "spl_literal", "build_spl",
+           "build_es_query", "parse_splunk_export", "parse_es_response", "search"]

@@ -41,8 +41,15 @@
   <div class="alert alert-danger" role="alert">{{ error }}</div>
   {% endif %}
 
+  {% if form.proposal and not report %}
+  <div class="alert alert-info small" role="status" id="pd-from-scout">
+    <i class="bi bi-robot me-1"></i>Filled in from a Scout proposal. Check the
+    fields and press Walk — nothing runs until you do.
+  </div>
+  {% endif %}
   <form method="post" class="fw-card mb-3">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if form.proposal %}<input type="hidden" name="proposal" value="{{ form.proposal }}">{% endif %}
     <div class="fw-card-body">
       <div class="fw-form-section-title">What to walk</div>
       <div class="row g-3">
@@ -214,7 +221,9 @@
         · {{ saved.created_at.strftime('%Y-%m-%d %H:%M') }} UTC by {{ saved.username or '—' }}
         {% if saved.job_id %}· device calls in job <code>{{ saved.job_id }}</code>
         (<a href="{{ url_for('jobs.manager') }}">Jobs</a>){% endif %}
-        · <a href="{{ url_for('scout.report_json', rid=saved.id) }}">JSON</a></p>
+        · <a href="{{ url_for('scout.report_json', rid=saved.id) }}">JSON</a>
+        {% if proposal %}· requested by Scout —
+        <a href="{{ url_for('advisor.open_conversation', cid=proposal.conversation_id) }}" id="pd-back-to-scout">back to the conversation</a>{% endif %}</p>
       {% endif %}
     </div>
   </div>
@@ -316,15 +325,22 @@
       {% endif %}
       {% endfor %}
       {% if metrics.interfaces %}
-      <h6 class="mt-3">Interfaces (bit/s over the window)</h6>
-      <table class="table fw-table table-sm mb-2">
-        <thead><tr><th>Interface</th><th>Direction</th><th>Rate</th></tr></thead>
+      <h6 class="mt-3">Interfaces (rates over the window; errors and discards in the window)</h6>
+      <table class="table fw-table table-sm mb-2" id="pd-ifaces">
+        <thead><tr><th>Interface</th><th>Direction</th><th>Rate</th><th>Packets/s</th>
+          <th>Errors</th><th>Discards</th></tr></thead>
         <tbody>
           {% for i in metrics.interfaces %}
-          <tr><td>{{ i.iface }}</td><td>{{ i.dir }}</td><td>{{ pd_fmt(i.bps, 'bit/s') }}</td></tr>
+          <tr><td>{{ i.iface }}</td><td>{{ i.dir }}</td><td>{{ pd_fmt(i.bps, 'bit/s') }}</td>
+            <td>{{ pd_fmt(i.pps, '') }}</td>
+            {# "—" = not collected (errors/discards come from SNMP only), never 0 #}
+            <td>{% if i.errors %}<span class="fw-badge fw-badge-danger">{{ pd_fmt(i.errors, '') }}</span>{% else %}{{ pd_fmt(i.errors, '') }}{% endif %}</td>
+            <td>{% if i.discards %}<span class="fw-badge fw-badge-warning">{{ pd_fmt(i.discards, '') }}</span>{% else %}{{ pd_fmt(i.discards, '') }}{% endif %}</td></tr>
           {% endfor %}
         </tbody>
       </table>
+      <p class="small text-muted mb-2">Errors and discards are read over SNMP (IF-MIB); the
+        appliance's REST interface rows have none. "—" means not collected, not zero.</p>
       {% endif %}
       {% if metrics.collectors %}
       <p class="small text-muted mb-0">Collectors:

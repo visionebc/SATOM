@@ -14,6 +14,14 @@ What one poll reads (one GET + one bounded table walk):
   counters, falling back to the 32-bit ones on a build that lacks ``ifX``)
   -> ``satom_snmp_if_oper_up``, ``satom_snmp_if_in_octets_total``,
   ``satom_snmp_if_out_octets_total`` labelled ``iface`` + ``ifindex``;
+* the interface error and discard counters (IF-MIB ``ifIn/OutErrors``,
+  ``ifIn/OutDiscards``) and the 64-bit unicast packet counters
+  -> ``satom_snmp_if_{in,out}_{errors,discards,packets}_total``. On FortiWeb
+  8.0.6 the REST interface rows carry bytes and packets but NO error or drop
+  field (read on fortiweb19, 2026-10-30), so SNMP is the only source of them.
+  A counter the agent does not serve is skipped, never written as 0.
+  # TODO verify: IF-MIB error/discard columns on a live FortiWeb/FortiADC
+  # SNMP agent -- no appliance in the lab has SNMP switched on.
 * CPU and memory from the vendor's enterprise MIB (:data:`VENDOR_OIDS`, each
   marked verified or not) with HOST-RESOURCES as the fallback ->
   ``satom_snmp_cpu_pct`` / ``satom_snmp_mem_pct``.
@@ -42,6 +50,15 @@ OID_IF_IN = "1.3.6.1.2.1.2.2.1.10"
 OID_IF_OUT = "1.3.6.1.2.1.2.2.1.16"
 OID_IFX_IN = "1.3.6.1.2.1.31.1.1.1.6"
 OID_IFX_OUT = "1.3.6.1.2.1.31.1.1.1.10"
+#: IF-MIB per-interface health counters, by reading key.
+IF_HEALTH_OIDS = {
+    "in_discards": "1.3.6.1.2.1.2.2.1.13",
+    "in_errors": "1.3.6.1.2.1.2.2.1.14",
+    "out_discards": "1.3.6.1.2.1.2.2.1.19",
+    "out_errors": "1.3.6.1.2.1.2.2.1.20",
+    "in_packets": "1.3.6.1.2.1.31.1.1.1.7",    # ifHCInUcastPkts
+    "out_packets": "1.3.6.1.2.1.31.1.1.1.11",  # ifHCOutUcastPkts
+}
 # HOST-RESOURCES: per-processor load (%) and the storage table for memory.
 OID_HR_CPU = "1.3.6.1.2.1.25.3.3.1.2"
 OID_HR_STORAGE_TYPE = "1.3.6.1.2.1.25.2.3.1.2"
@@ -142,11 +159,16 @@ def read(client: sc.SnmpClient, kind: str, *, max_ifaces: int = MAX_IFACES) -> d
         if not ins:   # no ifXTable on this build: the 32-bit counters
             ins = _rows(client.walk(OID_IF_IN, max_rows=max_ifaces), OID_IF_IN)
             outs = _rows(client.walk(OID_IF_OUT, max_rows=max_ifaces), OID_IF_OUT)
+        health = {k: _rows(client.walk(oid, max_rows=max_ifaces), oid)
+                  for k, oid in IF_HEALTH_OIDS.items()}
         for idx, name in descr.items():
-            out["ifaces"].append({
+            row = {
                 "ifindex": idx, "name": str(name),
                 "oper_up": (1 if oper.get(idx) == 1 else 0) if idx in oper else None,
-                "in_octets": ins.get(idx), "out_octets": outs.get(idx)})
+                "in_octets": ins.get(idx), "out_octets": outs.get(idx)}
+            # Only what the agent answered: an absent column is not "0 errors".
+            row.update({k: t[idx] for k, t in health.items() if idx in t})
+            out["ifaces"].append(row)
     return out
 
 
@@ -178,6 +200,9 @@ def lines_for(appliance, reading: dict, ts) -> list:
         out.append(vm_store.line("satom_snmp_if_oper_up", IL, i.get("oper_up"), ts))
         out.append(vm_store.line("satom_snmp_if_in_octets_total", IL, i.get("in_octets"), ts))
         out.append(vm_store.line("satom_snmp_if_out_octets_total", IL, i.get("out_octets"), ts))
+        for k in IF_HEALTH_OIDS:
+            if k in i:
+                out.append(vm_store.line("satom_snmp_if_%s_total" % k, IL, i.get(k), ts))
     return [l for l in out if l]
 
 

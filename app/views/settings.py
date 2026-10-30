@@ -3549,6 +3549,8 @@ def ai_state():
     return jsonify(
         ok=True, enabled=ai_advisor.enabled(), tools_on=ai_advisor.tools_enabled(),
         external_on=ai_advisor.external_allowed(), providers=ai_advisor.list_providers(),
+        tool_rounds=ai_advisor.tool_rounds(),
+        tool_rounds_range=[ai_advisor.MIN_TOOL_ROUNDS, ai_advisor.MAX_TOOL_ROUNDS],
         default_provider_key=ai_advisor.default_provider_key(),
         log_sources=log_sources_svc.list_sources(),
         log_source_kinds=log_sources_svc.KINDS)
@@ -3570,7 +3572,9 @@ def ai_logsource_save():
             device_field=(body.get("device_field") or "").strip(),
             verify_tls=bool(body.get("verify_tls", True)),
             token=body.get("token") or None,
-            enabled=bool(body.get("enabled", True)))
+            enabled=bool(body.get("enabled", True)),
+            time_field=(body.get("time_field") or "@timestamp").strip(),
+            auth=(body.get("auth") or "").strip())
     except ValueError as exc:
         return jsonify(ok=False, error=str(exc)), 400
     # Where Scout reads logs from is the audit question; the token never is.
@@ -3579,6 +3583,7 @@ def ai_logsource_save():
         'search_prefix': body.get("search_prefix", ""),
         'verify_tls': bool(body.get("verify_tls", True)),
         'enabled': bool(body.get("enabled", True)),
+        'auth': body.get("auth", ""),
         'token_set': bool(body.get("token"))})
     return jsonify(ok=True)
 
@@ -3628,9 +3633,15 @@ def ai_flags():
         kwargs["tools"] = bool(body["tools"])
     if "external" in body:
         kwargs["external"] = bool(body["external"])
+    extra = {}
+    if "tool_rounds" in body:
+        try:
+            extra["tool_rounds"] = ai_advisor.set_tool_rounds(body["tool_rounds"])
+        except ValueError as exc:
+            return jsonify(ok=False, error=str(exc)), 400
     ai_advisor.set_flags(**kwargs)
     log_action('settings.ai_flags', 'scout',
-               {k.rstrip('_'): v for k, v in kwargs.items()})
+               {k.rstrip('_'): v for k, v in kwargs.items()} | extra)
     return jsonify(ok=True)
 
 

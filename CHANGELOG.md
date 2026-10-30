@@ -104,6 +104,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   local model that wrote the call and then invented the result; SATOM ran
   nothing and the invented data reached the operator as the answer. The
   round goes back to the model as the call alone, never as its own text.
+- Scout no longer saves an empty reply as a successful answer. A reasoning
+  model can stop after its hidden reasoning with no text; the round is
+  retried once, and twice empty is an error the operator sees and the
+  request ledger records as failed.
 - User guide §33 named the old Scout ladder *Fault Isolation* (§12); it is
   **Path Diagnostics** (§13), and it never calls Scout's AI providers.
 

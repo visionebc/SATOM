@@ -219,6 +219,10 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   local model that wrote the call and then invented the result; SATOM ran
   nothing and the invented data reached the operator as the answer. The
   round goes back to the model as the call alone, never as its own text.</li>
+<li>Scout no longer saves an empty reply as a successful answer. A reasoning
+  model can stop after its hidden reasoning with no text; the round is
+  retried once, and twice empty is an error the operator sees and the
+  request ledger records as failed.</li>
 <li>User guide §33 named the old Scout ladder <em>Fault Isolation</em> (§12); it is
   <strong>Path Diagnostics</strong> (§13), and it never calls Scout's AI providers.</li>
 </ul>

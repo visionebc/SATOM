@@ -1109,6 +1109,7 @@ def _run_exchange(conv_id: int, username: str, text: str,
         return msg
 
     stopped_by_operator = False
+    empty_retried = False
     try:
         while True:
             yield ("status", {"phase": "thinking", "round": rounds + 1})
@@ -1127,6 +1128,19 @@ def _run_exchange(conv_id: int, username: str, text: str,
             final_text = result.text or "".join(current_parts)
             prompt_tokens = _add_tokens(prompt_tokens, result.prompt_tokens)
             completion_tokens = _add_tokens(completion_tokens, result.completion_tokens)
+            if not (final_text or "").strip():
+                # Measured 2026-10-30 (gpt-oss:120b on Ollama): a reasoning
+                # model can stop after its hidden reasoning with an EMPTY
+                # reply. Saved as-is, that was an empty answer logged ok=True.
+                # One retry of the same round; twice empty is a failure the
+                # operator sees and the ledger records.
+                if empty_retried:
+                    raise ProviderError(
+                        "the model returned an empty reply twice (it may have "
+                        "stopped after reasoning); nothing was saved -- send "
+                        "the message again or pick another model")
+                empty_retried = True
+                continue
 
             calls = extract_tool_calls(final_text) if tools_enabled() else []
             if not calls or rounds >= MAX_TOOL_ROUNDS:

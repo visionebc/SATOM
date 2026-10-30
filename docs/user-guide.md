@@ -9135,8 +9135,9 @@ Where to read it:
 ## 33. AI Advisor
 
 Labelled **Scout** in the menu and in Settings since 2026-10-14 (the
-fault-localisation ladder that used to be called Scout is now **Fault
-Isolation**, §12). A chat assistant (`/advisor`, permission `advisor.use`) for three things:
+fault-localisation ladder that used to be called Scout is now **Path
+Diagnostics**, Operations › Troubleshooting, §13 — it never calls these
+providers). A chat assistant (`/advisor`, permission `advisor.use`) for three things:
 interpreting a WAF false positive and drafting the exception for it, drafting
 a Lua script, and searching the versioned device-configuration source of
 truth. Full design write-up: `docs/ai-advisor.md`.

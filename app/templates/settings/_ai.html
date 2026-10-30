@@ -60,6 +60,45 @@
       <div id="ai-p-result" class="mt-2" style="font-size:12.5px"></div>
     </div>
   </div>
+
+  <div class="fw-card" id="card-logsources">
+    <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Log sources') }} <span class="fw-badge fw-badge-secondary">{{ _('optional') }}</span></h2></div>
+    <div class="fw-card-body">
+      <p class="text-secondary" style="font-size:13px">{{ _('Scout already reads Sentinel events, the syslog receiver and the FortiAnalyzer behind each appliance (Sentinel → Edge map). Add your SIEM here when part of the service path logs somewhere else — a Cisco switch or firewall in front of a FortiWeb never reaches a FortiAnalyzer. Read only: use a token of a role that can only search. Scout puts its search text inside one quoted term, so it can never append a command.') }}</p>
+      <div id="ai-ls-list" class="mb-3"></div>
+      <button type="button" class="btn btn-fw-outline btn-sm" id="ai-ls-new"><i class="bi bi-plus-lg me-1"></i>{{ _('Add log source') }}</button>
+    </div>
+  </div>
+
+  <div class="fw-card" id="ai-ls-form-card" style="display:none">
+    <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Log source') }}</h2></div>
+    <div class="fw-card-body">
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label" for="ai-ls-key">{{ _('Key (slug, unique)') }}</label><input class="form-control" id="ai-ls-key" placeholder="splunk-dc1"></div>
+        <div class="col-md-3"><label class="form-label" for="ai-ls-label">{{ _('Label') }}</label><input class="form-control" id="ai-ls-label"></div>
+        <div class="col-md-6"><label class="form-label" for="ai-ls-kind">{{ _('Kind') }}</label>
+          <select class="form-select" id="ai-ls-kind">
+            <option value="splunk">{{ _('Splunk (REST search export, port 8089) — unverified on a live Splunk') }}</option>
+          </select>
+        </div>
+        <div class="col-md-6"><label class="form-label" for="ai-ls-url">{{ _('Management URL') }}</label><input class="form-control" id="ai-ls-url" placeholder="https://splunk.example.com:8089"></div>
+        <div class="col-md-6"><label class="form-label" for="ai-ls-token">{{ _('Token') }} <span class="text-secondary">{{ _('(Bearer; blank = keep)') }}</span></label><input type="password" class="form-control" id="ai-ls-token" autocomplete="off"></div>
+        <div class="col-md-8"><label class="form-label" for="ai-ls-prefix">{{ _('Search prefix') }}</label><input class="form-control" id="ai-ls-prefix" placeholder="index=network (sourcetype=cisco:asa OR sourcetype=cisco:ios)">
+          <div class="form-text" style="font-size:11.5px">{{ _('Written by you, used as is at the start of every search. Scout only adds a device clause and one quoted term after it.') }}</div></div>
+        <div class="col-md-4"><label class="form-label" for="ai-ls-field">{{ _('Device field') }}</label><input class="form-control" id="ai-ls-field" placeholder="host">
+          <div class="form-text" style="font-size:11.5px">{{ _('Matched against the appliance name and management address. Blank = never filter by appliance.') }}</div></div>
+      </div>
+      <div class="d-flex flex-wrap gap-4 mt-2">
+        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="ai-ls-verify" checked><label class="form-check-label" for="ai-ls-verify">{{ _('Verify TLS against the trust store') }}</label></div>
+        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="ai-ls-enabled" checked><label class="form-check-label" for="ai-ls-enabled">{{ _('Enabled') }}</label></div>
+      </div>
+      <div class="d-flex gap-2 mt-3">
+        <button type="button" class="btn btn-fw-primary" id="ai-ls-save">{{ _('Save') }}</button>
+        <button type="button" class="btn btn-fw-outline" id="ai-ls-cancel">{{ _('Cancel') }}</button>
+      </div>
+      <div id="ai-ls-result" class="mt-2" style="font-size:12.5px"></div>
+    </div>
+  </div>
 </div>
 
 <script nonce="{{ csp_nonce }}">
@@ -105,8 +144,92 @@
         list.appendChild(row);
       });
       root.__providers = d.providers || [];
+      renderLogSources(d.log_sources || []);
     });
   }
+
+  function renderLogSources(rows){
+    var list = document.getElementById('ai-ls-list');
+    list.innerHTML = rows.length ? '' :
+      '<div class="text-secondary" style="font-size:12.5px">No external log source. Scout says so when it searches, instead of reading the silence as "no logs".</div>';
+    rows.forEach(function(s){
+      var row = document.createElement('div');
+      row.className = 'd-flex justify-content-between align-items-center py-1';
+      row.style.borderBottom = '1px solid var(--fw-border)';
+      row.innerHTML =
+        '<div><strong>' + esc(s.label) + '</strong> <span class="fw-badge fw-badge-secondary">' + esc(s.kind) + '</span>' +
+        (s.enabled === false ? ' <span class="fw-badge fw-badge-warning">disabled</span>' : '') +
+        (s.verify_tls === false ? ' <span class="fw-badge fw-badge-warning">TLS not verified</span>' : '') +
+        (s.verified ? '' : ' <span class="fw-badge fw-badge-secondary">unverified on a live instance</span>') +
+        '<div class="text-secondary" style="font-size:11.5px">' + esc(s.base_url) +
+        (s.search_prefix ? ' &middot; <code>' + esc(s.search_prefix) + '</code>' : '') +
+        (s.device_field ? ' &middot; device field ' + esc(s.device_field) : '') +
+        (s.has_secret ? ' &middot; token set' : ' &middot; <strong>no token</strong>') + '</div>' +
+        '<div class="text-secondary" style="font-size:11.5px" data-ls-out="' + esc(s.key) + '"></div></div>' +
+        '<div class="d-flex gap-2">' +
+        '<button type="button" class="btn btn-sm btn-fw-outline" data-act="ls-test" data-key="' + esc(s.key) + '">Test</button>' +
+        '<button type="button" class="btn btn-sm btn-fw-outline" data-act="ls-edit" data-key="' + esc(s.key) + '">Edit</button>' +
+        '<button type="button" class="btn btn-sm btn-fw-outline" data-act="ls-delete" data-key="' + esc(s.key) + '">Delete</button>' +
+        '</div>';
+      list.appendChild(row);
+    });
+    root.__logsources = rows;
+  }
+
+  function openLsForm(s){
+    document.getElementById('ai-ls-form-card').style.display = '';
+    document.getElementById('ai-ls-result').textContent = '';
+    document.getElementById('ai-ls-key').value = s ? s.key : '';
+    document.getElementById('ai-ls-key').disabled = !!s;
+    document.getElementById('ai-ls-label').value = s ? s.label : '';
+    document.getElementById('ai-ls-kind').value = s ? s.kind : 'splunk';
+    document.getElementById('ai-ls-url').value = s ? s.base_url : '';
+    document.getElementById('ai-ls-prefix').value = s ? (s.search_prefix || '') : '';
+    document.getElementById('ai-ls-field').value = s ? (s.device_field || '') : 'host';
+    document.getElementById('ai-ls-verify').checked = s ? s.verify_tls !== false : true;
+    document.getElementById('ai-ls-enabled').checked = s ? s.enabled !== false : true;
+    document.getElementById('ai-ls-token').value = '';
+  }
+
+  document.addEventListener('click', function(ev){
+    var t = ev.target.closest('[data-act^="ls-"]');
+    if (t) {
+      var act = t.getAttribute('data-act'), key = t.getAttribute('data-key');
+      if (act === 'ls-edit') {
+        openLsForm((root.__logsources || []).filter(function(x){ return x.key === key; })[0]);
+      } else if (act === 'ls-delete') {
+        if (confirm('Delete log source "' + key + '"? Its token is erased too.')) {
+          api('/settings/ai/logsource/' + encodeURIComponent(key) + '/delete', {method:'POST', body:'{}'}).then(refresh);
+        }
+      } else if (act === 'ls-test') {
+        var out = document.querySelector('[data-ls-out="' + CSS.escape(key) + '"]');
+        if (out) out.textContent = 'Testing…';
+        api('/settings/ai/logsource/' + encodeURIComponent(key) + '/test', {method:'POST', body:'{}'}).then(function(d){
+          if (out) out.textContent = d.ok ? ('OK — ' + d.detail) : ('Failed — ' + (d.error || 'error'));
+        }).catch(function(){ if (out) out.textContent = 'Failed — no answer from SATOM'; });
+      }
+    }
+    if (ev.target.id === 'ai-ls-new') openLsForm(null);
+    if (ev.target.id === 'ai-ls-cancel') document.getElementById('ai-ls-form-card').style.display = 'none';
+    if (ev.target.id === 'ai-ls-save') {
+      var body = {
+        key: document.getElementById('ai-ls-key').value.trim(),
+        label: document.getElementById('ai-ls-label').value.trim(),
+        kind: document.getElementById('ai-ls-kind').value,
+        base_url: document.getElementById('ai-ls-url').value.trim(),
+        search_prefix: document.getElementById('ai-ls-prefix').value.trim(),
+        device_field: document.getElementById('ai-ls-field').value.trim(),
+        verify_tls: document.getElementById('ai-ls-verify').checked,
+        enabled: document.getElementById('ai-ls-enabled').checked,
+        token: document.getElementById('ai-ls-token').value,
+      };
+      api('/settings/ai/logsource/save', {method:'POST', body: JSON.stringify(body)}).then(function(d){
+        if (!d.ok) { document.getElementById('ai-ls-result').textContent = d.error || 'save failed'; return; }
+        document.getElementById('ai-ls-form-card').style.display = 'none';
+        refresh();
+      }).catch(function(){ document.getElementById('ai-ls-result').textContent = 'save failed — no answer from SATOM'; });
+    }
+  });
 
   document.addEventListener('change', function(ev){
     var t = ev.target;

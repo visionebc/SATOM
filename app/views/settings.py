@@ -41,6 +41,7 @@ from ..services import dns_providers
 from ..services import acme_providers
 from ..services import policy_links as policy_links_svc
 from ..services import advisor as ai_advisor
+from ..services import log_sources as log_sources_svc
 from ..services.advisor_providers import ProviderError as _AiProviderError
 from ..services import clone_rules as clone_rules_svc
 from ..services import gui_pages
@@ -3548,7 +3549,71 @@ def ai_state():
     return jsonify(
         ok=True, enabled=ai_advisor.enabled(), tools_on=ai_advisor.tools_enabled(),
         external_on=ai_advisor.external_allowed(), providers=ai_advisor.list_providers(),
-        default_provider_key=ai_advisor.default_provider_key())
+        default_provider_key=ai_advisor.default_provider_key(),
+        log_sources=log_sources_svc.list_sources(),
+        log_source_kinds=log_sources_svc.KINDS)
+
+
+# -- Scout log sources (external SIEM, optional) -----------------------------
+
+@bp.route("/ai/logsource/save", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_logsource_save():
+    body = request.get_json(silent=True) or {}
+    key = (body.get("key") or "").strip()
+    try:
+        log_sources_svc.save_source(
+            key=key, kind=body.get("kind", ""), label=body.get("label", ""),
+            base_url=(body.get("base_url") or "").strip(),
+            search_prefix=body.get("search_prefix", ""),
+            device_field=(body.get("device_field") or "").strip(),
+            verify_tls=bool(body.get("verify_tls", True)),
+            token=body.get("token") or None,
+            enabled=bool(body.get("enabled", True)))
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    # Where Scout reads logs from is the audit question; the token never is.
+    log_action('settings.ai_logsource_save', key, {
+        'kind': body.get("kind", ""), 'base_url': body.get("base_url", ""),
+        'search_prefix': body.get("search_prefix", ""),
+        'verify_tls': bool(body.get("verify_tls", True)),
+        'enabled': bool(body.get("enabled", True)),
+        'token_set': bool(body.get("token"))})
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/logsource/<key>/delete", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_logsource_delete(key):
+    log_sources_svc.delete_source(key)
+    log_action('settings.ai_logsource_delete', key)
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/logsource/<key>/test", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_logsource_test(key):
+    """One bounded search over the last 15 minutes, ``| head 1``: proves the
+    URL, the TLS chain, the token and the prefix together. An answer with no
+    rows is reported as such -- it is NOT a failure, and NOT a proof the
+    prefix matches anything either."""
+    from datetime import datetime, timedelta
+    src = log_sources_svc.get_source(key)
+    if src is None:
+        return jsonify(ok=False, error="unknown log source"), 404
+    end = datetime.utcnow()
+    rows, err, query = log_sources_svc.search(
+        src, query="", start=end - timedelta(minutes=15), end=end, limit=1,
+        timeout=15.0)
+    log_action('settings.ai_logsource_test', key, {'ok': err is None, 'rows': len(rows)})
+    if err:
+        return jsonify(ok=False, error=err, query=query)
+    return jsonify(ok=True, rows=len(rows), query=query,
+                   detail=("answered with a row" if rows else
+                           "answered, but nothing in the last 15 minutes matched the prefix"))
 
 
 @bp.route("/ai/flags", methods=["POST"])

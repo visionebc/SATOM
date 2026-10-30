@@ -418,13 +418,29 @@ READ, not what it can do:</p>
 untrusted): <code>list_appliances</code>, <code>device_health</code>, <code>list_server_policies</code>,
 <code>list_probes</code>, <code>list_path_reports</code>, <code>path_report</code>, <code>metrics_context</code>,
 <code>recent_config_changes</code>, <code>sot_search</code>, <code>list_exceptions</code>,
-<code>list_lua_scripts</code>. The three Path Diagnostics / metrics tools are the
-2026-10-30 addition: <code>metrics_context</code> calls the same
+<code>list_lua_scripts</code>, and (stage 2c/3, 2026-10-30) <code>search_logs</code>,
+<code>list_incidents</code>, <code>incident</code>, <code>recent_jobs</code>, <code>job_detail</code>, <code>audit_events</code>,
+<code>recent_alerts</code> in <code>services/scout_sources.py</code> -- each applying the gate of
+the page that shows the same data, as the operator. The three Path
+Diagnostics / metrics tools are the 2026-10-30 addition: <code>metrics_context</code> calls the same
 <code>services/scout_metrics.context</code> that draws the panel under a walk, so the
 model and the page cannot disagree about a number.</p>
 <p><strong>Troubleshooting order</strong> (in the system prompt): newest Path Diagnostics
 report for the object → metrics around it → device health → recent
 configuration changes; no recent report → ask the operator to run one.
+Then correlation: <code>search_logs</code> over the walk's window, incidents, alerts,
+jobs and the Audit Log.</p>
+<p><strong>Log sources</strong> (<code>services/log_sources.py</code>, Settings → AI → Log sources):
+an OPTIONAL external SIEM for the non-Fortinet hops of a path (a Cisco in
+front of a FortiWeb logs to the customer's SIEM, never to a FortiAnalyzer).
+Kind <code>splunk</code> only (REST <code>search/jobs/export</code>), unverified against a live
+Splunk. Token Fernet-encrypted per source; TLS verified against the trust
+store unless an admin switched it off for that source; the model's text
+only ever becomes ONE quoted SPL term (<code>spl_literal</code>), so it cannot pipe
+into a writing command; every source reports a status (<code>ok</code>, <code>no_match</code>,
+<code>error</code>, <code>not_configured</code>, <code>disabled</code>, <code>forbidden</code>) and a failure is never
+an empty list. A new kind = one <code>_search_&lt;kind&gt;</code> function + a <code>KINDS</code>
+entry.
 Evidence and inference are reported separately; a failed collector or a
 rung that could not look is said in words.</p>
 <p><strong>Next, in order</strong> (not built):</p>
@@ -443,14 +459,19 @@ rung that could not look is said in words.</p>
 <td>Never on Scout's initiative; same permission as the page</td>
 </tr>
 <tr>
-<td>2c</td>
-<td>Read tools for Sentinel incidents, alerts, jobs and the Audit Log</td>
-<td>Read-only, ADOM-scoped like the pages</td>
+<td>~~2c~~</td>
+<td>Done 2026-10-30: Sentinel incidents, alerts, jobs and the Audit Log</td>
+<td></td>
 </tr>
 <tr>
-<td>3</td>
-<td>Log correlation in the walk's window: FortiAnalyzer traffic logs, syslog, Sentinel events</td>
-<td>Reads stored logs; the FAZ query already used by rung 7 is the only device-side read</td>
+<td>~~3~~</td>
+<td>Done 2026-10-30: <code>search_logs</code> (Sentinel, syslog, FortiAnalyzer, external SIEM)</td>
+<td></td>
+</tr>
+<tr>
+<td>3a</td>
+<td>More log-source kinds (Elastic/OpenSearch, Graylog); a live Splunk measurement</td>
+<td></td>
 </tr>
 <tr>
 <td>3b</td>

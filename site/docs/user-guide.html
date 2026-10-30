@@ -10327,10 +10327,132 @@ they read what the collectors and the sync already stored.</p>
 <td>Existing Lua scripts</td>
 <td>"Do we have a script for this?"</td>
 </tr>
+<tr>
+<td><code>search_logs</code></td>
+<td>The logs of ONE window from every source side by side — Sentinel events, the syslog receiver, the FortiAnalyzer behind the appliance and any external SIEM — each with a status. With a report id it uses the walk's appliance and window</td>
+<td>"What did the logs say when report #12 ran?"</td>
+</tr>
+<tr>
+<td><code>list_incidents</code> / <code>incident</code></td>
+<td>Sentinel incidents (open, closed or all) and one incident with its score factors and newest events</td>
+<td>"Is this box under attack right now?"</td>
+</tr>
+<tr>
+<td><code>recent_jobs</code> / <code>job_detail</code></td>
+<td>Jobs SATOM ran (syncs, deploys, walks, backups) and one job's last 40 steps — every REST call or SSH command, its outcome and duration</td>
+<td>"Did last night's deploy fail on this box?"</td>
+</tr>
+<tr>
+<td><code>audit_events</code></td>
+<td>Audit Log rows (who did what to which target) over the last N minutes</td>
+<td>"Who touched this policy today?"</td>
+</tr>
+<tr>
+<td><code>recent_alerts</code></td>
+<td>Your own notifications (the bell) in this ADOM: failed jobs, monitor, capacity, certificate and licence alerts</td>
+<td>"What alerted overnight?"</td>
+</tr>
 </tbody>
 </table>
 <p>Under each reply SATOM lists the tools it called and marks any that failed,
 next to the response time and token count.</p>
+<p>The new tools apply the gate of the page that shows the same data, as
+<strong>you</strong>: Sentinel needs <code>monitoring.view</code>, the Audit Log needs <code>audit.view</code>,
+and jobs follow the Jobs page — your own jobs, everyone's only for an
+administrator. Something you cannot open, Scout cannot read for you.</p>
+<h4 id="logs-every-source-one-window-each-with-a-status">Logs: every source, one window, each with a status</h4>
+<p><code>search_logs</code> never answers with a bare empty list. Each source comes back
+with a status, and only <code>ok</code> and <code>no_match</code> mean the source really looked:</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ok</code></td>
+<td>The source answered with matching lines.</td>
+</tr>
+<tr>
+<td><code>no_match</code></td>
+<td>The source answered and nothing matched the window and the term.</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>The source was asked and failed (timeout, refused token, HTTP error, a <code>FATAL</code> message inside an HTTP 200).</td>
+</tr>
+<tr>
+<td><code>not_configured</code></td>
+<td>There is nothing to ask: no edge-map row for the FortiAnalyzer, no external log source.</td>
+</tr>
+<tr>
+<td><code>disabled</code></td>
+<td>Switched off (the syslog receiver, a log source).</td>
+</tr>
+<tr>
+<td><code>forbidden</code></td>
+<td>Your account lacks the permission of that source's page.</td>
+</tr>
+</tbody>
+</table>
+<p>Scout is told that <code>error</code>, <code>not_configured</code>, <code>disabled</code> and <code>forbidden</code>
+are <strong>not</strong> "no logs". Two limits to keep in mind: the syslog receiver keeps
+only its last 500 messages (it is a ring buffer, not a log store), and the
+FortiAnalyzer search has not yet been proved against a live analyzer in the
+lab — the result says so.</p>
+<h4 id="log-sources--splunk-and-other-siems-optional">Log sources — Splunk and other SIEMs (optional)</h4>
+<p>A service path is rarely all Fortinet. The switch, router or firewall in
+front of a FortiWeb (a Cisco, typically) logs to your SIEM, not to a
+FortiAnalyzer, so without it Scout cannot see the hop most likely to be at
+fault. <strong>Settings → AI → Log sources</strong> lets an administrator
+(<code>advisor.configure</code>) add one, read only. Nothing is configured by default.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kind</td>
+<td><code>splunk</code> — the REST search export (<code>/services/search/jobs/export</code>, management port 8089). Marked <em>unverified on a live Splunk</em>: it is tested against simulated answers only.</td>
+</tr>
+<tr>
+<td>Management URL</td>
+<td>For example <code>https://splunk.example.com:8089</code>.</td>
+</tr>
+<tr>
+<td>Token</td>
+<td>A Splunk authentication token (sent as <code>Authorization: Bearer</code>), stored encrypted and never shown again. Use a role that can only search.</td>
+</tr>
+<tr>
+<td>Search prefix</td>
+<td>Written by you and used as is at the start of every search — for example <code>index=network (sourcetype=cisco:asa OR sourcetype=cisco:ios)</code>.</td>
+</tr>
+<tr>
+<td>Device field</td>
+<td>The field matched against the appliance name and management address (<code>host</code> by default). Blank = never filter by appliance.</td>
+</tr>
+<tr>
+<td>Verify TLS</td>
+<td>On by default, against SATOM's trust store. Turn it off only for a lab SIEM with a self-signed certificate; it is never turned off on its own after a failure.</td>
+</tr>
+</tbody>
+</table>
+<p>Every search is <code>search &lt;prefix&gt; (&lt;field&gt;="&lt;name&gt;" OR &lt;field&gt;="&lt;address&gt;")
+"&lt;term&gt;" | head N</code> over the window. Scout's text only ever becomes <strong>one
+quoted term</strong>: quotes and backslashes are escaped and new lines flattened,
+so it cannot close the quote and pipe into a command that writes
+(<code>| delete</code>, <code>| outputlookup</code>, <code>| collect</code>, <code>| sendemail</code>). <strong>Test</strong> runs
+the prefix over the last 15 minutes with <code>| head 1</code>. Saving, deleting and
+testing a source each leave an Audit Log row (<code>settings.ai_logsource_*</code>,
+without the token).</p>
+<p>To look at a non-Fortinet hop, ask about its address: <em>"search the logs
+for 192.0.2.10 around report 12"</em>. Without an appliance, only the external
+sources can answer for it.</p>
 <h3 id="334-troubleshooting-a-broken-service-with-scout">33.4 Troubleshooting a broken service with Scout</h3>
 <p>The fastest path from "the site is down" to a cause:</p>
 <ol>
@@ -10342,7 +10464,10 @@ next to the response time and token count.</p>
    {device}, policy shop-prod"</em>.</li>
 <li>Scout reads, in this order: the newest report for that object, the metrics
    around it, the device health, and recent configuration changes. If there is
-   no recent report it asks you to run one — it cannot run it itself.</li>
+   no recent report it asks you to run one — it cannot run it itself.
+   Then it correlates: the logs of the walk's window from every source,
+   open Sentinel incidents, your alerts, the jobs SATOM ran against the box and the
+   Audit Log (who changed what, and when).</li>
 <li>It answers with <strong>what the evidence shows</strong> (the failing rung, its evidence,
    any metric flagged against its 7-day average, any collector that was down)
    kept apart from <strong>what it infers</strong>, and the next check or change.</li>
@@ -10351,7 +10476,9 @@ next to the response time and token count.</p>
 </ol>
 <p>Other questions that work well: <em>"compare the CPU and sessions of {device}
 now with last week"</em>, <em>"what changed on this box since yesterday?"</em>,
-<em>"is this block a false positive?"</em> with the blocked request attached.</p>
+<em>"is this block a false positive?"</em> with the blocked request attached,
+<em>"did any job fail on {device} today, and which call?"</em>, <em>"who changed
+this policy since yesterday?"</em>.</p>
 <p>Scout is as good as the evidence: an appliance with no scrape target has no
 metrics, and a licence-locked device (<code>Invalid VM License</code>, HTTP 423) has no
 fresh reads — Scout says so rather than filling the gap.</p>
@@ -10418,10 +10545,8 @@ only one: even a fooled model has no write path (33.6).</p>
 <ul>
 <li><strong>Run a Path Diagnostics walk on request</strong> — as a job you confirm, with
   every device call recorded, never on Scout's own initiative.</li>
-<li>Read <strong>Sentinel incidents, alerts, jobs and the Audit Log</strong>, so a question
-  like <em>"what happened on this box in the last hour?"</em> has one answer.</li>
-<li><strong>Correlate logs</strong> in the same window: FortiAnalyzer traffic logs, syslog
-  and Sentinel events next to the metrics.</li>
+<li><strong>More SIEM kinds</strong> as log sources (Elastic/OpenSearch, Graylog). Only
+  Splunk exists today.</li>
 <li><strong>Packet, error and drop counters</strong> per interface. SATOM does not collect
   them today; the metrics panel says so.</li>
 </ul>
@@ -10449,6 +10574,18 @@ only one: even a fooled model has no write path (33.6).</p>
 <tr>
 <td>Scout answers but says it cannot see reports or metrics</td>
 <td><strong>Allow read-only tool calls</strong> is off (33.1), or the appliance is in another ADOM: tools see exactly what your ADOM sees.</td>
+</tr>
+<tr>
+<td>Scout says a log source is <code>error</code></td>
+<td>The source was asked and failed; the detail says why (refused token, timeout, HTTP code, a Splunk <code>FATAL</code> message). Run <strong>Test</strong> on it in Settings → AI → Log sources. It is never reported as "no logs".</td>
+</tr>
+<tr>
+<td>Scout says the FortiAnalyzer is <code>not_configured</code></td>
+<td>The appliance has no row in Sentinel → Edge map, so no analyzer was asked. Add the row; Scout does not guess which analyzer sees the box.</td>
+</tr>
+<tr>
+<td>Scout says it cannot read incidents or the Audit Log</td>
+<td>Your account lacks <code>monitoring.view</code> or <code>audit.view</code>. Scout reads as you, never more.</td>
 </tr>
 <tr>
 <td>Scout says the metrics are <em>not collected</em></td>

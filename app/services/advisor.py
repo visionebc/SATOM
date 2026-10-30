@@ -52,6 +52,7 @@ from . import encryption
 from . import wpp_exceptions
 from . import lua_studio as lua_svc
 from . import sot_store
+from . import scout_sources
 from .doc_publication import REDACTIONS as _REDACTIONS
 from .product_scope import stamp as _stamp, scope_query as _scope_query
 from .advisor_providers import (
@@ -107,8 +108,15 @@ SYSTEM_PROMPT = (
     "it — explain it), then the metrics around it, the device health and the "
     "recent configuration changes. If there is no recent report, ask the "
     "operator to run Path Diagnostics on that object; you cannot run it. "
+    "Then correlate: the logs of the same window from every source "
+    "(search_logs with the report_id), open Sentinel incidents, the alerts, the jobs "
+    "SATOM ran against the box and the audit log (who changed what, when). For a "
+    "non-Fortinet device in the path (a switch or firewall in front), search "
+    "the logs by its address; only an external log source can answer for it. "
     "Separate what the evidence shows from what you infer, and say when a "
-    "collector or a rung could not look — missing data is not health.\n\n"
+    "collector, a log source or a rung could not look — a source with status "
+    "error, not_configured, disabled or forbidden did NOT see 'nothing'; "
+    "missing data is not health.\n\n"
     "When a concrete change is warranted (a WAF exception, a Lua script), "
     "propose it as ONE fenced code block, language `" + PROPOSAL_FENCE + "`, "
     "containing exactly one JSON object and nothing else in that block:\n"
@@ -630,6 +638,47 @@ TOOLS = {
         "description": "Metrics for one appliance (and optionally one server policy / virtual server) over the last N minutes vs its 7-day average: CPU, memory, sessions, throughput, RTTs, collector status.",
         "params": {"appliance_id": "int", "policy": "string (optional)",
                    "window_minutes": "int (optional)"},
+    },
+    "search_logs": {
+        "fn": scout_sources.search_logs,
+        "description": "Logs of ONE time window from every source side by side (Sentinel events, the syslog receiver, the FortiAnalyzer behind the appliance, external SIEMs such as Splunk), each with a status. Pass report_id to use a Path Diagnostics walk's appliance and window; query is a free-text term (IP, URL, error word) -- use it alone for a non-Fortinet device in the path.",
+        "params": {"appliance_id": "int (optional)", "report_id": "int (optional)",
+                   "query": "string (optional)", "minutes": "int (optional, default 60)",
+                   "source": "string (optional: sentinel|syslog|fortianalyzer|<external key>)"},
+    },
+    "list_incidents": {
+        "fn": scout_sources.list_incidents,
+        "description": "Sentinel security incidents, newest first (status open|closed|all), optionally for one appliance: source, attack family, score, blocked vs passed, impact.",
+        "params": {"appliance_id": "int (optional)", "status": "string (optional, default open)",
+                   "limit": "int (optional)"},
+    },
+    "incident": {
+        "fn": scout_sources.incident,
+        "description": "One Sentinel incident (id or INC-… reference) with its score factors and newest events.",
+        "params": {"incident": "string"},
+    },
+    "recent_jobs": {
+        "fn": scout_sources.recent_jobs,
+        "description": "Jobs SATOM ran (syncs, deploys, walks, backups…), newest first, optionally for one appliance or status (failed, success, running): who, when, error, how many calls failed.",
+        "params": {"appliance_id": "int (optional)", "status": "string (optional)",
+                   "limit": "int (optional)"},
+    },
+    "job_detail": {
+        "fn": scout_sources.job_detail,
+        "description": "One job with its last 40 steps -- every REST call / SSH command it made to the device, with outcome and duration.",
+        "params": {"job_id": "string"},
+    },
+    "audit_events": {
+        "fn": scout_sources.audit_events,
+        "description": "Audit log rows (who did what, to which target), newest first, filtered by action and/or target substring over the last N minutes.",
+        "params": {"action": "string (optional)", "target": "string (optional)",
+                   "minutes": "int (optional, default 1440)", "limit": "int (optional)"},
+    },
+    "recent_alerts": {
+        "fn": scout_sources.recent_alerts,
+        "description": "The operator's own notifications (the bell) over the last N minutes: failed jobs, monitor, capacity, certificate and licence alerts.",
+        "params": {"minutes": "int (optional, default 1440)", "unread_only": "bool (optional)",
+                   "limit": "int (optional)"},
     },
     "list_lua_scripts": {
         "fn": tool_list_lua_scripts,

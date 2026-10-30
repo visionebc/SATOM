@@ -114,6 +114,26 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>Scout correlates logs, incidents, jobs and the audit log</strong> (request:
+  "do the next stage, and add an extra source where it checks logs, a
+  Splunk or similar, as optional — for products such as Cisco we will not
+  have the logs in the FortiAnalyzer"). New read-only tools:
+  <code>search_logs</code> (the logs of ONE window from every source side by side —
+  Sentinel events, the syslog receiver, the FortiAnalyzer behind the
+  appliance, external SIEMs — each with a status: <code>ok</code>, <code>no_match</code>,
+  <code>error</code>, <code>not_configured</code>, <code>disabled</code> or <code>forbidden</code>; with <code>report_id</code> it
+  takes a Path Diagnostics walk's appliance and window), <code>list_incidents</code>
+  / <code>incident</code> (Sentinel), <code>recent_jobs</code> / <code>job_detail</code> (every REST call
+  and SSH command a job made), <code>audit_events</code> and <code>recent_alerts</code> (the
+  operator's own bell). Each applies the gate of
+  the page that shows the same data, as the operator.</li>
+<li><strong>Settings → AI → Log sources (optional): Splunk.</strong> An administrator can
+  point Scout at a SIEM, read only — for the non-Fortinet hops of a path.
+  The token is stored encrypted and never shown; TLS is verified against
+  the trust store unless switched off per source; Scout's text only ever
+  becomes one quoted search term, so it cannot append a command; save,
+  delete and <strong>Test</strong> leave Audit Log rows without the token. The Splunk
+  connector is unverified against a live Splunk and says so.</li>
 <li><strong>DNS &amp; LB Lookup as Plugin Studio apps</strong> (request: "I want the whole DNS &amp;
   LB Lookup section to be an app in Plugin Studio — the page stays, and keep
   Copy, editing a record from its row and the decommission confirmation").

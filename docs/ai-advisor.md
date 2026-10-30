@@ -320,14 +320,31 @@ READ, not what it can do:
 untrusted): `list_appliances`, `device_health`, `list_server_policies`,
 `list_probes`, `list_path_reports`, `path_report`, `metrics_context`,
 `recent_config_changes`, `sot_search`, `list_exceptions`,
-`list_lua_scripts`. The three Path Diagnostics / metrics tools are the
-2026-10-30 addition: `metrics_context` calls the same
+`list_lua_scripts`, and (stage 2c/3, 2026-10-30) `search_logs`,
+`list_incidents`, `incident`, `recent_jobs`, `job_detail`, `audit_events`,
+`recent_alerts` in `services/scout_sources.py` -- each applying the gate of
+the page that shows the same data, as the operator. The three Path
+Diagnostics / metrics tools are the 2026-10-30 addition: `metrics_context` calls the same
 `services/scout_metrics.context` that draws the panel under a walk, so the
 model and the page cannot disagree about a number.
 
 **Troubleshooting order** (in the system prompt): newest Path Diagnostics
 report for the object → metrics around it → device health → recent
 configuration changes; no recent report → ask the operator to run one.
+Then correlation: `search_logs` over the walk's window, incidents, alerts,
+jobs and the Audit Log.
+
+**Log sources** (`services/log_sources.py`, Settings → AI → Log sources):
+an OPTIONAL external SIEM for the non-Fortinet hops of a path (a Cisco in
+front of a FortiWeb logs to the customer's SIEM, never to a FortiAnalyzer).
+Kind `splunk` only (REST `search/jobs/export`), unverified against a live
+Splunk. Token Fernet-encrypted per source; TLS verified against the trust
+store unless an admin switched it off for that source; the model's text
+only ever becomes ONE quoted SPL term (`spl_literal`), so it cannot pipe
+into a writing command; every source reports a status (`ok`, `no_match`,
+`error`, `not_configured`, `disabled`, `forbidden`) and a failure is never
+an empty list. A new kind = one `_search_<kind>` function + a `KINDS`
+entry.
 Evidence and inference are reported separately; a failed collector or a
 rung that could not look is said in words.
 
@@ -336,8 +353,9 @@ rung that could not look is said in words.
 | Stage | Adds | Boundary |
 |---|---|---|
 | 2b | `run_path_diagnostics` — Scout *asks* for a walk; the operator confirms; it runs as the normal job with every device call recorded | Never on Scout's initiative; same permission as the page |
-| 2c | Read tools for Sentinel incidents, alerts, jobs and the Audit Log | Read-only, ADOM-scoped like the pages |
-| 3 | Log correlation in the walk's window: FortiAnalyzer traffic logs, syslog, Sentinel events | Reads stored logs; the FAZ query already used by rung 7 is the only device-side read |
+| ~~2c~~ | Done 2026-10-30: Sentinel incidents, alerts, jobs and the Audit Log | |
+| ~~3~~ | Done 2026-10-30: `search_logs` (Sentinel, syslog, FortiAnalyzer, external SIEM) | |
+| 3a | More log-source kinds (Elastic/OpenSearch, Graylog); a live Splunk measurement | |
 | 3b | Per-interface packet, error and drop counters | A new collector; each counter verified on the exact build first (`api_library`), marked *unverified on this build* otherwise |
 
 ## What this explicitly does not do (yet)

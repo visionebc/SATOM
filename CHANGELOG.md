@@ -7,6 +7,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Scout correlates logs, incidents, jobs and the audit log** (request:
+  "do the next stage, and add an extra source where it checks logs, a
+  Splunk or similar, as optional — for products such as Cisco we will not
+  have the logs in the FortiAnalyzer"). New read-only tools:
+  `search_logs` (the logs of ONE window from every source side by side —
+  Sentinel events, the syslog receiver, the FortiAnalyzer behind the
+  appliance, external SIEMs — each with a status: `ok`, `no_match`,
+  `error`, `not_configured`, `disabled` or `forbidden`; with `report_id` it
+  takes a Path Diagnostics walk's appliance and window), `list_incidents`
+  / `incident` (Sentinel), `recent_jobs` / `job_detail` (every REST call
+  and SSH command a job made), `audit_events` and `recent_alerts` (the
+  operator's own bell). Each applies the gate of
+  the page that shows the same data, as the operator.
+- **Settings → AI → Log sources (optional): Splunk.** An administrator can
+  point Scout at a SIEM, read only — for the non-Fortinet hops of a path.
+  The token is stored encrypted and never shown; TLS is verified against
+  the trust store unless switched off per source; Scout's text only ever
+  becomes one quoted search term, so it cannot append a command; save,
+  delete and **Test** leave Audit Log rows without the token. The Splunk
+  connector is unverified against a live Splunk and says so.
 - **DNS & LB Lookup as Plugin Studio apps** (request: "I want the whole DNS &
   LB Lookup section to be an app in Plugin Studio — the page stays, and keep
   Copy, editing a record from its row and the decommission confirmation").

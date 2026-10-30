@@ -2,9 +2,11 @@
 
 The DNS & LB Lookup page (``views.dns_tool``, Global > Fleet > DNS Lookup and
 its copy in every ADOM) as diagram steps, so the lookup, the DNS Records
-editor and the hostname decommission also run as Plugin Studio apps (the
-template bundle ``dns-lb-lookup`` in ``studio_examples``). The page stays;
-both call the same modules.
+editor and the hostname decommission also run as Plugin Studio apps. The
+apps are PLUGINS, delivered like every other one: the packages
+``dns-lb-lookup``, ``dns-records`` and ``dns-decommission`` of the internal
+generator (``satom-dev/satom-plugins``), imported in Plugin Studio > Apps.
+The page stays; both call the same modules.
 
 Each step is an ADAPTER over the module the page already uses -- nothing is
 decided here a second time:

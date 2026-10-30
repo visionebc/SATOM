@@ -29,17 +29,9 @@ What each bundle shows:
 * ``site-contacts`` -- DATA STORES with no external system at all: a list
   field fed by a store, a query and an upsert. Works the moment it is
   installed, and is published so it appears under Operations > Plugins.
-* ``dns-lb-lookup`` -- the DNS & LB Lookup page as THREE apps built from the
-  SATOM steps of ``studio_dns``: the lookup (resolvers + the fleet's LB cache,
-  Copy DNS / Copy LB, a Records button on every name and Open policy /
-  Decommission on every match), DNS Records (list, then Edit / Delete on each
-  row) and the decommission (plan, warnings to tick, apply). The buttons open
-  the other app's form over the run page. Uses SATOM's own resolvers and DNS
-  backends, so it works once installed; the page itself stays.
 """
 from __future__ import annotations
 
-import json
 import textwrap
 
 FGT_CONN = "ex-fortigate"
@@ -423,206 +415,6 @@ CONTACT_EDIT_GRAPH = {
 
 
 # --------------------------------------------------------------------------- #
-#  DNS & LB Lookup -- the page as three apps (services.studio_dns)             #
-# --------------------------------------------------------------------------- #
-DNS_LOOKUP_APP = "ex-dns-lb-lookup"
-DNS_RECORDS_APP = "ex-dns-records"
-DNS_DECOM_APP = "ex-dns-decommission"
-
-DNS_LOOKUP_FIELDS = [
-    {"name": "entries", "label": "Hostnames / IPs, one per line", "type": "textarea",
-     "required": True,
-     "help": "Optionally 'name TYPE', e.g. app.example.com CNAME; *.example.com and "
-             "192.0.2.10 work too. At most 50."},
-    {"name": "lb", "label": "Show LB matches", "type": "checkbox", "default": "true"},
-    {"name": "quick", "label": "Quick LB (gateway only)", "type": "checkbox"},
-    {"name": "exact", "label": "Exact match", "type": "checkbox"},
-    {"name": "ttl", "label": "Show TTL", "type": "checkbox"},
-]
-_RECORDS_BUTTON = json.dumps([
-    {"label": "Records", "app": DNS_RECORDS_APP,
-     "inputs": {"operation": "list", "name": "{{ row._resolved }}"}}])
-_LB_BUTTONS = json.dumps([
-    {"label": "Open policy", "url": "{{ row._url }}", "when": "{{ row._url }}"},
-    {"label": "Decommission", "app": DNS_DECOM_APP,
-     "when": "{{ row._aid and row._policy and row._kind in ['fortiweb', 'fortiadc'] }}",
-     "inputs": {"appliance": "{{ row._aid }}", "policy": "{{ row._policy }}",
-                "hostname": "{{ row._hostname }}"}}])
-DNS_LOOKUP_GRAPH = {
-    "nodes": [
-        _n("start", "start", "Start", 300, 30),
-        _n("dns", "dns_lookup", "Ask the resolvers", 300, 120, entries="{{ form.entries }}",
-           ttl="{{ form.ttl }}", save_as="dns"),
-        _n("dns_failed", "fail", "No lookup", 560, 120, message="{{ last_error.message }}"),
-        _n("want_lb", "decision", "LB wanted?", 300, 210, left="{{ form.lb or form.quick }}",
-           op="true"),
-        _n("lb", "lb_lookup", "Match the fleet's LB cache", 560, 210,
-           entries="{{ form.entries }}", exact="{{ form.exact }}", dns="{{ dns }}",
-           save_as="lb"),
-        _n("lb_failed", "output", "LB matching failed", 800, 210,
-           value="{{ last_error.message }}", title="LB matching failed", view="text"),
-        _n("show_dns", "output", "DNS answers", 300, 300, value="{{ dns.rows }}",
-           title="DNS ({{ dns.servers | join(', ') }})", view="table",
-           row_actions=_RECORDS_BUTTON),
-        _n("has_lb", "decision", "LB matches wanted?", 300, 390,
-           left="{{ form.lb and lb is defined }}", op="true"),
-        _n("show_lb", "output", "LB matches", 560, 390, value="{{ lb.rows }}",
-           title="LB matches", view="table", row_actions=_LB_BUTTONS),
-        _n("has_quick", "decision", "Quick LB wanted?", 300, 480,
-           left="{{ form.quick and lb is defined }}", op="true"),
-        _n("show_quick", "output", "Quick LB", 560, 480, value="{{ lb.gateways }}",
-           title="Quick LB (gateways)", view="table"),
-        _n("has_missing", "decision", "Anything found nowhere?", 300, 570,
-           left="{{ lb.not_found if lb is defined else dns.unresolved }}", op="not_empty"),
-        _n("show_missing", "output", "Not found", 560, 570,
-           value="{{ lb.not_found if lb is defined else dns.unresolved }}",
-           title="Not found in any source", view="list"),
-        _n("end", "end", "End", 300, 660),
-    ],
-    "edges": [_e("start", "dns"), _e("dns", "want_lb", "ok"), _e("dns", "dns_failed", "error"),
-              _e("want_lb", "lb", "yes"), _e("want_lb", "show_dns", "no"),
-              _e("lb", "show_dns", "ok"), _e("lb", "lb_failed", "error"),
-              _e("lb_failed", "show_dns"), _e("show_dns", "has_lb"),
-              _e("has_lb", "show_lb", "yes"), _e("has_lb", "has_quick", "no"),
-              _e("show_lb", "has_quick"), _e("has_quick", "show_quick", "yes"),
-              _e("has_quick", "has_missing", "no"), _e("show_quick", "has_missing"),
-              _e("has_missing", "show_missing", "yes"), _e("has_missing", "end", "no"),
-              _e("show_missing", "end")],
-}
-DNS_LOOKUP_ACTIONS = [
-    {"key": "copy-dns", "label": "Copy DNS", "kind": "copy",
-     "params": {"format": "text", "value": "{{ dns.tsv }}"}},
-    {"key": "copy-lb", "label": "Copy LB", "kind": "copy",
-     "params": {"format": "text", "value": "{{ lb.tsv if lb is defined else '' }}"}},
-    {"key": "records", "label": "DNS Records", "kind": "open_app",
-     "params": {"app": DNS_RECORDS_APP, "inputs": json.dumps(
-         {"operation": "list", "name": "{{ dns.rows[0]._resolved if dns.rows else '' }}"})}},
-    {"key": "csv-dns", "label": "Download DNS (CSV)", "kind": "download",
-     "params": {"format": "csv", "value": "{{ dns.rows }}", "filename": "dns-lookup"}},
-    {"key": "csv-lb", "label": "Download LB (CSV)", "kind": "download",
-     "params": {"format": "csv", "value": "{{ lb.rows if lb is defined else [] }}",
-                "filename": "lb-matches"}},
-]
-
-DNS_RECORDS_FIELDS = [
-    {"name": "operation", "label": "Operation", "type": "select", "required": True,
-     "options": "list\ncreate\nupdate\ndelete", "default": "list",
-     "help": "list shows the records of the name; update and delete need the record id "
-             "(the Edit and Delete buttons of the list fill it in)."},
-    {"name": "backend", "label": "DNS backend", "type": "satom_select",
-     "source": "dns_backends",
-     "help": "Empty: the only DNS backend there is (Settings > DNS Records)."},
-    {"name": "name", "label": "Name", "type": "text", "help": "e.g. app.example.com"},
-    {"name": "type", "label": "Type", "type": "select", "default": "A",
-     "options": "A\nAAAA\nCNAME\nMX\nNS\nTXT\nSRV\nPTR\nCAA"},
-    {"name": "value", "label": "Value", "type": "text", "help": "e.g. 192.0.2.10"},
-    {"name": "ttl", "label": "TTL (s)", "type": "text"},
-    {"name": "zone", "label": "Zone", "type": "text"},
-    {"name": "id", "label": "Record id", "type": "text", "help": "For update and delete."},
-]
-_RECORD_FORM = {"backend": "{{ records.backend.id }}", "id": "{{ row.id }}",
-                "name": "{{ row.name }}", "type": "{{ row.type }}", "value": "{{ row.value }}",
-                "ttl": "{{ row.ttl if row.ttl is not none else '' }}", "zone": "{{ row.zone }}"}
-_RECORD_BUTTONS = json.dumps([
-    {"label": "Edit", "app": DNS_RECORDS_APP, "inputs": dict(_RECORD_FORM, operation="update")},
-    {"label": "Delete", "app": DNS_RECORDS_APP, "inputs": dict(_RECORD_FORM, operation="delete")}])
-DNS_RECORDS_GRAPH = {
-    "nodes": [
-        _n("start", "start", "Start", 300, 30),
-        _n("is_list", "decision", "List?", 300, 120, left="{{ form.operation }}",
-           op="equals", right="list"),
-        _n("list", "dns_records", "Read the records", 80, 210, backend="{{ form.backend }}",
-           name="{{ form.name }}", zone="{{ form.zone }}", save_as="records"),
-        _n("change", "dns_record_change", "Write the record", 520, 210,
-           operation="{{ form.operation }}", backend="{{ form.backend }}",
-           record='{"id": "{{ form.id }}", "name": "{{ form.name }}", "type": '
-                  '"{{ form.type }}", "value": "{{ form.value }}", "ttl": "{{ form.ttl }}", '
-                  '"zone": "{{ form.zone }}"}',
-           save_as="record"),
-        _n("show_change", "output", "What was written", 520, 300, value="{{ record.record }}",
-           title="{{ record.operation }}: {{ record.record.name }} in "
-                 "{{ record.backend.name or 'the DNS backend' }}", view="keyvalue"),
-        _n("relist", "dns_records", "Read the name again", 520, 390,
-           backend="{{ record.backend.id or form.backend }}", name="{{ record.record.name }}",
-           zone="{{ form.zone }}", save_as="records"),
-        _n("relist_failed", "output", "Could not read it again", 760, 390,
-           value="{{ last_error.message }}", title="The record was written; listing it "
-                                                   "again failed", view="text"),
-        _n("show_list", "output", "Records", 300, 480, value="{{ records.records }}",
-           title="{{ records.name or records.zone or 'All records' }} in "
-                 "{{ records.backend.name }}", view="table", row_actions=_RECORD_BUTTONS),
-        _n("failed", "fail", "Refused", 80, 300, message="{{ last_error.message }}"),
-        _n("end", "end", "End", 300, 570),
-    ],
-    "edges": [_e("start", "is_list"), _e("is_list", "list", "yes"),
-              _e("is_list", "change", "no"), _e("list", "show_list", "ok"),
-              _e("list", "failed", "error"), _e("change", "show_change", "ok"),
-              _e("change", "failed", "error"), _e("show_change", "relist"),
-              _e("relist", "show_list", "ok"), _e("relist", "relist_failed", "error"),
-              _e("relist_failed", "end"), _e("show_list", "end")],
-}
-DNS_RECORDS_ACTIONS = [
-    {"key": "new", "label": "New record", "kind": "open_app",
-     "params": {"app": DNS_RECORDS_APP, "inputs": json.dumps(
-         {"operation": "create", "backend": "{{ records.backend.id if records is defined "
-                                            "else form.backend }}",
-          "name": "{{ form.name }}", "type": "A"})}},
-    {"key": "csv", "label": "Download (CSV)", "kind": "download",
-     "params": {"format": "csv", "value": "{{ records.records if records is defined else [] }}",
-                "filename": "dns-records"}},
-]
-
-DNS_DECOM_FIELDS = [
-    {"name": "appliance", "label": "Appliance", "type": "satom_select",
-     "source": "lb_appliances", "required": True, "search": True},
-    {"name": "policy", "label": "Server policy / virtual server", "type": "text",
-     "required": True},
-    {"name": "hostname", "label": "Hostname being retired", "type": "text",
-     "help": "Its DNS records are removed first."},
-]
-DNS_DECOM_GRAPH = {
-    "nodes": [
-        _n("start", "start", "Start", 300, 30),
-        _n("plan", "dns_decommission_plan", "Plan (reads only)", 300, 120,
-           appliance="{{ form.appliance }}", policy="{{ form.policy }}",
-           hostname="{{ form.hostname }}", save_as="plan"),
-        _n("no_plan", "fail", "No plan", 560, 120, message="{{ last_error.message }}"),
-        _n("show_plan", "output", "The plan", 300, 210, value="{{ plan }}",
-           title="Decommission plan", view="plan"),
-        _n("confirm", "ask", "Confirm", 300, 300,
-           prompt="Decommission {{ plan.target.policy }} on {{ plan.target.appliance }}? "
-                  "Everything marked delete or unbind is removed, DNS records first.",
-           pass_label="Decommission", fail_label="Cancel",
-           acknowledge="{{ plan.warnings | rejectattr('blocking') | map(attribute='text') "
-                       "| list }}",
-           blockers="{{ plan.warnings | selectattr('blocking') | map(attribute='text') "
-                    "| list }}",
-           confirm_text="{{ plan.target.policy }}"),
-        _n("apply", "dns_decommission_apply", "Apply the confirmed plan", 300, 390,
-           appliance="{{ form.appliance }}", policy="{{ form.policy }}",
-           hostname="{{ form.hostname }}", confirm="{{ plan.fingerprint }}",
-           acknowledge="{{ last_answer.all_acknowledged }}", save_as="decommission"),
-        _n("show_done", "output", "Done", 300, 480, value="{{ decommission.results }}",
-           title="Done: {{ decommission.summary.ok }} of {{ decommission.summary.total }} "
-                 "step(s)", view="table"),
-        _n("show_failed", "output", "What happened", 560, 390,
-           value="{{ decommission.results if decommission is defined and "
-                 "decommission.results is defined else [] }}",
-           title="Decommission failed: {{ last_error.message }}", view="table"),
-        _n("failed", "fail", "Failed", 560, 480, message="{{ last_error.message }}"),
-        _n("cancelled", "output", "Cancelled", 60, 390, value="Nothing was changed.",
-           title="Cancelled", view="text"),
-        _n("end", "end", "End", 300, 570),
-    ],
-    "edges": [_e("start", "plan"), _e("plan", "show_plan", "ok"), _e("plan", "no_plan", "error"),
-              _e("show_plan", "confirm"), _e("confirm", "apply", "yes"),
-              _e("confirm", "cancelled", "no"), _e("cancelled", "end"),
-              _e("apply", "show_done", "ok"), _e("apply", "show_failed", "error"),
-              _e("show_failed", "failed"), _e("show_done", "end")],
-}
-
-
-# --------------------------------------------------------------------------- #
 #  the bundles                                                                 #
 # --------------------------------------------------------------------------- #
 FGT_CONNECTION = {
@@ -763,37 +555,6 @@ BUNDLES = [
      "setup": ["Nothing to configure. Open Operations > Plugins > Site contact (example).",
                "To let other users run them, open each app > Settings and pick users or "
                "groups (Administrator > Access > Groups)."]},
-    {"key": "dns-lb-lookup",
-     "title": "DNS & LB Lookup (the page as three apps)",
-     "summary": "The DNS & LB Lookup page rebuilt in Plugin Studio: look names up on every "
-                "resolver and match them to the FortiWeb / FortiADC cache, copy the DNS or "
-                "LB table, open a name's DNS records (edit or delete each one) and "
-                "decommission a matched service after ticking its warnings. Each step asks "
-                "the same permission as the page (network.view, user_manage for records, "
-                "config_write to decommission). Published for Studio authors in every ADOM.",
-     "connections": [], "stores": [], "scripts": [],
-     "apps": [{"slug": DNS_LOOKUP_APP, "name": "DNS & LB Lookup", "icon": "bi-globe2",
-               "publish": True, "fields": DNS_LOOKUP_FIELDS, "graph": DNS_LOOKUP_GRAPH,
-               "actions": DNS_LOOKUP_ACTIONS,
-               "description": "Resolve hostnames and IPs on the configured DNS servers and "
-                              "match them to this ADOM's load-balancing config (device "
-                              "cache)."},
-              {"slug": DNS_RECORDS_APP, "name": "DNS Records", "icon": "bi-card-list",
-               "publish": True, "fields": DNS_RECORDS_FIELDS, "graph": DNS_RECORDS_GRAPH,
-               "actions": DNS_RECORDS_ACTIONS,
-               "description": "List, create, change or delete the records of a DNS backend "
-                              "(Settings > DNS Records)."},
-              {"slug": DNS_DECOM_APP, "name": "Decommission a service", "icon": "bi-trash3",
-               "publish": True, "fields": DNS_DECOM_FIELDS, "graph": DNS_DECOM_GRAPH,
-               "actions": [],
-               "description": "Retire a FortiWeb server policy or FortiADC virtual server "
-                              "with what only it uses, and its DNS records: plan, confirm, "
-                              "apply."}],
-     "setup": ["Nothing to configure: the apps use the resolvers of Administrator > Objects "
-               "> DNS Resolvers and the backends of Settings > DNS Records.",
-               "Open Operations > Plugins > DNS & LB Lookup.",
-               "To let other users run them, open each app > Settings and pick users or "
-               "groups; each step still asks them for the page's permission."]},
 ]
 BUNDLE_KEYS = tuple(b["key"] for b in BUNDLES)
 
@@ -902,8 +663,8 @@ def install(key: str, by: str) -> dict:
         SL.publish(s["slug"], "example, as installed", by)
         created.append(s["slug"])
     # Every new app exists before any of them is saved: an action or a row
-    # button may open another app of the bundle (dns-lb-lookup), and an
-    # action naming an app that does not exist yet does not validate.
+    # button may open another app of the bundle, and an action naming an
+    # app that does not exist yet does not validate.
     new = []
     for a in b["apps"]:
         if SA.get(a["slug"]) is not None:

@@ -2326,10 +2326,12 @@ against what the devices say.
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
-  The same tool also exists as **three Plugin Studio apps** (template bundle
-  *DNS & LB Lookup*, §23.8): the lookup, DNS Records and the decommission,
-  with the same permissions and the same ADOM scoping. The page stays; use
-  whichever you prefer, or copy the apps and change them.
+  The same tool also exists as **three Plugin Studio apps** — the plugins
+  `dns-lb-lookup`, `dns-records` and `dns-decommission` (§23.7, *Plugins:
+  DNS & LB Lookup*), under **Operations › Plugins** once imported: the
+  lookup, DNS Records and the decommission, with the same permissions and the
+  same ADOM scoping. The page stays; use whichever you prefer, or copy the
+  apps and change them.
 - **Where these live:** Backend Reachability, Config Compare, Path Diagnostics,
   the **Transaction Tracer** (§37.3) and Scout sit together under
   **Operations › Troubleshooting** in every ADOM (since 2026-10-14; the tracer
@@ -5369,7 +5371,7 @@ The editor has seven tabs:
 row of a table, `{{ row }}` being that row:
 
 ```json
-[{"label": "Edit", "app": "ex-dns-records",
+[{"label": "Edit", "app": "dns-records",
   "inputs": {"operation": "update", "id": "{{ row.id }}", "name": "{{ row.name }}"}},
  {"label": "Open policy", "url": "{{ row._url }}", "when": "{{ row._url }}"}]
 ```
@@ -5598,6 +5600,39 @@ policy, and records the request in **spo-requests**. Any failure removes what
 the run created on the FortiWeb, releases its DDI records, records why, and
 ends failed with that reason. Every rule is a row the administrator edits.
 
+**Plugins: DNS & LB Lookup** (packages `dns-records`, `dns-decommission`
+and `dns-lb-lookup`, operator request 2026-10-30: "the whole DNS & LB Lookup
+section as an app in Plugin Studio — keep Copy, the record editor and the
+decommission confirmation"; "it is a plugin, handled like everything else,
+under the Plugins section"). Three signed plugins of the internal generator,
+on the staging hub `/downloads/plugins/`. Built only from the SATOM steps
+above and SATOM's own resolvers and DNS backends: no data store, no
+connection, nothing to configure. **Import them in this order** — Plugin
+Studio › Apps › *Import app package*: `dns-records`, `dns-decommission`, then
+`dns-lb-lookup` (its *DNS Records* action opens `dns-records`; imported first
+it is refused, naming that app, and nothing is written). Then **Publish**
+each one — published apps appear under **Operations › Plugins**; give them to
+other users in each app's *Settings*. The page under Fleet › DNS Lookup
+stays.
+
+- **DNS & LB Lookup** (`dns-lb-lookup`): the page's form (names, *Show LB
+  matches*, *Quick LB*, *Exact match*, *Show TTL*). Outputs: the DNS answers
+  with a **Records** button on each name, the LB matches with **Open policy**
+  and **Decommission** on each match, *Quick LB* (gateways) and *Not found in
+  any source*. A cache that cannot be read shows *LB matching failed* and the
+  DNS half still appears, as on the page. Actions: **Copy DNS** and **Copy
+  LB** (the page's tab-separated text), **DNS Records**, and a CSV download of
+  each table.
+- **DNS Records** (`dns-records`): *list* shows a name's records with
+  **Edit** and **Delete** on each row — each opens this same app filled in
+  with that record — and *New record*; *create*, *update* and *delete* write
+  and then list the name again.
+- **Decommission a service** (`dns-decommission`): the plan (what is
+  deleted, unbound and kept, and why), then **Decommission / Cancel** with a
+  tick box per warning and the policy name to type back, as on the page; a
+  blocker refuses *Decommission*. The apply step
+  plans again and refuses a plan that changed since it was shown.
+
 **Actions and devices.** *Raise a change request* never changes a device: it
 creates a **draft** change request (title, reason, change type, device ids,
 risk, with the app and run named in it) that goes through the normal approval
@@ -5688,29 +5723,6 @@ until you open the connection, set the address and paste the token.
 | **NetBox: who owns this IP address?** | A script that calls a connection, and an app whose diagram **runs that script**. | connection `ex-netbox`, script `ex-netbox-ip-owner`, app `ex-ip-owner` |
 | **Explain a flow (FortiGate + NetBox)** | One script, **two connections**: who owns both ends and which rule decides the flow. Keeps working when NetBox is down. | script and app `ex-traffic-explainer` (+ the two connections) |
 | **Data stores: site contacts** | No external system: a list field fed by a data store, a query, an upsert. Published at once (every ADOM, Studio authors), so it appears under **Operations → Plugins**. | data store `ex-site-contacts` (3 sample rows), apps `ex-site-contact`, `ex-site-contact-edit` |
-| **DNS & LB Lookup (the page as three apps)** | The DNS & LB Lookup page rebuilt from the SATOM steps, with nothing to configure (SATOM's own resolvers and DNS backends). Published at once (every ADOM, Studio authors). | apps `ex-dns-lb-lookup`, `ex-dns-records`, `ex-dns-decommission` |
-
-**DNS & LB Lookup as apps** (operator request, 2026-10-30: "the whole DNS & LB
-Lookup section as an app in Plugin Studio — keep Copy, the record editor and
-the decommission confirmation"). The page under Fleet › DNS Lookup stays.
-
-- **DNS & LB Lookup** (`ex-dns-lb-lookup`): the page's form (names, *Show LB
-  matches*, *Quick LB*, *Exact match*, *Show TTL*). Outputs: the DNS answers
-  with a **Records** button on each name, the LB matches with **Open policy**
-  and **Decommission** on each match, *Quick LB* (gateways) and *Not found in
-  any source*. A cache that cannot be read shows *LB matching failed* and the
-  DNS half still appears, as on the page. Actions: **Copy DNS** and **Copy
-  LB** (the page's tab-separated text), **DNS Records**, and a CSV download of
-  each table.
-- **DNS Records** (`ex-dns-records`): *list* shows a name's records with
-  **Edit** and **Delete** on each row — each opens this same app filled in
-  with that record — and *New record*; *create*, *update* and *delete* write
-  and then list the name again.
-- **Decommission a service** (`ex-dns-decommission`): the plan (what is
-  deleted, unbound and kept, and why), then **Decommission / Cancel** with a
-  tick box per warning and the policy name to type back, as on the page; a
-  blocker refuses *Decommission*. The apply step
-  plans again and refuses a plan that changed since it was shown.
 
 The **Console** pane has two examples in its *Studio* group: the fleet
 inventory printed as CSV (paste it into a data store's *Import CSV*) and every

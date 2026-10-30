@@ -30,14 +30,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - **DNS & LB Lookup as Plugin Studio apps** (request: "I want the whole DNS &
   LB Lookup section to be an app in Plugin Studio — the page stays, and keep
   Copy, editing a record from its row and the decommission confirmation").
-  Plugin Studio › Examples › *DNS & LB Lookup* installs three published
-  template apps: **DNS & LB Lookup** (`ex-dns-lb-lookup`: DNS answers per
-  resolver, LB matches from the device cache, Quick LB, Not found; Copy DNS /
-  Copy LB; Records, Open policy and Decommission on each row), **DNS Records**
-  (`ex-dns-records`: list, then Edit / Delete on each record, create, update,
-  delete) and **Decommission a service** (`ex-dns-decommission`: the plan,
-  a tick box per warning, apply). The page under Fleet › DNS Lookup is
-  unchanged.
+  Three **plugins**, delivered like every other one (request: "this is a
+  plugin, it should be handled like everything else, under the Plugins
+  section"): signed packages of the internal plugin generator, 1.0.0 on the
+  staging hub `/downloads/plugins/`, imported in Plugin Studio › Apps ›
+  *Import app package* and published under **Operations › Plugins** —
+  **DNS Records** (`dns-records`: list, then Edit / Delete on each record,
+  create, update, delete), **Decommission a service** (`dns-decommission`:
+  the plan, a tick box per warning, the policy name typed back, apply) and
+  **DNS & LB Lookup** (`dns-lb-lookup`: DNS answers per resolver, LB matches
+  from the device cache, Quick LB, Not found; Copy DNS / Copy LB; Records,
+  Open policy and Decommission on each row). Import `dns-lb-lookup` last: its
+  *DNS Records* action opens `dns-records`, and an import that names an app
+  the server does not have is refused with that app's name. They are not
+  Examples templates (they can be deleted like any app). The page under
+  Fleet › DNS Lookup is unchanged.
 - **Six SATOM steps** behind them, adapters over the modules the page uses:
   *DNS: look names up*, *LB: match names to the fleet*, *DNS records: list*,
   *DNS records: create, change or delete*, *Decommission: plan* and

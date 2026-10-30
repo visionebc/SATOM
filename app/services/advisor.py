@@ -644,7 +644,7 @@ TOOLS = {
         "description": "Logs of ONE time window from every source side by side (Sentinel events, the syslog receiver, the FortiAnalyzer behind the appliance, external SIEMs such as Splunk), each with a status. Pass report_id to use a Path Diagnostics walk's appliance and window; query is a free-text term (IP, URL, error word) -- use it alone for a non-Fortinet device in the path.",
         "params": {"appliance_id": "int (optional)", "report_id": "int (optional)",
                    "query": "string (optional)", "minutes": "int (optional, default 60)",
-                   "source": "string (optional: sentinel|syslog|fortianalyzer|<external key>)"},
+                   "source": "string (optional; omit for ALL sources, or one of sentinel|syslog|fortianalyzer|external|<external key>)"},
     },
     "list_incidents": {
         "fn": scout_sources.list_incidents,
@@ -660,7 +660,8 @@ TOOLS = {
     "recent_jobs": {
         "fn": scout_sources.recent_jobs,
         "description": "Jobs SATOM ran (syncs, deploys, walks, backups…), newest first, optionally for one appliance or status (failed, success, running): who, when, error, how many calls failed.",
-        "params": {"appliance_id": "int (optional)", "status": "string (optional)",
+        "params": {"appliance_id": "int (optional)",
+                   "status": "string (optional: error|success|running|active|cancelled)",
                    "limit": "int (optional)"},
     },
     "job_detail": {

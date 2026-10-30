@@ -172,12 +172,36 @@ def _job_summary(st: dict) -> dict:
             "failed_steps": sum(1 for s in steps if not s.get("ok", True))}
 
 
+#: What a model says -> the job store's word. Measured 2026-10-30 with
+#: gpt-oss:120b: asked for failed jobs it passed ``status="failed"``; the store
+#: says ``error``, the filter matched nothing and Scout told the operator
+#: "no failed jobs" while four had failed. An unknown word is now an error
+#: that names the valid ones, never an empty list.
+_JOB_STATUS_ALIASES = {"failed": "error", "failure": "error", "errors": "error",
+                       "succeeded": "success", "ok": "success", "done": "success",
+                       "canceled": "cancelled", "active": "active", "all": ""}
+
+
+def _job_status(status: str) -> str:
+    from . import jobs as jobsvc
+    st = (status or "").strip().lower()
+    st = _JOB_STATUS_ALIASES.get(st, st)
+    valid = {jobsvc.PENDING, jobsvc.RUNNING, jobsvc.SUCCESS, jobsvc.ERROR,
+             jobsvc.CANCELLING, jobsvc.CANCELLED, jobsvc.PAUSING, jobsvc.PAUSED}
+    if st and st != "active" and st not in valid:
+        raise ValueError(f"unknown job status {status!r}; use one of: "
+                         + ", ".join(sorted(valid | {"active"})))
+    return st
+
+
 def recent_jobs(appliance_id: int = 0, status: str = "", limit: int = 10) -> list[dict]:
     """The Jobs page's rule: your own jobs (all of them for an admin), in this
     ADOM, newest first."""
     from . import jobs as jobsvc
+    st = _job_status(status)
     by = None if _is_admin() else _me()
-    rows = jobsvc.list_jobs(limit=200, by=by, status=(status or None),
+    rows = jobsvc.list_jobs(limit=200, by=by, active_only=(st == "active"),
+                            status=(st if st and st != "active" else None),
                             appliance_id=int(appliance_id) if appliance_id else None)
     n = _int(limit, 10, 1, MAX_ROWS)
     out = [_job_summary(st) for st in rows if _job_visible(st)]
@@ -403,7 +427,13 @@ def search_logs(appliance_id: int = 0, query: str = "", minutes: int = 60,
     start = end - timedelta(minutes=w)
     n = _int(limit, 20, 1, MAX_ROWS)
     t = max(2.0, min(float(timeout or 20.0), 30.0))
+    # "all"/"any"/"*" mean no filter. Measured 2026-10-30: the model passed
+    # source="all", nothing matched it, and the tool returned NO source at all
+    # -- Scout then told the operator "no log source could look", with no
+    # status behind it. An unknown name is an error naming the valid ones.
     want = (source or "").strip().lower()
+    if want in ("all", "any", "*", "every"):
+        want = ""
 
     from . import log_sources
     plan = [("sentinel", lambda: _from_sentinel(ap, q, start, end, n)),
@@ -413,9 +443,15 @@ def search_logs(appliance_id: int = 0, query: str = "", minutes: int = 60,
     for s in externals:
         plan.append((f"external:{s['key']}",
                      lambda s=s: _from_external(s, ap, q, start, end, n, t)))
+    if want:
+        names = {n for n, _fn in plan} | {n.split(":", 1)[-1] for n, _fn in plan}
+        if want not in names and want != "external":
+            raise ValueError(f"unknown log source {source!r}; use one of: "
+                             + ", ".join(sorted(n for n, _fn in plan)) + " (or omit it for all)")
     out = []
     for name, fn in plan:
-        if want and want not in (name, name.split(":", 1)[-1]):
+        if want and want not in (name, name.split(":", 1)[-1]) and not (
+                want == "external" and name.startswith("external:")):
             continue
         try:
             out.append(fn())

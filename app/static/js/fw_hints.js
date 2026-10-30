@@ -63,6 +63,50 @@
     }
   }
 
+  /* The whole text of a menu label cut by its ellipsis (2026-10-30, operator:
+   * on mouse over, the full text in a small window). A label opts in with
+   * data-fw-fulltext="<the whole text>" -- Plugin Studio apps and their menu
+   * groups, in the sidebar and in the Studio Explorer. Hovering it shows the
+   * text in the same panel as the "?" hints, at once and to its right, and
+   * only when its first <span> is really cut: a label that fits is not
+   * repeated. The native title stays as the fallback without Bootstrap.
+   * Delegated from <document> (this file loads once), so it also covers
+   * entries inside a <details> opened later; one panel at a time, disposed
+   * when the pointer leaves the label or Turbo swaps the page. */
+  var cutEl = null, cutTip = null;
+
+  function hideCut() {
+    if (cutTip) { try { cutTip.dispose(); } catch (e) {} }
+    cutTip = null;
+    cutEl = null;
+  }
+
+  document.addEventListener('mouseover', function (ev) {
+    var el = ev.target && ev.target.closest ? ev.target.closest('[data-fw-fulltext]') : null;
+    if (el && el === cutEl) return;
+    hideCut();
+    if (!el || !window.bootstrap || !window.bootstrap.Tooltip) return;
+    var label = el.querySelector(':scope > span') || el;
+    if (label.scrollWidth <= label.clientWidth) return;
+    try {
+      cutTip = new window.bootstrap.Tooltip(el, {
+        title: el.getAttribute('data-fw-fulltext'),
+        container: 'body',
+        customClass: 'fw-hint-tip fw-fulltext-tip',
+        trigger: 'manual',
+        placement: 'right',
+        fallbackPlacements: ['right', 'bottom', 'top']
+      });
+      cutEl = el;
+      cutTip.show();
+    } catch (e) { hideCut(); }
+  });
+
+  document.addEventListener('mouseout', function (ev) {
+    if (cutEl && !(ev.relatedTarget && cutEl.contains(ev.relatedTarget))) hideCut();
+  });
+
+  document.addEventListener('turbo:before-render', hideCut);
   document.addEventListener('turbo:before-render', dispose);
   document.addEventListener('turbo:load', init);
   if (document.readyState === 'loading') {

@@ -76,8 +76,8 @@
   {%- if has_children %}<span role="button" tabindex="0" class="ex-caret {{ '' if count is not none else 'ms-auto' }}" data-ex-toggle="{{ key }}" aria-expanded="{{ 'true' if pane == key else 'false' }}" title="{{ _('Show or hide its items') }}" aria-label="{{ _('Show or hide its items') }}"><i class="bi bi-chevron-down"></i></span>{% endif %}</a>
 {%- if has_children %}<div class="ex-children" data-ex-body="{{ key }}">{{ caller() }}</div>{% endif %}
 {%- endmacro %}
-{% macro _leaf(href, icon, name, title='', badge='') -%}
-<a class="ex-leaf" href="{{ href }}" title="{{ title or name }}"><i class="bi {{ icon }} me-2 text-muted"></i><span>{{ name }}</span>{% if badge %}<span class="fw-badge fw-badge-success ms-auto">{{ badge }}</span>{% endif %}</a>
+{% macro _leaf(href, icon, name, badge='') -%}
+<a class="ex-leaf" href="{{ href }}" title="{{ name }}" data-fw-fulltext="{{ name }}"><i class="bi {{ icon }} me-2 text-muted"></i><span>{{ name }}</span>{% if badge %}<span class="fw-badge fw-badge-success ms-auto">{{ badge }}</span>{% endif %}</a>
 {%- endmacro %}
 <div class="row g-3">
   {# ------------------------------------------------------------ explorer
@@ -97,11 +97,11 @@
           {% for _grp in studio_apps_grouped(apps) %}
           {% if _grp.group %}
           <details class="ex-group" data-ex-group="{{ _grp.group }}">
-            <summary title="{{ _grp.group }}"><i class="bi bi-chevron-down ex-gcaret"></i><i class="bi bi-folder2 me-2"></i><span>{{ _grp.group }}</span><span class="fw-badge fw-badge-secondary ms-auto">{{ _grp['items']|length }}</span></summary>
-            {% for r in _grp['items'] %}{{ _leaf(url_for(r.edit_endpoint, slug=r.edit_slug), r.a.icon, r.name, r.a.slug, ('v%s' % r.published) if r.published else '') }}{% endfor %}
+            <summary title="{{ _grp.group }}" data-fw-fulltext="{{ _grp.group }}"><i class="bi bi-chevron-down ex-gcaret"></i><i class="bi bi-folder2 me-2"></i><span>{{ _grp.group }}</span><span class="fw-badge fw-badge-secondary ms-auto">{{ _grp['items']|length }}</span></summary>
+            {% for r in _grp['items'] %}{{ _leaf(url_for(r.edit_endpoint, slug=r.edit_slug), r.a.icon, r.name, ('v%s' % r.published) if r.published else '') }}{% endfor %}
           </details>
           {% else %}
-          {% for r in _grp['items'] %}{{ _leaf(url_for(r.edit_endpoint, slug=r.edit_slug), r.a.icon, r.name, r.a.slug, ('v%s' % r.published) if r.published else '') }}{% endfor %}
+          {% for r in _grp['items'] %}{{ _leaf(url_for(r.edit_endpoint, slug=r.edit_slug), r.a.icon, r.name, ('v%s' % r.published) if r.published else '') }}{% endfor %}
           {% endif %}
           {% else %}<div class="ex-empty">{{ _('No apps yet.') }}</div>
           {% endfor %}
@@ -112,18 +112,18 @@
         {% endif %}
         {% if can_library %}
         {% call _ex('stores', 'bi-table', _('Data stores'), stores|length, true) %}
-          {% for s in stores %}{{ _leaf(url_for('studio.store', slug=s.slug), 'bi-table', s.name, s.slug) }}
+          {% for s in stores %}{{ _leaf(url_for('studio.store', slug=s.slug), 'bi-table', s.name) }}
           {% else %}<div class="ex-empty">{{ _('No data stores yet.') }}</div>{% endfor %}
         {% endcall %}
         {% call _ex('connections', 'bi-plug', _('Connections'), connections|length, true) %}
-          {% for c in connections %}{{ _leaf(url_for('studio.connection', slug=c.slug), 'bi-plug', c.name, c.slug) }}
+          {% for c in connections %}{{ _leaf(url_for('studio.connection', slug=c.slug), 'bi-plug', c.name) }}
           {% else %}<div class="ex-empty">{{ _('No connections yet.') }}</div>{% endfor %}
         {% endcall %}
         {% if can_directories %}
         {{ _ex('directories', 'bi-diagram-2', _('Sign-in directories'), conns|length) }}
         {% endif %}
         {% call _ex('apis', 'bi-journal-code', _('API Catalog'), apis|length, true) %}
-          {% for x in apis %}{{ _leaf(url_for('studio.api', slug=x.a.slug), 'bi-journal-code', x.a.name, x.a.slug, x.latest) }}
+          {% for x in apis %}{{ _leaf(url_for('studio.api', slug=x.a.slug), 'bi-journal-code', x.a.name, x.latest) }}
           {% else %}<div class="ex-empty">{{ _('No APIs yet.') }}</div>{% endfor %}
         {% endcall %}
         {{ _ex('examples', 'bi-lightbulb', _('Examples'), bundles|length) }}

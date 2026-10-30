@@ -2597,6 +2597,9 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
 }
 
 .fw-hint-tip .tooltip-arrow::before { border-top-color: #1B2A3A; }
+/* The whole text of a cut menu label (fw_hints.js, data-fw-fulltext): a
+   name, so tighter than the prose of a hint, and a long word still wraps. */
+.fw-fulltext-tip .tooltip-inner { padding: 6px 10px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
 .fw-hint-tip.bs-tooltip-bottom .tooltip-arrow::before,
 .fw-hint-tip[data-popper-placement^="bottom"] .tooltip-arrow::before { border-bottom-color: #1B2A3A; }
 .fw-hint-tip[data-popper-placement^="left"]  .tooltip-arrow::before { border-left-color: #1B2A3A; }

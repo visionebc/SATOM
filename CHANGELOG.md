@@ -208,7 +208,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   is drawn open, and one menu group is open at a time. Below 1400 px the
   Explorer stays the one-line strip of tabs, without the items. The *Menu
   group* filter of Apps is always shown (it used to appear only once a group
-  existed, so it looked missing).
+  existed, so it looked missing). An app or menu-group name cut by its
+  ellipsis, in the Explorer or in the sidebar, shows whole in a small panel
+  on hover (request: "on mouse over, show the full text in a little
+  window"); an Explorer item used to show its slug there.
 - User guide §33 rewritten as *Scout — the operations assistant*: tools,
   the troubleshooting workflow, provider choice, what every exchange leaves
   behind, and what is planned. §13 describes Path Diagnostics, its saved

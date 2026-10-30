@@ -6738,7 +6738,7 @@ sign-in):
 | Rule on | What must hold |
 |---|---|
 | an AD / LDAP connection | the directory accepts the password, **and** the user is a member of any listed group DN (AD: nested groups count), **and** matches the optional LDAP filter, e.g. `(department=NOC)` |
-| a RADIUS connection | Access-Accept, **and** the reply's `Fortinet-Group-Name` names one of the listed groups (case-insensitive). The FortiAuthenticator sends it when its RADIUS client for SATOM sends group attributes; a reply without it fails the rule. *Unverified on this build until measured on your FortiAuthenticator.* |
+| a RADIUS connection | Access-Accept, **and** the reply's `Fortinet-Group-Name` names one of the listed groups (case-insensitive). The FortiAuthenticator sends it for a group that carries it as a RADIUS attribute (User Groups → the group → RADIUS Attributes → Fortinet / Fortinet-Group-Name) **and** is in the *Filter by group* of the realm that accepted the user, in the authentication profile of SATOM's RADIUS policy; a group outside that filter sends nothing, even for a member (measured on FortiAuthenticator 8.0.3). A reply without it fails the rule. |
 | Local SATOM accounts | the local password; the app must be shared with the account |
 
 Each rule may **require a SATOM authenticator code**: the first sign-in sets one

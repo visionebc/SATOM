@@ -215,6 +215,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   may open another app of the same bundle.
 
 ### Fixed
+- **Deleting a directory connection now deletes its secret from the vault.**
+  With the vault as the secret store, a removed AD, LDAP or RADIUS connection
+  left its bind password or shared secret under `directory/<id>`, where
+  nothing read it any more. The vault copy now goes first; a vault that
+  refuses the delete leaves the connection in place and says so.
+- **App sign-in: what makes a FortiAuthenticator name a group, measured.** On
+  FortiAuthenticator 8.0.3 the Access-Accept carries a group's
+  `Fortinet-Group-Name` when the group has it as a RADIUS attribute **and** is
+  in the group filter of the realm that accepted the user; a group outside
+  that filter sends nothing, even for a member. The help text said it
+  depended on the RADIUS client; the rule is no longer marked unverified.
 - **Metric values lost precision on the way to the store.** Every value was
   written with `%g`, which keeps six significant digits: a byte counter in
   the hundreds of millions was stored rounded to the nearest thousand, so

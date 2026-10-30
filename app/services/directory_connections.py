@@ -202,6 +202,17 @@ def delete(c: DirectoryConnection) -> None:
     used = apps_using(c.id)
     if used:
         raise ConnectionError_("used by the sign-in of: %s" % ", ".join(used))
+    # The secret's vault copy goes first: with the vault on the path,
+    # save() wrote it there (the only copy when the vault is authoritative),
+    # and a connection removed without it left its bind password or shared
+    # secret behind under a path nothing reads any more.
+    from . import secret_backend as sb
+    if sb.active():
+        try:
+            sb.delete(_vault_path(c.slug))
+        except Exception as exc:  # noqa: BLE001 -- nothing is removed: retry later
+            raise ConnectionError_("the vault refused to delete this connection's secret "
+                                   "(%s); nothing was removed" % exc) from None
     from ..models import AppSetting
     row = db.session.get(AppSetting, _secret_key(c.id))
     if row is not None:

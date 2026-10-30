@@ -91,7 +91,7 @@
         ta2.value = lines(r.radius_groups);
         ta2.addEventListener('input', function () { r.radius_groups = unlines(ta2.value); });
         c3.appendChild(ta2);
-        c3.appendChild(el('div', { 'class': 'form-text' }, 'Fortinet-Group-Name in the Access-Accept: the FortiAuthenticator sends it when its RADIUS client for SATOM sends group attributes. A reply with none fails the rule. Empty = anyone the server accepts.'));
+        c3.appendChild(el('div', { 'class': 'form-text' }, 'Fortinet-Group-Name in the Access-Accept. The FortiAuthenticator sends it for a group that carries it as a RADIUS attribute and is in the group filter of the realm that accepted the user (the authentication profile of SATOM\'s RADIUS policy); a group outside that filter sends nothing. A reply with none fails the rule. Empty = anyone the server accepts.'));
         row.appendChild(c3);
       } else if (r.connection_id === 'local') {
         row.appendChild(el('div', { 'class': 'col-12 text-muted' }, 'A local account\'s password. It may open the app only when the app is shared with it (right).'));

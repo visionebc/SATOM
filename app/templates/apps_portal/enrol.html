@@ -1,0 +1,18 @@
+{% extends "apps_portal/layout.html" %}
+{% block title %}{{ a.name }} — {{ _('Set up an authenticator') }}{% endblock %}
+{% block content %}
+<div class="ap-login" style="{{ theme }}">
+  <div class="fw-card"><div class="fw-card-body">
+    <div class="text-center mb-2"><i class="bi bi-shield-plus ap-login-icon"></i>
+      <h1 class="fw-page-title mt-2 mb-1" style="font-size:20px;">{{ _('Set up an authenticator') }}</h1>
+      <div class="text-muted" style="font-size:12px;">{{ _('This app requires a second factor. Scan the code with an authenticator app (or type the key), then enter the code it shows.') }}</div></div>
+    <div class="text-center ap-qr mb-2">{{ qr|safe }}</div>
+    <div class="text-center mb-3"><code style="font-size:12px;word-break:break-all;">{{ secret }}</code></div>
+    <form method="post" action="{{ url_for('apps_portal.enrol', slug=a.slug) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input class="form-control mb-3 text-center font-monospace" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus maxlength="12">
+      <button class="btn btn-fw-primary w-100" type="submit">{{ _('Verify and sign in') }}</button>
+    </form>
+  </div></div>
+</div>
+{% endblock %}

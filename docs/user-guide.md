@@ -6579,6 +6579,95 @@ yourself to a narrower profile, never a wider one. The same holds for ADOMs: a
 confined administrator composes and assigns profiles only within its own ADOMs
 and can never create or assign an unconfined one.
 
+### 26.3b Apps-only access — an app for people outside the console
+
+Some Plugin Studio apps are meant for people who are not SATOM operators: a
+help desk that looks something up, a team that requests a change. They should
+sign in, use **that app** and see nothing else — and they may live in another
+directory, or in a group the console sign-in does not use. Three pieces do it.
+
+**1. A profile of type *Apps only*** (Access → Profiles → *Type*). It holds no
+permission (the matrix is hidden and stays empty whatever is stored) and its
+accounts never see the console: after signing in they land on **My apps**
+(`/a/`), a page with the console's look but no sidebar, ADOM switcher, bell,
+job dock or bookmarks. Every console page — and the API v1, whatever token
+they hold — answers *not found* to them. What they can open:
+
+- the apps shared with them or with their groups (Plugin Studio → app →
+  *Settings → Who may use it*, or Access → App sign-in);
+- the apps whose own sign-in they pass (below);
+- their **Account** page: their authenticator status and, for local accounts,
+  their password.
+
+ADOMs do not apply to them: they reach an app wherever it is drawn. A script
+app runs from its own page as usual, without saved schedules. A step that
+writes to a device still needs *config_write*, which an Apps-only account never
+holds: give such people apps whose writes go through a change request.
+
+You can create Apps-only accounts by hand (Access → Users, with an Apps only
+profile) and share apps with them; they sign in on the console page or on an
+app's page and land on My apps.
+
+**2. Directory connections** (Access → Directory connections). Any number of
+directory servers an app's sign-in may prove people against, independent of
+Settings → Authentication (which they never change):
+
+- **Active Directory** — UPN bind of the user; *Base DN* is needed for group
+  checks. **LDAP** — service account (*Bind DN* + password) finds the user,
+  then the user's own bind proves the password. **RADIUS / FortiAuthenticator**
+  — an Access-Request with the shared secret.
+- The bind password / shared secret is write-only: the page shows *stored*,
+  never the value; a blank field on save keeps it. It is kept like the other
+  directory secrets (Fernet in the database, mirrored to the vault when one is
+  configured) and is **not** a Plugin Studio connection — app and script code
+  can never read it.
+- **Test** checks that the server answers; with a user and password it signs
+  that user in (nothing is stored) and, for RADIUS, lists the groups the reply
+  names.
+- The **Id** is fixed once saved: accounts are named `user@<id>`. A connection
+  that made accounts cannot be deleted — disable it (its accounts then cannot
+  sign in).
+
+**3. App sign-in** (Access → App sign-in → *app*). Tick *People sign in to this
+app on its own page* and add **rules**, tried in order — the first that accepts
+signs the person in, and nothing else is tried after them (never the console
+sign-in):
+
+| Rule on | What must hold |
+|---|---|
+| an AD / LDAP connection | the directory accepts the password, **and** the user is a member of any listed group DN (AD: nested groups count), **and** matches the optional LDAP filter, e.g. `(department=NOC)` |
+| a RADIUS connection | Access-Accept, **and** the reply's `Fortinet-Group-Name` names one of the listed groups (case-insensitive). The FortiAuthenticator sends it when its RADIUS client for SATOM sends group attributes; a reply without it fails the rule. *Unverified on this build until measured on your FortiAuthenticator.* |
+| Local SATOM accounts | the local password; the app must be shared with the account |
+
+Each rule may **require a SATOM authenticator code**: the first sign-in sets one
+up (QR + key) before any session exists, and later sign-ins ask for the code
+(backup codes work too; Users → *Clear 2FA* resets a lost one). For RADIUS you
+may prefer to leave this off and let the FortiAuthenticator ask for its
+FortiToken.
+
+A person a directory rule accepts gets the account **`user@<connection id>`**
+(lower-case), with the *Apps only* profile you choose in the policy, optionally
+held for approval (*New accounts wait for an administrator*). That account
+signs in **only** through its own connection, on an app's page — the console
+sign-in treats it as unknown — so a directory `jdoe` can never be served the
+console's `jdoe`, and two directories never share an account. A sign-in proves
+**its own app**: to use a second app the person signs in on that app's page,
+against that app's rules. Leaving the directory group closes the app at the
+next sign-in; **Revoke** on the app's page closes it at once.
+
+The link to hand out is shown on the page: `https://<node>/a/<app>/`. It opens
+the app when the session may use it and the app's sign-in page otherwise; the
+page wears the app's Design colours. An expired or idle-locked session on an
+app page comes back to that app's sign-in, and *Sign out* returns there too.
+
+Every step is audited: `login.app.ok` / `login.app.fail` (with the rule each
+connection answered, never a password), `login.app.provision`,
+`login.app.2fa_enrol`, `app.signin.save`, `app.grant.revoke`,
+`directory_connection.*`, and one `ACCESS_DENY reason=apps_only` log line for
+each console page an Apps-only account asked for. On the read-only standby
+existing accounts sign in as usual; a first sign-in (which must create the
+account) is refused with *needs the primary node*.
+
 ### 26.4 Software Update Repository — where this node downloads its own code from
 
 This is the product's **source code**, and the only one of the three

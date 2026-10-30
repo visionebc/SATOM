@@ -1,0 +1,16 @@
+{% extends "apps_portal/layout.html" %}
+{% block title %}{{ a.name }} — {{ _('Authentication code') }}{% endblock %}
+{% block content %}
+<div class="ap-login" style="{{ theme }}">
+  <div class="fw-card"><div class="fw-card-body">
+    <div class="text-center mb-3"><i class="bi bi-shield-lock ap-login-icon"></i>
+      <h1 class="fw-page-title mt-2 mb-1" style="font-size:20px;">{{ a.name }}</h1>
+      <div class="text-muted" style="font-size:12px;">{{ _('Enter the code from your authenticator app, or a backup code.') }}</div></div>
+    <form method="post" action="{{ url_for('apps_portal.two_factor', slug=a.slug) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input class="form-control mb-3 text-center font-monospace" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus maxlength="32">
+      <button class="btn btn-fw-primary w-100" type="submit">{{ _('Verify') }}</button>
+    </form>
+  </div></div>
+</div>
+{% endblock %}

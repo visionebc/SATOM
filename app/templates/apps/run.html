@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends portal_layout or "base.html" %}
 {% block title %}{{ a.name }} — run #{{ run.id }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ asset('css/app_design.css') }}">{% endblock %}
 {% block content %}

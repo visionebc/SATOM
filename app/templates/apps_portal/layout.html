@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+{# The page layout of an Apps-only account (services.apps_only.layout): the
+   SATOM look without the console -- no sidebar, no ADOM or device switcher,
+   no bell, jobs dock or bookmarks rail (every one of them calls console
+   endpoints this account is refused). App pages extend it through
+   ``portal_layout``; the portal's own pages extend it directly. #}
+<html lang="{{ ui_lang or 'en' }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="csp-nonce" content="{{ csp_nonce }}">
+  <title>{% block title %}{{ _('My apps') }}{% endblock %}</title>
+  <link rel="icon" href="{{ theme_favicon_url or url_for('static', filename='img/favicon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+  <link rel="stylesheet" href="{{ asset('css/fortiweb.css') }}">
+  <link rel="stylesheet" href="{{ asset('css/apps_portal.css') }}">
+  {% if theme_css %}<style nonce="{{ csp_nonce }}">{{ theme_css }}</style>{% endif %}
+  <script src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body class="ap-portal">
+<nav class="fw-topbar ap-topbar">
+  <a class="fw-topbar-brand ap-brand" href="{{ url_for('apps_portal.home') if current_user.is_authenticated else '#' }}">
+    {% if theme_logo_url %}<img src="{{ theme_logo_url }}" alt="" class="ap-logo">{% else %}<i class="bi bi-grid-3x3-gap-fill"></i>{% endif %}
+    <span>{{ theme_name or 'SATOM' }}</span>
+  </a>
+  <div class="fw-topbar-spacer"></div>
+  {% if current_user.is_authenticated %}
+  <div class="fw-topbar-actions ap-actions">
+    <a class="fw-topbar-btn" href="{{ url_for('apps_portal.home') }}" title="{{ _('My apps') }}"><i class="bi bi-grid"></i><span class="d-none d-md-inline ms-1">{{ _('My apps') }}</span></a>
+    <a class="fw-topbar-btn" href="{{ url_for('apps_portal.account') }}" title="{{ _('Account') }}"><i class="bi bi-person-circle"></i><span class="d-none d-md-inline ms-1">{{ current_user.username }}</span></a>
+    <a class="fw-topbar-btn" href="{{ url_for('apps_portal.logout') }}" title="{{ _('Sign out') }}"><i class="bi bi-box-arrow-right"></i></a>
+  </div>
+  {% endif %}
+</nav>
+<main class="ap-main">
+  {% with messages = get_flashed_messages(with_categories=True) %}
+    {% if messages %}
+      <div class="fw-flash-messages mb-3">
+        {% for category, message in messages %}
+          <div class="fw-alert fw-alert-{{ category if category in ['success','danger','warning','info'] else 'info' }} d-flex align-items-center gap-2">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  {% block breadcrumb %}{% endblock %}
+  {% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,36 @@
+{% extends "apps_portal/layout.html" %}
+{% block title %}{{ _('Account') }}{% endblock %}
+{% block content %}
+{# An Apps-only account's own settings (views.apps_portal.account). #}
+<div class="fw-page-header"><div>
+  <h1 class="fw-page-title"><i class="bi bi-person-circle me-2 text-accent"></i>{{ _('Account') }}</h1>
+  <p class="text-muted mb-0" style="font-size:13px;"><code>{{ current_user.username }}</code></p>
+</div></div>
+{% if backup_codes_once %}
+<div class="fw-card mb-3"><div class="fw-card-body" style="font-size:13px;">
+  <strong>{{ _('Your backup codes') }}</strong>
+  <p class="text-muted" style="font-size:12px;">{{ _('Each one signs you in once without the authenticator. Keep them somewhere safe: they are shown only now.') }}</p>
+  <pre class="mb-0">{{ backup_codes_once|join('\n') }}</pre>
+</div></div>
+{% endif %}
+<div class="row g-3">
+  <div class="col-lg-6"><div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-shield-lock me-2 text-accent"></i>{{ _('Authenticator') }}</span></div>
+    <div class="fw-card-body" style="font-size:13px;">
+      {% if current_user.totp_enabled %}<span class="fw-badge fw-badge-success">{{ _('on') }}</span> {{ _('%(n)d backup code(s) left.', n=remaining) }}
+      {% else %}<span class="fw-badge fw-badge-secondary">{{ _('off') }}</span> {{ _('An app that requires it asks you to set it up when you sign in to it.') }}{% endif %}
+      <div class="text-muted mt-2" style="font-size:12px;">{{ _('Lost your authenticator? Ask an administrator to reset it (Users).') }}</div>
+    </div></div></div>
+  <div class="col-lg-6"><div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-key me-2 text-accent"></i>{{ _('Password') }}</span></div>
+    <div class="fw-card-body" style="font-size:13px;">
+      {% if current_user.is_local %}
+      <form method="post" action="{{ url_for('apps_portal.account_password') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input class="form-control form-control-sm mb-2" type="password" name="current_password" placeholder="{{ _('Current password') }}" autocomplete="current-password" required>
+        <input class="form-control form-control-sm mb-2" type="password" name="new_password" placeholder="{{ _('New password') }}" autocomplete="new-password" required>
+        <input class="form-control form-control-sm mb-2" type="password" name="confirm_password" placeholder="{{ _('Repeat the new password') }}" autocomplete="new-password" required>
+        <button class="btn btn-fw-primary btn-sm" type="submit">{{ _('Change password') }}</button>
+      </form>
+      {% else %}<div class="text-muted">{{ _('Your password is kept by your organisation\'s directory; change it there.') }}</div>{% endif %}
+    </div></div></div>
+</div>
+{% endblock %}

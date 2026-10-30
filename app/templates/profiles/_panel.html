@@ -31,6 +31,7 @@
             <div>
               <strong>{{ p.name }}</strong>
               {% if p.is_admin_capable %}<span class="fw-badge fw-badge-danger ms-1" title="{{ _('Can administer users and profiles') }}">{{ _('admin-capable') }}</span>{% endif %}
+              {% if p.is_apps_only %}<span class="fw-badge fw-badge-warning ms-1" title="{{ _('Reaches the Plugin Studio apps it is given and nothing else') }}">{{ _('Apps only') }}</span>{% endif %}
               {% if p.description %}<div class="text-muted" style="font-size:12px;">{{ p.description }}</div>{% endif %}
             </div>
           </div>
@@ -47,7 +48,7 @@
           {% elif p.role_label == 'operator' %}<span class="fw-badge fw-badge-primary">{{ _('Operator') }}</span>
           {% else %}<span class="fw-badge fw-badge-secondary">{{ _('Read Only') }}</span>{% endif %}
         </td>
-        <td style="font-size:13px;">{{ p.permission_set|length }} granted</td>
+        <td style="font-size:13px;">{% if p.is_apps_only %}{{ _('none (Apps only)') }}{% else %}{{ p.permission_set|length }} granted{% endif %}</td>
         <td style="font-size:13px;">
           {%- if p.adom_set is none %}{{ _('All') }}{% else %}
           {%- for _k in p.adom_set|sort %}<span class="fw-badge fw-badge-info me-1">{{ (adom_names or {}).get(_k, _k) }}</span>{% endfor %}
@@ -101,6 +102,13 @@
           <div class="mb-3">
             <label class="fw-form-label">{{ _('Description') }}</label>
             <input type="text" class="form-control" name="description" placeholder="{{ _('What this profile is for') }}">
+          </div>
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('Type') }}</label>
+            <select class="form-select" name="kind">
+              <option value="console">{{ _('Console — the permissions you pick next') }}</option>
+              <option value="apps">{{ _('Apps only — the Plugin Studio apps it is given, nothing else') }}</option>
+            </select>
           </div>
           <p class="text-muted" style="font-size:12px;">
             {{ _('You\'ll pick the exact permissions on the next screen.') }}

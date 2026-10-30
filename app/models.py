@@ -82,6 +82,13 @@ class User(db.Model, UserMixin):
     failed_logins = db.Column(db.Integer, nullable=False, default=0)
     locked_until = db.Column(db.DateTime, nullable=True)
 
+    # An account made by an app's sign-in (services.app_signin) is pinned to
+    # the directory connection that proved it -- ``auth_source == "app"`` and
+    # the username qualified ``<name>@<connection slug>``. No FK on purpose:
+    # the connection table lives in models_studio, and deleting a connection
+    # that still owns accounts is refused by services.directory_connections.
+    login_connection_id = db.Column(db.Integer, nullable=True, index=True)
+
     # audit relationship (back-ref from AuditLog)
     audit_logs = db.relationship("AuditLog", backref="user", lazy="dynamic")
     profile = db.relationship("Profile", lazy="joined", foreign_keys=[profile_id])
@@ -101,6 +108,21 @@ class User(db.Model, UserMixin):
     def is_external(self) -> bool:
         """True for directory (AD/LDAP/RADIUS) accounts."""
         return not self.is_local
+
+    @property
+    def is_app_account(self) -> bool:
+        """True for an account an app's sign-in created: it authenticates only
+        against its own directory connection, never through /auth/login."""
+        return (self.auth_source or "local") == "app"
+
+    @property
+    def is_apps_only(self) -> bool:
+        """True when the assigned profile is Apps only (services.apps_only).
+        An app account without a profile is confined too: it was never meant
+        to have the console."""
+        if self.profile is not None:
+            return self.profile.is_apps_only
+        return self.is_app_account
 
     @property
     def is_pending_approval(self) -> bool:
@@ -125,6 +147,8 @@ class User(db.Model, UserMixin):
         """
         if self.profile is not None:
             return self.profile.effective
+        if self.is_app_account:
+            return set()
         # No profile (un-migrated / freshly built object): treat the legacy
         # role as its equivalent system profile so both granular and coarse
         # gates resolve exactly like a migrated user would.
@@ -178,13 +202,30 @@ class Profile(db.Model):
     # services.product_scope — never compare this column directly.
     adoms = db.Column(db.Text, nullable=False, default="")
     is_system = db.Column(db.Boolean, nullable=False, default=False)
+    #: ``console`` (the permission matrix decides) or ``apps`` (Apps only: the
+    #: account reaches the Plugin Studio apps it is given and nothing else --
+    #: services.apps_only). 2026-10-30.
+    kind = db.Column(db.String(16), nullable=False, default="console",
+                     server_default="console")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
+    KINDS = ("console", "apps")
+
+    @property
+    def is_apps_only(self) -> bool:
+        """Anything but ``console`` confines: an unknown or corrupted kind must
+        not widen access, so it reads as the narrower one."""
+        return (self.kind or "console") != "console"
+
     @property
     def permission_set(self) -> set[str]:
+        if self.is_apps_only:
+            # An Apps-only profile holds no permission, whatever the column
+            # says: the matrix is not how it grants anything.
+            return set()
         try:
             raw = json.loads(self.permissions or "[]")
         except (ValueError, TypeError):
@@ -197,7 +238,7 @@ class Profile(db.Model):
     @permission_set.setter
     def permission_set(self, value) -> None:
         clean = sorted({k for k in (value or set()) if _perm.is_valid_key(k)})
-        self.permissions = json.dumps(clean)
+        self.permissions = json.dumps([] if self.is_apps_only else clean)
 
     def has(self, key: str) -> bool:
         return key in self.permission_set

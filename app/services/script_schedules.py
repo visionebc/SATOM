@@ -73,6 +73,13 @@ def can_run(user, meta: dict) -> bool:
         return False
     if _disabled(meta):
         return False
+    if getattr(user, "is_apps_only", False):
+        # An Apps-only account holds no permission: it runs the script when
+        # the script's app is given to it (access list, or its own sign-in),
+        # whatever the script's operator audience says.
+        from . import studio_apps as SA
+        a = SA.script_app(meta.get("slug") or "")
+        return a is not None and bool(a.enabled) and SA.can_use(user, a)
     if user.can("studio.script_library"):
         return True
     return meta.get("audience") == "operators" and user.can("operations.scripts_run")

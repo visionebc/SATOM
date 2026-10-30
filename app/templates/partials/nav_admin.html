@@ -46,6 +46,14 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'user_groups' else '' }}" href="{{ url_for('user_groups.index') }}">
       <i class="bi bi-people-fill fw-nav-icon"></i><span>{{ _('Groups') }}</span></a>
     {% endif %}
+    {% if may_open('directory_connections.index') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('directory_connections.') and not request.endpoint.startswith('directory_connections.signin') else '' }}" href="{{ url_for('directory_connections.index') }}">
+      <i class="bi bi-diagram-2 fw-nav-icon"></i><span>{{ _('Directory connections') }}</span></a>
+    {% endif %}
+    {% if may_open('directory_connections.signin_index') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('directory_connections.signin') else '' }}" href="{{ url_for('directory_connections.signin_index') }}">
+      <i class="bi bi-door-open fw-nav-icon"></i><span>{{ _('App sign-in') }}</span></a>
+    {% endif %}
 {% endset %}
 
 {% set _s_devices %}

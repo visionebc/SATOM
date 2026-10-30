@@ -94,7 +94,9 @@
               </div>
               <div>
                 <strong>{{ u.username }}</strong>
-                {% if u.auth_source and u.auth_source != 'local' %}
+                {% if u.auth_source == 'app' %}
+                  <span class="fw-badge fw-badge-secondary ms-1" title="{{ _('Made by an app\'s own sign-in; signs in only there, through its directory connection') }}"><i class="bi bi-door-open me-1"></i>APP</span>
+                {% elif u.auth_source and u.auth_source != 'local' %}
                   <span class="fw-badge fw-badge-secondary ms-1" title="Imported from the {{ u.auth_source|upper }} directory"><i class="bi bi-diagram-3 me-1"></i>{{ u.auth_source|upper }}</span>
                 {% endif %}
                 {% if current_user and u.id == current_user.id %}

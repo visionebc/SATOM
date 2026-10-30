@@ -45,10 +45,19 @@ def _usable_or_404(slug) -> StudioApp:
         abort(404)
     if not a.enabled and not SA.is_author(current_user):
         abort(404)
+    # ADOMs are where a console user meets the app; an Apps-only account has
+    # no console and no ADOM switcher, so only the access check above applies.
+    in_adom = getattr(current_user, "is_apps_only", False) or SA.shown_in(a, _product_key())
     if not SA.is_author(current_user) and (a.status != "published" or not a.published
-                                           or not SA.shown_in(a, _product_key())):
+                                           or not in_adom):
         abort(404)
     return a
+
+
+def _run_product(a: StudioApp) -> str:
+    if getattr(current_user, "is_apps_only", False):
+        return SA.run_product(a, _product_key())
+    return _product_key()
 
 
 def _run_or_404(rid) -> tuple[StudioAppRun, StudioApp]:
@@ -128,7 +137,7 @@ def asset(slug, sha):
 def run(slug):
     a = _usable_or_404(slug)
     try:
-        r = SA.start_run(a, user=current_user, product=_product_key(),
+        r = SA.start_run(a, user=current_user, product=_run_product(a),
                          raw_inputs=(request.get_json(silent=True) or {}).get("inputs"))
     except SA.AppError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -180,7 +189,7 @@ def answer(rid):
 def action(rid, key):
     r, a = _run_or_404(rid)
     try:
-        res = SA.run_action(a, r, key, user=current_user, product=_product_key())
+        res = SA.run_action(a, r, key, user=current_user, product=_run_product(a))
     except SA.AppError as exc:
         log_action("studio.app.action", target=a.slug, extra={"run": rid, "action": key,
                                                               "ok": False, "error": str(exc)[:300]})

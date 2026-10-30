@@ -46,7 +46,8 @@
       <div class="col-xl-6"><div class="fw-card"><div class="fw-card-body" style="font-size:13px;">
         <label class="form-label small d-block">{{ _('Who may use it') }}</label>
         <p class="text-muted" style="font-size:12px;">{{ _('The groups and the people ticked here, plus every Plugin Studio author. Nobody else sees the menu entry or can open the app.') }}
-          {% if current_user.can('user_manage') %}<a href="{{ url_for('user_groups.index') }}">{{ _('Manage groups') }}</a>{% endif %}</p>
+          {% if current_user.can('user_manage') %}<a href="{{ url_for('user_groups.index') }}">{{ _('Manage groups') }}</a> ·
+          <a href="{{ url_for('directory_connections.signin_edit', slug=a.slug) }}">{{ _('Own sign-in for people outside SATOM') }}</a>{% endif %}</p>
         <div class="row">
           <div class="col-md-6"><div class="text-muted small mb-1">{{ _('Groups') }}</div>
             <div style="max-height:240px;overflow:auto;">

@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends portal_layout or "base.html" %}
 {% from "scripts/_form_fields.html" import form_fields %}
 {% block title %}{{ meta.name }} — Scripts{% endblock %}
 {% block content %}
@@ -9,7 +9,8 @@
       {% if v.network == 'egress' %}<span class="fw-badge fw-badge-info">{{ _('outbound') }}</span>{% endif %}
       · {{ _('timeout') }} {{ v.timeout }} s</p>
   </div>
-  <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('scripts.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Plugins') }}</a>
+  {% if portal_layout %}<a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('apps_portal.home') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('My apps') }}</a>
+  {% else %}<a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('scripts.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Plugins') }}</a>{% endif %}
 </div>
 
 {% if meta.description %}<div class="fw-card mb-3"><div class="fw-card-body" style="font-size:13px;white-space:pre-wrap;">{{ meta.description }}</div></div>{% endif %}
@@ -23,6 +24,8 @@
         <div class="d-flex gap-2 mt-2">
           <button type="button" class="btn btn-primary btn-sm" id="sc-run" {% if not sandbox_ok %}disabled{% endif %}><i class="bi bi-play-fill me-1"></i>{{ _('Run now') }}</button>
         </div>
+        {# Saved runs are a console feature: an Apps-only account runs now. #}
+        <div class="{{ 'd-none' if portal_layout }}">
         <hr>
         <div class="small fw-bold mb-1">{{ _('Save these values with a schedule') }}</div>
         <div class="row g-2">
@@ -35,6 +38,7 @@
         <div class="small text-warning">{{ _('Password values can be kept in a saved run only when a vault is configured (Settings > Vault).') }}</div>
         {% endif %}
         <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="sc-save"><i class="bi bi-calendar-plus me-1"></i>{{ _('Save schedule') }}</button>
+        </div>
         <span class="small ms-2" id="sc-save-msg"></span>
       </div>
     </div>
@@ -50,7 +54,7 @@
   </div>
 </div>
 
-<div class="fw-card mt-3">
+<div class="fw-card mt-3 {{ 'd-none' if portal_layout }}">
   <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-calendar2-week me-2 text-accent"></i>{{ _('Saved runs') }}</span></div>
   <div class="fw-card-body p-0">
     <table class="table table-sm mb-0 align-middle" style="font-size:12px;">

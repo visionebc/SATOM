@@ -41,12 +41,27 @@
       <label class="fw-form-label">{{ _('Name') }}</label>
       <input type="text" class="form-control" name="name" value="{{ profile.name }}" {{ 'disabled' if disabled }}>
     </div>
-    <div class="col-md-8">
+    <div class="col-md-5">
       <label class="fw-form-label">{{ _('Description') }}</label>
       <input type="text" class="form-control" name="description" value="{{ profile.description or '' }}" {{ 'disabled' if disabled }}>
     </div>
+    <div class="col-md-3">
+      <label class="fw-form-label">{{ _('Type') }}</label>
+      <select class="form-select" name="kind" {{ 'disabled' if disabled }}>
+        <option value="console" {{ 'selected' if not profile.is_apps_only }}>{{ _('Console') }}</option>
+        <option value="apps" {{ 'selected' if profile.is_apps_only }}>{{ _('Apps only') }}</option>
+      </select>
+    </div>
   </div>
 
+  {% if profile.is_apps_only %}
+  <div class="fw-card mb-3"><div class="fw-card-body" style="font-size:13px;">
+    <strong><i class="bi bi-grid me-1 text-accent"></i>{{ _('Apps only') }}</strong>
+    <p class="text-muted mb-0" style="font-size:12px;">{{ _('Accounts with this profile hold no permission and never see the console. After signing in they land on My apps and can open only the Plugin Studio apps given to them: the apps shared with them or their groups, and the apps whose own sign-in they pass (Access > App sign-in). Every other page answers "not found". Switch the type to Console to give it permissions instead.') }}</p>
+  </div></div>
+  {% endif %}
+
+  <div class="{{ 'd-none' if profile.is_apps_only }}">
   <div class="fw-card mb-3">
     <div class="fw-card-header d-flex align-items-center gap-2">
       <i class="bi bi-grid-1x2 text-accent"></i>
@@ -104,6 +119,7 @@
     </div>
     {% endif %}
     {% endfor %}
+  </div>
   </div>
 
   {% if not disabled %}

@@ -108,14 +108,18 @@ def create():
     if _adoms_beyond_actor(adoms):
         flash('Refused: you cannot grant ADOMs you do not have yourself.', 'danger')
         return redirect(url_for('profiles.index'))
-    p = Profile(name=name, description=description, is_system=False)
+    kind = request.form.get('kind', 'console')
+    p = Profile(name=name, description=description, is_system=False,
+                kind=kind if kind in Profile.KINDS else 'console')
     p.permission_set = posted  # may be empty — matrix is filled on the edit page
     p.adom_set = adoms
     db.session.add(p)
     db.session.commit()
     log_action('profile.create', target=name,
-               extra={'perms': sorted(p.permission_set)})
-    flash(f'Profile “{name}” created — set its permissions below.', 'success')
+               extra={'perms': sorted(p.permission_set), 'kind': p.kind})
+    flash(f'Profile “{name}” created — set its apps access in Access > App sign-in.'
+          if p.is_apps_only else f'Profile “{name}” created — set its permissions below.',
+          'success')
     return redirect(url_for('profiles.edit', id=p.id))
 
 
@@ -165,8 +169,12 @@ def edit_save(id):
         flash('Refused: you cannot grant ADOMs you do not have yourself.', 'danger')
         return redirect(url_for('profiles.edit', id=id))
     old_adoms = p.adom_set
+    old_kind = p.kind or 'console'
+    kind = request.form.get('kind', old_kind)
     p.name = name
     p.description = request.form.get('description', p.description or '').strip()
+    # The type first: the permission setter writes nothing for Apps only.
+    p.kind = kind if kind in Profile.KINDS else old_kind
     p.permission_set = new_perms
     p.adom_set = new_adoms
     _sync_roles_for_profile(p)
@@ -181,7 +189,8 @@ def edit_save(id):
 
     db.session.commit()
     log_action('profile.update', target=p.name,
-               extra={'perms': sorted(new_perms),
+               extra={'perms': sorted(p.permission_set), 'kind': p.kind,
+                      'kind_before': old_kind,
                       'adoms': sorted(new_adoms) if new_adoms else 'all',
                       'adoms_before': sorted(old_adoms) if old_adoms else 'all'})
     flash(f'Profile “{p.name}” updated.', 'success')
@@ -202,7 +211,8 @@ def clone(id):
     while Profile.query.filter(db.func.lower(Profile.name) == name.lower()).first():
         name = f'{base} {n}'
         n += 1
-    p = Profile(name=name, description=src.description, is_system=False)
+    p = Profile(name=name, description=src.description, is_system=False,
+                kind=src.kind or "console")
     p.permission_set = src.permission_set
     p.adom_set = src.adom_set
     db.session.add(p)

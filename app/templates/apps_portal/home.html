@@ -1,0 +1,22 @@
+{% extends "apps_portal/layout.html" %}
+{% block title %}{{ _('My apps') }}{% endblock %}
+{% block content %}
+{# The home of an Apps-only account (views.apps_portal.home). #}
+<div class="fw-page-header"><div>
+  <h1 class="fw-page-title"><i class="bi bi-grid me-2 text-accent"></i>{{ _('My apps') }}</h1>
+  <p class="text-muted mb-0" style="font-size:13px;">{{ _('The apps you may use. An app marked "sign in" needs you to sign in to it again.') }}</p>
+</div></div>
+{% if apps %}
+<div class="ap-grid">
+  {% for m in apps %}
+  <a class="fw-card ap-tile" href="{{ m.url }}">
+    <i class="bi {{ m.icon }} ap-tile-icon"></i>
+    <div><div class="ap-tile-name">{{ m.name }}{% if m.needs_signin %} <span class="fw-badge fw-badge-warning ms-1">{{ _('sign in') }}</span>{% endif %}</div>
+      {% if m.description %}<div class="ap-tile-desc">{{ m.description }}</div>{% endif %}</div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="fw-card"><div class="fw-card-body text-muted" style="font-size:13px;">{{ _('No app is available to you right now. Ask your administrator.') }}</div></div>
+{% endif %}
+{% endblock %}

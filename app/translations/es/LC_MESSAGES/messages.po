@@ -28034,3 +28034,308 @@ msgstr "zona"
 
 msgid "— every combo its zone / line / department falls into; you see the dry-run and confirm before anything is written"
 msgstr "— cada combo en el que caen su zona / línea / departamento; ves el dry-run y confirmas antes de que se escriba nada"
+
+# --- app-scoped access (2026-10-30) ---
+#: app/templates/apps/page.html app/templates/apps_portal/home.html app/templates/apps_portal/layout.html
+msgid "My apps"
+msgstr "Mis apps"
+
+#: app/templates/apps_portal/account.html app/templates/apps_portal/layout.html app/templates/directory_connections/signin_edit.html
+msgid "Account"
+msgstr "Cuenta"
+
+#: app/templates/apps_portal/account.html
+msgid "Your backup codes"
+msgstr "Sus códigos de respaldo"
+
+#: app/templates/apps_portal/account.html
+msgid "Each one signs you in once without the authenticator. Keep them somewhere safe: they are shown only now."
+msgstr "Cada uno le permite iniciar sesión una vez sin el autenticador. Guárdelos en un lugar seguro: solo se muestran ahora."
+
+#: app/templates/apps_portal/account.html
+msgid "Authenticator"
+msgstr "Autenticador"
+
+#: app/templates/apps_portal/account.html
+msgid "%(n)d backup code(s) left."
+msgstr "Quedan %(n)d código(s) de respaldo."
+
+#: app/templates/apps_portal/account.html
+msgid "An app that requires it asks you to set it up when you sign in to it."
+msgstr "Una app que lo exige le pide configurarlo cuando inicia sesión en ella."
+
+#: app/templates/apps_portal/account.html
+msgid "Lost your authenticator? Ask an administrator to reset it (Users)."
+msgstr "¿Perdió su autenticador? Pida a un administrador que lo restablezca (Usuarios)."
+
+#: app/templates/apps_portal/account.html
+msgid "Current password"
+msgstr "Contraseña actual"
+
+#: app/templates/apps_portal/account.html
+msgid "Repeat the new password"
+msgstr "Repita la nueva contraseña"
+
+#: app/templates/apps_portal/account.html
+msgid "Change password"
+msgstr "Cambiar contraseña"
+
+#: app/templates/apps_portal/account.html
+msgid "Your password is kept by your organisation's directory; change it there."
+msgstr "Su contraseña la guarda el directorio de su organización; cámbiela allí."
+
+#: app/templates/apps_portal/enrol.html
+msgid "Set up an authenticator"
+msgstr "Configurar un autenticador"
+
+#: app/templates/apps_portal/enrol.html
+msgid "This app requires a second factor. Scan the code with an authenticator app (or type the key), then enter the code it shows."
+msgstr "Esta app exige un segundo factor. Escanee el código con una app de autenticación (o escriba la clave) e introduzca el código que muestra."
+
+#: app/templates/apps_portal/enrol.html
+msgid "Verify and sign in"
+msgstr "Verificar e iniciar sesión"
+
+#: app/templates/apps_portal/home.html
+msgid "The apps you may use. An app marked \"sign in\" needs you to sign in to it again."
+msgstr "Las apps que puede usar. Una app marcada \"iniciar sesión\" necesita que vuelva a iniciar sesión en ella."
+
+#: app/templates/apps_portal/home.html
+msgid "sign in"
+msgstr "iniciar sesión"
+
+#: app/templates/apps_portal/home.html
+msgid "No app is available to you right now. Ask your administrator."
+msgstr "Ahora no tiene ninguna app disponible. Consulte a su administrador."
+
+#: app/templates/apps_portal/login.html
+msgid "Sign in"
+msgstr "Iniciar sesión"
+
+#: app/templates/apps_portal/login.html
+msgid "Sign in to use this app"
+msgstr "Inicie sesión para usar esta app"
+
+#: app/templates/apps_portal/two_factor.html
+msgid "Enter the code from your authenticator app, or a backup code."
+msgstr "Introduzca el código de su app de autenticación o un código de respaldo."
+
+#: app/templates/directory_connections/index.html app/templates/directory_connections/signin_index.html app/templates/partials/nav_admin.html
+msgid "Directory connections"
+msgstr "Conexiones de directorio"
+
+#: app/templates/directory_connections/index.html
+msgid "Directory servers an app's own sign-in can prove people against: Active Directory, LDAP or RADIUS (FortiAuthenticator). Each one has its own address, bind account and secret, independent of the console sign-in (Settings > Authentication), which they never change. Which groups may use which app is set per app in App sign-in."
+msgstr "Servidores de directorio contra los que el inicio de sesión propio de una app puede comprobar a las personas: Active Directory, LDAP o RADIUS (FortiAuthenticator). Cada uno tiene su propia dirección, cuenta de enlace y secreto, independientes del inicio de sesión de la consola (Ajustes > Autenticación), que nunca modifican. Qué grupos pueden usar qué app se define por app en Inicio de sesión de apps."
+
+#: app/templates/directory_connections/index.html
+msgid "Server"
+msgstr "Servidor"
+
+#: app/templates/directory_connections/index.html
+msgid "Accounts"
+msgstr "Cuentas"
+
+#: app/templates/directory_connections/index.html
+msgid "plain LDAP"
+msgstr "LDAP sin cifrar"
+
+#: app/templates/directory_connections/index.html
+msgid "certificate not verified"
+msgstr "certificado sin verificar"
+
+#: app/templates/directory_connections/index.html
+msgid "not needed"
+msgstr "no hace falta"
+
+#: app/templates/directory_connections/index.html
+msgid "No directory connections yet."
+msgstr "Todavía no hay conexiones de directorio."
+
+#: app/templates/directory_connections/index.html
+msgid "Directory connection"
+msgstr "Conexión de directorio"
+
+#: app/templates/directory_connections/index.html
+msgid "Fixed once saved. Accounts are named user@id."
+msgstr "Fijo una vez guardado. Las cuentas se llaman usuario@id."
+
+#: app/templates/directory_connections/index.html
+msgid "Verify the server certificate"
+msgstr "Verificar el certificado del servidor"
+
+#: app/templates/directory_connections/index.html
+msgid "Needed for group checks."
+msgstr "Necesario para comprobar grupos."
+
+#: app/templates/directory_connections/index.html
+msgid "Bind DN (service account)"
+msgstr "Bind DN (cuenta de servicio)"
+
+#: app/templates/directory_connections/index.html
+msgid "Blank keeps the stored one. Never shown again."
+msgstr "En blanco conserva el guardado. Nunca se vuelve a mostrar."
+
+#: app/templates/directory_connections/index.html
+msgid "Enabled (a disabled connection signs nobody in)"
+msgstr "Habilitada (una conexión deshabilitada no deja entrar a nadie)"
+
+#: app/templates/directory_connections/index.html
+msgid "Test the connection"
+msgstr "Probar la conexión"
+
+#: app/templates/directory_connections/index.html
+msgid "Without a user it checks that the server answers. With a user and password it signs that user in (nothing is stored); for RADIUS it also lists the groups the reply names."
+msgstr "Sin usuario comprueba que el servidor responde. Con usuario y contraseña inicia sesión con ese usuario (no se guarda nada); para RADIUS además lista los grupos que nombra la respuesta."
+
+#: app/templates/directory_connections/index.html
+msgid "User (optional)"
+msgstr "Usuario (opcional)"
+
+#: app/templates/directory_connections/signin_edit.html app/templates/directory_connections/signin_index.html app/templates/partials/nav_admin.html
+msgid "App sign-in"
+msgstr "Inicio de sesión de apps"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "sign-in open"
+msgstr "inicio de sesión abierto"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "enabled, waiting"
+msgstr "habilitado, en espera"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "The app is disabled or not published: the page stays closed until it is."
+msgstr "La app está deshabilitada o sin publicar: la página sigue cerrada hasta que lo esté."
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "no own sign-in"
+msgstr "sin inicio de sesión propio"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "stored policy is invalid:"
+msgstr "la política guardada no es válida:"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Own sign-in page"
+msgstr "Página de inicio de sesión propia"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "People sign in to this app on its own page"
+msgstr "Las personas inician sesión en esta app en su propia página"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Rules are tried in order and the first that accepts signs the person in; nothing else is tried after them (never the console sign-in). A person a directory accepts becomes the account user@connection, with the Apps only profile below, and may use this app; signing in to another app is another sign-in with that app's rules."
+msgstr "Las reglas se prueban en orden y la primera que acepta deja entrar a la persona; después no se prueba nada más (nunca el inicio de sesión de la consola). Una persona que un directorio acepta pasa a ser la cuenta usuario@conexión, con el perfil Solo apps de abajo, y puede usar esta app; iniciar sesión en otra app es otro inicio de sesión con las reglas de esa app."
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Local SATOM accounts"
+msgstr "Cuentas locales de SATOM"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Add a directory connection first"
+msgstr "Primero añada una conexión de directorio"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Profile of the accounts a sign-in creates"
+msgstr "Perfil de las cuentas que crea un inicio de sesión"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Only Apps only profiles can be chosen."
+msgstr "Solo se pueden elegir perfiles Solo apps."
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Create a profile with Type: Apps only first (Access > Profiles)."
+msgstr "Primero cree un perfil con Tipo: Solo apps (Acceso > Perfiles)."
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "New accounts wait for an administrator (Users)"
+msgstr "Las cuentas nuevas esperan a un administrador (Usuarios)"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Shared with (no sign-in rule needed)"
+msgstr "Compartida con (sin regla de inicio de sesión)"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Groups and people who may use the app with the account they already have, plus every Plugin Studio author. Same list as Plugin Studio > app > Settings."
+msgstr "Grupos y personas que pueden usar la app con la cuenta que ya tienen, además de cada autor de Plugin Studio. Es la misma lista que Plugin Studio > app > Ajustes."
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "People who signed in to this app"
+msgstr "Personas que iniciaron sesión en esta app"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Last sign-in through this app"
+msgstr "Último inicio de sesión por esta app"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "disabled / pending"
+msgstr "deshabilitada / pendiente"
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Nobody yet."
+msgstr "Nadie todavía."
+
+#: app/templates/directory_connections/signin_edit.html
+msgid "Revoking takes effect on the next page they open. A person still in the directory group gets it back by signing in again: remove them from the group, or disable the account in Users."
+msgstr "Revocar surte efecto en la siguiente página que abran. Quien siga en el grupo del directorio lo recupera al volver a iniciar sesión: quítelo del grupo o deshabilite la cuenta en Usuarios."
+
+#: app/templates/directory_connections/signin_index.html
+msgid "Give an app to people who are not SATOM operators. They sign in on the app's own page, against the directory connections and groups you choose for it, and reach that app and nothing else (their profile is Apps only). Plugin Studio authors keep opening every app from the console."
+msgstr "Dé una app a personas que no son operadores de SATOM. Inician sesión en la página propia de la app, contra las conexiones de directorio y los grupos que usted elija para ella, y llegan a esa app y a nada más (su perfil es Solo apps). Los autores de Plugin Studio siguen abriendo todas las apps desde la consola."
+
+#: app/templates/directory_connections/signin_index.html
+msgid "Own sign-in"
+msgstr "Inicio de sesión propio"
+
+#: app/templates/directory_connections/signin_index.html
+msgid "Rules"
+msgstr "Reglas"
+
+#: app/templates/directory_connections/signin_index.html
+msgid "Signed-in people"
+msgstr "Personas con sesión iniciada"
+
+#: app/templates/directory_connections/signin_index.html
+msgid "Enabled, but the app is disabled or not published."
+msgstr "Habilitado, pero la app está deshabilitada o sin publicar."
+
+#: app/templates/directory_connections/signin_index.html
+msgid "invalid"
+msgstr "no válida"
+
+#: app/templates/directory_connections/signin_index.html
+msgid "No apps yet. Create one in Plugin Studio."
+msgstr "Todavía no hay apps. Cree una en Plugin Studio."
+
+#: app/templates/profiles/_panel.html
+msgid "Reaches the Plugin Studio apps it is given and nothing else"
+msgstr "Llega a las apps de Plugin Studio que se le dan y a nada más"
+
+#: app/templates/profiles/_panel.html app/templates/profiles/edit.html
+msgid "Apps only"
+msgstr "Solo apps"
+
+#: app/templates/profiles/_panel.html
+msgid "none (Apps only)"
+msgstr "ninguno (Solo apps)"
+
+#: app/templates/profiles/_panel.html
+msgid "Console — the permissions you pick next"
+msgstr "Consola — los permisos que elija a continuación"
+
+#: app/templates/profiles/_panel.html
+msgid "Apps only — the Plugin Studio apps it is given, nothing else"
+msgstr "Solo apps — las apps de Plugin Studio que se le dan, nada más"
+
+#: app/templates/profiles/edit.html
+msgid "Accounts with this profile hold no permission and never see the console. After signing in they land on My apps and can open only the Plugin Studio apps given to them: the apps shared with them or their groups, and the apps whose own sign-in they pass (Access > App sign-in). Every other page answers \"not found\". Switch the type to Console to give it permissions instead."
+msgstr "Las cuentas con este perfil no tienen ningún permiso y nunca ven la consola. Tras iniciar sesión llegan a Mis apps y solo pueden abrir las apps de Plugin Studio que se les dan: las compartidas con ellas o con sus grupos y las apps cuyo inicio de sesión propio superan (Acceso > Inicio de sesión de apps). Cualquier otra página responde \"no encontrado\". Cambie el tipo a Consola para darle permisos."
+
+#: app/templates/studio/app.html
+msgid "Own sign-in for people outside SATOM"
+msgstr "Inicio de sesión propio para personas fuera de SATOM"
+
+#: app/templates/users/_panel.html
+msgid "Made by an app's own sign-in; signs in only there, through its directory connection"
+msgstr "Creada por el inicio de sesión propio de una app; solo inicia sesión allí, a través de su conexión de directorio"

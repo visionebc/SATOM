@@ -172,6 +172,15 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
 
+    if request.method == 'GET':
+        # A redirect here whose target is an app with its own sign-in (idle
+        # lock, expired session on an app page): that app's page, not this
+        # console form its people cannot use.
+        from ..views.apps_portal import login_redirect_for
+        portal = login_redirect_for(request.args.get('next'))
+        if portal:
+            return redirect(portal)
+
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
@@ -200,8 +209,16 @@ def login():
         # here until the password (or directory bind) is proven correct.
         authed = False
         failure_logged = False
+        # 0) An account an app's sign-in made is proven ONLY by its own
+        # directory connection, through that app (services.app_signin). Here
+        # it is an unknown name: same time, same message, no directory bind.
+        if user and user.is_app_account:
+            _spend_dummy_password_check(password)
+            log_action('login.fail', target=(username or '')[:128],
+                       extra={'known_user': True, 'reason': 'app account'})
+            failure_logged = True
         # 1) Local account → local password only (never fall through to directory).
-        if user and user.is_local:
+        elif user and user.is_local:
             if user.check_password(password):
                 authed = True
         # 2) New username OR existing external row → directory bind.
@@ -221,7 +238,9 @@ def login():
             _spend_dummy_password_check(password)
 
         if not authed:
-            if user is not None:
+            # Not against an app account: this door can never let it in, so a
+            # failure here must not be able to lock it out of its own app.
+            if user is not None and not user.is_app_account:
                 _record_failure(user, username, now)
             if not failure_logged:
                 # Every failed sign-in leaves a row, not only the one that
@@ -338,6 +357,8 @@ def two_factor():
 def logout():
     log_action('logout', target=current_user.username)
     logout_user()
+    from ..services import app_signin as _app_signin
+    _app_signin.forget_proofs()
     return redirect(url_for('auth.login'))
 
 

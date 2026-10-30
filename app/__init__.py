@@ -141,6 +141,12 @@ def create_app(config_override: object | None = None) -> Flask:
     from .auth import session_lock as _session_lock
     _session_lock.init_app(app)
 
+    # Apps-only accounts (Profiles > Type: Apps only, and the accounts an
+    # app's sign-in makes) reach their apps and nothing else. Deny by default,
+    # right after the idle lock and before every ADOM / device gate.
+    from .services import apps_only as _apps_only
+    _apps_only.init_app(app)
+
     # -- blueprints -------------------------------------------------------
     _register_blueprints(app)
 
@@ -419,7 +425,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # 'adc_api' is the ADC-scoped API hub. RBAC still gates each write.
             adc_bps = {'concept_map', 'adc', 'adc_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users',
-                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'locks',
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'directory_connections', 'apps_portal', 'locks',
                        # 'advisor' and 'adom_assets' are rendered into EVERY
                        # ADOM's sidebar by partials/nav_advisor.html and
                        # partials/nav_adom_assets.html. Both were missing from
@@ -517,7 +523,7 @@ def create_app(config_override: object | None = None) -> Flask:
             faz_bps = {'concept_map', 'faz', 'faz_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users',
                        'advisor', 'adom_assets', 'console',   # see the adc_bps note
-                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'locks', 'firmware', 'segments',
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'directory_connections', 'apps_portal', 'locks', 'firmware', 'segments',
                        'device_provision',
                        # Change Types is an Administration page, mirrored
                        # into every ADOM for the same reason Change Requests
@@ -568,7 +574,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # sidebar offers neither, the seeded cap_firmware is
                        # False and services/backup.py has no
                        # FortiAuthenticator transport — both were URL-only.
-                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'locks', 'segments',
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'directory_connections', 'apps_portal', 'locks', 'segments',
                        'device_provision',
                        # Change Types is an Administration page, mirrored
                        # into every ADOM for the same reason Change Requests
@@ -624,7 +630,7 @@ def create_app(config_override: object | None = None) -> Flask:
             fgt_bps = {'concept_map', 'fgt', 'fgt_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users',
                        'advisor', 'adom_assets', 'console',   # see the adc_bps note
-                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'locks', 'segments', 'device_provision',
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'directory_connections', 'apps_portal', 'locks', 'segments', 'device_provision',
                        'cr_types', 'process', 'scheduled_actions', 'triggers', 'event_automations',
                        'scout', 'calendar_plan',   # see the faz_bps note
                        'architecture', 'netarch', 'metrics', 'search', 'analysis',
@@ -1926,6 +1932,8 @@ def create_app(config_override: object | None = None) -> Flask:
             # '' = every ADOM, which is what every existing profile grants.
             'profiles': [
                 ('adoms', "TEXT DEFAULT '' NOT NULL"),
+                # --- Apps-only profiles (2026-10-30, migration appscope01) ---
+                ('kind', "VARCHAR(16) DEFAULT 'console' NOT NULL"),
             ],
             # --- artifact -> Web Protection Profile attribution (2026-08-25) ---
             # NULLABLE, NO DEFAULT, NO BACKFILL. NULL means "nobody attributed
@@ -2027,6 +2035,8 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('totp_last_step', 'INTEGER'),
                 ('failed_logins', 'INTEGER DEFAULT 0'),
                 ('locked_until', 'TIMESTAMP'),
+                # --- app accounts pinned to a directory connection (appscope01) ---
+                ('login_connection_id', 'INTEGER'),
             ],
             # Install-vs-upgrade split (see models_firmware.FirmwareImage).
             # Additive with a default, so every pre-existing row keeps meaning
@@ -2176,6 +2186,8 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('enabled', 'BOOLEAN DEFAULT TRUE'),
                 # --- app designer (appdesign01) ---
                 ('design_json', "TEXT DEFAULT '{}'"),
+                # --- the app's own sign-in (appscope01) ---
+                ('login_json', "TEXT DEFAULT '{}'"),
             ],
             # --- Analytics: dashboard variables (one board, whole fleet) ---
             'monitor_dashboard': [
@@ -2873,6 +2885,10 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.studio", "bp"),
         ("app.views.apps", "bp"),
         ("app.views.user_groups", "bp"),
+        # App-scoped access (2026-10-30): Directory connections, App sign-in
+        # (Administrator > Access) and the /a/ portal of Apps-only accounts.
+        ("app.views.directory_connections", "bp"),
+        ("app.views.apps_portal", "bp"),
         ("app.views.scripts", "bp"),
         ("app.views.system_backup", "bp"),
         ("app.views.self_update", "bp"),

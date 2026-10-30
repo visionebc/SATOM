@@ -1,11 +1,11 @@
-{% extends "base.html" %}
+{% extends portal_layout or "base.html" %}
 {% block title %}{{ a.name }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ asset('css/app_design.css') }}">{% endblock %}
 {% block content %}
 {# A Plugin Studio app, the operator's side (views.apps.page). #}
 <div class="fw-page-header d-flex align-items-start">
   <div>
-    <div class="text-muted" style="font-size:12px;">{{ _('Plugins') }}</div>
+    <div class="text-muted" style="font-size:12px;">{% if portal_layout %}<a href="{{ url_for('apps_portal.home') }}">{{ _('My apps') }}</a>{% else %}{{ _('Plugins') }}{% endif %}</div>
     <h1 class="fw-page-title"><i class="bi {{ a.icon }} me-2 text-accent"></i>{{ a.name }}</h1>
     {% if a.description %}<p class="text-muted mb-0" style="font-size:13px;white-space:pre-line;">{{ a.description }}</p>{% endif %}
   </div>

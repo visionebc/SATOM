@@ -39,6 +39,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   every one is ticked, and refused outright while a blocker stands. The
   answer is saved as `{{ last_answer }}`.
 
+- **Apps for people outside the console, with their own sign-in** (request:
+  "I want apps that are only for a group of people, with the same login but
+  only to this app and nothing else; and they could authenticate differently
+  from SATOM's login — the AD query or the FortiAuthenticator group can be
+  different, even other servers").
+  - **Profiles › Type: Apps only** — no permission, no console: the account
+    lands on **My apps** (`/a/`), opens only the apps given to it, and every
+    console page and the API v1 answer *not found* / `owner_forbidden`. Deny
+    by default: a route added later stays closed to these accounts until it
+    is allowed on purpose (a test walks the whole URL map).
+  - **Access › Directory connections** — any number of AD, LDAP and
+    RADIUS/FortiAuthenticator servers, each with its own address, bind
+    account and write-only secret, independent of Settings › Authentication.
+  - **Access › App sign-in** — per app: its own sign-in page
+    (`/a/<app>/login`, in the app's colours) with ordered rules — AD/LDAP
+    group DNs (AD nested) and an optional LDAP filter, RADIUS
+    `Fortinet-Group-Name` groups, or local accounts — each optionally
+    requiring a SATOM authenticator code (enrolled at the first sign-in).
+    Accounts are `user@<connection>`, pinned to that connection and never
+    accepted by the console sign-in; a sign-in proves its own app only, and
+    an administrator can revoke it at once.
+
 ### Changed
 - Plugin Studio tables, CSV downloads and copies leave out columns whose name
   starts with `_` (the app's own ids and row buttons), as *Save to a data

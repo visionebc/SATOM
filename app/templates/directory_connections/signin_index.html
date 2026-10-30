@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}App sign-in{% endblock %}
+{% block content %}
+{# Administrator > Access > App sign-in (views.directory_connections.signin_index). #}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-door-open me-2 text-accent"></i>{{ _('App sign-in') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Give an app to people who are not SATOM operators. They sign in on the app\'s own page, against the directory connections and groups you choose for it, and reach that app and nothing else (their profile is Apps only). Plugin Studio authors keep opening every app from the console.') }}</p>
+  </div>
+  <div><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('directory_connections.index') }}"><i class="bi bi-diagram-2 me-1"></i>{{ _('Directory connections') }}</a></div>
+</div>
+<div class="fw-table-wrapper">
+  <table class="fw-table">
+    <thead><tr><th>{{ _('App') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Own sign-in') }}</th><th>{{ _('Rules') }}</th><th>{{ _('Shared with') }}</th><th>{{ _('Signed-in people') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><i class="bi {{ r.a.icon }} me-1 text-accent"></i><strong>{{ r.a.name }}</strong><div class="text-muted" style="font-size:11px;"><code>{{ r.a.slug }}</code>{% if not r.a.enabled %} · {{ _('disabled') }}{% elif not r.runnable %} · {{ _('not published') }}{% endif %}</div></td>
+        <td style="font-size:13px;">{{ r.a.kind }}</td>
+        <td>{% if r.open %}<span class="fw-badge fw-badge-success">{{ _('open') }}</span>
+            {% elif r.policy.enabled %}<span class="fw-badge fw-badge-warning" title="{{ _('Enabled, but the app is disabled or not published.') }}">{{ _('waiting') }}</span>
+            {% elif r.policy.problem %}<span class="fw-badge fw-badge-danger" title="{{ r.policy.problem }}">{{ _('invalid') }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td style="font-size:13px;">{{ r.policy.rules|length or '—' }}</td>
+        <td style="font-size:13px;">{{ r.a.access.groups|length }} {{ _('group(s)') }}, {{ r.a.access.users|length }} {{ _('person(s)') }}</td>
+        <td style="font-size:13px;">{{ r.grants or '—' }}</td>
+        <td class="actions-col"><a class="btn btn-sm btn-outline-secondary btn-sm-icon" href="{{ url_for('directory_connections.signin_edit', slug=r.a.slug) }}" title="{{ _('Edit') }}"><i class="bi bi-pencil"></i></a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="text-muted p-3">{{ _('No apps yet. Create one in Plugin Studio.') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

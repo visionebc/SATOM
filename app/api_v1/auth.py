@@ -87,6 +87,11 @@ def token_required(scope: str = "read"):
             if owner is None or not getattr(owner, "is_active", False):
                 return _err(403, "owner_disabled",
                             "The user that owns this token is disabled.")
+            if getattr(owner, "is_apps_only", False):
+                # An Apps-only account has no API: it reaches its apps, in
+                # the browser, and nothing else (services.apps_only).
+                return _err(403, "owner_forbidden",
+                            "The token owner is an Apps only account.")
             if not tok.has_scope(scope):
                 return _err(403, "insufficient_scope",
                             f"This endpoint requires the '{scope}' scope.")

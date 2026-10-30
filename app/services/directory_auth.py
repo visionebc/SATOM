@@ -87,6 +87,10 @@ def ldap_authenticate(cfg: dict, username: str, password: str) -> tuple[bool, st
                 return False, f"Authentication failed: {conn.result.get('description', 'invalid credentials')}"
             # Optional membership/existence confirmation in the base DN.
             base = (cfg.get("base_dn") or "").strip()
+            extra = (cfg.get("extra_filter") or "").strip()
+            if extra and not base:
+                conn.unbind()
+                return False, "A group check needs a base DN."
             if base:
                 attr = cfg.get("user_attr") or "sAMAccountName"
                 # Confirm the EXACT identity that just bound, not merely a row
@@ -107,9 +111,15 @@ def ldap_authenticate(cfg: dict, username: str, password: str) -> tuple[bool, st
                     # case fully requires UPN sign-in (configure ad_domain).
                     bare = username.split("@")[0].split("\\")[-1]
                     flt = f"({attr}={_ldap_escape(bare)})"
+                if extra:
+                    # An app's sign-in rule (services.app_signin): the bound
+                    # identity must ALSO match the rule's filter / groups.
+                    flt = f"(&{flt}{extra})"
                 conn.search(base, flt, attributes=[attr])
                 if not conn.entries:
                     conn.unbind()
+                    if extra:
+                        return False, "User authenticated but is not in the required group."
                     return False, "User authenticated but not found under the base DN."
             conn.unbind()
             return True, "Authenticated via Active Directory."
@@ -121,6 +131,9 @@ def ldap_authenticate(cfg: dict, username: str, password: str) -> tuple[bool, st
         attr = cfg.get("user_attr") or "uid"
         user_filter = (cfg.get("user_filter") or f"({attr}={{username}})")
         flt = user_filter.replace("{username}", _ldap_escape(username))
+        extra = (cfg.get("extra_filter") or "").strip()
+        if extra:
+            flt = f"(&{flt}{extra})"
 
         svc = Connection(server, user=bind_dn or None, password=bind_pw or None,
                          authentication=SIMPLE if bind_dn else None, read_only=True)
@@ -134,6 +147,8 @@ def ldap_authenticate(cfg: dict, username: str, password: str) -> tuple[bool, st
         svc.search(base, flt, attributes=[attr])
         if not svc.entries:
             svc.unbind()
+            if extra:
+                return False, "User not found in directory, or not in the required group."
             return False, "User not found in directory."
         user_dn = svc.entries[0].entry_dn
         svc.unbind()
@@ -304,6 +319,10 @@ ATTRIBUTE	NAS-IP-Address		4	ipaddr
 ATTRIBUTE	NAS-Identifier		32	string
 ATTRIBUTE	NAS-Port		5	integer
 ATTRIBUTE	Reply-Message		18	string
+VENDOR		Fortinet		12356
+BEGIN-VENDOR	Fortinet
+ATTRIBUTE	Fortinet-Group-Name	1	string
+END-VENDOR	Fortinet
 """
 
 
@@ -326,18 +345,19 @@ def _radius_client(cfg: dict):
     return client
 
 
-def radius_authenticate(cfg: dict, username: str, password: str) -> tuple[bool, str]:
-    """Send an Access-Request; ``Access-Accept`` == authenticated."""
+def _radius_exchange(cfg: dict, username: str, password: str):
+    """One Access-Request: ``(ok, detail, reply)``; *reply* is ``None`` when
+    nothing usable came back."""
     if not cfg.get("host"):
-        return False, "No RADIUS host configured."
+        return False, "No RADIUS host configured.", None
     if not cfg.get("secret"):
-        return False, "No RADIUS shared secret configured."
+        return False, "No RADIUS shared secret configured.", None
     if not password:
-        return False, "Empty password."
+        return False, "Empty password.", None
     try:
         from pyrad.packet import AccessAccept, AccessReject
     except Exception as exc:  # noqa: BLE001
-        return False, f"pyrad not available: {exc}"
+        return False, f"pyrad not available: {exc}", None
     try:
         client = _radius_client(cfg)
         req = client.CreateAuthPacket(code=1, User_Name=username)
@@ -349,17 +369,50 @@ def radius_authenticate(cfg: dict, username: str, password: str) -> tuple[bool, 
             pass
         reply = client.SendPacket(req)
         if reply.code == AccessAccept:
-            return True, "Authenticated via RADIUS (FortiAuthenticator)."
+            return True, "Authenticated via RADIUS (FortiAuthenticator).", reply
         if reply.code == AccessReject:
             msg = ""
             try:
                 msg = reply.get("Reply-Message", [""])[0]
             except Exception:  # noqa: BLE001
                 pass
-            return False, f"Access rejected{(': ' + msg) if msg else '.'}"
-        return False, f"Unexpected RADIUS reply code {reply.code}."
+            return False, f"Access rejected{(': ' + msg) if msg else '.'}", reply
+        return False, f"Unexpected RADIUS reply code {reply.code}.", reply
     except Exception as exc:  # noqa: BLE001 — timeouts/socket/etc.
-        return False, f"{type(exc).__name__}: {exc}"
+        return False, f"{type(exc).__name__}: {exc}", None
+
+
+def radius_authenticate(cfg: dict, username: str, password: str) -> tuple[bool, str]:
+    """Send an Access-Request; ``Access-Accept`` == authenticated."""
+    ok, detail, _reply = _radius_exchange(cfg, username, password)
+    return ok, detail
+
+
+def radius_reply_groups(reply) -> list[str]:
+    """The ``Fortinet-Group-Name`` values (vendor 12356, attribute 1) an
+    Access-Accept carries -- how a FortiAuthenticator names the user's groups
+    when its RADIUS client sends group attributes. Empty when absent."""
+    if reply is None:
+        return []
+    try:
+        vals = reply.get("Fortinet-Group-Name") or []
+    except Exception:  # noqa: BLE001 — a malformed attribute is no group
+        return []
+    out = []
+    for v in vals:
+        if isinstance(v, bytes):
+            v = v.decode("utf-8", "replace")
+        v = str(v).strip().strip("\x00")
+        if v:
+            out.append(v)
+    return out
+
+
+def radius_authenticate_groups(cfg: dict, username: str,
+                               password: str) -> tuple[bool, str, list[str]]:
+    """Like :func:`radius_authenticate`, plus the groups the Accept named."""
+    ok, detail, reply = _radius_exchange(cfg, username, password)
+    return ok, detail, (radius_reply_groups(reply) if ok else [])
 
 
 def radius_test(cfg: dict, username: str = "", password: str = "") -> tuple[bool, str]:

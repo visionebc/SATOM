@@ -1,0 +1,19 @@
+/* The Apps-only portal (templates/apps_portal/): the console's light theme,
+   its topbar tokens and cards, without the sidebar. */
+body.ap-portal { background: var(--fw-content-bg, #F3F6FC); }
+.ap-main { padding: calc(var(--fw-topbar-height, 52px) + 20px) 24px 32px; max-width: 1400px; margin: 0 auto; }
+.ap-brand { display: flex; align-items: center; gap: 8px; color: #fff; text-decoration: none; font-weight: 600; }
+.ap-logo { height: 26px; width: auto; }
+.ap-actions .fw-topbar-btn { display: inline-flex; align-items: center; width: auto; padding: 0 10px; }
+
+.ap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.ap-tile { display: flex; gap: 12px; align-items: flex-start; padding: 16px; text-decoration: none; color: inherit; height: 100%; }
+.ap-tile:hover { box-shadow: 0 2px 10px rgba(4, 31, 90, .12); }
+.ap-tile-icon { font-size: 26px; color: var(--fw-accent, #EF5424); line-height: 1; }
+.ap-tile-name { font-weight: 600; font-size: 14px; }
+.ap-tile-desc { font-size: 12px; color: #5E6C84; white-space: pre-line; }
+
+.ap-login { max-width: 420px; margin: 6vh auto 0; }
+.ap-login .fw-card-body { padding: 24px; }
+.ap-login-icon { font-size: 34px; color: var(--fw-accent, #EF5424); }
+.ap-qr svg { width: 180px; height: 180px; }

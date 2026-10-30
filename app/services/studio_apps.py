@@ -477,7 +477,13 @@ def save_settings(a: StudioApp, form: dict, adom_keys, by: str) -> None:
     if bad:
         raise AppError("unknown ADOM(s): %s" % ", ".join(bad))
     a.adoms_json = json.dumps(["*"] if "*" in adoms else sorted(set(adoms)))
-    acc = form.get("access") or {}
+    set_access(a, form.get("access") or {})
+    a.updated_by = by
+    db.session.commit()
+
+
+def set_access(a: StudioApp, acc: dict) -> None:
+    """The app's access list (users and user groups), checked; not committed."""
     gids = sorted({int(x) for x in acc.get("groups") or [] if str(x).isdigit()})
     uids = sorted({int(x) for x in acc.get("users") or [] if str(x).isdigit()})
     from ..models import User
@@ -486,8 +492,6 @@ def save_settings(a: StudioApp, form: dict, adom_keys, by: str) -> None:
     if uids and User.query.filter(User.id.in_(uids)).count() != len(uids):
         raise AppError("a user in the access list does not exist")
     a.access_json = json.dumps({"groups": gids, "users": uids})
-    a.updated_by = by
-    db.session.commit()
 
 
 def clean_graph(graph) -> dict:
@@ -888,7 +892,12 @@ def can_use(user, a: StudioApp) -> bool:
     acc = a.access
     if user.id in acc["users"]:
         return True
-    return bool(group_ids_of(user) & set(acc["groups"]))
+    if group_ids_of(user) & set(acc["groups"]):
+        return True
+    # An account an app's sign-in made: this session signed in through *a*
+    # and its grant stands (services.app_signin).
+    from . import app_signin
+    return app_signin.may_use_by_signin(user, a)
 
 
 def shown_in(a: StudioApp, product_key: str) -> bool:
@@ -904,6 +913,8 @@ def menu(user, product_key: str) -> list[dict]:
     of their run page. ``endpoint`` / ``target`` build the link."""
     if user is None or not getattr(user, "is_authenticated", False):
         return []
+    if getattr(user, "is_apps_only", False):
+        return [m for m in portal_apps(user) if not m["needs_signin"]]
     try:
         adopt_scripts()
     except Exception:  # noqa: BLE001 -- a read-only standby cannot write; list what is there
@@ -927,6 +938,58 @@ def menu(user, product_key: str) -> list[dict]:
                         "endpoint": "apps.page", "target": a.slug})
     # by name as people read it: the database's order puts "Zeta" before "alpha"
     return sorted(out, key=lambda m: m["name"].lower())
+
+
+def _runnable_app(a: StudioApp) -> bool:
+    if not a.enabled:
+        return False
+    if a.kind == "script":
+        meta = script_meta(a)
+        return bool(meta.get("published"))
+    return a.status == "published" and bool(a.published)
+
+
+def portal_apps(user) -> list[dict]:
+    """An Apps-only account's apps (the portal's "My apps", and its menu):
+    every enabled, published app it may use now, plus the apps a sign-in
+    granted it that this session has not signed in to yet (``needs_signin``:
+    the link is the app's sign-in page). ADOMs do not apply: the account has
+    no console to be in an ADOM of."""
+    from flask import url_for
+    from . import app_signin
+    out, seen = [], set()
+    granted = {a.id for a in app_signin.apps_granted_to(user)}
+    for a in StudioApp.query.filter_by(enabled=True).order_by(StudioApp.name).all():
+        if not _runnable_app(a):
+            continue
+        usable = can_use(user, a)
+        if not usable and not (a.id in granted and app_signin.is_open(a)):
+            continue
+        if a.id in seen:
+            continue
+        seen.add(a.id)
+        if a.kind == "script":
+            meta = script_meta(a)
+            name, desc = meta.get("name") or a.name, meta.get("description") or ""
+            endpoint, target = "scripts.run_page", a.script_slug
+        else:
+            name, desc = a.name, a.description or ""
+            endpoint, target = "apps.page", a.slug
+        url = (url_for(endpoint, slug=target) if usable
+               else url_for("apps_portal.login", slug=a.slug))
+        out.append({"slug": a.slug, "name": name, "description": desc, "icon": a.icon,
+                    "kind": a.kind, "endpoint": endpoint, "target": target, "url": url,
+                    "needs_signin": not usable})
+    return sorted(out, key=lambda m: m["name"].lower())
+
+
+def run_product(a: StudioApp, session_product: str) -> str:
+    """The ADOM an Apps-only account's run executes in: the session's when the
+    app is drawn there, else the app's first ADOM (the account has no switcher
+    to pick one with)."""
+    if shown_in(a, session_product):
+        return session_product or "global"
+    return next((x for x in a.adoms if x not in ("*",)), "global")
 
 
 # --------------------------------------------------------------------------- #

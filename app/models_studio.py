@@ -202,6 +202,51 @@ class UserGroup(db.Model):
                               order_by="User.username")
 
 
+class DirectoryConnection(db.Model):
+    """One directory server an app's sign-in may prove people against
+    (Administrator > Access > Directory connections, services.directory_connections).
+
+    Separate from the Plugin Studio connections on purpose: those are handed
+    to app and script code, and a bind password or RADIUS shared secret used
+    for sign-in must never be readable by it. The secret is not a column
+    either: an ``app_settings`` row (Fernet) or the vault, like the global
+    directory secrets (``auth_store``)."""
+    __tablename__ = "directory_connections"
+
+    KINDS = ("ad", "ldap", "radius")
+
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(40), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    kind = db.Column(db.String(16), nullable=False)
+    #: The non-secret settings, same keys as the global ldap / radius section.
+    cfg_json = db.Column(db.Text, nullable=False, default="{}")
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    created_by = db.Column(db.String(64), nullable=False, default="")
+    updated_by = db.Column(db.String(64), nullable=False, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+
+    @property
+    def cfg(self) -> dict:
+        return _loads(self.cfg_json, {})
+
+
+class StudioAppGrant(db.Model):
+    """"This person may use this app": written by the app's sign-in when the
+    person passes one of its rules, recomputed at every sign-in through that
+    connection, removable by an administrator."""
+    __tablename__ = "studio_app_grants"
+
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"),
+                        primary_key=True)
+    app_id = db.Column(db.Integer, db.ForeignKey("studio_apps.id", ondelete="CASCADE"),
+                       primary_key=True)
+    connection_id = db.Column(db.Integer, nullable=True)
+    granted_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 # --------------------------------------------------------------------------- #
 #  Apps                                                                        #
 # --------------------------------------------------------------------------- #
@@ -248,6 +293,15 @@ class StudioApp(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)
     published_at = db.Column(db.DateTime, nullable=True)
+    #: The app's own sign-in (services.app_signin): {enabled, rules, profile_id,
+    #: require_approval}. Install-specific like ``access_json``: it never
+    #: travels in an app package. "{}" = no sign-in page. 2026-10-30.
+    login_json = db.Column(db.Text, nullable=False, default="{}", server_default="{}")
+
+    @property
+    def login(self) -> dict:
+        d = _loads(self.login_json, {})
+        return d if isinstance(d, dict) else {}
 
     @property
     def adoms(self) -> list:

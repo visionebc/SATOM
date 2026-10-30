@@ -214,6 +214,11 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   base URL, model and whether a key was set, never the key),
   <code>settings.ai_default</code> and <code>settings.ai_provider_delete</code>. Until now, which
   endpoint the assistant sends to could change with no trace.</li>
+<li>Scout runs a tool call the model wrote as bare JSON at the start of its
+  reply (no fence), and drops anything written after it. Measured with a
+  local model that wrote the call and then invented the result; SATOM ran
+  nothing and the invented data reached the operator as the answer. The
+  round goes back to the model as the call alone, never as its own text.</li>
 <li>User guide §33 named the old Scout ladder <em>Fault Isolation</em> (§12); it is
   <strong>Path Diagnostics</strong> (§13), and it never calls Scout's AI providers.</li>
 </ul>

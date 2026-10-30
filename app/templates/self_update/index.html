@@ -465,7 +465,7 @@
         {% set purgeable = api_packs.purgeable or [] %}
         <div class="table-responsive mb-2">
           <table class="table table-sm small align-middle mb-0" id="apk-list">
-            <thead><tr><th>{{ _('Pack') }}</th><th>{{ _('Lane') }}</th><th>{{ _('Source') }}</th>
+            <thead><tr><th>{{ _('Pack') }}</th><th>{{ _('Lane and state') }}</th>
               <th class="text-end">{{ _('Size') }}</th><th></th></tr></thead>
             <tbody>
             {% for p in shipped + uploaded %}
@@ -473,14 +473,12 @@
                 <td><button type="button" class="btn btn-link btn-sm p-0 text-start text-break"
                             data-js="apk-select" data-source="{{ p.source }}" data-name="{{ p.name }}">
                     <span class="font-monospace">{{ p.name }}</span></button></td>
-                <td>
+                <td><div class="d-flex flex-wrap gap-1">
                 {% if p.series == 'knowledge' %}
                 <span class="fw-badge fw-badge-info apk-kb text-nowrap" title="{{ _('Rolling snapshot built by satom-harvester from lab schema dumps and vendor documentation, signed with the knowledge key. Each knowledge pack carries everything the older ones did.') }} {{ p.provenance }}">{{ _('knowledge pack (satom-harvester)') }}</span>
                 {% elif p.series == 'api_pack' %}
                 <span class="fw-badge fw-badge-success apk-lane text-nowrap" title="{{ _('satom-harvester snapshot pinned to this SATOM release, signed with the API pack key.') }} {{ p.provenance }}">{{ _('API pack') }}{% if p.pinned_to %} · {{ p.pinned_to }}{% endif %}</span>
                 {% endif %}
-                </td>
-                <td class="text-nowrap">
                 {% if p.name in purgeable %}
                 <span class="fw-badge fw-badge-secondary apk-old" title="{{ _('A newer pack of the same series carries everything this one does. Purge old packs removes it.') }}">{{ _('superseded') }}</span>
                 {% elif p.source == 'shipped' %}
@@ -489,7 +487,7 @@
                 <span class="fw-badge fw-badge-secondary">{{ _('uploaded') }}</span>
                 {% endif %}
                 {% if p.imported %}<span class="fw-badge fw-badge-success">{{ _('imported') }}</span>{% endif %}
-                </td>
+                </div></td>
                 <td class="text-end text-nowrap text-muted">{{ (p.size / 1048576)|round(1) }} MB</td>
                 <td class="text-end">
                 {% if p.source == 'uploaded' %}
@@ -503,7 +501,7 @@
                 </td>
               </tr>
             {% else %}
-              <tr><td colspan="5" class="text-muted">
+              <tr><td colspan="4" class="text-muted">
                 {{ _('No pack on this node. A release that carries one has it in api-packs/; you can also upload one downloaded from the release page.') }}</td></tr>
             {% endfor %}
             </tbody>

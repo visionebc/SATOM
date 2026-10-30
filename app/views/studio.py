@@ -95,6 +95,18 @@ def index():
         sandbox_ok=sandbox.available())
 
 
+@bp.get("/icons.json")
+@login_required
+def icons():
+    """The icon pickers' list (Plugin Studio apps and Report Studio views):
+    every icon the vendored font draws that a package may carry -- the same
+    list the SATOM Builder's picker offers. Icon names, nothing else."""
+    from ..services import bootstrap_icons
+    resp = jsonify(list(bootstrap_icons.names()))
+    resp.headers["Cache-Control"] = "private, max-age=86400"
+    return resp
+
+
 def _bundles() -> list[dict]:
     from ..services import studio_examples as EX
     links = {"connection": "studio.connection", "store": "studio.store",

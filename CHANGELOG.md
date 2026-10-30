@@ -101,6 +101,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   health → recent changes; evidence kept apart from inference; missing data
   said in words), and three read-only tools feed it: `list_path_reports`,
   `path_report` and `metrics_context`, all scoped to the operator's ADOM.
+- **Icon picker in Plugin Studio and Report Studio** (request: "the Builder
+  and Plugin Studio must have the same icon menu, otherwise importing
+  something can fail — bring the Builder's icon picker into Plugin Studio").
+  The app Settings tab and the Report Studio editor get SATOM Builder's
+  picker: a searchable grid of the 2048 icons of the vendored Bootstrap
+  Icons 1.11.3 font that a package may carry, served by
+  `GET /studio/icons.json` — the same font and pattern the Builder builds its
+  list from.
 
 ### Changed
 - User guide §33 rewritten as *Scout — the operations assistant*: tools,
@@ -114,6 +122,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   may open another app of the same bundle.
 
 ### Fixed
+- An icon name the font does not draw (`bi-shield-search` matches the
+  `bi-…` pattern and shows as a blank) is no longer accepted silently.
+  Saving a Plugin Studio app refuses it; a Report Studio save keeps the body
+  and falls back to `bi-puzzle` with a warning (until now it stored any text,
+  unchecked); importing a view, widget or app package never fails on its
+  icon — it falls back to the default and the import report says so.
 - Changing Scout in **Settings → AI → Scout ▸ Providers** now leaves a row in
   the Audit Log: `settings.ai_flags`, `settings.ai_provider_save` (kind,
   base URL, model and whether a key was set, never the key),

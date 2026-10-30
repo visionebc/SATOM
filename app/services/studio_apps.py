@@ -470,6 +470,9 @@ def save_settings(a: StudioApp, form: dict, adom_keys, by: str) -> None:
     icon = (form.get("icon") or "bi-app-indicator").strip()
     if not _ICON_RE.match(icon):
         raise AppError("icon: a Bootstrap icon name such as bi-app-indicator")
+    from . import bootstrap_icons
+    if not bootstrap_icons.is_known(icon):
+        raise AppError("icon: %s is not in the icon set (pick one with the icon picker)" % icon)
     a.icon = icon
     adoms = [str(x) for x in form.get("adoms") or []]
     allowed = set(adom_keys) | {"*", "global"}

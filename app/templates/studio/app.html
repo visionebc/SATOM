@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ a.name }} — App{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ asset('css/app_design.css') }}">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ asset('css/app_design.css') }}">
+<link rel="stylesheet" href="{{ asset('css/icon_picker.css') }}">
+<script src="{{ asset('js/icon_picker.js') }}" nonce="{{ csp_nonce }}" defer></script>{% endblock %}
 {% block content %}
 {# Plugin Studio > Apps > editor (views.studio.app_edit). Settings, the form,
    the diagram (process_editor.js with the app step kinds), the output
@@ -34,7 +36,7 @@
     <div class="row g-3">
       <div class="col-xl-6"><div class="fw-card"><div class="fw-card-body row g-2" style="font-size:13px;">
         <div class="col-md-8"><label class="form-label small" for="ap-name">{{ _('Name (the menu entry)') }}</label><input class="form-control form-control-sm" id="ap-name" value="{{ a.name }}" maxlength="120"></div>
-        <div class="col-md-4"><label class="form-label small" for="ap-icon">{{ _('Icon') }}</label><input class="form-control form-control-sm" id="ap-icon" value="{{ a.icon }}" maxlength="31" placeholder="bi-app-indicator"></div>
+        <div class="col-md-4"><label class="form-label small" for="ap-icon">{{ _('Icon') }}</label><input class="form-control form-control-sm" id="ap-icon" value="{{ a.icon }}" maxlength="31" placeholder="bi-app-indicator" data-icon-picker="{{ url_for('studio.icons') }}"></div>
         <div class="col-12"><label class="form-label small" for="ap-desc">{{ _('Description (shown to users)') }}</label><textarea class="form-control form-control-sm" id="ap-desc" rows="3" maxlength="2000">{{ a.description }}</textarea></div>
         <div class="col-12"><label class="form-label small d-block">{{ _('Where it appears (Operations > Plugins of these ADOMs)') }}</label>
           <div class="form-check form-check-inline"><input class="form-check-input ap-adom" type="checkbox" id="ap-adom-all" value="*" {{ 'checked' if '*' in a.adoms }}><label class="form-check-label" for="ap-adom-all"><strong>{{ _('Every ADOM') }}</strong></label></div>

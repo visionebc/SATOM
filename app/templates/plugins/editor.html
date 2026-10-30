@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Edit' if plugin else 'New' }} view — Report Studio{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ asset('css/icon_picker.css') }}">
+<script src="{{ asset('js/icon_picker.js') }}" nonce="{{ csp_nonce }}" defer></script>{% endblock %}
 {% block content %}
 
 <div class="fw-breadcrumb">
@@ -70,7 +72,7 @@
               {% for k in ['view','widget'] %}<option value="{{ k }}" {{ 'selected' if plugin and plugin.kind==k }}>{{ k }}</option>{% endfor %}
             </select></div>
           <div class="col-sm-3"><label class="fw-form-label">{{ _('Icon') }}</label>
-            <input class="form-control fw-form-control" name="icon" id="fld-icon" value="{{ plugin.icon if plugin else 'bi-puzzle' }}"></div>
+            <input class="form-control fw-form-control" name="icon" id="fld-icon" value="{{ plugin.icon if plugin else 'bi-puzzle' }}" data-icon-picker="{{ url_for('studio.icons') }}"></div>
           <div class="col-12" id="fld-kind-help">
             {% from "_plugin_kinds.html" import kind_explainer %}
             {{ kind_explainer(plugin.kind if plugin else 'view') }}
@@ -193,6 +195,7 @@
     onInsert: function(ex){
       document.getElementById('fld-name').value = ex.name || ex.title || '';
       document.getElementById('fld-icon').value = ex.icon || 'bi-puzzle';
+      if (window.SatomIconPicker) { window.SatomIconPicker.sync(); }
       document.getElementById('fld-jinja').value = ex.jinja || '';
       document.getElementById('fld-css').value = ex.css || '';
       document.getElementById('fld-js').value = ex.js || '';

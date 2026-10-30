@@ -108,6 +108,11 @@ def save(pid=None):
     if not name:
         flash("A name is required.", "error")
         return redirect(url_for("plugins.new"))
+    # An icon the font does not draw is replaced, not refused: refusing would
+    # throw away the unsaved body with the redirect.
+    from ..services import bootstrap_icons
+    icon, icon_note = bootstrap_icons.or_default((f.get("icon") or "bi-puzzle").strip()[:40],
+                                                 "bi-puzzle")
     ds = f.getlist("datasets")
     ds = PD.declarable(ds)  # entitlement filter: every source, this ADOM
     if pid:
@@ -118,7 +123,7 @@ def save(pid=None):
         db.session.add(plugin)
     plugin.name = name
     plugin.kind = f.get("kind") if f.get("kind") in Plugin.KINDS else "view"
-    plugin.icon = (f.get("icon") or "bi-puzzle").strip()[:32]
+    plugin.icon = icon
     plugin.jinja = f.get("jinja") or ""
     plugin.css = f.get("css") or ""
     plugin.js = f.get("js") or ""
@@ -127,6 +132,8 @@ def save(pid=None):
     db.session.commit()
     log_action("plugin.save", target=plugin.slug, extra={"id": plugin.id})
     flash(f"Saved “{plugin.name}”.", "success")
+    if icon_note:
+        flash(icon_note[0].upper() + icon_note[1:] + ".", "warning")
     return redirect(url_for("plugins.edit", pid=plugin.id))
 
 

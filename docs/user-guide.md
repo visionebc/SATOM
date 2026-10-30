@@ -4763,6 +4763,13 @@ of every file and an optional Ed25519 signature).
   (10 MB package, 2 MB per file). A signature must come from a key this server
   trusts and match the manifest — a bad or unknown signature is refused, never
   treated as "unsigned".
+- **Icons never stop an import.** The Report Studio editor has the same icon
+  picker as Plugin Studio and SATOM Builder (one list, read from SATOM's
+  font). A package — view, widget or app — whose icon the font does not
+  draw still installs: the icon becomes the default (`bi-puzzle` for a view
+  or widget, `bi-app-indicator` for an app, or the app's current icon when it
+  is an update) and the import report says so. Saving a view with such a
+  name does the same, with a warning, so an unsaved body is never lost.
 - **The import is two steps.** Uploading shows the package first: its
   problems and warnings, what it creates and what it keeps as it is here,
   where it lands (*draft* or *testing*), who signed it (Vision EBC, a trusted
@@ -5303,6 +5310,11 @@ The editor has seven tabs:
   appears (the ADOMs you tick, or every ADOM) and **who** may use it (the
   groups and the people you tick; every Plugin Studio author can too). Nobody
   else sees the entry or can open the app, its runs or their actions.
+  The grid button next to **Icon** opens the icon picker: a searchable grid
+  of the 2048 Bootstrap icons SATOM's font draws — the same list SATOM
+  Builder's picker offers, so an icon picked there always exists here. You
+  can still type a name, but a name the font does not draw (it would show as
+  a blank) is refused on save.
 - **Form** — the fields the user fills in: text, textarea, number, date,
   checkbox, password and three lists — a fixed list, a list from a **data
   store** column (value and label columns) and a list from an **API** (a

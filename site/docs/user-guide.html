@@ -5348,6 +5348,13 @@ of every file and an optional Ed25519 signature).</p>
   (10 MB package, 2 MB per file). A signature must come from a key this server
   trusts and match the manifest — a bad or unknown signature is refused, never
   treated as "unsigned".</li>
+<li><strong>Icons never stop an import.</strong> The Report Studio editor has the same icon
+  picker as Plugin Studio and SATOM Builder (one list, read from SATOM's
+  font). A package — view, widget or app — whose icon the font does not
+  draw still installs: the icon becomes the default (<code>bi-puzzle</code> for a view
+  or widget, <code>bi-app-indicator</code> for an app, or the app's current icon when it
+  is an update) and the import report says so. Saving a view with such a
+  name does the same, with a warning, so an unsaved body is never lost.</li>
 <li><strong>The import is two steps.</strong> Uploading shows the package first: its
   problems and warnings, what it creates and what it keeps as it is here,
   where it lands (<em>draft</em> or <em>testing</em>), who signed it (Vision EBC, a trusted
@@ -5915,7 +5922,12 @@ data store, connection) refuses it with the reason.</p>
 <li><strong>Settings</strong> — name and icon of the menu entry, description, <strong>where</strong> it
   appears (the ADOMs you tick, or every ADOM) and <strong>who</strong> may use it (the
   groups and the people you tick; every Plugin Studio author can too). Nobody
-  else sees the entry or can open the app, its runs or their actions.</li>
+  else sees the entry or can open the app, its runs or their actions.
+  The grid button next to <strong>Icon</strong> opens the icon picker: a searchable grid
+  of the 2048 Bootstrap icons SATOM's font draws — the same list SATOM
+  Builder's picker offers, so an icon picked there always exists here. You
+  can still type a name, but a name the font does not draw (it would show as
+  a blank) is refused on save.</li>
 <li><strong>Form</strong> — the fields the user fills in: text, textarea, number, date,
   checkbox, password and three lists — a fixed list, a list from a <strong>data
   store</strong> column (value and label columns) and a list from an <strong>API</strong> (a

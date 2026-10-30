@@ -323,9 +323,13 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
             kept.append("app %s: draft replaced, published version and access unchanged" % slug)
         a.name = (spec.get("name") or a.name)[:120]
         a.description = str(spec.get("description") or "")[:2000]
-        icon = str(spec.get("icon") or "")
-        if SA._ICON_RE.match(icon):
-            a.icon = icon
+        from . import bootstrap_icons
+        here = a.icon if bootstrap_icons.is_known(a.icon) else "bi-app-indicator"
+        if spec.get("icon"):                  # none in the package: this server's stays
+            here, why = bootstrap_icons.or_default(spec.get("icon"), here)
+            if why:
+                warnings.append("app %s: %s" % (slug, why))
+        a.icon = here
         a.pkg_version = pk.version
         a.pkg_signer = pk.signer or ""
         db.session.flush()

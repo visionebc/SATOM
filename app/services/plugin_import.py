@@ -220,7 +220,11 @@ def _install_view(pk: P.Package, by: str, allow_downgrade: bool) -> dict:
         plugin = existing
     plugin.name = pk.manifest["name"].strip()[:200]
     plugin.kind = pk.kind
-    plugin.icon = pk.manifest["icon"]
+    todo, warnings = [], []
+    from . import bootstrap_icons
+    plugin.icon, why = bootstrap_icons.or_default(pk.manifest["icon"], "bi-puzzle")
+    if why:
+        warnings.append(why)
     plugin.jinja = pk.text("body.jinja")
     plugin.css = pk.text("style.css")
     plugin.js = pk.text("script.js")
@@ -228,7 +232,6 @@ def _install_view(pk: P.Package, by: str, allow_downgrade: bool) -> dict:
     plugin.params = json.dumps(sandbox.clean_param_defs(pk.manifest.get("params") or []))
     plugin.pkg_version = pk.version
     plugin.pkg_signer = pk.signer or ""
-    todo, warnings = [], []
     if plugin.status == "published":
         # The publish gate holds for an update too: a body that no longer
         # renders goes back to testing instead of breaking Custom Views.

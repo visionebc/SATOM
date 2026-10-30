@@ -135,6 +135,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   and falls back to `bi-puzzle` with a warning (until now it stored any text,
   unchecked); importing a view, widget or app package never fails on its
   icon — it falls back to the default and the import report says so.
+- **A refused app package import left objects behind.** The helpers that
+  create an app, a data store, a connection or an API version commit on
+  their own, so a refusal raised after them (an action that opens an app the
+  server does not have, a form field reading a data store that is
+  nowhere) left them on the server — importing `dns-lb-lookup` before
+  `dns-records` left an empty draft app `dns-lb-lookup`. The import now checks the form, diagram, actions and
+  design against this server before it writes anything (what the package
+  brings counts as present) and says which app to import first.
 - Changing Scout in **Settings → AI → Scout ▸ Providers** now leaves a row in
   the Audit Log: `settings.ai_flags`, `settings.ai_provider_save` (kind,
   base URL, model and whether a key was set, never the key),

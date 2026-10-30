@@ -42,7 +42,10 @@ Nothing is written before the whole package passed the rules that need no
 server state (``package_check.app_preflight``): a template (Plugin Studio >
 Examples) is never replaced or created, a connection never carries a secret
 and is never postgres, an API version has endpoints, every packaged script
-passes the script rules. The import page applies the rest of
+passes the script rules. Nor before what ``save_draft`` would refuse on THIS
+server (``_server_refusal``: the form, diagram, actions and design, with what
+the package brings counted as present -- e.g. an action that opens an app the
+server does not have). The import page applies the rest of
 ``package_check.check`` -- by policy -- before it calls :func:`install`.
 
 Export writes the same file from a live app, minus every secret: a
@@ -202,6 +205,47 @@ def _body(pk) -> dict:
         raise AppPackageError("%s is not valid JSON." % P.APP_FILE) from None
 
 
+def _server_refusal(body: dict) -> None:
+    """What ``save_draft`` would refuse ON THIS SERVER, checked before anything
+    is written: the form, diagram, actions and design, with the data stores,
+    HTTP connections and app the package itself brings counted as present.
+
+    The helpers that create an app, a data store, a connection or an API
+    version commit on their own, so a refusal raised halfway through
+    ``install`` -- after them -- left what they created behind: importing
+    ``dns-lb-lookup`` before ``dns-records`` (its *DNS Records* action opens
+    that app) left an empty draft app ``dns-lb-lookup`` (2026-10-30).
+    """
+    from . import studio_apps as SA
+    from . import studio_design as D
+    spec = body.get("app") or {}
+    slug = str(spec.get("slug") or "").strip()
+    ch = SA.choices()
+    ch["stores"] = sorted(set(ch.get("stores") or ())
+                          | {str(s.get("slug") or "") for s in body.get("stores") or []})
+    ch["http"] = sorted(set(ch.get("http") or ())
+                        | {str(c.get("slug") or "") for c in body.get("connections") or []
+                           if (c.get("kind") or "http") == "http"})
+    ch["apps"] = sorted(set(ch.get("apps") or ()) | {slug})
+    for act in spec.get("actions") or []:
+        if not isinstance(act, dict) or act.get("kind") not in ("run_app", "open_app"):
+            continue
+        other = str((act.get("params") or {}).get("app") or "")
+        if other and other not in ch["apps"]:
+            raise AppPackageError(
+                "the app package could not be installed: action %s opens the app %s, "
+                "which this server does not have -- import its package first; nothing "
+                "was written" % (act.get("key"), other))
+    try:
+        SA.clean_fields(spec.get("fields") or [], ch)
+        SA.clean_graph(spec.get("graph") or {})
+        SA.clean_actions(spec.get("actions") or [], ch)
+        D.clean(spec.get("design") or {})
+    except (SA.AppError, D.DesignError) as exc:
+        raise AppPackageError("the app package could not be installed: %s; nothing was "
+                              "written" % exc) from None
+
+
 def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
     """Install an app package. ``{app, created, kept, todo, problems, warnings}``."""
     from ..extensions import db
@@ -236,6 +280,7 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
             P.version_tuple(pk.version) < P.version_tuple(existing.pkg_version):
         raise AppPackageError("%s %s is installed and %s is older (tick Allow downgrade)"
                               % (slug, existing.pkg_version, pk.version))
+    _server_refusal(body)
     created, kept, todo, warnings = [], [], [], []
     try:
         for api in body.get("apis") or []:

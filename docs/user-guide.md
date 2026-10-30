@@ -5507,8 +5507,10 @@ secret (set it in Connections), missing data stores created with their rows;
 an existing data store keeps its rows (new columns are added), an existing
 connection is never changed, and the app's **draft** is replaced while its
 published version and access list stay as they are. A package older than the
-installed one needs *Allow downgrade*. Signed packages come from the internal
-generator (`satom-dev/satom-plugins`).
+installed one needs *Allow downgrade*. An app whose action opens or runs an
+app this server does not have is refused with that app's name — import its
+package first; a refused import writes nothing. Signed packages come from the
+internal generator (`satom-dev/satom-plugins`).
 
 **What the importer checks.** Every package goes through one check before
 anything is written. Each problem names the rule it breaks, and the answer

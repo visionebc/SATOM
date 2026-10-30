@@ -75,12 +75,21 @@ def layout() -> str | None:
     return "apps_portal/layout.html" if is_apps_only(current_user) else None
 
 
+def portal_menu() -> list[dict]:
+    """The portal's menu: this Apps-only account's apps by menu group
+    (studio_apps.grouped), nothing for any other account."""
+    if not is_apps_only(current_user):
+        return []
+    from . import studio_apps as SA
+    return SA.grouped(SA.portal_apps(current_user))
+
+
 def init_app(app) -> None:
     app.before_request(_gate)
 
     @app.context_processor
     def _apps_only_layout():
         try:
-            return {"portal_layout": layout()}
+            return {"portal_layout": layout(), "portal_menu": portal_menu}
         except Exception:  # noqa: BLE001 -- e.g. rendering outside a request
-            return {"portal_layout": None}
+            return {"portal_layout": None, "portal_menu": lambda: []}

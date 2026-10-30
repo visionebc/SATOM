@@ -235,7 +235,25 @@ class BookmarkDenied(Exception):
 # Visibility
 # ---------------------------------------------------------------------------
 
+#: The key that shows the device inventory. The bookmarks rail is open to
+#: every console account, and visible_appliances() scopes by ADOM and
+#: maintenance only -- it trusts the page to have required this key. The
+#: rail did not: a profile with NO permission read every device's name and
+#: address in its lens and its "add bookmark" picker (2026-10-30).
+DEVICE_VIEW = "appliances.view"
+
+
+def may_see_devices(user) -> bool:
+    try:
+        return bool(user is not None and getattr(user, "is_authenticated", False)
+                    and user.can(DEVICE_VIEW))
+    except Exception:  # noqa: BLE001 -- an unreadable profile sees no device
+        return False
+
+
 def _visible_appliance_ids(user) -> set[int]:
+    if not may_see_devices(user):
+        return set()
     return {
         row[0] for row in
         visible_appliances(db.session.query(Appliance.id), user=user).all()

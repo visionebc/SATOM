@@ -17,3 +17,16 @@ body.ap-portal { background: var(--fw-content-bg, #F3F6FC); }
 .ap-login .fw-card-body { padding: 24px; }
 .ap-login-icon { font-size: 34px; color: var(--fw-accent, #EF5424); }
 .ap-qr svg { width: 180px; height: 180px; }
+
+/* The portal's menu (layout.html): Plugins only, every group open, in the
+   console's sidebar look. */
+body.ap-has-side .ap-main { margin-left: var(--fw-sidebar-width, 260px); max-width: none; }
+.ap-side .ap-side-group span { overflow: hidden; text-overflow: ellipsis; }
+.ap-side .ap-side-sub { padding-left: 34px; }
+.ap-side .fw-nav-item span:not(.fw-badge) { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 768px) {
+  /* No toggle to slide it in: on a phone the menu sits above the page. */
+  .fw-sidebar.ap-side { position: static; transform: none; width: auto; height: auto;
+                        min-height: 0; margin-top: var(--fw-topbar-height, 52px); }
+  body.ap-has-side .ap-main { margin-left: 0; padding-top: 20px; }
+}

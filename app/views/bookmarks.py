@@ -309,8 +309,9 @@ def build_panel(q: str = '') -> dict:
     # order is the heading. Changing it is a per-user act on the profile page:
     # nobody re-shapes anybody else's panel.
     stack = svc.lens_for(current_user)
-    appliances = visible_appliances(
+    appliances = (visible_appliances(
         db.session.query(Appliance), user=current_user).all()
+        if svc.may_see_devices(current_user) else [])
     lens_root = _node(ROOT_LENS, svc.lens_title(stack), icon='bi-diagram-3')
     for appl in appliances:
         cursor = lens_root
@@ -445,9 +446,10 @@ def panel():
 def devices():
     """The device picker for "add bookmark". Scoped through the SAME gate the
     rest of the console uses, so the picker cannot enumerate devices the user
-    may not open."""
+    may not open -- and, like the lens, nothing without appliances.view."""
     q = (request.args.get('q') or '').strip().lower()
-    rows = visible_appliances(db.session.query(Appliance), user=current_user).all()
+    rows = (visible_appliances(db.session.query(Appliance), user=current_user).all()
+            if svc.may_see_devices(current_user) else [])
     out = [
         {'id': a.id, 'name': a.name, 'host': a.host, 'kind': a.kind}
         for a in rows if not q or q in a.name.lower() or q in (a.host or '').lower()

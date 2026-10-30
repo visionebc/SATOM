@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 {# The page layout of an Apps-only account (services.apps_only.layout): the
-   SATOM look without the console -- no sidebar, no ADOM or device switcher,
+   SATOM look without the console -- no console sidebar (only its own apps,
+   below), no ADOM or device switcher,
    no bell, jobs dock or bookmarks rail (every one of them calls console
    endpoints this account is refused). App pages extend it through
    ``portal_layout``; the portal's own pages extend it directly. #}
@@ -20,7 +21,11 @@
   <script src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
   {% block head %}{% endblock %}
 </head>
-<body class="ap-portal">
+{# The menu (2026-10-30, operator: "an external user sees only what is inside
+   Plugins, already expanded"): the apps this account may use and nothing
+   else, every menu group drawn open -- no toggle, no console section. #}
+{% set _pmenu = portal_menu() if current_user.is_authenticated else [] %}
+<body class="ap-portal{{ ' ap-has-side' if _pmenu }}">
 <nav class="fw-topbar ap-topbar">
   <a class="fw-topbar-brand ap-brand" href="{{ url_for('apps_portal.home') if current_user.is_authenticated else '#' }}">
     {% if theme_logo_url %}<img src="{{ theme_logo_url }}" alt="" class="ap-logo">{% else %}<i class="bi bi-grid-3x3-gap-fill"></i>{% endif %}
@@ -35,6 +40,24 @@
   </div>
   {% endif %}
 </nav>
+{% if _pmenu %}
+<aside id="fw-sidebar" class="fw-sidebar ap-side" aria-label="{{ _('Plugins') }}">
+  <nav class="fw-nav">
+    <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-puzzle fw-nav-section-icon"></i><span>{{ _('Plugins') }}</span></div>
+    {% for _grp in _pmenu %}
+    {% if _grp.group %}
+    <div class="fw-nav-section fw-nav-context-label ap-side-group" title="{{ _grp.group }}"><i class="bi bi-folder2-open fw-nav-section-icon"></i><span>{{ _grp.group }}</span></div>
+    {% endif %}
+    {% for _ap in _grp['items'] %}
+    <a class="fw-nav-item fw-nav-app{{ ' ap-side-sub' if _grp.group }}{{ ' active' if request.endpoint == _ap.endpoint and request.view_args and request.view_args.get('slug') == _ap.target }}"
+       href="{{ _ap.url }}" title="{{ _ap.name }}">
+      <i class="bi {{ _ap.icon }} fw-nav-icon"></i><span>{{ _ap.name }}</span>
+      {% if _ap.needs_signin %}<span class="fw-badge fw-badge-warning ms-auto">{{ _('sign in') }}</span>{% endif %}</a>
+    {% endfor %}
+    {% endfor %}
+  </nav>
+</aside>
+{% endif %}
 <main class="ap-main">
   {% with messages = get_flashed_messages(with_categories=True) %}
     {% if messages %}

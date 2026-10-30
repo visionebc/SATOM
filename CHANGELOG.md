@@ -197,6 +197,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   list from.
 
 ### Changed
+- **An Apps only account's menu is Plugins with its apps, already open**
+  (request: "only what is inside Plugins should appear, already expanded").
+  The portal pages (`/a/` and every app page) draw a left menu holding only
+  the apps the account may use, filed under their menu groups, every group
+  open and without a toggle; no other console section, no bookmarks.
 - **Plugin Studio's Explorer is a tree; the "Open an app" list is gone**
   (request: "remove that section and make the menus there expandable").
   Apps, Data stores, Connections and API Catalog have a caret that unfolds
@@ -223,6 +228,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   may open another app of the same bundle.
 
 ### Fixed
+- **The bookmarks rail showed every device to accounts that may not see the
+  inventory** (security; request: "external users must see only their app;
+  user sec sees a lot of Global, including the bookmarks"). The rail is open to
+  every console account, and the device query it used scopes by ADOM and
+  maintenance only, so a profile with no permission at all read every
+  device's name and address in its grouping lens and in the *add bookmark*
+  picker, while the dashboard told it "Your profile does not include viewing
+  appliances". The lens, the picker and device bookmarks now need *View
+  appliances* (`appliances.view`).
 - **API Tokens: the pickers no longer cover the whole screen** (request:
   "the selectors are not formatted for SATOM, they take the whole screen").
   The menus sit on a fixed popper so they escape the card, and a fixed box

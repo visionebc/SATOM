@@ -254,6 +254,9 @@ real and the pages ask for it.
 
 An appliance in maintenance mode is counted only for operators who may see
 maintenance devices, so this can never hand you a device the picker hides.
+Without *View appliances* (`appliances.view`) the rail shows no device at all
+— not in your grouping, not in the picker, not as a bookmark — whatever
+else the profile holds.
 
 ### 3.2 The device menu: drawn from the device's own GUI
 
@@ -6688,8 +6691,9 @@ directory, or in a group the console sign-in does not use. Three pieces do it.
 **1. A profile of type *Apps only*** (Access → Profiles → *Type*). It holds no
 permission (the matrix is hidden and stays empty whatever is stored) and its
 accounts never see the console: after signing in they land on **My apps**
-(`/a/`), a page with the console's look but no sidebar, ADOM switcher, bell,
-job dock or bookmarks. Every console page — and the API v1, whatever token
+(`/a/`), a page with the console's look whose only menu is **Plugins** with
+their apps, every menu group already open; no console sidebar, ADOM switcher,
+bell, job dock or bookmarks. Every console page — and the API v1, whatever token
 they hold — answers *not found* to them. What they can open:
 
 - the apps shared with them or with their groups (Plugin Studio → app →

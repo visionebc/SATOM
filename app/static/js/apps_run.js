@@ -349,13 +349,26 @@
     var msg = box.querySelector('[data-act-msg]');
     if (!act || act.error) { if (msg) msg.innerHTML = '<span style="color:#8B1C2A;">' + esc(act ? act.error : 'nothing to copy') + '</span>'; return; }
     var done = function () {
-      var old = b.textContent;
+      var old = b.innerHTML;
       b.textContent = act.label + ' — copied';
-      window.setTimeout(function () { b.textContent = old; }, 1600);
+      window.setTimeout(function () { b.innerHTML = old; }, 1600);
+    };
+    /* The browser may refuse the clipboard (no permission, no focus): then
+       the text is shown selected, to copy by hand -- never a silent no-op. */
+    var manual = function () {
+      if (!msg) return;
+      msg.innerHTML = '<div style="color:#7A5700;">The browser did not let SATOM copy: the text is selected below, press Ctrl+C (⌘C).</div>' +
+        '<textarea readonly data-copy-manual class="form-control form-control-sm font-monospace mt-1" rows="6" style="font-size:11px;"></textarea>';
+      var ta = msg.querySelector('[data-copy-manual]');
+      ta.value = act.text || '';
+      ta.focus(); ta.select();
     };
     if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(act.text || '').then(done, function () { legacyCopy(act.text || '') && done(); });
+      navigator.clipboard.writeText(act.text || '').then(done, function () {
+        if (legacyCopy(act.text || '')) done(); else manual();
+      });
     } else if (legacyCopy(act.text || '')) done();
+    else manual();
   }
   function legacyCopy(text) {
     var ta = document.createElement('textarea');

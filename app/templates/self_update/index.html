@@ -241,67 +241,6 @@
   </div>
 </div>
 
-<!-- History -->
-<div class="card"><div class="card-header"><strong>{{ _('Recent updates') }}</strong></div>
-  <div class="card-body">
-    {% if not history %}
-      <p class="text-muted small mb-0">{{ _('No updates run yet.') }}</p>
-    {% else %}
-    <table class="table table-sm align-middle mb-0">
-      <thead><tr><th>{{ _('When') }}</th><th>{{ _('By') }}</th><th>{{ _('Origin') }}</th><th>{{ _('Node') }}</th><th>{{ _('What') }}</th><th>{{ _('Result') }}</th><th>{{ _('Log') }}</th></tr></thead>
-      <tbody>
-      {% for h in history %}
-        <tr>
-          <td class="small">{{ (h.updated_at or h.started_at) | localtime }}</td>
-          <td class="small">{{ h.requested_by }}</td>
-          <td>{% if h.origin == 'auto' %}<span class="badge bg-info text-dark">{{ _('auto') }}</span>{% else %}<span class="badge bg-light text-dark border">{{ _('manual') }}</span>{% endif %}</td>
-          <td class="small font-monospace">{{ h.node }} ({{ h.role }})</td>
-          {# The runner records more than code updates: say what each request was. #}
-          <td class="small">
-            {% if h.kind == 'service' %}{{ h.action }} <code>{{ h.unit }}</code>
-            {% elif h.kind == 'syspkg' %}{{ _('OS packages') }}: {{ h.action }}{% if h.package %} <code>{{ h.package }}</code>{% endif %}
-            {% elif h.kind == 'clone' %}{{ _('deploy clone') }}: {{ h.action }}
-            {% elif h.action == 'upgrade' and h.package %}{{ _('library') }} <code>{{ h.package }}</code> {{ _('upgrade') }}
-            {% elif h.kind == 'package' %}{{ _('offline package') }} <code>{{ h.package }}</code>{% if h.result_sha or h.target %} <span class="font-monospace">{{ (h.result_sha or h.target)[:12] }}</span>{% endif %}
-            {% else %}<span class="font-monospace">{{ (h.result_sha or h.target or '')[:12] or '—' }}</span>{% endif %}
-          </td>
-          <td>
-            {% if h.state == 'success' %}<span class="badge bg-success">{{ _('success') }}</span>
-            {% elif h.state == 'failed' %}<span class="badge bg-danger">failed{% if h.rolled_back %} · rolled back{% endif %}</span>
-            {% elif h.state == 'running' %}<span class="badge bg-warning text-dark">{{ _('running') }}</span>
-            {% else %}<span class="badge bg-secondary">{{ h.state }}</span>{% endif %}
-          </td>
-          <td>
-            <button class="btn btn-sm btn-outline-secondary py-0 px-1" type="button"
-                    data-bs-toggle="collapse" data-bs-target="#log-{{ loop.index }}"
-                    aria-expanded="false" aria-controls="log-{{ loop.index }}">
-              log{% if h.steps %} ({{ h.steps|length }}){% endif %}
-            </button>
-          </td>
-        </tr>
-        <tr class="collapse" id="log-{{ loop.index }}">
-          <td colspan="7" class="bg-body-tertiary">
-            {% if h.steps %}
-            <ol class="small mb-0 font-monospace" style="list-style:decimal inside;">
-              {% for st in h.steps %}
-              <li>
-                {% if st.ok %}<span class="text-success">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}
-                {{ st.name }}{% if st.detail %} — <span class="text-muted" style="white-space:pre-wrap;">{{ st.detail }}</span>{% endif %}
-                {% if st.at %}<span class="text-muted"> · {{ st.at | localtime }}</span>{% endif %}
-              </li>
-              {% endfor %}
-            </ol>
-            {% else %}
-            <p class="text-muted small mb-0">No steps recorded{% if h.state == 'queued' %} — request is still queued (not yet picked up by the updater runner){% endif %}.</p>
-            {% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
-  </div>
-</div>
 <div class="row g-3">
   <!-- ==================== offline update package ==================== -->
   <div class="col-12">
@@ -699,6 +638,67 @@
         </form>
       </div>
     </div>
+  </div>
+</div>
+<!-- History (last on the page) -->
+<div class="card mb-3" id="recent-updates"><div class="card-header"><strong>{{ _('Recent updates') }}</strong></div>
+  <div class="card-body">
+    {% if not history %}
+      <p class="text-muted small mb-0">{{ _('No updates run yet.') }}</p>
+    {% else %}
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>{{ _('When') }}</th><th>{{ _('By') }}</th><th>{{ _('Origin') }}</th><th>{{ _('Node') }}</th><th>{{ _('What') }}</th><th>{{ _('Result') }}</th><th>{{ _('Log') }}</th></tr></thead>
+      <tbody>
+      {% for h in history %}
+        <tr>
+          <td class="small">{{ (h.updated_at or h.started_at) | localtime }}</td>
+          <td class="small">{{ h.requested_by }}</td>
+          <td>{% if h.origin == 'auto' %}<span class="badge bg-info text-dark">{{ _('auto') }}</span>{% else %}<span class="badge bg-light text-dark border">{{ _('manual') }}</span>{% endif %}</td>
+          <td class="small font-monospace">{{ h.node }} ({{ h.role }})</td>
+          {# The runner records more than code updates: say what each request was. #}
+          <td class="small">
+            {% if h.kind == 'service' %}{{ h.action }} <code>{{ h.unit }}</code>
+            {% elif h.kind == 'syspkg' %}{{ _('OS packages') }}: {{ h.action }}{% if h.package %} <code>{{ h.package }}</code>{% endif %}
+            {% elif h.kind == 'clone' %}{{ _('deploy clone') }}: {{ h.action }}
+            {% elif h.action == 'upgrade' and h.package %}{{ _('library') }} <code>{{ h.package }}</code> {{ _('upgrade') }}
+            {% elif h.kind == 'package' %}{{ _('offline package') }} <code>{{ h.package }}</code>{% if h.result_sha or h.target %} <span class="font-monospace">{{ (h.result_sha or h.target)[:12] }}</span>{% endif %}
+            {% else %}<span class="font-monospace">{{ (h.result_sha or h.target or '')[:12] or '—' }}</span>{% endif %}
+          </td>
+          <td>
+            {% if h.state == 'success' %}<span class="badge bg-success">{{ _('success') }}</span>
+            {% elif h.state == 'failed' %}<span class="badge bg-danger">failed{% if h.rolled_back %} · rolled back{% endif %}</span>
+            {% elif h.state == 'running' %}<span class="badge bg-warning text-dark">{{ _('running') }}</span>
+            {% else %}<span class="badge bg-secondary">{{ h.state }}</span>{% endif %}
+          </td>
+          <td>
+            <button class="btn btn-sm btn-outline-secondary py-0 px-1" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#log-{{ loop.index }}"
+                    aria-expanded="false" aria-controls="log-{{ loop.index }}">
+              log{% if h.steps %} ({{ h.steps|length }}){% endif %}
+            </button>
+          </td>
+        </tr>
+        <tr class="collapse" id="log-{{ loop.index }}">
+          <td colspan="7" class="bg-body-tertiary">
+            {% if h.steps %}
+            <ol class="small mb-0 font-monospace" style="list-style:decimal inside;">
+              {% for st in h.steps %}
+              <li>
+                {% if st.ok %}<span class="text-success">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}
+                {{ st.name }}{% if st.detail %} — <span class="text-muted" style="white-space:pre-wrap;">{{ st.detail }}</span>{% endif %}
+                {% if st.at %}<span class="text-muted"> · {{ st.at | localtime }}</span>{% endif %}
+              </li>
+              {% endfor %}
+            </ol>
+            {% else %}
+            <p class="text-muted small mb-0">No steps recorded{% if h.state == 'queued' %} — request is still queued (not yet picked up by the updater runner){% endif %}.</p>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
   </div>
 </div>
   </div>

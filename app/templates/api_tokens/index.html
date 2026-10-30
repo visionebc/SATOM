@@ -19,6 +19,10 @@
 {% set EXPLICIT_ONLY = cap_explicit %}
 {% set NO_CAPS_LABEL = _('every action that needs no explicit grant') %}
 {% set SCOPE_DESC = {'read': '(GET)', 'write': '(run actions / config_write)', 'admin': '(admin)'} %}
+{# app_arm is not WHICH app -- it only lets a granted app run armed. Said
+   next to the app picker because "capabilities only offers app_arm" read as
+   "a token cannot be held to one app" (2026-10-30). #}
+{% set APP_GRANT_HELP = _('To hold a token to one app, tick only that app. Each box is bound to the version you approve: when a different version is published, the grant pauses until you re-approve it. An unarmed run needs the write scope; an armed run (its write steps really write) also needs the app_arm capability — app_arm never adds an app.') %}
 <div class="d-flex align-items-center mb-3">
   <h4 class="mb-0"><i class="bi bi-key me-2"></i>{{ _('API Tokens') }}</h4>
 </div>
@@ -96,14 +100,10 @@
       </div>
 
       <div class="col-md-6">
-        <label class="form-label d-block">{{ _('Processes it may run') }}</label>
-        {{ grant_picker('gproc', 'process', [], grant_candidates['process']) }}
-      </div>
-      <div class="col-md-6">
-        <label class="form-label d-block">{{ _('Apps it may run') }}</label>
+        <label class="form-label d-block">{{ _('Apps it may run') }} <span class="text-muted small">{{ _('(which — none ticked = it runs none)') }}</span></label>
         {{ grant_picker('gapp', 'app', [], grant_candidates['app']) }}
       </div>
-      <div class="col-12"><div class="form-text mt-0">{{ _('One box per app, bound to the version you approve: when a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs app_arm.') }}</div></div>
+      <div class="col-md-6"><div class="form-text mt-md-4">{{ APP_GRANT_HELP }}</div></div>
 
       <div class="col-12">
         <button class="btn btn-primary" type="submit">
@@ -252,14 +252,11 @@
 
             {% set gs = grant_status.get(t.id, []) %}
             <div class="col-md-6">
-              <label class="form-label d-block">{{ _('Processes it may run') }}</label>
-              {{ grant_picker('egproc-' ~ t.id, 'process', t.grants('process')|map(attribute='id')|list, grant_candidates['process']) }}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label d-block">{{ _('Apps it may run') }}</label>
+              <label class="form-label d-block">{{ _('Apps it may run') }} <span class="text-muted small">{{ _('(which — none ticked = it runs none)') }}</span></label>
               {{ grant_picker('egapp-' ~ t.id, 'app', t.grants('app')|map(attribute='id')|list, grant_candidates['app']) }}
             </div>
-            <div class="col-12"><div class="form-text mt-0">{{ _('One box per app, bound to the version you approve: when a different app version is published, the grant pauses until you re-approve it. Nothing ticked = it runs none. An armed run also needs app_arm.') }}</div>
+            <div class="col-md-6"><div class="form-text mt-md-4">{{ APP_GRANT_HELP }}</div></div>
+            <div class="col-12">
               {% if gs %}
               <table class="table table-sm mb-0 mt-2 tok-grants">
                 <tbody>
@@ -292,7 +289,7 @@
 </div>
 {% endfor %}
 <style nonce="{{ csp_nonce }}">
-  .tok-picker-menu { max-height: 360px; overflow-y: auto; }
+  .tok-picker-menu { max-height: 360px; max-width: calc(100vw - 16px); overflow-y: auto; }
   .tok-picker-menu .form-check { padding-top: 2px; padding-bottom: 2px; }
   .tok-picker-menu .form-check-label { width: 100%; }
 </style>
@@ -313,6 +310,13 @@
   Array.prototype.forEach.call(document.querySelectorAll('.tok-picker'), function (p) {
     summarize(p);
     p.addEventListener('change', function () { summarize(p); });
+    // The fixed popper measures % against the viewport: give the menu its
+    // button's width each time it opens (a modal may have resized it).
+    p.addEventListener('show.bs.dropdown', function () {
+      var btn = p.querySelector('[data-bs-toggle="dropdown"]');
+      var menu = p.querySelector('.tok-picker-menu');
+      if (btn && menu) { menu.style.width = Math.max(btn.getBoundingClientRect().width, 280) + 'px'; }
+    });
     var q = p.querySelector('.tok-picker-search');
     if (q) {
       q.addEventListener('input', function () {

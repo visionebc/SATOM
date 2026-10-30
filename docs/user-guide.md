@@ -3829,6 +3829,8 @@ API refuses the run until you open the token and press **Re-approve**.
 Republishing the same content does not pause it. Deleting the app removes its
 grants. A run from the API is a rehearsal by default; a real (armed) run also
 needs `app_arm`. Only apps the token's owner may open in that ADOM can be granted.
+To hold a token to one app, tick only that app: `app_arm` never adds an app,
+it only lets the granted ones run armed.
 
 **SATOM Builder** (`/api/v1/builder/*`). The separate tool that builds
 plugins and Plugin Studio apps works with its author's own token: a `read`

@@ -223,6 +223,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   may open another app of the same bundle.
 
 ### Fixed
+- **API Tokens: the pickers no longer cover the whole screen** (request:
+  "the selectors are not formatted for SATOM, they take the whole screen").
+  The menus sit on a fixed popper so they escape the card, and a fixed box
+  sized at 100% is as wide as the window: every open picker (capabilities,
+  AppIDs, apps) ran over the sidebar. Each menu now opens as wide as its own
+  button, on the page and in the Edit dialog. The empty *Processes it may
+  run* picker, left over from the removed Process section, is gone, and the
+  *Apps it may run* picker now says how to hold a token to one app: tick only
+  that app (`app_arm` never adds an app; it only lets granted apps run armed).
+
 - **Deleting a directory connection now deletes its secret from the vault.**
   With the vault as the secret store, a removed AD, LDAP or RADIUS connection
   left its bind password or shared secret under `directory/<id>`, where

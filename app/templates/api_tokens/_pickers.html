@@ -4,7 +4,12 @@
    scrolls; seventeen loose checkboxes pushed the AppID picker off the screen.
    Each picker is a Bootstrap dropdown whose button says what is ticked, and
    whose menu holds the checkboxes -- grouped for capabilities, searchable for
-   AppIDs. The inputs keep their names, so the POST is unchanged. #}
+   AppIDs. The inputs keep their names, so the POST is unchanged.
+
+   No ``w-100`` on the menu: the popper is ``fixed`` (to escape the card's
+   overflow), and a fixed box's 100% is the VIEWPORT -- every open picker
+   covered the whole screen, sidebar included. index.html sizes the menu to
+   its button when it opens. #}
 
 {% macro cap_picker(prefix, selected, groups, desc, explicit) %}
 <div class="dropdown tok-picker" data-empty="{{ _('None ticked: every catalog action that needs no explicit grant') }}"
@@ -14,7 +19,7 @@
           data-bs-popper-config='{"strategy":"fixed"}'>
     <span class="tok-picker-summary"></span>
   </button>
-  <div class="dropdown-menu w-100 p-2 tok-picker-menu">
+  <div class="dropdown-menu p-2 tok-picker-menu">
     {% for title, keys in groups %}
     <div class="tok-picker-group">
       <div class="small fw-semibold text-muted text-uppercase mt-1 mb-1">{{ _(title) }}</div>
@@ -42,7 +47,7 @@
           data-bs-popper-config='{"strategy":"fixed"}'>
     <span class="tok-picker-summary"></span>
   </button>
-  <div class="dropdown-menu w-100 p-2 tok-picker-menu">
+  <div class="dropdown-menu p-2 tok-picker-menu">
     {% if catalog %}
     <input type="search" class="form-control form-control-sm mb-2 tok-picker-search"
            placeholder="{{ _('Filter AppIDs…') }}" aria-label="{{ _('Filter AppIDs') }}">
@@ -63,8 +68,8 @@
 </div>
 {% endmacro %}
 
-{# Object grants (services.token_grants): ONE Process / app per box, bound to
-   the version approved. Empty means none -- unlike the two pickers above. #}
+{# Object grants (services.token_grants): ONE app per box, bound to the
+   version approved. Empty means none -- unlike the two pickers above. #}
 {% macro grant_picker(prefix, kind, selected, candidates) %}
 <div class="dropdown tok-picker" data-empty="{{ _('None ticked: it runs none') }}"
      data-some="{{ _('selected') }}">
@@ -73,13 +78,13 @@
           data-bs-popper-config='{"strategy":"fixed"}'>
     <span class="tok-picker-summary"></span>
   </button>
-  <div class="dropdown-menu w-100 p-2 tok-picker-menu">
+  <div class="dropdown-menu p-2 tok-picker-menu">
     {% if candidates %}
     <input type="search" class="form-control form-control-sm mb-2 tok-picker-search"
            placeholder="{{ _('Filter…') }}" aria-label="{{ _('Filter') }}">
     {% for o in candidates %}
-    {% set okey = o.key if kind == 'process' else o.slug %}
-    {% set where = (o.products if kind == 'process' else o.adoms)|join(', ') %}
+    {% set okey = o.slug %}
+    {% set where = (o.adoms or [])|join(', ') %}
     <div class="form-check tok-picker-item" data-text="{{ (o.name ~ ' ' ~ okey ~ ' ' ~ where)|lower }}">
       <input class="form-check-input" type="checkbox" name="grant_{{ kind }}" value="{{ o.id }}"
              data-label="{{ okey }}" id="{{ prefix }}-{{ o.id }}" {{ 'checked' if o.id in selected else '' }}>
@@ -90,7 +95,7 @@
     </div>
     {% endfor %}
     {% else %}
-    <div class="small text-muted px-1">{% if kind == 'process' %}{{ _('No Processes yet.') }}{% else %}{{ _('No published flow apps yet.') }}{% endif %}</div>
+    <div class="small text-muted px-1">{{ _('No published flow apps yet.') }}</div>
     {% endif %}
   </div>
 </div>

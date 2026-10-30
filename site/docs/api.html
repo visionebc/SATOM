@@ -578,6 +578,20 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>This server's rows for the Builder's test data: datasets scoped to the owner, data stores, <code>satom_select</code> lists (§17)</td>
 </tr>
 <tr>
+<td><code>GET</code></td>
+<td><code>/builder/plugins</code></td>
+<td>read</td>
+<td>owner is a Plugin Studio author</td>
+<td>The plugins and apps this server has, each with <code>openable</code> (and <code>why</code> when not) (contract §21)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/builder/plugins/&lt;kind&gt;/&lt;slug&gt;/package</code></td>
+<td>read</td>
+<td>owner is a Plugin Studio author; a view/widget needs a super-admin owner</td>
+<td>One of them as the console's unsigned export (contract §21)</td>
+</tr>
+<tr>
 <td><code>POST</code></td>
 <td><code>/builder/validate</code></td>
 <td>write</td>
@@ -1836,6 +1850,28 @@ only with <code>audit.view</code>. Store rows carry the declared columns and <co
 <code>sources</code> are the <code>satom_select</code> lists, scoped the same way. The answer
 stays under 3 MB: a table that does not fit is cut (<code>truncated</code>). One audit
 line <code>builder.data</code> with the row counts per table.</p>
+<h3 id="get-builderplugins-and-get-builderpluginskindslugpackage"><code>GET /builder/plugins</code> and <code>GET /builder/plugins/&lt;kind&gt;/&lt;slug&gt;/package</code></h3>
+<p>What SATOM Builder opens as projects (contract §21). <code>read</code> scope; the owner
+must be a Plugin Studio author (<code>studio.script_library</code>), else 403
+<code>owner_forbidden</code>.</p>
+<pre><code class="language-json">{&quot;format&quot;: &quot;satom.builder-plugins/1&quot;, &quot;satom_version&quot;: &quot;4.7.0&quot;,
+ &quot;items&quot;: [{&quot;kind&quot;: &quot;app&quot;, &quot;slug&quot;: &quot;dns-lb-lookup&quot;, &quot;name&quot;: &quot;DNS &amp; LB Lookup&quot;,
+            &quot;icon&quot;: &quot;bi-diagram-3&quot;, &quot;description&quot;: &quot;&quot;, &quot;version&quot;: &quot;1.0.0&quot;,
+            &quot;status&quot;: &quot;published&quot;, &quot;app_kind&quot;: &quot;flow&quot;, &quot;template&quot;: false,
+            &quot;signed&quot;: true, &quot;updated_at&quot;: &quot;2026-10-30T11:02:00Z&quot;, &quot;adom&quot;: &quot;&quot;,
+            &quot;openable&quot;: true},
+           {&quot;kind&quot;: &quot;app&quot;, &quot;slug&quot;: &quot;netbox-ip-owner&quot;, &quot;app_kind&quot;: &quot;script&quot;,
+            &quot;openable&quot;: false, &quot;why&quot;: &quot;A script app: its code is a Script Library script, ...&quot;}],
+ &quot;counts&quot;: {&quot;total&quot;: 2, &quot;openable&quot;: 1}}
+</code></pre>
+<p>Every Plugin Studio app is listed; Report Studio plugins follow the call's
+ADOM (<code>?adom=</code> with a Global token). Not openable, with the reason: a script
+app, a <code>code</code> plugin, a Report Studio view or widget when the owner is not a
+super-admin. <code>…/&lt;kind&gt;/&lt;slug&gt;/package</code> (<code>kind</code> = <code>app</code>, <code>view</code> or <code>widget</code>)
+answers <code>application/zip</code>: the unsigned <code>satom.plugin/1</code> package the
+console's <strong>Export</strong> writes. 404 <code>not_found</code> (none here, another ADOM's
+plugin, wrong kind), 409 <code>not_openable</code> (exists but cannot open; <code>message</code>
+says why). Audit lines <code>builder.plugins</code> and <code>builder.plugin_export</code>.</p>
 <h3 id="post-buildervalidate"><code>POST /builder/validate</code></h3>
 <p>A dry run: the package is checked with the <strong>builder</strong> rules against this
 server and nothing is written. HTTP 200 even when <code>ok</code> is false:</p>

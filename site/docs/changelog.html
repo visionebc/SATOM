@@ -114,6 +114,34 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>SATOM Builder opens what this server already has</strong> (request: "I still
+  don't see SATOM's plugins in the Builder; they should all be there"). Two
+  read-only API routes for the Builder (contract §21): <code>GET
+  /api/v1/builder/plugins</code> lists every Plugin Studio app and the Report
+  Studio plugins of the call's ADOM, each with whether the Builder can open
+  it and, when not, why (a script app, a <code>code</code> plugin, a Report Studio
+  plugin when the token's owner is not a super-admin); <code>GET
+  /api/v1/builder/plugins/&lt;kind&gt;/&lt;slug&gt;/package</code> sends one of them as the
+  console's unsigned export (connections without secrets). The token's owner
+  must be a Plugin Studio author. The Builder's <em>Open from SATOM</em> page uses
+  them.</li>
+<li><strong>Plugin Studio apps can be filed under a menu group</strong> (request: "let
+  plugins belong to groups, so the menu shows the groups as submenus and
+  Studio can filter by them"). A flow app's <strong>Settings</strong> tab has a <em>Menu
+  group</em> field, and every app, flow or script, has <strong>Set menu group</strong> in its
+  row menu of Plugin Studio › Apps. Both suggest the groups that already
+  exist; a name that differs only in case is filed under the existing group,
+  and an empty field takes the app out. In the sidebar each group is a
+  collapsible submenu of <strong>Plugins</strong>, open only when you are on one of its
+  apps; apps without a group stay plain entries below the groups. Plugin
+  Studio › Apps has a <em>Menu group</em> column and filter (every group, one group,
+  no group), next to the search box. An app package carries the group
+  (<code>app.group</code>, optional); an import applies it only when it creates the app,
+  and an app that already exists keeps the group this server gave it (as with
+  its ADOMs). Audit Log: <code>studio.app.group</code>; the group is also recorded in
+  <code>studio.app.settings</code>. A menu group is not a user group: who may use an app
+  is still set under <em>Who may use it</em>. Schema: <code>studio_apps.menu_group</code>
+  (migration <code>appgroup01</code>).</li>
 <li><strong>Scout proposes a Path Diagnostics walk; the operator runs it</strong> (request:
   "do everything and leave nothing pending" — the next stage was a walk Scout
   asks for and the operator confirms). A new proposal kind, <code>path_walk</code>:
@@ -283,6 +311,13 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>Plugin Studio's Explorer is a tree; the "Open an app" list is gone</strong>
+  (request: "remove that section and make the menus there expandable").
+  Apps, Data stores, Connections and API Catalog have a caret that unfolds
+  their items, each a link to its page; Apps unfold by menu group, each group
+  folding on its own. Clicking an entry still shows its pane and unfolds it.
+  Everything starts folded and the browser remembers what you opened. Below
+  1400 px the Explorer stays the one-line strip of tabs, without the items.</li>
 <li>User guide §33 rewritten as <em>Scout — the operations assistant</em>: tools,
   the troubleshooting workflow, provider choice, what every exchange leaves
   behind, and what is planned. §13 describes Path Diagnostics, its saved
@@ -295,6 +330,17 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>Deleting a directory connection now deletes its secret from the vault.</strong>
+  With the vault as the secret store, a removed AD, LDAP or RADIUS connection
+  left its bind password or shared secret under <code>directory/&lt;id&gt;</code>, where
+  nothing read it any more. The vault copy now goes first; a vault that
+  refuses the delete leaves the connection in place and says so.</li>
+<li><strong>App sign-in: what makes a FortiAuthenticator name a group, measured.</strong> On
+  FortiAuthenticator 8.0.3 the Access-Accept carries a group's
+  <code>Fortinet-Group-Name</code> when the group has it as a RADIUS attribute <strong>and</strong> is
+  in the group filter of the realm that accepted the user; a group outside
+  that filter sends nothing, even for a member. The help text said it
+  depended on the RADIUS client; the rule is no longer marked unverified.</li>
 <li><strong>Metric values lost precision on the way to the store.</strong> Every value was
   written with <code>%g</code>, which keeps six significant digits: a byte counter in
   the hundreds of millions was stored rounded to the nearest thousand, so

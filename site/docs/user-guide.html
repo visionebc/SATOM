@@ -4257,6 +4257,17 @@ the audit log only with <code>audit.view</code>, sensitive columns masked), the 
 the data stores (declared columns and <code>_id</code>, never who edited them) and the
 lists of <code>satom_select</code> fields, at most 2,000 rows per table. Each call
 leaves an audit line <code>builder.data</code> with the row counts.</p>
+<p><strong>What the Builder opens from this server</strong> (<code>/builder/plugins</code>, <code>read</code> token,
+owner a Plugin Studio author). The Builder's <em>Open from SATOM</em> page lists
+every Plugin Studio app here and the Report Studio plugins of the token's
+ADOM, and opens the ones the author picks as Builder projects. Each one is
+fetched as the console's <strong>Export</strong> button writes it (unsigned, connections
+without their secrets, stores with their rows, automations and sign-in). Not
+every item can open, and the list says why: a script app (its code is a
+Script Library script), a <code>code</code> plugin, or a Report Studio plugin when the
+token's owner is not a super-admin (the console's export needs
+<code>studio.plugin_studio</code> too). Audit lines <code>builder.plugins</code> (the list) and
+<code>builder.plugin_export</code> (one per package).</p>
 <p><strong>Load protection: what a busy API can and cannot take from the node.</strong> An
 integration in a loop, or a hundred of them, must not take the console with
 it. Since this release:</p>
@@ -5144,13 +5155,28 @@ Studio are in Plugins).</p>
 </blockquote>
 <p><strong>Plugin Studio</strong> (since the release after 3.3.7) replaces the two menu entries
 <em>Python Console</em> and <em>Script Library</em>. On the left an <strong>Explorer</strong> switches
-between the panes and opens any app in its editor; the editor (<code>/studio/scripts/&lt;id&gt;</code>) has a <strong>Console</strong> tab too, to
+between the panes; Apps, Data stores, Connections and API Catalog unfold
+(the caret, or a click on the entry) into their items, each a link to its
+page, and Apps unfold by <strong>menu group</strong>. Everything starts folded; the
+browser remembers what you opened. The editor (<code>/studio/scripts/&lt;id&gt;</code>) has a <strong>Console</strong> tab too, to
 try code against the fleet data without saving it in the script. Uniting the
 pages united neither the keys nor the sandboxes: the page opens for a holder of
 <code>studio.script_library</code> <strong>or</strong> <code>studio.python_console</code>, and each pane, the
 editor's Console tab and the console's run endpoint still ask for their own
 key. The old addresses (<code>/database/py-console</code>, <code>/database/scripts/…</code>)
 redirect to the new ones.</p>
+<p><strong>Menu groups.</strong> An app can be filed under a menu group: the <em>Menu group</em>
+field of a flow app's <strong>Settings</strong> tab, or <strong>Set menu group</strong> in the row menu
+of Apps (flow and script apps alike). Both suggest the groups that exist;
+typing a name that differs only in case files the app under the existing
+group, and an empty field takes it out. In the sidebar every group is a
+collapsible submenu of <strong>Plugins</strong> (open when you are on one of its apps),
+followed by the apps without a group. The Apps list has a <em>Menu group</em>
+column and a filter next to the search box. A group is up to 48 letters,
+digits, spaces and <code>. &amp; ( ) + , ' -</code>. It is not a user group: who may use
+the app is still <em>Who may use it</em>. An exported app package carries the
+group; importing it sets the group only on an app the import creates — an
+app that exists here keeps the group it has.</p>
 <h3 id="231-report-studio-and-custom-views">23.1 Report Studio and Custom Views</h3>
 <p>A plugin is a Jinja body plus optional CSS and JS, bound to a list of
 <strong>datasets</strong>. You pick datasets in the editor (grouped, with a search box);
@@ -7441,7 +7467,7 @@ sign-in):</p>
 </tr>
 <tr>
 <td>a RADIUS connection</td>
-<td>Access-Accept, <strong>and</strong> the reply's <code>Fortinet-Group-Name</code> names one of the listed groups (case-insensitive). The FortiAuthenticator sends it when its RADIUS client for SATOM sends group attributes; a reply without it fails the rule. <em>Unverified on this build until measured on your FortiAuthenticator.</em></td>
+<td>Access-Accept, <strong>and</strong> the reply's <code>Fortinet-Group-Name</code> names one of the listed groups (case-insensitive). The FortiAuthenticator sends it for a group that carries it as a RADIUS attribute (User Groups → the group → RADIUS Attributes → Fortinet / Fortinet-Group-Name) <strong>and</strong> is in the <em>Filter by group</em> of the realm that accepted the user, in the authentication profile of SATOM's RADIUS policy; a group outside that filter sends nothing, even for a member (measured on FortiAuthenticator 8.0.3). A reply without it fails the rule.</td>
 </tr>
 <tr>
 <td>Local SATOM accounts</td>

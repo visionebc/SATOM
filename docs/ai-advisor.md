@@ -1,7 +1,10 @@
-# AI Advisor
+# Scout — the operations assistant (AI Advisor)
 
-A chat assistant embedded in SATOM for WAF false-positive triage, Lua
-scripting help, and searching device configuration reports (the SoT). It is
+**Scout** (the menu name since 2026-10-14; the code still says `advisor`) is
+the chat assistant embedded in SATOM for operations: localising and
+explaining faults from evidence SATOM already holds, WAF false-positive
+triage, Lua scripting help, and searching device configuration reports (the
+SoT). Operator guide: `docs/user-guide.md` §33. It is
 **read-only by construction**: it cannot change SATOM's configuration or an
 appliance's configuration directly, no matter what a prompt or a piece of
 device data tells it to do.
@@ -294,11 +297,55 @@ gunicorn worker killed first and the operator gets a dropped connection instead
 of the provider's own "timed out" — the diagnosable error replaced by the
 opaque one.
 
+## Scope: Scout as the operations assistant (2026-10-30)
+
+Operator request: *"I need Scout to be the operations AI that helps resolve
+problems, so the scope has to be bigger."* The design keeps the two
+properties that make the assistant safe to widen, and widens what it can
+READ, not what it can do:
+
+1. **Measurement and explanation stay separate.** Path Diagnostics
+   (`scout_ladder`, user guide §13) is deterministic and works with no AI.
+   Scout reads its saved reports (`path_diag_reports`) and explains them; it
+   never re-decides a verdict, and the system prompt tells it so. If Scout
+   is down, troubleshooting still works; if Scout is wrong, the report it
+   was wrong about is still there to check it against.
+2. **Every new capability is a read of something already stored** (NAF:
+   Presentation reads what the Collector and Observability layers left —
+   cache first, the device as a last resort). A tool that would reach a
+   device is not a tool: it is a job the operator confirms.
+
+**Catalog today** (`advisor.TOOLS`, each ADOM-scoped through
+`visible_appliances` / `visible_appliance_or_404`, each result wrapped as
+untrusted): `list_appliances`, `device_health`, `list_server_policies`,
+`list_probes`, `list_path_reports`, `path_report`, `metrics_context`,
+`recent_config_changes`, `sot_search`, `list_exceptions`,
+`list_lua_scripts`. The three Path Diagnostics / metrics tools are the
+2026-10-30 addition: `metrics_context` calls the same
+`services/scout_metrics.context` that draws the panel under a walk, so the
+model and the page cannot disagree about a number.
+
+**Troubleshooting order** (in the system prompt): newest Path Diagnostics
+report for the object → metrics around it → device health → recent
+configuration changes; no recent report → ask the operator to run one.
+Evidence and inference are reported separately; a failed collector or a
+rung that could not look is said in words.
+
+**Next, in order** (not built):
+
+| Stage | Adds | Boundary |
+|---|---|---|
+| 2b | `run_path_diagnostics` — Scout *asks* for a walk; the operator confirms; it runs as the normal job with every device call recorded | Never on Scout's initiative; same permission as the page |
+| 2c | Read tools for Sentinel incidents, alerts, jobs and the Audit Log | Read-only, ADOM-scoped like the pages |
+| 3 | Log correlation in the walk's window: FortiAnalyzer traffic logs, syslog, Sentinel events | Reads stored logs; the FAZ query already used by rung 7 is the only device-side read |
+| 3b | Per-interface packet, error and drop counters | A new collector; each counter verified on the exact build first (`api_library`), marked *unverified on this build* otherwise |
+
 ## What this explicitly does not do (yet)
 
-- Tool calling (mode C) is a fixed, hand-written catalog
-  (`sot_search`, `list_exceptions`, `list_lua_scripts`, and the device/probe
-  readers) — not open-ended function calling against arbitrary SATOM APIs.
+- Tool calling (mode C) is a fixed, hand-written catalog (above) — not
+  open-ended function calling against arbitrary SATOM APIs.
+- Scout cannot run a Path Diagnostics walk or any other device action; it
+  asks the operator to (stage 2b above).
 - Attachable context is a curated picker (exceptions, Lua scripts, a SoT
   search), not "attach any page."
 

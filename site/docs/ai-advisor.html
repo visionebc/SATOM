@@ -71,13 +71,17 @@
       <a href="#the-write-boundary-mode-d">The write boundary (mode D)</a>
       <a href="#permissions">Permissions</a>
       <a href="#watching-the-reply-arrive-and-stopping-it">Watching the reply arrive, and stopping it</a>
+      <a href="#scope-scout-as-the-operations-assistant-2026-10-30">Scope: Scout as the operations assistant (2026-10-30)</a>
       <a href="#what-this-explicitly-does-not-do-yet">What this explicitly does not do (yet)</a>
       <a href="#an-infrastructure-fact-that-shaped-the-timeout-found-by-running-it">An infrastructure fact that shaped the timeout, found by running it</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="ai-advisor">AI Advisor</h1>
-<p>A chat assistant embedded in SATOM for WAF false-positive triage, Lua
-scripting help, and searching device configuration reports (the SoT). It is
+<h1 id="scout--the-operations-assistant-ai-advisor">Scout — the operations assistant (AI Advisor)</h1>
+<p><strong>Scout</strong> (the menu name since 2026-10-14; the code still says <code>advisor</code>) is
+the chat assistant embedded in SATOM for operations: localising and
+explaining faults from evidence SATOM already holds, WAF false-positive
+triage, Lua scripting help, and searching device configuration reports (the
+SoT). Operator guide: <code>docs/user-guide.md</code> §33. It is
 <strong>read-only by construction</strong>: it cannot change SATOM's configuration or an
 appliance's configuration directly, no matter what a prompt or a piece of
 device data tells it to do.</p>
@@ -392,11 +396,75 @@ that is the honest answer, not zero.</p>
 gunicorn worker killed first and the operator gets a dropped connection instead
 of the provider's own "timed out" — the diagnosable error replaced by the
 opaque one.</p>
+<h2 id="scope-scout-as-the-operations-assistant-2026-10-30">Scope: Scout as the operations assistant (2026-10-30)</h2>
+<p>Operator request: <em>"I need Scout to be the operations AI that helps resolve
+problems, so the scope has to be bigger."</em> The design keeps the two
+properties that make the assistant safe to widen, and widens what it can
+READ, not what it can do:</p>
+<ol>
+<li><strong>Measurement and explanation stay separate.</strong> Path Diagnostics
+   (<code>scout_ladder</code>, user guide §13) is deterministic and works with no AI.
+   Scout reads its saved reports (<code>path_diag_reports</code>) and explains them; it
+   never re-decides a verdict, and the system prompt tells it so. If Scout
+   is down, troubleshooting still works; if Scout is wrong, the report it
+   was wrong about is still there to check it against.</li>
+<li><strong>Every new capability is a read of something already stored</strong> (NAF:
+   Presentation reads what the Collector and Observability layers left —
+   cache first, the device as a last resort). A tool that would reach a
+   device is not a tool: it is a job the operator confirms.</li>
+</ol>
+<p><strong>Catalog today</strong> (<code>advisor.TOOLS</code>, each ADOM-scoped through
+<code>visible_appliances</code> / <code>visible_appliance_or_404</code>, each result wrapped as
+untrusted): <code>list_appliances</code>, <code>device_health</code>, <code>list_server_policies</code>,
+<code>list_probes</code>, <code>list_path_reports</code>, <code>path_report</code>, <code>metrics_context</code>,
+<code>recent_config_changes</code>, <code>sot_search</code>, <code>list_exceptions</code>,
+<code>list_lua_scripts</code>. The three Path Diagnostics / metrics tools are the
+2026-10-30 addition: <code>metrics_context</code> calls the same
+<code>services/scout_metrics.context</code> that draws the panel under a walk, so the
+model and the page cannot disagree about a number.</p>
+<p><strong>Troubleshooting order</strong> (in the system prompt): newest Path Diagnostics
+report for the object → metrics around it → device health → recent
+configuration changes; no recent report → ask the operator to run one.
+Evidence and inference are reported separately; a failed collector or a
+rung that could not look is said in words.</p>
+<p><strong>Next, in order</strong> (not built):</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Adds</th>
+<th>Boundary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2b</td>
+<td><code>run_path_diagnostics</code> — Scout <em>asks</em> for a walk; the operator confirms; it runs as the normal job with every device call recorded</td>
+<td>Never on Scout's initiative; same permission as the page</td>
+</tr>
+<tr>
+<td>2c</td>
+<td>Read tools for Sentinel incidents, alerts, jobs and the Audit Log</td>
+<td>Read-only, ADOM-scoped like the pages</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Log correlation in the walk's window: FortiAnalyzer traffic logs, syslog, Sentinel events</td>
+<td>Reads stored logs; the FAZ query already used by rung 7 is the only device-side read</td>
+</tr>
+<tr>
+<td>3b</td>
+<td>Per-interface packet, error and drop counters</td>
+<td>A new collector; each counter verified on the exact build first (<code>api_library</code>), marked <em>unverified on this build</em> otherwise</td>
+</tr>
+</tbody>
+</table>
 <h2 id="what-this-explicitly-does-not-do-yet">What this explicitly does not do (yet)</h2>
 <ul>
-<li>Tool calling (mode C) is a fixed, hand-written catalog
-  (<code>sot_search</code>, <code>list_exceptions</code>, <code>list_lua_scripts</code>, and the device/probe
-  readers) — not open-ended function calling against arbitrary SATOM APIs.</li>
+<li>Tool calling (mode C) is a fixed, hand-written catalog (above) — not
+  open-ended function calling against arbitrary SATOM APIs.</li>
+<li>Scout cannot run a Path Diagnostics walk or any other device action; it
+  asks the operator to (stage 2b above).</li>
 <li>Attachable context is a curated picker (exceptions, Lua scripts, a SoT
   search), not "attach any page."</li>
 </ul>

@@ -62,7 +62,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
     accepted by the console sign-in; a sign-in proves its own app only, and
     an administrator can revoke it at once.
 
+- **Path Diagnostics saves every walk.** Each walk is stored as a report
+  (*Saved as report #N* under the verdict), listed under **Latest saved
+  reports** and on `/scout/reports`, reopened as drawn or as JSON
+  (`/scout/reports/<id>.json`), and visible exactly when its appliance is.
+  The `scout.walk` audit row names the report and the job that carried the
+  walk's device calls. New table `path_diag_reports` (migration `pdiag01`).
+- **Metrics around the walk.** Under the ladder, a panel reads the metrics
+  store for the walk's own window against the seven days before it:
+  appliance CPU, memory, sessions and new connections; the object's status,
+  throughput, sessions, transactions and client/server/application response
+  times; interface rates; each collector's status. Readings 2× off their
+  7-day average are flagged. It never changes the verdict; a failed
+  collector or a silent store is **METRICS ERROR**, an appliance with no
+  scrape target **not collected**.
+- **Scout is the operations assistant.** Its prompt now puts finding and
+  resolving faults first (newest Path Diagnostics report → metrics → device
+  health → recent changes; evidence kept apart from inference; missing data
+  said in words), and three read-only tools feed it: `list_path_reports`,
+  `path_report` and `metrics_context`, all scoped to the operator's ADOM.
+
 ### Changed
+- User guide §33 rewritten as *Scout — the operations assistant*: tools,
+  the troubleshooting workflow, provider choice, what every exchange leaves
+  behind, and what is planned. §13 describes Path Diagnostics, its saved
+  reports and its metrics panel.
 - Plugin Studio tables, CSV downloads and copies leave out columns whose name
   starts with `_` (the app's own ids and row buttons), as *Save to a data
   store* already did.

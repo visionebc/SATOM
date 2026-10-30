@@ -2514,6 +2514,9 @@ def create_app(config_override: object | None = None) -> Flask:
             # or IPAM operation refuses on a table the model says exists.
             from . import models_dnsbackend  # noqa: F401
             from . import models_advisor  # noqa: F401
+            # Path Diagnostics saved reports: without this import
+            # create_all() never makes ``path_diag_reports``.
+            from . import models_pathdiag  # noqa: F401
             # Translation catalogue + the ledger of what producing
             # it cost. Without this import create_all() never makes
             # the tables and the first save 500s.

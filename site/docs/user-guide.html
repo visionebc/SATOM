@@ -93,7 +93,7 @@
       <a href="#30-the-endpoint-registry--the-api-explorer">30. The endpoint registry &amp; the API explorer</a>
       <a href="#31-release-notes--the-satom-changelog">31. Release notes &amp; the SATOM changelog</a>
       <a href="#32-troubleshooting">32. Troubleshooting</a>
-      <a href="#33-ai-advisor">33. AI Advisor</a>
+      <a href="#33-scout--the-operations-assistant">33. Scout — the operations assistant</a>
       <a href="#34-the-audit-log">34. The Audit Log</a>
       <a href="#35-integrations-netbox-change-tickets-and-your-own-python">35. Integrations: NetBox, change tickets and your own Python</a>
       <a href="#36-putting-any-appliance-under-change-control">36. Putting any appliance under change control</a>
@@ -151,7 +151,7 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#30-the-endpoint-registry--the-api-explorer">The endpoint registry &amp; the API explorer</a></li>
 <li><a href="#31-release-notes--the-satom-changelog">Release notes &amp; the SATOM changelog</a></li>
 <li><a href="#32-troubleshooting">Troubleshooting</a></li>
-<li><a href="#33-ai-advisor">AI Advisor</a></li>
+<li><a href="#33-scout--the-operations-assistant">Scout — the operations assistant</a></li>
 <li><a href="#34-the-audit-log">The Audit Log</a></li>
 <li><a href="#35-integrations-netbox-change-tickets-and-your-own-python">Integrations: NetBox, change tickets and your own Python</a></li>
 <li><a href="#36-putting-any-appliance-under-change-control">Putting any appliance under change control</a></li>
@@ -2513,6 +2513,10 @@ against what the devices say.</p>
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
+  The same tool also exists as <strong>three Plugin Studio apps</strong> (template bundle
+  <em>DNS &amp; LB Lookup</em>, §23.8): the lookup, DNS Records and the decommission,
+  with the same permissions and the same ADOM scoping. The page stays; use
+  whichever you prefer, or copy the apps and change them.
 - <strong>Where these live:</strong> Backend Reachability, Config Compare, Path Diagnostics,
   the <strong>Transaction Tracer</strong> (§37.3) and Scout sit together under
   <strong>Operations › Troubleshooting</strong> in every ADOM (since 2026-10-14; the tracer
@@ -2523,6 +2527,34 @@ against what the devices say.</p>
   Troubleshooting, in all five device ADOMs (§27.1). Scout is drawn only
   while it is configured (§33.1); Path Diagnostics does not depend on that,
   and switched off for the site it is drawn disabled with the reason.
+- <strong>Path Diagnostics</strong> — pick an appliance and name one published object (a
+  FortiWeb server policy or a FortiADC virtual server); it walks a ten-rung
+  ladder in dependency order — appliance, object, name, front door,
+  certificate, pool, backends, network path, decision, WAF — and stops at the
+  first rung that <strong>fails</strong>, naming that layer with its evidence. Rungs below
+  a fault are <em>not walked</em>, and a rung that could not look says so: it is
+  never drawn as a pass. Read-only: no rung writes and none sends a mutating
+  method. It needs no AI and works with Scout switched off.
+  - <strong>Every walk is saved</strong> as a report (<em>Saved as report #N</em> under the
+    verdict) and listed under <strong>Latest saved reports</strong> on the form and on
+    <code>/scout/reports</code>. A report opens again exactly as it was drawn, also as
+    JSON (<code>/scout/reports/&lt;id&gt;.json</code>), and is visible exactly when its
+    appliance is visible in your ADOM. The walk's device calls are steps of a
+    job (Jobs page), and its Audit Log row (<code>scout.walk</code>) names the report and
+    the job.
+  - <strong>Metrics around the walk.</strong> Under the ladder, a panel shows what the
+    collectors wrote to the metrics store over the walk's own window against
+    the seven days before it: the appliance's CPU, memory, sessions and new
+    connections; the object's status, throughput, sessions, transactions and
+    client/server/application response times; the interface rates; and the
+    status of each collector. A reading <strong>2×</strong> its 7-day average (or that far
+    below it, where a drop is the symptom, such as throughput) is flagged.
+    The panel is context: it never changes the verdict. A failed collector or
+    a metrics store that does not answer is shown as <strong>METRICS ERROR</strong>, and an
+    appliance with no scrape target as <strong>not collected</strong> — neither is a quiet
+    table. Packet, error and drop counters are not collected.
+  - Scout (§33) reads these reports and metrics to explain a fault; it does
+    not run walks.
 - <strong>Backend Reachability</strong> — paste or upload a list of
   <code>source;policy;destination</code> lines and ask one question per line: <em>do the real
   servers behind this policy answer, on the source box and then on the
@@ -5902,7 +5934,10 @@ data store, connection) refuses it with the reason.</p>
 <li><strong>Diagram</strong> — a diagram editor. Steps: <em>Start</em>, <em>End</em>, <em>Activity</em>, <em>Set a
   variable</em>, <em>Decision</em> (equals, not equals, contains, greater, less, empty,
   not empty, true → yes / no), <em>Fail</em> (stop with a message), <em>Output</em> (a value
-  shown as a table, list, key/value, text or JSON), <em>Read a data store</em>,
+  shown as a table, list, key/value, text, JSON or a decommission <strong>plan</strong>;
+  columns whose name starts with <code>_</code> are kept for the app and never shown,
+  downloaded or copied; <strong>Row buttons</strong> put buttons on every row of a table,
+  below), <em>Read a data store</em>,
   <em>Write a data store</em> (insert, update, upsert, delete), <em>Query a database</em>,
   <em>Call an API</em> (with <em>Keep only (JSON path)</em>) and <em>Run a script</em> (the
   published version of a Script Library script, with its form values), the
@@ -5922,13 +5957,35 @@ data store, connection) refuses it with the reason.</p>
   blocks and coloured (below).</li>
 <li><strong>Actions</strong> — buttons under the output of a finished run: <em>Save to a data
   store</em>, <em>Download</em> (CSV or JSON), <em>Send to a connection</em>, <em>Run another app
-  with the output</em>, <em>Raise a change request</em>. Each can ask for confirmation.</li>
-<li><strong>Test</strong> — runs the saved draft, as a <strong>rehearsal</strong> by default: steps that
-  write (data store writes, SQL with writes allowed, API calls other than GET,
-  the SATOM steps that reserve, issue or create) are described, not executed.</li>
-<li><strong>Publish</strong> — lists what must be fixed first, freezes the draft as version
-  N, and <strong>Unpublish</strong> removes the entry from the menu.</li>
+  with the output</em>, <em>Raise a change request</em>, <strong>Copy to the clipboard</strong>
+  (<em>text</em> as it is, <em>tsv</em> — a table with a header, pasted straight into a
+  spreadsheet — or <em>JSON</em>; up to 512 KiB) and <strong>Open another app's form
+  here</strong> (that app's form opens in a window over the run page, filled in
+  with the values you give it; the person checks them and presses <em>Run</em>,
+  and follows the run in the same window). Each can ask for confirmation.
+  Copy and Open happen in the browser: SATOM renders the text and the values
+  from the run when it draws the page, with the same checks as any action.</li>
 </ul>
+<p><strong>Row buttons</strong> (<em>Output</em> → <em>Row buttons (JSON)</em>, 2026-10-30). One button per
+row of a table, <code>{{ row }}</code> being that row:</p>
+<pre><code class="language-json">[{&quot;label&quot;: &quot;Edit&quot;, &quot;app&quot;: &quot;ex-dns-records&quot;,
+  &quot;inputs&quot;: {&quot;operation&quot;: &quot;update&quot;, &quot;id&quot;: &quot;{{ row.id }}&quot;, &quot;name&quot;: &quot;{{ row.name }}&quot;}},
+ {&quot;label&quot;: &quot;Open policy&quot;, &quot;url&quot;: &quot;{{ row._url }}&quot;, &quot;when&quot;: &quot;{{ row._url }}&quot;}]
+</code></pre>
+<p>An <strong>app</strong> button opens that app's form over the run page, filled in with
+<code>inputs</code>; a button inside that window opens the next app in the same window.
+A <strong>url</strong> button opens a SATOM page in a new tab — only a SATOM path
+(<code>/…</code>) is kept; anything else (<code>https://…</code>, <code>//…</code>, <code>javascript:</code>) is dropped.
+<code>when</code> shows the button only on the rows where it is true. A button for an app
+the person may not use (access list, unpublished, disabled, another ADOM) is
+not drawn, and a button is never a permission: the app checks its access
+again when it runs, and each of its steps its own permission. At most 8
+buttons per row.
+- <strong>Test</strong> — runs the saved draft, as a <strong>rehearsal</strong> by default: steps that
+  write (data store writes, SQL with writes allowed, API calls other than GET,
+  the SATOM steps that reserve, issue or create) are described, not executed.
+- <strong>Publish</strong> — lists what must be fixed first, freezes the draft as version
+  N, and <strong>Unpublish</strong> removes the entry from the menu.</p>
 <p><strong>Design: the page designer</strong> (operator request, 2026-10-23). The Design tab
 lays out two surfaces of the app — switch with <strong>Page</strong> / <strong>Result</strong>:</p>
 <ul>
@@ -6049,8 +6106,44 @@ a whole provisioning chain is one diagram whose failures the author routes:</p>
 <td>Deletes, newest first, what a create step of this run wrote</td>
 <td>—</td>
 </tr>
+<tr>
+<td><em>DNS: look names up</em></td>
+<td>Every enabled resolver (Administrator › Objects › DNS Resolvers) for each name, as the DNS &amp; LB Lookup page does (at most 50 names, <code>name TYPE</code> accepted, optional TTL). Saves <code>rows</code> (a column per resolver), <code>answers</code>, <code>unresolved</code> and <code>tsv</code> — the page's <em>Copy DNS</em> text. No resolver configured is an <strong>error</strong>, never an empty table. Needs <code>network.view</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>LB: match names to the fleet</em></td>
+<td>Each name matched to this ADOM's FortiWeb server policies and FortiADC virtual servers <strong>from the device cache</strong> (never the device). Saves <code>rows</code> (the page's columns, <code>Path</code> = policy › pool › members with their status, and <code>_aid</code>, <code>_policy</code>, <code>_hostname</code>, <code>_url</code> for buttons), <code>gateways</code>, <code>unmatched</code>, <code>not_found</code> (no answer and no match, when given the DNS result) and <code>tsv</code> (<em>Copy LB</em>). A cache that cannot be read is an <strong>error</strong>. Needs <code>network.view</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>DNS records: list</em></td>
+<td>The records one DNS backend (Settings › DNS Records) holds for a name or zone, with its capabilities. Two or more DNS backends and none named is refused — never the first one. Needs <code>user_manage</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>DNS records: create, change or delete</em></td>
+<td>Writes one record (<code>create</code> needs name and value; <code>update</code> / <code>delete</code> the record id). Audited like the page. Needs <code>user_manage</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>Decommission: plan</em></td>
+<td>What retiring a service removes and keeps, with warnings, blockers and the plan's fingerprint (the page's planner; reads only). Only a FortiWeb or FortiADC of the run's ADOM. Needs <code>config_write</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>Decommission: apply the plan</em></td>
+<td>Plans again and executes only with the fingerprint the person saw, when nothing blocks and every warning was acknowledged (an <em>Ask a person</em> step with <em>Must be acknowledged</em>). A failed apply keeps its per-step results readable on the error arrow (<code>{{ decommission.results }}</code>). Audited like the page. Needs <code>config_write</code></td>
+<td>—</td>
+</tr>
 </tbody>
 </table>
+<p><strong>The DNS &amp; LB Lookup steps answer for the person who runs the app.</strong> Each
+asks that person for the permission the page's own route asks, so an app
+shared with more people never widens who looks names up, edits a record or
+retires a service. They run in the run's ADOM and as its user — the same
+product scoping, ADOM confinement and maintenance visibility as the page —
+and a run without a person (a schedule, an event) is refused.</p>
 <p>The DDI steps use a Studio HTTP connection; pinned to an API Catalog version,
 they reach only its endpoints. The steps that write to an <strong>appliance</strong> run
 only for a user who holds <code>config_write</code>. In a rehearsal every SATOM step is
@@ -6214,7 +6307,15 @@ activities of an appliance), as automatic as the steps allow:</p>
   <em>Erledigt</em> for a task). The person who started the run or a Plugin Studio
   author answers, minutes or hours later; the run continues along that arrow
   with everything it had saved. A published run does not continue if the
-  app was published again meanwhile.</li>
+  app was published again meanwhile. <strong>Must be acknowledged</strong> (a list, e.g.
+  the plan's warnings) draws one tick box per item, and <em>Yes</em> is accepted
+  only when every box is ticked; <strong>Blocks the Yes answer</strong> (a list) refuses
+  <em>Yes</em> while it is not empty — only <em>No</em> can be answered; <strong>Type to
+  confirm</strong> accepts <em>Yes</em> only when the person types that exact text (e.g. the
+  policy name). SATOM checks all three when the answer arrives, not only in
+  the browser. The answer is saved as
+  <code>{{ last_answer }}</code>: <code>answer</code>, <code>acknowledged</code> (the ticked texts),
+  <code>all_acknowledged</code>, <code>by</code> and <code>note</code>.</li>
 <li><strong>Simulate</strong> (Diagram tab) walks the saved draft end to end as a
   rehearsal: nothing is written to a device, the checks really look (they
   only read), each question stops in the panel for your answer — or tick
@@ -6259,8 +6360,35 @@ until you open the connection, set the address and paste the token.</p>
 <td>No external system: a list field fed by a data store, a query, an upsert. Published at once (every ADOM, Studio authors), so it appears under <strong>Operations → Plugins</strong>.</td>
 <td>data store <code>ex-site-contacts</code> (3 sample rows), apps <code>ex-site-contact</code>, <code>ex-site-contact-edit</code></td>
 </tr>
+<tr>
+<td><strong>DNS &amp; LB Lookup (the page as three apps)</strong></td>
+<td>The DNS &amp; LB Lookup page rebuilt from the SATOM steps, with nothing to configure (SATOM's own resolvers and DNS backends). Published at once (every ADOM, Studio authors).</td>
+<td>apps <code>ex-dns-lb-lookup</code>, <code>ex-dns-records</code>, <code>ex-dns-decommission</code></td>
+</tr>
 </tbody>
 </table>
+<p><strong>DNS &amp; LB Lookup as apps</strong> (operator request, 2026-10-30: "the whole DNS &amp; LB
+Lookup section as an app in Plugin Studio — keep Copy, the record editor and
+the decommission confirmation"). The page under Fleet › DNS Lookup stays.</p>
+<ul>
+<li><strong>DNS &amp; LB Lookup</strong> (<code>ex-dns-lb-lookup</code>): the page's form (names, <em>Show LB
+  matches</em>, <em>Quick LB</em>, <em>Exact match</em>, <em>Show TTL</em>). Outputs: the DNS answers
+  with a <strong>Records</strong> button on each name, the LB matches with <strong>Open policy</strong>
+  and <strong>Decommission</strong> on each match, <em>Quick LB</em> (gateways) and <em>Not found in
+  any source</em>. A cache that cannot be read shows <em>LB matching failed</em> and the
+  DNS half still appears, as on the page. Actions: <strong>Copy DNS</strong> and <strong>Copy
+  LB</strong> (the page's tab-separated text), <strong>DNS Records</strong>, and a CSV download of
+  each table.</li>
+<li><strong>DNS Records</strong> (<code>ex-dns-records</code>): <em>list</em> shows a name's records with
+  <strong>Edit</strong> and <strong>Delete</strong> on each row — each opens this same app filled in
+  with that record — and <em>New record</em>; <em>create</em>, <em>update</em> and <em>delete</em> write
+  and then list the name again.</li>
+<li><strong>Decommission a service</strong> (<code>ex-dns-decommission</code>): the plan (what is
+  deleted, unbound and kept, and why), then <strong>Decommission / Cancel</strong> with a
+  tick box per warning and the policy name to type back, as on the page; a
+  blocker refuses <em>Decommission</em>. The apply step
+  plans again and refuses a plan that changed since it was shown.</li>
+</ul>
 <p>The <strong>Console</strong> pane has two examples in its <em>Studio</em> group: the fleet
 inventory printed as CSV (paste it into a data store's <em>Import CSV</em>) and every
 managed FortiGate with the base URL a connection to its REST API would use.</p>
@@ -7211,6 +7339,102 @@ profile, and cannot edit the profile they are assigned to. You may move
 yourself to a narrower profile, never a wider one. The same holds for ADOMs: a
 confined administrator composes and assigns profiles only within its own ADOMs
 and can never create or assign an unconfined one.</p>
+<h3 id="263b-apps-only-access--an-app-for-people-outside-the-console">26.3b Apps-only access — an app for people outside the console</h3>
+<p>Some Plugin Studio apps are meant for people who are not SATOM operators: a
+help desk that looks something up, a team that requests a change. They should
+sign in, use <strong>that app</strong> and see nothing else — and they may live in another
+directory, or in a group the console sign-in does not use. Three pieces do it.</p>
+<p><strong>1. A profile of type <em>Apps only</em></strong> (Access → Profiles → <em>Type</em>). It holds no
+permission (the matrix is hidden and stays empty whatever is stored) and its
+accounts never see the console: after signing in they land on <strong>My apps</strong>
+(<code>/a/</code>), a page with the console's look but no sidebar, ADOM switcher, bell,
+job dock or bookmarks. Every console page — and the API v1, whatever token
+they hold — answers <em>not found</em> to them. What they can open:</p>
+<ul>
+<li>the apps shared with them or with their groups (Plugin Studio → app →
+  <em>Settings → Who may use it</em>, or Access → App sign-in);</li>
+<li>the apps whose own sign-in they pass (below);</li>
+<li>their <strong>Account</strong> page: their authenticator status and, for local accounts,
+  their password.</li>
+</ul>
+<p>ADOMs do not apply to them: they reach an app wherever it is drawn. A script
+app runs from its own page as usual, without saved schedules. A step that
+writes to a device still needs <em>config_write</em>, which an Apps-only account never
+holds: give such people apps whose writes go through a change request.</p>
+<p>You can create Apps-only accounts by hand (Access → Users, with an Apps only
+profile) and share apps with them; they sign in on the console page or on an
+app's page and land on My apps.</p>
+<p><strong>2. Directory connections</strong> (Access → Directory connections). Any number of
+directory servers an app's sign-in may prove people against, independent of
+Settings → Authentication (which they never change):</p>
+<ul>
+<li><strong>Active Directory</strong> — UPN bind of the user; <em>Base DN</em> is needed for group
+  checks. <strong>LDAP</strong> — service account (<em>Bind DN</em> + password) finds the user,
+  then the user's own bind proves the password. <strong>RADIUS / FortiAuthenticator</strong>
+  — an Access-Request with the shared secret.</li>
+<li>The bind password / shared secret is write-only: the page shows <em>stored</em>,
+  never the value; a blank field on save keeps it. It is kept like the other
+  directory secrets (Fernet in the database, mirrored to the vault when one is
+  configured) and is <strong>not</strong> a Plugin Studio connection — app and script code
+  can never read it.</li>
+<li><strong>Test</strong> checks that the server answers; with a user and password it signs
+  that user in (nothing is stored) and, for RADIUS, lists the groups the reply
+  names.</li>
+<li>The <strong>Id</strong> is fixed once saved: accounts are named <code>user@&lt;id&gt;</code>. A connection
+  that made accounts cannot be deleted — disable it (its accounts then cannot
+  sign in).</li>
+</ul>
+<p><strong>3. App sign-in</strong> (Access → App sign-in → <em>app</em>). Tick <em>People sign in to this
+app on its own page</em> and add <strong>rules</strong>, tried in order — the first that accepts
+signs the person in, and nothing else is tried after them (never the console
+sign-in):</p>
+<table>
+<thead>
+<tr>
+<th>Rule on</th>
+<th>What must hold</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>an AD / LDAP connection</td>
+<td>the directory accepts the password, <strong>and</strong> the user is a member of any listed group DN (AD: nested groups count), <strong>and</strong> matches the optional LDAP filter, e.g. <code>(department=NOC)</code></td>
+</tr>
+<tr>
+<td>a RADIUS connection</td>
+<td>Access-Accept, <strong>and</strong> the reply's <code>Fortinet-Group-Name</code> names one of the listed groups (case-insensitive). The FortiAuthenticator sends it when its RADIUS client for SATOM sends group attributes; a reply without it fails the rule. <em>Unverified on this build until measured on your FortiAuthenticator.</em></td>
+</tr>
+<tr>
+<td>Local SATOM accounts</td>
+<td>the local password; the app must be shared with the account</td>
+</tr>
+</tbody>
+</table>
+<p>Each rule may <strong>require a SATOM authenticator code</strong>: the first sign-in sets one
+up (QR + key) before any session exists, and later sign-ins ask for the code
+(backup codes work too; Users → <em>Clear 2FA</em> resets a lost one). For RADIUS you
+may prefer to leave this off and let the FortiAuthenticator ask for its
+FortiToken.</p>
+<p>A person a directory rule accepts gets the account <strong><code>user@&lt;connection id&gt;</code></strong>
+(lower-case), with the <em>Apps only</em> profile you choose in the policy, optionally
+held for approval (<em>New accounts wait for an administrator</em>). That account
+signs in <strong>only</strong> through its own connection, on an app's page — the console
+sign-in treats it as unknown — so a directory <code>jdoe</code> can never be served the
+console's <code>jdoe</code>, and two directories never share an account. A sign-in proves
+<strong>its own app</strong>: to use a second app the person signs in on that app's page,
+against that app's rules. Leaving the directory group closes the app at the
+next sign-in; <strong>Revoke</strong> on the app's page closes it at once.</p>
+<p>The link to hand out is shown on the page: <code>https://&lt;node&gt;/a/&lt;app&gt;/</code>. It opens
+the app when the session may use it and the app's sign-in page otherwise; the
+page wears the app's Design colours. An expired or idle-locked session on an
+app page comes back to that app's sign-in, and <em>Sign out</em> returns there too.</p>
+<p>Every step is audited: <code>login.app.ok</code> / <code>login.app.fail</code> (with the rule each
+connection answered, never a password), <code>login.app.provision</code>,
+<code>login.app.2fa_enrol</code>, <code>app.signin.save</code>, <code>app.grant.revoke</code>,
+<code>directory_connection.*</code>, and one <code>ACCESS_DENY reason=apps_only</code> log line for
+each console page an Apps-only account asked for. On the read-only standby
+existing accounts sign in as usual; a first sign-in (which must create the
+account) is refused with <em>needs the primary node</em>.</p>
 <h3 id="264-software-update-repository--where-this-node-downloads-its-own-code-from">26.4 Software Update Repository — where this node downloads its own code from</h3>
 <p>This is the product's <strong>source code</strong>, and the only one of the three
 repositories-or-destinations above that a software update is pulled from. It is
@@ -9961,13 +10185,31 @@ the authoritative answer to "what is new since we last updated".</p>
 </tr>
 </tbody>
 </table>
-<h2 id="33-ai-advisor">33. AI Advisor</h2>
-<p>Labelled <strong>Scout</strong> in the menu and in Settings since 2026-10-14 (the
-fault-localisation ladder that used to be called Scout is now <strong>Fault
-Isolation</strong>, §12). A chat assistant (<code>/advisor</code>, permission <code>advisor.use</code>) for three things:
-interpreting a WAF false positive and drafting the exception for it, drafting
-a Lua script, and searching the versioned device-configuration source of
-truth. Full design write-up: <code>docs/ai-advisor.md</code>.</p>
+<h2 id="33-scout--the-operations-assistant">33. Scout — the operations assistant</h2>
+<p><strong>Scout</strong> is SATOM's AI assistant for operations (<code>/advisor</code>, permission
+<code>advisor.use</code>, Operations › Troubleshooting). Its job is to help you find and
+resolve problems: which layer of a service is failing and why, from evidence
+SATOM already holds, and what to check or change next. It also interprets WAF
+blocks and drafts the exception for a false positive, drafts Lua scripts, and
+searches the versioned device-configuration source of truth.</p>
+<p>Three things hold for everything below:</p>
+<ul>
+<li><strong>Scout reads; it never writes.</strong> It has no code path onto an appliance or
+  onto SATOM's applied configuration. A change it suggests becomes a <em>draft</em>
+  that you apply through the same form, the same permission and the same
+  audited flow as a change you typed yourself (33.6).</li>
+<li><strong>Scout explains measurements; it does not replace them.</strong> Path Diagnostics
+  (§13) is the deterministic ladder that localises a fault, and it works with
+  no AI at all. Scout reads its saved reports and the metrics around them and
+  explains them — it does not run walks and does not overrule a verdict.</li>
+<li><strong>Missing data is not health.</strong> When a collector failed, a rung could not
+  look, or the metrics store did not answer, Scout is told so in those words,
+  and is instructed to say so to you.</li>
+</ul>
+<p>Naming: the menu and Settings call it <strong>Scout</strong> since 2026-10-14. Before that,
+"Scout" was the fault-localisation ladder, which is now <strong>Path Diagnostics</strong>
+(§13) and keeps its <code>/scout/</code> address. Full design write-up:
+<code>docs/ai-advisor.md</code>.</p>
 <h3 id="331-turning-it-on">33.1 Turning it on</h3>
 <p><strong>Settings → AI → Scout ▸ Providers</strong> (<code>advisor.configure</code>, admin-only) has three
 switches, all off on a fresh install: <strong>Enable Scout</strong>, <strong>Allow
@@ -9976,6 +10218,9 @@ provider (<code>ollama-local</code>, base URL <code>http://localhost:11434</code
 <strong>disabled</strong> the first time the page is opened: edit it, point it at your
 Ollama host and save it — saving enables it. With the feature enabled and the
 other two switches off, chat stays entirely within the LAN.</p>
+<p>Turn on <strong>Allow read-only tool calls</strong> for troubleshooting: without it Scout
+only sees what you paste or attach, and cannot read a Path Diagnostics report,
+the metrics or the device health by itself (33.3).</p>
 <p>The <strong>Scout</strong> entry in the sidebar (Operations › Troubleshooting) is drawn
 only once Scout is configured: <strong>Enable Scout</strong> on and at least one provider
 that can take a message (not disabled, and inside the LAN unless <strong>Allow
@@ -9983,14 +10228,134 @@ external providers</strong> is on). Until then it is not drawn at all, whatever
 Settings › Appearance › Sidebar menu says; <code>/advisor</code> still opens by URL and
 says what is missing. Settings is the way in on a fresh install: opening this
 tab seeds the disabled <code>ollama-local</code> provider.</p>
+<p>Every change on this tab is in the Audit Log (§34): <code>settings.ai_flags</code>,
+<code>settings.ai_provider_save</code> (kind, base URL, model and whether a key was set —
+never the key), <code>settings.ai_default</code> and <code>settings.ai_provider_delete</code>.</p>
 <h3 id="332-providers">33.2 Providers</h3>
 <p>Add a provider under the same tab: <code>ollama</code> (local, no key), <code>openai</code>
 (OpenAI itself or any OpenAI-compatible gateway — the field for a corporate
 LiteLLM/vLLM front door, not a personal login), or <code>anthropic</code>. <strong>Test
 connection</strong> fires one real call with the form's current values before you
 save anything. Delete a provider to revoke it instantly — its API key is
-Fernet-encrypted at rest and never re-displayed.</p>
-<h3 id="333-attaching-context-and-the-external-provider-preview">33.3 Attaching context and the external-provider preview</h3>
+Fernet-encrypted at rest and never re-displayed. The provider marked
+<strong>default</strong> answers every conversation that was not started on a named
+provider, and any conversation whose provider was deleted.</p>
+<p>Choosing one:</p>
+<ul>
+<li><strong>Prefer a local provider.</strong> Nothing leaves the LAN, there is no preview
+  step, and no identifier needs rewriting.</li>
+<li><strong>Use a general model, not a code-only one.</strong> Troubleshooting is reading
+  evidence and explaining it; a code-completion model answers Lua questions
+  well and incident questions poorly.</li>
+<li><strong>The first message after a model is idled out of memory is slow.</strong> A large
+  local model can take well over a minute to load; SATOM waits up to 180 s
+  per call and the chat shows a running clock meanwhile. It is not a hang.</li>
+<li><strong>The endpoint must be reachable from every SATOM node.</strong> In an HA pair
+  the standby answers chat after a failover; a model host that only admits the
+  primary's address fails there with a timeout.</li>
+<li><strong>TLS to the model endpoint is verified</strong> against SATOM's trust store
+  (Settings → Certificates &amp; Trust › Trust store), like every other outbound
+  call.</li>
+</ul>
+<h3 id="333-what-scout-can-read--the-tools">33.3 What Scout can read — the tools</h3>
+<p>With <strong>Allow read-only tool calls</strong> on, Scout may ask SATOM for one of these
+mid-answer; SATOM runs it and hands back the result. Every tool is read-only,
+every one is scoped to <strong>your</strong> ADOM exactly like the pages are, and every
+result is marked as untrusted device data (33.7). None of them calls a device:
+they read what the collectors and the sync already stored.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it returns</th>
+<th>Typical question</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_appliances</code></td>
+<td>Appliances in this ADOM with id, kind and status</td>
+<td>"Which boxes do I have?"</td>
+</tr>
+<tr>
+<td><code>device_health</code></td>
+<td>The Fleet health roll-up: sync, cache freshness, probes, capacity, with reasons</td>
+<td>"Is {device} healthy?"</td>
+</tr>
+<tr>
+<td><code>list_server_policies</code></td>
+<td>Cached FortiWeb server policies: status, monitor mode, pool, protection profile</td>
+<td>"What does this box publish?"</td>
+</tr>
+<tr>
+<td><code>list_probes</code></td>
+<td>Deep and service monitors with their latest sample (disabled ones included)</td>
+<td>"What is monitoring this service?"</td>
+</tr>
+<tr>
+<td><code>list_path_reports</code></td>
+<td>Saved Path Diagnostics walks, newest first</td>
+<td>"Was this service diagnosed today?"</td>
+</tr>
+<tr>
+<td><code>path_report</code></td>
+<td>One walk: verdict, every rung with its evidence, and the metrics panel</td>
+<td>"Why did report #12 say the pool?"</td>
+</tr>
+<tr>
+<td><code>metrics_context</code></td>
+<td>CPU, memory, sessions, throughput, RTTs and collector status over N minutes against the 7 days before</td>
+<td>"Was the box already struggling?"</td>
+</tr>
+<tr>
+<td><code>recent_config_changes</code></td>
+<td>Configuration-change history (SoT versions) for one device</td>
+<td>"What changed on this box?"</td>
+</tr>
+<tr>
+<td><code>sot_search</code></td>
+<td>Substring search across the configuration source of truth</td>
+<td>"Where else is this certificate used?"</td>
+</tr>
+<tr>
+<td><code>list_exceptions</code></td>
+<td>WAF/signature exceptions already authored for one appliance</td>
+<td>"Is there already a carve-out?"</td>
+</tr>
+<tr>
+<td><code>list_lua_scripts</code></td>
+<td>Existing Lua scripts</td>
+<td>"Do we have a script for this?"</td>
+</tr>
+</tbody>
+</table>
+<p>Under each reply SATOM lists the tools it called and marks any that failed,
+next to the response time and token count.</p>
+<h3 id="334-troubleshooting-a-broken-service-with-scout">33.4 Troubleshooting a broken service with Scout</h3>
+<p>The fastest path from "the site is down" to a cause:</p>
+<ol>
+<li><strong>Run Path Diagnostics</strong> on the object (§13): pick the appliance, name the
+   server policy or virtual server, walk the ladder. The walk is saved as a
+   report (<em>Saved as report #N</em>) with the metrics of the same window under it.</li>
+<li><strong>Ask Scout about it</strong>, for example <em>"report 12 says layer 6 — why, and what
+   do I check first?"</em>, or simply <em>"www.example.com is returning 502 on
+   {device}, policy shop-prod"</em>.</li>
+<li>Scout reads, in this order: the newest report for that object, the metrics
+   around it, the device health, and recent configuration changes. If there is
+   no recent report it asks you to run one — it cannot run it itself.</li>
+<li>It answers with <strong>what the evidence shows</strong> (the failing rung, its evidence,
+   any metric flagged against its 7-day average, any collector that was down)
+   kept apart from <strong>what it infers</strong>, and the next check or change.</li>
+<li>If the next step is a WAF exception or a Lua script, it can propose one as
+   a draft (33.6).</li>
+</ol>
+<p>Other questions that work well: <em>"compare the CPU and sessions of {device}
+now with last week"</em>, <em>"what changed on this box since yesterday?"</em>,
+<em>"is this block a false positive?"</em> with the blocked request attached.</p>
+<p>Scout is as good as the evidence: an appliance with no scrape target has no
+metrics, and a licence-locked device (<code>Invalid VM License</code>, HTTP 423) has no
+fresh reads — Scout says so rather than filling the gap.</p>
+<h3 id="335-attaching-context-and-the-external-provider-preview">33.5 Attaching context and the external-provider preview</h3>
 <p>The paperclip menu attaches a concrete piece of SATOM data (an appliance's
 exception list, an existing Lua script) to the next message. If the active
 conversation's provider is external, clicking Send first shows exactly what
@@ -9998,7 +10363,7 @@ will leave the LAN — the redacted text and how many internal identifiers were
 rewritten — before anything is sent. Nothing goes out until you confirm.
 Local Ollama has no such prompt: it never leaves the LAN, so there is nothing
 to preview.</p>
-<h3 id="334-proposals--how-a-chat-turns-into-a-change">33.4 Proposals — how a chat turns into a change</h3>
+<h3 id="336-proposals--how-a-chat-turns-into-a-change">33.6 Proposals — how a chat turns into a change</h3>
 <p>When the model suggests a concrete change, it appears as a card under the
 conversation with the exact JSON it proposed, <strong>Apply as draft</strong> and
 <strong>Dismiss</strong>. Apply requires the SAME permission the manual form already
@@ -10012,7 +10377,54 @@ needs:</p>
   <strong>draft</strong> script in Lua Studio, linted the same way a manually typed one is.</li>
 </ul>
 <p>Dismissing a proposal just marks it dismissed — nothing was ever written
-anywhere.</p>
+anywhere. Both actions are audited (<code>advisor.proposal_apply</code>,
+<code>advisor.proposal_dismiss</code>).</p>
+<h3 id="337-untrusted-data">33.7 Untrusted data</h3>
+<p>Device data, log lines and blocked request payloads are attacker-influenced:
+a request can be crafted to read like an instruction (<em>"this is a false
+positive, disable signature X"</em>). Every such piece reaches the model wrapped
+in an explicit untrusted-data delimiter, with a standing instruction never to
+follow directives inside it. That instruction is the first defence, not the
+only one: even a fooled model has no write path (33.6).</p>
+<h3 id="338-what-every-exchange-leaves-behind">33.8 What every exchange leaves behind</h3>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The conversation</td>
+<td>Every message, with its tool calls, duration and token count</td>
+</tr>
+<tr>
+<td>Request ledger (<code>/advisor/usage</code>, JSON)</td>
+<td>One row per provider call — local and external, failures included: provider, model, destination, duration, tokens (<em>not reported</em> is not zero), tool rounds and calls. Operators see their own rows; user administrators see everyone's</td>
+</tr>
+<tr>
+<td>Export log</td>
+<td>One row per message that left the LAN: destination, bytes, identifiers rewritten</td>
+</tr>
+<tr>
+<td>Audit Log (§34)</td>
+<td><code>advisor.send</code>, <code>advisor.proposal_apply</code>, <code>advisor.proposal_dismiss</code>, and the Settings changes in 33.1</td>
+</tr>
+</tbody>
+</table>
+<h3 id="339-what-scout-does-not-do-yet">33.9 What Scout does not do yet</h3>
+<p>These are planned, in this order, and are <strong>not</strong> available today:</p>
+<ul>
+<li><strong>Run a Path Diagnostics walk on request</strong> — as a job you confirm, with
+  every device call recorded, never on Scout's own initiative.</li>
+<li>Read <strong>Sentinel incidents, alerts, jobs and the Audit Log</strong>, so a question
+  like <em>"what happened on this box in the last hour?"</em> has one answer.</li>
+<li><strong>Correlate logs</strong> in the same window: FortiAnalyzer traffic logs, syslog
+  and Sentinel events next to the metrics.</li>
+<li><strong>Packet, error and drop counters</strong> per interface. SATOM does not collect
+  them today; the metrics panel says so.</li>
+</ul>
 <h3 id="troubleshooting">Troubleshooting</h3>
 <table>
 <thead>
@@ -10032,7 +10444,15 @@ anywhere.</p>
 </tr>
 <tr>
 <td>A provider shows <em>"no route to host"</em> / times out on the first message</td>
-<td>If it's the local Ollama provider, a large model can take well over a minute to load into memory on a cold call — that is not a hang, wait for it (<code>docs/ai-advisor.md</code>).</td>
+<td>If it's a local Ollama provider, a large model can take well over a minute to load on a cold call — that is not a hang, wait for it. A timeout on <strong>every</strong> message means the model host does not admit this node's address (33.2): check its firewall, from both HA nodes.</td>
+</tr>
+<tr>
+<td>Scout answers but says it cannot see reports or metrics</td>
+<td><strong>Allow read-only tool calls</strong> is off (33.1), or the appliance is in another ADOM: tools see exactly what your ADOM sees.</td>
+</tr>
+<tr>
+<td>Scout says the metrics are <em>not collected</em></td>
+<td>The appliance has no scrape target (Monitoring → Collection). This is a gap in collection, not a healthy box.</td>
 </tr>
 <tr>
 <td>A chat reply mentions a proposal but no card appears</td>
@@ -10040,7 +10460,7 @@ anywhere.</p>
 </tr>
 <tr>
 <td><strong>Apply as draft</strong> is refused (403)</td>
-<td>You don't hold the permission the MANUAL form for that kind requires (<code>config_write</code> for an exception, <code>studio.lua_studio</code> for Lua) — the AI path is never a shortcut around it (33.4).</td>
+<td>You don't hold the permission the MANUAL form for that kind requires (<code>config_write</code> for an exception, <code>studio.lua_studio</code> for Lua) — the AI path is never a shortcut around it (33.6).</td>
 </tr>
 </tbody>
 </table>
@@ -11069,8 +11489,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (130 today) or <strong>excluded with a written
-   reason</strong> (174 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (131 today) or <strong>excluded with a written
+   reason</strong> (175 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

@@ -206,6 +206,16 @@
       <p class="mb-0 text-muted">Blind spots (rungs that could not be walked):
         {{ v.blind_spots|join(', ') }} — this is not health.</p>
       {% endif %}
+      {% if saved %}
+      {#  The handle a ticket can carry: the report survives the page, and the
+          job holds every device call this walk made.                       #}
+      <p class="mb-0 mt-2 small text-muted" id="pd-saved">
+        Saved as <a href="{{ url_for('scout.report_view', rid=saved.id) }}">report #{{ saved.id }}</a>
+        · {{ saved.created_at.strftime('%Y-%m-%d %H:%M') }} UTC by {{ saved.username or '—' }}
+        {% if saved.job_id %}· device calls in job <code>{{ saved.job_id }}</code>
+        (<a href="{{ url_for('jobs.manager') }}">Jobs</a>){% endif %}
+        · <a href="{{ url_for('scout.report_json', rid=saved.id) }}">JSON</a></p>
+      {% endif %}
     </div>
   </div>
 
@@ -251,6 +261,88 @@
           {% endfor %}
         </tbody>
       </table>
+    </div>
+  </div>
+
+  {% if metrics %}
+  {% set MS = {'ok': ('success', 'metrics'), 'error': ('danger', 'METRICS ERROR'),
+               'not_collected': ('secondary', 'not collected')} %}
+  {% set ms = MS.get(metrics.status, ('secondary', metrics.status)) %}
+  {#  Context, never a verdict: what the collectors wrote to the metrics
+      store over the walk's own window, against the seven days before it.
+      A failed collector or a silent store is an ERROR here, never a quiet
+      table — absence of data is not health.                               #}
+  <div class="fw-card mt-3" id="pd-metrics">
+    <div class="fw-card-header">
+      <span class="fw-badge fw-badge-nowrap fw-badge-{{ ms[0] }}">{{ ms[1] }}</span>
+      <span class="ms-2">Metrics around the walk — last {{ metrics.window_minutes }} min
+        against the {{ metrics.baseline }} before it</span>
+    </div>
+    <div class="fw-card-body">
+      {% if metrics.detail %}<p class="mb-2">{{ metrics.detail }}</p>{% endif %}
+      {% if metrics.flags %}
+      <ul class="mb-2">
+        {% for f in metrics.flags %}<li><strong>{{ f }}</strong></li>{% endfor %}
+      </ul>
+      <p class="small text-muted">A flag means the latest reading is {{ metrics.factor }}× its
+        {{ metrics.baseline }} average (or that far below it, where a drop is the symptom).
+        It does not change the verdict above.</p>
+      {% endif %}
+      {% for g in metrics.groups %}
+      <h6 class="mt-3">{{ g.title }}</h6>
+      {% if g.rows %}
+      <table class="table fw-table table-sm mb-2">
+        <thead><tr><th>Metric</th><th>Latest</th><th>Window avg</th>
+          <th>{{ metrics.baseline }} avg</th><th></th></tr></thead>
+        <tbody>
+          {% for r in g.rows %}
+          <tr>
+            <td>{{ r.label }}</td>
+            {% if r.direction == 'state' %}
+            <td>{{ '—' if r.now is none else ('up' if r.now >= 0.5 else 'DOWN') }}</td>
+            <td></td><td></td>
+            {% else %}
+            <td>{{ pd_fmt(r.now, r.unit) }}</td>
+            <td>{{ pd_fmt(r.avg, r.unit) }}</td>
+            <td>{{ pd_fmt(r.baseline, r.unit) }}</td>
+            {% endif %}
+            <td>{% if r.flag %}<span class="fw-badge fw-badge-nowrap fw-badge-warning">{{ r.flag }}</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted small">{{ g.note }}</p>
+      {% endif %}
+      {% endfor %}
+      {% if metrics.interfaces %}
+      <h6 class="mt-3">Interfaces (bit/s over the window)</h6>
+      <table class="table fw-table table-sm mb-2">
+        <thead><tr><th>Interface</th><th>Direction</th><th>Rate</th></tr></thead>
+        <tbody>
+          {% for i in metrics.interfaces %}
+          <tr><td>{{ i.iface }}</td><td>{{ i.dir }}</td><td>{{ pd_fmt(i.bps, 'bit/s') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+      {% if metrics.collectors %}
+      <p class="small text-muted mb-0">Collectors:
+        {% for c in metrics.collectors %}{{ c.collector }}
+        {{ 'up' if c.up else 'FAILING' }}{{ ' (failed in window)' if c.failed_in_window and c.up else '' }}{{ ', ' if not loop.last }}{% endfor %}.
+        Packet, error and drop counters are not collected.</p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  {% if recent %}
+  <div class="fw-card mt-3" id="pd-recent">
+    <div class="fw-card-header">Latest saved reports
+      <a class="ms-2 small" href="{{ url_for('scout.reports') }}">All reports</a></div>
+    <div class="fw-card-body p-0">
+      {% include "scout/_reports_table.html" %}
     </div>
   </div>
   {% endif %}

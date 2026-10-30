@@ -1,7 +1,14 @@
 """Scout — Operations → Troubleshooting → Scout.
 
-GET  /scout/   the form
-POST /scout/   walk the ladder against the named object
+GET  /scout/                    the form (+ the latest saved reports)
+POST /scout/                    walk the ladder against the named object
+GET  /scout/reports             saved reports this ADOM can see
+GET  /scout/reports/<id>        one saved report, drawn as it was
+GET  /scout/reports/<id>.json   the same, for Scout and API callers
+
+Every walk is saved (``path_diag_reports``) with the metrics panel that sat
+under it and the id of the job that carried its device calls; the audit row
+names both. A report is visible exactly when its appliance is.
 
 READ ONLY. Every rung delegates; this module reads the form, clamps what an
 operator may set, and renders. It does NOT decide what a verdict means — a
@@ -18,12 +25,18 @@ WHY THE APPLIANCE IS PICKED HERE AND NOT TAKEN FROM THE WORKSPACE
 """
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, render_template, request
-from flask_login import login_required
+import json
+
+from flask import Blueprint, abort, jsonify, render_template, request
+from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import Appliance, Permission, visible_appliances
+from ..extensions import db
+from ..models_pathdiag import PathDiagReport
 from ..services import faz_logs
+from ..services import jobs
+from ..services import scout_metrics
 from ..services import scout_config
 from ..services import scout_objects
 from ..services import scout_ladder as sl
@@ -96,6 +109,54 @@ def _defaults() -> dict:
     return scout_config.walk_defaults()
 
 
+def _visible_ids() -> list[int]:
+    return [a.id for a in visible_appliances().with_entities(Appliance.id).all()]
+
+
+def _recent(limit: int = 10) -> list[PathDiagReport]:
+    ids = _visible_ids()
+    if not ids:
+        return []
+    return (PathDiagReport.query.filter(PathDiagReport.appliance_id.in_(ids))
+            .order_by(PathDiagReport.id.desc()).limit(limit).all())
+
+
+def _visible_report(rid: int) -> PathDiagReport:
+    """404 for a report whose appliance this ADOM cannot see — the same answer
+    as a report that does not exist, so an id cannot be probed across ADOMs."""
+    row = db.session.get(PathDiagReport, rid)
+    if row is None or row.appliance_id not in set(_visible_ids()):
+        abort(404)
+    return row
+
+
+def _product() -> str:
+    try:
+        from ..services.product_scope import stamp
+        return stamp() or ""
+    except Exception:  # noqa: BLE001 — a report is never lost to scoping
+        return ""
+
+
+def _save(appl, target, opts, report: dict, metrics: dict) -> PathDiagReport:
+    v = report.get("verdict") or {}
+    row = PathDiagReport(
+        username=getattr(current_user, "username", "") or "",
+        product=_product(), appliance_id=appl.id,
+        appliance_name=appl.name or "", kind=appl.kind or "",
+        policy=target.policy or "", localised=bool(v.get("localised")),
+        verdict_layer=str(v.get("layer") or ""),
+        verdict_text=str(v.get("text") or "")[:400],
+        metrics_status=str(metrics.get("status") or ""),
+        window_minutes=int(opts.window_minutes or 0),
+        job_id=jobs.current_job_id() or "",
+        report_json=json.dumps(report, default=str),
+        metrics_json=json.dumps(metrics, default=str))
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
 @bp.route("/objects")
 @login_required
 @require_permission(Permission.VIEW)
@@ -142,6 +203,10 @@ def index():
         # a control added later cannot ship mute.
         "field_help": scout_config.walk_help(),
         "report": None,
+        "metrics": None,
+        "saved": None,
+        "pd_fmt": scout_metrics.fmt,
+        "recent": [],
         "error": "",
         # appliance_id/policy/hostname/port/scheme also come from the query
         # string: Fleet ->
@@ -169,6 +234,7 @@ def index():
         "UNKNOWN": sl.UNKNOWN, "SKIPPED": sl.SKIPPED,
     }
     if request.method != "POST":
+        ctx["recent"] = _recent(10)
         return render_template("scout/index.html", **ctx)
 
     appl = None
@@ -227,9 +293,53 @@ def index():
         ctx["error"] = str(exc)
         return render_template("scout/index.html", **ctx)
 
-    ctx["report"] = report
+    # Context, never a rung: the panel cannot change the verdict above it.
+    metrics = scout_metrics.context(appl.name, target.policy,
+                                    report["options"]["window_minutes"])
+    saved = _save(appl, target, opts, report, metrics)
+    ctx.update(report=report, metrics=metrics, saved=saved)
     log_action("scout.walk",
                "appliance=%s object=%r verdict=%s" % (
                    appl.name, target.policy,
-                   report["verdict"].get("layer") or "no fault localised"))
+                   report["verdict"].get("layer") or "no fault localised"),
+               {"report_id": saved.id, "job_id": saved.job_id,
+                "metrics": metrics.get("status")})
     return render_template("scout/index.html", **ctx)
+
+
+@bp.route("/reports")
+@login_required
+@require_permission(Permission.VIEW)
+def reports():
+    rows = _recent(200)
+    if request.args.get("format") == "json":
+        return jsonify({"reports": [r.summary() for r in rows]})
+    return render_template("scout/reports.html", rows=rows)
+
+
+@bp.route("/reports/<int:rid>")
+@login_required
+@require_permission(Permission.VIEW)
+def report_view(rid: int):
+    row = _visible_report(rid)
+    rep_ = row.report()
+    form = {"appliance_id": str(row.appliance_id or ""), "policy": row.policy,
+            "hostname": "", "port": "", "scheme": "https", "path": "/",
+            "use_ssh": False, "window_minutes": str(row.window_minutes or ""),
+            "analyzer_id": "", "faz_adom": "", "faz_devid": "", "faz_vdom": ""}
+    return render_template(
+        "scout/index.html", appliances=_candidates(), analyzers=_analyzers(),
+        field_help=scout_config.walk_help(), report=rep_,
+        metrics=row.metrics(), saved=row, recent=[], error="", form=form,
+        pd_fmt=scout_metrics.fmt,
+        PASS=sl.PASS, FAIL=sl.FAIL, WARN=sl.WARN, UNKNOWN=sl.UNKNOWN,
+        SKIPPED=sl.SKIPPED)
+
+
+@bp.route("/reports/<int:rid>.json")
+@login_required
+@require_permission(Permission.VIEW)
+def report_json(rid: int):
+    row = _visible_report(rid)
+    return jsonify({"report": row.summary() | {"walk": row.report(),
+                                               "metrics": row.metrics()}})

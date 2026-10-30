@@ -94,12 +94,21 @@ HEARTBEAT_SECONDS = 2.0
 _STREAM_QUEUE_MAX = 512
 
 SYSTEM_PROMPT = (
-    "You are the SATOM AI Advisor, embedded in a Fortinet fleet-management "
-    "console (FortiWeb WAF, FortiADC, FortiAnalyzer, FortiAuthenticator). "
-    "You help operators interpret WAF blocks, draft Lua scripts, and search "
-    "device configuration reports. You are a READ-ONLY advisor: you never "
-    "change SATOM's configuration or any appliance directly, and you never "
-    "run or deploy code.\n\n"
+    "You are Scout, the operations assistant of SATOM, a Fortinet "
+    "fleet-management console (FortiWeb WAF, FortiADC, FortiGate, "
+    "FortiAnalyzer, FortiAuthenticator). Your job is to help operators find "
+    "and resolve problems: say which layer is failing and why, from evidence, "
+    "and what to check or change next. You also interpret WAF blocks, draft "
+    "Lua scripts, and search device configuration reports. You are a "
+    "READ-ONLY advisor: you never change SATOM's configuration or any "
+    "appliance directly, and you never run or deploy code.\n\n"
+    "When a service is reported broken: read the newest Path Diagnostics "
+    "report for that object (its verdict is a measurement; do not contradict "
+    "it — explain it), then the metrics around it, the device health and the "
+    "recent configuration changes. If there is no recent report, ask the "
+    "operator to run Path Diagnostics on that object; you cannot run it. "
+    "Separate what the evidence shows from what you infer, and say when a "
+    "collector or a rung could not look — missing data is not health.\n\n"
     "When a concrete change is warranted (a WAF exception, a Lua script), "
     "propose it as ONE fenced code block, language `" + PROPOSAL_FENCE + "`, "
     "containing exactly one JSON object and nothing else in that block:\n"
@@ -510,6 +519,66 @@ def tool_recent_config_changes(device: str, limit: int = 10) -> list[dict]:
             for r in sot_store.history(device=real, limit=limit)]
 
 
+def tool_list_path_reports(appliance_id: int = 0, limit: int = 10) -> list[dict]:
+    """Saved Path Diagnostics walks, newest first, only for appliances this
+    ADOM can see -- the same rule the report pages apply."""
+    from ..models import Appliance, visible_appliances
+    from ..models_pathdiag import PathDiagReport
+    ids = [a.id for a in visible_appliances().with_entities(Appliance.id).all()]
+    if appliance_id:
+        ids = [i for i in ids if i == int(appliance_id)]
+    if not ids:
+        return []
+    try:
+        limit = max(1, min(int(limit), 50))
+    except (TypeError, ValueError):
+        limit = 10
+    rows = (PathDiagReport.query.filter(PathDiagReport.appliance_id.in_(ids))
+            .order_by(PathDiagReport.id.desc()).limit(limit).all())
+    return [r.summary() for r in rows]
+
+
+def tool_path_report(report_id: int) -> dict:
+    """One saved walk: the verdict, every rung's headline and evidence, and the
+    metrics panel. Evidence values are capped so one verbose rung cannot crowd
+    the rest out of the model's context."""
+    from flask import abort
+    from ..extensions import db
+    from ..models import visible_appliance_or_404
+    from ..models_pathdiag import PathDiagReport
+    row = db.session.get(PathDiagReport, int(report_id))
+    if row is None or row.appliance_id is None:
+        abort(404)
+    visible_appliance_or_404(row.appliance_id)
+    walk, m = row.report(), row.metrics()
+    layers = [{"layer": L.get("key"), "title": L.get("title"),
+               "verdict": L.get("verdict"), "headline": L.get("headline"),
+               "detail": (L.get("detail") or "")[:400],
+               "evidence": [[str(k)[:80], str(v)[:300]]
+                            for k, v in (L.get("evidence") or [])[:10]]}
+              for L in walk.get("layers") or []]
+    return {"report": row.summary(), "verdict": walk.get("verdict"),
+            "endpoint": walk.get("endpoint"), "layers": layers,
+            "metrics": {"status": m.get("status"), "detail": m.get("detail"),
+                        "flags": m.get("flags"), "collectors": m.get("collectors"),
+                        "window_minutes": m.get("window_minutes")}}
+
+
+def tool_metrics_context(appliance_id: int, policy: str = "",
+                         window_minutes: int = 15) -> dict:
+    """What the collectors wrote to the metrics store for one appliance (and
+    optionally one object) over the last N minutes, against the seven days
+    before. Read from the store, never from the device."""
+    from ..models import visible_appliance_or_404
+    from . import scout_metrics
+    ap = visible_appliance_or_404(appliance_id)
+    try:
+        w = max(1, min(int(window_minutes), 1440))
+    except (TypeError, ValueError):
+        w = 15
+    return scout_metrics.context(ap.name, (policy or "").strip(), w)
+
+
 TOOLS = {
     "list_appliances": {
         "fn": tool_list_appliances,
@@ -545,6 +614,22 @@ TOOLS = {
         "fn": tool_list_exceptions,
         "description": "List the guided WAF/signature exceptions already authored for one appliance.",
         "params": {"appliance_id": "int"},
+    },
+    "list_path_reports": {
+        "fn": tool_list_path_reports,
+        "description": "Saved Path Diagnostics walks (which layer failed), newest first; optionally for one appliance. Start here when a service is reported broken.",
+        "params": {"appliance_id": "int (optional)", "limit": "int (optional)"},
+    },
+    "path_report": {
+        "fn": tool_path_report,
+        "description": "One saved Path Diagnostics walk: verdict, every rung with its evidence, and the metrics around it.",
+        "params": {"report_id": "int"},
+    },
+    "metrics_context": {
+        "fn": tool_metrics_context,
+        "description": "Metrics for one appliance (and optionally one server policy / virtual server) over the last N minutes vs its 7-day average: CPU, memory, sessions, throughput, RTTs, collector status.",
+        "params": {"appliance_id": "int", "policy": "string (optional)",
+                   "window_minutes": "int (optional)"},
     },
     "list_lua_scripts": {
         "fn": tool_list_lua_scripts,

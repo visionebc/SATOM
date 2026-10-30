@@ -155,10 +155,10 @@ URL</strong> on the Knowledge packs card of the primary (any <code>https://</cod
    its <code>.sha256</code> from the <code>knowledge</code> release of the public repository
    (<code>https://github.com/visionebc/SATOM/releases/tag/knowledge</code>; its
    <code>latest.json</code> names the current file). Check it:
-   <code>sha256sum -c satom-apipack-kb-&lt;date&gt;.tar.gz.sha256</code>.</li>
+   <code>sha256sum -c satom-kbpack-&lt;date&gt;.tar.gz.sha256</code>.</li>
 <li>Carry the file over and import it on the primary: Software Update → <strong>API
    library packs</strong> → upload → <strong>Import selected</strong>, or
-   <code>sudo satom execute apipack import ./satom-apipack-kb-&lt;date&gt;.tar.gz --yes</code>.
+   <code>sudo satom execute apipack import ./satom-kbpack-&lt;date&gt;.tar.gz --yes</code>.
    The signature is checked against the shipped knowledge key; nothing else
    needs to be trusted.</li>
 <li>Repeat step 2–3 whenever you want newer knowledge. The release notes modal,

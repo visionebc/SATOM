@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#470---2026-10-30">[4.7.0] - 2026-10-30</a>
       <a href="#460---2026-10-27">[4.6.0] - 2026-10-27</a>
       <a href="#450---2026-10-26">[4.5.0] - 2026-10-26</a>
       <a href="#440---2026-10-26">[4.4.0] - 2026-10-26</a>
@@ -104,7 +105,6 @@
       <a href="#280---2026-10-02">[2.8.0] - 2026-10-02</a>
       <a href="#270---2026-10-02">[2.7.0] - 2026-10-02</a>
       <a href="#260---2026-10-02">[2.6.0] - 2026-10-02</a>
-      <a href="#250---2026-10-01">[2.5.0] - 2026-10-01</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,6 +112,17 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="470---2026-10-30">[4.7.0] - 2026-10-30</h2>
+<p><strong>Apps for people outside the console, and the Builder opens what SATOM
+has.</strong> A Plugin Studio app can carry its own sign-in (local accounts, LDAP or
+FortiAuthenticator groups, two-factor) and an <em>Apps only</em> profile whose whole
+menu is its apps; apps can be filed under menu groups that become Plugins
+submenus; SATOM Builder lists and opens this server's plugins and apps.
+Scout becomes the operations assistant: it correlates logs (with optional
+Splunk and Elasticsearch / OpenSearch sources), Sentinel incidents, jobs and
+the audit log, proposes Path Diagnostics walks, and every walk is saved as a
+report with the metrics around it. Knowledge packs are now kbpacks, and
+Software Update takes the update, the API pack and the kbpack in one Upload.</p>
 <h3 id="added">Added</h3>
 <ul>
 <li><strong>SATOM Builder opens what this server already has</strong> (request: "I still
@@ -205,7 +216,11 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   / <code>incident</code> (Sentinel), <code>recent_jobs</code> / <code>job_detail</code> (every REST call
   and SSH command a job made), <code>audit_events</code> and <code>recent_alerts</code> (the
   operator's own bell). Each applies the gate of
-  the page that shows the same data, as the operator.</li>
+  the page that shows the same data, as the operator.
+  <code>source: "all"</code> searches every log source, a job status of <code>failed</code>
+  finds the jobs that failed, and an unknown source or status is an
+  error naming the valid values; incidents follow the Sentinel console's
+  rule (matched by device name, incidents without a device included).</li>
 <li><strong>Settings → AI → Log sources (optional): Splunk.</strong> An administrator can
   point Scout at a SIEM, read only — for the non-Fortinet hops of a path.
   The token is stored encrypted and never shown; TLS is verified against
@@ -294,7 +309,9 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   times; interface rates; each collector's status. Readings 2× off their
   7-day average are flagged. It never changes the verdict; a failed
   collector or a silent store is <strong>METRICS ERROR</strong>, an appliance with no
-  scrape target <strong>not collected</strong>.</li>
+  scrape target <strong>not collected</strong>.
+  An interface that lacks a reading (no SNMP counters, no packet
+  counters on a FortiADC) shows an empty cell instead of failing the page.</li>
 <li><strong>Scout is the operations assistant.</strong> Its prompt now puts finding and
   resolving faults first (newest Path Diagnostics report → metrics → device
   health → recent changes; evidence kept apart from inference; missing data
@@ -311,13 +328,71 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>Knowledge packs are kbpacks: <code>satom-kbpack-YYYYMMDD[.N].tar.gz</code></strong>
+  (request: "the API pack stays the API pack; the knowledge one must stop
+  saying API pack: call it kbpack"). The file of the rolling knowledge lane
+  was named like an API pack (<code>satom-apipack-kb-...</code>). Its version is still
+  <code>kb-YYYYMMDD[.N]</code>; only the file name changes. The old name is still read
+  everywhere (upload, feed, <code>satom execute apipack import</code>), and an upload or
+  a feed download under it is stored as <code>satom-kbpack-...</code>, so a node shows one
+  name for one pack. A schema /2 pack named <code>satom-kbpack-*</code> whose manifest is
+  not of the knowledge lane is refused. The knowledge feed may name the
+  kbpack in a <code>kbpack</code> block (<code>file</code>, <code>url</code>, <code>sha256</code>, <code>size</code>, <code>sha256_url</code>)
+  that wins over the top-level file, which stays the old name for nodes on
+  4.6.0 and older. New provenance strings read <code>pack:knowledge:satom-kbpack-...</code>;
+  rows written before keep theirs. The page says <em>kbpack</em> where it said
+  <em>knowledge pack (satom-harvester)</em>; the pack card is <em>API packs &amp; kbpacks</em>.</li>
+<li><strong>One Upload for the three files</strong> (request: "it should be one file upload
+  that takes the three: the SATOM update, the kbpack and the API pack").
+  Settings › Software Update has an <strong>Upload</strong> card (<code>POST
+  /self-update/upload</code>, <code>user_manage</code>) that routes the file by its name:
+  <code>satom-update-&lt;version&gt;.tar.gz</code> to the offline package staging and its
+  preflight, <code>satom-apipack-&lt;version&gt;.tar.gz</code> and <code>satom-kbpack-&lt;date&gt;.tar.gz</code>
+  to the pack list; any other name is refused and nothing is written. The
+  separate upload forms of <em>Offline update package</em> and the pack card point
+  to it; their routes stay for scripts.</li>
+<li><strong>Software Update fits a laptop screen</strong> (request: "check every card, they
+  don't look right at my resolution"). <em>API library packs</em> lists its packs as
+  one table across the whole card (pack, lane, source, size) instead of a
+  narrow column of 47 rows next to an empty one; the pack detail and <em>Recent
+  imports</em> (now with column headers) use the full width too. <em>Knowledge
+  packs</em> stacks <em>Installed</em> and <em>Available from the feed</em>, so the installed
+  table no longer runs under the <em>Check now</em> button, and the <em>Scheduled
+  fetch</em> select is no longer cut. <em>Recent updates</em> says what each request was
+  in a <em>What</em> column (a service restart, an OS-package check, a library
+  upgrade, an offline package or a code revision) where <em>Target</em> was blank
+  for everything but code updates.</li>
+<li><strong>Only the newest API pack of each series is listed</strong> (request: "keep only
+  the latest; there is no need to keep the others — add a button to purge the
+  old ones"). Older shipped packs are counted under the table, not listed; a
+  release payload already carries only its own. New <strong>Purge old packs (N)</strong>
+  button (<code>POST /self-update/apipack/purge</code>, <code>user_manage</code>): deletes every
+  uploaded pack that a newer one of the same series replaces, keeps the
+  newest of each series, never touches shipped packs; one <code>apipack.delete</code>
+  audit row per pack.</li>
+<li><strong>The HA link card appears only where there is an HA pair</strong> (request: "if
+  there is no HA, that card should not appear"): in HA mode with a standby
+  registered, and on the standby. A failed check is still shown.</li>
+<li><strong>An Apps only account's menu is Plugins with its apps, already open</strong>
+  (request: "only what is inside Plugins should appear, already expanded").
+  The portal pages (<code>/a/</code> and every app page) draw a left menu holding only
+  the apps the account may use, filed under their menu groups, every group
+  open and without a toggle; no other console section, no bookmarks.</li>
 <li><strong>Plugin Studio's Explorer is a tree; the "Open an app" list is gone</strong>
   (request: "remove that section and make the menus there expandable").
   Apps, Data stores, Connections and API Catalog have a caret that unfolds
   their items, each a link to its page; Apps unfold by menu group, each group
-  folding on its own. Clicking an entry still shows its pane and unfolds it.
-  Everything starts folded and the browser remembers what you opened. Below
-  1400 px the Explorer stays the one-line strip of tabs, without the items.</li>
+  folding on its own. It works as an accordion (follow-up request: "when a
+  submenu opens the others should collapse, and the menu we are in should be
+  highlighted"): opening an entry, by a click on it or on its caret, shows its
+  pane, highlights it and folds the others; the entry of the pane you are on
+  is drawn open, and one menu group is open at a time. Below 1400 px the
+  Explorer stays the one-line strip of tabs, without the items. The <em>Menu
+  group</em> filter of Apps is always shown (it used to appear only once a group
+  existed, so it looked missing). An app or menu-group name cut by its
+  ellipsis, in the Explorer or in the sidebar, shows whole in a small panel
+  on hover (request: "on mouse over, show the full text in a little
+  window"); an Explorer item used to show its slug there.</li>
 <li>User guide §33 rewritten as <em>Scout — the operations assistant</em>: tools,
   the troubleshooting workflow, provider choice, what every exchange leaves
   behind, and what is planned. §13 describes Path Diagnostics, its saved
@@ -330,11 +405,33 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>Deleting a directory connection now deletes its secret from the vault.</strong>
+<li><strong>The bookmarks rail showed every device to accounts that may not see the
+  inventory</strong> (security; request: "external users must see only their app;
+  user sec sees a lot of Global, including the bookmarks"). The rail is open to
+  every console account, and the device query it used scopes by ADOM and
+  maintenance only, so a profile with no permission at all read every
+  device's name and address in its grouping lens and in the <em>add bookmark</em>
+  picker, while the dashboard told it "Your profile does not include viewing
+  appliances". The lens, the picker and device bookmarks now need <em>View
+  appliances</em> (<code>appliances.view</code>).</li>
+<li>
+<p><strong>API Tokens: the pickers no longer cover the whole screen</strong> (request:
+  "the selectors are not formatted for SATOM, they take the whole screen").
+  The menus sit on a fixed popper so they escape the card, and a fixed box
+  sized at 100% is as wide as the window: every open picker (capabilities,
+  AppIDs, apps) ran over the sidebar. Each menu now opens as wide as its own
+  button, on the page and in the Edit dialog. The empty <em>Processes it may
+  run</em> picker, left over from the removed Process section, is gone, and the
+  <em>Apps it may run</em> picker now says how to hold a token to one app: tick only
+  that app (<code>app_arm</code> never adds an app; it only lets granted apps run armed).</p>
+</li>
+<li>
+<p><strong>Deleting a directory connection now deletes its secret from the vault.</strong>
   With the vault as the secret store, a removed AD, LDAP or RADIUS connection
   left its bind password or shared secret under <code>directory/&lt;id&gt;</code>, where
   nothing read it any more. The vault copy now goes first; a vault that
-  refuses the delete leaves the connection in place and says so.</li>
+  refuses the delete leaves the connection in place and says so.</p>
+</li>
 <li><strong>App sign-in: what makes a FortiAuthenticator name a group, measured.</strong> On
   FortiAuthenticator 8.0.3 the Access-Accept carries a group's
   <code>Fortinet-Group-Name</code> when the group has it as a RADIUS attribute <strong>and</strong> is

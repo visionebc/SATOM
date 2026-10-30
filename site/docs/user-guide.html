@@ -372,7 +372,10 @@ to your session, so the picker still shows what you actually chose and the
 Select button still means something. From two appliances up, the choice is
 real and the pages ask for it.</p>
 <p>An appliance in maintenance mode is counted only for operators who may see
-maintenance devices, so this can never hand you a device the picker hides.</p>
+maintenance devices, so this can never hand you a device the picker hides.
+Without <em>View appliances</em> (<code>appliances.view</code>) the rail shows no device at all
+— not in your grouping, not in the picker, not as a bookmark — whatever
+else the profile holds.</p>
 <h3 id="32-the-device-menu-drawn-from-the-devices-own-gui">3.2 The device menu: drawn from the device's own GUI</h3>
 <p>In the <strong>FortiWeb</strong>, <strong>FortiGate</strong>, <strong>FortiAuthenticator</strong>, <strong>FortiADC</strong> and <strong>FortiAnalyzer</strong> ADOMs the sidebar
 has one device menu, named after the product, and it is the <strong>device's own
@@ -4231,7 +4234,9 @@ different version of the app, the grant shows <strong>paused</strong> on the tok
 API refuses the run until you open the token and press <strong>Re-approve</strong>.
 Republishing the same content does not pause it. Deleting the app removes its
 grants. A run from the API is a rehearsal by default; a real (armed) run also
-needs <code>app_arm</code>. Only apps the token's owner may open in that ADOM can be granted.</p>
+needs <code>app_arm</code>. Only apps the token's owner may open in that ADOM can be granted.
+To hold a token to one app, tick only that app: <code>app_arm</code> never adds an app,
+it only lets the granted ones run armed.</p>
 <p><strong>SATOM Builder</strong> (<code>/api/v1/builder/*</code>). The separate tool that builds
 plugins and Plugin Studio apps works with its author's own token: a <code>read</code>
 token fetches this server's description (<code>/builder/target</code>) and its rules
@@ -4923,7 +4928,19 @@ source of the vendor release notes (§22.4).
 It never carries a configuration value or a device name.</p>
 <ol>
 <li><strong>Pick a pack.</strong> The release you run carries its own (<em>this release</em>); you
-   can also upload one downloaded from the release page.</li>
+   can also upload one downloaded from the release page. <strong>Upload</strong> (one
+   card, one file at a time) takes the three files the page uses and routes
+   each by its name: <code>satom-update-&lt;version&gt;.tar.gz</code> goes to <em>Offline update
+   package</em> and its preflight, <code>satom-apipack-&lt;version&gt;.tar.gz</code> (the API pack
+   of a release) and <code>satom-kbpack-&lt;date&gt;.tar.gz</code> (a kbpack) to this list. The list shows one
+   row per pack (name, lane, source, size) across the whole card, and only the
+   newest shipped pack of each series: the older ones a development checkout
+   keeps in <code>api-packs/</code> are counted under the table, never listed — a release
+   ships only its own pack, and the newest carries everything they did.
+   <strong>Purge old packs (N)</strong> deletes every <em>uploaded</em> pack that a newer pack of
+   the same series replaces (each marked <em>superseded</em>); the newest of each
+   series is always kept, imported or not, and shipped packs are never
+   touched. Each removal is in the Audit Log as <code>apipack.delete</code>.</li>
 <li><strong>Read the table.</strong> Every item says what importing it would do: <code>new</code> (will
    be imported), <code>update</code> (replaces a copy an older pack wrote), <code>present</code>
    (already on this node), <code>local</code> (this node measured it itself — local data
@@ -4949,7 +4966,9 @@ console equivalent is <code>sudo satom execute apipack import shipped --yes</cod
 update imports the release's own pack on the primary by itself, and the page
 shows a notice while a shipped pack is pending. Details:
 <a href="api-library.html">api-library.md §12</a>.</p>
-<p><strong>Knowledge packs</strong> (<code>satom-apipack-kb-YYYYMMDD[.N]</code>) are written by the SATOM
+<p><strong>Knowledge packs</strong>, called <strong>kbpacks</strong> (<code>satom-kbpack-YYYYMMDD[.N]</code>; named
+<code>satom-apipack-kb-...</code> before 2026-10-30, a name still read and stored
+under the new one) are written by the SATOM
 team's separate harvester tool rather than by a node: the CLI schema, hidden
 fields and REST fields of every firmware build measured in the team's lab, the
 vendor release notes of FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer
@@ -4996,8 +5015,8 @@ lanes with the same content sections:</p>
 <td>Inside the update; imported by the update on the primary</td>
 </tr>
 <tr>
-<td><strong>Knowledge pack</strong></td>
-<td>Rolling (<code>satom-apipack-kb-YYYYMMDD[.N]</code>), published whenever the knowledge changes</td>
+<td><strong>Knowledge pack (kbpack)</strong></td>
+<td>Rolling (<code>satom-kbpack-YYYYMMDD[.N]</code>), published whenever the knowledge changes</td>
 <td>The knowledge feed, or an upload</td>
 </tr>
 </tbody>
@@ -5063,8 +5082,8 @@ work without it.</p>
 <p><strong>Air-gapped network.</strong> On a machine with Internet access, download the pack
 named by the feed and its <code>.sha256</code> file from the release page (the card links
 both after <strong>Check now</strong>), verify the checksum, carry the file over and upload
-it under <strong>API library packs</strong> (<code>/self-update/apipack/upload</code>), then import it
-there — or run <code>sudo satom execute apipack import &lt;file&gt; --yes</code>. The signature
+it in the page's <strong>Upload</strong> card, then import it under <strong>API packs &amp; kbpacks</strong>
+— or run <code>sudo satom execute apipack import &lt;file&gt; --yes</code>. The signature
 check is the same.</p>
 <p>From the console:</p>
 <pre><code>satom show knowledge                                  # installed per lane, age, mode, last result
@@ -6628,7 +6647,10 @@ fetch hung for 120 s and the standby silently stopped converging. The fix was
 one reconciler cycle.</p>
 <p><strong>Where you see it now.</strong></p>
 <ul>
-<li><em>Software Update &amp; HA</em> on the <strong>primary</strong> has an <strong>HA link</strong> card. It shows
+<li><em>Software Update &amp; HA</em> on the <strong>primary</strong> has an <strong>HA link</strong> card, drawn
+  only where there is a pair: in HA mode with a standby registered (and on the
+  standby itself). A standalone node, or an HA-mode primary with no standby in
+  the node registry, has no card; a check that fails is always shown. It shows
   the standby's own account of itself — <em>in sync</em>, <em>N commits behind</em>, or
   <em>cannot fetch from this node since <time>: <error></em> — plus this node's
   <code>systemd-logind</code> (logins of the service account stuck in <code>opening</code> for more
@@ -7407,8 +7429,9 @@ directory, or in a group the console sign-in does not use. Three pieces do it.</
 <p><strong>1. A profile of type <em>Apps only</em></strong> (Access → Profiles → <em>Type</em>). It holds no
 permission (the matrix is hidden and stays empty whatever is stored) and its
 accounts never see the console: after signing in they land on <strong>My apps</strong>
-(<code>/a/</code>), a page with the console's look but no sidebar, ADOM switcher, bell,
-job dock or bookmarks. Every console page — and the API v1, whatever token
+(<code>/a/</code>), a page with the console's look whose only menu is <strong>Plugins</strong> with
+their apps, every menu group already open; no console sidebar, ADOM switcher,
+bell, job dock or bookmarks. Every console page — and the API v1, whatever token
 they hold — answers <em>not found</em> to them. What they can open:</p>
 <ul>
 <li>the apps shared with them or with their groups (Plugin Studio → app →

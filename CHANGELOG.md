@@ -6,6 +6,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.7.0] - 2026-10-30
+
+**Apps for people outside the console, and the Builder opens what SATOM
+has.** A Plugin Studio app can carry its own sign-in (local accounts, LDAP or
+FortiAuthenticator groups, two-factor) and an *Apps only* profile whose whole
+menu is its apps; apps can be filed under menu groups that become Plugins
+submenus; SATOM Builder lists and opens this server's plugins and apps.
+Scout becomes the operations assistant: it correlates logs (with optional
+Splunk and Elasticsearch / OpenSearch sources), Sentinel incidents, jobs and
+the audit log, proposes Path Diagnostics walks, and every walk is saved as a
+report with the metrics around it. Knowledge packs are now kbpacks, and
+Software Update takes the update, the API pack and the kbpack in one Upload.
+
 ### Added
 - **SATOM Builder opens what this server already has** (request: "I still
   don't see SATOM's plugins in the Builder; they should all be there"). Two
@@ -99,6 +112,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   and SSH command a job made), `audit_events` and `recent_alerts` (the
   operator's own bell). Each applies the gate of
   the page that shows the same data, as the operator.
+  `source: "all"` searches every log source, a job status of `failed`
+  finds the jobs that failed, and an unknown source or status is an
+  error naming the valid values; incidents follow the Sentinel console's
+  rule (matched by device name, incidents without a device included).
 - **Settings → AI → Log sources (optional): Splunk.** An administrator can
   point Scout at a SIEM, read only — for the non-Fortinet hops of a path.
   The token is stored encrypted and never shown; TLS is verified against
@@ -182,6 +199,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   7-day average are flagged. It never changes the verdict; a failed
   collector or a silent store is **METRICS ERROR**, an appliance with no
   scrape target **not collected**.
+  An interface that lacks a reading (no SNMP counters, no packet
+  counters on a FortiADC) shows an empty cell instead of failing the page.
 - **Scout is the operations assistant.** Its prompt now puts finding and
   resolving faults first (newest Path Diagnostics report → metrics → device
   health → recent changes; evidence kept apart from inference; missing data

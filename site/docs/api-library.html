@@ -1379,7 +1379,7 @@ cumulative, so:</p>
 <tr>
 <td>name</td>
 <td><code>satom-apipack-&lt;x.y.z&gt;</code></td>
-<td><code>satom-apipack-kb-YYYYMMDD[.N]</code> (<code>.10</code> sorts after <code>.2</code>)</td>
+<td><code>satom-kbpack-YYYYMMDD[.N]</code> (<code>.10</code> sorts after <code>.2</code>; <code>satom-apipack-kb-...</code> before 2026-10-30, still read)</td>
 </tr>
 <tr>
 <td>kept in <code>api-packs/</code></td>
@@ -1485,7 +1485,7 @@ the digests, because they act on a stored dump.</p>
 </tr>
 <tr>
 <td><code>knowledge</code></td>
-<td><code>satom-apipack-kb-YYYYMMDD[.N]</code></td>
+<td><code>satom-kbpack-YYYYMMDD[.N]</code></td>
 <td>whenever the knowledge changes</td>
 <td>nothing (<code>pinned_to</code> is <code>""</code>)</td>
 </tr>
@@ -2542,7 +2542,7 @@ scheduled action <code>schema_watch</code>.</p>
 vendor documentation and public collections, and publishes the result as
 signed packs in two lanes with the same sections (§12): the <strong>API pack</strong>
 pinned to each SATOM release and the rolling <strong>knowledge pack</strong>
-(<code>satom-apipack-kb-YYYYMMDD[.N]</code>). The <code>library</code> section carries evidence of the
+(<code>satom-kbpack-YYYYMMDD[.N]</code>). The <code>library</code> section carries evidence of the
 sources <code>cli_tree</code>, <code>cli_full</code>, <code>sweep</code>, <code>schema</code> and <code>vendor_doc</code>; <code>docs</code>
 carries the vendor release notes and field schemas.</p>
 <ul>

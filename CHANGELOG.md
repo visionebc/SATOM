@@ -197,6 +197,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   list from.
 
 ### Changed
+- **Software Update fits a laptop screen** (request: "check every card, they
+  don't look right at my resolution"). *API library packs* lists its packs as
+  one table across the whole card (pack, lane, source, size) instead of a
+  narrow column of 47 rows next to an empty one; the pack detail and *Recent
+  imports* (now with column headers) use the full width too. *Knowledge
+  packs* stacks *Installed* and *Available from the feed*, so the installed
+  table no longer runs under the *Check now* button, and the *Scheduled
+  fetch* select is no longer cut. *Recent updates* says what each request was
+  in a *What* column (a service restart, an OS-package check, a library
+  upgrade, an offline package or a code revision) where *Target* was blank
+  for everything but code updates.
+- **Only the newest API pack of each series is listed** (request: "keep only
+  the latest; there is no need to keep the others — add a button to purge the
+  old ones"). Older shipped packs are counted under the table, not listed; a
+  release payload already carries only its own. New **Purge old packs (N)**
+  button (`POST /self-update/apipack/purge`, `user_manage`): deletes every
+  uploaded pack that a newer one of the same series replaces, keeps the
+  newest of each series, never touches shipped packs; one `apipack.delete`
+  audit row per pack.
+- **The HA link card appears only where there is an HA pair** (request: "if
+  there is no HA, that card should not appear"): in HA mode with a standby
+  registered, and on the standby. A failed check is still shown.
 - **An Apps only account's menu is Plugins with its apps, already open**
   (request: "only what is inside Plugins should appear, already expanded").
   The portal pages (`/a/` and every app page) draw a left menu holding only

@@ -4389,7 +4389,15 @@ source of the vendor release notes (§22.4).
 It never carries a configuration value or a device name.
 
 1. **Pick a pack.** The release you run carries its own (*this release*); you
-   can also upload one downloaded from the release page.
+   can also upload one downloaded from the release page. The list shows one
+   row per pack (name, lane, source, size) across the whole card, and only the
+   newest shipped pack of each series: the older ones a development checkout
+   keeps in `api-packs/` are counted under the table, never listed — a release
+   ships only its own pack, and the newest carries everything they did.
+   **Purge old packs (N)** deletes every *uploaded* pack that a newer pack of
+   the same series replaces (each marked *superseded*); the newest of each
+   series is always kept, imported or not, and shipped packs are never
+   touched. Each removal is in the Audit Log as `apipack.delete`.
 2. **Read the table.** Every item says what importing it would do: `new` (will
    be imported), `update` (replaces a copy an older pack wrote), `present`
    (already on this node), `local` (this node measured it itself — local data
@@ -5958,7 +5966,10 @@ one reconciler cycle.
 
 **Where you see it now.**
 
-- *Software Update & HA* on the **primary** has an **HA link** card. It shows
+- *Software Update & HA* on the **primary** has an **HA link** card, drawn
+  only where there is a pair: in HA mode with a standby registered (and on the
+  standby itself). A standalone node, or an HA-mode primary with no standby in
+  the node registry, has no card; a check that fails is always shown. It shows
   the standby's own account of itself — *in sync*, *N commits behind*, or
   *cannot fetch from this node since <time>: <error>* — plus this node's
   `systemd-logind` (logins of the service account stuck in `opening` for more

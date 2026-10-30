@@ -156,6 +156,8 @@
 {% set hl = ha_link %}
 {% set hl_badge = {'ok': 'success', 'warning': 'warning', 'broken': 'danger'} %}
 {% set hl_label = {'ok': _('healthy'), 'warning': _('check'), 'broken': _('broken'), 'n/a': _('not applicable here')} %}
+{# Only where there is an HA pair (views.self_update.ha_link_shown). #}
+{% if ha_link_shown %}
 <div class="fw-card mb-3" id="ha-link-card">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
     <span class="fw-card-title"><i class="bi bi-link-45deg me-2 text-accent"></i>{{ _('HA link — can the standby fetch code from this node?') }}</span>
@@ -221,6 +223,7 @@
     <div id="ha-link-progress" class="d-none mt-2" role="status" aria-live="polite"></div>
   </div>
 </div>
+{% endif %}
 
 <!-- Live status of the running update -->
 <div id="live-panel" class="card mb-3 d-none"><div class="card-header"><strong>{{ _('Update in progress') }}</strong>
@@ -245,7 +248,7 @@
       <p class="text-muted small mb-0">{{ _('No updates run yet.') }}</p>
     {% else %}
     <table class="table table-sm align-middle mb-0">
-      <thead><tr><th>{{ _('When') }}</th><th>{{ _('By') }}</th><th>{{ _('Origin') }}</th><th>{{ _('Node') }}</th><th>{{ _('Target') }}</th><th>{{ _('Result') }}</th><th>{{ _('Log') }}</th></tr></thead>
+      <thead><tr><th>{{ _('When') }}</th><th>{{ _('By') }}</th><th>{{ _('Origin') }}</th><th>{{ _('Node') }}</th><th>{{ _('What') }}</th><th>{{ _('Result') }}</th><th>{{ _('Log') }}</th></tr></thead>
       <tbody>
       {% for h in history %}
         <tr>
@@ -253,7 +256,15 @@
           <td class="small">{{ h.requested_by }}</td>
           <td>{% if h.origin == 'auto' %}<span class="badge bg-info text-dark">{{ _('auto') }}</span>{% else %}<span class="badge bg-light text-dark border">{{ _('manual') }}</span>{% endif %}</td>
           <td class="small font-monospace">{{ h.node }} ({{ h.role }})</td>
-          <td class="small font-monospace">{{ (h.result_sha or h.target or '')[:12] }}</td>
+          {# The runner records more than code updates: say what each request was. #}
+          <td class="small">
+            {% if h.kind == 'service' %}{{ h.action }} <code>{{ h.unit }}</code>
+            {% elif h.kind == 'syspkg' %}{{ _('OS packages') }}: {{ h.action }}{% if h.package %} <code>{{ h.package }}</code>{% endif %}
+            {% elif h.kind == 'clone' %}{{ _('deploy clone') }}: {{ h.action }}
+            {% elif h.action == 'upgrade' and h.package %}{{ _('library') }} <code>{{ h.package }}</code> {{ _('upgrade') }}
+            {% elif h.kind == 'package' %}{{ _('offline package') }} <code>{{ h.package }}</code>{% if h.result_sha or h.target %} <span class="font-monospace">{{ (h.result_sha or h.target)[:12] }}</span>{% endif %}
+            {% else %}<span class="font-monospace">{{ (h.result_sha or h.target or '')[:12] or '—' }}</span>{% endif %}
+          </td>
           <td>
             {% if h.state == 'success' %}<span class="badge bg-success">{{ _('success') }}</span>
             {% elif h.state == 'failed' %}<span class="badge bg-danger">failed{% if h.rolled_back %} · rolled back{% endif %}</span>
@@ -445,83 +456,89 @@
             {{ _('— or all of them from the console:') }} <code>sudo satom execute apipack import shipped --yes</code></div>
         {% endif %}
 
-        <div class="row g-3">
-          <div class="col-lg-5">
-            <div class="text-muted small mb-1">{{ _('Available packs') }}</div>
-            {% set shipped = api_packs.packs|selectattr('source', 'equalto', 'shipped')|list %}
-            {% set uploaded = api_packs.packs|selectattr('source', 'equalto', 'uploaded')|list %}
-            <ul class="list-group list-group-flush mb-2" id="apk-list">
-              {% for p in shipped %}
-              <li class="list-group-item px-0 py-1 d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <button type="button" class="btn btn-link btn-sm p-0 text-start text-wrap text-break"
-                        data-js="apk-select" data-source="shipped" data-name="{{ p.name }}">
-                  <span class="font-monospace">{{ p.name }}</span></button>
-                <span class="d-inline-flex flex-wrap align-items-center gap-1">
+        {# One row per pack, full card width. Only the newest shipped pack of a
+           lineage is listed: the older ones stay in the code tree (a release
+           payload carries only its own pack) and the newest carries them all. #}
+        {% set shipped_all = api_packs.packs|selectattr('source', 'equalto', 'shipped')|list %}
+        {% set shipped = shipped_all|rejectattr('superseded')|list %}
+        {% set uploaded = api_packs.packs|selectattr('source', 'equalto', 'uploaded')|list %}
+        {% set purgeable = api_packs.purgeable or [] %}
+        <div class="table-responsive mb-2">
+          <table class="table table-sm small align-middle mb-0" id="apk-list">
+            <thead><tr><th>{{ _('Pack') }}</th><th>{{ _('Lane') }}</th><th>{{ _('Source') }}</th>
+              <th class="text-end">{{ _('Size') }}</th><th></th></tr></thead>
+            <tbody>
+            {% for p in shipped + uploaded %}
+              <tr>
+                <td><button type="button" class="btn btn-link btn-sm p-0 text-start text-break"
+                            data-js="apk-select" data-source="{{ p.source }}" data-name="{{ p.name }}">
+                    <span class="font-monospace">{{ p.name }}</span></button></td>
+                <td>
                 {% if p.series == 'knowledge' %}
-                <span class="fw-badge fw-badge-info apk-kb" title="{{ _('Rolling snapshot built by satom-harvester from lab schema dumps and vendor documentation, signed with the knowledge key. Each knowledge pack carries everything the older ones did.') }} {{ p.provenance }}">{{ _('knowledge pack (satom-harvester)') }}</span>
+                <span class="fw-badge fw-badge-info apk-kb text-nowrap" title="{{ _('Rolling snapshot built by satom-harvester from lab schema dumps and vendor documentation, signed with the knowledge key. Each knowledge pack carries everything the older ones did.') }} {{ p.provenance }}">{{ _('knowledge pack (satom-harvester)') }}</span>
                 {% elif p.series == 'api_pack' %}
                 <span class="fw-badge fw-badge-success apk-lane text-nowrap" title="{{ _('satom-harvester snapshot pinned to this SATOM release, signed with the API pack key.') }} {{ p.provenance }}">{{ _('API pack') }}{% if p.pinned_to %} · {{ p.pinned_to }}{% endif %}</span>
                 {% endif %}
-                {% if p.superseded %}
-                <span class="fw-badge fw-badge-secondary" title="{{ _('A newer pack of the same series carries everything this one does; it is not imported automatically.') }}">{{ _('superseded') }}</span>
-                {% else %}
+                </td>
+                <td class="text-nowrap">
+                {% if p.name in purgeable %}
+                <span class="fw-badge fw-badge-secondary apk-old" title="{{ _('A newer pack of the same series carries everything this one does. Purge old packs removes it.') }}">{{ _('superseded') }}</span>
+                {% elif p.source == 'shipped' %}
                 <span class="fw-badge fw-badge-secondary" title="{{ _('In the code tree (api-packs/): it came with this release') }}">{{ _('this release') }}</span>
+                {% else %}
+                <span class="fw-badge fw-badge-secondary">{{ _('uploaded') }}</span>
                 {% endif %}
-                </span>
-              </li>
-              {% endfor %}
-              {% for p in uploaded %}
-              <li class="list-group-item px-0 py-1 d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <button type="button" class="btn btn-link btn-sm p-0 text-start text-wrap text-break"
-                        data-js="apk-select" data-source="uploaded" data-name="{{ p.name }}">
-                  <span class="font-monospace">{{ p.name }}</span></button>
-                <span class="d-inline-flex align-items-center gap-2">
-                  <span class="text-muted small">{{ (p.size / 1048576)|round(1) }} MB</span>
+                {% if p.imported %}<span class="fw-badge fw-badge-success">{{ _('imported') }}</span>{% endif %}
+                </td>
+                <td class="text-end text-nowrap text-muted">{{ (p.size / 1048576)|round(1) }} MB</td>
+                <td class="text-end">
+                {% if p.source == 'uploaded' %}
                   <form method="post" class="d-inline" action="{{ url_for('self_update.apipack_delete') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="name" value="{{ p.name }}">
                     <button class="btn btn-outline-secondary btn-sm py-0" type="submit"
                             title="{{ _('Remove the uploaded pack') }}"><i class="bi bi-trash"></i></button>
                   </form>
-                </span>
-              </li>
-              {% endfor %}
-              {% if not api_packs.packs %}
-              <li class="list-group-item px-0 py-1 small text-muted">
-                {{ _('No pack on this node. A release that carries one has it in api-packs/; you can also upload one downloaded from the release page.') }}</li>
-              {% endif %}
-            </ul>
+                {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5" class="text-muted">
+                {{ _('No pack on this node. A release that carries one has it in api-packs/; you can also upload one downloaded from the release page.') }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if shipped_all|length > shipped|length %}
+        <div class="text-muted small mb-2" id="apk-hidden-shipped">
+          {{ shipped_all|length - shipped|length }} {{ _('older pack(s) from earlier releases are not listed: they stay in the code tree (api-packs/), a release ships only its own pack, and the newest one carries everything they did.') }}</div>
+        {% endif %}
 
-            <form method="post" enctype="multipart/form-data" action="{{ url_for('self_update.apipack_upload') }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
+          <form method="post" enctype="multipart/form-data" action="{{ url_for('self_update.apipack_upload') }}"
+                class="d-flex flex-wrap align-items-end gap-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div>
               <label class="form-label small mb-1" for="apk-file">
                 {{ _('Upload') }} <code>satom-apipack-&lt;version&gt;.tar.gz</code></label>
-              <input class="form-control form-control-sm mb-2" type="file" id="apk-file"
+              <input class="form-control form-control-sm" type="file" id="apk-file"
                      name="apipack" accept=".gz,.tgz,application/gzip">
-              <button class="btn btn-fw-primary btn-sm" type="submit">
-                <i class="bi bi-upload me-1"></i>{{ _('Upload & check') }}</button>
-            </form>
-
-            {% if api_packs.history %}
-            <div class="mt-3">
-              <div class="text-muted small mb-1">{{ _('Recent imports') }}</div>
-              <table class="table table-sm small mb-0" id="apk-history">
-                <tbody>
-                {% for h in api_packs.history %}
-                  <tr>
-                    <td class="text-nowrap">{{ h.at[:16]|replace('T', ' ') }}</td>
-                    <td class="font-monospace">{{ h.version }}{% if h.lane %} <span class="fw-badge fw-badge-secondary apk-prov" title="{{ h.provenance }}">{{ h.lane }}</span>{% endif %}</td>
-                    <td>{{ h.imported }} {{ _('imported') }}{% if h.errors %} · <span class="text-danger">{{ h.errors }} {{ _('failed') }}</span>{% endif %}</td>
-                    <td class="text-muted">{{ h.actor }}</td>
-                  </tr>
-                {% endfor %}
-                </tbody>
-              </table>
             </div>
-            {% endif %}
-          </div>
+            <button class="btn btn-fw-primary btn-sm" type="submit">
+              <i class="bi bi-upload me-1"></i>{{ _('Upload & check') }}</button>
+          </form>
+          <form method="post" action="{{ url_for('self_update.apipack_purge') }}" id="apk-purge"
+                onsubmit="return confirm('{{ _('Remove the uploaded packs a newer one replaces?') }}');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-outline-danger btn-sm" type="submit"
+                    {{ 'disabled' if not purgeable or api_packs.role == 'standby' else '' }}
+                    title="{{ _('Delete every uploaded pack that a newer pack of the same series replaces. The newest of each series is kept.') }}">
+              <i class="bi bi-trash me-1"></i>{{ _('Purge old packs') }} ({{ purgeable|length }})</button>
+          </form>
+        </div>
 
-          <div class="col-lg-7">
+        <div class="row g-3">
+          <div class="col-12">
             <div id="apk-detail" class="small text-muted">
               {% if api_packs.packs %}{{ _('Select a pack to see what it carries and what importing it would do.') }}
               {% else %}{{ _('Upload a pack to see its contents.') }}{% endif %}
@@ -553,6 +570,27 @@
             </div>
           </div>
         </div>
+
+        {% if api_packs.history %}
+        <div class="mt-3">
+          <div class="text-muted small mb-1">{{ _('Recent imports') }}</div>
+          <div class="table-responsive">
+          <table class="table table-sm small mb-0" id="apk-history">
+            <thead><tr><th>{{ _('When') }}</th><th>{{ _('Pack') }}</th><th>{{ _('Result') }}</th><th>{{ _('By') }}</th></tr></thead>
+            <tbody>
+            {% for h in api_packs.history %}
+              <tr>
+                <td class="text-nowrap">{{ h.at[:16]|replace('T', ' ') }}</td>
+                <td class="font-monospace text-nowrap">{{ h.version }}{% if h.lane %} <span class="fw-badge fw-badge-secondary apk-prov" title="{{ h.provenance }}">{{ h.lane }}</span>{% endif %}</td>
+                <td>{{ h.imported }} {{ _('imported') }}{% if h.errors %} · <span class="text-danger">{{ h.errors }} {{ _('failed') }}</span>{% endif %}</td>
+                <td class="text-muted">{{ h.actor }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          </div>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -576,9 +614,10 @@
           <div class="alert alert-warning py-2 small" id="kn-standby"><i class="bi bi-hdd-network me-1"></i>{{ knowledge.refusal }}</div>
         {% endif %}
         <div class="row g-3">
-          <div class="col-lg-6">
+          <div class="col-12">
             <div class="text-muted small mb-1">{{ _('Installed') }}</div>
-            <table class="fw-table small mb-2" id="kn-installed">
+            <div class="table-responsive">
+            <table class="fw-table small mb-2 w-100" id="kn-installed">
               <thead><tr><th>{{ _('Lane') }}</th><th>{{ _('Pack') }}</th><th>{{ _('Date') }}</th><th>{{ _('Age') }}</th></tr></thead>
               <tbody>
               {% for lane in ('api_pack', 'knowledge') %}
@@ -602,6 +641,7 @@
               {% endfor %}
               </tbody>
             </table>
+            </div>
             {% set last = knowledge.last or {} %}
             <div class="small text-muted" id="kn-last">
               {{ _('Last check:') }}
@@ -611,7 +651,7 @@
               {% else %}{{ _('never') }}{% endif %}
             </div>
           </div>
-          <div class="col-lg-6">
+          <div class="col-12">
             <div class="text-muted small mb-1">{{ _('Available from the feed') }}</div>
             <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
               <button type="button" class="btn btn-outline-secondary btn-sm" id="kn-check-btn">
@@ -640,7 +680,7 @@
         <hr class="my-3">
         <form method="post" action="{{ url_for('self_update.knowledge_settings') }}" class="row g-2 align-items-end" id="kn-settings">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="col-md-4">
+          <div class="col-auto">
             <label class="fw-form-label mb-1" for="kn-mode">{{ _('Scheduled fetch (daily)') }}</label>
             <select class="form-select form-select-sm" id="kn-mode" name="mode">
               {% for m, label in knowledge.modes %}
@@ -648,13 +688,13 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-md-6">
+          <div class="col" style="min-width:18rem;">
             <label class="fw-form-label mb-1" for="kn-feed">{{ _('Feed URL') }}</label>
             <input type="url" class="form-control form-control-sm font-monospace" id="kn-feed" name="feed_url"
                    value="{{ knowledge.feed_url }}" placeholder="{{ knowledge.default_feed_url }}" pattern="https://.*">
           </div>
-          <div class="col-md-2">
-            <button class="btn btn-fw-primary btn-sm w-100" type="submit" {{ 'disabled' if knowledge.refusal else '' }}>
+          <div class="col-auto">
+            <button class="btn btn-fw-primary btn-sm" type="submit" {{ 'disabled' if knowledge.refusal else '' }}>
               <i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
           </div>
           <div class="col-12 form-text">{{ _('The feed is fetched over HTTPS with the same proxy and TLS settings as the system-upgrade feed. Empty = the default feed. The buttons above work in every mode; the mode only decides what the daily scheduled action does.') }}</div>

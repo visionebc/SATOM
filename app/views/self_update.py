@@ -55,6 +55,7 @@ def index():
     su.self_report()  # refresh this node's entry in the shared (replicated) state
     check = su.check_remote(fetch=False)  # cheap: no network on page load
     history = su.recent_updates()
+    hl = _ha_link_state()
     return render_template(
         "self_update/index.html",
         current=check["current"],
@@ -76,8 +77,20 @@ def index():
         trust=upkg.trust_state(),
         api_packs=_api_pack_state(),
         knowledge=_knowledge_state(),
-        ha_link=_ha_link_state(),
+        ha_link=hl,
+        ha_link_shown=ha_link_shown(hl),
     )
+
+
+def ha_link_shown(hl: dict) -> bool:
+    """The HA link card is drawn only where there is an HA pair to link: an
+    HA-mode node that is the standby, or a primary with a standby registered.
+    A standalone node (or an HA-mode primary with no peer) has no link, so
+    the card would only say "not applicable". A check that failed is shown."""
+    if hl.get("error"):
+        return True
+    return hl.get("mode") == "ha" and (hl.get("role") == "standby"
+                                       or bool(hl.get("standby")))
 
 
 def _ha_link_state() -> dict:
@@ -178,9 +191,11 @@ def _api_pack_state() -> dict:
         packs = api_pack.list_packs()
         return {"packs": packs, "history": api_pack.import_history(),
                 "pending": api_pack.pending_shipped(packs),
+                "purgeable": api_pack.superseded_uploads(packs),
                 "role": su.node_role(), "error": ""}
     except Exception as exc:  # noqa: BLE001 — shown in the card, not a 500
-        return {"packs": [], "history": [], "pending": [], "role": su.node_role(),
+        return {"packs": [], "history": [], "pending": [], "purgeable": [],
+                "role": su.node_role(),
                 "error": "%s: %s" % (type(exc).__name__, exc)}
 
 
@@ -565,6 +580,24 @@ def apipack_delete():
         flash("Removed %s." % name, "info")
     except (api_pack.PackError, OSError) as exc:
         flash(str(exc), "danger")
+    return redirect(url_for("self_update.index", _anchor="api-packs"))
+
+
+@bp.route("/apipack/purge", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def apipack_purge():
+    """Remove every uploaded pack a newer one of its lineage carries."""
+    from ..services import api_pack
+    try:
+        removed = api_pack.purge_superseded_uploads()
+    except (api_pack.PackError, OSError) as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("self_update.index", _anchor="api-packs"))
+    for name in removed:
+        log_action("apipack.delete", target=name, extra={"via": "purge"})
+    flash("Removed %d old pack(s)." % len(removed) if removed
+          else "No old pack to remove.", "info")
     return redirect(url_for("self_update.index", _anchor="api-packs"))
 
 

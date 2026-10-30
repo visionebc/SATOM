@@ -1893,6 +1893,31 @@ def delete_upload(name: str) -> None:
     resolve_pack(SOURCE_UPLOADED, name).unlink()
 
 
+def superseded_uploads(packs: list | None = None) -> list:
+    """Uploaded packs that a newer pack of the same lineage (uploaded or
+    shipped) carries entirely -- what "Purge old packs" removes. The newest
+    pack of every lineage is never in this list, imported or not."""
+    packs = list_packs() if packs is None else packs
+    newest = {}
+    for p in packs:
+        lin, key = _lineage(p["series"]), _pack_version_key(p["name"])
+        if lin not in newest or key > newest[lin]:
+            newest[lin] = key
+    return [p["name"] for p in packs if p["source"] == SOURCE_UPLOADED
+            and _pack_version_key(p["name"]) < newest[_lineage(p["series"])]]
+
+
+def purge_superseded_uploads() -> list:
+    """Delete every superseded upload; the names removed, oldest last. Shipped
+    packs live in the code tree (git) and are never touched here: a release
+    payload already carries only its own pack."""
+    removed = []
+    for name in superseded_uploads():
+        delete_upload(name)
+        removed.append(name)
+    return removed
+
+
 def _import_logs():
     d = pack_dir() / "imports"
     if not d.is_dir():

@@ -85,24 +85,32 @@ _INCIDENT_KEYS = ("id", "ref", "opened_at", "last_event_at", "status", "device",
                   "fp_reason")
 
 
+def _incident_visible():
+    """The Sentinel console's own rule (``views.sentinel._shows``), reused --
+    not re-written. It decides by device NAME (an incident outlives its
+    device), shows device-less incidents, and fails closed for a confined
+    profile. A second copy here would be the place it drifts."""
+    from ..views.sentinel import _shows, _visible_names
+    names = _visible_names()
+    return lambda inc: _shows(inc, names)
+
+
 def list_incidents(appliance_id: int = 0, status: str = "open", limit: int = 10) -> list[dict]:
-    """Sentinel incidents on appliances this ADOM sees, newest first."""
+    """Sentinel incidents the operator's console shows, newest first."""
     _need("monitoring.view")
     from ..models_sentinel import SentinelIncident
-    ids = _visible_ids()
+    q = SentinelIncident.query
     if appliance_id:
-        ids = [i for i in ids if i == int(appliance_id)]
-    if not ids:
-        return []
-    q = SentinelIncident.query.filter(SentinelIncident.appliance_id.in_(ids))
+        from ..models import visible_appliance_or_404
+        ap = visible_appliance_or_404(int(appliance_id))
+        q = q.filter(SentinelIncident.device == ap.name)
     st = (status or "").strip().lower()
     if st and st != "all":
         q = q.filter(SentinelIncident.status == st)
-    rows = (q.order_by(SentinelIncident.last_event_at.desc().nullslast(),
-                       SentinelIncident.id.desc())
-            .limit(_int(limit, 10, 1, MAX_ROWS)).all())
+    shows = _incident_visible()
+    rows = [r for r in q.order_by(SentinelIncident.id.desc()).limit(500).all() if shows(r)]
     out = []
-    for r in rows:
+    for r in rows[:_int(limit, 10, 1, MAX_ROWS)]:
         d = r.to_dict()
         out.append({k: d.get(k) for k in _INCIDENT_KEYS})
     return out
@@ -117,7 +125,7 @@ def incident(incident: str) -> dict:
     q = SentinelIncident.query
     row = (q.filter(SentinelIncident.id == int(key)).first() if key.isdigit()
            else q.filter(SentinelIncident.ref == key).first())
-    if row is None or row.appliance_id not in set(_visible_ids()):
+    if row is None or not _incident_visible()(row):
         raise LookupError(f"incident {key!r} not found")
     d = row.to_dict()
     out = {k: d.get(k) for k in _INCIDENT_KEYS}

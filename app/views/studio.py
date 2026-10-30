@@ -93,6 +93,7 @@ def index():
         connections=SC.list_connections() if can_library else [],
         apis=apis, library_offer=library_offer,
         apps=SA.list_rows() if can_library else [],
+        app_groups=SA.groups() if can_library else [],
         runs=SL.recent_runs(limit=15) if can_library else [],
         datasets=PD.picker() if can_console else [],
         examples=py_examples.all_examples() if can_console else [],
@@ -786,7 +787,7 @@ def app_edit(slug):
         "studio/app.html", a=a, problems=SA.problems(a), kinds=F.kinds(ch),
         kinds_json=F.kinds_json(ch), branches=F.BRANCHES, field_types=SA.FIELD_TYPES,
         action_schema=SA.action_schema(ch), choices=ch, adoms=_adom_choices(),
-        groups=UserGroup.query.order_by(UserGroup.name).all(),
+        groups=UserGroup.query.order_by(UserGroup.name).all(), app_groups=SA.groups(),
         users=User.query.filter_by(is_active=True).order_by(User.username).all(),
         runs=SA.recent_runs(a, current_user), used_by=SA.used_by("app", slug),
         template=SA.is_template(a), design_schema=D.schema(), design=a.design or D.empty(),
@@ -811,7 +812,7 @@ def app_settings(slug):
         db.session.rollback()
         return _err(exc)
     log_action("studio.app.settings", target=slug,
-               extra={"adoms": a.adoms, "access": a.access})
+               extra={"adoms": a.adoms, "access": a.access, "group": a.menu_group})
     return jsonify({"ok": True})
 
 
@@ -1089,6 +1090,25 @@ def app_enable(slug):
     SA.set_enabled(a, on, _who())
     log_action("studio.app.enable" if on else "studio.app.disable", target=slug)
     return jsonify({"ok": True, "enabled": a.enabled})
+
+
+@bp.route("/apps/<slug>/group", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_group(slug):
+    """File a flow or a script app under a menu group ("" takes it out): the
+    submenu of Plugins it is drawn in, and the Apps filter (2026-10-30)."""
+    from ..extensions import db
+    from ..services import studio_apps as SA
+    a = _app_or_404(slug)
+    before = a.menu_group or ""
+    try:
+        group = SA.set_group(a, (request.get_json(silent=True) or {}).get("group"), _who())
+    except SA.AppError as exc:
+        db.session.rollback()
+        return _err(exc)
+    log_action("studio.app.group", target=slug, extra={"from": before, "to": group})
+    return jsonify({"ok": True, "group": group})
 
 
 @bp.route("/apps/<slug>/reset", methods=["POST"])

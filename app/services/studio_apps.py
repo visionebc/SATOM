@@ -90,6 +90,9 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,47}$")
 _FIELD_RE = re.compile(r"^[a-z_][a-z0-9_]{0,63}$")
 _ICON_RE = re.compile(r"^bi-[a-z0-9-]{1,28}$")
 _ACTION_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
+#: A menu group (StudioApp.menu_group): a word character first, then words,
+#: spaces and . & ( ) + , ' - ; up to 48 characters. Not a path: no / or >.
+_GROUP_RE = re.compile(r"^\w[\w .&()+,'-]{0,47}$")
 
 #: Node / action parameters that name another Studio object.
 REF_PARAMS = {"store": ("store",), "connection": ("connection",), "script": ("script",),
@@ -481,8 +484,58 @@ def save_settings(a: StudioApp, form: dict, adom_keys, by: str) -> None:
         raise AppError("unknown ADOM(s): %s" % ", ".join(bad))
     a.adoms_json = json.dumps(["*"] if "*" in adoms else sorted(set(adoms)))
     set_access(a, form.get("access") or {})
+    if "group" in form:                 # absent (Examples, older callers): the group stays
+        a.menu_group = clean_group(form.get("group"), a)
     a.updated_by = by
     db.session.commit()
+
+
+def clean_group(value, a: StudioApp | None = None) -> str:
+    """A menu group as stored: spaces collapsed, at most 48 characters of
+    :data:`_GROUP_RE`, "" for none. A name that differs from an existing
+    group only in case takes that group's spelling, so "netops" typed by one
+    author files the app under the "NetOps" another one made."""
+    g = " ".join(str(value or "").split())
+    if not g:
+        return ""
+    if not _GROUP_RE.match(g):
+        raise AppError("menu group: up to 48 letters, digits, spaces and . & ( ) + , ' - "
+                       "(it starts with a letter or a digit)")
+    for other in groups(exclude=a):
+        if other.lower() == g.lower():
+            return other
+    return g
+
+
+def groups(exclude: StudioApp | None = None) -> list[str]:
+    """Every menu group some app is filed under, sorted as people read them."""
+    q = db.session.query(StudioApp.menu_group).filter(StudioApp.menu_group != "")
+    if exclude is not None and exclude.id is not None:
+        q = q.filter(StudioApp.id != exclude.id)
+    return sorted({g for (g,) in q.distinct().all()}, key=str.lower)
+
+
+def set_group(a: StudioApp, value, by: str) -> str:
+    """File *a* (a flow or a script app) under a menu group; "" takes it out."""
+    a.menu_group = clean_group(value, a)
+    a.updated_by = by
+    db.session.commit()
+    return a.menu_group
+
+
+def grouped(items: list[dict]) -> list[dict]:
+    """*items* (each with a ``group`` key) as the sidebar draws them: one
+    ``{"group": name, "items": [...]}`` per menu group, sorted, then the
+    entries without a group as ``{"group": "", "items": [...]}``. The order
+    inside each keeps the order of *items*."""
+    by, loose = {}, []
+    for m in items:
+        g = m.get("group") or ""
+        (by.setdefault(g, []) if g else loose).append(m)
+    out = [{"group": g, "items": by[g]} for g in sorted(by, key=str.lower)]
+    if loose:
+        out.append({"group": "", "items": loose})
+    return out
 
 
 def set_access(a: StudioApp, acc: dict) -> None:
@@ -708,7 +761,8 @@ def list_rows() -> list[dict]:
     out = []
     for a in StudioApp.query.order_by(StudioApp.name).all():
         r = {"a": a, "kind": a.kind or "flow", "template": is_template(a),
-             "enabled": a.enabled, "edit_endpoint": "studio.app_edit", "edit_slug": a.slug}
+             "enabled": a.enabled, "group": a.menu_group or "",
+             "edit_endpoint": "studio.app_edit", "edit_slug": a.slug}
         if a.kind == "script":
             meta = script_meta(a)
             vs = [int(v.get("n") or 0) for v in meta.get("versions") or [] if isinstance(v, dict)]
@@ -913,7 +967,8 @@ def menu(user, product_key: str) -> list[dict]:
     sidebar and the Plugins page: flow apps by their ADOMs and access list,
     script apps (Global only, like scripts always were) by the script's
     audience (script_schedules.can_run) and operations.scripts_run, the key
-    of their run page. ``endpoint`` / ``target`` build the link."""
+    of their run page. ``endpoint`` / ``target`` build the link; ``group``
+    is the menu group the sidebar files it under (:func:`grouped`)."""
     if user is None or not getattr(user, "is_authenticated", False):
         return []
     if getattr(user, "is_apps_only", False):
@@ -932,12 +987,12 @@ def menu(user, product_key: str) -> list[dict]:
             if SSch.can_run(user, meta):
                 out.append({"slug": a.slug, "name": meta.get("name") or a.name,
                             "description": meta.get("description") or "",
-                            "icon": a.icon, "kind": "script",
+                            "icon": a.icon, "kind": "script", "group": a.menu_group or "",
                             "endpoint": "scripts.run_page", "target": a.script_slug})
         elif a.status == "published" and a.published and shown_in(a, product_key) \
                 and can_use(user, a):
             out.append({"slug": a.slug, "name": a.name, "description": a.description or "",
-                        "icon": a.icon, "kind": "flow",
+                        "icon": a.icon, "kind": "flow", "group": a.menu_group or "",
                         "endpoint": "apps.page", "target": a.slug})
     # by name as people read it: the database's order puts "Zeta" before "alpha"
     return sorted(out, key=lambda m: m["name"].lower())
@@ -982,7 +1037,7 @@ def portal_apps(user) -> list[dict]:
                else url_for("apps_portal.login", slug=a.slug))
         out.append({"slug": a.slug, "name": name, "description": desc, "icon": a.icon,
                     "kind": a.kind, "endpoint": endpoint, "target": target, "url": url,
-                    "needs_signin": not usable})
+                    "group": a.menu_group or "", "needs_signin": not usable})
     return sorted(out, key=lambda m: m["name"].lower())
 
 

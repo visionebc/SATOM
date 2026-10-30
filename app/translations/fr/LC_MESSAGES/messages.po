@@ -28453,3 +28453,31 @@ msgstr "Tours d'outils par question"
 #, python-format
 msgid "was %(name)s, de-registered %(when)s — remove this receiver from its syslog settings, or register it again"
 msgstr "était %(name)s, désenregistré le %(when)s — retirez ce récepteur de ses paramètres syslog ou réenregistrez-le"
+
+# Plugin Studio app menu groups (2026-10-30)
+msgid "Menu group"
+msgstr "Groupe de menu"
+
+msgid "A submenu of Plugins that holds the apps of the same group; empty = a plain entry of Plugins. Plugin Studio filters its app list by it."
+msgstr "Un sous-menu de Plugins qui regroupe les apps du même groupe ; vide = une entrée simple de Plugins. Plugin Studio filtre sa liste d'apps par ce groupe."
+
+msgid "Show or hide its items"
+msgstr "Afficher ou masquer ses éléments"
+
+msgid "Show the apps of one menu group"
+msgstr "Afficher les apps d'un groupe de menu"
+
+msgid "Every menu group"
+msgstr "Tous les groupes de menu"
+
+msgid "No menu group"
+msgstr "Sans groupe de menu"
+
+msgid "The submenu of Plugins the app is drawn in"
+msgstr "Le sous-menu de Plugins où l'app apparaît"
+
+msgid "Set menu group"
+msgstr "Définir le groupe de menu"
+
+msgid "Pick a group or type a new one. Apps of the same group are a submenu of Plugins; empty = a plain entry of Plugins."
+msgstr "Choisissez un groupe ou saisissez-en un nouveau. Les apps du même groupe forment un sous-menu de Plugins ; vide = une entrée simple de Plugins."

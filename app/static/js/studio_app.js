@@ -59,7 +59,7 @@
   $('ap-save-settings').addEventListener('click', function () {
     post(U.settings, {
       name: $('ap-name').value, icon: $('ap-icon').value, description: $('ap-desc').value,
-      adoms: checked('.ap-adom'), access: { groups: checked('.ap-group'), users: checked('.ap-user') }
+      group: $('ap-menu-group').value, adoms: checked('.ap-adom'), access: { groups: checked('.ap-group'), users: checked('.ap-user') }
     }).then(function () { $('ap-title').textContent = $('ap-name').value; state('Settings saved.'); })
       .catch(function (e) { state(e.message, true); });
   });

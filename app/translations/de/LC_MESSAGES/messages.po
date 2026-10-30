@@ -28451,3 +28451,31 @@ msgstr "Werkzeugrunden pro Frage"
 #, python-format
 msgid "was %(name)s, de-registered %(when)s — remove this receiver from its syslog settings, or register it again"
 msgstr "war %(name)s, abgemeldet am %(when)s — entfernen Sie diesen Empfänger aus seinen Syslog-Einstellungen oder registrieren Sie es erneut"
+
+# Plugin Studio app menu groups (2026-10-30)
+msgid "Menu group"
+msgstr "Menügruppe"
+
+msgid "A submenu of Plugins that holds the apps of the same group; empty = a plain entry of Plugins. Plugin Studio filters its app list by it."
+msgstr "Ein Untermenü von Plugins mit den Apps derselben Gruppe; leer = ein normaler Eintrag unter Plugins. Plugin Studio filtert seine App-Liste danach."
+
+msgid "Show or hide its items"
+msgstr "Elemente ein- oder ausblenden"
+
+msgid "Show the apps of one menu group"
+msgstr "Die Apps einer Menügruppe anzeigen"
+
+msgid "Every menu group"
+msgstr "Alle Menügruppen"
+
+msgid "No menu group"
+msgstr "Keine Menügruppe"
+
+msgid "The submenu of Plugins the app is drawn in"
+msgstr "Das Untermenü von Plugins, in dem die App erscheint"
+
+msgid "Set menu group"
+msgstr "Menügruppe festlegen"
+
+msgid "Pick a group or type a new one. Apps of the same group are a submenu of Plugins; empty = a plain entry of Plugins."
+msgstr "Wählen Sie eine Gruppe oder geben Sie eine neue ein. Apps derselben Gruppe bilden ein Untermenü von Plugins; leer = ein normaler Eintrag unter Plugins."

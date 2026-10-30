@@ -43,52 +43,90 @@
    tabs above the pane (the side column squeezed every table and wrapped its
    own labels); from 1400 px it is the side column again. */
 .studio-explorer .list-group-item { white-space: nowrap; }
+/* The Explorer is a tree: see the note above the explorer column. */
+.studio-explorer .ex-caret { display: inline-block; text-align: center; cursor: pointer; width: 22px; margin-left: 4px; padding: 0; border: 0; background: none; color: inherit; opacity: .7; line-height: 1; }
+.studio-explorer .ex-caret:hover { opacity: 1; }
+.studio-explorer .ex-caret .bi { display: inline-block; transition: transform .15s; }
+.studio-explorer .ex-entry:not(.ex-open) .ex-caret .bi { transform: rotate(-90deg); }
+.studio-explorer .ex-children { display: none; font-size: 12px; padding: 2px 0 6px; max-height: 50vh; overflow: auto; border-bottom: 1px solid var(--fw-border-light, #e5e9f2); }
+.studio-explorer .ex-entry.ex-open + .ex-children { display: block; }
+.studio-explorer .ex-leaf { display: flex; align-items: center; padding: 3px 12px 3px 34px; color: var(--fw-text-primary, #1f2937); text-decoration: none; white-space: nowrap; }
+.studio-explorer .ex-leaf:hover { background: var(--fw-content-bg, #F3F6FC); }
+.studio-explorer .ex-leaf > span { overflow: hidden; text-overflow: ellipsis; }
+.studio-explorer .ex-group > summary { list-style: none; cursor: pointer; display: flex; align-items: center; padding: 3px 12px 3px 20px; color: var(--fw-text-secondary, #4b5563); font-weight: 600; white-space: nowrap; }
+.studio-explorer .ex-group > summary::-webkit-details-marker { display: none; }
+.studio-explorer .ex-group > summary > span { overflow: hidden; text-overflow: ellipsis; }
+.studio-explorer .ex-group > summary .ex-gcaret { display: inline-block; width: 14px; transition: transform .15s; }
+.studio-explorer .ex-group:not([open]) > summary .ex-gcaret { transform: rotate(-90deg); }
+.studio-explorer .ex-group .ex-leaf { padding-left: 44px; }
+.studio-explorer .ex-empty { padding: 3px 12px 3px 34px; color: var(--fw-text-secondary, #4b5563); }
 @media (max-width: 1399.98px) {
-  .studio-explorer > .fw-card-header, .studio-explorer .studio-open-apps { display: none; }
+  .studio-explorer > .fw-card-header, .studio-explorer .ex-caret,
+  .studio-explorer .ex-children { display: none !important; }
   .studio-explorer .list-group { flex-direction: row; overflow-x: auto; }
   .studio-explorer .list-group-item { flex: 0 0 auto; width: auto; border-width: 0 1px 0 0; }
   .studio-explorer .list-group-item .fw-badge { margin-left: 8px !important; }
 }
 </style>
+{# An Explorer entry: the tab that shows its pane and, when it has objects
+   (caller), the caret that unfolds them right below it. #}
+{% macro _ex(key, icon, label, count=none, has_children=false) -%}
+<a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == key }} {{ 'ex-entry' if has_children }}" data-bs-toggle="list" href="#studio-pane-{{ key }}" role="tab" data-pane="{{ key }}" {% if has_children %}data-ex="{{ key }}"{% endif %}>
+  <i class="bi {{ icon }} me-2"></i>{{ label }}{% if count is not none %}<span class="fw-badge fw-badge-secondary ms-auto">{{ count }}</span>{% endif %}
+  {%- if has_children %}<span role="button" tabindex="0" class="ex-caret {{ '' if count is not none else 'ms-auto' }}" data-ex-toggle="{{ key }}" aria-expanded="false" title="{{ _('Show or hide its items') }}" aria-label="{{ _('Show or hide its items') }}"><i class="bi bi-chevron-down"></i></span>{% endif %}</a>
+{%- if has_children %}<div class="ex-children" data-ex-body="{{ key }}">{{ caller() }}</div>{% endif %}
+{%- endmacro %}
+{% macro _leaf(href, icon, name, title='', badge='') -%}
+<a class="ex-leaf" href="{{ href }}" title="{{ title or name }}"><i class="bi {{ icon }} me-2 text-muted"></i><span>{{ name }}</span>{% if badge %}<span class="fw-badge fw-badge-success ms-auto">{{ badge }}</span>{% endif %}</a>
+{%- endmacro %}
 <div class="row g-3">
-  {# ------------------------------------------------------------ explorer #}
+  {# ------------------------------------------------------------ explorer
+     A tree since 2026-10-30 (operator): an entry with objects has a caret
+     that unfolds them -- Apps by menu group, Data stores, Connections, API
+     Catalog -- each a link to its page. Folded by default; what is open is
+     remembered in this browser (studio_explorer.js). It replaced the list of
+     apps that sat under the entries. #}
   <div class="col-12 col-xxl-2">
     <div class="fw-card studio-explorer">
       <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-folder2-open me-2 text-accent"></i>{{ _('Explorer') }}</span></div>
-      <div class="list-group list-group-flush" role="tablist" style="font-size:13px;">
+      <div class="list-group list-group-flush" role="tablist" style="font-size:13px;" id="studio-explorer-list">
         {% if can_library %}
-        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'apps' }}" data-bs-toggle="list" href="#studio-pane-apps" role="tab" data-pane="apps">
-          <i class="bi bi-app-indicator me-2"></i>{{ _('Apps') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ apps|length }}</span></a>
+        {% call _ex('apps', 'bi-app-indicator', _('Apps'), apps|length, true) %}
+          {% for _grp in studio_apps_grouped(apps) %}
+          {% if _grp.group %}
+          <details class="ex-group" data-ex-group="{{ _grp.group }}">
+            <summary title="{{ _grp.group }}"><i class="bi bi-chevron-down ex-gcaret"></i><i class="bi bi-folder2 me-2"></i><span>{{ _grp.group }}</span><span class="fw-badge fw-badge-secondary ms-auto">{{ _grp['items']|length }}</span></summary>
+            {% for r in _grp['items'] %}{{ _leaf(url_for(r.edit_endpoint, slug=r.edit_slug), r.a.icon, r.name, r.a.slug, ('v%s' % r.published) if r.published else '') }}{% endfor %}
+          </details>
+          {% else %}
+          {% for r in _grp['items'] %}{{ _leaf(url_for(r.edit_endpoint, slug=r.edit_slug), r.a.icon, r.name, r.a.slug, ('v%s' % r.published) if r.published else '') }}{% endfor %}
+          {% endif %}
+          {% else %}<div class="ex-empty">{{ _('No apps yet.') }}</div>
+          {% endfor %}
+        {% endcall %}
         {% endif %}
         {% if can_console %}
-        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'console' }}" data-bs-toggle="list" href="#studio-pane-console" role="tab" data-pane="console">
-          <i class="bi bi-terminal me-2"></i>{{ _('Console') }}</a>
+        {{ _ex('console', 'bi-terminal', _('Console')) }}
         {% endif %}
         {% if can_library %}
-        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'stores' }}" data-bs-toggle="list" href="#studio-pane-stores" role="tab" data-pane="stores">
-          <i class="bi bi-table me-2"></i>{{ _('Data stores') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ stores|length }}</span></a>
-        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'connections' }}" data-bs-toggle="list" href="#studio-pane-connections" role="tab" data-pane="connections">
-          <i class="bi bi-plug me-2"></i>{{ _('Connections') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ connections|length }}</span></a>
+        {% call _ex('stores', 'bi-table', _('Data stores'), stores|length, true) %}
+          {% for s in stores %}{{ _leaf(url_for('studio.store', slug=s.slug), 'bi-table', s.name, s.slug) }}
+          {% else %}<div class="ex-empty">{{ _('No data stores yet.') }}</div>{% endfor %}
+        {% endcall %}
+        {% call _ex('connections', 'bi-plug', _('Connections'), connections|length, true) %}
+          {% for c in connections %}{{ _leaf(url_for('studio.connection', slug=c.slug), 'bi-plug', c.name, c.slug) }}
+          {% else %}<div class="ex-empty">{{ _('No connections yet.') }}</div>{% endfor %}
+        {% endcall %}
         {% if can_directories %}
-        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'directories' }}" data-bs-toggle="list" href="#studio-pane-directories" role="tab" data-pane="directories">
-          <i class="bi bi-diagram-2 me-2"></i>{{ _('Sign-in directories') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ conns|length }}</span></a>
+        {{ _ex('directories', 'bi-diagram-2', _('Sign-in directories'), conns|length) }}
         {% endif %}
-        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'apis' }}" data-bs-toggle="list" href="#studio-pane-apis" role="tab" data-pane="apis">
-          <i class="bi bi-journal-code me-2"></i>{{ _('API Catalog') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ apis|length }}</span></a>
-        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'examples' }}" data-bs-toggle="list" href="#studio-pane-examples" role="tab" data-pane="examples">
-          <i class="bi bi-lightbulb me-2"></i>{{ _('Examples') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ bundles|length }}</span></a>
+        {% call _ex('apis', 'bi-journal-code', _('API Catalog'), apis|length, true) %}
+          {% for x in apis %}{{ _leaf(url_for('studio.api', slug=x.a.slug), 'bi-journal-code', x.a.name, x.a.slug, x.latest) }}
+          {% else %}<div class="ex-empty">{{ _('No APIs yet.') }}</div>{% endfor %}
+        {% endcall %}
+        {{ _ex('examples', 'bi-lightbulb', _('Examples'), bundles|length) }}
         {% endif %}
       </div>
-      {% if can_library and apps %}
-      <div class="px-3 pt-2 pb-1 text-muted text-uppercase studio-open-apps" style="font-size:10px;letter-spacing:.04em;">{{ _('Open an app') }}</div>
-      <ul class="list-unstyled mb-2 px-2 studio-open-apps" style="font-size:12px;max-height:50vh;overflow:auto;">
-        {% for r in apps %}
-        <li><a class="d-flex align-items-center px-2 py-1 rounded text-decoration-none" href="{{ url_for(r.edit_endpoint, slug=r.edit_slug) }}" title="{{ r.a.slug }}">
-          <i class="bi {{ r.a.icon }} me-2 text-muted"></i><span class="text-truncate">{{ r.name }}</span>
-          {% if r.published %}<span class="fw-badge fw-badge-success ms-auto">v{{ r.published }}</span>{% endif %}</a></li>
-        {% endfor %}
-      </ul>
-      {% endif %}
     </div>
   </div>
 
@@ -148,6 +186,13 @@
             <i class="bi bi-search search-icon"></i>
             <input type="text" id="apSearch" placeholder="{{ _('Search apps…') }}">
           </div>
+          {% if app_groups %}
+          <select class="form-select form-select-sm w-auto" id="apGroupFilter" aria-label="{{ _('Menu group') }}" title="{{ _('Show the apps of one menu group') }}">
+            <option value="*">{{ _('Every menu group') }}</option>
+            {% for g in app_groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+            <option value="">{{ _('No menu group') }}</option>
+          </select>
+          {% endif %}
           {% if current_user.can('studio.plugin_studio') %}
           <form method="post" action="{{ url_for('plugins.import_package') }}" enctype="multipart/form-data" class="d-flex gap-2 align-items-center ms-auto" style="font-size:12px;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -160,14 +205,15 @@
         <div id="apMsg" class="small mb-2" role="status"></div>
         <div class="fw-table-wrapper">
           <table class="fw-table" id="apTable">
-            <thead><tr><th class="fw-col-name">{{ _('Name') }}</th><th>{{ _('Type') }}</th><th>{{ _('Status') }}</th><th>{{ _('Published') }}</th><th>{{ _('ADOMs') }}</th><th>{{ _('Shared with') }}</th><th>{{ _('Last change') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
+            <thead><tr><th class="fw-col-name">{{ _('Name') }}</th><th>{{ _('Type') }}</th><th>{{ _('Menu group') }}</th><th>{{ _('Status') }}</th><th>{{ _('Published') }}</th><th>{{ _('ADOMs') }}</th><th>{{ _('Shared with') }}</th><th>{{ _('Last change') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
             <tbody>
             {% for r in apps %}{% set a = r.a %}
-              <tr data-app="{{ a.slug }}">
+              <tr data-app="{{ a.slug }}" data-group="{{ r.group }}">
                 <td><a href="{{ url_for(r.edit_endpoint, slug=r.edit_slug) }}"><i class="bi {{ a.icon }} me-1"></i><strong>{{ r.name }}</strong></a>
                   {% if r.template %}<span class="fw-badge fw-badge-info ms-1" title="{{ _('Installed from Examples: it cannot be deleted') }}">{{ _('Template') }}</span>{% endif %}
                   <div class="text-muted" style="font-size:11px;"><code>{{ a.slug }}</code>{% if r.description %} · {{ r.description|truncate(80) }}{% endif %}</div></td>
                 <td>{% if r.kind == 'script' %}<span class="fw-badge fw-badge-secondary"><i class="bi bi-filetype-py me-1"></i>{{ _('Script') }}</span>{% else %}<span class="fw-badge fw-badge-secondary"><i class="bi bi-diagram-3 me-1"></i>{{ _('Flow') }}</span>{% endif %}</td>
+                <td style="font-size:12px;">{% if r.group %}<i class="bi bi-folder2 me-1 text-muted"></i>{{ r.group }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
                 <td>{% if r.missing %}<span class="fw-badge fw-badge-danger">{{ _('script missing') }}</span>{% elif r.enabled %}<span class="fw-badge fw-badge-success">{{ _('enabled') }}</span>{% else %}<span class="fw-badge fw-badge-warning">{{ _('disabled') }}</span>{% endif %}</td>
                 <td>{% if r.published %}<span class="fw-badge fw-badge-success">v{{ r.published }}</span>{% elif r.latest %}<span class="fw-badge fw-badge-warning">v{{ r.latest }} {{ _('unpublished') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('not published') }}</span>{% endif %}</td>
                 {% if r.kind == 'script' %}
@@ -190,6 +236,7 @@
                             data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false"
                             title="{{ _('More actions') }}" aria-label="{{ _('More actions') }}"><i class="bi bi-three-dots"></i></button>
                     <ul class="dropdown-menu dropdown-menu-end">
+                      <li><button type="button" class="dropdown-item" data-app-act="group" data-group="{{ r.group }}" title="{{ _('The submenu of Plugins the app is drawn in') }}"><i class="bi bi-folder2"></i>{{ _('Set menu group') }}</button></li>
                       <li><a class="dropdown-item" href="{{ url_for('studio.app_data', slug=a.slug) }}" title="{{ _('Download data: runs and data stores (zip)') }}"><i class="bi bi-database-down"></i>{{ _('Download data') }}</a></li>
                       {% if r.kind == 'script' %}
                       {% if not r.missing %}<li><a class="dropdown-item" href="{{ url_for('script_library.download', slug=a.script_slug) }}"><i class="bi bi-file-earmark-zip"></i>{{ _('Download the code') }}</a></li>{% endif %}
@@ -206,7 +253,7 @@
                 </div></td>
               </tr>
             {% else %}
-              <tr><td colspan="8" class="text-muted p-3">{{ _('No apps yet. Create one with New app.') }}</td></tr>
+              <tr><td colspan="9" class="text-muted p-3">{{ _('No apps yet. Create one with New app.') }}</td></tr>
             {% endfor %}
             </tbody>
           </table>
@@ -389,6 +436,24 @@
   </div></div>
 </div>
 {% endfor %}
+{% if can_library %}
+<div class="modal fade fw-modal" id="apGroupModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title"><i class="bi bi-folder2 me-2"></i>{{ _('Set menu group') }} <code class="ms-1" id="apGroupSlug"></code></h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button></div>
+    <div class="modal-body" style="font-size:13px;">
+      <label class="form-label small" for="apGroupInput">{{ _('Menu group') }}</label>
+      <input class="form-control form-control-sm" id="apGroupInput" maxlength="48" list="apGroupList" autocomplete="off" placeholder="{{ _('none') }}">
+      <datalist id="apGroupList">{% for g in app_groups %}<option value="{{ g }}">{% endfor %}</datalist>
+      <div class="form-text">{{ _('Pick a group or type a new one. Apps of the same group are a submenu of Plugins; empty = a plain entry of Plugins.') }}</div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+      <button type="button" class="btn btn-fw-primary" id="apGroupSave"><i class="bi bi-check-lg me-1"></i>{{ _('Save') }}</button>
+    </div>
+  </div></div>
+</div>
+{% endif %}
 <div class="modal fade fw-modal" id="apiLibModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog"><div class="modal-content">
     <div class="modal-header"><h5 class="modal-title"><i class="bi bi-collection me-2"></i>{{ _("Add from SATOM's API library") }}</h5>
@@ -413,8 +478,9 @@
   </div></div>
 </div>
 <script type="application/json" id="ex-config">{{ {'install': url_for('studio.example_install', key='KEY'), 'back': url_for('studio.index', pane='examples')}|tojson }}</script>
-<script type="application/json" id="ap-config">{{ {'enable': url_for('studio.app_enable', slug='SLUG'), 'reset': url_for('studio.app_reset', slug='SLUG'), 'delete': url_for('studio.app_delete', slug='SLUG'), 'back': url_for('studio.index', pane='apps')}|tojson }}</script>
+<script type="application/json" id="ap-config">{{ {'enable': url_for('studio.app_enable', slug='SLUG'), 'group': url_for('studio.app_group', slug='SLUG'), 'reset': url_for('studio.app_reset', slug='SLUG'), 'delete': url_for('studio.app_delete', slug='SLUG'), 'back': url_for('studio.index', pane='apps')}|tojson }}</script>
 <script src="{{ asset('js/studio_apps_list.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/studio_explorer.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/studio_examples.js') }}" nonce="{{ csp_nonce }}"></script>
 <script type="application/json" id="sl-config">{{ {'urls': {'run': url_for('script_library.run_status', rid='RID')}}|tojson }}</script>
 <script src="{{ asset('js/script_library.js') }}" nonce="{{ csp_nonce }}"></script>

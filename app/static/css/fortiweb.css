@@ -403,6 +403,9 @@ summary.fw-nav-item { padding-right: 16px; }
    link title holds the whole name, and the right padding keeps the
    favourite star clear of the text instead of over its last letters. */
 .fw-nav-app { padding-right: 24px; }
+/* A menu group of Plugins (partials/nav_apps_entries.html): the author's
+   name, up to 48 characters, ends in the ellipsis before the caret. */
+.fw-nav-appgroup > .fw-so-parent-head > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* FortiWeb config sections — indented sub-items under "Configuration" */
 .fw-nav-subitem {

@@ -6,7 +6,7 @@ a server where none of those exist, so its first run fails on step one. A
 ``kind: app`` package (``satom.plugin/1``, see :mod:`plugin_package`)
 carries ``app.json``::
 
-    {"app":         {slug, name, icon, description, fields, graph, actions},
+    {"app":         {slug, name, icon, description, fields, graph, actions[, group]},
      "stores":      [{slug, name, description, columns, rows}],
      "connections": [{slug, name, kind, base_url, auth, username, header_name,
                       token_url, verify_tls, timeout, api, api_version}],
@@ -19,7 +19,10 @@ INSTALL RULES -- what an import may and may not overwrite
 ---------------------------------------------------------
 * **The app** is created, or its DRAFT replaced (form, diagram, actions).
   The published version, the ADOMs and who may run it are never touched:
-  publishing is the administrator's act, on this server.
+  publishing is the administrator's act, on this server. Its menu group
+  (``app.group``, optional, 2026-10-30) is applied only when the import
+  CREATES the app; an app that exists keeps the group this server filed it
+  under. A group this server refuses is left out with a warning.
 * **Data stores** are created with their columns and seed rows when missing.
   An existing store keeps its rows (they are this server's data -- the
   variables an administrator already set); columns the package adds are
@@ -178,6 +181,8 @@ def build_body(a) -> dict:
                     "description": a.description, "fields": a.fields,
                     "graph": a.graph, "actions": a.actions, "design": a.design},
             "stores": stores, "connections": conns, "apis": list(apis.values())}
+    if a.menu_group:
+        body["app"]["group"] = a.menu_group
     if scripts:
         body["scripts"] = scripts
     from . import plugin_automations as PA
@@ -375,6 +380,11 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
         if a is None:
             a = SA.create(slug, spec.get("name") or slug, by)
             created.append("app %s (draft)" % slug)
+            if spec.get("group"):
+                try:
+                    a.menu_group = SA.clean_group(spec.get("group"), a)
+                except SA.AppError as exc:
+                    warnings.append("app %s: %s; it has no menu group here" % (slug, exc))
         else:
             kept.append("app %s: draft replaced, published version and access unchanged" % slug)
         a.name = (spec.get("name") or a.name)[:120]

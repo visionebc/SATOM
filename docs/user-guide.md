@@ -4578,13 +4578,29 @@ guide.
 
 **Plugin Studio** (since the release after 3.3.7) replaces the two menu entries
 *Python Console* and *Script Library*. On the left an **Explorer** switches
-between the panes and opens any app in its editor; the editor (`/studio/scripts/<id>`) has a **Console** tab too, to
+between the panes; Apps, Data stores, Connections and API Catalog unfold
+(the caret, or a click on the entry) into their items, each a link to its
+page, and Apps unfold by **menu group**. Everything starts folded; the
+browser remembers what you opened. The editor (`/studio/scripts/<id>`) has a **Console** tab too, to
 try code against the fleet data without saving it in the script. Uniting the
 pages united neither the keys nor the sandboxes: the page opens for a holder of
 `studio.script_library` **or** `studio.python_console`, and each pane, the
 editor's Console tab and the console's run endpoint still ask for their own
 key. The old addresses (`/database/py-console`, `/database/scripts/…`)
 redirect to the new ones.
+
+**Menu groups.** An app can be filed under a menu group: the *Menu group*
+field of a flow app's **Settings** tab, or **Set menu group** in the row menu
+of Apps (flow and script apps alike). Both suggest the groups that exist;
+typing a name that differs only in case files the app under the existing
+group, and an empty field takes it out. In the sidebar every group is a
+collapsible submenu of **Plugins** (open when you are on one of its apps),
+followed by the apps without a group. The Apps list has a *Menu group*
+column and a filter next to the search box. A group is up to 48 letters,
+digits, spaces and `. & ( ) + , ' -`. It is not a user group: who may use
+the app is still *Who may use it*. An exported app package carries the
+group; importing it sets the group only on an app the import creates — an
+app that exists here keeps the group it has.
 
 ### 23.1 Report Studio and Custom Views
 

@@ -297,6 +297,11 @@ class StudioApp(db.Model):
     #: require_approval}. Install-specific like ``access_json``: it never
     #: travels in an app package. "{}" = no sign-in page. 2026-10-30.
     login_json = db.Column(db.Text, nullable=False, default="{}", server_default="{}")
+    #: The menu group the app is filed under (services.studio_apps.clean_group):
+    #: a submenu of Plugins in the sidebar and a filter of Plugin Studio > Apps.
+    #: "" = none, a plain entry of Plugins. Not the user groups of ``access_json``.
+    #: 2026-10-30.
+    menu_group = db.Column(db.String(48), nullable=False, default="", server_default="")
 
     @property
     def login(self) -> dict:

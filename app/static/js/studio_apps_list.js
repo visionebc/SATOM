@@ -1,7 +1,8 @@
 /* Plugin Studio > Apps (studio/index.html): the Actions column -- enable /
- * disable, reset, delete -- and the search box. Server side:
- * app/views/studio.py (app_enable, app_reset, app_delete) and
- * app/services/studio_apps.py (set_enabled, reset, remove). Reset and Delete
+ * disable, menu group, reset, delete -- the search box and the menu-group
+ * filter. Server side: app/views/studio.py (app_enable, app_group,
+ * app_reset, app_delete) and app/services/studio_apps.py (set_enabled,
+ * set_group, reset, remove). Reset and Delete
  * cannot be undone, so they ask for the app's id typed back. A template
  * (from Examples) has no Delete button and the server refuses it anyway.
  */
@@ -42,6 +43,7 @@
     var slug = tr.getAttribute('data-app');
     var act = b.getAttribute('data-app-act');
     var url, body = {}, done;
+    if (act === 'group') { askGroup(slug, b.getAttribute('data-group') || ''); return; }
     if (act === 'enable' || act === 'disable') {
       url = CFG.enable; body = { enabled: act === 'enable' };
       done = function () { return (act === 'enable' ? 'Enabled ' : 'Disabled ') + slug + '.'; };
@@ -71,15 +73,46 @@
       })
       .catch(function (e) { b.disabled = false; msg(e.message, true); });
   });
+  // Menu group: a modal with the groups that exist as suggestions; "" takes
+  // the app out of its group.
+  var gModal = document.getElementById('apGroupModal');
+  var gSlug = null;
+  function askGroup(slug, current) {
+    if (!gModal || !window.bootstrap) return;
+    gSlug = slug;
+    document.getElementById('apGroupSlug').textContent = slug;
+    var inp = document.getElementById('apGroupInput');
+    inp.value = current;
+    window.bootstrap.Modal.getOrCreateInstance(gModal).show();
+    window.setTimeout(function () { inp.focus(); inp.select(); }, 200);
+  }
+  var gSave = document.getElementById('apGroupSave');
+  if (gSave) gSave.addEventListener('click', function () {
+    if (!gSlug) return;
+    gSave.disabled = true;
+    post(CFG.group.replace('SLUG', encodeURIComponent(gSlug)),
+         { group: document.getElementById('apGroupInput').value })
+      .then(function (d) {
+        window.bootstrap.Modal.getOrCreateInstance(gModal).hide();
+        msg(d.group ? gSlug + ' is in menu group ' + d.group + '.' : gSlug + ' has no menu group now.');
+        window.setTimeout(function () { window.location = CFG.back; }, 900);
+      })
+      .catch(function (e) { gSave.disabled = false; msg(e.message, true); });
+  });
+  // Search and menu-group filter: a row shows when it matches both.
   var search = document.getElementById('apSearch');
-  if (search) {
-    search.addEventListener('input', function () {
-      var q = search.value.trim().toLowerCase();
-      document.querySelectorAll('#apTable tbody tr[data-app]').forEach(function (tr) {
-        tr.style.display = !q || tr.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
-      });
+  var gFilter = document.getElementById('apGroupFilter');
+  function filterRows() {
+    var q = search ? search.value.trim().toLowerCase() : '';
+    var g = gFilter ? gFilter.value : '*';
+    document.querySelectorAll('#apTable tbody tr[data-app]').forEach(function (tr) {
+      var okText = !q || tr.textContent.toLowerCase().indexOf(q) >= 0;
+      var okGroup = g === '*' || (tr.getAttribute('data-group') || '') === g;
+      tr.style.display = okText && okGroup ? '' : 'none';
     });
   }
+  if (search) search.addEventListener('input', filterRows);
+  if (gFilter) gFilter.addEventListener('change', filterRows);
   // Import app package: the button is the label of a hidden file input;
   // choosing a file submits the form (layout sweep 2026-10-24).
   var imp = document.querySelector('input[data-ap-import]');

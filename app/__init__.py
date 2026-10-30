@@ -786,6 +786,13 @@ def create_app(config_override: object | None = None) -> Flask:
         return cache[product_key]
 
     @app.template_global()
+    def studio_apps_grouped(items):
+        """The menu entries of studio_apps_menu() by menu group: a submenu of
+        Plugins per group, then the entries without one (services.studio_apps.grouped)."""
+        from .services.studio_apps import grouped
+        return grouped(items or [])
+
+    @app.template_global()
     def global_all_plugins_entry(product_key):
         """Whether Global > Plugins (partials/nav_global_apps.html) draws the
         "All plugins" entry for this user: the gate it had inside Automation

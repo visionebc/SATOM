@@ -18,6 +18,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   console's unsigned export (connections without secrets). The token's owner
   must be a Plugin Studio author. The Builder's *Open from SATOM* page uses
   them.
+- **Plugin Studio apps can be filed under a menu group** (request: "let
+  plugins belong to groups, so the menu shows the groups as submenus and
+  Studio can filter by them"). A flow app's **Settings** tab has a *Menu
+  group* field, and every app, flow or script, has **Set menu group** in its
+  row menu of Plugin Studio › Apps. Both suggest the groups that already
+  exist; a name that differs only in case is filed under the existing group,
+  and an empty field takes the app out. In the sidebar each group is a
+  collapsible submenu of **Plugins**, open only when you are on one of its
+  apps; apps without a group stay plain entries below the groups. Plugin
+  Studio › Apps has a *Menu group* column and filter (every group, one group,
+  no group), next to the search box. An app package carries the group
+  (`app.group`, optional); an import applies it only when it creates the app,
+  and an app that already exists keeps the group this server gave it (as with
+  its ADOMs). Audit Log: `studio.app.group`; the group is also recorded in
+  `studio.app.settings`. A menu group is not a user group: who may use an app
+  is still set under *Who may use it*. Schema: `studio_apps.menu_group`
+  (migration `appgroup01`).
 - **Scout proposes a Path Diagnostics walk; the operator runs it** (request:
   "do everything and leave nothing pending" — the next stage was a walk Scout
   asks for and the operator confirms). A new proposal kind, `path_walk`:
@@ -180,6 +197,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   list from.
 
 ### Changed
+- **Plugin Studio's Explorer is a tree; the "Open an app" list is gone**
+  (request: "remove that section and make the menus there expandable").
+  Apps, Data stores, Connections and API Catalog have a caret that unfolds
+  their items, each a link to its page; Apps unfold by menu group, each group
+  folding on its own. Clicking an entry still shows its pane and unfolds it.
+  Everything starts folded and the browser remembers what you opened. Below
+  1400 px the Explorer stays the one-line strip of tabs, without the items.
 - User guide §33 rewritten as *Scout — the operations assistant*: tools,
   the troubleshooting workflow, provider choice, what every exchange leaves
   behind, and what is planned. §13 describes Path Diagnostics, its saved

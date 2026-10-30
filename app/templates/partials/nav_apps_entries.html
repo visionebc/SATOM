@@ -3,8 +3,31 @@
    studio_apps_menu(product.key). A flow app opens apps.page, a script app
    its script's run page (endpoint / target come from the menu). An app
    name is the author's and can run to 120 characters: .fw-nav-app keeps
-   it on one line clear of the star (fortiweb.css) and the title carries it whole. #}
-{% for _ap in _apps %}
-<a class="fw-nav-item fw-nav-app {{ 'active' if request.endpoint == _ap.endpoint and request.view_args and request.view_args.get('slug') == _ap.target else '' }}" href="{{ url_for(_ap.endpoint, slug=_ap.target) }}" title="{{ _ap.name }}">
+   it on one line clear of the star (fortiweb.css) and the title carries it whole.
+
+   Menu groups (2026-10-30, operator): the apps filed under a group
+   (StudioApp.menu_group) are a collapsible submenu of Plugins, one per
+   group and sorted, the same <details class="fw-so-parent"> shape as WAF
+   Artifacts; the apps without a group follow as plain entries. A group is
+   drawn open only when the page is one of its apps. #}
+{% macro _app_link(_ap, flat=false) -%}
+<a class="fw-nav-item fw-nav-app {{ 'fw-so-nav-flat' if flat }} {{ 'active' if request.endpoint == _ap.endpoint and request.view_args and request.view_args.get('slug') == _ap.target else '' }}" href="{{ url_for(_ap.endpoint, slug=_ap.target) }}" title="{{ _ap.name }}">
   <i class="bi {{ _ap.icon }} fw-nav-icon"></i><span>{{ _ap.name }}</span></a>
+{%- endmacro %}
+{% for _grp in studio_apps_grouped(_apps) %}
+{% if _grp.group %}
+{% set _ns = namespace(here=false) %}
+{% for _ap in _grp['items'] %}{% if request.endpoint == _ap.endpoint and request.view_args and request.view_args.get('slug') == _ap.target %}{% set _ns.here = true %}{% endif %}{% endfor %}
+<details class="fw-so-parent fw-nav-appgroup" data-app-group="{{ _grp.group }}" {{ 'open' if _ns.here }}>
+  <summary class="fw-nav-item fw-so-parent-head" title="{{ _grp.group }}">
+    <i class="bi bi-folder2 fw-nav-icon"></i><span>{{ _grp.group }}</span>
+    <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+  </summary>
+  <div class="fw-so-parent-body"><div class="fw-so-nav">
+    {% for _ap in _grp['items'] %}{{ _app_link(_ap, true) }}{% endfor %}
+  </div></div>
+</details>
+{% else %}
+{% for _ap in _grp['items'] %}{{ _app_link(_ap) }}{% endfor %}
+{% endif %}
 {% endfor %}

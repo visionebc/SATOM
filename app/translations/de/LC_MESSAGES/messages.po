@@ -28350,3 +28350,55 @@ msgstr "Anmeldeverzeichnisse"
 #: app/templates/studio/index.html
 msgid "The Active Directory, LDAP and RADIUS (FortiAuthenticator) servers an app's own sign-in proves people against -- each with its own address, bind account and secret, never shown again. Which groups of which server may use an app is set in the app's Sign-in tab. The same list as Administrator > Access > Directory connections; app steps never see these secrets."
 msgstr "Die Active-Directory-, LDAP- und RADIUS-Server (FortiAuthenticator), gegen die die eigene Anmeldung einer App Personen prüft -- jeder mit eigener Adresse, eigenem Bind-Konto und Geheimnis, das nie wieder angezeigt wird. Welche Gruppen welches Servers eine App nutzen dürfen, legt der Reiter Anmeldung der App fest. Dieselbe Liste wie Administrator > Zugriff > Verzeichnisverbindungen; App-Schritte sehen diese Geheimnisse nie."
+
+#: app/templates/scout/reports.html
+msgid "Path Diagnostics reports"
+msgstr "Path-Diagnostics-Berichte"
+
+#: app/templates/settings/_ai.html
+msgid "Log sources"
+msgstr "Log-Quellen"
+
+#: app/templates/settings/_ai.html
+msgid "Scout already reads Sentinel events, the syslog receiver and the FortiAnalyzer behind each appliance (Sentinel → Edge map). Add your SIEM here when part of the service path logs somewhere else — a Cisco switch or firewall in front of a FortiWeb never reaches a FortiAnalyzer. Read only: use a token of a role that can only search. Scout puts its search text inside one quoted term, so it can never append a command."
+msgstr "Scout liest bereits Sentinel-Ereignisse, den Syslog-Empfänger und den FortiAnalyzer hinter jeder Appliance (Sentinel → Edge map). Fügen Sie hier Ihr SIEM hinzu, wenn ein Teil des Servicepfads woanders protokolliert — ein Cisco-Switch oder eine Firewall vor einem FortiWeb erreicht nie einen FortiAnalyzer. Nur lesend: Verwenden Sie ein Token einer Rolle, die nur suchen kann. Scout setzt seinen Suchtext in einen einzigen Begriff in Anführungszeichen und kann daher nie einen Befehl anhängen."
+
+#: app/templates/settings/_ai.html
+msgid "Add log source"
+msgstr "Log-Quelle hinzufügen"
+
+#: app/templates/settings/_ai.html
+msgid "Log source"
+msgstr "Log-Quelle"
+
+#: app/templates/settings/_ai.html
+msgid "Splunk (REST search export, port 8089) — unverified on a live Splunk"
+msgstr "Splunk (REST-Suchexport, Port 8089) — nicht an einem echten Splunk geprüft"
+
+#: app/templates/settings/_ai.html
+msgid "Management URL"
+msgstr "Verwaltungs-URL"
+
+#: app/templates/settings/_ai.html
+msgid "(Bearer; blank = keep)"
+msgstr "(Bearer; leer = beibehalten)"
+
+#: app/templates/settings/_ai.html
+msgid "Search prefix"
+msgstr "Suchpräfix"
+
+#: app/templates/settings/_ai.html
+msgid "Written by you, used as is at the start of every search. Scout only adds a device clause and one quoted term after it."
+msgstr "Von Ihnen geschrieben, unverändert am Anfang jeder Suche verwendet. Scout fügt danach nur eine Geräteklausel und einen Begriff in Anführungszeichen an."
+
+#: app/templates/settings/_ai.html
+msgid "Device field"
+msgstr "Gerätefeld"
+
+#: app/templates/settings/_ai.html
+msgid "Matched against the appliance name and management address. Blank = never filter by appliance."
+msgstr "Wird mit dem Appliance-Namen und der Verwaltungsadresse verglichen. Leer = nie nach Appliance filtern."
+
+#: app/templates/settings/_ai.html
+msgid "Verify TLS against the trust store"
+msgstr "TLS gegen den Vertrauensspeicher prüfen"

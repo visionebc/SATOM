@@ -2513,10 +2513,12 @@ against what the devices say.</p>
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
-  The same tool also exists as <strong>three Plugin Studio apps</strong> (template bundle
-  <em>DNS &amp; LB Lookup</em>, §23.8): the lookup, DNS Records and the decommission,
-  with the same permissions and the same ADOM scoping. The page stays; use
-  whichever you prefer, or copy the apps and change them.
+  The same tool also exists as <strong>three Plugin Studio apps</strong> — the plugins
+  <code>dns-lb-lookup</code>, <code>dns-records</code> and <code>dns-decommission</code> (§23.7, <em>Plugins:
+  DNS &amp; LB Lookup</em>), under <strong>Operations › Plugins</strong> once imported: the
+  lookup, DNS Records and the decommission, with the same permissions and the
+  same ADOM scoping. The page stays; use whichever you prefer, or copy the
+  apps and change them.
 - <strong>Where these live:</strong> Backend Reachability, Config Compare, Path Diagnostics,
   the <strong>Transaction Tracer</strong> (§37.3) and Scout sit together under
   <strong>Operations › Troubleshooting</strong> in every ADOM (since 2026-10-14; the tracer
@@ -5980,7 +5982,7 @@ data store, connection) refuses it with the reason.</p>
 </ul>
 <p><strong>Row buttons</strong> (<em>Output</em> → <em>Row buttons (JSON)</em>, 2026-10-30). One button per
 row of a table, <code>{{ row }}</code> being that row:</p>
-<pre><code class="language-json">[{&quot;label&quot;: &quot;Edit&quot;, &quot;app&quot;: &quot;ex-dns-records&quot;,
+<pre><code class="language-json">[{&quot;label&quot;: &quot;Edit&quot;, &quot;app&quot;: &quot;dns-records&quot;,
   &quot;inputs&quot;: {&quot;operation&quot;: &quot;update&quot;, &quot;id&quot;: &quot;{{ row.id }}&quot;, &quot;name&quot;: &quot;{{ row.name }}&quot;}},
  {&quot;label&quot;: &quot;Open policy&quot;, &quot;url&quot;: &quot;{{ row._url }}&quot;, &quot;when&quot;: &quot;{{ row._url }}&quot;}]
 </code></pre>
@@ -6175,8 +6177,10 @@ secret (set it in Connections), missing data stores created with their rows;
 an existing data store keeps its rows (new columns are added), an existing
 connection is never changed, and the app's <strong>draft</strong> is replaced while its
 published version and access list stay as they are. A package older than the
-installed one needs <em>Allow downgrade</em>. Signed packages come from the internal
-generator (<code>{org}/satom-plugins</code>).</p>
+installed one needs <em>Allow downgrade</em>. An app whose action opens or runs an
+app this server does not have is refused with that app's name — import its
+package first; a refused import writes nothing. Signed packages come from the
+internal generator (<code>{org}/satom-plugins</code>).</p>
 <p><strong>What the importer checks.</strong> Every package goes through one check before
 anything is written. Each problem names the rule it breaks, and the answer
 also lists what the import would create and keep and which connections need a
@@ -6263,6 +6267,39 @@ capacity, reserves in the DDI, issues or deploys the certificate, creates the
 policy, and records the request in <strong>spo-requests</strong>. Any failure removes what
 the run created on the FortiWeb, releases its DDI records, records why, and
 ends failed with that reason. Every rule is a row the administrator edits.</p>
+<p><strong>Plugins: DNS &amp; LB Lookup</strong> (packages <code>dns-records</code>, <code>dns-decommission</code>
+and <code>dns-lb-lookup</code>, operator request 2026-10-30: "the whole DNS &amp; LB Lookup
+section as an app in Plugin Studio — keep Copy, the record editor and the
+decommission confirmation"; "it is a plugin, handled like everything else,
+under the Plugins section"). Three signed plugins of the internal generator,
+on the staging hub <code>/downloads/plugins/</code>. Built only from the SATOM steps
+above and SATOM's own resolvers and DNS backends: no data store, no
+connection, nothing to configure. <strong>Import them in this order</strong> — Plugin
+Studio › Apps › <em>Import app package</em>: <code>dns-records</code>, <code>dns-decommission</code>, then
+<code>dns-lb-lookup</code> (its <em>DNS Records</em> action opens <code>dns-records</code>; imported first
+it is refused, naming that app, and nothing is written). Then <strong>Publish</strong>
+each one — published apps appear under <strong>Operations › Plugins</strong>; give them to
+other users in each app's <em>Settings</em>. The page under Fleet › DNS Lookup
+stays.</p>
+<ul>
+<li><strong>DNS &amp; LB Lookup</strong> (<code>dns-lb-lookup</code>): the page's form (names, <em>Show LB
+  matches</em>, <em>Quick LB</em>, <em>Exact match</em>, <em>Show TTL</em>). Outputs: the DNS answers
+  with a <strong>Records</strong> button on each name, the LB matches with <strong>Open policy</strong>
+  and <strong>Decommission</strong> on each match, <em>Quick LB</em> (gateways) and <em>Not found in
+  any source</em>. A cache that cannot be read shows <em>LB matching failed</em> and the
+  DNS half still appears, as on the page. Actions: <strong>Copy DNS</strong> and <strong>Copy
+  LB</strong> (the page's tab-separated text), <strong>DNS Records</strong>, and a CSV download of
+  each table.</li>
+<li><strong>DNS Records</strong> (<code>dns-records</code>): <em>list</em> shows a name's records with
+  <strong>Edit</strong> and <strong>Delete</strong> on each row — each opens this same app filled in
+  with that record — and <em>New record</em>; <em>create</em>, <em>update</em> and <em>delete</em> write
+  and then list the name again.</li>
+<li><strong>Decommission a service</strong> (<code>dns-decommission</code>): the plan (what is
+  deleted, unbound and kept, and why), then <strong>Decommission / Cancel</strong> with a
+  tick box per warning and the policy name to type back, as on the page; a
+  blocker refuses <em>Decommission</em>. The apply step
+  plans again and refuses a plan that changed since it was shown.</li>
+</ul>
 <p><strong>Actions and devices.</strong> <em>Raise a change request</em> never changes a device: it
 creates a <strong>draft</strong> change request (title, reason, change type, device ids,
 risk, with the app and run named in it) that goes through the normal approval
@@ -6372,35 +6409,8 @@ until you open the connection, set the address and paste the token.</p>
 <td>No external system: a list field fed by a data store, a query, an upsert. Published at once (every ADOM, Studio authors), so it appears under <strong>Operations → Plugins</strong>.</td>
 <td>data store <code>ex-site-contacts</code> (3 sample rows), apps <code>ex-site-contact</code>, <code>ex-site-contact-edit</code></td>
 </tr>
-<tr>
-<td><strong>DNS &amp; LB Lookup (the page as three apps)</strong></td>
-<td>The DNS &amp; LB Lookup page rebuilt from the SATOM steps, with nothing to configure (SATOM's own resolvers and DNS backends). Published at once (every ADOM, Studio authors).</td>
-<td>apps <code>ex-dns-lb-lookup</code>, <code>ex-dns-records</code>, <code>ex-dns-decommission</code></td>
-</tr>
 </tbody>
 </table>
-<p><strong>DNS &amp; LB Lookup as apps</strong> (operator request, 2026-10-30: "the whole DNS &amp; LB
-Lookup section as an app in Plugin Studio — keep Copy, the record editor and
-the decommission confirmation"). The page under Fleet › DNS Lookup stays.</p>
-<ul>
-<li><strong>DNS &amp; LB Lookup</strong> (<code>ex-dns-lb-lookup</code>): the page's form (names, <em>Show LB
-  matches</em>, <em>Quick LB</em>, <em>Exact match</em>, <em>Show TTL</em>). Outputs: the DNS answers
-  with a <strong>Records</strong> button on each name, the LB matches with <strong>Open policy</strong>
-  and <strong>Decommission</strong> on each match, <em>Quick LB</em> (gateways) and <em>Not found in
-  any source</em>. A cache that cannot be read shows <em>LB matching failed</em> and the
-  DNS half still appears, as on the page. Actions: <strong>Copy DNS</strong> and <strong>Copy
-  LB</strong> (the page's tab-separated text), <strong>DNS Records</strong>, and a CSV download of
-  each table.</li>
-<li><strong>DNS Records</strong> (<code>ex-dns-records</code>): <em>list</em> shows a name's records with
-  <strong>Edit</strong> and <strong>Delete</strong> on each row — each opens this same app filled in
-  with that record — and <em>New record</em>; <em>create</em>, <em>update</em> and <em>delete</em> write
-  and then list the name again.</li>
-<li><strong>Decommission a service</strong> (<code>ex-dns-decommission</code>): the plan (what is
-  deleted, unbound and kept, and why), then <strong>Decommission / Cancel</strong> with a
-  tick box per warning and the policy name to type back, as on the page; a
-  blocker refuses <em>Decommission</em>. The apply step
-  plans again and refuses a plan that changed since it was shown.</li>
-</ul>
 <p>The <strong>Console</strong> pane has two examples in its <em>Studio</em> group: the fleet
 inventory printed as CSV (paste it into a data store's <em>Import CSV</em>) and every
 managed FortiGate with the base URL a connection to its REST API would use.</p>

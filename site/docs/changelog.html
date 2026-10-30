@@ -137,14 +137,21 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <li><strong>DNS &amp; LB Lookup as Plugin Studio apps</strong> (request: "I want the whole DNS &amp;
   LB Lookup section to be an app in Plugin Studio — the page stays, and keep
   Copy, editing a record from its row and the decommission confirmation").
-  Plugin Studio › Examples › <em>DNS &amp; LB Lookup</em> installs three published
-  template apps: <strong>DNS &amp; LB Lookup</strong> (<code>ex-dns-lb-lookup</code>: DNS answers per
-  resolver, LB matches from the device cache, Quick LB, Not found; Copy DNS /
-  Copy LB; Records, Open policy and Decommission on each row), <strong>DNS Records</strong>
-  (<code>ex-dns-records</code>: list, then Edit / Delete on each record, create, update,
-  delete) and <strong>Decommission a service</strong> (<code>ex-dns-decommission</code>: the plan,
-  a tick box per warning, apply). The page under Fleet › DNS Lookup is
-  unchanged.</li>
+  Three <strong>plugins</strong>, delivered like every other one (request: "this is a
+  plugin, it should be handled like everything else, under the Plugins
+  section"): signed packages of the internal plugin generator, 1.0.0 on the
+  staging hub <code>/downloads/plugins/</code>, imported in Plugin Studio › Apps ›
+  <em>Import app package</em> and published under <strong>Operations › Plugins</strong> —
+  <strong>DNS Records</strong> (<code>dns-records</code>: list, then Edit / Delete on each record,
+  create, update, delete), <strong>Decommission a service</strong> (<code>dns-decommission</code>:
+  the plan, a tick box per warning, the policy name typed back, apply) and
+  <strong>DNS &amp; LB Lookup</strong> (<code>dns-lb-lookup</code>: DNS answers per resolver, LB matches
+  from the device cache, Quick LB, Not found; Copy DNS / Copy LB; Records,
+  Open policy and Decommission on each row). Import <code>dns-lb-lookup</code> last: its
+  <em>DNS Records</em> action opens <code>dns-records</code>, and an import that names an app
+  the server does not have is refused with that app's name. They are not
+  Examples templates (they can be deleted like any app). The page under
+  Fleet › DNS Lookup is unchanged.</li>
 <li><strong>Six SATOM steps</strong> behind them, adapters over the modules the page uses:
   <em>DNS: look names up</em>, <em>LB: match names to the fleet</em>, <em>DNS records: list</em>,
   <em>DNS records: create, change or delete</em>, <em>Decommission: plan</em> and
@@ -243,6 +250,14 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   and falls back to <code>bi-puzzle</code> with a warning (until now it stored any text,
   unchecked); importing a view, widget or app package never fails on its
   icon — it falls back to the default and the import report says so.</li>
+<li><strong>A refused app package import left objects behind.</strong> The helpers that
+  create an app, a data store, a connection or an API version commit on
+  their own, so a refusal raised after them (an action that opens an app the
+  server does not have, a form field reading a data store that is
+  nowhere) left them on the server — importing <code>dns-lb-lookup</code> before
+  <code>dns-records</code> left an empty draft app <code>dns-lb-lookup</code>. The import now checks the form, diagram, actions and
+  design against this server before it writes anything (what the package
+  brings counts as present) and says which app to import first.</li>
 <li>Changing Scout in <strong>Settings → AI → Scout ▸ Providers</strong> now leaves a row in
   the Audit Log: <code>settings.ai_flags</code>, <code>settings.ai_provider_save</code> (kind,
   base URL, model and whether a key was set, never the key),

@@ -1,7 +1,10 @@
 {# ============================================================================
    Scout (the AI assistant; labelled "AI Advisor" until 2026-10-13, blueprint
-   still ``advisor``) — ONE definition, drawn by Fleet › Troubleshooting
-   (partials/nav_troubleshooting.html) in every ADOM.
+   still ``advisor``) — ONE definition, drawn at the TOP LEVEL of the sidebar
+   right above Wiki (operator, 2026-10-31; until then it sat in Fleet ›
+   Troubleshooting): in Global as the first entry of the Global block, in a
+   device ADOM as its own entry right above the Operations group (whose first
+   entry is Wiki, partials/nav_operations.html).
 
    Gated on the ``advisor.use`` permission (not just login) — a readonly user with
    no AI access should not see a dead link. Scoping of what the page can SEE
@@ -20,7 +23,10 @@
    ========================================================================= #}
 {% if current_user.is_authenticated and current_user.can('advisor.use') and advisor_on %}
 {% if may_open('advisor.index') %}
+{% set _scout_own = product.key != 'global' %}
+{% if _scout_own %}<div class="fw-nav-context" data-nav-context="Scout"><div class="fw-nav-group-body">{% endif %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'advisor' else '' }}" href="{{ url_for('advisor.index', _adom=product.key) }}">
   <i class="bi bi-stars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
+{% if _scout_own %}</div></div>{% endif %}
 {% endif %}
 {% endif %}

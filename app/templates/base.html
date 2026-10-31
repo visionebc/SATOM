@@ -348,6 +348,8 @@
       <div class="fw-nav-context" data-nav-context="Global">
         <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Global') }}</span></div>
         <div class="fw-nav-group-body">
+          {# Scout: top level, right above Wiki (operator, 2026-10-31). #}
+          {% include 'partials/nav_advisor.html' %}
           {% include 'partials/nav_wiki.html' %}
           {# Global › Automation and Plugins are drawn by nav_fleet.html, above Jobs. #}
           {% include 'partials/nav_fleet.html' %}

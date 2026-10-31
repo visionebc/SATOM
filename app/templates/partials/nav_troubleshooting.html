@@ -34,12 +34,16 @@
    sites FortiWeb server policies and FortiADC virtual servers publish, so it
    is drawn where Backend Reachability is (Global, FortiWeb, FortiADC) and its
    services/adom_menu.py row gates the device ADOMs.
+
+   Scout LEFT this subgroup on 2026-10-31 (operator request): it is a
+   top-level entry right above Wiki (partials/nav_advisor.html). FortiGate,
+   FortiAnalyzer and FortiAuthenticator keep the entries they are drawn above.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% set _ts_dev = product.key != 'global' and not product.placeholder %}
 {% set _ts_two = product.key == 'global' or _ts_dev %}
 {% set _ts_lb = product.key not in ('fortigate', 'fortianalyzer', 'fortiauthenticator') %}
-<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare','scout','advisor','logs','txn_trace','observatory'] }}" data-nav-subgroup="Troubleshooting">
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare','scout','logs','txn_trace','observatory'] }}" data-nav-subgroup="Troubleshooting">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-life-preserver fw-nav-icon"></i><span>{{ _('Troubleshooting') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
     {% if _ts_lb %}
@@ -88,7 +92,6 @@
       <i class="bi bi-arrow-left-right fw-nav-icon"></i><span>{{ _('Transaction Tracer') }}</span></a>
     {% else %}{{ nav_off('bi-arrow-left-right', _('Transaction Tracer'), _m.reason, ep='txn_trace.index') }}{% endif %}
     {% endif %}
-    {% include 'partials/nav_advisor.html' %}
     {% if _ts_dev and current_user.can('config_write') and may_open('logs.index') %}
     {% set _m = adom_menu('logs', product) %}
     {% if _m.on %}

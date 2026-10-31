@@ -327,11 +327,16 @@ ADOM ends up empty.
 in the same order around the device menu: **Operations** first, the device
 menu, **Administrator**, Plugins. Operations opens with the
 fleet pages (Dashboard where the ADOM has one, Calendar, Architecture, Service
-Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, Fleet Objects and WAF
+Diagram, Monitoring, Search, DNS Lookup, Fleet Objects and WAF
 in FortiWeb and FortiADC, Jobs), then holds Device Backups and Import Backup,
 the **Automation** sub-menu right above **Plugins**, and Jobs last. The
-entries of Automation are alphabetical in the console's language;
-**Diagnose Log Collection** is in Operations › Troubleshooting (§27). There is
+entries of Automation are alphabetical in the console's language. **Scout**
+is a top-level entry of its own, right above Operations (whose first entry is
+Wiki); in Global it is the first entry of the Global block, above Wiki. The
+six troubleshooting tools — Backend Reachability, Config Compare, HTTP
+Observatory, Path Diagnostics, Transaction Tracer and **Diagnose Log
+Collection** — are Plugin Studio apps under **Plugins › Troubleshooting**
+(§23.7, *Plugins: Troubleshooting*); their pages keep answering by URL. There is
 no separate **Fleet** group, and no separate Automation group in a device ADOM
 (the Global ADOM draws Automation as a sub-menu of its Global block, with
 **Plugins** right below it and Jobs after them). The **API** sub-menu of Automation holds the console (Registry &
@@ -2138,7 +2143,7 @@ A clone copies a deploy's whole configuration; copying only some of it (by categ
 appliance) into a deploy that keeps its own data is not available yet.
 
 
-Diagnose Log Collection (under Operations › Troubleshooting) and Import Backup
+Diagnose Log Collection (the app under Plugins › Troubleshooting) and Import Backup
 (next to Device Backups under **Operations**) are covered in §27. Neither is a backup: one collects read-only diagnostics over SSH, the
 other parses a config file entirely offline.
 
@@ -2335,16 +2340,13 @@ against what the devices say.
   lookup, DNS Records and the decommission, with the same permissions and the
   same ADOM scoping. The page stays; use whichever you prefer, or copy the
   apps and change them.
-- **Where these live:** Backend Reachability, Config Compare, Path Diagnostics,
-  the **Transaction Tracer** (§37.3) and Scout sit together under
-  **Operations › Troubleshooting** in every ADOM (since 2026-10-14; the tracer
-  since 2026-10-16 — before that it was a window in the header Tools menu).
-  The FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs list only the
-  Transaction Tracer and Scout from this set, because the other three work on
-  FortiWeb and FortiADC objects. **Diagnose Log Collection** is also in
-  Troubleshooting, in all five device ADOMs (§27.1). Scout is drawn only
-  while it is configured (§33.1); Path Diagnostics does not depend on that,
-  and switched off for the site it is drawn disabled with the reason.
+- **Where these live:** since 2026-10-31 Backend Reachability, Config Compare,
+  Path Diagnostics, the **Transaction Tracer** (§37.3), the HTTP Observatory
+  and **Diagnose Log Collection** (§27.1) are Plugin Studio apps under
+  **Plugins › Troubleshooting** (§23.7, *Plugins: Troubleshooting*), placed
+  in the ADOMs their administrator ticks; the pages keep answering by URL.
+  **Scout** is a top-level entry right above Wiki, drawn only while it is
+  configured (§33.1).
 - **Path Diagnostics** — pick an appliance and name one published object (a
   FortiWeb server policy or a FortiADC virtual server); it walks a ten-rung
   ladder in dependency order — appliance, object, name, front door,
@@ -3680,7 +3682,7 @@ the whole menu as a grid.
 
 **What does *not* apply to FortiAuthenticator.** In the FAC ADOM's Operations
 group Device Backups and Import Backup are greyed out (the reason is on hover),
-and that is not an oversight. (Diagnose Log Collection, under Operations ›
+and that is not an oversight. (Diagnose Log Collection, under Plugins ›
 Troubleshooting, does apply: it runs the FortiAuthenticator battery, §27.1.)
 
 | Feature | In the FAC ADOM? |
@@ -5694,6 +5696,54 @@ stays.
   blocker refuses *Decommission*. The apply step
   plans again and refuses a plan that changed since it was shown.
 
+**Plugins: Troubleshooting** (packages `backend-reachability`,
+`config-compare`, `http-observatory`, `path-diagnostics`, `transaction-tracer`
+and `diagnose-log-collection`, operator request 2026-10-31: "every element in
+Troubleshooting as plugins, loaded, and also in the Builder ... they go in the
+Plugins menu"). Six signed plugins of the internal generator, on the staging
+hub `/downloads/plugins/`, each filed under the menu group **Troubleshooting**:
+installed and published they are the **Plugins › Troubleshooting** submenu,
+which replaced the old Troubleshooting entries of the sidebar. Each is built
+from ONE SATOM step that runs the code its page runs — `reach_check`,
+`config_compare`, `observatory_scan`, `path_walk`, `txn_trace`,
+`log_collect` — so the verdicts, the saved reports, the audit line (with
+`via: plugin studio`) and the limits are the page's. Each step asks the
+person who runs the app for the page's permission (*view*; *config_write* for
+the log collection; the tracer's free-target, reveal and writing-method
+gates; Path Diagnostics' site switch) and runs in the run's ADOM, so an app
+never widens who can probe, compare or collect, and an appliance of another
+ADOM is "not here". Nothing to configure; they import in any order (Plugin
+Studio › Apps › *Import app package*), then **Publish**, tick the ADOMs and
+give them to users in each app's *Settings*. Needs a SATOM newer than 4.7.0.
+
+- **Backend Reachability** (`backend-reachability`): the page's lines
+  (`source;policy;destination`), *Ping from the appliance (SSH)*, the TCP
+  timeout and the time budget. Output: a verdict per line with its findings,
+  and a note when the budget ran out. Actions: **Copy (TSV)**, **Download
+  (CSV)**.
+- **Config Compare** (`config-compare`): the same lines (destination
+  required) and the budget. Outputs: one row per service (same, changed,
+  renamed, only on one side) and **What differs**, object by object with the
+  fields that differ; lines the budget did not reach are listed. Actions:
+  **Copy (TSV)**, **Download differences (CSV)**.
+- **HTTP Observatory** (`http-observatory`): an appliance, a server policy
+  or virtual server and an optional site name. With a policy: the grade and
+  the findings (who produces each, and the fixes the page offers), stored
+  like a page scan. Without one: the appliance's published sites with their
+  last grade and a **Grade** button on each. Fixing stays on the page.
+- **Path Diagnostics** (`path-diagnostics`): the page's walk form, the
+  FortiAnalyzer from a list. Outputs: the verdict, the rungs, and the saved
+  report with **Open the report**. Needs Path Diagnostics switched on.
+- **Transaction Tracer** (`transaction-tracer`): VIP, backend, their target
+  modes, method, path, headers, body, *Reveal credential values* and *Send a
+  writing method for real*. Outputs: the legs, the comparison and the curl
+  commands; action **Copy curl**. A rehearsal (the Builder's test run) never
+  sends POST, PUT, PATCH or DELETE.
+- **Diagnose Log Collection** (`diagnose-log-collection`): a device or
+  *Every device of this ADOM*, a label and optional commands (empty = the
+  ADOM's battery). The run waits for the collection — one at a time on the
+  node, as on the page — and shows each device's file, the errors and the log.
+
 **Actions and devices.** *Raise a change request* never changes a device: it
 creates a **draft** change request (title, reason, change type, device ids,
 risk, with the app and run named in it) that goes through the normal approval
@@ -7641,7 +7691,7 @@ addresses attacked which customer.
 ## 27. Operations: log collection and importing a backup
 
 Two entries under **Operations** look alike but do different things. **Diagnose
-Log Collection** (Operations › Troubleshooting, in every device ADOM) runs a
+Log Collection** (Plugins › Troubleshooting, in every device ADOM) runs a
 read-only diagnostic battery on live devices over SSH. **Import Backup**
 (Operations, FortiWeb ADOM) parses a configuration file offline. An
 administrator chooses each ADOM's battery under Administrator → **Diagnostic
@@ -7649,10 +7699,12 @@ Battery** (27.2). §11 covers Device Backups.
 
 ### 27.1 Diagnose Log Collection — a read-only diagnostic battery over SSH
 
-Any device ADOM → Operations › Troubleshooting → **Diagnose Log Collection**
-(`config_write`). It is in the FortiWeb, FortiADC, FortiGate, FortiAnalyzer and
-FortiAuthenticator ADOMs. The Global ADOM does not show it. Before 2026-10-14
-it was a FortiWeb-only entry directly under Operations.
+Any device ADOM → Plugins › Troubleshooting → **Diagnose Log Collection**
+(`config_write`; the Plugin Studio app `diagnose-log-collection`, §23.7, runs
+this same collection), or `/logs/` by URL. It works in the FortiWeb, FortiADC,
+FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs, not in Global. Before
+2026-10-14 it was a FortiWeb-only entry directly under Operations, until
+2026-10-31 an entry of Operations › Troubleshooting.
 
 **What it is not:** it is *not* a viewer of the appliance's on-box log database.
 It does not page attack or event logs.
@@ -9268,7 +9320,7 @@ Where to read it:
 ## 33. Scout — the operations assistant
 
 **Scout** is SATOM's AI assistant for operations (`/advisor`, permission
-`advisor.use`, Operations › Troubleshooting). Its job is to help you find and
+`advisor.use`, a top-level sidebar entry right above Wiki). Its job is to help you find and
 resolve problems: which layer of a service is failing and why, from evidence
 SATOM already holds, and what to check or change next. It also interprets WAF
 blocks and drafts the exception for a false positive, drafts Lua scripts, and
@@ -9307,7 +9359,7 @@ Turn on **Allow read-only tool calls** for troubleshooting: without it Scout
 only sees what you paste or attach, and cannot read a Path Diagnostics report,
 the metrics or the device health by itself (33.3).
 
-The **Scout** entry in the sidebar (Operations › Troubleshooting) is drawn
+The **Scout** entry in the sidebar (top level, right above Wiki) is drawn
 only once Scout is configured: **Enable Scout** on and at least one provider
 that can take a message (not disabled, and inside the LAN unless **Allow
 external providers** is on). Until then it is not drawn at all, whatever
@@ -10027,7 +10079,8 @@ calculators (regex tester, regex cheat sheet, pattern library, network
 calculator). The three below do more than arithmetic, and two of them make
 **this server** open a connection on your behalf — so each one states what it
 measured and what it only derived. The transaction tracer (§37.3) left the
-Tools menu on 2026-10-16: it is a page under **Operations › Troubleshooting**.
+Tools menu on 2026-10-16: it is a page, opened from the **Transaction Tracer**
+app under **Plugins › Troubleshooting** (§23.7) or by URL.
 
 ### 37.1 Certificate inspector
 
@@ -10109,8 +10162,8 @@ its own** peels the encoding layers off a value you paste without a log entry.
 
 ### 37.3 Transaction tracer
 
-**Operations › Troubleshooting › Transaction Tracer** (`/txn-trace/`), in every
-ADOM. It is a page, not a window: the trace, its cookies and its HAR stay on
+`/txn-trace/`, in every ADOM; in the menu it is the **Transaction Tracer** app
+under **Plugins › Troubleshooting** (§23.7), which runs this same trace. It is a page, not a window: the trace, its cookies and its HAR stay on
 screen, and `?vip=`, `?backend=` and `?path=` in the address prefill the form.
 
 Three legs, answering *is it the WAF or is it the app?*
@@ -10214,8 +10267,9 @@ Integrity, CORS and certificate trust are graded by the Observatory, not here.
 
 ### 37.4 HTTP Observatory
 
-**Troubleshooting › HTTP Observatory** (`/observatory/`), in the Global,
-FortiWeb and FortiADC ADOMs. It grades every site an appliance publishes with
+`/observatory/`, in the Global, FortiWeb and FortiADC ADOMs; in the menu it is
+the **HTTP Observatory** app under **Plugins › Troubleshooting** (§23.7),
+which grades a site the same way. It grades every site an appliance publishes with
 the tests and the scoring of the MDN HTTP Observatory
 (developer.mozilla.org/observatory, algorithm version 6), then says **who**
 produced each result and, on a FortiWeb, applies the fix.

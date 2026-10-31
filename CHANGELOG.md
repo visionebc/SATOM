@@ -6,6 +6,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+- **Troubleshooting is a Plugins submenu: its six pages are Plugin Studio
+  apps** (request: "every element in Troubleshooting as plugins, loaded, and
+  also in the Builder ... they go in the Plugins menu"). Backend
+  Reachability, Config Compare, HTTP Observatory, Path Diagnostics,
+  Transaction Tracer and Diagnose Log Collection are six signed plugins
+  (`backend-reachability`, `config-compare`, `http-observatory`,
+  `path-diagnostics`, `transaction-tracer`, `diagnose-log-collection`, menu
+  group *Troubleshooting*); imported and published they are **Plugins ›
+  Troubleshooting**, and the sidebar no longer draws the old Troubleshooting
+  entries (`partials/nav_troubleshooting.html` removed). The pages keep
+  answering by URL. Each app is ONE new SATOM step over the code its page
+  runs (`services/studio_troubleshoot.py`: `reach_check`, `config_compare`,
+  `observatory_scan`, `path_walk`, `txn_trace`, `log_collect`), so the
+  verdicts, saved reports, audit line (`via: plugin studio`) and limits are
+  the page's; each step asks the person who runs it for the page's
+  permission and runs in the run's ADOM, and none is a write kind (the
+  tracer never sends POST/PUT/PATCH/DELETE in a rehearsal). The tracer's
+  `/run` and the log collection's `/collect` now call one function each
+  (`views.txn_trace.trace`, `views.logs.start_collection`) shared with the
+  steps. New form-list source `fortianalyzer` (Path Diagnostics' analyzer).
+  Tests: `tests/test_studio_troubleshoot.py`, `tests/test_nav_troubleshooting.py`.
+- **Scout is a top-level sidebar entry, right above Wiki** (request: "put
+  the Scout section at the top level, above Wiki"). It left Troubleshooting:
+  in Global it is the first entry of the Global block, in a device ADOM its
+  own entry right above Operations. Same gates; a hidden Scout stays hidden.
+
 ## [4.7.0] - 2026-10-30
 
 **Apps for people outside the console, and the Builder opens what SATOM

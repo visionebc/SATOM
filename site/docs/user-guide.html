@@ -440,11 +440,16 @@ ADOM ends up empty.</p>
 in the same order around the device menu: <strong>Operations</strong> first, the device
 menu, <strong>Administrator</strong>, Plugins. Operations opens with the
 fleet pages (Dashboard where the ADOM has one, Calendar, Architecture, Service
-Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, Fleet Objects and WAF
+Diagram, Monitoring, Search, DNS Lookup, Fleet Objects and WAF
 in FortiWeb and FortiADC, Jobs), then holds Device Backups and Import Backup,
 the <strong>Automation</strong> sub-menu right above <strong>Plugins</strong>, and Jobs last. The
-entries of Automation are alphabetical in the console's language;
-<strong>Diagnose Log Collection</strong> is in Operations › Troubleshooting (§27). There is
+entries of Automation are alphabetical in the console's language. <strong>Scout</strong>
+is a top-level entry of its own, right above Operations (whose first entry is
+Wiki); in Global it is the first entry of the Global block, above Wiki. The
+six troubleshooting tools — Backend Reachability, Config Compare, HTTP
+Observatory, Path Diagnostics, Transaction Tracer and <strong>Diagnose Log
+Collection</strong> — are Plugin Studio apps under <strong>Plugins › Troubleshooting</strong>
+(§23.7, <em>Plugins: Troubleshooting</em>); their pages keep answering by URL. There is
 no separate <strong>Fleet</strong> group, and no separate Automation group in a device ADOM
 (the Global ADOM draws Automation as a sub-menu of its Global block, with
 <strong>Plugins</strong> right below it and Jobs after them). The <strong>API</strong> sub-menu of Automation holds the console (Registry &amp;
@@ -771,8 +776,15 @@ character the devices refuse (anything but letters, digits, <code>_</code> and <
 from <code>{host}</code> is the usual one) blocks the plan as <code>naming_unsafe</code>. Rewrite it
 with a variable.</p>
 <p><strong>A segment can hold several networks.</strong> On <strong>Network Segments</strong> each segment
-lists one or more networks (CIDR + gateway, optionally an interface of its
-own; blank uses the segment's interface). With <strong>Reserve the VIP from IPAM</strong>,
+lists one or more networks, and <strong>each network carries its own CIDR, gateway
+and interface</strong> (the port the VIP goes on; a new network starts on the
+interface of the network above it, else <code>port1</code>). There is no segment-level
+<em>Interface</em> column any more: a network saved before that change with no
+interface of its own shows, and keeps, the interface the segment column gave
+it, so where a VIP goes does not change. <strong>Clone</strong> (the copy icon) duplicates
+a whole segment row right below it (its name gets <code>-copy</code>, since two segments
+may not share a name) or one network line (type the new range over the
+selected CIDR; the same CIDR twice in one segment is refused on save). With <strong>Reserve the VIP from IPAM</strong>,
 the VIP is taken from the <strong>first network with a free address</strong>: if IPAM
 refuses one (full, or any other error) the next is tried, and the address step
 says which networks refused and why. The preview lists the order. A network no
@@ -2310,7 +2322,7 @@ runner cannot finish within 25 minutes is stopped, and the web, scheduler and
 reconciler are started again; run imports that big from a shell.</p>
 <p>A clone copies a deploy's whole configuration; copying only some of it (by category or by
 appliance) into a deploy that keeps its own data is not available yet.</p>
-<p>Diagnose Log Collection (under Operations › Troubleshooting) and Import Backup
+<p>Diagnose Log Collection (the app under Plugins › Troubleshooting) and Import Backup
 (next to Device Backups under <strong>Operations</strong>) are covered in §27. Neither is a backup: one collects read-only diagnostics over SSH, the
 other parses a config file entirely offline.</p>
 <h2 id="12-firmware-upgrades">12. Firmware upgrades</h2>
@@ -2522,16 +2534,13 @@ against what the devices say.</p>
   lookup, DNS Records and the decommission, with the same permissions and the
   same ADOM scoping. The page stays; use whichever you prefer, or copy the
   apps and change them.
-- <strong>Where these live:</strong> Backend Reachability, Config Compare, Path Diagnostics,
-  the <strong>Transaction Tracer</strong> (§37.3) and Scout sit together under
-  <strong>Operations › Troubleshooting</strong> in every ADOM (since 2026-10-14; the tracer
-  since 2026-10-16 — before that it was a window in the header Tools menu).
-  The FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs list only the
-  Transaction Tracer and Scout from this set, because the other three work on
-  FortiWeb and FortiADC objects. <strong>Diagnose Log Collection</strong> is also in
-  Troubleshooting, in all five device ADOMs (§27.1). Scout is drawn only
-  while it is configured (§33.1); Path Diagnostics does not depend on that,
-  and switched off for the site it is drawn disabled with the reason.
+- <strong>Where these live:</strong> since 2026-10-31 Backend Reachability, Config Compare,
+  Path Diagnostics, the <strong>Transaction Tracer</strong> (§37.3), the HTTP Observatory
+  and <strong>Diagnose Log Collection</strong> (§27.1) are Plugin Studio apps under
+  <strong>Plugins › Troubleshooting</strong> (§23.7, <em>Plugins: Troubleshooting</em>), placed
+  in the ADOMs their administrator ticks; the pages keep answering by URL.
+  <strong>Scout</strong> is a top-level entry right above Wiki, drawn only while it is
+  configured (§33.1).
 - <strong>Path Diagnostics</strong> — pick an appliance and name one published object (a
   FortiWeb server policy or a FortiADC virtual server); it walks a ten-rung
   ladder in dependency order — appliance, object, name, front door,
@@ -2811,6 +2820,10 @@ Discovery token.</p>
 <td><code>{port}</code></td>
 <td>the port the creating flow gives (the wizard's <strong>Port</strong>), else <code>8443</code> from the address</td>
 </tr>
+<tr>
+<td><code>{scope}</code></td>
+<td>where the site is published: the value <strong>Administrator › Classification › Name scope</strong> gives the zone the flow publishes in (one value per zone, one for more than one zone); empty when the Name scope is off, the zone has no value or the flow names no zone; the native New Server Policy wizard names the zone of the appliance it builds on (the plugins name the zone of the FortiWeb they pick), and then it takes ONE adjoining dash with it: <code>pol-{scope}-{name}</code> gives <code>pol-blabla-example-com</code></td>
+</tr>
 </tbody>
 </table>
 <p><strong>Variables</strong> (the table above the patterns, one list <strong>per product</strong>) rewrite
@@ -2833,6 +2846,38 @@ variable read as free text. Next to each input: what Discovery found on the devi
 (<strong>all devices agree</strong> / <strong>devices differ</strong>), <strong>use it</strong> to copy it in, and a
 live count of the existing names that follow the pattern you type. Use the
 filter box or <strong>Only types with objects on a device</strong> to narrow the list.</p>
+<p><strong>Server Policy (plugins)</strong> (FortiWeb) holds the names a Plugin Studio app
+builds when its <em>Render names</em> step is set to <strong>Name patterns from: naming</strong>
+— today <code>spo-fortiweb</code>: server policy, virtual server, VIP and server pool.
+One place for the convention; the app passes the values. Besides the site
+tokens and the variables these patterns take <code>{extra}</code> (the form's extra
+text), <code>{service}</code> (the DNS name with <code>.</code> as <code>_</code>), <code>{dns}</code> and, below the
+policy, <code>{spo}</code> (the server policy's own name). As in the app, an empty value
+takes its dash with it. Defaults: <code>spo-{scope}-{extra}-{service}-{port}</code>,
+<code>vs-{spo}</code>, <code>vip-{spo}</code>, <code>pool-{spo}</code> — the names spo-fortiweb gave before
+this section existed. Example (FA-0011): variable <code>host_u</code> (reads <code>host</code>,
+<code>\.</code> → <code>_</code>) and <code>spo-{scope}-{host_u}-{port}</code> give <code>spo-bv-app1_example_com-443</code>,
+<code>spo-ext-…</code> or <code>spo-all-…</code> by the zone(s) of the app's FortiWeb rules and the
+values in <strong>Classification › Name scope</strong> (below). The <strong>Scope</strong> picker next
+to the sample address offers the values saved there (with their zone), and
+every pattern that uses <code>{scope}</code> lists what it gives for each of them and
+for none. With the Name scope off the picker offers none and the page says
+so.</p>
+<p><strong>Where the scope is written — Administrator › Classification › Name
+scope.</strong> One place only, no built-in value: a switch <strong>Add the scope to
+names</strong>, one value per zone of the zones catalog (e.g. Internal <code>bv</code>,
+External <code>ext</code>) and one for <strong>More than one zone</strong> (<code>all</code>). A site published
+in one zone takes that zone's value, one published on devices of more than
+one zone the "More than one zone" value; an empty value, or the switch off,
+gives names without a scope. Next to each value: the Server Policy (plugins)
+name it gives for <code>app1.example.com</code>, port 443, rebuilt while you type by the
+same code the <em>Render names</em> step runs. A value may only contain letters,
+digits, <code>_</code> and <code>-</code>; a refused save writes nothing. Renaming a zone in the
+catalog keeps its value, deleting it drops it. An install that already ran
+spo-fortiweb got its values once at upgrade (migration <code>nscope01</code>): the
+zone of the plugin's <code>split</code> rule <code>ext</code>, more than one zone <code>all</code>, the
+<code>internal</code> zone none — the names the plugin gave before; nothing changes
+until you edit them.</p>
 <p><strong>Discovery</strong> reads the names already on a device — from the configuration
 tree SATOM keeps for it, no device call — and shows, per object type:</p>
 <ul>
@@ -4069,7 +4114,7 @@ the whole menu as a grid.</p>
 </ul>
 <p><strong>What does <em>not</em> apply to FortiAuthenticator.</strong> In the FAC ADOM's Operations
 group Device Backups and Import Backup are greyed out (the reason is on hover),
-and that is not an oversight. (Diagnose Log Collection, under Operations ›
+and that is not an oversight. (Diagnose Log Collection, under Plugins ›
 Troubleshooting, does apply: it runs the FortiAuthenticator battery, §27.1.)</p>
 <table>
 <thead>
@@ -6318,8 +6363,14 @@ Certificate Manager). The diagram reads its variables from four data stores — 
 (per type: units in order, record name pattern, subnets, <code>ip_from</code>; e.g. split
 = <code>use-{dns}.used</code> in bn, <code>{dns}</code> in inet, ktv with inet's address),
 <strong>spo-fortiweb-rules</strong> (zone, line, VIP interface, which unit's address is the
-VIP; internal-external has two rows = two FortiWebs), <strong>spo-naming</strong> (the
-name of every object of the tree) — names the tree, picks the FortiWeb(s) by
+VIP, and <strong>scope</strong> — the publication scope the names carry: empty = the entry
+type's own, none / <code>ext</code> / <code>all</code>; set <code>bv</code> on the internal row for
+<code>spo-bv-…</code>; internal-external has two rows = two FortiWebs), <strong>spo-naming</strong>
+(the custom service's name; on a SATOM without <em>Server Policy (plugins)</em> the
+whole tree) — names the tree from <strong>Administrator › Naming › Server Policy
+(plugins)</strong> (since 1.3.0; a spo-naming row you changed for one of those four
+objects that gives another name stops the run before anything is written:
+move the pattern to Naming and delete the row), picks the FortiWeb(s) by
 capacity, reserves in the DDI, issues or deploys the certificate, creates the
 policy, and records the request in <strong>spo-requests</strong>. Any failure removes what
 the run created on the FortiWeb, releases its DDI records, records why, and
@@ -6356,6 +6407,54 @@ stays.</p>
   tick box per warning and the policy name to type back, as on the page; a
   blocker refuses <em>Decommission</em>. The apply step
   plans again and refuses a plan that changed since it was shown.</li>
+</ul>
+<p><strong>Plugins: Troubleshooting</strong> (packages <code>backend-reachability</code>,
+<code>config-compare</code>, <code>http-observatory</code>, <code>path-diagnostics</code>, <code>transaction-tracer</code>
+and <code>diagnose-log-collection</code>, operator request 2026-10-31: "every element in
+Troubleshooting as plugins, loaded, and also in the Builder ... they go in the
+Plugins menu"). Six signed plugins of the internal generator, on the staging
+hub <code>/downloads/plugins/</code>, each filed under the menu group <strong>Troubleshooting</strong>:
+installed and published they are the <strong>Plugins › Troubleshooting</strong> submenu,
+which replaced the old Troubleshooting entries of the sidebar. Each is built
+from ONE SATOM step that runs the code its page runs — <code>reach_check</code>,
+<code>config_compare</code>, <code>observatory_scan</code>, <code>path_walk</code>, <code>txn_trace</code>,
+<code>log_collect</code> — so the verdicts, the saved reports, the audit line (with
+<code>via: plugin studio</code>) and the limits are the page's. Each step asks the
+person who runs the app for the page's permission (<em>view</em>; <em>config_write</em> for
+the log collection; the tracer's free-target, reveal and writing-method
+gates; Path Diagnostics' site switch) and runs in the run's ADOM, so an app
+never widens who can probe, compare or collect, and an appliance of another
+ADOM is "not here". Nothing to configure; they import in any order (Plugin
+Studio › Apps › <em>Import app package</em>), then <strong>Publish</strong>, tick the ADOMs and
+give them to users in each app's <em>Settings</em>. Needs a SATOM newer than 4.7.0.</p>
+<ul>
+<li><strong>Backend Reachability</strong> (<code>backend-reachability</code>): the page's lines
+  (<code>source;policy;destination</code>), <em>Ping from the appliance (SSH)</em>, the TCP
+  timeout and the time budget. Output: a verdict per line with its findings,
+  and a note when the budget ran out. Actions: <strong>Copy (TSV)</strong>, <strong>Download
+  (CSV)</strong>.</li>
+<li><strong>Config Compare</strong> (<code>config-compare</code>): the same lines (destination
+  required) and the budget. Outputs: one row per service (same, changed,
+  renamed, only on one side) and <strong>What differs</strong>, object by object with the
+  fields that differ; lines the budget did not reach are listed. Actions:
+  <strong>Copy (TSV)</strong>, <strong>Download differences (CSV)</strong>.</li>
+<li><strong>HTTP Observatory</strong> (<code>http-observatory</code>): an appliance, a server policy
+  or virtual server and an optional site name. With a policy: the grade and
+  the findings (who produces each, and the fixes the page offers), stored
+  like a page scan. Without one: the appliance's published sites with their
+  last grade and a <strong>Grade</strong> button on each. Fixing stays on the page.</li>
+<li><strong>Path Diagnostics</strong> (<code>path-diagnostics</code>): the page's walk form, the
+  FortiAnalyzer from a list. Outputs: the verdict, the rungs, and the saved
+  report with <strong>Open the report</strong>. Needs Path Diagnostics switched on.</li>
+<li><strong>Transaction Tracer</strong> (<code>transaction-tracer</code>): VIP, backend, their target
+  modes, method, path, headers, body, <em>Reveal credential values</em> and <em>Send a
+  writing method for real</em>. Outputs: the legs, the comparison and the curl
+  commands; action <strong>Copy curl</strong>. A rehearsal (the Builder's test run) never
+  sends POST, PUT, PATCH or DELETE.</li>
+<li><strong>Diagnose Log Collection</strong> (<code>diagnose-log-collection</code>): a device or
+  <em>Every device of this ADOM</em>, a label and optional commands (empty = the
+  ADOM's battery). The run waits for the collection — one at a time on the
+  node, as on the page — and shows each device's file, the errors and the log.</li>
 </ul>
 <p><strong>Actions and devices.</strong> <em>Raise a change request</em> never changes a device: it
 creates a <strong>draft</strong> change request (title, reason, change type, device ids,
@@ -6938,7 +7037,8 @@ preset it — <em>Alert only</em>, <em>Alert and block</em>, <em>High</em>, <em>
 edited by hand. A mode is a named set of values for knobs that already
 existed and nothing in the engine ever asks which one is active, so the name
 cannot describe behaviour the table below it does not have. <strong>Architecture</strong> renders the same document served at
-<code>/sentinel/docs</code>, and <strong>Incidents console</strong> the same live console served at
+<code>/sentinel/docs</code> — including its cards 13–15 on Scout and Path Diagnostics
+(§33.10) — and <strong>Incidents console</strong> the same live console served at
 <code>/sentinel/</code> — health tiles, the seven-day figures and the incident table
 included.</p>
 <p>Nothing in the group leaves the Admin Console, so none of the five is marked as
@@ -8374,7 +8474,8 @@ for them among the tabs is a dead end:</p>
 <ul>
 <li><strong>Naming</strong> — the object-naming patterns; edited on the Naming page.</li>
 <li><strong>Classification</strong> — the zone / line / department vocabulary that scopes
-  baselines (§28); edited on the Classification page.</li>
+  baselines (§28), and the <strong>Name scope</strong> (the <code>{scope}</code> value per zone,
+  §13.3); edited on the Classification page.</li>
 <li><strong>Segments</strong> — the network-segment registry; edited on the Network Segment
   page.</li>
 <li><strong>PostgreSQL SSL policy</strong> — saved from the Node TLS tab (§26.8).</li>
@@ -8443,16 +8544,18 @@ the release tooling; a blocklist committed there would disclose which
 addresses attacked which customer.</p>
 <h2 id="27-operations-log-collection-and-importing-a-backup">27. Operations: log collection and importing a backup</h2>
 <p>Two entries under <strong>Operations</strong> look alike but do different things. <strong>Diagnose
-Log Collection</strong> (Operations › Troubleshooting, in every device ADOM) runs a
+Log Collection</strong> (Plugins › Troubleshooting, in every device ADOM) runs a
 read-only diagnostic battery on live devices over SSH. <strong>Import Backup</strong>
 (Operations, FortiWeb ADOM) parses a configuration file offline. An
 administrator chooses each ADOM's battery under Administrator → <strong>Diagnostic
 Battery</strong> (27.2). §11 covers Device Backups.</p>
 <h3 id="271-diagnose-log-collection--a-read-only-diagnostic-battery-over-ssh">27.1 Diagnose Log Collection — a read-only diagnostic battery over SSH</h3>
-<p>Any device ADOM → Operations › Troubleshooting → <strong>Diagnose Log Collection</strong>
-(<code>config_write</code>). It is in the FortiWeb, FortiADC, FortiGate, FortiAnalyzer and
-FortiAuthenticator ADOMs. The Global ADOM does not show it. Before 2026-10-14
-it was a FortiWeb-only entry directly under Operations.</p>
+<p>Any device ADOM → Plugins › Troubleshooting → <strong>Diagnose Log Collection</strong>
+(<code>config_write</code>; the Plugin Studio app <code>diagnose-log-collection</code>, §23.7, runs
+this same collection), or <code>/logs/</code> by URL. It works in the FortiWeb, FortiADC,
+FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs, not in Global. Before
+2026-10-14 it was a FortiWeb-only entry directly under Operations, until
+2026-10-31 an entry of Operations › Troubleshooting.</p>
 <p><strong>What it is not:</strong> it is <em>not</em> a viewer of the appliance's on-box log database.
 It does not page attack or event logs.</p>
 <p><strong>What it is:</strong> tick one or more devices of the active ADOM and give the run a
@@ -10285,7 +10388,7 @@ the authoritative answer to "what is new since we last updated".</p>
 </table>
 <h2 id="33-scout--the-operations-assistant">33. Scout — the operations assistant</h2>
 <p><strong>Scout</strong> is SATOM's AI assistant for operations (<code>/advisor</code>, permission
-<code>advisor.use</code>, Operations › Troubleshooting). Its job is to help you find and
+<code>advisor.use</code>, a top-level sidebar entry right above Wiki). Its job is to help you find and
 resolve problems: which layer of a service is failing and why, from evidence
 SATOM already holds, and what to check or change next. It also interprets WAF
 blocks and drafts the exception for a false positive, drafts Lua scripts, and
@@ -10319,7 +10422,7 @@ other two switches off, chat stays entirely within the LAN.</p>
 <p>Turn on <strong>Allow read-only tool calls</strong> for troubleshooting: without it Scout
 only sees what you paste or attach, and cannot read a Path Diagnostics report,
 the metrics or the device health by itself (33.3).</p>
-<p>The <strong>Scout</strong> entry in the sidebar (Operations › Troubleshooting) is drawn
+<p>The <strong>Scout</strong> entry in the sidebar (top level, right above Wiki) is drawn
 only once Scout is configured: <strong>Enable Scout</strong> on and at least one provider
 that can take a message (not disabled, and inside the LAN unless <strong>Allow
 external providers</strong> is on). Until then it is not drawn at all, whatever
@@ -10724,6 +10827,44 @@ only one: even a fooled model has no write path (33.6).</p>
 </tbody>
 </table>
 <hr>
+<h3 id="3310-how-scout-and-path-diagnostics-work--in-sentinels-architecture">33.10 How Scout and Path Diagnostics work — in Sentinel's architecture</h3>
+<p>Sentinel's architecture document (<strong>Sentinel › Architecture</strong>, <code>/sentinel/docs</code>,
+and the same pane under Settings › Sentinel) ends with three cards on the two
+operations tools. A link under the page title jumps to them.</p>
+<ul>
+<li><strong>13 · Scout and Path Diagnostics — operations beside Sentinel.</strong> Sentinel,
+  Path Diagnostics and Scout side by side: who starts each one, what object it
+  works on, what it produces, whether it writes to a device and whether it uses
+  a model. Below that, a diagram of the flow: Path Diagnostics is a job that reads
+  the device and saves a report. Scout reads what SATOM already holds, calls
+  read-only tools in your session, and turns a proposal into a draft only when
+  you approve it. Each part is placed in its NAF block. Neither tool opens,
+  scores or closes a Sentinel incident. The incident page does not yet link
+  into Path Diagnostics, and the card says so.</li>
+<li><strong>14 · Path Diagnostics — the ladder, and how it decides.</strong> The rules: the
+  first FAIL stops the walk, "could not look" is <em>unknown</em> and never counts as
+  health, a crash inside the tool is <em>unknown</em>, the tool only reads, and every
+  rung records where it was observed from. Then it shows the rungs with their
+  questions, how the walk's verdict is chosen, how the border rung reads the
+  FortiAnalyzer, the decision criteria and the metrics context. The metrics
+  give context and never change the verdict.</li>
+<li><strong>15 · Scout — the operations assistant, and where its decisions stop.</strong>
+  This node's live settings: tools on or off, the default provider (label,
+  kind, model, local or leaving the LAN; never its address), whether external
+  providers are allowed, and the tool-round budget. Then it lists what Scout
+  decides, what it may only propose (each proposal kind with what approving
+  it does and the permission it needs), and what it never does. It shows the
+  audit trail, the read-only tool catalog, the log sources of one window and
+  what each source status means.</li>
+</ul>
+<p>Every row comes from the code that enforces it: the ladder, the criteria, the
+tool catalog, the log sources and their statuses, the round budget, and the
+approval gates. The approval gates are the table the approve route itself
+checks. Change one of those in the code and the page changes with it. A
+log-source status the page does not explain cannot be emitted. The <strong>Open
+Scout</strong> button appears only for users who hold <em>Scout</em> (<code>advisor.use</code>) and
+only while Scout is configured. <strong>Open Path Diagnostics</strong> appears only while
+Path Diagnostics is switched on.</p>
 <h2 id="34-the-audit-log">34. The Audit Log</h2>
 <p>Every write SATOM makes is recorded here: who, when, from which address, against
 which target, with the payload. It is the page a compliance question ends on, so
@@ -11197,7 +11338,8 @@ calculators (regex tester, regex cheat sheet, pattern library, network
 calculator). The three below do more than arithmetic, and two of them make
 <strong>this server</strong> open a connection on your behalf — so each one states what it
 measured and what it only derived. The transaction tracer (§37.3) left the
-Tools menu on 2026-10-16: it is a page under <strong>Operations › Troubleshooting</strong>.</p>
+Tools menu on 2026-10-16: it is a page, opened from the <strong>Transaction Tracer</strong>
+app under <strong>Plugins › Troubleshooting</strong> (§23.7) or by URL.</p>
 <h3 id="371-certificate-inspector">37.1 Certificate inspector</h3>
 <p>Two ways in:</p>
 <ul>
@@ -11292,8 +11434,8 @@ recommendation is identical and the evidence is device-read.</p>
 "where on the device" path shown under each carve-out, and <strong>Decode a payload on
 its own</strong> peels the encoding layers off a value you paste without a log entry.</p>
 <h3 id="373-transaction-tracer">37.3 Transaction tracer</h3>
-<p><strong>Operations › Troubleshooting › Transaction Tracer</strong> (<code>/txn-trace/</code>), in every
-ADOM. It is a page, not a window: the trace, its cookies and its HAR stay on
+<p><code>/txn-trace/</code>, in every ADOM; in the menu it is the <strong>Transaction Tracer</strong> app
+under <strong>Plugins › Troubleshooting</strong> (§23.7), which runs this same trace. It is a page, not a window: the trace, its cookies and its HAR stay on
 screen, and <code>?vip=</code>, <code>?backend=</code> and <code>?path=</code> in the address prefill the form.</p>
 <p>Three legs, answering <em>is it the WAF or is it the app?</em></p>
 <ul>
@@ -11414,8 +11556,9 @@ Observatory. It scores only what the trace already returned — no request
 leaves the server for it — and says it is partial: redirects, Subresource
 Integrity, CORS and certificate trust are graded by the Observatory, not here.</p>
 <h3 id="374-http-observatory">37.4 HTTP Observatory</h3>
-<p><strong>Troubleshooting › HTTP Observatory</strong> (<code>/observatory/</code>), in the Global,
-FortiWeb and FortiADC ADOMs. It grades every site an appliance publishes with
+<p><code>/observatory/</code>, in the Global, FortiWeb and FortiADC ADOMs; in the menu it is
+the <strong>HTTP Observatory</strong> app under <strong>Plugins › Troubleshooting</strong> (§23.7),
+which grades a site the same way. It grades every site an appliance publishes with
 the tests and the scoring of the MDN HTTP Observatory
 (developer.mozilla.org/observatory, algorithm version 6), then says <strong>who</strong>
 produced each result and, on a FortiWeb, applies the fix.</p>
@@ -11748,8 +11891,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (131 today) or <strong>excluded with a written
-   reason</strong> (175 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (134 today) or <strong>excluded with a written
+   reason</strong> (179 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

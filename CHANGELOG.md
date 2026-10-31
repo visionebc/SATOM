@@ -6,6 +6,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.8.0] - 2026-10-31
+
+**Names written in one place, and Troubleshooting as plugins.** Naming
+gains the `{scope}` token and a Server Policy (plugins) section for the
+names Plugin Studio flows build, and Classification › Name scope is the one
+place its value is written, per zone; spo-fortiweb 1.4.0 and the native New
+Server Policy wizard both take it from there. Network Segments carry one
+interface per network and segments or networks can be cloned. The six
+Troubleshooting pages are Plugin Studio apps under Plugins › Troubleshooting,
+Scout is a top-level sidebar entry above Wiki, and Sentinel's architecture
+page explains Scout and Path Diagnostics. Fixes from the nightly review,
+including `pyasn1` 0.6.5.
+
 ### Added
 - **Sentinel's architecture now explains Scout and Path Diagnostics.** Request:
   "Scout, which helps operations, and Path Diagnostics: in Sentinel I do not see

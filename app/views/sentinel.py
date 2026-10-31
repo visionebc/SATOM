@@ -1254,4 +1254,73 @@ def docs_context(health: dict = None) -> dict:
         # leave behind: nothing fails when the two disagree.
         gate_order=s["actions"].GATE_ORDER,
         handoffs=s["actions"].handoff_keys(),
+        ops=ops_context(),
         health=_health() if health is None else health)
+
+
+def ops_context() -> dict:
+    """Scout and Path Diagnostics, as the architecture document draws them.
+
+    Operator, 2026-10-29 (FA-0012): "Scout, which helps operations, and Path
+    Diagnostics -- in Sentinel I do not see how they work, their architecture
+    or how they decide; this must be there." Same rule as the rest of this
+    document: every rung, verdict, tool, source, status, budget and gate below
+    is read from the module that ENFORCES it (scout_ladder, scout_config,
+    scout_metrics, scout_sources, advisor, views.advisor.APPLY_GATE), never
+    transcribed -- a card that restates a budget is one more place for it to
+    be wrong while the code is right.
+
+    Live switches (Scout on, tools on, external providers, the default
+    provider) are shown as they ARE on this node, because "how it decides"
+    depends on them. The provider's base URL is deliberately left out: it is
+    an endpoint, not an explanation.
+    """
+    from ..models_advisor import AdvisorProposal
+    from ..services import advisor as adv
+    from ..services import log_sources
+    from ..services import scout_config
+    from ..services import scout_ladder as sl
+    from ..services import scout_metrics
+    from ..services import scout_sources
+    from .advisor import APPLY_GATE
+
+    prov = adv.get_provider(adv.default_provider_key())
+    provider = None
+    if prov:
+        provider = {"label": prov.get("label") or prov.get("key"),
+                    "kind": prov.get("kind", ""), "model": prov.get("model", ""),
+                    "enabled": prov.get("enabled") is not False,
+                    "leaves_lan": adv.leaves_lan(prov)}
+    externals = [{"key": "external:" + x["key"],
+                  "label": "%s (%s)" % (x.get("label") or x["key"], x.get("kind", "")),
+                  "enabled": x.get("enabled") is not False}
+                 for x in log_sources.list_sources()]
+    return dict(
+        ladder=[{"key": r.key, "title": r.title, "question": r.question,
+                 "vantage": sl.VANTAGE_LABEL.get(r.vantage, r.vantage)}
+                for r in sl.LADDER],
+        path_verdicts=[{"mode": k, "verdict": v, "text": t}
+                       for k, (v, t) in sl.PATH_VERDICT.items()],
+        criteria=scout_config.criteria(),
+        pd_enabled=scout_config.enabled(),
+        nouns=sl.OBJECT_NOUN,
+        safe_methods=", ".join(sl.SAFE_METHODS),
+        deviation=scout_metrics.DEVIATION_FACTOR,
+        baseline=scout_metrics.BASELINE,
+        box_metrics=[m[1] for m in scout_metrics.BOX_METRICS],
+        policy_metrics=[m[1] for m in scout_metrics.POLICY_METRICS],
+        scout_on=adv.enabled(),
+        scout_ready=adv.configured(),
+        tools_on=adv.tools_enabled(),
+        external_allowed=adv.external_allowed(),
+        provider=provider,
+        rounds={"now": adv.tool_rounds(), "default": adv.DEFAULT_TOOL_ROUNDS,
+                "min": adv.MIN_TOOL_ROUNDS, "max": adv.MAX_TOOL_ROUNDS,
+                "calls": adv.MAX_CALLS_PER_BLOCK,
+                "result_bytes": adv.MAX_TOOL_RESULT_BYTES},
+        tools=adv.tools_catalog(),
+        sources=[{"key": k, "label": lbl, "enabled": True}
+                 for k, lbl in scout_sources.BUILTIN_SOURCES] + externals,
+        statuses=scout_sources.SOURCE_STATUSES,
+        proposals=[{"kind": k, "effect": adv.PROPOSAL_EFFECT[k],
+                    "gate": APPLY_GATE[k]} for k in AdvisorProposal.KINDS])

@@ -1467,6 +1467,19 @@ def link_walk(proposal_id, *, appliance_id: int, report_id: int, username: str,
     return prop
 
 
+#: What approving each proposal kind does -- one sentence per kind, next to the
+#: code that does it. The Sentinel architecture page renders this table and a
+#: guard requires a row for every ``AdvisorProposal.KINDS``.
+PROPOSAL_EFFECT = {
+    "waf_exception": ("creates a DRAFT guided WAF exception; nothing is pushed to "
+                      "the device, and a template-locked profile is refused"),
+    "lua_script": ("creates a Lua script in draft status, linted and analysed; "
+                   "it is not deployed"),
+    "path_walk": ("writes nothing: opens the Path Diagnostics form pre-filled; "
+                  "the operator runs the walk and Scout reads the saved report"),
+}
+
+
 def apply_proposal(prop: AdvisorProposal, *, applied_by: str) -> str:
     """Turn an approved proposal into a DRAFT row. Returns a human-readable
     reference. Raises on validation failure — the caller (the view) already

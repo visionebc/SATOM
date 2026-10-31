@@ -6287,7 +6287,8 @@ preset it — *Alert only*, *Alert and block*, *High*, *Ultra high*, plus
 edited by hand. A mode is a named set of values for knobs that already
 existed and nothing in the engine ever asks which one is active, so the name
 cannot describe behaviour the table below it does not have. **Architecture** renders the same document served at
-`/sentinel/docs`, and **Incidents console** the same live console served at
+`/sentinel/docs` — including its cards 13–15 on Scout and Path Diagnostics
+(§33.10) — and **Incidents console** the same live console served at
 `/sentinel/` — health tiles, the seven-day figures and the incident table
 included.
 
@@ -9609,6 +9610,46 @@ These are planned, in this order, and are **not** available today:
 
 ---
 
+### 33.10 How Scout and Path Diagnostics work — in Sentinel's architecture
+
+Sentinel's architecture document (**Sentinel › Architecture**, `/sentinel/docs`,
+and the same pane under Settings › Sentinel) ends with three cards on the two
+operations tools. A link under the page title jumps to them.
+
+- **13 · Scout and Path Diagnostics — operations beside Sentinel.** Sentinel,
+  Path Diagnostics and Scout side by side: who starts each one, what object it
+  works on, what it produces, whether it writes to a device and whether it uses
+  a model. Below that, a diagram of the flow: Path Diagnostics is a job that reads
+  the device and saves a report. Scout reads what SATOM already holds, calls
+  read-only tools in your session, and turns a proposal into a draft only when
+  you approve it. Each part is placed in its NAF block. Neither tool opens,
+  scores or closes a Sentinel incident. The incident page does not yet link
+  into Path Diagnostics, and the card says so.
+- **14 · Path Diagnostics — the ladder, and how it decides.** The rules: the
+  first FAIL stops the walk, "could not look" is *unknown* and never counts as
+  health, a crash inside the tool is *unknown*, the tool only reads, and every
+  rung records where it was observed from. Then it shows the rungs with their
+  questions, how the walk's verdict is chosen, how the border rung reads the
+  FortiAnalyzer, the decision criteria and the metrics context. The metrics
+  give context and never change the verdict.
+- **15 · Scout — the operations assistant, and where its decisions stop.**
+  This node's live settings: tools on or off, the default provider (label,
+  kind, model, local or leaving the LAN; never its address), whether external
+  providers are allowed, and the tool-round budget. Then it lists what Scout
+  decides, what it may only propose (each proposal kind with what approving
+  it does and the permission it needs), and what it never does. It shows the
+  audit trail, the read-only tool catalog, the log sources of one window and
+  what each source status means.
+
+Every row comes from the code that enforces it: the ladder, the criteria, the
+tool catalog, the log sources and their statuses, the round budget, and the
+approval gates. The approval gates are the table the approve route itself
+checks. Change one of those in the code and the page changes with it. A
+log-source status the page does not explain cannot be emitted. The **Open
+Scout** button appears only for users who hold *Scout* (`advisor.use`) and
+only while Scout is configured. **Open Path Diagnostics** appears only while
+Path Diagnostics is switched on.
+
 ## 34. The Audit Log
 
 Every write SATOM makes is recorded here: who, when, from which address, against
@@ -10532,8 +10573,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (131 today) or **excluded with a written
-   reason** (175 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (134 today) or **excluded with a written
+   reason** (179 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

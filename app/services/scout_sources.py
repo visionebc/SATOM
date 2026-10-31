@@ -282,7 +282,32 @@ def _matches(row, q: str) -> bool:
     return q.lower() in json.dumps(row, default=str, ensure_ascii=False).lower()
 
 
+#: Every status a log source may report, and what it means. A status outside
+#: this table is refused by :func:`_src`: the Sentinel architecture page
+#: (Scout and Path Diagnostics card) renders this table, and a status the page
+#: does not explain is one the operator cannot read.
+SOURCE_STATUSES = (
+    ("ok", "rows matched in the window"),
+    ("no_match", "the source looked and found nothing for this window/term"),
+    ("error", "the source was asked and failed; it did NOT see nothing"),
+    ("not_configured", "nothing to ask: no collector or SIEM is set up for this"),
+    ("disabled", "configured but switched off"),
+    ("forbidden", "your account may not read it, so Scout may not either"),
+)
+_STATUS_KEYS = frozenset(k for k, _ in SOURCE_STATUSES)
+
+#: The built-in log sources, in the order :func:`search_logs` asks them.
+#: External SIEMs (Settings -> AI -> Log sources) follow as ``external:<key>``.
+BUILTIN_SOURCES = (
+    ("sentinel", "Sentinel events (FortiWeb attack log already ingested)"),
+    ("syslog", "SATOM's syslog receiver"),
+    ("fortianalyzer", "the FortiAnalyzer mapped behind the appliance (edge map)"),
+)
+
+
 def _src(name: str, status: str, detail: str = "", rows=None, **extra) -> dict:
+    if status not in _STATUS_KEYS:
+        raise ValueError(f"unknown log-source status {status!r}")
     d = {"source": name, "status": status, "detail": detail, "rows": rows or []}
     d.update(extra)
     return d
@@ -436,9 +461,10 @@ def search_logs(appliance_id: int = 0, query: str = "", minutes: int = 60,
         want = ""
 
     from . import log_sources
-    plan = [("sentinel", lambda: _from_sentinel(ap, q, start, end, n)),
-            ("syslog", lambda: _from_syslog(ap, q, start, end, n)),
-            ("fortianalyzer", lambda: _from_faz(ap, q, start, end, n, t))]
+    builtin = {"sentinel": lambda: _from_sentinel(ap, q, start, end, n),
+               "syslog": lambda: _from_syslog(ap, q, start, end, n),
+               "fortianalyzer": lambda: _from_faz(ap, q, start, end, n, t)}
+    plan = [(key, builtin[key]) for key, _label in BUILTIN_SOURCES]
     externals = log_sources.list_sources()
     for s in externals:
         plan.append((f"external:{s['key']}",

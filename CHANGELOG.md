@@ -6,6 +6,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Sentinel's architecture now explains Scout and Path Diagnostics.** Request:
+  "Scout, which helps operations, and Path Diagnostics: in Sentinel I do not see
+  how they work, their architecture or how they decide; this must be there."
+  `/sentinel/docs` and the Settings › Sentinel › Architecture pane gain
+  three cards:
+  - 13: Sentinel, Path Diagnostics and Scout side by side, a flow
+    diagram and their NAF blocks.
+  - 14: Path Diagnostics' ladder, verdict rules, border verdicts,
+    decision criteria and metrics context.
+  - 15: Scout's live state (tools, default provider, external gate,
+    round budget), what it decides, proposes and never does, its trail,
+    tool catalog, log sources and source statuses.
+  Everything comes from the enforcing code: `scout_ladder`, `scout_config.criteria()`,
+  `scout_metrics`, `advisor.tools_catalog()`, and the new
+  `scout_sources.BUILTIN_SOURCES` / `SOURCE_STATUSES`. `search_logs` asks the
+  sources in that order. `_src` refuses a status the table does not explain.
+  `advisor.PROPOSAL_EFFECT` and `views.advisor.APPLY_GATE` are now the one table
+  `_can_apply` reads. The provider's base URL is not shown. The Open Scout and
+  Open Path Diagnostics links follow those pages' own gates. Tests:
+  `tests/test_sentinel_ops_doc.py`.
+
 ### Changed
 - **Troubleshooting is a Plugins submenu: its six pages are Plugin Studio
   apps** (request: "every element in Troubleshooting as plugins, loaded, and

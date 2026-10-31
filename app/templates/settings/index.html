@@ -1767,7 +1767,8 @@
             recommendations=sentinel_docs.recommendations,
             bands=sentinel_docs.bands, verified=sentinel_docs.verified,
             gate_order=sentinel_docs.gate_order,
-            handoffs=sentinel_docs.handoffs, health=sentinel_docs.health %}
+            handoffs=sentinel_docs.handoffs, ops=sentinel_docs.ops,
+            health=sentinel_docs.health %}
       {% include "sentinel/_docs_section.html" %}
     {% endwith %}
   </div>

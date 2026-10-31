@@ -243,19 +243,29 @@ def tools():
     return jsonify(ok=True, enabled=svc.tools_enabled(), catalog=svc.tools_catalog())
 
 
+#: The permission that turns ONE proposal kind into a draft -- the same key the
+#: manual form for that object already requires, so an AI proposal is never an
+#: easier path than typing it in by hand. ``waf_exception``: the guided
+#: exception form; ``path_walk``: the Path Diagnostics page (which is also
+#: closed while that feature is switched off); ``lua_script``: Lua Studio's
+#: super-admin gate. Read by :func:`_can_apply` AND rendered on the Sentinel
+#: architecture page, so the page cannot state a gate this view does not enforce.
+APPLY_GATE = {
+    "waf_exception": Permission.CONFIG_WRITE,
+    "path_walk": Permission.VIEW,
+    "lua_script": "studio.lua_studio",
+}
+
+
 def _can_apply(prop: AdvisorProposal) -> bool:
-    if prop.kind == "waf_exception":
-        return current_user.can(Permission.CONFIG_WRITE)
+    gate = APPLY_GATE.get(prop.kind)
+    if gate is None:
+        return False
     if prop.kind == "path_walk":
-        # The same gate as the Path Diagnostics page itself.
         from ..services import scout_config
-        return scout_config.enabled() and current_user.can(Permission.VIEW)
-    if prop.kind == "lua_script":
-        # Same super-admin gate the manual Lua Studio form requires — an AI
-        # proposal must never be an easier path to a Lua draft than typing
-        # it in by hand.
-        return current_user.can("studio.lua_studio")
-    return False
+        if not scout_config.enabled():
+            return False
+    return current_user.can(gate)
 
 
 @bp.route("/<int:cid>/proposal/<int:pid>/apply", methods=["POST"])

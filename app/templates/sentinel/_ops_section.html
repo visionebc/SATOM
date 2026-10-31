@@ -1,0 +1,288 @@
+{#
+   Scout and Path Diagnostics, inside Sentinel's architecture document.
+
+   Operator, 2026-10-29 (FA-0012): "Scout, which helps operations, and Path
+   Diagnostics -- in Sentinel I do not see how they work, their architecture or
+   how they decide; this must be there."
+
+   Same rule as every other card of this document: each rung, verdict,
+   criterion, tool, log source, status, budget and approval gate is read from
+   `ops` (views.sentinel.ops_context), which reads the module that ENFORCES it.
+   The only prose here describes behaviour that has no constant to read (the
+   order of the loop, what a proposal is); where that prose is an instruction
+   to the model rather than something the code enforces, it says so.
+
+   Drawn by both surfaces of the document (/sentinel/docs and Settings ›
+   Sentinel › Architecture), so it is included from _docs_section.html and
+   never copied.  Links follow the target page's own gates: Scout needs
+   `advisor.use` AND a configured Scout (`advisor_on`, the sidebar rule);
+   Path Diagnostics needs its switch AND the page's permission.
+#}
+{% set _o = ops %}
+{% set _can_scout = current_user.is_authenticated and current_user.can('advisor.use')
+                    and advisor_on and may_open('advisor.index') %}
+{% set _can_walk = current_user.is_authenticated and _o.pd_enabled
+                   and may_open('scout.index') %}
+{% set _vbadge = {'pass': 'success', 'fail': 'danger', 'warn': 'warning',
+                  'unknown': 'secondary', 'skipped': 'secondary'} %}
+
+{# ── 13 · the three, side by side ────────────────────────────────────────── #}
+<div class="fw-card mb-3 mt-3" id="card-13-scout-and-path-diagnostics">
+  <div class="fw-card-header"><strong>13 · Scout and Path Diagnostics — operations beside Sentinel</strong></div>
+  <div class="fw-card-body">
+    <p class="small">
+      Sentinel watches. The two operations tools answer an operator who already knows something is
+      wrong: <strong>Path Diagnostics</strong> names the layer that is broken for one published
+      service, and <strong>Scout</strong> (the operations assistant) explains it from everything
+      SATOM already holds. The line between them is <em>who starts it and what it owns</em>, not
+      “security versus troubleshooting”.
+    </p>
+    <table class="table table-sm align-middle mb-3">
+      <thead><tr><th style="width:150px;"></th><th>Sentinel</th><th>Path Diagnostics</th><th>Scout</th></tr></thead>
+      <tbody>
+        <tr><td class="small"><strong>Started by</strong></td>
+            <td class="small">the clock (<code>sentinel_sweep</code>)</td>
+            <td class="small">an operator — on its page, from a Scout proposal, or as the
+              <code>path_walk</code> step of the Plugins › Troubleshooting app</td>
+            <td class="small">an operator's question</td></tr>
+        <tr><td class="small"><strong>Its object</strong></td>
+            <td class="small">chooses its own</td>
+            <td class="small">is handed one {% for k, n in _o.nouns.items() %}{{ n }} ({{ k }}){{ ' or ' if not loop.last }}{% endfor %}</td>
+            <td class="small">whatever the operator asks about</td></tr>
+        <tr><td class="small"><strong>Produces</strong></td>
+            <td class="small">an incident</td>
+            <td class="small">a localisation verdict, saved as a report with the metrics around it and the id of the job that carried its device calls</td>
+            <td class="small">an answer, and optionally proposals that become drafts only when approved</td></tr>
+        <tr><td class="small"><strong>Writes to a device</strong></td>
+            <td class="small">only through the armed response gates (card 7)</td>
+            <td class="small">never — read-only rungs</td>
+            <td class="small">never — it has no write tool</td></tr>
+        <tr><td class="small"><strong>Uses a model</strong></td>
+            <td class="small">cold path only, as an opinion (card 8)</td>
+            <td class="small">no — every verdict is a measurement</td>
+            <td class="small">yes; the model chooses which read-only tool to call next</td></tr>
+      </tbody>
+    </table>
+    <p class="small">
+      <strong>One direction.</strong> Sentinel incidents are one of Scout's sources; neither tool
+      opens, scores or closes an incident. <em>Not wired today:</em> the incident page does not yet
+      link into Path Diagnostics with the object pre-filled (the ladder's design allows it).
+    </p>
+    <pre class="small mb-3" style="background:#F4F5F7;padding:12px;border-radius:4px;">
+ OPERATOR ── object ──► PATH DIAGNOSTICS  (a job; the only part that goes to the device)
+                          rung 0 … rung {{ _o.ladder[-1].key }}, in dependency order, each delegated to the module
+                          that owns its question ─► pass · warn · unknown · FAIL (stops)
+                          └─► saved report + metrics panel + job id ─► audit row
+                                              │
+ OPERATOR ── question ──► SCOUT  (reads what SATOM already holds, never the device)
+                          system prompt + read-only tool catalog ─► model provider
+                          reply ─┬─ answer ─────────────────────────► operator
+                                 ├─ tool call ─► run in the OPERATOR's session, same
+                                 │               gates as the page; result capped and
+                                 │               wrapped as untrusted ─► next round
+                                 └─ proposal ──► pending ─► operator approves ─► DRAFT
+   Scout's sources:  Path Diagnostics reports · metrics store · Sentinel incidents ·
+                     logs of one window (built-in + external SIEMs) · jobs and their calls ·
+                     audit log · alerts · configuration history · device health cache</pre>
+    <h6 class="small">Where each part sits (NAF blocks)</h6>
+    <ul class="small mb-2">
+      <li><strong>Path Diagnostics</strong> — an explicit, visible <em>Collector</em> action (it reads the
+          appliance and the FortiAnalyzer inside a job) whose output is <em>Observability</em>: the saved report.</li>
+      <li><strong>Scout</strong> — <em>Presentation</em>: it reads what the Collectors and Observability
+          already stored. It reaches <em>Intent</em> only through a proposal that becomes a draft in the
+          same store an operator fills in by hand, after a human approves it.</li>
+      <li>Neither is an <em>Executor</em>. Nothing on this card writes to an appliance.</li>
+    </ul>
+    {% if _can_scout or _can_walk %}
+    <div class="d-flex gap-2 flex-wrap">
+      {% if _can_scout %}<a class="btn btn-fw-outline btn-sm" href="{{ url_for('advisor.index') }}"><i class="bi bi-stars me-1"></i>Open Scout</a>{% endif %}
+      {% if _can_walk %}<a class="btn btn-fw-outline btn-sm" href="{{ url_for('scout.index') }}"><i class="bi bi-signpost-split me-1"></i>Open Path Diagnostics</a>
+      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('scout.reports') }}">Saved walks</a>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── 14 · Path Diagnostics ──────────────────────────────────────────────── #}
+<div class="fw-card mb-3" id="card-14-path-diagnostics-the-ladder">
+  <div class="fw-card-header"><strong>14 · Path Diagnostics — the ladder, and how it decides</strong>
+    {% if _o.pd_enabled %}<span class="fw-badge fw-badge-success ms-2">on</span>
+    {% else %}<span class="fw-badge fw-badge-secondary ms-2">switched off on this site</span>{% endif %}</div>
+  <div class="fw-card-body">
+    <ul class="small">
+      <li><strong>The first FAIL stops the ladder.</strong> Every rung below it is <em>skipped</em>,
+          never passed: a pool cannot be judged through a front door that never opened.</li>
+      <li><strong>“Could not look” is never health.</strong> A rung that could not run is
+          <em>unknown</em>; it does not stop the walk and it is counted as a blind spot.</li>
+      <li><strong>A crash in the tool is not a fault in the path.</strong> A rung that raises is
+          reported <em>unknown</em> with the error, never FAIL.</li>
+      <li><strong>Read only.</strong> No rung writes; the only HTTP methods it will send are
+          <code>{{ _o.safe_methods }}</code>,
+          refused at the entrance otherwise.</li>
+      <li><strong>Every rung records its vantage</strong> — this node, the appliance, or the collector —
+          and the three are never merged: SATOM's path to a backend is not the appliance's.</li>
+      <li><strong>No judgement is re-implemented.</strong> Each rung delegates to the module that owns its
+          question (reachability, request timing, device health); the ladder owns only the order and the verdict.</li>
+    </ul>
+    <table class="table table-sm align-middle mb-3">
+      <thead><tr><th style="width:60px;">Rung</th><th style="width:140px;">Layer</th><th>Question</th><th style="width:140px;">Observed from</th></tr></thead>
+      <tbody>
+      {% for r in _o.ladder %}
+        <tr><td class="small font-monospace">{{ r.key }}</td><td class="small"><strong>{{ r.title }}</strong></td>
+            <td class="small">{{ r.question }}</td>
+            <td class="small"><span class="fw-badge fw-badge-secondary">{{ r.vantage }}</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <h6 class="small">The walk's verdict</h6>
+    <p class="small">
+      With a FAIL, the verdict names <strong>that one layer</strong> and the vantage that saw it, plus
+      the blind spots and warnings. Without one it is deliberately <em>not</em> called healthy: if any
+      rung was unknown it is a <em>partial walk</em>; only a walk with every rung probed says the fault
+      is not on this path as Path Diagnostics can observe it.
+    </p>
+    <h6 class="small">How the border is read (the “Path” rung, from the FortiAnalyzer)</h6>
+    <table class="table table-sm align-middle mb-3">
+      <thead><tr><th style="width:110px;">Rows say</th><th style="width:100px;">Verdict</th><th>Meaning</th></tr></thead>
+      <tbody>
+      {% for v in _o.path_verdicts %}
+        <tr><td class="small font-monospace">{{ v.mode }}</td>
+            <td><span class="fw-badge fw-badge-{{ _vbadge.get(v.verdict, 'secondary') }}">{{ v.verdict }}</span></td>
+            <td class="small">{{ v.text }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <h6 class="small">Decision criteria — read-only, read off the engine</h6>
+    {% for gkey, glabel, rows in _o.criteria %}
+    <table class="table table-sm align-middle mb-2">
+      <thead><tr><th colspan="3" class="small">{{ glabel }}</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr><td class="small" style="width:220px;">{{ r.label }}<br><code class="small">{{ r.symbol }}</code></td>
+            <td class="small font-monospace" style="width:150px;">{{ r.value }}</td>
+            <td class="small">{{ r.why }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endfor %}
+    <h6 class="small mt-3">The metrics around a walk — context, never the verdict</h6>
+    <p class="small mb-0">
+      Read from the local metrics store, not the device. A reading is flagged when it is
+      <strong>{{ _o.deviation }}×</strong> its <strong>{{ _o.baseline }}</strong> average (or that far
+      below it where a drop is the symptom). A collector that failed is shown as an error, never as an
+      empty panel. Appliance: {{ _o.box_metrics|join(', ') }}. Object: {{ _o.policy_metrics|join(', ') }}.
+    </p>
+  </div>
+</div>
+
+{# ── 15 · Scout ─────────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3" id="card-15-scout-the-operations-assistant">
+  <div class="fw-card-header"><strong>15 · Scout — the operations assistant, and where its decisions stop</strong>
+    {% if _o.scout_ready %}<span class="fw-badge fw-badge-success ms-2">ready</span>
+    {% elif _o.scout_on %}<span class="fw-badge fw-badge-warning ms-2">on, no usable provider</span>
+    {% else %}<span class="fw-badge fw-badge-secondary ms-2">switched off</span>{% endif %}</div>
+  <div class="fw-card-body">
+    <p class="small">
+      Scout is not the model of card 8. Sentinel's model writes an opinion about a finished incident and
+      has no tools; Scout's model answers an operator and may call <em>read-only</em> tools to fetch evidence.
+    </p>
+    <table class="table table-sm align-middle mb-3">
+      <tbody>
+        <tr><td class="small" style="width:260px;">Read-only tools</td>
+            <td class="small">{% if _o.tools_on %}<span class="fw-badge fw-badge-success">on</span>{% else %}<span class="fw-badge fw-badge-secondary">off</span> — Scout answers only from what the operator attaches{% endif %}</td></tr>
+        <tr><td class="small">Default provider</td>
+            <td class="small">{% if _o.provider %}{{ _o.provider.label }} · <code>{{ _o.provider.kind }}</code>{% if _o.provider.model %} · <code>{{ _o.provider.model }}</code>{% endif %}
+              {% if _o.provider.leaves_lan %}<span class="fw-badge fw-badge-warning ms-1">leaves the LAN</span>{% else %}<span class="fw-badge fw-badge-info ms-1">local</span>{% endif %}
+              {% if not _o.provider.enabled %}<span class="fw-badge fw-badge-secondary ms-1">disabled</span>{% endif %}
+              {% else %}none configured{% endif %}</td></tr>
+        <tr><td class="small">Providers outside the LAN</td>
+            <td class="small">{% if _o.external_allowed %}allowed — what is sent is redacted, and every export is logged{% else %}not allowed{% endif %}</td></tr>
+        <tr><td class="small">Tool rounds per question</td>
+            <td class="small"><strong>{{ _o.rounds.now }}</strong> (default {{ _o.rounds.default }}, allowed {{ _o.rounds.min }}–{{ _o.rounds.max }}),
+              up to {{ _o.rounds.calls }} calls per round, each result capped at {{ _o.rounds.result_bytes }} bytes
+              (truncation is announced to the model). When the rounds are spent, one last round runs
+              <em>without</em> tools and must say which checks it could not make.</td></tr>
+      </tbody>
+    </table>
+
+    <h6 class="small">What Scout decides, what it proposes, what it never does</h6>
+    <div class="row">
+      <div class="col-md-4">
+        <p class="small mb-1"><strong>Decides</strong></p>
+        <ul class="small">
+          <li>which tool to call next, inside the round budget;</li>
+          <li>how to explain the evidence: which layer, why, what to check next.</li>
+        </ul>
+        <p class="small text-muted">Instructions to the model, not enforced by code: read the newest walk
+          first and explain its verdict rather than contradict it; separate evidence from inference; treat a
+          source that could not look as missing data, not health.</p>
+      </div>
+      <div class="col-md-8">
+        <p class="small mb-1"><strong>Proposes</strong> — a proposal is stored as pending; nothing happens until an operator approves it, with the permission the manual form already needs</p>
+        <table class="table table-sm align-middle mb-2">
+          <thead><tr><th style="width:120px;">Kind</th><th>Approving it</th><th style="width:140px;">Needs</th></tr></thead>
+          <tbody>
+          {% for p in _o.proposals %}
+            <tr><td class="small font-monospace">{{ p.kind }}</td><td class="small">{{ p.effect }}</td>
+                <td class="small"><code>{{ p.gate }}</code></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="small mb-1"><strong>Never</strong></p>
+    <ul class="small">
+      <li>writes to an appliance or to SATOM's configuration — the tool catalog below has no writer;</li>
+      <li>runs a walk, deploys code or applies its own proposal;</li>
+      <li>sees more than the operator: every tool runs in the operator's session and applies the page's own
+          gate (<code>monitoring.view</code> for Sentinel, owner-or-admin for jobs, <code>audit.view</code>
+          for the audit log, ADOM visibility for appliances);</li>
+      <li>obeys text read from a device or a log: such text reaches the model wrapped as untrusted data, with an
+          instruction not to follow it (a mitigation against prompt injection, not a proof).</li>
+    </ul>
+    <p class="small">
+      <strong>Trail.</strong> Every exchange writes an audit row (<code>advisor.send</code>: provider, tool
+      calls, redactions, external or not); a send outside the LAN also writes an export-log row; approving or
+      dismissing a proposal is audited; a walk is audited with its report and job.
+    </p>
+
+    <details class="mb-2">
+      <summary class="small"><strong>Read-only tools ({{ _o.tools|length }})</strong></summary>
+      <table class="table table-sm align-middle mt-2 mb-0">
+        <thead><tr><th style="width:190px;">Tool</th><th>What it reads</th></tr></thead>
+        <tbody>
+        {% for t in _o.tools %}
+          <tr><td class="small font-monospace">{{ t.name }}</td><td class="small">{{ t.description }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </details>
+
+    <details>
+      <summary class="small"><strong>Log sources of one window ({{ _o.sources|length }}) and what their status means</strong></summary>
+      <div class="row mt-2">
+        <div class="col-md-6">
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Source</th><th style="width:90px;"></th></tr></thead>
+            <tbody>
+            {% for s in _o.sources %}
+              <tr><td class="small"><code>{{ s.key }}</code> — {{ s.label }}</td>
+                  <td class="small">{% if not s.enabled %}<span class="fw-badge fw-badge-secondary">disabled</span>{% endif %}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="col-md-6">
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th style="width:120px;">Status</th><th>Means</th></tr></thead>
+            <tbody>
+            {% for k, means in _o.statuses %}
+              <tr><td class="small font-monospace">{{ k }}</td><td class="small">{{ means }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  </div>
+</div>

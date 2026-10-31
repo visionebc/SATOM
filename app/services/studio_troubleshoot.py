@@ -535,16 +535,21 @@ def _collect(node, ctx):
         ids = [a.id for a in lv._adom_appliances(lv._adom_key())]
     if not ids:
         raise F.FlowError("select at least one device")
+    from datetime import datetime
+    t0 = datetime.utcnow().isoformat()
     payload, status = lv.start_collection(ids, label=_s(node, ctx, "label") or "plugin",
                                           custom_text=_s(node, ctx, "commands"), via=VIA)
     if not payload.get("ok"):
         raise F.FlowError("%s (HTTP %d)" % (payload.get("error") or "could not start", status))
-    started = (payload.get("progress") or {}).get("started")
+    started = payload.get("progress") or {}
     deadline = ctx.deadline or (time.time() + F.RUN_TIMEOUT)
-    cur = payload.get("progress") or {}
     while True:
         cur = logcollect.status() or {}
-        if cur.get("started") != started:
+        # ours = this label and user, started after we asked. Not the exact
+        # ``started`` start() answered: the collection thread rewrites the
+        # state with its own timestamp as soon as it runs.
+        if not (cur.get("label") == started.get("label") and cur.get("by") == started.get("by")
+                and str(cur.get("started") or "") >= t0):
             raise F.FlowError("another collection replaced this one before it ended")
         if cur.get("state") != "running":
             break

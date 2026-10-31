@@ -28479,3 +28479,81 @@ msgstr "Menügruppe festlegen"
 
 msgid "Pick a group or type a new one. Apps of the same group are a submenu of Plugins; empty = a plain entry of Plugins."
 msgstr "Wählen Sie eine Gruppe oder geben Sie eine neue ein. Apps derselben Gruppe bilden ein Untermenü von Plugins; leer = ein normaler Eintrag unter Plugins."
+
+msgid "(which — none ticked = it runs none)"
+msgstr "(welche — keine angehakt = es läuft keine)"
+
+msgid "A newer pack of the same series carries everything this one does. Purge old packs removes it."
+msgstr "Ein neueres Paket derselben Serie enthält alles, was dieses enthält. Alte Pakete bereinigen entfernt es."
+
+msgid "API pack of a SATOM release: listed under API packs & kbpacks, then Import selected."
+msgstr "API-Paket eines SATOM-Releases: wird unter API-Pakete & kbpacks aufgeführt, dann Auswahl importieren."
+
+msgid "API packs & kbpacks"
+msgstr "API-Pakete & kbpacks"
+
+msgid "Air-gapped network? Download the kbpack (satom-kbpack-<date>.tar.gz) and its .sha256 on a machine with internet"
+msgstr "Netz ohne Internet? Laden Sie das kbpack (satom-kbpack-<date>.tar.gz) und seine .sha256 auf einem Rechner mit Internet herunter"
+
+msgid "Delete every uploaded pack that a newer pack of the same series replaces. The newest of each series is kept."
+msgstr "Löscht jedes hochgeladene Paket, das ein neueres Paket derselben Serie ersetzt. Das neueste jeder Serie bleibt erhalten."
+
+msgid "Lane and state"
+msgstr "Spur und Status"
+
+msgid "OS packages"
+msgstr "Betriebssystempakete"
+
+msgid "Purge old packs"
+msgstr "Alte Pakete bereinigen"
+
+msgid "Remove the uploaded packs a newer one replaces?"
+msgstr "Die hochgeladenen Pakete entfernen, die ein neueres ersetzt?"
+
+msgid "SATOM no longer reads vendor web sites. Release notes, the Upgrade Advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling kbpack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins."
+msgstr "SATOM liest keine Hersteller-Websites mehr. Versionshinweise, die Upgrade Advisory, Upgrade-Pfade und Signatur-Metadaten stammen aus signierten Paketen in zwei Spuren: dem API-Paket, das mit jedem Release ausgeliefert wird, und dem fortlaufenden kbpack, das bei jeder Änderung des Wissens veröffentlicht wird. Jedes Paket wird beim Import auf seine Signatur geprüft, und was dieser Knoten selbst gemessen hat, hat immer Vorrang."
+
+msgid "SATOM update: staged under Offline update package, with its preflight, then Apply."
+msgstr "SATOM-Update: wird unter Offline-Update-Paket bereitgestellt, mit seiner Vorabprüfung, dann Anwenden."
+
+msgid "To hold a token to one app, tick only that app. Each box is bound to the version you approve: when a different version is published, the grant pauses until you re-approve it. An unarmed run needs the write scope; an armed run (its write steps really write) also needs the app_arm capability — app_arm never adds an app."
+msgstr "Um ein Token auf eine App zu beschränken, haken Sie nur diese App an. Jedes Kästchen ist an die Version gebunden, die Sie genehmigen: Wird eine andere Version veröffentlicht, ruht die Berechtigung, bis Sie sie erneut genehmigen. Ein nicht scharfer Lauf braucht den Scope write; ein scharfer Lauf (seine Schreibschritte schreiben wirklich) braucht zusätzlich die Fähigkeit app_arm — app_arm fügt nie eine App hinzu."
+
+msgid "Upload a"
+msgstr "Hochladen:"
+
+msgid "Upload an API pack or a kbpack in"
+msgstr "Laden Sie ein API-Paket oder ein kbpack hoch unter"
+
+msgid "and import it under"
+msgstr "und importieren Sie es unter"
+
+msgid "deploy clone"
+msgstr "Deploy-Klon"
+
+msgid "for nodes with no internet: one file at a time"
+msgstr "für Knoten ohne Internet: eine Datei nach der anderen"
+
+msgid "in"
+msgstr "in"
+
+msgid "kbpack"
+msgstr "kbpack"
+
+msgid "kbpack (rolling knowledge): listed under API packs & kbpacks, then Import selected. Its .sha256 is published next to it."
+msgstr "kbpack (fortlaufendes Wissen): wird unter API-Pakete & kbpacks aufgeführt, dann Auswahl importieren. Seine .sha256 wird daneben veröffentlicht."
+
+msgid "kbpacks (rolling knowledge)"
+msgstr "kbpacks (fortlaufendes Wissen)"
+
+msgid "library"
+msgstr "Bibliothek"
+
+msgid "offline package"
+msgstr "Offline-Paket"
+
+msgid "older pack(s) from earlier releases are not listed: they stay in the code tree (api-packs/), a release ships only its own pack, and the newest one carries everything they did."
+msgstr "ältere(s) Paket(e) früherer Releases werden nicht aufgeführt: Sie bleiben im Codebaum (api-packs/), ein Release liefert nur sein eigenes Paket aus, und das neueste enthält alles, was sie enthielten."
+
+msgid "then upload it in"
+msgstr "laden Sie es dann hoch unter"

@@ -540,6 +540,15 @@ PAGES: tuple[dict, ...] = (
     _p("auth.profile", "My Profile", "access",
        "my profile password language 2fa preferences me account settings",
        "Your own account: password, language, two-factor."),
+    _p("directory_connections.index", "Directory Connections", "access",
+       "directory connections ldap active directory fortiauthenticator fac radius "
+       "app sign in login source bind dn groups",
+       "The LDAP and FortiAuthenticator directories a Plugin Studio app sign-in "
+       "checks people against."),
+    _p("directory_connections.signin_index", "App Sign-in", "access",
+       "app sign in sign-in apps only portal two factor 2fa grants who may sign in "
+       "plugin studio app login",
+       "Which Plugin Studio apps carry their own sign-in, their rules and grants."),
     _p("audit.index", "Audit Log", "access",
        "audit trail who did what when history change accountability forensics",
        "Every action SATOM took, by whom, from where."),
@@ -569,6 +578,9 @@ PAGES: tuple[dict, ...] = (
     _p("reports.inbox", "Report Inbox", "platform",
        "report inbox generated document output delivered archive",
        "Generated reports waiting to be read."),
+    _p("scout.reports", "Path Diagnostics Reports", "monitoring",
+       "path diagnostics reports saved walks history ladder report verdict metrics",
+       "Every Path Diagnostics walk, saved with the metrics around it."),
     _p("advisor.index", "Scout", "platform",
        "scout advisor ai advisor ai assistant llm suggestion analysis chat help",
        "Scout, the AI assistant over your own fleet data."),
@@ -670,6 +682,10 @@ EXCLUDED: dict[str, str] = {
     "advisor.tools": "json feed", "advisor.usage": "json feed",
     # Fetched by the Software Update page's own JS after it renders.
     "self_update.package_feed": "json feed",
+    # The Apps-only portal: the console is not there to map it into.
+    "apps_portal.home": "apps portal", "apps_portal.account": "apps portal",
+    "apps_portal.logout": "logout",
+    "studio.icons": "json feed",
     "self_update.apipack_inspect": "json feed",
     "self_update.ha_link_check": "json feed — the HA card's Re-check button",
     # Fetched by the Deploy Clone pane (Settings) when it opens and while a

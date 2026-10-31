@@ -28,7 +28,7 @@
 <body class="ap-portal{{ ' ap-has-side' if _pmenu }}">
 <nav class="fw-topbar ap-topbar">
   <a class="fw-topbar-brand ap-brand" href="{{ url_for('apps_portal.home') if current_user.is_authenticated else '#' }}">
-    {% if theme_logo_url %}<img src="{{ theme_logo_url }}" alt="" class="ap-logo">{% else %}<i class="bi bi-grid-3x3-gap-fill"></i>{% endif %}
+    <img src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}" alt="" class="ap-logo">
     <span>{{ theme_name or 'SATOM' }}</span>
   </a>
   <div class="fw-topbar-spacer"></div>

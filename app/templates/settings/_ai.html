@@ -76,7 +76,7 @@
     </div>
   </div>
 
-  <div class="fw-card" id="ai-ls-form-card" style="display:none">
+  <div class="fw-card" id="card-ai-ls-form" style="display:none">
     <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Log source') }}</h2></div>
     <div class="fw-card-body">
       <div class="row g-2">
@@ -192,7 +192,7 @@
   }
 
   function openLsForm(s){
-    document.getElementById('ai-ls-form-card').style.display = '';
+    document.getElementById('card-ai-ls-form').style.display = '';
     document.getElementById('ai-ls-result').textContent = '';
     document.getElementById('ai-ls-key').value = s ? s.key : '';
     document.getElementById('ai-ls-key').disabled = !!s;
@@ -227,7 +227,7 @@
       }
     }
     if (ev.target.id === 'ai-ls-new') openLsForm(null);
-    if (ev.target.id === 'ai-ls-cancel') document.getElementById('ai-ls-form-card').style.display = 'none';
+    if (ev.target.id === 'ai-ls-cancel') document.getElementById('card-ai-ls-form').style.display = 'none';
     if (ev.target.id === 'ai-ls-save') {
       var body = {
         key: document.getElementById('ai-ls-key').value.trim(),
@@ -244,7 +244,7 @@
       };
       api('/settings/ai/logsource/save', {method:'POST', body: JSON.stringify(body)}).then(function(d){
         if (!d.ok) { document.getElementById('ai-ls-result').textContent = d.error || 'save failed'; return; }
-        document.getElementById('ai-ls-form-card').style.display = 'none';
+        document.getElementById('card-ai-ls-form').style.display = 'none';
         refresh();
       }).catch(function(){ document.getElementById('ai-ls-result').textContent = 'save failed — no answer from SATOM'; });
     }

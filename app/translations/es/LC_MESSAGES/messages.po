@@ -28500,3 +28500,81 @@ msgstr "Asignar grupo de menú"
 
 msgid "Pick a group or type a new one. Apps of the same group are a submenu of Plugins; empty = a plain entry of Plugins."
 msgstr "Elige un grupo o escribe uno nuevo. Las apps del mismo grupo forman un submenú de Plugins; vacío = una entrada normal de Plugins."
+
+msgid "(which — none ticked = it runs none)"
+msgstr "(cuáles — ninguna marcada = no ejecuta ninguna)"
+
+msgid "A newer pack of the same series carries everything this one does. Purge old packs removes it."
+msgstr "Un paquete más reciente de la misma serie contiene todo lo que tiene este. Purgar paquetes antiguos lo elimina."
+
+msgid "API pack of a SATOM release: listed under API packs & kbpacks, then Import selected."
+msgstr "Paquete de API de una versión de SATOM: aparece en Paquetes de API y kbpacks; luego Importar selección."
+
+msgid "API packs & kbpacks"
+msgstr "Paquetes de API y kbpacks"
+
+msgid "Air-gapped network? Download the kbpack (satom-kbpack-<date>.tar.gz) and its .sha256 on a machine with internet"
+msgstr "¿Red aislada? Descargue el kbpack (satom-kbpack-<date>.tar.gz) y su .sha256 en una máquina con Internet"
+
+msgid "Delete every uploaded pack that a newer pack of the same series replaces. The newest of each series is kept."
+msgstr "Elimina cada paquete subido que un paquete más reciente de la misma serie reemplaza. Se conserva el más reciente de cada serie."
+
+msgid "Lane and state"
+msgstr "Carril y estado"
+
+msgid "OS packages"
+msgstr "Paquetes del sistema operativo"
+
+msgid "Purge old packs"
+msgstr "Purgar paquetes antiguos"
+
+msgid "Remove the uploaded packs a newer one replaces?"
+msgstr "¿Eliminar los paquetes subidos que uno más reciente reemplaza?"
+
+msgid "SATOM no longer reads vendor web sites. Release notes, the Upgrade Advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling kbpack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins."
+msgstr "SATOM ya no lee los sitios web del fabricante. Las notas de versión, el Upgrade Advisory, las rutas de actualización y los metadatos de firmas vienen de paquetes firmados en dos carriles: el paquete de API que se entrega con cada versión y el kbpack continuo que se publica cada vez que cambia el conocimiento. Cada paquete se verifica por firma al importarlo, y lo que este nodo midió por sí mismo siempre prevalece."
+
+msgid "SATOM update: staged under Offline update package, with its preflight, then Apply."
+msgstr "Actualización de SATOM: se prepara en Paquete de actualización sin conexión, con su comprobación previa; luego Aplicar."
+
+msgid "To hold a token to one app, tick only that app. Each box is bound to the version you approve: when a different version is published, the grant pauses until you re-approve it. An unarmed run needs the write scope; an armed run (its write steps really write) also needs the app_arm capability — app_arm never adds an app."
+msgstr "Para limitar un token a una app, marque solo esa app. Cada casilla queda ligada a la versión que aprueba: cuando se publica otra versión, el permiso se pausa hasta que lo vuelva a aprobar. Una ejecución no armada necesita el scope write; una ejecución armada (sus pasos de escritura escriben de verdad) también necesita la capacidad app_arm — app_arm nunca añade una app."
+
+msgid "Upload a"
+msgstr "Suba un"
+
+msgid "Upload an API pack or a kbpack in"
+msgstr "Suba un paquete de API o un kbpack en"
+
+msgid "and import it under"
+msgstr "e impórtelo en"
+
+msgid "deploy clone"
+msgstr "clon del despliegue"
+
+msgid "for nodes with no internet: one file at a time"
+msgstr "para nodos sin Internet: un archivo a la vez"
+
+msgid "in"
+msgstr "en"
+
+msgid "kbpack"
+msgstr "kbpack"
+
+msgid "kbpack (rolling knowledge): listed under API packs & kbpacks, then Import selected. Its .sha256 is published next to it."
+msgstr "kbpack (conocimiento continuo): aparece en Paquetes de API y kbpacks; luego Importar selección. Su .sha256 se publica junto a él."
+
+msgid "kbpacks (rolling knowledge)"
+msgstr "kbpacks (conocimiento continuo)"
+
+msgid "library"
+msgstr "biblioteca"
+
+msgid "offline package"
+msgstr "paquete sin conexión"
+
+msgid "older pack(s) from earlier releases are not listed: they stay in the code tree (api-packs/), a release ships only its own pack, and the newest one carries everything they did."
+msgstr "paquete(s) antiguo(s) de versiones anteriores no se muestran: quedan en el árbol de código (api-packs/), una versión solo entrega su propio paquete y el más reciente contiene todo lo que ellos tenían."
+
+msgid "then upload it in"
+msgstr "luego súbalo en"

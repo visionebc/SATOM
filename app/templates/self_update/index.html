@@ -477,7 +477,7 @@
         <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
           <div class="small text-muted">{{ _('Upload an API pack or a kbpack in') }} <a href="#upload">{{ _('Upload') }}</a>.</div>
           <form method="post" action="{{ url_for('self_update.apipack_purge') }}" id="apk-purge"
-                onsubmit="return confirm('{{ _('Remove the uploaded packs a newer one replaces?') }}');">
+                data-fw-confirm-form="{{ _('Remove the uploaded packs a newer one replaces?') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-outline-danger btn-sm" type="submit"
                     {{ 'disabled' if not purgeable or api_packs.role == 'standby' else '' }}

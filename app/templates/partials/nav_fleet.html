@@ -18,13 +18,17 @@
 
    Order (operator, 2026-10-13, second pass): Dashboard (the ADOM home, where
    there is one), Calendar, Architecture, Service Diagram, Monitoring,
-   Search, DNS Lookup, Troubleshooting ▸ (partials/nav_troubleshooting.html:
-   Backend Reachability, Config Compare, Path Diagnostics, Scout), Fleet
-   Objects and WAF (FortiWeb and FortiADC ADOMs only) — and Jobs last.
+   Search, DNS Lookup, Fleet Objects and WAF (FortiWeb and FortiADC ADOMs only) — and Jobs last.
    Third pass (operator, 2026-10-14): Fleet Objects right below Search;
    in a device ADOM Automation ▸ followed WAF until 2026-10-23 (now right
    above Plugins, partials/nav_operations.html) and Jobs closes the
    Operations group. Global keeps Jobs last here.
+
+   Troubleshooting ▸ is not drawn here any more (operator, 2026-10-31): its
+   six pages are Plugin Studio apps, filed under the menu group
+   "Troubleshooting" of Plugins (services/studio_troubleshoot.py, plugins
+   backend-reachability ... diagnose-log-collection). The pages keep
+   answering by URL; Scout went to the top level on the same day.
 
    Draws the ITEMS only. The caller supplies the wrapper: the Operations group
    in a device ADOM (partials/nav_operations.html — these items lead it; the
@@ -71,7 +75,6 @@
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' and request.endpoint != 'dns_tool.resolvers' else '' }}" href="{{ url_for('dns_tool.index') }}">
   <i class="bi bi-globe fw-nav-icon"></i><span>{{ _('DNS Lookup') }}</span></a>
 {% endif %}
-{% include 'partials/nav_troubleshooting.html' %}
 {# Appliances moved to Administrator (2026-10-13). That group is drawn only
    for user_manage, and the page asks appliances.view, so an operator keeps
    the entry here. #}

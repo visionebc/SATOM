@@ -123,8 +123,20 @@ def collect():
         except (TypeError, ValueError):
             continue
 
-    label = (request.form.get('label') or 'manual').strip() or 'manual'
-    custom_text = (request.form.get('commands') or '').strip()
+    payload, status = start_collection(
+        ids, label=request.form.get('label') or '',
+        custom_text=request.form.get('commands') or '')
+    return jsonify(payload), status
+
+
+def start_collection(ids: list[int], *, label: str = '', custom_text: str = '',
+                     via: str = '') -> tuple[dict, int]:
+    """Start one collection as ``(payload, http_status)``: the page's
+    ``/collect`` and the Plugin Studio step ``log_collect``
+    (services.studio_troubleshoot) are this one function -- the same ADOM
+    battery, command rule, device scoping and audit, as ``current_user``."""
+    label = (label or 'manual').strip() or 'manual'
+    custom_text = (custom_text or '').strip()
     key = _adom_key()
 
     custom = bool(custom_text)
@@ -132,19 +144,19 @@ def collect():
         try:
             commands = _custom_commands(custom_text, key)
         except diag_battery.BatteryError as e:
-            return jsonify({'ok': False, 'error': f'Refused: {e}'}), 400
+            return {'ok': False, 'error': f'Refused: {e}'}, 400
         if not commands:
-            return jsonify({'ok': False,
-                            'error': 'Enter at least one get, show or diagnose command.'}), 400
+            return {'ok': False,
+                    'error': 'Enter at least one get, show or diagnose command.'}, 400
     else:
         commands, _meta = diag_battery.get_battery(key)
         if not commands:
-            return jsonify({'ok': False,
-                            'error': 'This ADOM has no diagnostic battery.'}), 400
+            return {'ok': False,
+                    'error': 'This ADOM has no diagnostic battery.'}, 400
 
     appliances = _adom_appliances(key, ids) if ids else []
     if not appliances:
-        return jsonify({'ok': False, 'error': 'Select at least one device.'}), 400
+        return {'ok': False, 'error': 'Select at least one device.'}, 400
 
     # Snapshot credentials + each device's plan in the request context — the
     # worker thread never touches the ORM. SSH logs in with the SSH login:
@@ -157,8 +169,8 @@ def collect():
         try:
             secret = a.ssh_secret
         except Exception as e:  # noqa: BLE001 — e.g. the vault holds it and is unreachable
-            return jsonify({'ok': False,
-                            'error': f'{a.name}: the SSH password cannot be read ({e})'}), 400
+            return {'ok': False,
+                    'error': f'{a.name}: the SSH password cannot be read ({e})'}, 400
         targets.append(SimpleNamespace(
             id=a.id, name=a.name, host=a.host, kind=kind,
             firmware=a.firmware or '',
@@ -169,8 +181,8 @@ def collect():
     res = logcollect.start(targets, label=label, commands=commands,
                            by=getattr(current_user, 'username', ''), custom=custom)
     if not res.get('started'):
-        return jsonify({'ok': False, 'error': res.get('reason', 'could not start'),
-                        'progress': res.get('progress')}), 409
+        return {'ok': False, 'error': res.get('reason', 'could not start'),
+                'progress': res.get('progress')}, 409
 
     log_action('logs.collect', target=f'{len(targets)} device(s)',
                extra={'label': label, 'adom': key,
@@ -178,8 +190,8 @@ def collect():
                       'commands': len(commands),
                       'skipped': {t.name: sum(1 for p in t.plan if p['action'] != 'run')
                                   for t in targets},
-                      'custom': custom})
-    return jsonify({'ok': True, 'progress': res.get('progress')})
+                      'custom': custom, **({'via': via} if via else {})})
+    return {'ok': True, 'progress': res.get('progress')}, 200
 
 
 @bp.route('/status')

@@ -108,7 +108,7 @@ TLS_PORTS = (443, 8443)
 
 def _resolve(mode: str, raw: str, inventory: dict, default_port: int = 443,
              plain_unless_tls_port: bool = False):
-    """``(dest, scheme, path, error_response)``.
+    """``(dest, scheme, path, error)`` -- *error* is ``(payload, status)``.
 
     ``plain_unless_tls_port`` is the backend rule: ``host:8080`` with no scheme
     is a plain-HTTP backend far more often than a TLS one, so only 443/8443
@@ -116,7 +116,7 @@ def _resolve(mode: str, raw: str, inventory: dict, default_port: int = 443,
     try:
         parsed = net_guard.parse_target(raw, default_port=default_port)
     except net_guard.TargetError as exc:
-        return None, "", "", (jsonify(ok=False, error=str(exc)), 400)
+        return None, "", "", ({"ok": False, "error": str(exc)}, 400)
     if plain_unless_tls_port and "://" not in raw \
             and parsed["port"] not in TLS_PORTS:
         parsed["scheme"] = "http"
@@ -127,7 +127,7 @@ def _resolve(mode: str, raw: str, inventory: dict, default_port: int = 443,
             parsed["host"], parsed["port"], mode=mode,
             inventory_hosts=[(h, int(a.port or 443)) for h, a in inventory.items()])
     except net_guard.TargetError as exc:
-        return None, "", "", (jsonify(ok=False, error=str(exc)), 400)
+        return None, "", "", ({"ok": False, "error": str(exc)}, 400)
     return dest, parsed["scheme"], parsed["path"], None
 
 
@@ -175,7 +175,15 @@ def run():
     leg A plus the derived leg B, and the diff says WHY it is absent instead of
     rendering an empty comparison that reads like "no differences".
     """
-    body = request.get_json(silent=True) or {}
+    payload, status = trace(request.get_json(silent=True) or {})
+    resp = jsonify(**payload)
+    return (_no_store(resp) if payload.get("ok") else resp), status
+
+
+def trace(body: dict) -> tuple[dict, int]:
+    """One trace as ``(payload, http_status)``: the page's ``/run`` and the
+    Plugin Studio step ``txn_trace`` (services.studio_troubleshoot) are this
+    one function, with the same gates, run as ``current_user``."""
     mode_a = str(body.get("mode_a") or net_guard.MODE_INVENTORY)
     mode_c = str(body.get("mode_c") or net_guard.MODE_FREE)
     method = str(body.get("method") or "GET").upper()
@@ -189,25 +197,25 @@ def run():
     if reveal and not _may_reveal():
         log_action("txn_trace.denied", target=(vip_raw or backend_raw)[:200],
                    extra={"reason": "reveal without " + REVEAL_PERMISSION})
-        return jsonify(ok=False, error=(
+        return {"ok": False, "error": (
             "Revealing credential values requires the '%s' permission. Trace "
-            "without it: values stay redacted." % REVEAL_PERMISSION)), 403
+            "without it: values stay redacted." % REVEAL_PERMISSION)}, 403
 
     if method not in txn_trace.SAFE_METHODS + txn_trace.MUTATING_METHODS:
-        return jsonify(ok=False, error="Method %s is not traceable." % method), 400
+        return {"ok": False, "error": "Method %s is not traceable." % method}, 400
     if method in txn_trace.MUTATING_METHODS:
         if not _may_free():
             log_action("txn_trace.denied", target=vip_raw[:200],
                        extra={"method": method,
                               "reason": "missing " + net_guard.FREE_PERMISSION})
-            return jsonify(ok=False, error=(
+            return {"ok": False, "error": (
                 "%s writes to the target application. It requires the '%s' "
-                "permission." % (method, net_guard.FREE_PERMISSION))), 403
+                "permission." % (method, net_guard.FREE_PERMISSION))}, 403
         if not body.get("confirm_mutating"):
-            return jsonify(ok=False, error=(
+            return {"ok": False, "error": (
                 "%s is a real write to that application, issued from this "
                 "server. Tick the confirmation to send it." % method),
-                needs_confirmation=True), 409
+                "needs_confirmation": True}, 409
 
     # Only a leg that is actually traced can need the free permission: the
     # panel always names a mode for both legs, and an empty backend must not
@@ -218,9 +226,9 @@ def run():
         log_action("txn_trace.denied", target=(vip_raw or backend_raw)[:200],
                    extra={"reason": "free target without "
                                     + net_guard.FREE_PERMISSION})
-        return jsonify(ok=False, error=(
+        return {"ok": False, "error": (
             "A free target requires the '%s' permission. Inventory "
-            "destinations remain available." % net_guard.FREE_PERMISSION)), 403
+            "destinations remain available." % net_guard.FREE_PERMISSION)}, 403
 
     inventory = _inventory()
     legs = []
@@ -260,8 +268,7 @@ def run():
     ended = time.time()
 
     if not legs:
-        return jsonify(ok=False,
-                       error="Give at least a VIP or a backend to trace."), 400
+        return {"ok": False, "error": "Give at least a VIP or a backend to trace."}, 400
 
     comparison = txn_trace.diff(leg_a, leg_c) if (leg_a and leg_c) else {
         "comparable": False,
@@ -282,12 +289,11 @@ def run():
     findings = {l["leg"]: txn_trace.cookie_findings(
         l.get("set_cookie"), l["request"].get("scheme", "https"))
         for l in legs if l.get("ok")}
-    return _no_store(jsonify(
-        ok=True, legs=legs, diff=comparison, cookie_findings=findings,
-        revealed=reveal,
-        curl=[{"leg": l["leg"], "label": l.get("label"),
-               "cmd": txn_trace.to_curl(l)} for l in legs],
-        window=[started, ended]))
+    return {"ok": True, "legs": legs, "diff": comparison, "cookie_findings": findings,
+            "revealed": reveal,
+            "curl": [{"leg": l["leg"], "label": l.get("label"),
+                      "cmd": txn_trace.to_curl(l)} for l in legs],
+            "window": [started, ended]}, 200
 
 
 @bp.route("/derive", methods=["POST"])

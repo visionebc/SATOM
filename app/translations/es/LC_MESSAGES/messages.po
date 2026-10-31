@@ -28586,3 +28586,7 @@ msgstr "paquete(s) antiguo(s) de versiones anteriores no se muestran: quedan en 
 
 msgid "then upload it in"
 msgstr "luego súbalo en"
+
+#: app/templates/naming/index.html
+msgid "is where the site is published (for example bv, ext or all), decided by the flow that builds the names; empty, it takes its dash with it."
+msgstr "es dónde se publica el sitio (por ejemplo bv, ext o all), lo decide el flujo que construye los nombres; vacío, se lleva su guion consigo."

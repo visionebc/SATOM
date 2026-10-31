@@ -28602,3 +28602,7 @@ msgstr "pacchetto/i più vecchio/i di release precedenti non sono elencati: rest
 
 msgid "then upload it in"
 msgstr "poi caricalo in"
+
+#: app/templates/naming/index.html
+msgid "is where the site is published (for example bv, ext or all), decided by the flow that builds the names; empty, it takes its dash with it."
+msgstr "indica dove viene pubblicato il sito (ad esempio bv, ext o all), deciso dal flusso che costruisce i nomi; se vuoto, porta via con sé il suo trattino."

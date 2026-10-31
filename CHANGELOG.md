@@ -27,6 +27,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `_can_apply` reads. The provider's base URL is not shown. The Open Scout and
   Open Path Diagnostics links follow those pages' own gates. Tests:
   `tests/test_sentinel_ops_doc.py`.
+- **Naming: the publication scope `{scope}`, and one place for the names
+  plugins build** (FA-0011; request, translated: "I use spo-bv-host-port,
+  spo-ext-host-port or spo-all-host-port depending on where it is published,
+  and that comes from the rules of the 'New FortiWeb server policy (DDI +
+  certificate)' plugin -- change the naming or do everything in plugins?").
+  Decided: Administrator › Naming defines the pattern, the flow decides the
+  values. `{scope}` is a new site token (reserved, readable by a variable);
+  an EMPTY scope takes one adjoining dash with it, so `spo-{scope}-{host_u}`
+  with no scope is `spo-shop_example_com` and every pattern saved before
+  renders exactly as it did. New FortiWeb section **Server Policy
+  (plugins)** (server policy, virtual server, VIP, server pool) with the
+  tokens a Plugin Studio `render_names` step passes (`{extra}`, `{service}`,
+  `{dns}`, `{spo}` below the policy) besides the site tokens and the
+  variables; its defaults (`spo-{scope}-{extra}-{service}-{port}`,
+  `vs-{spo}`, `vip-{spo}`, `pool-{spo}`) give exactly the names
+  spo-fortiweb 1.2.x gave. The page has a **Scope** picker next to the sample
+  address and shows, under every pattern that uses `{scope}`, what it gives
+  for none / bv / ext / all. The `render_names` step gets **Name patterns
+  from** (`patterns`, as before, or `naming`) and **Shipped patterns**: with
+  `naming` the four names come from Naming and the step's Patterns only add
+  other objects (e.g. `service`); a Patterns row for one of the four that is
+  not one of the app's shipped patterns and gives another name **stops the
+  step** (move the pattern to Naming, delete the row) -- an install that
+  customised its data store is never renamed in silence. A SATOM without this
+  ignores both settings and uses the Patterns. spo-fortiweb **1.3.0** uses it:
+  the scope comes from its FortiWeb rule (`spo-fortiweb-rules`, new column
+  `scope`; empty = the entry type's own: none, `ext`, `all`). Tests:
+  `tests/test_naming_scope.py`.
 
 ### Changed
 - **Network Segments: one interface per network, and rows can be cloned**

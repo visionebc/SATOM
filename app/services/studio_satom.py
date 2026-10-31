@@ -124,10 +124,25 @@ def kinds(ch: dict | None = None) -> list:
         K("render_names", "Render names", GROUP,
           "Build object names from patterns -- {extra}, {service}, {port}, {dns}, {spo} or any "
           "value you pass. An empty value takes its dash with it (spo-{extra}-x with no extra "
-          "is spo-x), and a name FortiWeb would refuse is an error.",
-          [P("patterns", "Patterns", required=True,
+          "is spo-x), and a name FortiWeb would refuse is an error. With 'Administrator > "
+          "Naming' the server policy, virtual server, VIP and server pool names come from "
+          "Naming > Server Policy (plugins), which also fills in {name}, {host}, {scope} and "
+          "the FortiWeb variables; pass the publication scope as \"scope\" in the values.",
+          [P("scheme", "Name patterns from", "select", choices=("patterns", "naming"),
+             default="patterns",
+             help="patterns: the Patterns below. naming: Administrator > Naming > Server Policy "
+                  "(plugins) for server_policy, virtual_server, vip and server_pool; Patterns "
+                  "add any other object (e.g. service). A Patterns row for one of those four "
+                  "objects that gives another name stops the step (move the pattern to Naming "
+                  "and delete the row) -- unless it is one of the Shipped patterns."),
+           P("patterns", "Patterns",
              help='{{ name_rules }} (rows with object + pattern) or JSON '
                   '{"server_policy": "spo-{extra}-{service}-{port}"}'),
+           P("shipped", "Shipped patterns (JSON)", "json",
+             help='Only with naming: the patterns your app seeded its data store with, e.g. '
+                  '["vs-{spo}", "vip-{spo}"]. A row still equal to one was never changed here, '
+                  'so Naming wins without a stop. A SATOM without Naming support ignores this '
+                  'and the scheme, and uses the Patterns as before.'),
            P("values", "Values (JSON)", "json", True,
              help='{"extra": "{{ form.extra }}", "service": "{{ form.dns | replace(\'.\', \'_\') }}"}'),
            F._save_as("names")]),
@@ -486,24 +501,73 @@ def fill(pattern: str, values: dict) -> str:
     return re.sub(r"-{2,}", "-", out).strip("-")
 
 
-def render_names(patterns, values: dict) -> dict:
-    from . import naming
+def _pattern_rows(patterns) -> dict:
+    """``{object: pattern}`` from rows with object + pattern, or an object."""
     if isinstance(patterns, list):
         rows = {}
         for r in patterns:
             if isinstance(r, dict) and r.get("object"):
                 rows[str(r["object"])] = str(r.get("pattern") or "")
-        patterns = rows
-    if not isinstance(patterns, dict) or not patterns:
-        raise F.FlowError("no name patterns (rows with object + pattern, or an object)")
-    vals = dict(values or {})
+        return rows
+    return dict(patterns) if isinstance(patterns, dict) else {}
+
+
+def _fill_all(patterns: dict, vals: dict) -> dict:
     out = {}
     # The policy name first: the other patterns may use it as {spo}.
-    order = sorted(patterns, key=lambda k: (k != "server_policy", k))
-    for k in order:
+    for k in sorted(patterns, key=lambda k: (k != "server_policy", k)):
         out[k] = fill(patterns[k], vals)
         if k == "server_policy":
             vals.setdefault("spo", out[k])
+    return out
+
+
+def naming_scheme() -> tuple[dict, list]:
+    """Administrator > Naming > Server Policy (plugins), FortiWeb (FA-0011):
+    ``({object: pattern}, variables)``."""
+    from . import naming
+    from . import settings_store as store
+    p = naming.PRODUCT_FORTIWEB
+    scheme = naming.effective_scheme(store.naming_overrides(p), p)
+    return ({o: scheme[k] for k, o in naming.PLUGIN_OBJECTS.items()},
+            store.naming_variables(p))
+
+
+def render_names(patterns, values: dict, scheme: str = "patterns", shipped=()) -> dict:
+    """``{object: name}``. *scheme* ``naming`` takes the server policy tree's
+    patterns from Administrator > Naming (one place for the convention; the
+    app passes the values, ``scope`` among them) and *patterns* only for the
+    other objects. A *patterns* row for one of those objects is a guard, never
+    ignored in silence: unless it is one of the *shipped* patterns (the app's
+    seed, never changed on this server), a row that gives another name than
+    Naming stops the step -- an install that customised its data store never
+    gets renamed objects."""
+    from . import naming
+    rows = _pattern_rows(patterns)
+    vals = dict(values or {})
+    if scheme == "naming":
+        own, variables = naming_scheme()
+        tokens = naming.site_tokens(str(vals.get("dns") or ""), vals.get("port") or "",
+                                    variables, scope=vals.get("scope") or "")
+        tokens.update(vals)                  # what the app passes wins
+        vals = tokens
+        out = _fill_all({**{k: v for k, v in rows.items() if k not in own}, **own}, dict(vals))
+        seed = {str(x).strip() for x in (shipped or ()) if str(x or "").strip()}
+        overlap = {k: rows[k] for k in own if k in rows and rows[k].strip() not in seed}
+        if overlap:
+            mine = _fill_all(overlap, {**vals, "spo": out["server_policy"]})
+            for k, name in mine.items():
+                if name != out[k]:
+                    raise F.FlowError(
+                        "the pattern row for %s gives %r but Administrator > Naming > Server "
+                        "Policy (plugins) gives %r: Naming defines this name -- put %r there "
+                        "and delete the row" % (k, name, out[k], overlap[k]))
+    elif scheme not in ("", "patterns"):
+        raise F.FlowError("name patterns come from patterns or naming, not %r" % scheme)
+    else:
+        if not rows:
+            raise F.FlowError("no name patterns (rows with object + pattern, or an object)")
+        out = _fill_all(rows, vals)
     for k, v in out.items():
         bad = naming.unsafe_name(v)
         if bad:
@@ -1150,7 +1214,12 @@ def run(node: dict, ctx) -> tuple:
         vals = F._json(node, ctx, "values", "Values") or {}
         if not isinstance(vals, dict):
             raise F.FlowError("values is an object")
-        names = render_names(_r(node, ctx, "patterns"), vals)
+        scheme = _s(node, ctx, "scheme", "patterns") or "patterns"
+        shipped = F._json(node, ctx, "shipped", "Shipped patterns") if scheme == "naming" else []
+        if shipped and not isinstance(shipped, list):
+            raise F.FlowError("shipped patterns are a JSON list")
+        names = render_names(_r(node, ctx, "patterns"), vals, scheme=scheme,
+                             shipped=shipped or ())
         return "ok", names, ", ".join("%s=%s" % kv for kv in names.items())
     if kind == "ddi_reserve_set":
         vals = F._json(node, ctx, "values", "Values") or {}

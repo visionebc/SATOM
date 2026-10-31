@@ -166,6 +166,14 @@ SAMPLE_ADDRESS = "shop.example.com"
 SAMPLE_PORT = "443"
 
 
+def _step_samples(tokens: dict) -> dict:
+    """Sample values of what a Plugin Studio ``render_names`` step passes
+    (Server Policy (plugins)): the DNS name, the service (the DNS name with
+    . as _, as spo-fortiweb passes it) and an empty extra text."""
+    host = tokens.get("host") or ""
+    return {"dns": host, "service": host.replace(".", "_"), "extra": ""}
+
+
 def _free_tokens(variables) -> tuple[str, ...]:
     """Tokens that match free text when an existing name is checked against a
     catalog pattern: ``{host}`` and every variable (a rewritten host is
@@ -332,6 +340,9 @@ def index():
         site_tokens=naming_svc.SITE_TOKENS,
         sample_address=SAMPLE_ADDRESS, sample_port=SAMPLE_PORT,
         sample_tokens=naming_svc.site_tokens(SAMPLE_ADDRESS, SAMPLE_PORT, model["variables"]),
+        step_samples=_step_samples({"host": naming_svc.split_address(SAMPLE_ADDRESS)[0]}),
+        scope_examples=naming_svc.SCOPE_EXAMPLES,
+        plugin_section=naming_svc.SECTION_PLUGIN,
     )
 
 
@@ -409,8 +420,11 @@ def preview():
     variables = naming_svc.normalize_variables(body.get('variables') or [])[:naming_svc.MAX_VARIABLES]
     address = str(body.get('address') or '')[:255]
     port = str(body.get('port') or '')[:5]
+    scope = str(body.get('scope') or '')[:32]
+    tokens = naming_svc.site_tokens(address, port, variables, scope)
     return jsonify({
-        'tokens': naming_svc.site_tokens(address, port, variables),
+        'tokens': tokens,
+        'step': _step_samples(tokens),
         'problems': naming_svc.variable_problems(variables),
         'variables': [v['name'] for v in variables],
     })

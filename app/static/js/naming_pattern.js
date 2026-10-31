@@ -80,13 +80,32 @@ window.NamingPattern = (function () {
   }
 
   /* A pattern under real token values: unknown tokens stay literal and the
-   * result is capped like ``naming.render_pattern``. */
+   * result is capped like ``naming.render_pattern``; an empty {scope} takes
+   * one adjoining dash with it (``naming.DROPPABLE_TOKENS``). */
   function render(pattern, tokens) {
+    var out = pattern || '';
+    if (tokens && Object.prototype.hasOwnProperty.call(tokens, 'scope') && !String(tokens.scope || '').trim()) {
+      out = out.replace(/-\{scope\}/g, '').replace(/\{scope\}-?/g, '');
+    }
     TOKEN.lastIndex = 0;
-    var out = (pattern || '').replace(TOKEN, function (whole, t) {
+    out = out.replace(TOKEN, function (whole, t) {
       return Object.prototype.hasOwnProperty.call(tokens || {}, t) ? tokens[t] : whole;
     });
     return out.substring(0, 63);
+  }
+
+  /* A pattern the way a Plugin Studio ``render_names`` step fills it
+   * (``studio_satom.fill``): EVERY empty value takes one adjoining dash with
+   * it, unknown tokens stay literal, no length cap. */
+  function fill(pattern, tokens) {
+    var out = pattern || '';
+    Object.keys(tokens || {}).forEach(function (k) {
+      var v = tokens[k] === null || tokens[k] === undefined ? '' : String(tokens[k]).trim();
+      var e = esc('{' + k + '}');
+      if (v) out = out.split('{' + k + '}').join(v);
+      else out = out.replace(new RegExp('-?' + e, 'g'), '').replace(new RegExp('^' + e + '-?'), '');
+    });
+    return out.replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '');
   }
 
   /* Why a rendered name cannot be built ("" = it can) — ``naming.unsafe_name``. */
@@ -97,5 +116,5 @@ window.NamingPattern = (function () {
 
   return { slugify: slugify, toRegex: toRegex, check: check,
            derivesProblem: derivesProblem, sample: sample,
-           render: render, unsafe: unsafe };
+           render: render, fill: fill, unsafe: unsafe };
 })();

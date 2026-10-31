@@ -29,6 +29,7 @@
       <code>{name}</code> {{ _('is the site identifier, sanitised automatically') }}
       (<code>shop.example.com → shop-example-com</code>),
       <code>{host}</code> {{ _('the host as typed (dots kept) and') }} <code>{port}</code> {{ _('the port the creating flow gives.') }}
+      <code>{scope}</code> {{ _('is where the site is published (for example bv, ext or all), decided by the flow that builds the names; empty, it takes its dash with it.') }}
       {{ _('Variables (below) rewrite a token with a regular expression, for a name the devices accept') }}
       (<code>{host_u}-{port}</code> → <code>shop_example_com-443</code>).
       {{ _('Entries marked “builds names” are the ones SATOM fills in when it creates objects: they take those tokens and the variables only. The others document your convention and may use any Discovery token') }}
@@ -80,6 +81,13 @@
       <div class="col-auto"><label class="fw-form-label mb-0" for="naming-sample-port">{{ _('Port') }}</label></div>
       <div class="col-auto" style="width:90px;">
         <input type="text" id="naming-sample-port" class="form-control form-control-sm fw-form-control" value="{{ sample_port }}" inputmode="numeric">
+      </div>
+      <div class="col-auto"><label class="fw-form-label mb-0" for="naming-sample-scope">{{ _('Scope') }}</label></div>
+      <div class="col-auto">
+        <select id="naming-sample-scope" class="form-select form-select-sm fw-form-control" style="width:auto;">
+          <option value="">{{ _('none') }}</option>
+          {% for s in scope_examples %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
       </div>
       <div class="col-auto"><span class="text-muted" id="naming-slug" style="font-size:12px;"></span></div>
       <div class="col-auto ms-lg-auto" style="min-width:220px;">
@@ -151,6 +159,7 @@
                      data-allowed="{{ e.allowed | tojson | forceescape }}"
                      data-free="{{ e.free | tojson | forceescape }}"
                      data-curated="{{ '1' if e.curated else '0' }}"
+                     data-plugin="{{ '1' if section == plugin_section else '0' }}"
                      data-default="{{ e.default }}"
                      data-names="{{ e.names | tojson | forceescape }}"
                      value="{{ e.value }}" placeholder="{{ e.default or (e.found.consensus if e.found else '') }}"
@@ -159,6 +168,7 @@
               <span class="input-group-text text-muted nm-preview" style="min-width:140px; justify-content:flex-start;"></span>
             </div>
             <div class="d-flex align-items-center gap-2 flex-wrap mt-1" style="font-size:11.5px;">
+              <span class="text-muted nm-scopes"></span>
               {% if e.found %}
                 <span class="text-muted">{{ _('Found') }}</span> <code>{{ e.found.consensus }}</code>
                 {% if e.found.single %}<span class="text-muted">· {{ e.found.devices[0].device }} {{ e.found.devices[0].conform }}/{{ e.found.devices[0].user }}</span>
@@ -195,7 +205,10 @@
 (function () {
   var NP = window.NamingPattern, PROTO = {{ proto_words | tojson }};
   var PREVIEW = "{{ url_for('naming.preview') }}", CSRF = "{{ csrf_token() }}";
-  var SITE = ['name', 'host', 'port'], CERT = ['name', 'class', 'cn', 'date', 'serial'];
+  var SITE = {{ site_tokens | list | tojson }}, CERT = ['name', 'class', 'cn', 'date', 'serial'];
+  var SCOPES = [''].concat({{ scope_examples | list | tojson }});
+  var STEP = {{ step_samples | tojson }};
+  var scopeEl = document.getElementById('naming-sample-scope');
   var sampleEl = document.getElementById('naming-sample');
   var portEl = document.getElementById('naming-sample-port');
   var varBody = document.getElementById('nm-var-body');
@@ -203,6 +216,7 @@
   // are Python regular expressions). Seeded with the saved variables.
   var TOKENS = {{ sample_tokens | tojson }};
   var VARNAMES = Object.keys(TOKENS).filter(function (t) { return SITE.indexOf(t) < 0; });
+  var VARNAMES0 = VARNAMES.slice();
 
   function varRows() {
     return Array.prototype.slice.call(varBody.querySelectorAll('.nm-var-row'));
@@ -221,7 +235,20 @@
     if (!allowed) return null;
     if (allowed.indexOf('class') >= 0) return CERT;
     if (allowed.indexOf('host') < 0) return ['name'];
-    return SITE.concat(VARNAMES);
+    // what the server allows minus the SAVED variables, plus the ones on the page
+    return allowed.filter(function (t) { return VARNAMES0.indexOf(t) < 0; }).concat(VARNAMES);
+  }
+  // Server Policy (plugins): rendered the way the render_names step fills
+  // them in, with sample step values and {spo} = the policy entry's name.
+  function pluginName(pat, tokens) {
+    var t = Object.assign({}, tokens, STEP);
+    var pol = document.getElementById('nm_plugin_server_policy');
+    if (pol) t.spo = NP.fill(pol.value.trim() || pol.getAttribute('data-default') || '', t);
+    return NP.fill(pat, t);
+  }
+  function nameOf(inp, pat, tokens, site) {
+    if (inp.getAttribute('data-plugin') === '1') return pluginName(pat, tokens);
+    return site || inp.getAttribute('data-curated') === '1' ? NP.render(pat, tokens) : NP.sample(pat, tokens.name || '');
   }
 
   function refreshOne(inp) {
@@ -231,8 +258,14 @@
     var site = !!allowed && allowed.indexOf('host') >= 0;
     var free = JSON.parse(inp.getAttribute('data-free') || '[]').length ? ['host'].concat(VARNAMES) : [];
     var pv = box.querySelector('.nm-preview');
-    var name = pat ? (site || inp.getAttribute('data-curated') === '1' ? NP.render(pat, TOKENS) : NP.sample(pat, TOKENS.name || '')) : '';
+    var name = pat ? nameOf(inp, pat, TOKENS, site) : '';
     if (pv) pv.textContent = pat ? name : '—';
+    var sc = box.querySelector('.nm-scopes');
+    if (sc) {
+      sc.textContent = pat.indexOf('{scope}') >= 0 ? SCOPES.map(function (s) {
+        return (s || 'none') + ' → ' + nameOf(inp, pat, Object.assign({}, TOKENS, { scope: s }), site);
+      }).join(' · ') : '';
+    }
     var warn = '';
     if (pat && inp.getAttribute('data-derives') === '1' && allowed) {
       warn = NP.derivesProblem(pat, allowed);
@@ -256,7 +289,7 @@
   function refreshAll() {
     var slugEl = document.getElementById('naming-slug');
     if (slugEl) slugEl.textContent = 'name: ' + (TOKENS.name || '∅') + ' · host: ' + (TOKENS.host || '∅')
-      + ' · port: ' + (TOKENS.port || '∅');
+      + ' · port: ' + (TOKENS.port || '∅') + ' · scope: ' + (TOKENS.scope || '∅');
     varRows().forEach(function (r) {
       var n = r.querySelector('input').value.trim().toLowerCase();
       r.querySelector('.nm-var-value').textContent = Object.prototype.hasOwnProperty.call(TOKENS, n) ? TOKENS[n] : '';
@@ -270,9 +303,10 @@
       fetch(PREVIEW, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-        body: JSON.stringify({ address: sampleEl.value, port: portEl.value, variables: postedVariables() })
+        body: JSON.stringify({ address: sampleEl.value, port: portEl.value, scope: scopeEl.value, variables: postedVariables() })
       }).then(function (r) { return r.json(); }).then(function (d) {
         TOKENS = d.tokens || {};
+        STEP = d.step || STEP;
         VARNAMES = d.variables || [];
         document.getElementById('nm-var-problems').textContent = (d.problems || []).join(' · ');
         refreshAll();
@@ -335,6 +369,7 @@
   }
   sampleEl.addEventListener('input', function (event) { askServer(); });
   portEl.addEventListener('input', function (event) { askServer(); });
+  scopeEl.addEventListener('change', function (event) { askServer(); });
   varBody.addEventListener('input', function (event) { askServer(); });
   varBody.addEventListener('click', function (event) {
     var btn = event.target.closest('.nm-var-del');

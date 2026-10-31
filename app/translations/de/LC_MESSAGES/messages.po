@@ -28565,3 +28565,7 @@ msgstr "ältere(s) Paket(e) früherer Releases werden nicht aufgeführt: Sie ble
 
 msgid "then upload it in"
 msgstr "laden Sie es dann hoch unter"
+
+#: app/templates/naming/index.html
+msgid "is where the site is published (for example bv, ext or all), decided by the flow that builds the names; empty, it takes its dash with it."
+msgstr "ist der Ort, an dem die Site veröffentlicht wird (zum Beispiel bv, ext oder all), festgelegt vom Ablauf, der die Namen bildet; leer nimmt es seinen Bindestrich mit."

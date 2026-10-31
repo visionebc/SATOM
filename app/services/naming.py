@@ -37,8 +37,21 @@ TOKEN = "{name}"
 #: Tokens SATOM fills in from the site itself when it builds a name:
 #: ``name`` (the slug), ``host`` (the host exactly as typed, lower-cased,
 #: dots kept) and ``port`` (the port the creating flow gives — the wizard's
-#: Port field, the port in the address, or the flow's default).
-SITE_TOKENS = ("name", "host", "port")
+#: Port field, the port in the address, or the flow's default) and ``scope``
+#: (FA-0011: where the site is published -- ``bv``, ``ext``, ``all`` or any
+#: word the creating flow decides; empty for a flow that has no scope).
+SITE_TOKENS = ("name", "host", "port", "scope")
+
+#: The publication scopes the Naming page previews with. SATOM does not
+#: decide the scope: the flow that builds the names does (spo-fortiweb takes
+#: it from its rule for the entry type), so this is only the sample list.
+SCOPE_EXAMPLES = ("bv", "ext", "all")
+
+#: A token that may be empty: an empty ``{scope}`` takes ONE adjoining dash
+#: with it (``spo-{scope}-{host_u}`` with no scope is ``spo-shop_example_com``,
+#: never ``spo--shop_example_com``). Only ``{scope}``: an empty ``{port}`` or
+#: variable renders as it always did.
+DROPPABLE_TOKENS = ("scope",)
 
 #: What an object name SATOM builds may contain: letters, digits, ``_`` and
 #: ``-``. Operators report the devices refusing a dot in these names
@@ -52,8 +65,8 @@ VARIABLE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 #: Names a variable may not take: the site tokens, the certificate tokens and
 #: the tokens Discovery writes into the patterns it finds (a variable called
 #: ``num`` would change what every discovered pattern means).
-RESERVED_TOKENS = frozenset({"name", "host", "port", "class", "cn", "date", "serial",
-                             "proto", "adom", "vdom", "num", "ip", "device"})
+RESERVED_TOKENS = frozenset({"name", "host", "port", "scope", "class", "cn", "date",
+                             "serial", "proto", "adom", "vdom", "num", "ip", "device"})
 MAX_VARIABLES = 20
 MAX_REGEX_LEN = 200
 MAX_REPLACE_LEN = 100
@@ -131,6 +144,12 @@ SECTION_POLICY = "Server Policy"
 SECTION_WPP = "Web Protection Profile"
 SECTION_CERT = "Certificate Manager"
 
+#: The names a Plugin Studio app builds with a ``render_names`` step set to
+#: "Administrator → Naming" (FA-0011; spo-fortiweb). One place defines the
+#: pattern; the app decides the values it passes -- the publication
+#: ``{scope}`` among them.
+SECTION_PLUGIN = "Server Policy (plugins)"
+
 # ── FortiADC sections ─────────────────────────────────────────────────────────
 SECTION_ADC_SLB = "Server Load Balance"
 SECTION_ADC_SSL = "SSL"
@@ -182,6 +201,23 @@ NAMING_ELEMENTS: tuple[NamingElement, ...] = (
     # Certificate Manager — the ADCS-signed cert name. Uses the cert tokens
     # {class}/{cn}/{date}/{serial} (NOT {name}); {date} keeps the old + new cert
     # distinct so both can live on the box during a maintenance-window swap.
+    # Server Policy (plugins) -- what a render_names step fills in: the site
+    # tokens and variables plus the values the app passes ({extra},
+    # {service}, {dns}) and {spo}, the server policy's own name. The defaults
+    # give exactly the names spo-fortiweb 1.2.x gave from its own data store.
+    NamingElement("plugin_server_policy", "Server Policy", SECTION_PLUGIN,
+                  "spo-{scope}-{extra}-{service}-{port}", PRODUCT_FORTIWEB,
+                  "Built by Plugin Studio apps (spo-fortiweb). {scope} is the publication "
+                  "scope the app decides (spo-fortiweb: its FortiWeb rule for the entry type "
+                  "-- none, ext or all by default, bv if you set it); {service} is the DNS name "
+                  "with . as _, {extra} the form's extra text. An empty value takes its dash "
+                  "with it."),
+    NamingElement("plugin_virtual_server", "Virtual Server", SECTION_PLUGIN, "vs-{spo}",
+                  PRODUCT_FORTIWEB, "{spo} is the server policy's name above."),
+    NamingElement("plugin_vip", "Virtual IP (VIP)", SECTION_PLUGIN, "vip-{spo}", PRODUCT_FORTIWEB,
+                  "{spo} is the server policy's name above."),
+    NamingElement("plugin_server_pool", "Server Pool", SECTION_PLUGIN, "pool-{spo}",
+                  PRODUCT_FORTIWEB, "{spo} is the server policy's name above."),
     NamingElement("managed_certificate", "Managed Certificate", SECTION_CERT,
                   "cert-{class}-{cn}-{date}", PRODUCT_FORTIWEB,
                   "Tokens: {class} {cn} {date} {serial}. The {date} makes the old "
@@ -228,6 +264,13 @@ NAMING_ELEMENTS: tuple[NamingElement, ...] = (
 )
 
 _BY_KEY = {e.key: e for e in NAMING_ELEMENTS}
+
+#: Naming element -> the object key a ``render_names`` step returns.
+PLUGIN_OBJECTS = {"plugin_server_policy": "server_policy",
+                  "plugin_virtual_server": "virtual_server",
+                  "plugin_vip": "vip", "plugin_server_pool": "server_pool"}
+#: The values a ``render_names`` step passes besides the site tokens.
+STEP_TOKENS = ("extra", "service", "dns", "spo")
 
 
 # --------------------------------------------------------------------------- #
@@ -315,7 +358,12 @@ def allowed_tokens(key: str, variables=None) -> set[str] | None:
         return {"name"} | {t.strip("{}") for t in CERT_TOKENS}
     if e.key in NAME_ONLY_ELEMENTS:
         return {"name"}
-    return set(SITE_TOKENS) | {v["name"] for v in normalize_variables(variables)}
+    out = set(SITE_TOKENS) | {v["name"] for v in normalize_variables(variables)}
+    if e.section == SECTION_PLUGIN:
+        out |= set(STEP_TOKENS)
+        if e.key == "plugin_server_policy":
+            out.discard("spo")            # {spo} IS this name
+    return out
 
 
 def pattern_problem(key: str, pattern: str, variables=None) -> str:
@@ -444,9 +492,10 @@ def variable_problems(variables) -> list[str]:
 
 
 def site_tokens(web_address: str, port: str | int | None = "",
-                variables=None) -> dict[str, str]:
-    """Every token value for one site: ``{name}``, ``{host}``, ``{port}`` and
-    then each variable in order. *port* wins over the port in the address.
+                variables=None, scope: str | None = "") -> dict[str, str]:
+    """Every token value for one site: ``{name}``, ``{host}``, ``{port}``,
+    ``{scope}`` and then each variable in order (a variable may read
+    ``{scope}``). *port* wins over the port in the address.
 
     A variable that fails at render time (only possible for a list stored
     around :func:`variable_problems`) renders empty rather than raising: the
@@ -454,7 +503,8 @@ def site_tokens(web_address: str, port: str | int | None = "",
     a clean refusal instead of a 500."""
     host, addr_port = split_address(web_address)
     tokens = {"name": slugify(web_address), "host": host,
-              "port": str(port).strip() if str(port or "").strip() else addr_port}
+              "port": str(port).strip() if str(port or "").strip() else addr_port,
+              "scope": str(scope or "").strip().lower()}
     for v in normalize_variables(variables):
         src = tokens.get(v["source"], "")
         try:
@@ -467,8 +517,14 @@ def site_tokens(web_address: str, port: str | int | None = "",
 def render_pattern(pattern: str, tokens: dict[str, str]) -> str:
     """Substitute every known token of *pattern* (unknown ones stay literal —
     :func:`pattern_problem` keeps those out of the patterns SATOM builds
-    from) and cap at :data:`MAX_NAME_LEN`."""
-    out = _TOKEN_RE.sub(lambda m: tokens.get(m.group(1), m.group(0)), pattern or "")
+    from) and cap at :data:`MAX_NAME_LEN`. An empty :data:`DROPPABLE_TOKENS`
+    token takes one adjoining dash with it."""
+    out = pattern or ""
+    for t in DROPPABLE_TOKENS:
+        if t in tokens and not str(tokens[t] or "").strip():
+            out = re.sub(r"-\{%s\}" % t, "", out)
+            out = re.sub(r"\{%s\}-?" % t, "", out)
+    out = _TOKEN_RE.sub(lambda m: tokens.get(m.group(1), m.group(0)), out)
     return out[:MAX_NAME_LEN]
 
 
@@ -517,6 +573,7 @@ def render_names(
     *,
     port: str | int | None = "",
     variables=None,
+    scope: str | None = "",
 ) -> dict[str, str]:
     """``{element_key: derived_name}`` for one product's elements, from one
     web address (and the port the creating flow gives).
@@ -527,7 +584,7 @@ def render_names(
     :func:`site_tokens`); with none, only ``{name}``/``{host}``/``{port}`` are
     filled in.
     """
-    tokens = site_tokens(web_address, port, variables)
+    tokens = site_tokens(web_address, port, variables, scope)
     return {
         key: render_pattern(pat, tokens)
         for key, pat in effective_scheme(overrides, product).items()
@@ -568,6 +625,11 @@ __all__ = [
     "render_pattern",
     "render_names",
     "SITE_TOKENS",
+    "SCOPE_EXAMPLES",
+    "DROPPABLE_TOKENS",
+    "SECTION_PLUGIN",
+    "PLUGIN_OBJECTS",
+    "STEP_TOKENS",
     "RESERVED_TOKENS",
     "normalize_variables",
     "variable_problems",

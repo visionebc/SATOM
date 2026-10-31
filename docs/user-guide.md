@@ -2597,6 +2597,7 @@ The site tokens:
 | `{name}` | `blabla-example-com` — the slug, as before |
 | `{host}` | `blabla.example.com` — the host as typed, dots kept |
 | `{port}` | the port the creating flow gives (the wizard's **Port**), else `8443` from the address |
+| `{scope}` | where the site is published (`bv`, `ext`, `all` or any word), decided by the flow that builds the names; empty when the flow has none (the native wizard), and then it takes ONE adjoining dash with it: `pol-{scope}-{name}` gives `pol-blabla-example-com` |
 
 **Variables** (the table above the patterns, one list **per product**) rewrite
 a token with a regular expression so the name is one the devices accept. Each
@@ -2618,6 +2619,22 @@ variable read as free text. Next to each input: what Discovery found on the devi
 (**all devices agree** / **devices differ**), **use it** to copy it in, and a
 live count of the existing names that follow the pattern you type. Use the
 filter box or **Only types with objects on a device** to narrow the list.
+
+**Server Policy (plugins)** (FortiWeb) holds the names a Plugin Studio app
+builds when its *Render names* step is set to **Name patterns from: naming**
+— today `spo-fortiweb`: server policy, virtual server, VIP and server pool.
+One place for the convention; the app passes the values. Besides the site
+tokens and the variables these patterns take `{extra}` (the form's extra
+text), `{service}` (the DNS name with `.` as `_`), `{dns}` and, below the
+policy, `{spo}` (the server policy's own name). As in the app, an empty value
+takes its dash with it. Defaults: `spo-{scope}-{extra}-{service}-{port}`,
+`vs-{spo}`, `vip-{spo}`, `pool-{spo}` — the names spo-fortiweb gave before
+this section existed. Example (FA-0011): variable `host_u` (reads `host`,
+`\.` → `_`) and `spo-{scope}-{host_u}-{port}` give `spo-bv-app1_example_com-443`,
+`spo-ext-…` or `spo-all-…` by the scope of the app's FortiWeb rule. The
+**Scope** picker next to the sample address sets the preview's scope, and
+every pattern that uses `{scope}` lists what it gives for none / bv / ext /
+all.
 
 **Discovery** reads the names already on a device — from the configuration
 tree SATOM keeps for it, no device call — and shows, per object type:
@@ -5663,8 +5680,14 @@ Certificate Manager). The diagram reads its variables from four data stores — 
 (per type: units in order, record name pattern, subnets, `ip_from`; e.g. split
 = `use-{dns}.used` in bn, `{dns}` in inet, ktv with inet's address),
 **spo-fortiweb-rules** (zone, line, VIP interface, which unit's address is the
-VIP; internal-external has two rows = two FortiWebs), **spo-naming** (the
-name of every object of the tree) — names the tree, picks the FortiWeb(s) by
+VIP, and **scope** — the publication scope the names carry: empty = the entry
+type's own, none / `ext` / `all`; set `bv` on the internal row for
+`spo-bv-…`; internal-external has two rows = two FortiWebs), **spo-naming**
+(the custom service's name; on a SATOM without *Server Policy (plugins)* the
+whole tree) — names the tree from **Administrator › Naming › Server Policy
+(plugins)** (since 1.3.0; a spo-naming row you changed for one of those four
+objects that gives another name stops the run before anything is written:
+move the pattern to Naming and delete the row), picks the FortiWeb(s) by
 capacity, reserves in the DDI, issues or deploys the certificate, creates the
 policy, and records the request in **spo-requests**. Any failure removes what
 the run created on the FortiWeb, releases its DDI records, records why, and

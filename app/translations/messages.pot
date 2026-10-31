@@ -11293,3 +11293,7 @@ msgstr ""
 #: layout sweep 2026-10-24
 msgid "Threshold scope"
 msgstr ""
+
+#: app/templates/naming/index.html
+msgid "is where the site is published (for example bv, ext or all), decided by the flow that builds the names; empty, it takes its dash with it."
+msgstr ""

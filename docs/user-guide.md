@@ -2597,7 +2597,7 @@ The site tokens:
 | `{name}` | `blabla-example-com` — the slug, as before |
 | `{host}` | `blabla.example.com` — the host as typed, dots kept |
 | `{port}` | the port the creating flow gives (the wizard's **Port**), else `8443` from the address |
-| `{scope}` | where the site is published (`bv`, `ext`, `all` or any word), decided by the flow that builds the names; empty when the flow has none (the native wizard), and then it takes ONE adjoining dash with it: `pol-{scope}-{name}` gives `pol-blabla-example-com` |
+| `{scope}` | where the site is published: the value **Administrator › Classification › Name scope** gives the zone the flow publishes in (one value per zone, one for more than one zone); empty when the Name scope is off, the zone has no value or the flow names no zone (the native wizard), and then it takes ONE adjoining dash with it: `pol-{scope}-{name}` gives `pol-blabla-example-com` |
 
 **Variables** (the table above the patterns, one list **per product**) rewrite
 a token with a regular expression so the name is one the devices accept. Each
@@ -2631,10 +2631,28 @@ takes its dash with it. Defaults: `spo-{scope}-{extra}-{service}-{port}`,
 `vs-{spo}`, `vip-{spo}`, `pool-{spo}` — the names spo-fortiweb gave before
 this section existed. Example (FA-0011): variable `host_u` (reads `host`,
 `\.` → `_`) and `spo-{scope}-{host_u}-{port}` give `spo-bv-app1_example_com-443`,
-`spo-ext-…` or `spo-all-…` by the scope of the app's FortiWeb rule. The
-**Scope** picker next to the sample address sets the preview's scope, and
-every pattern that uses `{scope}` lists what it gives for none / bv / ext /
-all.
+`spo-ext-…` or `spo-all-…` by the zone(s) of the app's FortiWeb rules and the
+values in **Classification › Name scope** (below). The **Scope** picker next
+to the sample address offers the values saved there (with their zone), and
+every pattern that uses `{scope}` lists what it gives for each of them and
+for none. With the Name scope off the picker offers none and the page says
+so.
+
+**Where the scope is written — Administrator › Classification › Name
+scope.** One place only, no built-in value: a switch **Add the scope to
+names**, one value per zone of the zones catalog (e.g. Internal `bv`,
+External `ext`) and one for **More than one zone** (`all`). A site published
+in one zone takes that zone's value, one published on devices of more than
+one zone the "More than one zone" value; an empty value, or the switch off,
+gives names without a scope. Next to each value: the Server Policy (plugins)
+name it gives for `app1.example.com`, port 443, rebuilt while you type by the
+same code the *Render names* step runs. A value may only contain letters,
+digits, `_` and `-`; a refused save writes nothing. Renaming a zone in the
+catalog keeps its value, deleting it drops it. An install that already ran
+spo-fortiweb got its values once at upgrade (migration `nscope01`): the
+zone of the plugin's `split` rule `ext`, more than one zone `all`, the
+`internal` zone none — the names the plugin gave before; nothing changes
+until you edit them.
 
 **Discovery** reads the names already on a device — from the configuration
 tree SATOM keeps for it, no device call — and shows, per object type:
@@ -7636,7 +7654,8 @@ for them among the tabs is a dead end:
 
 - **Naming** — the object-naming patterns; edited on the Naming page.
 - **Classification** — the zone / line / department vocabulary that scopes
-  baselines (§28); edited on the Classification page.
+  baselines (§28), and the **Name scope** (the `{scope}` value per zone,
+  §13.3); edited on the Classification page.
 - **Segments** — the network-segment registry; edited on the Network Segment
   page.
 - **PostgreSQL SSL policy** — saved from the Node TLS tab (§26.8).

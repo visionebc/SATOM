@@ -38,14 +38,10 @@ TOKEN = "{name}"
 #: ``name`` (the slug), ``host`` (the host exactly as typed, lower-cased,
 #: dots kept) and ``port`` (the port the creating flow gives — the wizard's
 #: Port field, the port in the address, or the flow's default) and ``scope``
-#: (FA-0011: where the site is published -- ``bv``, ``ext``, ``all`` or any
-#: word the creating flow decides; empty for a flow that has no scope).
+#: (FA-0011: where the site is published -- the value Administrator >
+#: Classification > Name scope gives the zone(s) the flow publishes in, see
+#: ``settings_store.scope_for``; empty for a flow that names no zone).
 SITE_TOKENS = ("name", "host", "port", "scope")
-
-#: The publication scopes the Naming page previews with. SATOM does not
-#: decide the scope: the flow that builds the names does (spo-fortiweb takes
-#: it from its rule for the entry type), so this is only the sample list.
-SCOPE_EXAMPLES = ("bv", "ext", "all")
 
 #: A token that may be empty: an empty ``{scope}`` takes ONE adjoining dash
 #: with it (``spo-{scope}-{host_u}`` with no scope is ``spo-shop_example_com``,
@@ -207,11 +203,11 @@ NAMING_ELEMENTS: tuple[NamingElement, ...] = (
     # give exactly the names spo-fortiweb 1.2.x gave from its own data store.
     NamingElement("plugin_server_policy", "Server Policy", SECTION_PLUGIN,
                   "spo-{scope}-{extra}-{service}-{port}", PRODUCT_FORTIWEB,
-                  "Built by Plugin Studio apps (spo-fortiweb). {scope} is the publication "
-                  "scope the app decides (spo-fortiweb: its FortiWeb rule for the entry type "
-                  "-- none, ext or all by default, bv if you set it); {service} is the DNS name "
-                  "with . as _, {extra} the form's extra text. An empty value takes its dash "
-                  "with it."),
+                  "Built by Plugin Studio apps (spo-fortiweb). {scope} is the value "
+                  "Administrator > Classification > Name scope gives the zone the site is "
+                  "published in (one value per zone, one for more than one zone); "
+                  "{service} is the DNS name with . as _, {extra} the form's extra text. An "
+                  "empty value takes its dash with it."),
     NamingElement("plugin_virtual_server", "Virtual Server", SECTION_PLUGIN, "vs-{spo}",
                   PRODUCT_FORTIWEB, "{spo} is the server policy's name above."),
     NamingElement("plugin_vip", "Virtual IP (VIP)", SECTION_PLUGIN, "vip-{spo}", PRODUCT_FORTIWEB,

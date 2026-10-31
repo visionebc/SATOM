@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 
 from flask import Blueprint, render_template, request, flash, redirect, url_for
+from flask_babel import gettext as _
 from flask_login import login_required
 
 from ..auth.decorators import require_permission
@@ -341,9 +342,26 @@ def index():
         sample_address=SAMPLE_ADDRESS, sample_port=SAMPLE_PORT,
         sample_tokens=naming_svc.site_tokens(SAMPLE_ADDRESS, SAMPLE_PORT, model["variables"]),
         step_samples=_step_samples({"host": naming_svc.split_address(SAMPLE_ADDRESS)[0]}),
-        scope_examples=naming_svc.SCOPE_EXAMPLES,
+        scope_examples=_scope_choices(),
+        name_scope_on=store.name_scope()["enabled"],
         plugin_section=naming_svc.SECTION_PLUGIN,
     )
+
+
+def _scope_choices() -> list[dict]:
+    """The scopes the preview offers: the values Administrator >
+    Classification > Name scope holds (per zone, then "More than one zone"),
+    each value once. Off: none -- ``{scope}`` is then always empty."""
+    cfg = store.name_scope()
+    if not cfg["enabled"]:
+        return []
+    out, seen = [], set()
+    zones = [(z, cfg["zones"].get(z, "")) for z in store.classification("zones")]
+    for label, val in zones + [(_("More than one zone"), cfg["multi"])]:
+        if val and val.lower() not in seen:
+            seen.add(val.lower())
+            out.append({"value": val, "label": "%s (%s)" % (val, label)})
+    return out
 
 
 @bp.route('/save', methods=['POST'])

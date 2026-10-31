@@ -126,8 +126,10 @@ def kinds(ch: dict | None = None) -> list:
           "value you pass. An empty value takes its dash with it (spo-{extra}-x with no extra "
           "is spo-x), and a name FortiWeb would refuse is an error. With 'Administrator > "
           "Naming' the server policy, virtual server, VIP and server pool names come from "
-          "Naming > Server Policy (plugins), which also fills in {name}, {host}, {scope} and "
-          "the FortiWeb variables; pass the publication scope as \"scope\" in the values.",
+          "Naming > Server Policy (plugins), which also fills in {name}, {host} and the "
+          "FortiWeb variables, and {scope} from Administrator > Classification > Name scope for "
+          "the Publication zones you pass (a \"scope\" in the values is ignored: the scope is "
+          "written in one place only).",
           [P("scheme", "Name patterns from", "select", choices=("patterns", "naming"),
              default="patterns",
              help="patterns: the Patterns below. naming: Administrator > Naming > Server Policy "
@@ -143,6 +145,11 @@ def kinds(ch: dict | None = None) -> list:
                   '["vs-{spo}", "vip-{spo}"]. A row still equal to one was never changed here, '
                   'so Naming wins without a stop. A SATOM without Naming support ignores this '
                   'and the scheme, and uses the Patterns as before.'),
+           P("zones", "Publication zones",
+             help='Only with naming: the zone(s) of the devices the site is published on, e.g. '
+                  '{{ fwb_rules | map(attribute="zone") | list }} or "Internal, External". '
+                  'One zone gives that zone\'s Name scope value, more than one the "More than one '
+                  'zone" value, none (or the Name scope off) no scope.'),
            P("values", "Values (JSON)", "json", True,
              help='{"extra": "{{ form.extra }}", "service": "{{ form.dns | replace(\'.\', \'_\') }}"}'),
            F._save_as("names")]),
@@ -533,11 +540,15 @@ def naming_scheme() -> tuple[dict, list]:
             store.naming_variables(p))
 
 
-def render_names(patterns, values: dict, scheme: str = "patterns", shipped=()) -> dict:
+def render_names(patterns, values: dict, scheme: str = "patterns", shipped=(),
+                 zones=(), scope_cfg=None) -> dict:
     """``{object: name}``. *scheme* ``naming`` takes the server policy tree's
-    patterns from Administrator > Naming (one place for the convention; the
-    app passes the values, ``scope`` among them) and *patterns* only for the
-    other objects. A *patterns* row for one of those objects is a guard, never
+    patterns from Administrator > Naming (one place for the convention) and
+    *patterns* only for the other objects; ``{scope}`` is
+    ``settings_store.scope_for(zones)`` -- Administrator > Classification >
+    Name scope is the ONLY place a scope is written, so a ``scope`` in the
+    app's values is dropped (*scope_cfg*: an unsaved Name scope, for the
+    Classification page's examples). A *patterns* row for one of those objects is a guard, never
     ignored in silence: unless it is one of the *shipped* patterns (the app's
     seed, never changed on this server), a row that gives another name than
     Naming stops the step -- an install that customised its data store never
@@ -546,9 +557,11 @@ def render_names(patterns, values: dict, scheme: str = "patterns", shipped=()) -
     rows = _pattern_rows(patterns)
     vals = dict(values or {})
     if scheme == "naming":
+        from . import settings_store as store
         own, variables = naming_scheme()
+        vals.pop("scope", None)
         tokens = naming.site_tokens(str(vals.get("dns") or ""), vals.get("port") or "",
-                                    variables, scope=vals.get("scope") or "")
+                                    variables, scope=store.scope_for(zones, scope_cfg))
         tokens.update(vals)                  # what the app passes wins
         vals = tokens
         out = _fill_all({**{k: v for k, v in rows.items() if k not in own}, **own}, dict(vals))
@@ -1219,7 +1232,8 @@ def run(node: dict, ctx) -> tuple:
         if shipped and not isinstance(shipped, list):
             raise F.FlowError("shipped patterns are a JSON list")
         names = render_names(_r(node, ctx, "patterns"), vals, scheme=scheme,
-                             shipped=shipped or ())
+                             shipped=shipped or (),
+                             zones=_r(node, ctx, "zones") if scheme == "naming" else ())
         return "ok", names, ", ".join("%s=%s" % kv for kv in names.items())
     if kind == "ddi_reserve_set":
         vals = F._json(node, ctx, "values", "Values") or {}

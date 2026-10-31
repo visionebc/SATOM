@@ -28569,3 +28569,33 @@ msgstr "laden Sie es dann hoch unter"
 #: app/templates/naming/index.html
 msgid "is where the site is published (for example bv, ext or all), decided by the flow that builds the names; empty, it takes its dash with it."
 msgstr "ist der Ort, an dem die Site veröffentlicht wird (zum Beispiel bv, ext oder all), festgelegt vom Ablauf, der die Namen bildet; leer nimmt es seinen Bindestrich mit."
+
+msgid "Name scope"
+msgstr "Namens-Scope"
+
+msgid "Add the scope to names"
+msgstr "Scope in Namen einfügen"
+
+msgid "More than one zone"
+msgstr "Mehr als eine Zone"
+
+msgid "Example: Server Policy (plugins)"
+msgstr "Beispiel: Server Policy (Plugins)"
+
+msgid "No zones in the catalog yet."
+msgstr "Noch keine Zonen im Katalog."
+
+msgid "Save Name scope"
+msgstr "Namens-Scope speichern"
+
+msgid "Examples for app1.example.com, port 443, no extra text."
+msgstr "Beispiele für app1.example.com, Port 443, ohne Zusatztext."
+
+msgid "Name scope is off: {scope} is empty in every name."
+msgstr "Namens-Scope ist aus: {scope} ist in jedem Namen leer."
+
+msgid "is where the site is published: the value Administrator > Classification > Name scope gives its zone (one value per zone, one for more than one zone); empty, it takes its dash with it."
+msgstr "ist, wo die Site veröffentlicht wird: der Wert, den Administrator > Classification > Name scope ihrer Zone gibt (ein Wert pro Zone, einer für mehr als eine Zone); leer nimmt er seinen Bindestrich mit."
+
+msgid "The publication scope object names carry as {scope} (Administrator > Naming, e.g. spo-{scope}-{service}-{port}). This is the only place it is written: a site published in one zone takes that zone's value, one published in more than one zone takes the “More than one zone” value. An empty value, or the switch off, gives names without a scope."
+msgstr "Der Veröffentlichungs-Scope, den Objektnamen als {scope} tragen (Administrator > Naming, z. B. spo-{scope}-{service}-{port}). Nur hier wird er festgelegt: eine Site in einer Zone erhält den Wert dieser Zone, eine Site in mehr als einer Zone den Wert „Mehr als eine Zone“. Ein leerer Wert oder der ausgeschaltete Schalter ergibt Namen ohne Scope."

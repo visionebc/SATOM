@@ -25,6 +25,7 @@ K_LOG_LEVELS = "general.log_levels"                # JSON list
 K_NAMING = "naming.scheme"                          # JSON dict of overrides
 K_NAMING_VARIABLES = "naming.variables"             # + ".<product>": JSON list (FA-0001)
 K_CLS_PREFIX = "classification."                    # + zones|lines|departments -> JSON list
+K_NAME_SCOPE = "classification.name_scope"         # JSON {enabled, zones: {zone: value}, multi}
 K_SEGMENTS = "network.segments"                     # JSON list of dicts
 K_IP_WHITELIST = "access.ip_whitelist"              # JSON list of {ip, note}
 K_ALLOWED_USERS_LEGACY = "access.allowed_users"     # REMOVED gate; see below
@@ -408,6 +409,161 @@ def save_classification(kind: str, values: list[str]) -> None:
         if v and v.lower() not in {s.lower() for s in seen}:
             seen.append(v)
     set_json(K_CLS_PREFIX + kind, seen)
+
+
+# ---- Name scope (Classification) ------------------------------------------
+# The publication scope a name carries as ``{scope}`` (Administrator >
+# Naming), written in ONE place: Administrator > Classification > Name scope,
+# one value per zone of the zones catalog plus one for a publication that
+# spans more than one zone. Nothing here is a built-in value: an absent row is
+# "off, no values" (no scope in any name). Existing installs got their values
+# once, from migration ``nscope01`` (:func:`seed_name_scope`), so the names
+# spo-fortiweb gave before do not change.
+
+def normalize_name_scope(raw) -> dict:
+    """``{"enabled": bool, "zones": {zone: value}, "multi": value}`` from
+    whatever is stored or posted. Values are stripped, never invented; zones
+    with an empty name are dropped."""
+    raw = raw if isinstance(raw, dict) else {}
+    zones = raw.get("zones") if isinstance(raw.get("zones"), dict) else {}
+    return {
+        "enabled": bool(raw.get("enabled")),
+        "zones": {str(z).strip(): str(v if v is not None else "").strip()
+                  for z, v in zones.items() if str(z or "").strip()},
+        "multi": str(raw.get("multi") if raw.get("multi") is not None else "").strip(),
+    }
+
+
+def name_scope_problems(cfg: dict) -> list[str]:
+    """Refusals for a name scope config. A value goes into object names, so it
+    obeys the same rule as a built name (letters, digits, ``_`` and ``-``);
+    empty is allowed (no scope for that zone)."""
+    from .naming import SAFE_NAME_RE
+    out = []
+    items = [(z, v) for z, v in cfg.get("zones", {}).items()] + [
+        ("More than one zone", cfg.get("multi", ""))]
+    for zone, val in items:
+        if val and not SAFE_NAME_RE.match(val):
+            out.append(f"Name scope for {zone}: {val!r} may only contain letters, digits, "
+                       "'_' and '-'.")
+        elif len(val) > 32:
+            out.append(f"Name scope for {zone}: {val!r} is longer than 32 characters.")
+    return out
+
+
+def name_scope() -> dict:
+    """The stored name scope. Absent row: off, no values."""
+    return normalize_name_scope(get_json(K_NAME_SCOPE, {}))
+
+
+def save_name_scope(raw) -> list[str]:
+    """Validate and store; on any refusal NOTHING is written. Only zones of
+    the zones catalog are kept (a value for a zone that no longer exists is
+    not a setting anybody can see)."""
+    cfg = normalize_name_scope(raw)
+    problems = name_scope_problems(cfg)
+    if problems:
+        return problems
+    catalog = {z.lower(): z for z in classification("zones")}
+    cfg["zones"] = {catalog[z.lower()]: v for z, v in cfg["zones"].items()
+                    if z.lower() in catalog}
+    set_json(K_NAME_SCOPE, cfg)
+    return []
+
+
+def zone_list(zones) -> list[str]:
+    """Distinct non-empty zone names (case-insensitive, first spelling kept)
+    from a list, a JSON list or a comma-separated text."""
+    if isinstance(zones, str):
+        text = zones.strip()
+        try:
+            zones = json.loads(text) if text.startswith("[") else text.split(",")
+        except ValueError:
+            zones = text.strip("[]").replace("'", "").split(",")
+    if not isinstance(zones, (list, tuple, set)):
+        zones = [] if zones is None else [zones]
+    seen, out = set(), []
+    for z in zones:
+        z = str(z if z is not None else "").strip()
+        if z and z.lower() not in seen:
+            seen.add(z.lower())
+            out.append(z)
+    return out
+
+
+def scope_for(zones, cfg: dict | None = None) -> str:
+    """THE resolver of ``{scope}``: the value of the one zone a site is
+    published in, the "More than one zone" value when it spans several, and
+    empty when the name scope is off or no zone is given."""
+    cfg = name_scope() if cfg is None else normalize_name_scope(cfg)
+    if not cfg["enabled"]:
+        return ""
+    zs = zone_list(zones)
+    if not zs:
+        return ""
+    if len(zs) > 1:
+        return cfg["multi"]
+    want = zs[0].lower()
+    return next((v for z, v in cfg["zones"].items() if z.lower() == want), "")
+
+
+def move_name_scope_zones(renamed, deleted) -> None:
+    """Follow the zones catalog: a renamed zone keeps its value under the new
+    name, a deleted one loses it. Called by ``classification_ops.apply_all``
+    in the same save that changes the catalog."""
+    raw = get_json(K_NAME_SCOPE, None)
+    if not isinstance(raw, dict):
+        return
+    cfg = normalize_name_scope(raw)
+    zones = dict(cfg["zones"])
+    gone = {str(d).strip().lower() for d in deleted or ()}
+    moved = {}
+    for old, new in renamed or ():
+        for z in list(zones):
+            if z.lower() == str(old).strip().lower():
+                moved[str(new).strip()] = zones.pop(z)
+    zones = {z: v for z, v in zones.items() if z.lower() not in gone}
+    zones.update(moved)
+    if zones != cfg["zones"]:
+        cfg["zones"] = zones
+        set_json(K_NAME_SCOPE, cfg)
+
+
+def seed_name_scope(rules) -> dict:
+    """The one-time values for an existing install (migration ``nscope01``),
+    from the rows of the spo-fortiweb-rules data store if it exists: the zone
+    of the ``split`` rule had names with ``ext``, a publication on two zones
+    (``internal-external``) names with ``all``, the ``internal`` rule none --
+    the names spo-fortiweb 1.2.x gave. A ``scope`` a 1.3.0 rule row carried is
+    kept for its zone. No store: on, no values (no scope in any name)."""
+    cfg = {"enabled": True, "zones": {}, "multi": ""}
+    rows = [r for r in (rules or []) if isinstance(r, dict)]
+    if not rows:
+        return cfg
+    cfg["multi"] = "all"
+    by_type: dict[str, list[dict]] = {}
+    for r in rows:
+        by_type.setdefault(str(r.get("entry_type") or "").strip(), []).append(r)
+    for r in by_type.get("split", []):
+        z = str(r.get("zone") or "").strip()
+        if z:
+            cfg["zones"].setdefault(z, "ext")
+    for r in by_type.get("internal", []):
+        z = str(r.get("zone") or "").strip()
+        if z:
+            cfg["zones"].setdefault(z, "")
+    for etype, rs in by_type.items():
+        first = sorted(rs, key=lambda r: _to_int(r.get("order"), 0))[0]
+        sc = str(first.get("scope") or "").strip()
+        if not sc:
+            continue
+        if etype == "internal-external":
+            cfg["multi"] = sc
+        else:
+            z = str(first.get("zone") or "").strip()
+            if z:
+                cfg["zones"][z] = sc
+    return cfg
 
 
 # ---- Network segments -----------------------------------------------------

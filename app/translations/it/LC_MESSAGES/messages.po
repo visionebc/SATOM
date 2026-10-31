@@ -28606,3 +28606,33 @@ msgstr "poi caricalo in"
 #: app/templates/naming/index.html
 msgid "is where the site is published (for example bv, ext or all), decided by the flow that builds the names; empty, it takes its dash with it."
 msgstr "indica dove viene pubblicato il sito (ad esempio bv, ext o all), deciso dal flusso che costruisce i nomi; se vuoto, porta via con sé il suo trattino."
+
+msgid "Name scope"
+msgstr "Ambito del nome"
+
+msgid "Add the scope to names"
+msgstr "Aggiungi l'ambito ai nomi"
+
+msgid "More than one zone"
+msgstr "Più di una zona"
+
+msgid "Example: Server Policy (plugins)"
+msgstr "Esempio: Server Policy (plugin)"
+
+msgid "No zones in the catalog yet."
+msgstr "Ancora nessuna zona nel catalogo."
+
+msgid "Save Name scope"
+msgstr "Salva ambito del nome"
+
+msgid "Examples for app1.example.com, port 443, no extra text."
+msgstr "Esempi per app1.example.com, porta 443, senza testo aggiuntivo."
+
+msgid "Name scope is off: {scope} is empty in every name."
+msgstr "L'ambito del nome è disattivato: {scope} è vuoto in ogni nome."
+
+msgid "is where the site is published: the value Administrator > Classification > Name scope gives its zone (one value per zone, one for more than one zone); empty, it takes its dash with it."
+msgstr "è dove il sito è pubblicato: il valore che Administrator > Classification > Name scope dà alla sua zona (un valore per zona, uno per più di una zona); vuoto, si porta via il suo trattino."
+
+msgid "The publication scope object names carry as {scope} (Administrator > Naming, e.g. spo-{scope}-{service}-{port}). This is the only place it is written: a site published in one zone takes that zone's value, one published in more than one zone takes the “More than one zone” value. An empty value, or the switch off, gives names without a scope."
+msgstr "L'ambito di pubblicazione che i nomi degli oggetti portano come {scope} (Administrator > Naming, ad es. spo-{scope}-{service}-{port}). È l'unico posto in cui si scrive: un sito pubblicato in una zona prende il valore di quella zona, uno pubblicato in più di una zona prende il valore «Più di una zona». Un valore vuoto, o l'interruttore spento, dà nomi senza ambito."

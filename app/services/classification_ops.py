@@ -316,6 +316,10 @@ def apply_all(rows_by_kind: dict[str, list[Row]]) -> dict[str, Report]:
     # save_segments each commit, which also flushes the ORM work above.
     for kind, plan in plans.items():
         store.save_classification(kind, plan.final)
+    if "zones" in plans:
+        # Name scope keeps one value per zone: it follows the catalog.
+        store.move_name_scope_zones(plans["zones"].report.renamed,
+                                    plans["zones"].report.deleted)
     if any(p.report.segments for p in plans.values()):
         store.save_segments(segs)
     db.session.commit()

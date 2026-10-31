@@ -51,10 +51,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   not one of the app's shipped patterns and gives another name **stops the
   step** (move the pattern to Naming, delete the row) -- an install that
   customised its data store is never renamed in silence. A SATOM without this
-  ignores both settings and uses the Patterns. spo-fortiweb **1.3.0** uses it:
-  the scope comes from its FortiWeb rule (`spo-fortiweb-rules`, new column
-  `scope`; empty = the entry type's own: none, `ext`, `all`). Tests:
+  ignores both settings and uses the Patterns. Tests:
   `tests/test_naming_scope.py`.
+- **Classification › Name scope: the ONE place the `{scope}` of a name is
+  written** (follow-up to FA-0011; request, translated: "it should be
+  possible to write it somewhere, not depend on a plugin -- add a section in
+  Classification; if it is on the scope is added, otherwise not; these things
+  always have to be variables, never hard-coded"). New section on
+  Administrator › Classification: a switch **Add the scope to names**, one
+  value per zone of the zones catalog and one for **More than one zone**,
+  with the Server Policy (plugins) name each gives for a sample site, rebuilt
+  by the `render_names` step's own code while you type. A site published in
+  one zone takes that zone's value, in more than one zone the "More than one
+  zone" value; empty, or the switch off, no scope. Values follow the
+  safe-name rule; a refused save writes nothing and hands your values back;
+  a renamed zone keeps its value, a deleted one loses it. There is no
+  built-in value anywhere: nothing saved = off. Migration `nscope01` writes
+  the values ONCE for an install that already runs spo-fortiweb, from its
+  `spo-fortiweb-rules` store (the `split` rule's zone `ext`, more than one
+  zone `all`, `internal` none -- the names 1.2.x gave), so no name changes;
+  set `bv` on Internal on the page if that is your convention. The
+  `render_names` step (naming mode) gets **Publication zones** and takes the
+  scope from there; a `scope` in its values is ignored. The Naming page's
+  **Scope** picker offers the values saved here instead of a fixed
+  bv / ext / all. spo-fortiweb **1.4.0** passes the zones of its FortiWeb
+  rules and has no scope column any more (1.3.0's was never published).
+  Tests: `tests/test_name_scope.py`, `tests/test_naming_scope.py`.
 
 ### Changed
 - **Network Segments: one interface per network, and rows can be cloned**

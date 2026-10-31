@@ -11297,3 +11297,33 @@ msgstr ""
 #: app/templates/naming/index.html
 msgid "is where the site is published (for example bv, ext or all), decided by the flow that builds the names; empty, it takes its dash with it."
 msgstr ""
+
+msgid "Name scope"
+msgstr ""
+
+msgid "Add the scope to names"
+msgstr ""
+
+msgid "More than one zone"
+msgstr ""
+
+msgid "Example: Server Policy (plugins)"
+msgstr ""
+
+msgid "No zones in the catalog yet."
+msgstr ""
+
+msgid "Save Name scope"
+msgstr ""
+
+msgid "Examples for app1.example.com, port 443, no extra text."
+msgstr ""
+
+msgid "Name scope is off: {scope} is empty in every name."
+msgstr ""
+
+msgid "is where the site is published: the value Administrator > Classification > Name scope gives its zone (one value per zone, one for more than one zone); empty, it takes its dash with it."
+msgstr ""
+
+msgid "The publication scope object names carry as {scope} (Administrator > Naming, e.g. spo-{scope}-{service}-{port}). This is the only place it is written: a site published in one zone takes that zone's value, one published in more than one zone takes the “More than one zone” value. An empty value, or the switch off, gives names without a scope."
+msgstr ""

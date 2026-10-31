@@ -29,7 +29,8 @@
       <code>{name}</code> {{ _('is the site identifier, sanitised automatically') }}
       (<code>shop.example.com → shop-example-com</code>),
       <code>{host}</code> {{ _('the host as typed (dots kept) and') }} <code>{port}</code> {{ _('the port the creating flow gives.') }}
-      <code>{scope}</code> {{ _('is where the site is published (for example bv, ext or all), decided by the flow that builds the names; empty, it takes its dash with it.') }}
+      <code>{scope}</code> {{ _('is where the site is published: the value Administrator > Classification > Name scope gives its zone (one value per zone, one for more than one zone); empty, it takes its dash with it.') }}
+      {% if not name_scope_on %}<strong>{{ _('Name scope is off: {scope} is empty in every name.') }}</strong>{% endif %}
       {{ _('Variables (below) rewrite a token with a regular expression, for a name the devices accept') }}
       (<code>{host_u}-{port}</code> → <code>shop_example_com-443</code>).
       {{ _('Entries marked “builds names” are the ones SATOM fills in when it creates objects: they take those tokens and the variables only. The others document your convention and may use any Discovery token') }}
@@ -86,7 +87,7 @@
       <div class="col-auto">
         <select id="naming-sample-scope" class="form-select form-select-sm fw-form-control" style="width:auto;">
           <option value="">{{ _('none') }}</option>
-          {% for s in scope_examples %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          {% for s in scope_examples %}<option value="{{ s.value }}">{{ s.label }}</option>{% endfor %}
         </select>
       </div>
       <div class="col-auto"><span class="text-muted" id="naming-slug" style="font-size:12px;"></span></div>
@@ -206,7 +207,7 @@
   var NP = window.NamingPattern, PROTO = {{ proto_words | tojson }};
   var PREVIEW = "{{ url_for('naming.preview') }}", CSRF = "{{ csrf_token() }}";
   var SITE = {{ site_tokens | list | tojson }}, CERT = ['name', 'class', 'cn', 'date', 'serial'];
-  var SCOPES = [''].concat({{ scope_examples | list | tojson }});
+  var SCOPES = [''].concat({{ scope_examples | map(attribute='value') | list | tojson }});
   var STEP = {{ step_samples | tojson }};
   var scopeEl = document.getElementById('naming-sample-scope');
   var sampleEl = document.getElementById('naming-sample');

@@ -147,10 +147,102 @@
     </button>
   </div>
 </form>
+
+{# Name scope: the ONLY place the {scope} of a name is written (one value per
+   zone). Its own form: saving it never touches the catalogs above. #}
+<form method="POST" action="{{ url_for('classification.save_name_scope') }}" id="ns-form"
+      class="mt-4" data-ns-preview="{{ url_for('classification.preview_name_scope') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="fw-card mb-3" id="name-scope">
+    <div class="fw-card-header">
+      <span class="fw-card-title"><i class="bi bi-signpost-split me-2 text-accent"></i>{{ _('Name scope') }}</span>
+      <span class="fw-badge {{ 'fw-badge-success' if name_scope.enabled else 'fw-badge-secondary' }}" data-ns-state>{{ _('on') if name_scope.enabled else _('off') }}</span>
+    </div>
+    <div class="fw-card-body">
+      <p class="text-muted" style="font-size:12.5px;">
+        {{ _("The publication scope object names carry as {scope} (Administrator > Naming, e.g. spo-{scope}-{service}-{port}). This is the only place it is written: a site published in one zone takes that zone's value, one published in more than one zone takes the “More than one zone” value. An empty value, or the switch off, gives names without a scope.") }}
+        <a href="{{ url_for('naming.index', product='fortiweb') }}">{{ _('Naming') }}</a>
+      </p>
+      <div class="form-check form-switch mb-2">
+        <input class="form-check-input" type="checkbox" role="switch" id="ns-enabled" name="ns_enabled" value="1" {% if name_scope.enabled %}checked{% endif %}>
+        <label class="form-check-label" for="ns-enabled">{{ _('Add the scope to names') }}</label>
+      </div>
+      <div class="fw-table-wrapper">
+        <table class="fw-table">
+          <thead>
+            <tr>
+              <th style="width:30%;">{{ _('Zone') }}</th>
+              <th style="width:22%;">{{ _('Scope') }}</th>
+              <th>{{ _('Example: Server Policy (plugins)') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ex in name_scope_examples %}
+            <tr data-ns-row="{{ loop.index0 }}">
+              {% if ex.zone is not none %}
+              <td>{{ ex.zone }}<input type="hidden" name="ns_zone_name[]" value="{{ ex.zone }}"></td>
+              <td><input class="form-control form-control-sm" name="ns_zone_value[]" maxlength="32"
+                         value="{{ ex.value }}" placeholder="{{ _('none') }}" data-ns-value></td>
+              {% else %}
+              <td><em>{{ _('More than one zone') }}</em></td>
+              <td><input class="form-control form-control-sm" name="ns_multi" maxlength="32"
+                         value="{{ ex.value }}" placeholder="{{ _('none') }}" data-ns-value></td>
+              {% endif %}
+              <td><code data-ns-example>{{ ex.name }}</code></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="text-muted">{{ _('No zones in the catalog yet.') }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-muted mb-0" style="font-size:12px;">{{ _('Examples for app1.example.com, port 443, no extra text.') }} <span class="text-danger" data-ns-problems></span></p>
+    </div>
+  </div>
+  <button type="submit" class="btn btn-fw-primary">
+    <i class="bi bi-check-lg me-1"></i>{{ _('Save Name scope') }}
+  </button>
+</form>
 {% endblock %}
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
+(function () {
+  // Name scope: the examples are re-built by the server (the render_names
+  // step's own code) for the values on the page, saved or not.
+  var form = document.getElementById('ns-form');
+  if (!form) { return; }
+  var url = form.getAttribute('data-ns-preview');
+  var csrf = form.querySelector('input[name="csrf_token"]').value;
+  var timer = null;
+  function posted() {
+    var zones = {};
+    form.querySelectorAll('input[name="ns_zone_name[]"]').forEach(function (h, i) {
+      zones[h.value] = form.querySelectorAll('input[name="ns_zone_value[]"]')[i].value;
+    });
+    var multi = form.querySelector('input[name="ns_multi"]');
+    return { enabled: document.getElementById('ns-enabled').checked, zones: zones,
+             multi: multi ? multi.value : '' };
+  }
+  function refresh() {
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      fetch(url, { method: 'POST', credentials: 'same-origin',
+                   headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+                   body: JSON.stringify(posted()) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          (d.examples || []).forEach(function (ex, i) {
+            var cell = form.querySelector('[data-ns-row="' + i + '"] [data-ns-example]');
+            if (cell) { cell.textContent = ex.name; }
+          });
+          form.querySelector('[data-ns-problems]').textContent = (d.problems || []).join(' ');
+        });
+    }, 250);
+  }
+  form.addEventListener('input', refresh);
+  form.addEventListener('change', refresh);
+})();
 (function () {
   // The reassign options are built from the LIVE inputs, not from the stored
   // catalog: an operator who renames one value and removes another in the same

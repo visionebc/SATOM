@@ -28571,3 +28571,33 @@ msgstr "puis téléversez-le dans"
 #: app/templates/naming/index.html
 msgid "is where the site is published (for example bv, ext or all), decided by the flow that builds the names; empty, it takes its dash with it."
 msgstr "indique où le site est publié (par exemple bv, ext ou all), décidé par le flux qui construit les noms ; vide, il emporte son tiret avec lui."
+
+msgid "Name scope"
+msgstr "Portée du nom"
+
+msgid "Add the scope to names"
+msgstr "Ajouter la portée aux noms"
+
+msgid "More than one zone"
+msgstr "Plus d'une zone"
+
+msgid "Example: Server Policy (plugins)"
+msgstr "Exemple : Server Policy (plugins)"
+
+msgid "No zones in the catalog yet."
+msgstr "Aucune zone dans le catalogue pour l'instant."
+
+msgid "Save Name scope"
+msgstr "Enregistrer la portée du nom"
+
+msgid "Examples for app1.example.com, port 443, no extra text."
+msgstr "Exemples pour app1.example.com, port 443, sans texte supplémentaire."
+
+msgid "Name scope is off: {scope} is empty in every name."
+msgstr "La portée du nom est désactivée : {scope} est vide dans chaque nom."
+
+msgid "is where the site is published: the value Administrator > Classification > Name scope gives its zone (one value per zone, one for more than one zone); empty, it takes its dash with it."
+msgstr "est l'endroit où le site est publié : la valeur que Administrator > Classification > Name scope donne à sa zone (une valeur par zone, une pour plus d'une zone) ; vide, il emporte son tiret."
+
+msgid "The publication scope object names carry as {scope} (Administrator > Naming, e.g. spo-{scope}-{service}-{port}). This is the only place it is written: a site published in one zone takes that zone's value, one published in more than one zone takes the “More than one zone” value. An empty value, or the switch off, gives names without a scope."
+msgstr "La portée de publication que les noms d'objets portent en tant que {scope} (Administrator > Naming, p. ex. spo-{scope}-{service}-{port}). C'est le seul endroit où elle est définie : un site publié dans une zone prend la valeur de cette zone, un site publié dans plus d'une zone prend la valeur « Plus d'une zone ». Une valeur vide, ou l'interrupteur désactivé, donne des noms sans portée."

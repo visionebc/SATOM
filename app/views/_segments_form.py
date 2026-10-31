@@ -11,7 +11,8 @@ and rows are matched by index, so a field that posts a VARIABLE number of
 values per row (a ``<select multiple>``) would silently shift every column
 after it. Departments therefore travel as ONE encoded string per row, and so
 do a segment's networks (``seg_networks[]``, a JSON list of
-``{cidr, gateway, interface}``) -- a segment holds as many as it needs.
+``{cidr, gateway, interface}``) -- a segment holds as many as it needs, and
+each network names its own interface (FA-0010).
 """
 from __future__ import annotations
 
@@ -39,12 +40,15 @@ def parse_departments(raw: str) -> list[str]:
     return store.normalize_departments(raw)
 
 
-def parse_networks(raw: str, legacy_cidr: str = "", legacy_gateway: str = "") -> list[dict]:
+def parse_networks(raw: str, legacy_cidr: str = "", legacy_gateway: str = "",
+                   interface: str = "") -> list[dict]:
     """Decode one row's networks field.
 
     A JSON list is what the page posts. No field at all (a stale cached copy
     of the page, a hand-built POST) falls back to the single ``seg_cidr[]`` /
     ``seg_gateway[]`` columns -- the shape every page before FA-0002 sent.
+    *interface* fills a network posted without one (see
+    ``settings_store.normalize_networks``).
     """
     raw = (raw or "").strip()
     if raw.startswith("["):
@@ -53,8 +57,9 @@ def parse_networks(raw: str, legacy_cidr: str = "", legacy_gateway: str = "") ->
         except (ValueError, TypeError):
             data = None
         if isinstance(data, list):
-            return store.normalize_networks({"networks": data})
-    return store.normalize_networks({"cidr": legacy_cidr, "gateway": legacy_gateway})
+            return store.normalize_networks({"networks": data, "interface": interface})
+    return store.normalize_networks({"cidr": legacy_cidr, "gateway": legacy_gateway,
+                                     "interface": interface})
 
 
 def parse_rows(form) -> tuple[list[dict], list[str]]:
@@ -71,7 +76,13 @@ def parse_rows(form) -> tuple[list[dict], list[str]]:
             vals = form.getlist(f"seg_{field}[]")
             return vals[i] if i < len(vals) else ""
 
-        nets = parse_networks(col("networks"), col("cidr"), col("gateway"))
+        # The page no longer posts a segment interface (FA-0010): each network
+        # carries its own. ``seg_interface[]`` is what a stale cached page or
+        # a hand-built POST still sends; it fills the networks that name none,
+        # exactly as it did when the page had that column. "port1" is the
+        # default that column always had.
+        interface = col("interface").strip() or "port1"
+        nets = parse_networks(col("networks"), col("cidr"), col("gateway"), interface)
         if not (name or "").strip() and not nets:
             continue
         good = []
@@ -96,7 +107,7 @@ def parse_rows(form) -> tuple[list[dict], list[str]]:
         rows.append({
             "name": name, "zone": col("zone"), "line": col("line"),
             "departments": depts, "networks": nets,
-            "interface": col("interface") or "port1",
+            "interface": interface,
             "note": col("note"),
         })
     return rows, bad_cidr

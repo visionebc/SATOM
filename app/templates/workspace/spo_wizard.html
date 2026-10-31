@@ -543,7 +543,6 @@
       html += '<div class="mb-2" style="font-size:12.5px;">' +
               '<span class="fw-badge fw-badge-info">' + esc(plan.segment.name) + '</span> ' +
               esc(netList(plan.segment)) +
-              (plan.segment.interface ? ' on ' + esc(plan.segment.interface) : '') +
               (dl.length ? ' &middot; serves ' + esc(dl.join(', ')) : ' &middot; no department') +
               (plan.department ? ' &middot; building for <strong>' + esc(plan.department) + '</strong>' : '') +
               ((plan.pools || []).length > 1

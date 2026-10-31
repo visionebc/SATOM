@@ -52,9 +52,12 @@ SEGMENT_LIST_FIELDS = ("departments",)
 SEGMENT_FIELDS = SEGMENT_STR_FIELDS + SEGMENT_LIST_FIELDS
 #: One network of a segment (FA-0002). A segment holds a LIST of them, in
 #: the order an address is taken from: the first with a free address wins.
-#: ``interface`` empty = the segment's own ``interface``. The scalar
-#: ``cidr``/``gateway`` of a segment mirror its FIRST network, so every
-#: consumer written for one network keeps reading the same value.
+#: Every network carries its OWN interface (FA-0010): the page has no
+#: segment-level interface any more. A network stored with an empty one (rows
+#: written before FA-0010) takes the segment's stored ``interface`` when read,
+#: so it keeps resolving to exactly what it resolved to before. The scalar
+#: ``cidr``/``gateway``/``interface`` of a segment mirror its FIRST network,
+#: so every consumer written for one network keeps reading the same value.
 SEGMENT_NETWORK_FIELDS = ("cidr", "gateway", "interface")
 
 DEFAULTS = {
@@ -455,27 +458,41 @@ def normalize_networks(row: dict) -> list[dict]:
     written before FA-0002, and a stale page) is ONE network made of its
     scalar ``cidr``/``gateway``. Entries with neither a CIDR nor a gateway
     are dropped; anything that is not a dict is ignored, never an error.
+
+    A network with no interface of its own gets the row's ``interface`` --
+    the segment-level value every pre-FA-0010 page used as "the interface of
+    every network that does not name its own". Filled here, in the one
+    reader, so the page, the wizard and a re-save all see the value the VIP
+    would actually go on, and a re-save writes it into the network.
     """
     raw = row.get("networks") if isinstance(row, dict) else None
     if not isinstance(raw, list):
         raw = [{"cidr": row.get("cidr"), "gateway": row.get("gateway")}] \
             if isinstance(row, dict) else []
+    inherited = str(row.get("interface", "") or "").strip() if isinstance(row, dict) else ""
     out: list[dict] = []
     for net in raw:
         if not isinstance(net, dict):
             continue
         clean = {f: str(net.get(f, "") or "").strip() for f in SEGMENT_NETWORK_FIELDS}
+        if not clean["interface"]:
+            clean["interface"] = inherited
         if clean["cidr"] or clean["gateway"]:
             out.append(clean)
     return out
 
 
 def _mirror_first_network(seg: dict) -> None:
-    """Scalar ``cidr``/``gateway`` = the first network that has a CIDR."""
+    """Scalar ``cidr``/``gateway``/``interface`` = the first network that has
+    a CIDR. A segment with no network keeps its stored ``interface``: there
+    is no network to take it from, and blanking it would change what an old
+    row answers."""
     nets = seg.get("networks") or []
     first = next((n for n in nets if n["cidr"]), nets[0] if nets else None)
     seg["cidr"] = first["cidr"] if first else ""
     seg["gateway"] = first["gateway"] if first else ""
+    if first and first.get("interface"):
+        seg["interface"] = first["interface"]
 
 
 def segments() -> list[dict]:

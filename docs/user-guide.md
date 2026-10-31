@@ -665,8 +665,15 @@ from `{host}` is the usual one) blocks the plan as `naming_unsafe`. Rewrite it
 with a variable.
 
 **A segment can hold several networks.** On **Network Segments** each segment
-lists one or more networks (CIDR + gateway, optionally an interface of its
-own; blank uses the segment's interface). With **Reserve the VIP from IPAM**,
+lists one or more networks, and **each network carries its own CIDR, gateway
+and interface** (the port the VIP goes on; a new network starts on the
+interface of the network above it, else `port1`). There is no segment-level
+*Interface* column any more: a network saved before that change with no
+interface of its own shows, and keeps, the interface the segment column gave
+it, so where a VIP goes does not change. **Clone** (the copy icon) duplicates
+a whole segment row right below it (its name gets `-copy`, since two segments
+may not share a name) or one network line (type the new range over the
+selected CIDR; the same CIDR twice in one segment is refused on save). With **Reserve the VIP from IPAM**,
 the VIP is taken from the **first network with a free address**: if IPAM
 refuses one (full, or any other error) the next is tried, and the address step
 says which networks refused and why. The preview lists the order. A network no

@@ -25452,8 +25452,8 @@ msgid "Add variable"
 msgstr "Ajouter une variable"
 
 #: FA-0001/FA-0002
-msgid "Blank = the segment interface"
-msgstr "Vide = l’interface du segment"
+msgid "The interface a VIP in this network goes on"
+msgstr "L’interface où va une VIP de ce réseau"
 
 #: FA-0001/FA-0002
 msgid "Each variable reads a token (or a variable above it) and applies a regular-expression replacement to it (Python syntax, every match replaced). Use it in any pattern by its name in braces."
@@ -25468,8 +25468,8 @@ msgid "gateway"
 msgstr "passerelle"
 
 #: FA-0001/FA-0002
-msgid "Named networks a new server policy puts its VIP on. A segment holds one or more networks (CIDR + gateway, optionally its own interface): when the VIP is reserved from IPAM it is taken from the first network with a free address, then the next; a VIP typed by hand must sit in one of them. Each segment can be scoped to a classification value (leave blank for \"any\")."
-msgstr "Réseaux nommés sur lesquels une nouvelle server policy place sa VIP. Un segment contient un ou plusieurs réseaux (CIDR + passerelle, éventuellement sa propre interface) : quand la VIP est réservée dans l’IPAM, elle est prise dans le premier réseau ayant une adresse libre, sinon dans le suivant ; une VIP saisie à la main doit se trouver dans l’un d’eux. Chaque segment peut être limité à une valeur de classification (laisser vide pour \"tous\")."
+msgid "Named networks a new server policy puts its VIP on. A segment holds one or more networks, each with its CIDR, gateway and the interface the VIP goes on: when the VIP is reserved from IPAM it is taken from the first network with a free address, then the next; a VIP typed by hand must sit in one of them. Each segment can be scoped to a classification value (leave blank for \"any\")."
+msgstr "Réseaux nommés sur lesquels une nouvelle server policy place sa VIP. Un segment contient un ou plusieurs réseaux, chacun avec son CIDR, sa passerelle et l’interface où va la VIP : quand la VIP est réservée dans l’IPAM, elle est prise dans le premier réseau ayant une adresse libre, sinon dans le suivant ; une VIP saisie à la main doit se trouver dans l’un d’eux. Chaque segment peut être limité à une valeur de classification (laisser vide pour \"tous\")."
 
 #: FA-0001/FA-0002
 msgid "Networks"
@@ -25500,8 +25500,16 @@ msgid "the host as typed (dots kept) and"
 msgstr "l’hôte tel que saisi (points conservés) et"
 
 #: FA-0001/FA-0002
-msgid "The interface of every network that does not name its own"
-msgstr "L’interface de chaque réseau qui n’indique pas la sienne"
+msgid "Clone this network"
+msgstr "Cloner ce réseau"
+
+#: FA-0010
+msgid "Clone this segment"
+msgstr "Cloner ce segment"
+
+#: FA-0010
+msgid "Remove this segment"
+msgstr "Retirer ce segment"
 
 #: FA-0001/FA-0002
 msgid "the port the creating flow gives."

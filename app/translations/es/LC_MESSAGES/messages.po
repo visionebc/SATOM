@@ -25471,8 +25471,8 @@ msgid "Add variable"
 msgstr "Añadir variable"
 
 #: FA-0001/FA-0002
-msgid "Blank = the segment interface"
-msgstr "Vacío = la interfaz del segmento"
+msgid "The interface a VIP in this network goes on"
+msgstr "La interfaz en la que va un VIP de esta red"
 
 #: FA-0001/FA-0002
 msgid "Each variable reads a token (or a variable above it) and applies a regular-expression replacement to it (Python syntax, every match replaced). Use it in any pattern by its name in braces."
@@ -25487,8 +25487,8 @@ msgid "gateway"
 msgstr "gateway"
 
 #: FA-0001/FA-0002
-msgid "Named networks a new server policy puts its VIP on. A segment holds one or more networks (CIDR + gateway, optionally its own interface): when the VIP is reserved from IPAM it is taken from the first network with a free address, then the next; a VIP typed by hand must sit in one of them. Each segment can be scoped to a classification value (leave blank for \"any\")."
-msgstr "Redes con nombre en las que una nueva server policy coloca su VIP. Un segmento contiene una o más redes (CIDR + gateway y, opcionalmente, su propia interfaz): cuando el VIP se reserva en IPAM se toma de la primera red con una dirección libre y, si no, de la siguiente; un VIP escrito a mano debe estar en una de ellas. Cada segmento puede limitarse a un valor de clasificación (déjalo en blanco para \"cualquiera\")."
+msgid "Named networks a new server policy puts its VIP on. A segment holds one or more networks, each with its CIDR, gateway and the interface the VIP goes on: when the VIP is reserved from IPAM it is taken from the first network with a free address, then the next; a VIP typed by hand must sit in one of them. Each segment can be scoped to a classification value (leave blank for \"any\")."
+msgstr "Redes con nombre en las que una nueva server policy coloca su VIP. Un segmento contiene una o más redes, cada una con su CIDR, su gateway y la interfaz en la que va el VIP: cuando el VIP se reserva en IPAM se toma de la primera red con una dirección libre y, si no, de la siguiente; un VIP escrito a mano debe estar en una de ellas. Cada segmento puede limitarse a un valor de clasificación (déjalo en blanco para \"cualquiera\")."
 
 #: FA-0001/FA-0002
 msgid "Networks"
@@ -25519,8 +25519,16 @@ msgid "the host as typed (dots kept) and"
 msgstr "el host tal como se escribe (con puntos) y"
 
 #: FA-0001/FA-0002
-msgid "The interface of every network that does not name its own"
-msgstr "La interfaz de cada red que no indica la suya"
+msgid "Clone this network"
+msgstr "Clonar esta red"
+
+#: FA-0010
+msgid "Clone this segment"
+msgstr "Clonar este segmento"
+
+#: FA-0010
+msgid "Remove this segment"
+msgstr "Quitar este segmento"
 
 #: FA-0001/FA-0002
 msgid "the port the creating flow gives."

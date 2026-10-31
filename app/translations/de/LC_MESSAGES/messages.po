@@ -25450,8 +25450,8 @@ msgid "Add variable"
 msgstr "Variable hinzufügen"
 
 #: FA-0001/FA-0002
-msgid "Blank = the segment interface"
-msgstr "Leer = die Schnittstelle des Segments"
+msgid "The interface a VIP in this network goes on"
+msgstr "Die Schnittstelle, auf die eine VIP in diesem Netz kommt"
 
 #: FA-0001/FA-0002
 msgid "Each variable reads a token (or a variable above it) and applies a regular-expression replacement to it (Python syntax, every match replaced). Use it in any pattern by its name in braces."
@@ -25466,8 +25466,8 @@ msgid "gateway"
 msgstr "Gateway"
 
 #: FA-0001/FA-0002
-msgid "Named networks a new server policy puts its VIP on. A segment holds one or more networks (CIDR + gateway, optionally its own interface): when the VIP is reserved from IPAM it is taken from the first network with a free address, then the next; a VIP typed by hand must sit in one of them. Each segment can be scoped to a classification value (leave blank for \"any\")."
-msgstr "Benannte Netze, in die eine neue Server-Policy ihre VIP legt. Ein Segment enthält ein oder mehrere Netze (CIDR + Gateway, optional eine eigene Schnittstelle): Wird die VIP aus dem IPAM reserviert, kommt sie aus dem ersten Netz mit einer freien Adresse, sonst aus dem nächsten; eine von Hand eingegebene VIP muss in einem davon liegen. Jedes Segment kann auf einen Klassifizierungswert beschränkt werden (leer lassen für \"beliebig\")."
+msgid "Named networks a new server policy puts its VIP on. A segment holds one or more networks, each with its CIDR, gateway and the interface the VIP goes on: when the VIP is reserved from IPAM it is taken from the first network with a free address, then the next; a VIP typed by hand must sit in one of them. Each segment can be scoped to a classification value (leave blank for \"any\")."
+msgstr "Benannte Netze, in die eine neue Server-Policy ihre VIP legt. Ein Segment enthält ein oder mehrere Netze, jedes mit CIDR, Gateway und der Schnittstelle, auf die die VIP kommt: Wird die VIP aus dem IPAM reserviert, kommt sie aus dem ersten Netz mit einer freien Adresse, sonst aus dem nächsten; eine von Hand eingegebene VIP muss in einem davon liegen. Jedes Segment kann auf einen Klassifizierungswert beschränkt werden (leer lassen für \"beliebig\")."
 
 #: FA-0001/FA-0002
 msgid "Networks"
@@ -25498,8 +25498,16 @@ msgid "the host as typed (dots kept) and"
 msgstr "der Host wie eingegeben (mit Punkten) und"
 
 #: FA-0001/FA-0002
-msgid "The interface of every network that does not name its own"
-msgstr "Die Schnittstelle jedes Netzes, das keine eigene nennt"
+msgid "Clone this network"
+msgstr "Dieses Netz klonen"
+
+#: FA-0010
+msgid "Clone this segment"
+msgstr "Dieses Segment klonen"
+
+#: FA-0010
+msgid "Remove this segment"
+msgstr "Dieses Segment entfernen"
 
 #: FA-0001/FA-0002
 msgid "the port the creating flow gives."

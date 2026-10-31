@@ -17,7 +17,7 @@
       <i class="bi bi-hdd-network me-2 text-accent"></i>{{ _('Network Segments') }}
     </h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      {{ _('Named networks a new server policy puts its VIP on. A segment holds one or more networks (CIDR + gateway, optionally its own interface): when the VIP is reserved from IPAM it is taken from the first network with a free address, then the next; a VIP typed by hand must sit in one of them. Each segment can be scoped to a classification value (leave blank for "any").') }}
+      {{ _('Named networks a new server policy puts its VIP on. A segment holds one or more networks, each with its CIDR, gateway and the interface the VIP goes on: when the VIP is reserved from IPAM it is taken from the first network with a free address, then the next; a VIP typed by hand must sit in one of them. Each segment can be scoped to a classification value (leave blank for "any").') }}
     </p>
   </div>
 </div>
@@ -65,7 +65,7 @@
       <div class="fw-table-wrapper">
         <table class="fw-table" id="segments-table">
           <thead>
-            <tr><th>{{ _('Name') }}</th><th>{{ _('Zone') }}</th><th>{{ _('Line') }}</th><th>{{ _('Departments') }}</th><th>{{ _('Networks') }}</th><th>{{ _('Interface') }}</th><th>{{ _('Note') }}</th><th></th></tr>
+            <tr><th>{{ _('Name') }}</th><th>{{ _('Zone') }}</th><th>{{ _('Line') }}</th><th>{{ _('Departments') }}</th><th>{{ _('Networks') }}</th><th>{{ _('Note') }}</th><th></th></tr>
           </thead>
           <tbody id="segments-body">
             {% for s in segments %}
@@ -106,16 +106,19 @@
                   <div class="d-flex gap-1 mb-1 seg-net">
                     <input class="form-control form-control-sm" data-f="cidr" value="{{ n.cidr }}" placeholder="192.0.2.0/24" style="min-width:130px;">
                     <input class="form-control form-control-sm" data-f="gateway" value="{{ n.gateway }}" placeholder="{{ _('gateway') }}" style="min-width:110px;">
-                    <input class="form-control form-control-sm" data-f="interface" value="{{ n.interface }}" placeholder="{{ _('interface') }}" style="width:90px;" title="{{ _('Blank = the segment interface') }}">
+                    <input class="form-control form-control-sm" data-f="interface" value="{{ n.interface }}" placeholder="port1" style="width:90px;" title="{{ _('The interface a VIP in this network goes on') }}">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-js="seg-net-clone" title="{{ _('Clone this network') }}"><i class="bi bi-copy"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-js="seg-net-del" title="{{ _('Remove this network') }}">&times;</button>
                   </div>
                   {% endfor %}
                 </div>
                 <button type="button" class="btn btn-sm btn-link p-0" data-js="seg-net-add" style="font-size:12px;"><i class="bi bi-plus-lg me-1"></i>{{ _('Add network') }}</button>
               </td>
-              <td><input class="form-control form-control-sm" name="seg_interface[]" value="{{ s.interface }}" placeholder="{{ _('port1') }}" title="{{ _('The interface of every network that does not name its own') }}"></td>
               <td><input class="form-control form-control-sm" name="seg_note[]" value="{{ s.note }}"></td>
-              <td><button type="button" class="btn btn-sm btn-outline-danger" data-js="seg-remove"><i class="bi bi-trash"></i></button></td>
+              <td class="text-nowrap">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-js="seg-clone" title="{{ _('Clone this segment') }}"><i class="bi bi-copy"></i></button>
+                <button type="button" class="btn btn-sm btn-outline-danger" data-js="seg-remove" title="{{ _('Remove this segment') }}"><i class="bi bi-trash"></i></button>
+              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -175,24 +178,39 @@ function addSegmentRow() {
     '<td>' + deptCell() + '</td>' +
     '<td><input type="hidden" name="seg_networks[]" value="[]"><div class="seg-nets" data-js="seg-nets"></div>' +
     '<button type="button" class="btn btn-sm btn-link p-0" data-js="seg-net-add" style="font-size:12px;"><i class="bi bi-plus-lg me-1"></i>Add network</button></td>' +
-    '<td><input class="form-control form-control-sm" name="seg_interface[]" placeholder="port1" value="port1"></td>' +
     '<td><input class="form-control form-control-sm" name="seg_note[]"></td>' +
-    '<td><button type="button" class="btn btn-sm btn-outline-danger" data-js="seg-remove"><i class="bi bi-trash"></i></button></td>';
+    '<td class="text-nowrap">' +
+    '<button type="button" class="btn btn-sm btn-outline-secondary" data-js="seg-clone" title="Clone this segment"><i class="bi bi-copy"></i></button> ' +
+    '<button type="button" class="btn btn-sm btn-outline-danger" data-js="seg-remove" title="Remove this segment"><i class="bi bi-trash"></i></button></td>';
   body.appendChild(tr);
   addNetwork(tr.querySelector('[data-js="seg-nets"]'));
 }
-function netLine() {
+// A new network starts on the interface of the network above it (the usual
+// case: a second range on the same port), else port1 -- the default the
+// segment-level interface column had before every network carried its own.
+function netLine(iface) {
   var div = document.createElement('div');
   div.className = 'd-flex gap-1 mb-1 seg-net';
   [['cidr', '192.0.2.0/24', 'min-width:130px;'], ['gateway', 'gateway', 'min-width:110px;'],
-   ['interface', 'interface', 'width:90px;']].forEach(function (f) {
+   ['interface', 'port1', 'width:90px;']].forEach(function (f) {
     var inp = document.createElement('input');
     inp.className = 'form-control form-control-sm';
     inp.setAttribute('data-f', f[0]);
     inp.placeholder = f[1];
     inp.setAttribute('style', f[2]);
+    if (f[0] === 'interface') {
+      inp.value = iface || 'port1';
+      inp.title = 'The interface a VIP in this network goes on';
+    }
     div.appendChild(inp);
   });
+  var cl = document.createElement('button');
+  cl.type = 'button';
+  cl.className = 'btn btn-sm btn-outline-secondary';
+  cl.setAttribute('data-js', 'seg-net-clone');
+  cl.title = 'Clone this network';
+  cl.innerHTML = '<i class="bi bi-copy"></i>';
+  div.appendChild(cl);
   var del = document.createElement('button');
   del.type = 'button';
   del.className = 'btn btn-sm btn-outline-secondary';
@@ -203,9 +221,50 @@ function netLine() {
   return div;
 }
 function addNetwork(box) {
-  var line = netLine();
+  var lines = box.querySelectorAll('.seg-net');
+  var prev = lines.length ? lines[lines.length - 1].querySelector('input[data-f="interface"]') : null;
+  var line = netLine(prev ? prev.value.trim() : '');
   box.appendChild(line);
   line.querySelector('input').focus();
+}
+// Clone one network line right below itself. The copy keeps every field;
+// the CIDR is selected so the operator types the new range over it (the
+// same CIDR twice in one segment is refused on save, by name).
+function cloneNetwork(line) {
+  var copy = netLine('');
+  line.querySelectorAll('input[data-f]').forEach(function (i) {
+    copy.querySelector('input[data-f="' + i.getAttribute('data-f') + '"]').value = i.value;
+  });
+  line.parentNode.insertBefore(copy, line.nextSibling);
+  var cidr = copy.querySelector('input[data-f="cidr"]');
+  cidr.focus();
+  cidr.select();
+}
+// Clone a whole segment row right below itself. Field values are copied by
+// hand: cloneNode copies attributes, not what the operator changed in a
+// select since the page loaded. The name gets "-copy" because two segments
+// may not share a name (the save refuses it).
+function cloneSegment(tr) {
+  var copy = tr.cloneNode(true);
+  var src = tr.querySelectorAll('input, select');
+  var dst = copy.querySelectorAll('input, select');
+  for (var i = 0; i < src.length; i++) {
+    if (src[i].tagName === 'SELECT') {
+      for (var j = 0; j < src[i].options.length; j++) {
+        dst[i].options[j].selected = src[i].options[j].selected;
+      }
+    } else {
+      dst[i].value = src[i].value;
+    }
+  }
+  var name = copy.querySelector('input[name="seg_name[]"]');
+  if (name) { name.value = (name.value ? name.value + '-copy' : ''); }
+  tr.parentNode.insertBefore(copy, tr.nextSibling);
+  var depts = copy.querySelector('[data-js="seg-depts"]');
+  if (depts) { syncDepts(depts); }
+  var nets = copy.querySelector('[data-js="seg-nets"]');
+  if (nets) { syncNets(nets.closest('td')); }
+  if (name) { name.focus(); name.select(); }
 }
 // The networks of one row -> its hidden field, in the order shown (the
 // order an address is taken in).
@@ -229,6 +288,10 @@ function syncNets(td) {
   body.addEventListener('click', function (event) {
     var btn = event.target.closest('[data-js="seg-remove"]');
     if (btn) { btn.closest('tr').remove(); return; }
+    var cln = event.target.closest('[data-js="seg-clone"]');
+    if (cln) { cloneSegment(cln.closest('tr')); return; }
+    var ncl = event.target.closest('[data-js="seg-net-clone"]');
+    if (ncl) { var ntd = ncl.closest('td'); cloneNetwork(ncl.closest('.seg-net')); syncNets(ntd); return; }
     var add = event.target.closest('[data-js="seg-net-add"]');
     if (add) { addNetwork(add.closest('td').querySelector('[data-js="seg-nets"]')); syncNets(add.closest('td')); return; }
     var del = event.target.closest('[data-js="seg-net-del"]');

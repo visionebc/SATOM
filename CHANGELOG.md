@@ -29,6 +29,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `tests/test_sentinel_ops_doc.py`.
 
 ### Changed
+- **Network Segments: one interface per network, and rows can be cloned**
+  (FA-0010; request: "the Networks column has a field for the interface, but
+  there is still another Interface field in the next column — confusing; also
+  make the lines clonable"). The segment-level *Interface* column is gone:
+  every network line carries its own CIDR, gateway and interface. Nothing is
+  migrated in place and nothing changes for a VIP: `settings_store.
+  normalize_networks` (the one reader) gives a network stored without an
+  interface the segment's stored `interface`, so the page shows it and the
+  next save writes it into the network; the segment's scalar `interface` now
+  mirrors its first network, like `cidr`/`gateway` (a segment with no network
+  keeps its stored value). A stale cached page or a hand-built POST that
+  still sends `seg_interface[]` fills the networks that name none, default
+  `port1` as before. New copy buttons clone a segment row (name + `-copy`)
+  or a single network line; a new network starts on the interface of the one
+  above it. The New Server Policy plan no longer prints the segment-level
+  "on <interface>" next to the network list, which already names each
+  network's interface. Tests: `tests/test_segment_networks.py`.
 - **Troubleshooting is a Plugins submenu: its six pages are Plugin Studio
   apps** (request: "every element in Troubleshooting as plugins, loaded, and
   also in the Builder ... they go in the Plugins menu"). Backend

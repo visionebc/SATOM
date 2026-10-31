@@ -23,6 +23,7 @@ from ..services import app_signin as AS
 from ..services import directory_connections as DC
 from ..services import studio_apps as SA
 from ..services.audit import log_action
+from ..services.link_host import external_url
 
 bp = Blueprint("directory_connections", __name__, url_prefix="/access")
 
@@ -133,7 +134,8 @@ def signin_context(a, *, directories_url: str = "") -> dict:
             "runnable": SA._runnable_app(a),
             "can_edit": bool(current_user.can(Permission.USER_MANAGE)),
             "directories_url": directories_url,
-            "login_url": url_for("apps_portal.entry", slug=a.slug, _external=True)}
+            # pinned to this node: the Host header is the client's to choose
+            "login_url": external_url("apps_portal.entry", slug=a.slug)}
 
 
 @bp.route("/app-signin/<slug>")

@@ -72,7 +72,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   zone `all`, `internal` none -- the names 1.2.x gave), so no name changes;
   set `bv` on Internal on the page if that is your convention. The
   `render_names` step (naming mode) gets **Publication zones** and takes the
-  scope from there; a `scope` in its values is ignored. The Naming page's
+  scope from there; a `scope` in its values is ignored. The native New Server
+  Policy wizard takes the scope of the zone of the appliance it builds on,
+  so a `{scope}` in its patterns names the site as the plugin would. The Naming page's
   **Scope** picker offers the values saved here instead of a fixed
   bv / ext / all. spo-fortiweb **1.4.0** passes the zones of its FortiWeb
   rules and has no scope column any more (1.3.0's was never published).

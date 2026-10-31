@@ -2597,7 +2597,7 @@ The site tokens:
 | `{name}` | `blabla-example-com` — the slug, as before |
 | `{host}` | `blabla.example.com` — the host as typed, dots kept |
 | `{port}` | the port the creating flow gives (the wizard's **Port**), else `8443` from the address |
-| `{scope}` | where the site is published: the value **Administrator › Classification › Name scope** gives the zone the flow publishes in (one value per zone, one for more than one zone); empty when the Name scope is off, the zone has no value or the flow names no zone (the native wizard), and then it takes ONE adjoining dash with it: `pol-{scope}-{name}` gives `pol-blabla-example-com` |
+| `{scope}` | where the site is published: the value **Administrator › Classification › Name scope** gives the zone the flow publishes in (one value per zone, one for more than one zone); empty when the Name scope is off, the zone has no value or the flow names no zone; the native New Server Policy wizard names the zone of the appliance it builds on (the plugins name the zone of the FortiWeb they pick), and then it takes ONE adjoining dash with it: `pol-{scope}-{name}` gives `pol-blabla-example-com` |
 
 **Variables** (the table above the patterns, one list **per product**) rewrite
 a token with a regular expression so the name is one the devices accept. Each

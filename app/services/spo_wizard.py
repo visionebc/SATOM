@@ -223,9 +223,13 @@ def build_plan(appliance, *, line: str, web_address: str,
     # win over the defaults; passing None here once made that page a no-op
     # for the wizard.
     overrides = store.naming_overrides(product)
+    # {scope} comes from Administrator -> Classification -> Name scope, by the
+    # zone of the appliance the policy is built on -- the same zone the
+    # plugins pass (the FortiWeb they pick), so one site gets one name.
     plan.names = naming.render_names(
         web_address, overrides, product, port=plan.port,
-        variables=store.naming_variables(product))
+        variables=store.naming_variables(product),
+        scope=store.scope_for([getattr(appliance, "zone", "") or ""]))
     scheme = naming.effective_scheme(overrides, product)
     if plan.port_source == PORT_DEFAULT and any(
             "{port}" in (scheme.get(k) or "") for k in REQUIRED_NAMES):

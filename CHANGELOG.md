@@ -33,6 +33,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   in Global it is the first entry of the Global block, in a device ADOM its
   own entry right above Operations. Same gates; a hidden Scout stays hidden.
 
+### Fixed
+- **Software Update › Purge old packs never asked for confirmation**: its
+  inline `onsubmit` was blocked by the CSP (`script-src-attr none`), so the
+  confirm dialog never showed; it uses `data-fw-confirm-form` now.
+- **26 strings of the Software Update / kbpack / app-token screens rendered
+  in English** in German, Spanish, French and Italian; translated.
+- **The Apps-only portal header** fell back to a generic icon instead of the
+  product mark when no theme logo is set.
+- **Security (satom-audit nightly):** `pyasn1` pinned to 0.6.5 (four
+  quadratic-CPU decoder CVEs in <=0.6.4, pulled unpinned by `ldap3`); the
+  app sign-in link shown to administrators is built on this node's own name,
+  not on the request's Host header.
+- **Diagnose Log Collection app**: the run recognised its own collection by
+  the exact start time, which the collection thread rewrites, and failed every
+  run with "another collection replaced this one" (found live on a1).
+
 ## [4.7.0] - 2026-10-30
 
 **Apps for people outside the console, and the Builder opens what SATOM

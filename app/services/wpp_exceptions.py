@@ -144,8 +144,8 @@ HTTP_METHOD_TOKENS = ["get", "post", "head", "options", "trace", "connect",
 FIELD_HINTS: dict[str, str] = {
     "signature_id": ("The signature that blocked the request: the Signature ID "
                      "column of the Attack log (Create exception there fills "
-                     "this form). Type an id, attack class or words of the "
-                     "description to search the signature index."),
+                     "this form). Browse… picks it from the signature index "
+                     "by id, attack class or description."),
     "http-method": ("The method of the blocked request (Attack log, HTTP "
                     "Method column). The signature is skipped only for "
                     "requests using this method."),

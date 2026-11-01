@@ -223,6 +223,33 @@ def search(product: str, needle: str, *, limit: int = 200,
     return q.order_by(E.sig_id).limit(limit).all()
 
 
+def browse(product: str, needle: str = "", *, main: str = "", offset: int = 0,
+           limit: int = 50) -> tuple[list, int]:
+    """``(rows, total)`` of live index rows for the signature picker: optional
+    text filter (id, description, class names) and attack-class filter."""
+    from ..models_signatures import SignatureEntry as E
+    q = E.query.filter(E.product == product, E.removed_in_version.is_(None))
+    n = (needle or "").strip()
+    if n:
+        like = "%" + n.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        q = q.filter(E.sig_id.ilike(like, escape="\\") | E.description.ilike(like, escape="\\")
+                     | E.sub_name.ilike(like, escape="\\") | E.main_name.ilike(like, escape="\\"))
+    if main:
+        q = q.filter(E.main_name == main)
+    total = q.count()
+    return q.order_by(E.sig_id).offset(max(0, offset)).limit(max(1, min(limit, 200))).all(), total
+
+
+def main_classes(product: str) -> list[tuple[str, int]]:
+    """``[(attack class, live signatures)]`` for the picker's class filter."""
+    from sqlalchemy import func
+    from ..models import db
+    from ..models_signatures import SignatureEntry as E
+    return [(m or "", c) for m, c in db.session.query(E.main_name, func.count(E.id))
+            .filter(E.product == product, E.removed_in_version.is_(None))
+            .group_by(E.main_name).order_by(E.main_name).all()]
+
+
 # ---------------------------------------------------------------------------
 # record one read
 # ---------------------------------------------------------------------------

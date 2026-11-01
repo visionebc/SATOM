@@ -23,6 +23,7 @@ from ..services import wpp_clone_flow
 from ..services import exception_versions as versions
 from ..services import exception_advice, exception_deploy, exception_lifecycle
 from ..services.audit import log_action
+from ..services import http_constraints_gui as hce_gui
 
 bp = Blueprint('exceptions', __name__, url_prefix='/exceptions')
 
@@ -181,7 +182,11 @@ def type_fields(id=None):
     t = store.type_for(key)
     if not t:
         return jsonify(ok=False, error='unknown type', fields=[]), 400
-    return jsonify(ok=True, type=t, fields=store.fields_for(key),
+    fields = store.fields_for(key)
+    layout = None
+    if store.canonical_type(key) == hce_gui.EXC_TYPE:
+        layout = hce_gui.exception_layout(fields)
+    return jsonify(ok=True, type=t, fields=fields, layout=layout,
                    help=store.help_for(key))
 
 
@@ -194,10 +199,33 @@ def signature_lookup():
     the index was never built, so an empty answer is not read as "no match"."""
     from ..services import signature_index as sidx
     q = (request.args.get('q') or '').strip()[:80]
+    def _row(r, n=200):
+        return {'id': r.sig_id, 'main': r.main_name, 'sub': r.sub_name,
+                'desc': (r.description or '')[:n]}
+    if request.args.get('browse'):
+        # The picker modal: paged, filterable by attack class.
+        offset = request.args.get('offset', 0, type=int) or 0
+        rows, total = sidx.browse('fortiweb', q, main=(request.args.get('main') or '')[:255],
+                                  offset=offset, limit=50)
+        out = dict(ok=True, indexed=sidx.entry_count('fortiweb'), total=total,
+                   offset=offset, results=[_row(r, 400) for r in rows])
+        if not offset:
+            out['classes'] = [{'name': m, 'count': c} for m, c in sidx.main_classes('fortiweb')]
+        return jsonify(out)
     rows = sidx.search('fortiweb', q, limit=25) if len(q) >= 2 else []
-    return jsonify(ok=True, indexed=sidx.entry_count('fortiweb'), results=[
-        {'id': r.sig_id, 'main': r.main_name, 'sub': r.sub_name,
-         'desc': (r.description or '')[:200]} for r in rows])
+    return jsonify(ok=True, indexed=sidx.entry_count('fortiweb'),
+                   results=[_row(r) for r in rows])
+
+
+@bp.route('/<int:id>/http-constraint-state')
+@login_required
+@require_permission('protection.view')
+def http_constraint_state(id):
+    """Which constraints are ON in the HTTP Protocol Constraints profile the
+    chosen WPP binds (SATOM cache, never the device)."""
+    appliance = visible_appliance_or_404(id)
+    return jsonify(ok=True, **hce_gui.profile_state(appliance.id,
+                                                    (request.args.get('wpp') or '')[:255]))
 
 
 @bp.route('/<int:id>/save', methods=['POST'])

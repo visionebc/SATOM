@@ -7,6 +7,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **Exceptions: an HTTP Protocol Constraints exception is authored the way
+  FortiWeb draws it.** Request: "on fortiweb19 HTTP constraints is far more
+  polished and easy to use; here the user does not know what it depends on or
+  which parameters there are." The layout was measured in the device GUI
+  (fortiweb19, 7.6.8): Host Status / Host (greyed while off), Source IP /
+  range (shown while on), URL Type as Simple String / Regular Expression,
+  URL Pattern, then the 44 constraints in FortiWeb's seven collapsible
+  categories with the device's names and descriptions. A column says, for
+  the chosen Web Protection Profile, whether each constraint is ON in its
+  HTTP Protocol Constraints profile (an exception for one that is off
+  changes nothing), read from the SATOM cache. The one key the GUI does not
+  show (`Internal-resource-limits-check`) sits under "Not in GUI, but in CLI".
+- **Signature ID is picked from a list.** Request: "Signature ID should be a
+  select; nobody knows those by heart — open a modal with the signature id
+  and everything it is, and pick it from there." Browse… opens the
+  signature index (all of it, paged) with search and an attack-class
+  filter; clicking a row fills the field.
 - **Exceptions: the form says where Signature ID and HTTP Method come from.**
   Request: "Signature ID — how will the user know which signature id to pick?
   And HTTP Method — where does that come from?" Signature ID now searches the

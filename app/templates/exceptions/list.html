@@ -402,6 +402,42 @@
   </div>
 </div>
 
+{# ── signature picker ── #}
+<div class="modal fade" id="sig-modal" tabindex="-1" aria-labelledby="sig-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title" id="sig-modal-title">{{ _('Select a signature') }}</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-2 mb-2">
+          <div class="col-md-7"><input id="sig-q" class="form-control form-control-sm" placeholder="{{ _('Search: id, attack class or words of the description') }}"></div>
+          <div class="col-md-5"><select id="sig-main" class="form-select form-select-sm"><option value="">{{ _('All attack classes') }}</option></select></div>
+        </div>
+        <div class="small text-muted mb-2" id="sig-count"></div>
+        <table class="table table-sm table-hover mb-0 sig-table">
+          <thead><tr><th>{{ _('Signature ID') }}</th><th>{{ _('Attack class') }}</th><th>{{ _('Sub-class') }}</th><th>{{ _('Description') }}</th></tr></thead>
+          <tbody id="sig-rows"></tbody>
+        </table>
+        <div class="text-center mt-2"><button type="button" class="btn btn-sm btn-outline-secondary d-none" id="sig-more">{{ _('Load more') }}</button></div>
+      </div>
+      <div class="modal-footer justify-content-start small text-muted">
+        {{ _('From SATOM\'s signature index (Signatures › Sync). The ID that blocked a request is the Signature ID column of the Attack log.') }}
+      </div>
+    </div>
+  </div>
+</div>
+<style nonce="{{ csp_nonce }}">
+.hce-line{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.hce-line>label{flex:0 0 160px;margin:0;font-size:.875rem}
+.hce-line>div{flex:0 1 380px}
+.hce-table .hce-c1{width:70px}.hce-table .hce-c3{width:170px}
+.hce-cat td{background:var(--fw-content-bg,#F3F6FC);cursor:pointer;font-weight:600;user-select:none}
+.hce-table td{vertical-align:middle}
+.sig-table .sig-pick{cursor:pointer}
+</style>
+
 <script src="{{ url_for('static', filename='js/regex_lab.js') }}" nonce="{{ csp_nonce }}"></script>
 <script nonce="{{ csp_nonce }}">
 var EXC_AID = {{ appliance.id }};
@@ -428,8 +464,9 @@ function fieldInput(f, val){
   }
   if (f.key === 'signature_id'){
     // Searchable over the local signature index (id, class, description).
-    return '<input class="form-control form-control-sm exc-fld" data-key="signature_id" list="exc-sig-list" autocomplete="off" value="'+esc(val)+'">'
-      + '<datalist id="exc-sig-list"></datalist><div class="small mt-1" id="exc-sig-info"></div>';
+    return '<div class="input-group input-group-sm"><input class="form-control exc-fld" data-key="signature_id" autocomplete="off" placeholder="010000001" value="'+esc(val)+'">'
+      + '<button type="button" class="btn btn-fw-outline" data-js="sig-browse"><i class="bi bi-list-ul me-1"></i>Browse…</button></div>'
+      + '<div class="small mt-1" id="exc-sig-info"></div>';
   }
   let input = '<input class="form-control form-control-sm exc-fld" data-key="'+f.key+'" value="'+esc(val)+'">';
   if (f.regex){
@@ -440,8 +477,9 @@ function fieldInput(f, val){
   }
   return input;
 }
-function renderFields(fields, payload){
+function renderFields(fields, payload, layout){
   payload = payload || {};
+  if (layout && layout.kind === 'http_constraint_exception'){ renderHce(payload, layout); excRefreshVis(); hceLoadState(); return; }
   const box = document.getElementById('exc-fields');
   box.innerHTML = '';
   fields.forEach(function(f){
@@ -463,7 +501,12 @@ function excRefreshVis(){
     let rule = null; try { rule = JSON.parse(w.getAttribute('data-vis')); } catch(e){}
     if (!rule || rule.t !== 'eq') return;
     const ctrl = document.querySelector('#exc-fields .exc-fld[data-key="'+rule.key+'"]');
-    const show = !ctrl || (rule.vals||[]).indexOf(ctrl.value) >= 0;
+    const v = ctrl ? (ctrl.type === 'checkbox' ? (ctrl.checked ? 'enable' : 'disable') : ctrl.value) : null;
+    const show = !ctrl || (rule.vals||[]).indexOf(v) >= 0;
+    if (rule.mode === 'disable'){
+      w.querySelectorAll('input,select').forEach(function(i){ i.disabled = !show; });
+      return;
+    }
     w.style.display = show ? '' : 'none';
   });
 }
@@ -506,6 +549,176 @@ function excSigLookup(now){
 document.getElementById('exc-fields').addEventListener('input', function(ev){
   if (ev.target.dataset && ev.target.dataset.key === 'signature_id') excSigLookup(false);
 });
+// ── HTTP Constraint Exception rule, laid out as FortiWeb draws it ─────────
+// (measured on the device GUI: services/http_constraints_gui.py)
+function hceOn(v){ return v === 'enable' || v === true || v === 'true'; }
+function renderHce(payload, L){
+  const box = document.getElementById('exc-fields');
+  const hl = L.head_labels || {};
+  const sw = function(key, explicit){
+    return '<div class="form-check form-switch m-0"><input class="form-check-input exc-fld" type="checkbox" role="switch" data-key="'+esc(key)+'"'
+      + (explicit ? ' data-explicit="1"' : '') + (hceOn(payload[key]) ? ' checked' : '') + '></div>';
+  };
+  const line = function(label, ctrl, vis){
+    return '<div class="hce-line exc-fld-wrap"'+(vis ? ' data-vis="'+esc(JSON.stringify(vis))+'"' : '')+'><label>'+label+'</label><div>'+ctrl+'</div></div>';
+  };
+  const rt = payload['request-type'] || 'plain';
+  const seg = '<div class="btn-group btn-group-sm" role="group">'
+    + '<button type="button" class="btn '+(rt === 'plain' ? 'btn-primary' : 'btn-outline-secondary')+'" data-rt="plain">Simple String</button>'
+    + '<button type="button" class="btn '+(rt === 'regular' ? 'btn-primary' : 'btn-outline-secondary')+'" data-rt="regular">Regular Expression</button></div>'
+    + '<input type="hidden" class="exc-fld" data-key="request-type" value="'+esc(rt)+'">';
+  const url = '<div class="d-flex gap-1 fw-rx-wrap"><input class="form-control form-control-sm exc-fld" data-key="request-file" placeholder="/path" value="'+esc(payload['request-file']||'')+'">'
+    + '<button type="button" class="btn btn-sm btn-fw-outline fw-rx-btn'+(rt === 'regular' ? '' : ' d-none')+'" data-rx-context="http_constraint_exception_item" title="Regex calculator — test this pattern against samples">.*</button></div>';
+  let h = '<div class="col-12"><div class="hce">'
+    + line(esc(hl['host-status']||'Host Status'), sw('host-status', true))
+    + line(esc(hl['host']||'Host'), '<input class="form-control form-control-sm exc-fld" data-key="host" value="'+esc(payload.host||'')+'">', {t:'eq', key:'host-status', vals:['enable'], mode:'disable'})
+    + line(esc(hl['source-ip-status']||'Source IP'), sw('source-ip-status', true))
+    + line(esc(hl['source-ip']||'IPv4/IPv6/IP Range'), '<input class="form-control form-control-sm exc-fld" data-key="source-ip" placeholder="192.0.2.1-192.0.2.9" value="'+esc(payload['source-ip']||'')+'">', {t:'eq', key:'source-ip-status', vals:['enable']})
+    + line(esc(hl['request-type']||'URL Type'), seg)
+    + line(esc(hl['request-file']||'URL Pattern')+' <span class="text-danger">*</span>', url)
+    + '<div id="hce-state" class="small mt-2"></div>'
+    + '<div class="d-flex justify-content-between align-items-center mt-3 mb-1"><strong class="small">Constraints this rule exempts</strong>'
+    + '<span><button type="button" class="btn btn-link btn-sm p-0 me-3" data-hce="expand">Expand all</button>'
+    + '<button type="button" class="btn btn-link btn-sm p-0" data-hce="collapse">Collapse all</button></span></div>'
+    + '<table class="table table-sm hce-table mb-0"><thead><tr><th class="hce-c1">Status</th><th>Name</th><th class="hce-c3">In the profile</th></tr></thead>';
+  (L.categories||[]).forEach(function(c, ci){
+    const nOn = c.rows.filter(function(r){ return hceOn(payload[r.key]); }).length;
+    h += '<tbody><tr class="hce-cat" data-cat="'+ci+'"><td colspan="3"><i class="bi bi-'+(nOn ? 'dash' : 'plus')+'-square me-1"></i>'
+      + esc(c.title)+'('+c.rows.length+')<span class="hce-count ms-2 fw-normal text-muted">'+(nOn ? nOn+' exempted' : '')+'</span></td></tr>';
+    c.rows.forEach(function(r){
+      h += '<tr class="hce-row'+(nOn ? '' : ' d-none')+'" data-cat="'+ci+'"><td>'+sw(r.key)+'</td><td><div>'+esc(r.label)
+        + (r.proto ? ' <span class="fw-badge fw-badge-secondary ms-1">'+esc(r.proto)+'</span>' : '')+'</div>'
+        + (r.desc ? '<div class="small text-muted">'+esc(r.desc)+'</div>' : '')+'</td><td class="hce-prof small" data-key="'+esc(r.key)+'"></td></tr>';
+    });
+    h += '</tbody>';
+  });
+  h += '</table>';
+  if ((L.not_in_gui||[]).length){
+    h += '<div class="mt-3 small fw-semibold">Not in GUI, but in CLI</div>'
+      + '<div class="small text-muted mb-1">The device has these; the FortiWeb GUI does not show them. Written over REST.</div>'
+      + '<table class="table table-sm mb-0"><tbody>'
+      + L.not_in_gui.map(function(f){ return '<tr class="hce-row-nig"><td class="hce-c1">'+sw(f.key)+'</td><td>'+esc(f.label)+' <code class="text-muted">'+esc(f.key)+'</code> <span class="fw-badge fw-badge-secondary">REST</span></td></tr>'; }).join('')
+      + '</tbody></table>';
+  }
+  box.innerHTML = h + '</div></div>';
+}
+function hceCount(ci){
+  const rows = document.querySelectorAll('#exc-fields .hce-row[data-cat="'+ci+'"] .exc-fld');
+  const n = Array.prototype.filter.call(rows, function(i){ return i.checked; }).length;
+  const c = document.querySelector('#exc-fields .hce-cat[data-cat="'+ci+'"] .hce-count');
+  if (c) c.textContent = n ? n+' exempted' : '';
+}
+function hceToggle(ci, open){
+  document.querySelectorAll('#exc-fields .hce-row[data-cat="'+ci+'"]').forEach(function(r){ r.classList.toggle('d-none', !open); });
+  const i = document.querySelector('#exc-fields .hce-cat[data-cat="'+ci+'"] i');
+  if (i) i.className = 'bi bi-'+(open ? 'dash' : 'plus')+'-square me-1';
+}
+function hceLoadState(){
+  const box = document.getElementById('hce-state');
+  if (!box) return;
+  const wpp = document.getElementById('exc-wpp').value;
+  document.querySelectorAll('#exc-fields .hce-prof').forEach(function(td){ td.innerHTML = ''; });
+  if (!wpp){
+    box.className = 'small mt-2 text-muted';
+    box.textContent = 'Pick the Web Protection Profile to see which of these constraints its HTTP Protocol Constraints profile enforces. An exception only changes something for a constraint that is ON there.';
+    return;
+  }
+  fetch('/exceptions/'+EXC_AID+'/http-constraint-state?wpp='+encodeURIComponent(wpp)).then(r=>r.json()).then(function(s){
+    if (!s.read){
+      box.className = 'small mt-2 text-warning';
+      box.textContent = 'Could not read the profile of "'+wpp+'" from the SATOM cache. Run a device sync to see which constraints it enforces.';
+      return;
+    }
+    if (!s.profile){
+      box.className = 'small mt-2 text-warning';
+      box.textContent = '"'+wpp+'" binds no HTTP Protocol Constraints profile: this exception changes nothing until one is bound.';
+      return;
+    }
+    box.className = 'small mt-2';
+    box.innerHTML = 'The constraints come from <strong>'+esc(s.profile)+'</strong>, the HTTP Protocol Constraints profile of <strong>'+esc(wpp)+'</strong>. '
+      + 'Exempting a constraint that is off there changes nothing.'
+      + (s.exception_name ? ' The profile uses the exception list <code>'+esc(s.exception_name)+'</code>.' : ' The profile uses no exception list yet.');
+    document.querySelectorAll('#exc-fields .hce-prof').forEach(function(td){
+      td.innerHTML = s.on[td.dataset.key]
+        ? '<span class="fw-badge fw-badge-success">On — enforced</span>'
+        : '<span class="text-muted">Off — no effect</span>';
+    });
+  }).catch(function(){});
+}
+document.getElementById('exc-fields').addEventListener('click', function(ev){
+  const t = ev.target;
+  const rtb = t.closest && t.closest('[data-rt]');
+  if (rtb){
+    const wrap = rtb.parentNode;
+    wrap.querySelectorAll('[data-rt]').forEach(function(b){ b.className = 'btn '+(b === rtb ? 'btn-primary' : 'btn-outline-secondary'); });
+    document.querySelector('#exc-fields .exc-fld[data-key="request-type"]').value = rtb.dataset.rt;
+    const rx = document.querySelector('#exc-fields .hce .fw-rx-btn');
+    if (rx) rx.classList.toggle('d-none', rtb.dataset.rt !== 'regular');
+    return;
+  }
+  const ex = t.closest && t.closest('[data-hce]');
+  if (ex){
+    document.querySelectorAll('#exc-fields .hce-cat').forEach(function(c){ hceToggle(c.dataset.cat, ex.dataset.hce === 'expand'); });
+    return;
+  }
+  const cat = t.closest && t.closest('.hce-cat');
+  if (cat){
+    const first = document.querySelector('#exc-fields .hce-row[data-cat="'+cat.dataset.cat+'"]');
+    hceToggle(cat.dataset.cat, first && first.classList.contains('d-none'));
+  }
+  if (t.closest && t.closest('[data-js="sig-browse"]')) sigOpen();
+});
+document.getElementById('exc-fields').addEventListener('change', function(ev){
+  const row = ev.target.closest && ev.target.closest('.hce-row');
+  if (row) hceCount(row.dataset.cat);
+});
+// ── Signature picker (modal over the local signature index) ─────────────
+var sigState = {offset: 0, total: 0, timer: null};
+function sigFetch(append){
+  const q = document.getElementById('sig-q').value.trim();
+  const main = document.getElementById('sig-main').value;
+  if (!append) sigState.offset = 0;
+  fetch('/exceptions/signature-lookup?browse=1&q='+encodeURIComponent(q)+'&main='+encodeURIComponent(main)+'&offset='+sigState.offset)
+    .then(r=>r.json()).then(function(j){
+      const tb = document.getElementById('sig-rows');
+      if (!append) tb.innerHTML = '';
+      const sel = document.getElementById('sig-main');
+      if (j.classes && sel.options.length <= 1){
+        j.classes.forEach(function(c){ sel.insertAdjacentHTML('beforeend', '<option value="'+esc(c.name)+'">'+esc(c.name || '(no class)')+' ('+c.count+')</option>'); });
+      }
+      (j.results||[]).forEach(function(r){
+        excSigRows[r.id] = r;
+        tb.insertAdjacentHTML('beforeend', '<tr class="sig-pick" data-id="'+esc(r.id)+'"><td><code>'+esc(r.id)+'</code></td><td>'+esc(r.main)+'</td><td>'+esc(r.sub)+'</td><td class="small">'+esc(r.desc)+'</td></tr>');
+      });
+      sigState.offset += (j.results||[]).length;
+      sigState.total = j.total || 0;
+      document.getElementById('sig-count').textContent = !j.indexed
+        ? 'The signature index is empty. Build it under Signatures (Sync).'
+        : sigState.total+' signature(s)'+(sigState.offset < sigState.total ? ', showing '+sigState.offset : '')+'. Click a row to use it.';
+      document.getElementById('sig-more').classList.toggle('d-none', sigState.offset >= sigState.total);
+    }).catch(function(){});
+}
+function sigOpen(){
+  const inp = document.querySelector('#exc-fields .exc-fld[data-key="signature_id"]');
+  const cur = inp ? inp.value.trim() : '';
+  document.getElementById('sig-q').value = /^\d{9,10}$/.test(cur) ? '' : cur;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('sig-modal')).show();
+  sigFetch(false);
+}
+document.getElementById('sig-q').addEventListener('input', function(){
+  clearTimeout(sigState.timer); sigState.timer = setTimeout(function(){ sigFetch(false); }, 250);
+});
+document.getElementById('sig-main').addEventListener('change', function(){ sigFetch(false); });
+document.getElementById('sig-more').addEventListener('click', function(){ sigFetch(true); });
+document.getElementById('sig-rows').addEventListener('click', function(ev){
+  const tr = ev.target.closest && ev.target.closest('.sig-pick');
+  const inp = document.querySelector('#exc-fields .exc-fld[data-key="signature_id"]');
+  if (!tr || !inp) return;
+  inp.value = tr.dataset.id;
+  excSigRows.__done = true;
+  excSigShow();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('sig-modal')).hide();
+});
 document.getElementById('exc-fields').addEventListener('change', excRefreshVis);
 document.getElementById('exc-fields').addEventListener('click', function(ev){
   const rx = ev.target.closest && ev.target.closest('.fw-rx-btn');
@@ -525,13 +738,21 @@ function loadFields(payload){
   const t = document.getElementById('exc-type').value;
   if (!t){ document.getElementById('exc-fields').innerHTML = ''; showTypeHelp(null); return Promise.resolve(); }
   return fetch('/exceptions/type-fields?type='+encodeURIComponent(t)).then(r=>r.json())
-    .then(function(j){ renderFields(j.fields||[], payload); showTypeHelp(j.help); });
+    .then(function(j){ renderFields(j.fields||[], payload, j.layout); showTypeHelp(j.help); });
 }
 function collectFields(){
   const out = {};
   document.querySelectorAll('#exc-fields .exc-fld').forEach(function(el){
     const wrap = el.closest('.exc-fld-wrap');
     if (wrap && wrap.style.display === 'none') return;   // gated-out field
+    if (el.disabled) return;                              // greyed by its status switch
+    if (el.type === 'checkbox'){
+      // A constraint switch is sent only when ON (off = the device default);
+      // a status switch is always sent so "off" is explicit.
+      if (el.checked) out[el.dataset.key] = 'enable';
+      else if (el.dataset.explicit) out[el.dataset.key] = 'disable';
+      return;
+    }
     if (el.value !== '') out[el.dataset.key] = el.value;
   });
   return out;
@@ -1167,6 +1388,7 @@ function adviseExc(){
   document.getElementById('exc-wpp').addEventListener('change', function (event) {
     const opt = this.selectedOptions && this.selectedOptions[0];
     document.getElementById('wpp-managed-warn').classList.toggle('d-none', !(opt && opt.dataset.managed));
+    hceLoadState();
   });
   document.querySelector('[data-js="clone-rebind"]').addEventListener('click', function (event) { cloneRebind(); });
   document.querySelector('[data-js="clone-cancel"]').addEventListener('click', function (event) { hideClonePanel(); });

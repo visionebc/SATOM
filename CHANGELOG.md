@@ -7,6 +7,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **"+ Create" beside a selector, from the device's own GUI; dialog tables in
+  SATOM's table format.** Request: "that same section has the pencil to
+  create and you did not put it; are you using the crawler to scan
+  everything? and check all those tables, the CSS does not match SATOM's
+  format." FortiWeb offers **Create** inside the dropdown of every selector
+  whose GUI source is declared `createNew` (204 of 220 sources on 7.6.8). The
+  harvester now carries that flag from the GUI's own registry (harvester
+  5232929, knowledge pack kb-20261101.6: 119 templates, only the flag added),
+  and SATOM draws a **+** beside each such selector (a native select has no
+  room inside its list). It opens the object's empty dialog in a panel; on
+  save the panel closes and the new object is selected (measured on
+  fortiweb19: a Trigger Policy created from Edit Signature Policy, then
+  deleted). The signature categories' Trigger Policy column has it too. The
+  tables inside FortiWeb-layout dialogs (sub-tables, HTTP Protocol
+  Constraints, signature categories, toggle rows, the change review) now use
+  SATOM's table format: uppercase secondary headers, no cell grid, zebra
+  rows, a card around the large tables.
 - **Edit Signature Policy draws its ten categories even when the policy has
   no rows; Signature Details slides in over the dialog.** Request: "the table
   is empty in SATOM; Signature Details goes to another page while FortiWeb

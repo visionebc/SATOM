@@ -57,6 +57,19 @@
      href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=coll, mkey=name) if name else '#' }}"><i class="bi bi-pencil-fill" aria-hidden="true"></i></a>
   {%- else -%}<i class="bi bi-pencil-fill fwg-pencil is-off" aria-hidden="true"></i>{%- endif -%}
 {%- endmacro %}
+{# creator(ref): FortiWeb's "+ Create" of a selector whose GUI source is
+   declared createNew (harvester: field create_new). FortiWeb puts it inside
+   the dropdown; a native select has no room for it, so it sits beside the
+   select. It opens the object's own empty dialog (fwg_ref_new) in the panel,
+   and what is saved there is selected here; without a measured page, the
+   generic editor's create. #}
+{% macro creator(ref, title='') -%}
+  {%- set coll = (ref or '').split('|')[0] -%}
+  {%- if coll -%}
+  <a class="fwg-pencil fwg-create" href="#" title="{{ _('Create New') }}" aria-label="{{ _('Create New') }}"
+     data-fwg-create data-coll="{{ coll }}" data-title="{{ title }}" data-gui="{{ fwg_ref_new(appliance, coll) }}"><i class="bi bi-plus-lg" aria-hidden="true"></i></a>
+  {%- endif -%}
+{%- endmacro %}
 {% macro more_inputs(f) %}
   {% for m in f.more or [] %}<label class="form-check form-check-inline mb-0 ms-2"><input type="checkbox" class="form-check-input fwg-in" data-gkey="{{ m.key }}" data-orig="{{ m.raw }}" data-on="{{ m.on }}" data-off="{{ m.off }}"{{ ' checked' if m.raw == m.on }}> {{ m.label }}</label>{% endfor %}
 {% endmacro %}
@@ -90,6 +103,7 @@
       {% if f.raw %}<option value="{{ f.raw }}" selected>{{ f.raw }}</option>{% endif %}
     </select>
     {% if f.edit_shortcut %}{{ pencil(f.ref, f.raw) }}{% endif %}
+    {% if f.create_new %}{{ creator(f.ref, f.label) }}{% endif %}
   {% elif f.kind == 'textarea' %}
     <textarea class="form-control form-control-sm fwg-in fwg-edit" rows="2" data-gkey="{{ k }}" data-orig="{{ f.raw }}">{{ f.raw }}</textarea>
   {% elif f.kind == 'number' %}
@@ -337,12 +351,15 @@
   .fwg-sig-table{width:100%;min-width:1040px;table-layout:fixed}
   .fwg-sig-table col:nth-child(1){width:3%}.fwg-sig-table col:nth-child(2){width:24%}
   .fwg-sig-table col:nth-child(3){width:5%}.fwg-sig-table col:nth-child(4){width:16%}
-  .fwg-sig-table col:nth-child(5){width:19%}.fwg-sig-table col:nth-child(6){width:9%}
-  .fwg-sig-table col:nth-child(7){width:13%}.fwg-sig-table col:nth-child(8){width:11%}
+  .fwg-sig-table col:nth-child(5){width:17%}.fwg-sig-table col:nth-child(6){width:9%}
+  .fwg-sig-table col:nth-child(7){width:12%}.fwg-sig-table col:nth-child(8){width:14%}
   .fwg-sig-table td{vertical-align:middle}
   .fwg-sig-table td.c{text-align:center}
   /* .fwg-edit's 220px minimum (fortiweb.css) would overflow the narrow columns */
   .fwg-sig-table select.fwg-edit{width:100%;min-width:0}
+  /* Trigger Policy keeps its "+ Create" on the same line */
+  .fwg-sig-table td:last-child{white-space:nowrap}
+  .fwg-sig-table td:last-child select.fwg-edit{display:inline-block;width:calc(100% - 22px);vertical-align:middle}
   .fwg-sig-table input.fwg-edit[type=number]{width:100%;min-width:0;max-width:7rem}
   .fwg-sig-toggle{border:0;background:none;padding:0 .25rem;color:var(--fw-text-muted,#5a6b7d)}
   .fwg-sig-warn{color:#8B1C2A;font-size:12px}
@@ -364,7 +381,7 @@
         <td class="c">{{ sg_sel(r.action, r.actions, r.off, 'data-sig-dep data-sig-action') }}</td>
         <td class="c"><input type="number" min="1" max="3600" class="form-control form-control-sm fwg-in fwg-edit d-inline-block" data-sig-block data-gkey="{{ r.block_period.key }}" data-orig="{{ r.block_period.raw }}" value="{{ r.block_period.raw }}"{{ ' disabled' if r.off or not r.block_on or not can_edit }}></td>
         <td class="c">{{ sg_sel(r.severity, sg.options.severity, r.off, 'data-sig-dep') }}</td>
-        <td><select class="form-select form-select-sm fwg-in fwg-edit" data-sig-dep data-gkey="{{ r.trigger.key }}" data-orig="{{ r.trigger.raw }}" data-ref="log/trigger-policy"{{ ' disabled' if r.off or not can_edit }}><option value="">{{ _('— none —') }}</option>{% if r.trigger.raw %}<option value="{{ r.trigger.raw }}" selected>{{ r.trigger.raw }}</option>{% endif %}</select></td>
+        <td><select class="form-select form-select-sm fwg-in fwg-edit" data-sig-dep data-gkey="{{ r.trigger.key }}" data-orig="{{ r.trigger.raw }}" data-ref="log/trigger-policy"{{ ' disabled' if r.off or not can_edit }}><option value="">{{ _('— none —') }}</option>{% if r.trigger.raw %}<option value="{{ r.trigger.raw }}" selected>{{ r.trigger.raw }}</option>{% endif %}</select>{% if can_edit and sg.trigger_create %}{{ creator('log/trigger-policy', _('Trigger Policy')) }}{% endif %}</td>
       </tr>
       {% if r.ident and sg.threshold %}<tr data-sig-threshold hidden>
         <td></td><td>{{ sg.threshold.label }}</td>
@@ -556,6 +573,31 @@
       }
       if (window.FWDrawer) { window.FWDrawer.openEdit(pen.dataset.coll, mkey, {title: title, opener: sel}); return; }
       window.location.href = pen.getAttribute('href');
+    });
+  });
+  // "+ Create": the object's empty dialog in the panel; what it saves is
+  // added to the list and selected here, then the panel closes (FortiWeb's
+  // inlineEditCreate -> notifySourceChanged)
+  document.querySelectorAll('[data-fwg-create]').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      var sel = btn.parentElement.querySelector('select[data-ref]');
+      if (sel && sel.disabled) return;
+      var val = btn.closest('.fwg-value');
+      var lab = val && val.previousElementSibling;
+      var title = btn.dataset.title || (lab ? lab.textContent.trim() : btn.dataset.coll.split('/').pop());
+      function pick(name) {
+        if (!sel || !name) return;
+        var have = Array.prototype.some.call(sel.options, function (o) { return o.value === name; });
+        if (!have) { var o = document.createElement('option'); o.value = o.textContent = name; sel.appendChild(o); }
+        sel.value = name;
+        sel.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+      if (window.FWDrawer && btn.dataset.gui && window.FWDrawer.openFrame) {
+        window.FWDrawer.openFrame(btn.dataset.gui, btn.dataset.coll, '{{ _('New') }}', {title: title, opener: sel, onCreated: pick});
+        return;
+      }
+      if (window.FWDrawer) window.FWDrawer.openCreate(btn.dataset.coll, {title: title, opener: sel});
     });
   });
 })();
@@ -953,6 +995,10 @@
         // (a mismatch never gets here: GuiOps fails it, notApplied above
         // names what the device kept)
         var go = function () {
+          if (MODE === 'new-object' && window.self !== window.top && res.mkey) {
+            window.parent.postMessage({fwDrawer: 'created', name: res.mkey}, location.origin);
+            return;
+          }
           if (MODE === 'gp-row') window.location.href = BACK;
           else if (MODE === 'new-object' && res.mkey) window.location.href = GUI_POLICY.replace('__N__', encodeURIComponent(res.mkey));
           else if (MODE === 'new-object') window.location.href = DONE;
@@ -973,6 +1019,13 @@
       if (GP) {
         // the object editor updated the SATOM copy; sub-table rows are read
         // from the device when the page draws
+        // opened by a selector's "+ Create" in a panel: hand the new name
+        // back (selected there) and close, as FortiWeb's slide does
+        if (MODE === 'new-object' && window.self !== window.top) {
+          say('Created.');
+          window.parent.postMessage({fwDrawer: 'created', name: name}, location.origin);
+          return;
+        }
         say('Saved. Reloading…');
         if (MODE === 'new-object') window.location.href = GUI_POLICY.replace('__N__', encodeURIComponent(name));
         else if (MODE === 'gp-row') window.location.href = DONE;

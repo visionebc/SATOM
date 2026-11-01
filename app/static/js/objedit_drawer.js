@@ -140,6 +140,7 @@
     p.dataset.url = opts.url;
     p._opener = opts.opener || null;       // the <select> that spawned the panel
     p._onClose = opts.onClose || null;     // told how the framed page closed
+    p._onCreated = opts.onCreated || null; // a framed "+ Create" names what it saved
     if (opts.wide) p.classList.add('is-wide');
     STACK.push(p);
     syncChrome();
@@ -206,7 +207,7 @@
       var t = opts.title || (coll || '').split('/').pop();
       return open({url: url, title: t + ' — ' + mkey, coll: coll,
                    opener: opts.opener, frame: true, wide: !!opts.wide,
-                   onClose: opts.onClose});
+                   onClose: opts.onClose, onCreated: opts.onCreated});
     },
     reload: function (panel) {
       if (!panel || !panel.dataset.url) return;
@@ -280,12 +281,17 @@
   window.addEventListener('message', function (ev) {
     if (ev.origin !== location.origin || !ev.data) return;
     var kind = ev.data.fwDrawer;
-    if (kind !== 'close' && kind !== 'changed') return;
+    if (kind !== 'close' && kind !== 'changed' && kind !== 'created') return;
     for (var i = STACK.length - 1; i >= 0; i--) {
       var f = STACK[i].querySelector('.fw-drawer-frame');
       if (f && f.contentWindow === ev.source) {
         // a write inside the frame (it may reload itself afterwards): remembered
         if (kind === 'changed') { STACK[i]._changed = true; return; }
+        // created from a selector's "+ Create": selected in the opener, panel closed
+        if (kind === 'created') {
+          if (STACK[i]._onCreated) { try { STACK[i]._onCreated(String(ev.data.name || '')); } catch (e) { /* opener gone */ } }
+          pop(STACK[i]); return;
+        }
         pop(STACK[i], ev.data); return;
       }
     }

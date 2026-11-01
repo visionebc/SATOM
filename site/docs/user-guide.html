@@ -1288,7 +1288,14 @@ hosts them, which says <em>Served only by the CLI on this build</em>.</p>
 Standard Protection, Cookie, Advanced Protection, … Redirect), the notes the
 device prints under a field, and an <strong>Edit entry</strong> pencil beside every
 selector that has one on the device. A selector lists the objects of the
-collection the device's own page lists, served from SATOM's cache.</p>
+collection the device's own page lists, served from SATOM's cache. Where the
+device's list offers <strong>Create</strong>, a <strong>+</strong> beside the selector opens that
+object's own empty dialog in a panel over the current one (Trigger Policy,
+Custom Signature Group, IP List, Exception Policy…); when you save it, the
+panel closes and the new object is selected in the field. Interfaces and
+predefined objects have no <strong>+</strong>, as on the device. The tables inside these
+dialogs (sub-tables, HTTP Protocol Constraints, signature categories) use
+SATOM's table format.</p>
 <p>Fields appear and disappear as on the device. The condition behind each one is
 resolved from what SATOM has cached for the device: the field values of the
 dialog, the operation mode, the feature visibility (including the GUI's own

@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · Fixed · 21 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · Fixed · 22 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · Fixed · 21 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · Fixed · 22 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · Fixed · 21 entries</span>
-        <ul class="rel-leads"><li>Edit Signature Policy draws its ten categories even when the policy has no rows; Signature Details slides in over the dialog</li><li>Signature Details as FortiWeb lays it out</li><li>Each selector lists what the device&#x27;s GUI lists</li><li class="rel-more">… and 18 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · Fixed · 22 entries</span>
+        <ul class="rel-leads"><li>&quot;+ Create&quot; beside a selector, from the device&#x27;s own GUI; dialog tables in SATOM&#x27;s table format</li><li>Edit Signature Policy draws its ten categories even when the policy has no rows; Signature Details slides in over the dialog</li><li>Signature Details as FortiWeb lays it out</li><li class="rel-more">… and 19 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v4.8.0.html" data-rel-version="4.8.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 4.8.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -532,6 +532,23 @@
       <div class="mdx">
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>"+ Create" beside a selector, from the device's own GUI; dialog tables in
+  SATOM's table format.</strong> Request: "that same section has the pencil to
+  create and you did not put it; are you using the crawler to scan
+  everything? and check all those tables, the CSS does not match SATOM's
+  format." FortiWeb offers <strong>Create</strong> inside the dropdown of every selector
+  whose GUI source is declared <code>createNew</code> (204 of 220 sources on 7.6.8). The
+  harvester now carries that flag from the GUI's own registry (harvester
+  5232929, knowledge pack kb-20261101.6: 119 templates, only the flag added),
+  and SATOM draws a <strong>+</strong> beside each such selector (a native select has no
+  room inside its list). It opens the object's empty dialog in a panel; on
+  save the panel closes and the new object is selected (measured on
+  {device}: a Trigger Policy created from Edit Signature Policy, then
+  deleted). The signature categories' Trigger Policy column has it too. The
+  tables inside FortiWeb-layout dialogs (sub-tables, HTTP Protocol
+  Constraints, signature categories, toggle rows, the change review) now use
+  SATOM's table format: uppercase secondary headers, no cell grid, zebra
+  rows, a card around the large tables.</li>
 <li><strong>Edit Signature Policy draws its ten categories even when the policy has
   no rows; Signature Details slides in over the dialog.</strong> Request: "the table
   is empty in SATOM; Signature Details goes to another page while FortiWeb

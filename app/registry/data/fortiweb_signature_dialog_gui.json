@@ -181,5 +181,7 @@
     "expansion_controls": true,
     "west_collapsible": true,
     "source": "fwb-signature-detail.html: f-tree-view expansion-controls=\"true\" collapsed-root=\"true\"; west pane collapse button (fa-angle-left, closeTree) and Return (signature.return_str, closePage -> the dialog)"
-  }
+  },
+  "trigger_create": true,
+  "trigger_create_note": "The Trigger Policy cell is an f-omniselect over source log.trigger-policy, declared createNew:!0 in the GUI's Omniselect registry (app.min.js; harvester gui_extract.source_flags): its dropdown offers + Create, which opens fwb-trigger-policy-dialog empty."
 }

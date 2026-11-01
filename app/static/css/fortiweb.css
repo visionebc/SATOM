@@ -2938,6 +2938,28 @@ button.fwg-btn{cursor:pointer;}
 .fwg-satom .fwg-sat-tabs{padding:10px 20px 0;margin:0;border-bottom:1px solid var(--fw-border-light);flex-wrap:wrap;}
 .fwg-satom .fwg-sat-tabs .nav-link{font-size:13px;padding:6px 14px;}
 .fwg-satom .fwg-idx{padding:16px 20px;}
+/* Tables inside a FortiWeb-layout dialog in SATOM's table format (.fw-table,
+   2026-11-01): FortiWeb's grid look (centred weight-400 headers, a border on
+   every cell) stays for FortiWeb's own screens only. Covers the inline
+   sub-tables, HTTP Protocol Constraints, the signature classes, the toggle
+   rows and the change review. */
+.fwg-satom .fwg-table{font-size:13.5px;}
+.fwg-satom .fwg-table th{background:var(--fw-surface-alt);color:var(--fw-text-secondary);font-weight:600;
+  font-size:12px;text-transform:uppercase;letter-spacing:.5px;text-align:left;padding:10px 14px;
+  border-right:0;border-bottom:2px solid var(--fw-border);}
+.fwg-satom .fwg-table td{padding:6px 14px;height:auto;border-right:0;
+  border-bottom:1px solid var(--fw-border-light);color:var(--fw-text-primary);}
+.fwg-satom .fwg-table tbody tr:nth-child(even) td{background:var(--fw-surface-alt);}
+.fwg-satom .fwg-table tbody tr:hover td{background:color-mix(in srgb,var(--fw-accent) 5%,transparent);}
+.fwg-satom .fwg-table tbody tr:last-child td{border-bottom:0;}
+.fwg-satom .fwg-table tbody tr.fwg-hce-head td{background:var(--fw-content-bg);color:var(--fw-text-secondary);font-weight:600;}
+.fwg-satom .fwg-rows td{padding:4px 14px;}
+/* the card a dialog's large table sits in (as .fw-table-wrapper, no shadow
+   inside a card) */
+.fwg-satom .fwg-block.fwg-sig,.fwg-satom .fwg-block.fwg-hce{display:block;grid-column:1 / -1;margin:12px 24px;border:1px solid var(--fw-border);
+  border-radius:var(--fw-radius-lg);background:var(--fw-surface);overflow:auto;}
+.fwg-satom .fwg-sig-table th:nth-child(3),.fwg-satom .fwg-sig-table th:nth-child(4){text-align:center;}
+.fwg-satom .fwg-review .fwg-table{border:1px solid var(--fw-border);}
 .fwg-satom .fwg-idx .fwg-sec-title{margin:0 0 6px;}
 .fwg-satom .fw-empty-state-title{font-size:13px;font-weight:500;}
 

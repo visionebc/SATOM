@@ -1209,6 +1209,40 @@ def fwg_ref_page(appl, collection: str) -> str:
                    name='__N__', v=hit[1] or None, framed=1)
 
 
+@bp.app_template_global('fwg_ref_new')
+def fwg_ref_new(appl, collection: str) -> str:
+    """URL (framed) of the empty dialog the device opens to create an object of
+    ``collection`` -- what a selector's "+ Create" opens (FortiWeb's
+    inlineEditCreate: the source's own dialog, new) -- or '' when no measured
+    page lists the collection, or its page has no dialog that creates one
+    (the selector then falls back to the generic editor's create)."""
+    from ..services import gui_pages, gui_products, gui_store
+    try:
+        if appl is None or gui_products.product_of(appl) != 'fortiweb' or not collection:
+            return ''
+        fw = gui_store.firmware_of(appl)
+        hit = gui_pages.page_for_collection(collection, fw, 'fortiweb')
+        if not hit:
+            return ''
+        tpl, _match = gui_pages.template(hit[0], fw, 'fortiweb')
+        if not tpl:
+            return ''
+        views = gui_pages.views(tpl)
+        view = views[hit[1]] if hit[1] < len(views) else {}
+        # the dialog Create New opens: the view's create menu, else the dialog
+        # every row of the view opens (no discriminating key)
+        dlg = next((it.get('dialog') for it in view.get('create_menu') or [] if it.get('dialog')), '') \
+            or next((d.get('dialog') for d in view.get('dialogs') or []
+                     if d.get('dialog') and not d.get('key')), '')
+    except Exception as exc:  # noqa: BLE001 — a Create button never breaks the dialog
+        log_exception(exc, context='workspace.fwg_ref_new')
+        return ''
+    if not dlg or dlg not in (tpl.get('dialogs') or {}) or dlg in (tpl.get('subtable_dialogs') or ()):
+        return ''
+    return url_for('workspace.fwgui_new', appliance_id=appl.id, page=hit[0], dialog=dlg,
+                   v=hit[1] or None, framed=1)
+
+
 def _fwgui_subrows(appl, tpl, key, name, obj_row):
     """{sub-table: rows | None} of a dialog's inline tables, read as the object
     editor reads them: the device first (a row saved here shows at once), the

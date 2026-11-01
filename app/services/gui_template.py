@@ -516,6 +516,8 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                 "text": f.get("text") or "",
                 "style": f.get("style") or "",
                 "edit_shortcut": bool(f.get("edit_shortcut")),
+                # FortiWeb's "+ Create" in the selector (source createNew)
+                "create_new": bool(f.get("create_new")),
                 "table": _table_view(f, (subrows or {}).get(f.get("subtable")), refs)
                 if f.get("kind") == "table" else None,
                 "unknown": unknown,

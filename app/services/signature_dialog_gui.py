@@ -116,6 +116,7 @@ def class_table(rows, obj: dict | None) -> dict | None:
     return {"subtable": st, "rows": out, "options": opts, "columns": d["columns"],
             "threshold": threshold, "block_actions": d["block_actions"],
             "client_id_warning": d["client_id_warning"],
+            "trigger_create": bool(d.get("trigger_create")),
             "keys": [thr["key"]] if threshold else []}
 
 

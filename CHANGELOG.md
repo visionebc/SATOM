@@ -7,6 +7,49 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **Signature Details as FortiWeb lays it out.** Request: "do everything,
+  leave nothing pending." The **Signature Details** button of Edit Signature
+  Policy now opens the policy's Signature Details page (it opened the
+  generic object editor), redrawn in the device's three panes:
+  **Dictionaries** on the left (main category -> sub-category with this
+  policy's status; a category without sub-categories is one entry listing its
+  signatures; then Search and Filters), the selected entry in the middle (a
+  main category's settings with Apply; a sub-category's signatures with
+  Search Description; Search by CVE number, keywords or signature ID; Filters:
+  Disabled, False Positive Mitigation Disabled, Alert Only, Exception) and the
+  selected signature on the right (Signature, Exception, Threat Weight). Row
+  menu: Enable, Disable in all policies, Disable in current policy. Sensitivity
+  Level, Found In, Attack Reference, Match Example and Threat Weight are read
+  from the device on **Read from device** (`waf/signature.sigdetail`, audited;
+  only the pane's fields are kept; a refused read or an HTTP 200 without the
+  signature is an error, never an empty pane). A CVE search without imported
+  FortiGuard metadata says so. **Back to Signatures** returns to the dialog
+  and only ever to a SATOM path. *Disable in all policies* writes a
+  `waf/base-signature-disable` entry: the schema is measured (keyed by
+  signature ID), the write round trip is not yet (unverified on this build).
+- **Each selector lists what the device's GUI lists.** 40 selectors of
+  FortiWeb 7.6.8 dialogs were text boxes with no list and no Edit entry pencil
+  (File List and Health Check trigger policies, the DoS and IP Protection
+  exceptions, DLP rules and sensors, Trigger Policy's email / syslog /
+  FortiAnalyzer / SIEM policies, report output policies...). The layouts now
+  carry the source FortiWeb's code names for each one, resolved through the
+  GUI's own registry (harvester a41df4a, knowledge pack kb-20261101.5): 180
+  pencils open the device's dialog, 4 the object editor. The measured list wins
+  over SATOM's per-key map, which had Firewall Policy's Service listing
+  server policy services instead of `system/firewall.service`. A GUI API list
+  binds only to a twin SATOM measured. Five certificate selectors that
+  FortiWeb filters by key type stay text boxes: SATOM cannot filter that list
+  the same way and does not show a different one.
+- **Help tips written with the lang filter are shown.** 11 tips a build
+  (Sensitivity Level among them) were dropped by the layout reader; they come
+  with the layouts now.
+- **Not in GUI, but in CLI follows the device's page.** Where SATOM's
+  schema-built page and a page of the device's GUI covered the same
+  collection, the one that sorted first decided, and the schema-built page
+  places every field: 14 collections listed nothing (Signatures, OCSP, ZTNA,
+  Traffic Mirror, Padding Oracle, Web Vulnerability Scan...). The device's page
+  decides now: Edit Signature Policy lists PII Hyperscan Mode, which
+  FortiWeb's dialog never draws.
 - **The Edit entry pencil opens the dialog the device draws.** Request:
   "on the Web Protection Profile, the pencil on Signatures opens a screen that
   is not exactly what FortiWeb shows, and this happens in many places; clone

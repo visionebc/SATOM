@@ -1024,7 +1024,12 @@ explains the banner and the badges, and §7.5 explains how Save works.
   the pencil on a Web Protection Profile's Signatures opens Edit Signature
   Policy with its signature classes table); otherwise it holds the object
   editor below. **Cancel** or **Esc** closes the panel, and choices made in an
-  object-editor panel feed back into the selector that opened it.
+  object-editor panel feed back into the selector that opened it. Each
+  selector lists what the device's own GUI lists for it (the source named in
+  FortiWeb's code, measured per build): on 7.6.8, 180 selectors open the
+  device's dialog and 4 the object editor; 5 certificate selectors, which
+  FortiWeb filters by key type, stay text boxes rather than show a list
+  SATOM cannot filter the same way.
 - Below the main dialog, **Not in GUI, but in CLI** lists the fields this
   object has on the build that FortiWeb's GUI does not show (§7.6).
 
@@ -1286,7 +1291,10 @@ Two kinds of evidence decide what is "not in the GUI":
 - the page's **GUI layout**, where one was measured: a REST field the layout
   does not place is not in the GUI either. Without a measured layout SATOM
   cannot tell a GUI field from a REST-only one, so those stay in their usual
-  groups and the section says so.
+  groups and the section says so. When both a page of the device's GUI and
+  one of SATOM's own *Not in GUI, but in CLI* pages cover a collection, the
+  device's page decides: Edit Signature Policy lists PII Hyperscan Mode
+  here, which FortiWeb's dialog never draws.
 
 Each field carries the channel SATOM writes it by:
 
@@ -1409,12 +1417,29 @@ policy opens in the FortiWeb-layout object editor.
 
 SATOM's own tools are still served:
 
-- **Signatures editor:** browse signature categories, search the full
-  signature catalog (2,400+ signatures by name/class/state), open any
-  signature's details, disable it, set alert-only, or add a **per-signature
-  exception**, with the same element-type-gated form as the appliance GUI. No
-  menu entry leads to it on a device whose layout draws the Signatures page.
-  Open it at `/web/web-protection/<device id>/signatures/<signature policy>`.
+- **Signature Details:** the **Signature Details** button of Edit Signature
+  Policy opens it, laid out as FortiWeb lays it out. On the left,
+  **Dictionaries**: each main category with its sub-categories and the status
+  this policy gives them (a category without sub-categories is one entry that
+  lists its signatures), then **Search** and **Filters**. In the middle, the
+  selected entry: a main category shows its settings in this policy (False
+  Positive Mitigation for the SQL Injection categories, Action, Block Period,
+  Severity, Trigger Policy; **Apply** writes them); a sub-category lists its
+  signatures (Signature ID, Status, Description) with **Search Description**;
+  **Search** looks by CVE number, keywords or signature ID; **Filters** shows
+  the signatures disabled, with False Positive Mitigation disabled, Alert Only
+  or with exceptions. Each row's menu offers **Enable**, **Disable in all
+  policies** and **Disable in current policy**. On the right, the selected
+  signature: **Signature** (categories, Alert Only and False Positive
+  Mitigation Support switches, description, FortiGuard data),
+  **Exception** (the per-signature exceptions, with the same
+  element-type-gated form as the appliance GUI) and **Threat Weight**.
+  Sensitivity Level, Found In, Attack Reference, Match Example and Threat
+  Weight are read from the device only when you press **Read from device**; a
+  refused read shows the device's answer, never an empty pane. A CVE search
+  needs the FortiGuard signature metadata of a knowledge pack and says so when
+  there is none. **Back to Signatures** returns to the dialog. The page is
+  also at `/web/web-protection/<device id>/signatures/<signature policy>`.
 - **166 curated object kinds** (ported from the desktop manager and validated
   against the vendor admin guide) drive SATOM's own object forms: correct
   enums, field gating, inline help ("what does this do", "how the backend

@@ -1147,8 +1147,17 @@ explains the banner and the badges, and §7.5 explains how Save works.</p>
   never written blind.</li>
 <li><strong>Reference selectors</strong> are filled from the device's own objects. The pencil
   beside one opens the selected object in a <strong>panel stacked over the dialog</strong>,
-  the way FortiWeb drops in a sub-page. <strong>Esc</strong> closes the panel, and choices
-  made in the panel feed back into the selector that opened it.</li>
+  the way FortiWeb drops in a sub-page. When a FortiWeb page lists that kind of
+  object, the panel holds <strong>the dialog the device draws for it</strong> (for example
+  the pencil on a Web Protection Profile's Signatures opens Edit Signature
+  Policy with its signature classes table); otherwise it holds the object
+  editor below. <strong>Cancel</strong> or <strong>Esc</strong> closes the panel, and choices made in an
+  object-editor panel feed back into the selector that opened it. Each
+  selector lists what the device's own GUI lists for it (the source named in
+  FortiWeb's code, measured per build): on 7.6.8, 180 selectors open the
+  device's dialog and 4 the object editor; 5 certificate selectors, which
+  FortiWeb filters by key type, stay text boxes rather than show a list
+  SATOM cannot filter the same way.</li>
 <li>Below the main dialog, <strong>Not in GUI, but in CLI</strong> lists the fields this
   object has on the build that FortiWeb's GUI does not show (§7.6).</li>
 </ul>
@@ -1275,6 +1284,24 @@ the CLI serves are edited the same way on the device's <em>Not in GUI, but in CL
 page (§7.7). On FortiAuthenticator they are also edited on the menu page that
 hosts them, which says <em>Served only by the CLI on this build</em>.</p>
 <h3 id="74-pages-in-fortiwebs-layout-banner-and-badges">7.4 Pages in FortiWeb's layout: banner and badges</h3>
+<p>The dialogs keep FortiWeb's sections (the Web Protection Profile has fifteen:
+Standard Protection, Cookie, Advanced Protection, … Redirect), the notes the
+device prints under a field, and an <strong>Edit entry</strong> pencil beside every
+selector that has one on the device. A selector lists the objects of the
+collection the device's own page lists, served from SATOM's cache.</p>
+<p>Fields appear and disappear as on the device. The condition behind each one is
+resolved from what SATOM has cached for the device: the field values of the
+dialog, the operation mode, the feature visibility (including the GUI's own
+map, e.g. Advanced Bot Protection on an unlicensed VM) and objects the device
+reads to decide (Threat Score Profile appears only while threat scoring is
+enabled on the device). A field is marked <strong>conditional</strong> only when SATOM
+cannot tell; hover the badge to see what it depends on.</p>
+<p><strong>HTTP Protocol Constraints</strong> profiles open with the constraints table FortiWeb
+draws: the seven categories (Content Length, HTTP Header, HTTP Parameter, HTTP
+Request, HTTP/2, HTTP/3, Others) collapsed, one click opens them; each
+constraint has its Status switch, Length where it has one, Action, Block
+Period, Severity, Threat Weight (0–5), Trigger Policy and the protocols it
+applies to.</p>
 <p>The note above every list and dialog names the layout it is drawn from:
 <em>FortiWeb 7.6.x GUI layout — template built from FortiWeb 7.6.8 build …. This
 device runs 7.6.8.</em> A <strong>knowledge pack</strong> badge means the layout came from an
@@ -1303,6 +1330,10 @@ fit is not exact, the note becomes a warning:</p>
 <tr>
 <td><em>The firmware of this device is not known yet</em></td>
 <td>Run a firmware check on the device.</td>
+</tr>
+<tr>
+<td><em>Firmware not read from the device yet: chosen by the model on record (…)</em></td>
+<td>The layout was picked by the model typed on the device record, not by a firmware SATOM read. The hourly device sync reads the firmware (when it was never read, or the reading is older than 6 hours); until then the layout may belong to another build.</td>
 </tr>
 <tr>
 <td><em>Operation mode not cached for this device</em></td>
@@ -1410,7 +1441,10 @@ or the page's GUI layout has not been measured yet.</p>
 <li>the page's <strong>GUI layout</strong>, where one was measured: a REST field the layout
   does not place is not in the GUI either. Without a measured layout SATOM
   cannot tell a GUI field from a REST-only one, so those stay in their usual
-  groups and the section says so.</li>
+  groups and the section says so. When both a page of the device's GUI and
+  one of SATOM's own <em>Not in GUI, but in CLI</em> pages cover a collection, the
+  device's page decides: Edit Signature Policy lists PII Hyperscan Mode
+  here, which FortiWeb's dialog never draws.</li>
 </ul>
 <p>Each field carries the channel SATOM writes it by:</p>
 <table>
@@ -1535,12 +1569,29 @@ policy opens in the FortiWeb-layout object editor.</p>
 <em>Known Attacks → Signatures, drawn from the device's own GUI layout</em></p>
 <p>SATOM's own tools are still served:</p>
 <ul>
-<li><strong>Signatures editor:</strong> browse signature categories, search the full
-  signature catalog (2,400+ signatures by name/class/state), open any
-  signature's details, disable it, set alert-only, or add a <strong>per-signature
-  exception</strong>, with the same element-type-gated form as the appliance GUI. No
-  menu entry leads to it on a device whose layout draws the Signatures page.
-  Open it at <code>/web/web-protection/&lt;device id&gt;/signatures/&lt;signature policy&gt;</code>.</li>
+<li><strong>Signature Details:</strong> the <strong>Signature Details</strong> button of Edit Signature
+  Policy opens it, laid out as FortiWeb lays it out. On the left,
+  <strong>Dictionaries</strong>: each main category with its sub-categories and the status
+  this policy gives them (a category without sub-categories is one entry that
+  lists its signatures), then <strong>Search</strong> and <strong>Filters</strong>. In the middle, the
+  selected entry: a main category shows its settings in this policy (False
+  Positive Mitigation for the SQL Injection categories, Action, Block Period,
+  Severity, Trigger Policy; <strong>Apply</strong> writes them); a sub-category lists its
+  signatures (Signature ID, Status, Description) with <strong>Search Description</strong>;
+  <strong>Search</strong> looks by CVE number, keywords or signature ID; <strong>Filters</strong> shows
+  the signatures disabled, with False Positive Mitigation disabled, Alert Only
+  or with exceptions. Each row's menu offers <strong>Enable</strong>, <strong>Disable in all
+  policies</strong> and <strong>Disable in current policy</strong>. On the right, the selected
+  signature: <strong>Signature</strong> (categories, Alert Only and False Positive
+  Mitigation Support switches, description, FortiGuard data),
+  <strong>Exception</strong> (the per-signature exceptions, with the same
+  element-type-gated form as the appliance GUI) and <strong>Threat Weight</strong>.
+  Sensitivity Level, Found In, Attack Reference, Match Example and Threat
+  Weight are read from the device only when you press <strong>Read from device</strong>; a
+  refused read shows the device's answer, never an empty pane. A CVE search
+  needs the FortiGuard signature metadata of a knowledge pack and says so when
+  there is none. <strong>Back to Signatures</strong> returns to the dialog. The page is
+  also at <code>/web/web-protection/&lt;device id&gt;/signatures/&lt;signature policy&gt;</code>.</li>
 <li><strong>166 curated object kinds</strong> (ported from the desktop manager and validated
   against the vendor admin guide) drive SATOM's own object forms: correct
   enums, field gating, inline help ("what does this do", "how the backend
@@ -1942,6 +1993,30 @@ show <em>no evidence</em> for their fields: that is a <strong>warning, never a p
 the gate starts to bite on its own once a sweep or a knowledge pack records
 those fields. Line Profiles show the build of each line's WPP template and the
 builds its approval covers.</p>
+<h3 id="99-the-authoring-form-type-by-type">9.9 The authoring form, type by type</h3>
+<p><strong>New carve-out</strong> draws each type the way FortiWeb's own exception dialog
+draws it, when SATOM has the dialog measured for the device's firmware: the
+same fields, order, choices and show/hide rules (for example the <strong>Wildcard</strong>
+switch of a Cookie Security exception, or the method checkboxes of an Allow
+Method exception). The line above the fields names the dialog and the build it
+was measured on. A type with no measured dialog shows its field list.</p>
+<ul>
+<li><strong>Signature ID</strong> — type it, or click <strong>Browse…</strong> to pick it from SATOM's
+  signature index: search by id, attack class or words of the description,
+  filter by attack class, click a row. The class and description of the chosen
+  signature show under the field. The ID that blocked a request is the
+  <em>Signature ID</em> column of the Attack log.</li>
+<li><strong>HTTP Method</strong> (signature exception, Element Type = HTTP Method) — a
+  select of the device's tokens (GET … OTHERS).</li>
+<li><strong>HTTP Protocol Constraints</strong> — laid out as FortiWeb's exception rule: Host
+  Status and Host (greyed while off), Source IP and its range (shown while
+  on), URL Type (Simple String / Regular Expression), URL Pattern, then the
+  44 constraints in FortiWeb's seven collapsible categories with the device's
+  names and descriptions. Pick the Web Protection Profile first: the <strong>In the
+  profile</strong> column then says, for each constraint, whether the profile's HTTP
+  Protocol Constraints enforce it. Exempting a constraint that is off there
+  changes nothing.</li>
+</ul>
 <h2 id="10-certificate-manager">10. Certificate Manager</h2>
 <p>Automation → <strong>Certificate Manager</strong> — in the Global ADOM, and in every device
 ADOM under Operations › Automation (product-scoped: in the FortiWeb ADOM you
@@ -11892,7 +11967,7 @@ discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
    the console is either <strong>on the map</strong> (134 today) or <strong>excluded with a written
-   reason</strong> (179 today — JSON feeds, downloads, redirects and fragments that
+   reason</strong> (180 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

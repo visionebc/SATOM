@@ -427,7 +427,7 @@
     <span class="fwg-btn is-primary" aria-disabled="true" title="{{ _('Read-only: nothing is sent to the device.') }}">{{ _('OK') }}</span>
     {% endif %}
     <a class="fwg-btn" href="{{ back }}" data-fwg-cancel>{{ _('Cancel') }}</a>
-    {% if view.key == 'signature_dialog' and name and _fwp %}<a class="fwg-btn" data-fwg-sig-detail href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/signature', mkey=name) }}" title="{{ _("FortiWeb opens the signature list of this policy here; SATOM opens the policy's alert-only, disabled-signature and exception lists in the object editor.") }}">{{ _('Signature Details') }}</a>{% endif %}
+    {% if view.key == 'signature_dialog' and name and _fwp %}<a class="fwg-btn" data-fwg-sig-detail href="{{ url_for('web_protection.signature_policy', id=appliance.id, name=name, back=url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=name)) }}" target="_top" title="{{ _("Opens the policy's Signature Details page, as FortiWeb does: Dictionaries tree, signatures per sub-category, and each signature's detail and exceptions.") }}">{{ _('Signature Details') }}</a>{% endif %}
   </div>
 </div>
 {% if gp and gp.form and satom is defined and satom and satom.lib %}{% set tlib = satom.lib %}{% include 'section_config/_template_library.html' %}{% endif %}

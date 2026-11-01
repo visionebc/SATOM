@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · Fixed · 18 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · Fixed · 18 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
-        <ul class="rel-leads"></ul>
+        <span class="rel-nav-meta">unreleased · Changed · Fixed · 18 entries</span>
+        <ul class="rel-leads"><li>Signature Details as FortiWeb lays it out</li><li>Each selector lists what the device&#x27;s GUI lists</li><li>Help tips written with the lang filter are shown</li><li class="rel-more">… and 15 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v4.8.0.html" data-rel-version="4.8.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 4.8.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -530,7 +530,150 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong>Signature Details as FortiWeb lays it out.</strong> Request: "do everything,
+  leave nothing pending." The <strong>Signature Details</strong> button of Edit Signature
+  Policy now opens the policy's Signature Details page (it opened the
+  generic object editor), redrawn in the device's three panes:
+  <strong>Dictionaries</strong> on the left (main category -&gt; sub-category with this
+  policy's status; a category without sub-categories is one entry listing its
+  signatures; then Search and Filters), the selected entry in the middle (a
+  main category's settings with Apply; a sub-category's signatures with
+  Search Description; Search by CVE number, keywords or signature ID; Filters:
+  Disabled, False Positive Mitigation Disabled, Alert Only, Exception) and the
+  selected signature on the right (Signature, Exception, Threat Weight). Row
+  menu: Enable, Disable in all policies, Disable in current policy. Sensitivity
+  Level, Found In, Attack Reference, Match Example and Threat Weight are read
+  from the device on <strong>Read from device</strong> (<code>waf/signature.sigdetail</code>, audited;
+  only the pane's fields are kept; a refused read or an HTTP 200 without the
+  signature is an error, never an empty pane). A CVE search without imported
+  FortiGuard metadata says so. <strong>Back to Signatures</strong> returns to the dialog
+  and only ever to a SATOM path. <em>Disable in all policies</em> writes a
+  <code>waf/base-signature-disable</code> entry: the schema is measured (keyed by
+  signature ID), the write round trip is not yet (unverified on this build).</li>
+<li><strong>Each selector lists what the device's GUI lists.</strong> 40 selectors of
+  FortiWeb 7.6.8 dialogs were text boxes with no list and no Edit entry pencil
+  (File List and Health Check trigger policies, the DoS and IP Protection
+  exceptions, DLP rules and sensors, Trigger Policy's email / syslog /
+  FortiAnalyzer / SIEM policies, report output policies...). The layouts now
+  carry the source FortiWeb's code names for each one, resolved through the
+  GUI's own registry (harvester a41df4a, knowledge pack kb-20261101.5): 180
+  pencils open the device's dialog, 4 the object editor. The measured list wins
+  over SATOM's per-key map, which had Firewall Policy's Service listing
+  server policy services instead of <code>system/firewall.service</code>. A GUI API list
+  binds only to a twin SATOM measured. Five certificate selectors that
+  FortiWeb filters by key type stay text boxes: SATOM cannot filter that list
+  the same way and does not show a different one.</li>
+<li><strong>Help tips written with the lang filter are shown.</strong> 11 tips a build
+  (Sensitivity Level among them) were dropped by the layout reader; they come
+  with the layouts now.</li>
+<li><strong>Not in GUI, but in CLI follows the device's page.</strong> Where SATOM's
+  schema-built page and a page of the device's GUI covered the same
+  collection, the one that sorted first decided, and the schema-built page
+  places every field: 14 collections listed nothing (Signatures, OCSP, ZTNA,
+  Traffic Mirror, Padding Oracle, Web Vulnerability Scan...). The device's page
+  decides now: Edit Signature Policy lists PII Hyperscan Mode, which
+  FortiWeb's dialog never draws.</li>
+<li><strong>The Edit entry pencil opens the dialog the device draws.</strong> Request:
+  "on the Web Protection Profile, the pencil on Signatures opens a screen that
+  is not exactly what FortiWeb shows, and this happens in many places; clone
+  exactly what is there and keep the help texts already added." The pencil
+  beside a selector in a device-layout dialog used to open SATOM's generic
+  object editor in the stacked panel; it now opens the referenced object in
+  the dialog FortiWeb draws for it (146 selectors on FortiWeb 7.6.8; the
+  generic editor stays the fallback where no page lists the collection, 3
+  today). The panel holds the dialog in a same-origin frame, so its own Save,
+  live show/hide and pencils work there; Cancel and Esc close it. Only those
+  dialog pages may be framed, and only by SATOM itself (X-Frame-Options
+  SAMEORIGIN; every other page stays DENY).</li>
+<li><strong>Edit Signature Policy as on the device.</strong> Name, Custom Signature Group
+  (with its list and Edit entry pencil), Sensitivity Level (with FortiWeb's
+  tip) and Comments, then the signature classes table FortiWeb draws by hand:
+  ten classes in the device's order with Status, False Positive Mitigation
+  (SQL Injection rows only), Action (Information Disclosure and PII have their
+  own choices), Block Period (only for a block-period action), Severity and
+  Trigger Policy, and the PII Detection Threshold folded under its row; plus
+  the <strong>Signature Details</strong> button. Changed classes are written row by row,
+  dry run first. Rows SATOM cannot read are reported, never drawn empty.</li>
+<li><strong>Selectors the GUI crawl left unbound now list their objects.</strong> 38
+  selectors (Trigger Policy, exceptions, rules…) were drawn as text boxes
+  with no list and no pencil; they take the collection the device schema
+  names for the field. The remaining 40 stay text boxes until the crawl
+  measures them (no guessed lists).</li>
+<li><strong>Web Protection pages drawn as FortiWeb draws them (FortiWeb 7.6.8).</strong>
+  Request: "the Web Protection Profile page is not the same as on the
+  FortiWeb; take that as the example but improve the WPP profiles, their
+  exceptions and all of Web Protection, Bot Mitigation, API Protection, DoS
+  Protection and IP Protection, identical in behaviour, menus and windows; use
+  the harvester fully." The GUI was re-read with the harvester on a lab
+  FortiWeb (50 pages) and the harvester's extractor and crawler were fixed
+  where they lost what the device draws: section titles (the profile dialog
+  has 15), the dialog's own notes, the collection each selector lists, the
+  collection each sub-table lists, conditions that read a device object
+  (Threat Score Profile shows only while threat scoring is enabled), the
+  operation-mode and model rules (Waiting Room, Advanced Bot Protection),
+  repeated method checkboxes and the row dialogs of tabbed pages. SATOM
+  resolves those conditions from its cache, so fields appear and disappear as
+  on the device.</li>
+<li><strong>HTTP Protocol Constraints: the profile's constraints in FortiWeb's
+  table.</strong> The Edit dialog lists the 56 constraints in the device's seven
+  collapsible categories, each with Status, Length (where the constraint has
+  one), Action, Block Period, Severity, Threat Weight (0-5, as the device
+  shows it), Trigger Policy and protocol support -- measured on the device's
+  own dialog -- instead of two stray number fields marked "conditional".
+  Every cell edits its REST key through the same Save.</li>
+<li><strong>Exceptions: every type with a measured row dialog is authored in it.</strong>
+  Cookie Security, File Exception, Allow Method, Bot Mitigation, URL
+  Encryption and Link Cloaking exceptions (and the others as the device
+  exposes them) take FortiWeb's own fields, order, choices and conditions,
+  including fields the old form lacked (Cookie Wildcard). A type with no
+  measured dialog keeps the field list.</li>
+<li><strong>Exceptions: an HTTP Protocol Constraints exception is authored the way
+  FortiWeb draws it.</strong> Request: "on {device} HTTP constraints is far more
+  polished and easy to use; here the user does not know what it depends on or
+  which parameters there are." The layout was measured in the device GUI
+  ({device}, 7.6.8): Host Status / Host (greyed while off), Source IP /
+  range (shown while on), URL Type as Simple String / Regular Expression,
+  URL Pattern, then the 44 constraints in FortiWeb's seven collapsible
+  categories with the device's names and descriptions. A column says, for
+  the chosen Web Protection Profile, whether each constraint is ON in its
+  HTTP Protocol Constraints profile (an exception for one that is off
+  changes nothing), read from the SATOM cache. The one key the GUI does not
+  show (<code>Internal-resource-limits-check</code>) sits under "Not in GUI, but in CLI".</li>
+<li><strong>Signature ID is picked from a list.</strong> Request: "Signature ID should be a
+  select; nobody knows those by heart — open a modal with the signature id
+  and everything it is, and pick it from there." Browse… opens the
+  signature index (all of it, paged) with search and an attack-class
+  filter; clicking a row fills the field.</li>
+<li><strong>Exceptions: the form says where Signature ID and HTTP Method come from.</strong>
+  Request: "Signature ID — how will the user know which signature id to pick?
+  And HTTP Method — where does that come from?" Signature ID now searches the
+  local signature index as you type (id, attack class or description) and
+  shows the picked signature's class and description, with a note that the
+  value is the Attack log's Signature ID column. HTTP Method is a select of
+  the device tokens (GET … OTHERS, read from the 7.6.8 and 8.0.6 CLI tree)
+  instead of free text, still shown only for Element Type = HTTP Method.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>A device registered while its REST API was licence-locked kept an empty
+  firmware</strong>, and the GUI pages took the version from the model typed by hand
+  (a 7.6.8 box was drawn with the 8.0.6 layout and the page said "This device
+  runs 8.0.6"). The hourly device sync now re-reads the firmware when it was
+  never read or is older than 6 hours, and a version that comes from the model
+  on record is labelled as such.</li>
+<li><strong>Reference lists are served from the cache first.</strong> Every selector of a
+  dialog asked the device on each open (42 calls for a Web Protection
+  Profile); the device is asked only when the cache has nothing.</li>
+<li><strong>The device sync caches the GUI's own visibility map</strong> (<code>system/state</code>),
+  which carries facts the configuration does not (Advanced Bot Protection on
+  an unlicensed VM).</li>
+<li><strong>A signature exception built from the Attack log carried the method as the
+  log prints it (<code>GET</code>)</strong>; FortiWeb stores <code>get</code>. It is now lower-cased, like
+  the Allow Method exception already was.</li>
+<li><strong>Exceptions: no gap between the Purge and Detect cards.</strong></li>
+</ul>
 <p class="rel-prevnext"><a href="v4.8.0.html">Version 4.8.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">

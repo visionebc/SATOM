@@ -316,6 +316,23 @@ def signature_policy(id, name):
             m = classes.setdefault(s.main_id, {
                 'name': s.main_name or s.main_id, 'subs': {}})
             m['subs'].setdefault(s.sub_id, s.sub_name or s.sub_id)
+    # the Dictionaries tree as FortiWeb draws it: main class -> sub-class, each
+    # with the status this policy gives it (main_class_list status,
+    # sub_class_disable_list), then Search and Filters
+    main_on = {str(c.get('main_class_id')): c.get('status') == 'enable'
+               for c in state.get('classes') or [] if isinstance(c, dict)}
+    sub_off = {str(r.get('sub_class_id') or r.get('id') or '')
+               for r in state.get('subclass') or [] if isinstance(r, dict)}
+    from ..services import signature_dialog_gui as sdg
+    sdg_data = sdg.data()
+    rank = {mid: i for i, mid in enumerate(sdg_data.get('order') or [])}
+    tree = [{'id': mid, 'name': m['name'], 'on': main_on.get(mid),
+             'subs': [{'id': sid, 'name': sname, 'on': (main_on.get(mid) is not False)
+                       and sid not in sub_off} for sid, sname in m['subs'].items()]}
+            for mid, m in sorted(classes.items(), key=lambda kv: (rank.get(kv[0], 99), kv[0]))]
+    back = request.args.get('back') or ''
+    if not (back.startswith('/') and not back.startswith('//')):
+        back = url_for('web_protection.menu_page', id=appliance.id, item_key='signatures')
     vlabels = waf_specs.value_labels()
     filter_spec = (waf_specs.kinds().get('signature_filter_item') or {})
     class_spec = (waf_specs.kinds().get('signature_class_item') or {})
@@ -332,6 +349,9 @@ def signature_policy(id, name):
         value_labels=vlabels,
         filter_spec=filter_spec,
         class_spec=class_spec,
+        tree=tree,
+        back=back,
+        sdg=sdg_data,
     )
 
 
@@ -345,7 +365,10 @@ def sig_search(id, name):
     q = (request.args.get('q') or '').strip().lower()
     main = (request.args.get('main') or '').strip()
     sub = (request.args.get('sub') or '').strip()
-    flt = (request.args.get('filter') or '').strip()  # '', disabled, alert, exception
+    flt = (request.args.get('filter') or '').strip()  # '', disabled, fpm, alert, exception
+    # FortiWeb's Search: CVE number (``CVE-2021-44228``), from the FortiGuard
+    # metadata a knowledge pack brought (no pack: no CVE is known, said so)
+    cve = (request.args.get('cve') or '').strip().upper()
     page = max(request.args.get('page', type=int) or 1, 1)
     per_page = min(max(request.args.get('per_page', type=int) or 100, 10), 400)
 
@@ -364,6 +387,16 @@ def sig_search(id, name):
     alert = {str(r.get('signature_id') or '').strip():
              str(r.get('id', r.get('_id', '')))
              for r in state['alert'] if isinstance(r, dict)}
+    fpm_off = {str(r.get('signature_id') or '').strip(): str(r.get('id', r.get('_id', '')))
+               for r in state.get('fpm') or [] if isinstance(r, dict)}
+    # disabled in every policy (Disable in all policies): the cached
+    # waf/base-signature-disable rows, keyed by signature id
+    from ..services import read_layer
+    try:
+        global_off = {str(n) for n in read_layer.cached_ref_names(appliance.id,
+                                                                 'waf/base-signature-disable')}
+    except Exception:  # noqa: BLE001 — no cache: nothing claimed
+        global_off = set()
     exc_count = {}
     for r in state['exceptions']:
         if isinstance(r, dict):
@@ -371,8 +404,21 @@ def sig_search(id, name):
             if sid:
                 exc_count[sid] = exc_count.get(sid, 0) + 1
 
+    cve_ids = None
+    if cve:
+        from ..services import signature_freshness
+        allm = signature_freshness.meta_for(appliance.kind or 'fortiweb',
+                                            [s.id for s in catalog.signatures])
+        cve_ids = {sid for sid, m in allm.items()
+                   if any(cve in str(c).upper() for c in m.get('cve') or [])}
+        if not allm:
+            return jsonify(ok=False, total=0, rows=[],
+                           error='No FortiGuard signature metadata imported (knowledge '
+                                 'pack), so no CVE is known for any signature.')
     hits = []
     for s in catalog.signatures:
+        if cve_ids is not None and s.id not in cve_ids:
+            continue
         if main and s.main_id != main:
             continue
         if sub and s.sub_id != sub:
@@ -380,6 +426,8 @@ def sig_search(id, name):
         if q and q not in s.id and q not in s.desc.lower():
             continue
         if flt == 'disabled' and s.id not in disabled:
+            continue
+        if flt == 'fpm' and s.id not in fpm_off:
             continue
         if flt == 'alert' and s.id not in alert:
             continue
@@ -398,6 +446,9 @@ def sig_search(id, name):
         'alert_only': s.id in alert,
         'alert_row': alert.get(s.id, ''),
         'exceptions': exc_count.get(s.id, 0),
+        'fpm_disabled': s.id in fpm_off,
+        'fpm_row': fpm_off.get(s.id, ''),
+        'global_disabled': s.id in global_off,
     } for s in hits[start:start + per_page]]
     # Public FortiGuard metadata (name / severity / CVE / link) from the
     # signature-meta section of an imported knowledge pack, when there is any.
@@ -423,6 +474,64 @@ def sig_exceptions(id, name, sig_id):
             if isinstance(r, dict)
             and str(r.get('signature_id') or '').strip() == str(sig_id)]
     return jsonify(ok=True, source=src, rows=rows)
+
+
+#: The fields FortiWeb's Signature Details pane reads off one signature
+#: (fwb-signature-detail setDetail / setSample / setThreat, 7.6.8 bundle):
+#: nothing else of the answer is passed on.
+SIG_DETAIL_FIELDS = ('main_class_name', 'sub_class_name', 'sensitivity_level', 'protocol',
+                     'fpm_mitigation', 'fpm_disable', 'alert_only', 'attack_reference',
+                     'meet_target', 'sample', 'sample2', 'score', 'default_score', 'concat')
+
+
+@bp.route('/<int:id>/signatures/<path:name>/detail/<sig_id>')
+@login_required
+@require_permission('protection.view')
+def sig_detail(id, name, sig_id):
+    """One signature as FortiWeb's Signature Details pane shows it
+    (``waf/signature.sigdetail``: sensitivity level, where it looks, attack
+    reference, match example, threat weight). A device read, so an explicit
+    operator action (the pane's "Read from device"), audited; a refused read
+    is an error with the device's status, never an empty pane."""
+    import re as _re
+    appliance = visible_appliance_or_404(id)
+    main = (request.args.get('main') or '').strip()
+    sub = (request.args.get('sub') or '').strip()
+    if not all(_re.fullmatch(r'\d{9}', v) for v in (str(sig_id), main, sub)):
+        return jsonify(ok=False, error='signature, main and sub class ids are 9 digits'), 400
+    from urllib.parse import urlencode
+    path = '/api/v2.0/waf/signature.sigdetail?' + urlencode(
+        {'mkey': name, 'main_class_id': main, 'sub_class_id': sub, 'sig_id': sig_id})
+    log_action('signature.detail_read', target='%s/%s' % (name, sig_id),
+               appliance_id=appliance.id)
+    try:
+        resp = FortiWebClient(appliance).api_call('GET', path)
+    except Exception as exc:  # noqa: BLE001 — unreachable: said, not hidden
+        return jsonify(ok=False, error='device unreachable: %s' % type(exc).__name__), 502
+    if resp.status_code != 200:
+        return jsonify(ok=False, status=resp.status_code,
+                       error='the device refused the read (HTTP %s)' % resp.status_code), 502
+    try:
+        body = resp.json()
+    except ValueError:
+        return jsonify(ok=False, error='the device answered something that is not JSON'), 502
+    res = body.get('results', body) if isinstance(body, dict) else None
+    if isinstance(res, list):
+        res = res[0] if len(res) == 1 and isinstance(res[0], dict) else None
+    # HTTP 200 is not success: FortiWeb reports refusals in the body
+    if not isinstance(res, dict) or not any(k in res for k in SIG_DETAIL_FIELDS):
+        msg = res.get('errcode') if isinstance(res, dict) else None
+        return jsonify(ok=False, error='the device returned no signature detail%s'
+                       % (' (errcode %s)' % msg if msg is not None else '')), 502
+    out = {k: res.get(k) for k in SIG_DETAIL_FIELDS if k in res}
+    refs = []
+    for line in str(out.get('attack_reference') or '').split('\n'):
+        m = _re.match(r'^(.*?)&lt;#(.*?)::(.*?)#&gt;$', line.strip())
+        if m:
+            refs.append({'label': m.group(2), 'target': m.group(3)})
+    out['attack_refs'] = refs
+    out['filters'] = [f for f in (res.get('filters') or []) if isinstance(f, dict)]
+    return jsonify(ok=True, source='live', detail=out)
 
 
 # Whitelist of per-user Web Protection view preferences (UserSetting keys are

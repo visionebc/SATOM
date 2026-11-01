@@ -15,254 +15,281 @@
 {% endblock %}
 
 {% block content %}
-<div class="row g-3">
-  <div class="col-lg-12">
-    <div class="fw-page-header">
-      <div>
-        <h1 class="fw-page-title"><i class="bi bi-fingerprint me-2 text-accent"></i>{{ set_name }}</h1>
-        <p class="text-muted mb-0" style="font-size:13px;">
-          {{ _('Signature Policy on') }} <strong>{{ appliance.name }}</strong>
-          {% if sig_obj and sig_obj.get('can_view') == 1 %}
-            <span class="fw-badge fw-badge-secondary ms-1" title="{{ _('FortiWeb predefined signature policy — read-only; clone it to customize') }}">{{ _('Predefined') }}</span>
-          {% endif %}
-          · state source:
-          {% if state_source == 'db' %}<span class="fw-badge fw-badge-success">{{ _('DB cache') }}</span>
-          {% elif state_source == 'live' %}<span class="fw-badge fw-badge-primary">{{ _('live device') }}</span>
-          {% else %}<span class="fw-badge fw-badge-warning" title="{{ _('Neither the cache nor the device returned the sub-lists') }}">{{ _('unavailable') }}</span>{% endif %}
-        </p>
-      </div>
-      <div class="d-flex gap-2">
-        <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/signature', mkey=set_name, title='Signature Policy') }}"
-           class="btn btn-secondary btn-sm"><i class="bi bi-pencil me-1"></i>{{ _('Full editor') }}</a>
-        <a href="{{ url_for('web_protection.menu_page', id=appliance.id, item_key='signatures') }}"
-           class="btn btn-secondary btn-sm"><i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}</a>
-      </div>
-    </div>
+{#- Signature Details as FortiWeb lays it out (fwb-signature-detail, 7.6.8):
+    Dictionaries tree on the left (main class -> sub-class, then Search and
+    Filters), the selected node in the middle (a main class's settings, a
+    sub-class's signatures, a search or a filter), the selected signature on
+    the right (Signature | Exception | Threat Weight). -#}
+{% set mc_labels = value_labels.get('main_class_id', {}) %}
+<style nonce="{{ csp_nonce }}">
+  .sigd { display:grid; grid-template-columns: 230px minmax(0,1fr) 380px; gap:12px; align-items:start; }
+  .sigd.no-east { grid-template-columns: 230px minmax(0,1fr); }
+  .sigd.no-east .sigd-east { display:none; }
+  .sigd-pane { background:#fff; border:1px solid var(--fw-border, #DCE3EE); border-radius:6px; min-height:520px; }
+  .sigd-hd { padding:8px 12px; border-bottom:1px solid var(--fw-border, #DCE3EE); font-weight:600; font-size:13.5px; }
+  .sigd-back { display:flex; align-items:center; gap:6px; padding:8px 12px; font-size:13px; border-bottom:1px solid var(--fw-border, #DCE3EE); color:inherit; text-decoration:none; }
+  .sigd-back:hover { background:#F3F6FC; }
+  .sigd-tree { list-style:none; margin:0; padding:6px 0; font-size:13px; max-height:70vh; overflow:auto; }
+  .sigd-tree ul { list-style:none; margin:0; padding:0 0 0 18px; }
+  .sigd-node { display:flex; align-items:center; gap:6px; padding:3px 10px; cursor:pointer; white-space:nowrap; }
+  .sigd-node:hover { background:#F3F6FC; }
+  .sigd-node.is-sel { background:#E7EEFB; font-weight:600; }
+  .sigd-node .bi-check-circle-fill { color:#15692A; }
+  .sigd-node .bi-x-circle-fill { color:#8B1C2A; }
+  .sigd-node .bi-search, .sigd-node .bi-funnel { color:#7A5700; }
+  .sigd-body { padding:12px; }
+  .sigd-mode { display:none; }
+  .sigd-mode.is-on { display:block; }
+  .sigd-form .fw-form-label { margin-bottom:2px; }
+  .sigd-row-sel { background:#E7EEFB !important; }
+  .sigd-menu { position:relative; }
+  .sigd-menu-list { position:absolute; right:0; top:100%; z-index:20; background:#fff; border:1px solid var(--fw-border, #DCE3EE); border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.08); min-width:210px; display:none; }
+  .sigd-menu-list.is-open { display:block; }
+  .sigd-menu-list button { display:block; width:100%; text-align:left; border:0; background:none; padding:6px 12px; font-size:13px; }
+  .sigd-menu-list button:hover:not(:disabled) { background:#F3F6FC; }
+  .sigd-menu-list button:disabled { color:#9AA3B2; cursor:not-allowed; }
+  .sigd-kv td { padding:4px 6px; font-size:12.5px; vertical-align:top; }
+  .sigd-kv td:first-child { color:#3D4550; width:42%; }
+  .sigd-pre { white-space:pre-wrap; font-size:12px; background:#F3F6FC; border:1px solid var(--fw-border, #DCE3EE); border-radius:4px; padding:6px; margin:0; max-height:160px; overflow:auto; }
+  @media (max-width: 1100px) { .sigd, .sigd.no-east { grid-template-columns: 1fr; } }
+</style>
 
-    {% if not catalog_ready %}
-    <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
-      <i class="bi bi-exclamation-triangle-fill"></i>
-      <div>{{ _('No signature database cached — signature names/descriptions and the search need it. Sync it once in') }} <a href="{{ url_for('signatures.index') }}" class="alert-link">{{ _('Administrator → Signatures') }}</a>.</div>
-    </div>
-    {% endif %}
-
-    {# ── Signature Category — the per-main-class rows, like FortiWeb's policy page ── #}
-    <div class="fw-card mb-3">
-      <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-collection me-2 text-accent"></i>{{ _('Signature Category') }}</span>
-      </div>
-      <div class="fw-card-body p-0">
-        <table class="fw-table mb-0">
-          <thead><tr>
-            <th>{{ _('Signature Category') }}</th><th>{{ _('Status') }}</th>
-            <th title="{{ _('False Positive Mitigation — extra SQL syntax validation (SQL Injection categories only)') }}">{{ _('False Positive Mitigation') }}</th>
-            <th>{{ _('Action') }}</th><th>{{ _('Block Period') }}</th><th>{{ _('Severity') }}</th><th>{{ _('Trigger Policy') }}</th><th style="width:70px;"></th>
-          </tr></thead>
-          <tbody>
-            {% set mc_labels = value_labels.get('main_class_id', {}) %}
-            {% set act_labels = value_labels.get('action', {}) %}
-            {% if state.classes %}
-              {% for c in state.classes %}
-              <tr>
-                <td class="fw-semibold">{{ mc_labels.get(c.get('main_class_id')|string, c.get('main_class_id')) }}</td>
-                <td>{% if c.get('status') == 'enable' %}<span class="fw-badge fw-badge-success">{{ _('Enabled') }}</span>
-                    {% else %}<span class="fw-badge fw-badge-secondary">{{ _('Disabled') }}</span>{% endif %}</td>
-                <td>{% if c.get('fpm-status') == 'enable' %}<span class="fw-badge fw-badge-success">{{ _('Enabled') }}</span>
-                    {% elif c.get('fpm-status') == 'disable' %}<span class="fw-badge fw-badge-secondary">{{ _('Disabled') }}</span>
-                    {% else %}<span class="text-muted">—</span>{% endif %}</td>
-                <td>{{ act_labels.get(c.get('action'), c.get('action') or '—') }}</td>
-                <td>{{ c.get('block-period') or '—' }}</td>
-                <td>{{ c.get('severity') or '—' }}</td>
-                <td>{{ c.get('trigger') or '—' }}</td>
-                <td>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" title="{{ _('Edit category settings') }}"
-                          data-js="edit-class" data-row="{{ c.get('id', c.get('_id','')) }}"
-                          data-mc="{{ c.get('main_class_id') }}" data-status="{{ c.get('status','') }}"
-                          data-fpm="{{ c.get('fpm-status','') }}"
-                          data-action="{{ c.get('action','') }}" data-severity="{{ c.get('severity','') }}"
-                          data-block="{{ c.get('block-period','') }}" data-trigger="{{ c.get('trigger','') }}">
-                    <i class="bi bi-pencil"></i></button>
-                </td>
-              </tr>
-              {% endfor %}
-            {% else %}
-              <tr><td colspan="8" class="text-center text-muted py-3">
-                No category rows available{% if state_source == 'none' %} — device unreachable and no deep capture cached. Run a deep capture or Refresh{% endif %}.
-              </td></tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    {# ── Signature Details — searchable list + per-signature actions, like FortiWeb ── #}
-    <div class="fw-card">
-      <div class="fw-card-header d-flex align-items-center justify-content-between">
-        <span class="fw-card-title"><i class="bi bi-list-ul me-2 text-accent"></i>{{ _('Signature Details') }}</span>
-        <span class="text-muted" style="font-size:12px;">{{ catalog_count }} signatures in the catalog</span>
-      </div>
-      <div class="fw-card-body">
-        <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
-          <select id="sig-main" class="form-select fw-form-control" style="width:auto; font-size:13px;">
-            <option value="">{{ _('All classes') }}</option>
-            {% for mid, m in classes.items() %}
-            <option value="{{ mid }}">{{ m.name }}</option>
-            {% endfor %}
-          </select>
-          <select id="sig-sub" class="form-select fw-form-control" style="width:auto; font-size:13px;">
-            <option value="">{{ _('All sub-classes') }}</option>
-          </select>
-          <select id="sig-flt" class="form-select fw-form-control" style="width:auto; font-size:13px;">
-            <option value="">{{ _('All signatures') }}</option>
-            <option value="disabled">{{ _('Disabled only') }}</option>
-            <option value="alert">{{ _('Alert Only') }}</option>
-            <option value="exception">{{ _('With exceptions') }}</option>
-          </select>
-          <div class="fw-search-box">
-            <i class="bi bi-search search-icon"></i>
-            <input type="text" id="sig-q" placeholder="{{ _('Search ID or description…') }}">
-          </div>
-          <span id="sig-count" class="text-muted ms-auto" style="font-size:12px;"></span>
-        </div>
-
-        <div class="fw-table-wrapper">
-          <table class="fw-table" id="sig-table">
-            <thead><tr>
-              <th style="width:110px;">{{ _('Signature ID') }}</th><th>{{ _('Description') }}</th>
-              <th style="width:180px;">{{ _('Sub Class') }}</th><th style="width:110px;">{{ _('Status') }}</th>
-              <th style="width:100px;">{{ _('Exceptions') }}</th><th style="width:170px;">{{ _('Actions') }}</th>
-            </tr></thead>
-            <tbody id="sig-tbody">
-              <tr><td colspan="6" class="text-center text-muted py-3">{{ _('Loading…') }}</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="d-flex align-items-center gap-2 mt-2">
-          <button type="button" class="btn btn-sm btn-outline-light" id="sig-prev">&laquo; Prev</button>
-          <span id="sig-page" class="text-muted" style="font-size:12px;"></span>
-          <button type="button" class="btn btn-sm btn-outline-light" id="sig-next">Next &raquo;</button>
-        </div>
-      </div>
-    </div>
+<div class="fw-page-header mb-2">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-fingerprint me-2 text-accent"></i>{{ set_name }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Signature Details on') }} <strong>{{ appliance.name }}</strong>
+      {% if sig_obj and sig_obj.get('can_view') == 1 %}
+        <span class="fw-badge fw-badge-secondary ms-1" title="{{ _('FortiWeb predefined signature policy: read-only; clone it to customize') }}">{{ _('Predefined') }}</span>
+      {% endif %}
+      · {{ _('state source') }}:
+      {% if state_source == 'db' %}<span class="fw-badge fw-badge-success">{{ _('DB cache') }}</span>
+      {% elif state_source == 'live' %}<span class="fw-badge fw-badge-primary">{{ _('live device') }}</span>
+      {% else %}<span class="fw-badge fw-badge-warning" title="{{ _('Neither the cache nor the device returned the sub-lists') }}">{{ _('unavailable') }}</span>{% endif %}
+      · {{ catalog_count }} {{ _('signatures in the catalog') }}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/signature', mkey=set_name, title='Signature Policy') }}"
+       class="btn btn-secondary btn-sm"><i class="bi bi-pencil me-1"></i>{{ _('Full editor') }}</a>
   </div>
 </div>
 
-{# ── Signature Category edit modal ── #}
-<div class="modal fade fw-modal" id="modalClass" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-collection me-2"></i><span id="cls-title">{{ _('Signature Category') }}</span></h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+{% if not catalog_ready %}
+<div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <div>{{ _('No signature database cached: signature names, descriptions and the search need it. Sync it once in') }} <a href="{{ url_for('signatures.index') }}" class="alert-link">{{ _('Administrator → Signatures') }}</a>.</div>
+</div>
+{% endif %}
+
+<div class="sigd no-east" id="sigd">
+  {# ── west: Dictionaries ── #}
+  <div class="sigd-pane sigd-west">
+    <a class="sigd-back" href="{{ back }}" data-sigd-back><i class="bi bi-arrow-left"></i>{{ _('Back to Signatures') }}</a>
+    <div class="sigd-hd">{{ _('Dictionaries') }}</div>
+    <ul class="sigd-tree" id="sigd-tree">
+      {% for m in tree %}
+      {% if m.subs|length == 1 and m.subs[0].id == '000000000' %}
+      {#- no sub-category: FortiWeb's leaf (type 2, sub 000000000) lists the
+          category's signatures directly -#}
+      <li><div class="sigd-node" data-node="sub" data-main="{{ m.id }}" data-sub="000000000" data-name="{{ m.name }}">
+        <i class="bi {{ 'bi-check-circle-fill' if m.on is not false else 'bi-x-circle-fill' }}"
+           title="{{ _('Enabled') if m.on is not false else _('Disabled') }}"></i>{{ m.name }}
+      </div></li>
+      {% else %}
+      <li>
+        <div class="sigd-node" data-node="main" data-main="{{ m.id }}" data-name="{{ m.name }}">
+          <i class="bi {{ 'bi-check-circle-fill' if m.on is not false else 'bi-x-circle-fill' }}"
+             title="{{ _('Enabled') if m.on is not false else _('Disabled') }}"></i>{{ m.name }}
+        </div>
+        <ul>
+          {% for s in m.subs %}
+          <li><div class="sigd-node" data-node="sub" data-main="{{ m.id }}" data-sub="{{ s.id }}" data-name="{{ s.name }}">
+            <i class="bi {{ 'bi-check-circle-fill' if s.on else 'bi-x-circle-fill' }}"
+               title="{{ _('Enabled') if s.on else _('Disabled') }}"></i>{{ s.name }}
+          </div></li>
+          {% endfor %}
+        </ul>
+      </li>
+      {% endif %}
+      {% endfor %}
+      <li><div class="sigd-node" data-node="search"><i class="bi bi-search"></i>{{ _('Search') }}</div></li>
+      <li><div class="sigd-node" data-node="filter"><i class="bi bi-funnel"></i>{{ _('Filters') }}</div></li>
+    </ul>
+  </div>
+
+  {# ── central: the selected node ── #}
+  <div class="sigd-pane sigd-main">
+    <div class="sigd-hd" id="sigd-title">{{ _('Select a category, a sub-category, Search or Filters') }}</div>
+    <div class="sigd-body">
+      <div class="sigd-mode is-on" data-mode="0">
+        <p class="text-muted mb-0" style="font-size:13px;">{{ _('Pick a node in Dictionaries. A main category shows its settings in this policy; a sub-category lists its signatures.') }}</p>
       </div>
-      <div class="modal-body">
-        <div class="mb-2"><label class="fw-form-label">{{ _('Status') }}</label>
-          <select id="cls-status" class="form-select fw-form-control">
-            <option value="enable">{{ _('Enabled') }}</option><option value="disable">{{ _('Disabled') }}</option>
-          </select></div>
-        <div class="mb-2"><label class="fw-form-label"
-             title="{{ _('Extra SQL syntax validation before a signature match fires (SQL Injection categories only)') }}">{{ _('False Positive Mitigation') }}</label>
+
+      {# mode 1: a main class's settings (main_class_list row) #}
+      <div class="sigd-mode sigd-form" data-mode="1">
+        <input type="hidden" id="cls-status">
+        <div class="mb-2" id="cls-fpm-row"><label class="fw-form-label">{{ _('False Positive Mitigation') }}</label>
           <select id="cls-fpm" class="form-select fw-form-control">
-            <option value="">{{ _('(not applicable)') }}</option>
             <option value="enable">{{ _('Enabled') }}</option><option value="disable">{{ _('Disabled') }}</option>
           </select></div>
         <div class="mb-2"><label class="fw-form-label">{{ _('Action') }}</label>
-          <select id="cls-action" class="form-select fw-form-control">
-            {% for a in class_spec.get('enums', {}).get('action', []) %}
-            <option value="{{ a }}">{{ value_labels.get('action', {}).get(a, a) }}</option>
-            {% endfor %}
-          </select></div>
+          <select id="cls-action" class="form-select fw-form-control"></select></div>
+        <div class="mb-2"><label class="fw-form-label">{{ _('Block Period') }}</label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="number" id="cls-block" class="form-control fw-form-control" min="1" max="3600" style="max-width:140px;">
+            <span class="text-muted small">{{ _('Seconds (1 - 3600)') }}</span></div></div>
         <div class="mb-2"><label class="fw-form-label">{{ _('Severity') }}</label>
           <select id="cls-severity" class="form-select fw-form-control">
             {% for s in class_spec.get('enums', {}).get('severity', ['Informative','Low','Medium','High']) %}
             <option value="{{ s }}">{{ s }}</option>
             {% endfor %}
           </select></div>
-        <div class="mb-2"><label class="fw-form-label">{{ _('Block Period (seconds)') }}</label>
-          <input type="number" id="cls-block" class="form-control fw-form-control" min="1" max="3600"></div>
         <div class="mb-2"><label class="fw-form-label">{{ _('Trigger Policy') }}</label>
           <input type="text" id="cls-trigger" class="form-control fw-form-control" placeholder="{{ _('(none)') }}"></div>
         <div id="cls-status-msg"></div>
+        <button type="button" class="btn btn-fw-primary btn-sm" id="cls-save">{{ _('Apply') }}</button>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
-        <button type="button" class="btn btn-fw-primary btn-sm" id="cls-save">{{ _('Save to device') }}</button>
+
+      {# mode 2: signatures (a sub-class, a search or a filter) #}
+      <div class="sigd-mode" data-mode="2">
+        <input type="hidden" id="sig-main"><input type="hidden" id="sig-sub">
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-2" data-table-mode="1">
+          <label class="fw-form-label mb-0" for="sig-q">{{ _('Search Description') }}</label>
+          <input type="text" id="sig-q" class="form-control fw-form-control" style="max-width:280px;">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="sig-q-clear" title="{{ _('Clear') }}"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-2" data-table-mode="2">
+          <label class="fw-form-label mb-0" for="sig-stype">{{ _('Search Type') }}:</label>
+          <select id="sig-stype" class="form-select fw-form-control" style="width:auto;">
+            <option value="cve">{{ _('CVE Number') }}</option>
+            <option value="key">{{ _('Keywords') }}</option>
+            <option value="sig_id">{{ _('Signature ID') }}</option>
+          </select>
+          <span data-stype="cve" class="d-flex align-items-center gap-1">CVE -
+            <input type="text" id="sig-cve1" class="form-control fw-form-control" style="width:80px;" inputmode="numeric"> -
+            <input type="text" id="sig-cve2" class="form-control fw-form-control" style="width:90px;" inputmode="numeric"></span>
+          <input type="text" id="sig-sval" data-stype="text" class="form-control fw-form-control" style="max-width:260px;">
+          <button type="button" class="btn btn-fw-primary btn-sm" id="sig-search-go">{{ _('Search') }}</button>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-2" data-table-mode="3">
+          <label class="fw-form-label mb-0" for="sig-flt">{{ _('Filter by') }}</label>
+          <select id="sig-flt" class="form-select fw-form-control" style="width:auto;">
+            <option value="disabled">{{ _('Disabled') }}</option>
+            <option value="fpm">{{ _('False Positive Mitigation Disabled') }}</option>
+            <option value="alert">{{ _('Alert Only') }}</option>
+            <option value="exception">{{ _('Exception') }}</option>
+          </select>
+          <button type="button" class="btn btn-fw-primary btn-sm" id="sig-flt-go">{{ _('Apply') }}</button>
+        </div>
+        <div id="sig-msg"></div>
+        <div class="fw-table-wrapper">
+          <table class="fw-table" id="sig-table">
+            <thead><tr>
+              <th style="width:110px;">{{ _('Signature ID') }}</th><th style="width:150px;">{{ _('Status') }}</th>
+              <th>{{ _('Description') }}</th><th style="width:44px;"></th>
+            </tr></thead>
+            <tbody id="sig-tbody"></tbody>
+          </table>
+        </div>
+        <div class="d-flex align-items-center gap-2 mt-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="sig-prev">&laquo; {{ _('Prev') }}</button>
+          <span id="sig-page" class="text-muted" style="font-size:12px;"></span>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="sig-next">{{ _('Next') }} &raquo;</button>
+          <span id="sig-count" class="text-muted ms-auto" style="font-size:12px;"></span>
+        </div>
       </div>
     </div>
   </div>
-</div>
 
-{# ── Per-signature modal: Signature Details | Exception tabs (like FortiWeb) ── #}
-<div class="modal fade fw-modal" id="modalSig" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-fingerprint me-2"></i>{{ _('Signature') }} <span id="sd-id"></span></h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <ul class="nav nav-tabs mb-3">
-          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#sd-tab-details" type="button">{{ _('Signature Details') }}</button></li>
-          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sd-tab-exc" type="button">{{ _('Exception') }}</button></li>
-        </ul>
-        <div class="tab-content">
-          <div class="tab-pane fade show active" id="sd-tab-details">
-            <table class="fw-table">
-              <tbody>
-                <tr><td class="text-muted" style="width:30%;">{{ _('Signature ID') }}</td><td class="mono" id="sd-d-id"></td></tr>
-                <tr><td class="text-muted">{{ _('Class') }}</td><td id="sd-d-class"></td></tr>
-                <tr><td class="text-muted">{{ _('Sub Class') }}</td><td id="sd-d-sub"></td></tr>
-                <tr><td class="text-muted">{{ _('Description') }}</td><td id="sd-d-desc" style="font-size:12.5px;"></td></tr>
-                <tr id="sd-d-meta-row" class="d-none"><td class="text-muted">{{ _('FortiGuard') }}</td><td id="sd-d-meta" style="font-size:12.5px;"></td></tr>
-                <tr><td class="text-muted">{{ _('Status in this policy') }}</td><td id="sd-d-status"></td></tr>
-              </tbody>
-            </table>
+  {# ── east: the selected signature ── #}
+  <div class="sigd-pane sigd-east">
+    <div class="sigd-hd d-flex align-items-center justify-content-between">
+      <span>{{ _('Signature ID') }}: <span class="mono" id="sd-id"></span></span>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="sd-close" title="{{ _('Close') }}"><i class="bi bi-chevron-right"></i></button>
+    </div>
+    <div class="sigd-body">
+      <ul class="nav nav-tabs mb-2">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#sd-tab-details" type="button">{{ _('Signature') }}</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sd-tab-exc" type="button">{{ _('Exception') }}</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sd-tab-score" type="button">{{ _('Threat Weight') }}</button></li>
+      </ul>
+      <div class="tab-content">
+        <div class="tab-pane fade show active" id="sd-tab-details">
+          <table class="sigd-kv w-100"><tbody>
+            <tr><td>{{ _('Signature ID') }}:</td><td class="mono" id="sd-d-id"></td></tr>
+            <tr><td>{{ _('Main Category') }}:</td><td id="sd-d-class"></td></tr>
+            <tr><td>{{ _('Sub Category') }}:</td><td id="sd-d-sub"></td></tr>
+            <tr><td>{{ _('Sensitivity Level') }}:</td><td id="sd-d-level" data-live></td></tr>
+            <tr id="sd-d-fpm-row" class="d-none"><td>{{ _('False Positive Mitigation Support') }}:</td>
+              <td><div class="form-check form-switch m-0"><input class="form-check-input" type="checkbox" id="sd-fpm"></div></td></tr>
+            <tr><td>{{ _('Alert Only') }}:</td>
+              <td><div class="form-check form-switch m-0"><input class="form-check-input" type="checkbox" id="sd-alert"></div></td></tr>
+            <tr id="sd-d-refs-row" class="d-none"><td>{{ _('Attack Reference') }}:</td><td id="sd-d-refs"></td></tr>
+            <tr><td>{{ _('Description') }}:</td><td id="sd-d-desc"></td></tr>
+            <tr><td>{{ _('Found In') }}:</td><td><pre class="sigd-pre" id="sd-d-found" data-live></pre></td></tr>
+            <tr id="sd-d-meta-row" class="d-none"><td>{{ _('FortiGuard') }}:</td><td id="sd-d-meta"></td></tr>
+            <tr><td>{{ _('Status in this policy') }}:</td><td id="sd-d-status"></td></tr>
+          </tbody></table>
+          <div class="d-flex align-items-center gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="sd-live"
+                    title="{{ _('FortiWeb reads these fields off the device for each signature (waf/signature.sigdetail); SATOM does it when you ask') }}">
+              <i class="bi bi-arrow-repeat me-1"></i>{{ _('Read from device') }}</button>
+            <span class="text-muted small" id="sd-live-msg">{{ _('Sensitivity Level, Found In, Attack Reference, Match Example and Threat Weight come from the device.') }}</span>
           </div>
-          <div class="tab-pane fade" id="sd-tab-exc">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-              <span class="text-muted" style="font-size:12.5px;">
-                {{ _('Exception entries exempt this signature when the request element matches (max 128 per signature).') }}
-              </span>
-              <button type="button" class="btn btn-fw-primary btn-sm" id="exc-new-btn"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}</button>
-            </div>
-            <table class="fw-table" id="exc-table">
-              <thead><tr><th>#</th><th>{{ _('Element Type') }}</th><th>{{ _('Operation') }}</th><th>{{ _('Value') }}</th><th>{{ _('Concatenate') }}</th><th style="width:60px;"></th></tr></thead>
-              <tbody id="exc-tbody"><tr><td colspan="6" class="text-center text-muted py-2">{{ _('Loading…') }}</td></tr></tbody>
-            </table>
-
-            <div id="exc-form" class="fw-card mt-2" style="display:none;">
-              <div class="fw-card-header"><span class="fw-card-title">{{ _('New exception entry') }}</span></div>
-              <div class="fw-card-body">
-                <div class="row g-2">
-                  <div class="col-md-6"><label class="fw-form-label">{{ _('Element Type') }}</label>
-                    <select id="exc-target" class="form-select fw-form-control"></select></div>
-                  <div class="col-md-6"><label class="fw-form-label">{{ _('Operation') }}</label>
-                    <select id="exc-op" class="form-select fw-form-control"></select></div>
-                  <div class="col-md-6" data-exc-field="http-method"><label class="fw-form-label">{{ _('HTTP Method') }}</label>
-                    <input type="text" id="exc-method" class="form-control fw-form-control" placeholder="GET"></div>
-                  <div class="col-md-6" data-exc-field="ip"><label class="fw-form-label">{{ _('Client IP') }}</label>
-                    <input type="text" id="exc-ip" class="form-control fw-form-control" placeholder="{{ _('192.0.2.1 or range') }}"></div>
-                  <div class="col-md-6" data-exc-field="name"><label class="fw-form-label">{{ _('Name') }}</label>
-                    <input type="text" id="exc-name" class="form-control fw-form-control"></div>
-                  <div class="col-md-6" data-exc-field="value-check"><label class="fw-form-label">{{ _('Check Value of Specified Element') }}</label>
-                    <select id="exc-vcheck" class="form-select fw-form-control">
-                      <option value="disable">{{ _('Disabled') }}</option><option value="enable">{{ _('Enabled') }}</option>
-                    </select></div>
-                  <div class="col-md-6" data-exc-field="value"><label class="fw-form-label">{{ _('Value') }}</label>
-                    <input type="text" id="exc-value" class="form-control fw-form-control"></div>
-                  <div class="col-md-6"><label class="fw-form-label">{{ _('Concatenate') }}</label>
-                    <select id="exc-concat" class="form-select fw-form-control">
-                      <option value="AND">AND</option><option value="OR">OR</option>
-                    </select></div>
-                </div>
-                <div class="d-flex gap-2 mt-3">
-                  <button type="button" class="btn btn-fw-primary btn-sm" id="exc-save"><i class="bi bi-check-lg me-1"></i>{{ _('Save to device') }}</button>
-                  <button type="button" class="btn btn-secondary btn-sm" id="exc-cancel">{{ _('Cancel') }}</button>
-                </div>
+          <div id="sd-sample-box" class="mt-2 d-none">
+            <div class="fw-form-label">{{ _('Match Example') }}</div>
+            <pre class="sigd-pre" id="sd-sample"></pre>
+          </div>
+        </div>
+        <div class="tab-pane fade" id="sd-tab-exc">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <span class="text-muted" style="font-size:12.5px;">{{ _('Exception entries exempt this signature when the request element matches (max 128 per signature).') }}</span>
+            <button type="button" class="btn btn-fw-primary btn-sm" id="exc-new-btn"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}</button>
+          </div>
+          <table class="fw-table" id="exc-table">
+            <thead><tr><th>#</th><th>{{ _('Element Type') }}</th><th>{{ _('Operation') }}</th><th>{{ _('Value') }}</th><th>{{ _('Concatenate') }}</th><th style="width:44px;"></th></tr></thead>
+            <tbody id="exc-tbody"></tbody>
+          </table>
+          <div id="exc-form" class="fw-card mt-2" style="display:none;">
+            <div class="fw-card-header"><span class="fw-card-title">{{ _('New exception entry') }}</span></div>
+            <div class="fw-card-body">
+              <div class="row g-2">
+                <div class="col-12"><label class="fw-form-label">{{ _('Element Type') }}</label>
+                  <select id="exc-target" class="form-select fw-form-control"></select></div>
+                <div class="col-12"><label class="fw-form-label">{{ _('Operation') }}</label>
+                  <select id="exc-op" class="form-select fw-form-control"></select></div>
+                <div class="col-12" data-exc-field="http-method"><label class="fw-form-label">{{ _('HTTP Method') }}</label>
+                  <input type="text" id="exc-method" class="form-control fw-form-control" placeholder="GET"></div>
+                <div class="col-12" data-exc-field="ip"><label class="fw-form-label">{{ _('Client IP') }}</label>
+                  <input type="text" id="exc-ip" class="form-control fw-form-control" placeholder="{{ _('192.0.2.1 or range') }}"></div>
+                <div class="col-12" data-exc-field="name"><label class="fw-form-label">{{ _('Name') }}</label>
+                  <input type="text" id="exc-name" class="form-control fw-form-control"></div>
+                <div class="col-12" data-exc-field="value-check"><label class="fw-form-label">{{ _('Check Value of Specified Element') }}</label>
+                  <select id="exc-vcheck" class="form-select fw-form-control">
+                    <option value="disable">{{ _('Disabled') }}</option><option value="enable">{{ _('Enabled') }}</option>
+                  </select></div>
+                <div class="col-12" data-exc-field="value"><label class="fw-form-label">{{ _('Value') }}</label>
+                  <input type="text" id="exc-value" class="form-control fw-form-control"></div>
+                <div class="col-12"><label class="fw-form-label">{{ _('Concatenate') }}</label>
+                  <select id="exc-concat" class="form-select fw-form-control">
+                    <option value="AND">AND</option><option value="OR">OR</option>
+                  </select></div>
+              </div>
+              <div class="d-flex gap-2 mt-3">
+                <button type="button" class="btn btn-fw-primary btn-sm" id="exc-save"><i class="bi bi-check-lg me-1"></i>{{ _('Save to device') }}</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="exc-cancel">{{ _('Cancel') }}</button>
               </div>
             </div>
-            <div id="exc-msg" class="mt-2"></div>
           </div>
+          <div id="exc-msg" class="mt-2"></div>
+        </div>
+        <div class="tab-pane fade" id="sd-tab-score">
+          <table class="sigd-kv w-100"><tbody>
+            <tr><td>{{ _('Threat Weight') }}:</td><td id="sd-score" data-live></td></tr>
+            <tr><td>{{ _('Default') }}:</td><td id="sd-score-default" data-live></td></tr>
+          </tbody></table>
+          <p class="text-muted small mb-0">{{ _('Read from the device with "Read from device" on the Signature tab. Changing the weight is done on the device for now; SATOM shows it read-only.') }}</p>
         </div>
       </div>
     </div>
@@ -275,182 +302,374 @@
   var SET = {{ set_name | tojson }};
   var URL_SEARCH = {{ url_for('web_protection.sig_search', id=appliance.id, name=set_name) | tojson }};
   var URL_EXC = {{ url_for('web_protection.sig_exceptions', id=appliance.id, name=set_name, sig_id='__SID__') | tojson }};
-  var CLASSES = {{ classes | tojson }};
+  var URL_DETAIL = {{ url_for('web_protection.sig_detail', id=appliance.id, name=set_name, sig_id='__SID__') | tojson }};
+  var CLASS_ROWS = {{ (state.classes or []) | tojson }};
+  var SDG = {{ sdg | tojson }};
   var FILTER_SPEC = {{ filter_spec | tojson }};
   var VLBL = {{ value_labels | tojson }};
   var PAGE = 1, TOTAL = 0, PER = 100, LIVE = false;
-  var CUR = null;  // signature row currently open in the modal
+  var MODE = 0, TMODE = 0, EXTRA = {};
+  var CUR = null;      // the signature open in the east pane
+  var CLS_ROW = null;  // the main_class_list row in the form
 
+  function $(id) { return document.getElementById(id); }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
-  function lbl(field, v) {
-    var m = VLBL[field] || {};
-    return m[v] != null ? m[v] : v;
-  }
+  function lbl(field, v) { var m = VLBL[field] || {}; return m[v] != null ? m[v] : v; }
+  function csrf() { var m = document.querySelector('meta[name="csrf-token"]'); return m ? m.content : ''; }
   function post(url, body) {
-    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
                         body: JSON.stringify(body) }).then(function (r) { return r.json(); });
   }
   function saveRow(coll, subId, fields) {
     return post('/objedit/' + AID + '/save-row',
-                { collection: coll, parent: SET, sub_id: subId || null,
-                  fields: fields, apply: true });
+                { collection: coll, parent: SET, sub_id: subId || null, fields: fields, apply: true });
   }
   function deleteRow(coll, subId) {
     return post('/objedit/' + AID + '/delete-row',
                 { collection: coll, parent: SET, sub_id: subId, apply: true });
   }
 
-  // ── Signature Details list ────────────────────────────────────────────────
-  function query() {
-    var p = new URLSearchParams({
-      q: document.getElementById('sig-q').value || '',
-      main: document.getElementById('sig-main').value || '',
-      sub: document.getElementById('sig-sub').value || '',
-      filter: document.getElementById('sig-flt').value || '',
-      page: PAGE, per_page: PER
+  // ── layout: modes as FortiWeb switches them ──────────────────────────────
+  function setMode(mode, tmode, title) {
+    MODE = mode; TMODE = tmode || 0;
+    document.querySelectorAll('.sigd-mode').forEach(function (el) {
+      el.classList.toggle('is-on', String(el.dataset.mode) === String(mode));
     });
+    document.querySelectorAll('[data-table-mode]').forEach(function (el) {
+      el.style.display = String(el.dataset.tableMode) === String(TMODE) ? '' : 'none';
+    });
+    $('sigd-title').textContent = title || '';
+    showEast(false);
+  }
+  function showEast(on) { $('sigd').classList.toggle('no-east', !on); }
+  $('sd-close').addEventListener('click', function () { showEast(false); });
+
+  // ── Dictionaries tree ────────────────────────────────────────────────────
+  document.querySelectorAll('#sigd-tree .sigd-node').forEach(function (n) {
+    n.addEventListener('click', function () {
+      document.querySelectorAll('#sigd-tree .is-sel').forEach(function (x) { x.classList.remove('is-sel'); });
+      n.classList.add('is-sel');
+      var kind = n.dataset.node;
+      $('sig-msg').innerHTML = '';
+      if (kind === 'main') { openClass(n.dataset.main, n.dataset.name); return; }
+      $('sig-tbody').innerHTML = '';
+      $('sig-count').textContent = ''; $('sig-page').textContent = '';
+      EXTRA = {}; PAGE = 1;
+      if (kind === 'sub') {
+        $('sig-main').value = n.dataset.main; $('sig-sub').value = n.dataset.sub; $('sig-q').value = '';
+        setMode(2, 1, n.dataset.name); query();
+      } else if (kind === 'search') {
+        $('sig-main').value = ''; $('sig-sub').value = '';
+        setMode(2, 2, '{{ _('Search') }}'); gateSearch();
+      } else {
+        $('sig-main').value = ''; $('sig-sub').value = '';
+        setMode(2, 3, '{{ _('Filters') }}');
+      }
+    });
+  });
+
+  // ── a main class: its main_class_list row ─────────────────────────────────
+  function actionOptions(mid) {
+    var o = SDG.options || {};
+    if (mid === SDG.info_id) return o.info_action || o.action || [];
+    if (mid === SDG.ident_id) return o.ident_action || o.action || [];
+    return o.action || [];
+  }
+  function gateBlock() {
+    var on = (SDG.block_actions || ['block-period']).indexOf($('cls-action').value) !== -1;
+    $('cls-block').disabled = !on;
+  }
+  function openClass(mid, name) {
+    setMode(1, 0, name);
+    var row = CLASS_ROWS.filter(function (r) { return String(r.main_class_id) === String(mid); })[0];
+    var msg = $('cls-status-msg'); msg.innerHTML = '';
+    if (!row) {
+      CLS_ROW = null;
+      msg.innerHTML = '<div class="fw-alert fw-alert-warning">{{ _('This policy row is not in the cache and the device did not return it: nothing to show or save.') }}</div>';
+      $('cls-save').disabled = true;
+      return;
+    }
+    $('cls-save').disabled = false;
+    CLS_ROW = String(row.id != null ? row.id : (row._id || ''));
+    $('cls-status').value = row.status || 'enable';
+    $('cls-fpm-row').style.display = (SDG.fpm_ids || []).indexOf(String(mid)) !== -1 ? '' : 'none';
+    $('cls-fpm').value = row['fpm-status'] || 'disable';
+    var sel = $('cls-action'); sel.innerHTML = '';
+    actionOptions(String(mid)).forEach(function (p) {
+      sel.insertAdjacentHTML('beforeend', '<option value="' + esc(p[0]) + '">' + esc(p[1]) + '</option>');
+    });
+    sel.value = row.action || '';
+    $('cls-severity').value = row.severity || '';
+    $('cls-block').value = row['block-period'] || '';
+    $('cls-trigger').value = row.trigger || '';
+    gateBlock();
+  }
+  $('cls-action').addEventListener('change', gateBlock);
+  $('cls-save').addEventListener('click', function () {
+    if (CLS_ROW == null) return;
+    var fields = { action: $('cls-action').value, severity: $('cls-severity').value,
+                   trigger: $('cls-trigger').value };
+    if (!$('cls-block').disabled && $('cls-block').value) fields['block-period'] = $('cls-block').value;
+    if ($('cls-fpm-row').style.display !== 'none') fields['fpm-status'] = $('cls-fpm').value;
+    if (!confirm('{{ _('Apply these category settings to') }} ' + SET + ' {{ _('on the device?') }}')) return;
+    saveRow('waf/signature/main_class_list', CLS_ROW, fields).then(function (j) {
+      var el = $('cls-status-msg');
+      if (!j.ok) { el.innerHTML = '<div class="fw-alert fw-alert-danger">{{ _('Write failed') }}: ' + esc(j.error || 'unknown') + '</div>'; return; }
+      el.innerHTML = '<div class="fw-alert fw-alert-success">{{ _('Saved. Reloading…') }}</div>';
+      setTimeout(function () { window.location.reload(); }, 900);
+    });
+  });
+
+  // ── signatures table ─────────────────────────────────────────────────────
+  function query() {
+    var p = new URLSearchParams({ main: $('sig-main').value || '', sub: $('sig-sub').value || '',
+                                  page: PAGE, per_page: PER });
+    if (TMODE === 1) p.set('q', $('sig-q').value || '');
+    Object.keys(EXTRA).forEach(function (k) { p.set(k, EXTRA[k]); });
     if (LIVE) p.set('live', '1');
+    $('sig-tbody').innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">{{ _('Loading…') }}</td></tr>';
     fetch(URL_SEARCH + '?' + p.toString()).then(function (r) { return r.json(); }).then(render);
   }
 
+  function statusCell(s) {
+    if (s.global_disabled) return '<span class="fw-badge fw-badge-secondary" title="{{ _('Disabled in all policies') }}">{{ _('Disabled (all policies)') }}</span>';
+    if (s.disabled) return '<span class="fw-badge fw-badge-secondary">{{ _('Disabled') }}</span>';
+    var out = '<span class="fw-badge fw-badge-success">{{ _('Enabled') }}</span>';
+    if (s.alert_only) out += ' <span class="fw-badge fw-badge-warning">{{ _('Alert Only') }}</span>';
+    if (s.exceptions) out += ' <span class="fw-badge fw-badge-primary" title="{{ _('Exception entries') }}">' + s.exceptions + '</span>';
+    return out;
+  }
+
   function render(d) {
-    var tb = document.getElementById('sig-tbody');
+    var tb = $('sig-tbody');
     if (!d.ok) {
-      tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">' + esc(d.error || 'No data') + '</td></tr>';
+      tb.innerHTML = '<tr><td colspan="4" class="text-center text-danger py-3">' + esc(d.error || 'No data') + '</td></tr>';
       return;
     }
     TOTAL = d.total;
-    document.getElementById('sig-count').textContent = d.total + ' match(es)' + (d.source ? ' · state: ' + d.source : '');
-    document.getElementById('sig-page').textContent = 'Page ' + d.page + ' / ' + Math.max(1, Math.ceil(d.total / PER));
+    $('sig-count').textContent = d.total + ' {{ _('signature(s)') }}' + (d.source ? ' · {{ _('state') }}: ' + d.source : '');
+    $('sig-page').textContent = '{{ _('Page') }} ' + d.page + ' / ' + Math.max(1, Math.ceil(d.total / PER));
     if (!d.rows.length) {
-      tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No signatures match.</td></tr>';
+      tb.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">{{ _('No results') }}</td></tr>';
       return;
     }
-    tb.innerHTML = d.rows.map(function (s) {
-      var status = s.disabled ? '<span class="fw-badge fw-badge-secondary">Disabled</span>'
-                 : (s.alert_only ? '<span class="fw-badge fw-badge-warning">Alert Only</span>'
-                                 : '<span class="fw-badge fw-badge-success">Enabled</span>');
-      var exc = s.exceptions ? '<span class="fw-badge fw-badge-primary">' + s.exceptions + '</span>' : '<span class="text-muted">—</span>';
-      return '<tr>' +
-        '<td class="mono">' + esc(s.id) + '</td>' +
-        '<td style="font-size:12.5px;">' + esc(s.desc || '—') + metaBadge(s.meta) + '</td>' +
-        '<td class="text-muted" style="font-size:12px;">' + esc(s.sub) + '</td>' +
-        '<td>' + status + '</td><td>' + exc + '</td>' +
-        '<td>' +
-          '<button class="btn btn-sm btn-outline-' + (s.disabled ? 'success' : 'secondary') + '" title="' + (s.disabled ? 'Enable' : 'Disable') + ' this signature in the policy" data-act="toggle-disable" data-sig=\'' + esc(JSON.stringify(s)) + '\'><i class="bi bi-power"></i></button> ' +
-          '<button class="btn btn-sm btn-outline-' + (s.alert_only ? 'warning' : 'secondary') + '" title="' + (s.alert_only ? 'Remove Alert Only' : 'Alert Only (log, don\'t block)') + '" data-act="toggle-alert" data-sig=\'' + esc(JSON.stringify(s)) + '\'><i class="bi bi-bell"></i></button> ' +
-          '<button class="btn btn-sm btn-outline-primary" title="Details / Exceptions" data-act="open" data-sig=\'' + esc(JSON.stringify(s)) + '\'><i class="bi bi-three-dots"></i></button>' +
-        '</td></tr>';
+    tb.innerHTML = d.rows.map(function (s, i) {
+      var en = !s.disabled && !s.global_disabled;
+      return '<tr data-i="' + i + '" style="cursor:pointer;">' +
+        '<td class="mono">' + esc(s.id) + '</td><td>' + statusCell(s) + '</td>' +
+        '<td style="font-size:12.5px;">' + esc(s.desc || '—') + '</td>' +
+        '<td class="sigd-menu"><button type="button" class="btn btn-sm btn-outline-secondary" data-menu="' + i + '" title="{{ _('Actions') }}"><i class="bi bi-three-dots-vertical"></i></button>' +
+        '<div class="sigd-menu-list" id="sigm-' + i + '">' +
+          '<button data-do="enable" data-i="' + i + '"' + (en ? ' disabled' : '') + '>{{ _('Enable') }}</button>' +
+          '<button data-do="global" data-i="' + i + '" title="{{ _('Writes a waf/base-signature-disable entry: unverified on this build') }}"' + (s.global_disabled || s.disabled ? ' disabled' : '') + '>{{ _('Disable in all policies') }}</button>' +
+          '<button data-do="group" data-i="' + i + '"' + (s.global_disabled || s.disabled ? ' disabled' : '') + '>{{ _('Disable in current policy') }}</button>' +
+        '</div></td></tr>';
     }).join('');
-    tb.querySelectorAll('button[data-act]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        var s = JSON.parse(this.dataset.sig);
-        var act = this.dataset.act;
-        if (act === 'open') openSig(s, false);
-        else if (act === 'toggle-disable') toggleList(s, 'signature_disable_list', s.disabled, s.disable_row);
-        else if (act === 'toggle-alert') toggleList(s, 'alert_only_list', s.alert_only, s.alert_row);
+    tb.querySelectorAll('tr[data-i]').forEach(function (tr) {
+      tr.addEventListener('click', function (ev) {
+        if (ev.target.closest('.sigd-menu')) return;
+        tb.querySelectorAll('.sigd-row-sel').forEach(function (x) { x.classList.remove('sigd-row-sel'); });
+        tr.classList.add('sigd-row-sel');
+        openSig(d.rows[+tr.dataset.i]);
+      });
+    });
+    tb.querySelectorAll('[data-menu]').forEach(function (b) {
+      b.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var m = $('sigm-' + b.dataset.menu), open = m.classList.contains('is-open');
+        document.querySelectorAll('.sigd-menu-list.is-open').forEach(function (x) { x.classList.remove('is-open'); });
+        if (!open) m.classList.add('is-open');
+      });
+    });
+    tb.querySelectorAll('[data-do]').forEach(function (b) {
+      b.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        document.querySelectorAll('.sigd-menu-list.is-open').forEach(function (x) { x.classList.remove('is-open'); });
+        setStatus(d.rows[+b.dataset.i], b.dataset.do);
       });
     });
   }
+  document.addEventListener('click', function () {
+    document.querySelectorAll('.sigd-menu-list.is-open').forEach(function (x) { x.classList.remove('is-open'); });
+  });
 
-  function toggleList(s, seg, isOn, rowId) {
-    var coll = 'waf/signature/' + seg;
-    var what = seg === 'alert_only_list' ? 'Alert Only' : 'Disable';
-    if (isOn) {
-      if (!rowId) { alert('Row id unknown — refresh the list (state may be stale).'); return; }
-      if (!confirm('Remove ' + what + ' for signature ' + s.id + ' on ' + SET + '?')) return;
-      deleteRow(coll, rowId).then(after);
-    } else {
-      if (!confirm(what + ' signature ' + s.id + ' in policy ' + SET + '?\nThis writes to the device.')) return;
-      saveRow(coll, null, { signature_id: s.id }).then(after);
-    }
+  // Enable / Disable in all policies / Disable in current policy, as the
+  // device's row menu: the current policy is its signature_disable_list, all
+  // policies is a waf/base-signature-disable entry (keyed by signature id)
+  function setStatus(s, act) {
     function after(j) {
-      if (!j.ok) { alert('Write failed: ' + (j.error || 'unknown')); return; }
-      LIVE = true;  // the box is now ahead of the local cache — read live
-      query();
+      if (!j.ok) { $('sig-msg').innerHTML = '<div class="fw-alert fw-alert-danger">{{ _('Write failed') }}: ' + esc(j.error || 'unknown') + '</div>'; return; }
+      $('sig-msg').innerHTML = '<div class="fw-alert fw-alert-success">{{ _('Saved on the device.') }}</div>';
+      LIVE = true; query();
+    }
+    if (act === 'group') {
+      if (!confirm('{{ _('Disable signature') }} ' + s.id + ' {{ _('in policy') }} ' + SET + '?')) return;
+      saveRow('waf/signature/signature_disable_list', null, { signature_id: s.id }).then(after);
+    } else if (act === 'global') {
+      // TODO verify: FortiWeb 7.6.8 waf/base-signature-disable create (schema
+      // measured: table keyed by signature_id; the write round trip is not)
+      if (!confirm('{{ _('Disable signature') }} ' + s.id + ' {{ _('in ALL signature policies of') }} {{ appliance.name }}?')) return;
+      post('/objedit/' + AID + '/create-object',
+           { collection: 'waf/base-signature-disable', mkey: s.id, fields: { signature_id: s.id }, apply: true }).then(after);
+    } else {
+      var p = Promise.resolve({ ok: true });
+      if (s.disabled && s.disable_row) p = deleteRow('waf/signature/signature_disable_list', s.disable_row);
+      p.then(function (j) {
+        if (!j.ok || !s.global_disabled) return j;
+        return post('/objedit/' + AID + '/delete-object',
+                    { collection: 'waf/base-signature-disable', mkey: s.id, apply: true });
+      }).then(after);
     }
   }
 
-  // Public FortiGuard metadata from an imported knowledge pack (C8 enrichment).
+  // Search (CVE number / keywords / signature id) and Filters
+  function gateSearch() {
+    var cve = $('sig-stype').value === 'cve';
+    document.querySelector('[data-stype="cve"]').style.display = cve ? '' : 'none';
+    $('sig-sval').style.display = cve ? 'none' : '';
+  }
+  $('sig-stype').addEventListener('change', gateSearch);
+  $('sig-search-go').addEventListener('click', function () {
+    var t = $('sig-stype').value;
+    EXTRA = {}; PAGE = 1;
+    if (t === 'cve') {
+      var a = $('sig-cve1').value.trim(), b = $('sig-cve2').value.trim();
+      if (!/^[0-9]+$/.test(a) || !/^[0-9]+$/.test(b)) {
+        $('sig-msg').innerHTML = '<div class="fw-alert fw-alert-danger">{{ _('A CVE number is two groups of digits (CVE-2021-44228).') }}</div>'; return;
+      }
+      EXTRA.cve = 'CVE-' + a + '-' + b;
+    } else {
+      var v = $('sig-sval').value.trim();
+      if (!v) return;
+      if (t === 'sig_id' && !/^[0-9]{9}$/.test(v)) {
+        $('sig-msg').innerHTML = '<div class="fw-alert fw-alert-danger">{{ _('You must input a valid Signature ID.') }}</div>'; return;
+      }
+      EXTRA.q = v;
+    }
+    $('sig-msg').innerHTML = ''; query();
+  });
+  $('sig-flt-go').addEventListener('click', function () { EXTRA = { filter: $('sig-flt').value }; PAGE = 1; query(); });
+  var qTimer = null;
+  $('sig-q').addEventListener('input', function () { clearTimeout(qTimer); qTimer = setTimeout(function () { PAGE = 1; query(); }, 250); });
+  $('sig-q-clear').addEventListener('click', function () { $('sig-q').value = ''; PAGE = 1; query(); });
+  $('sig-prev').addEventListener('click', function () { if (PAGE > 1) { PAGE--; query(); } });
+  $('sig-next').addEventListener('click', function () { if (PAGE * PER < TOTAL) { PAGE++; query(); } });
+
+  // ── east pane: one signature ─────────────────────────────────────────────
   function sevClass(sev) {
     var s = String(sev || '').toLowerCase();
     return s === 'critical' || s === 'high' ? 'danger' : (s === 'medium' ? 'warning' : 'secondary');
   }
-  function metaBadge(m) {
-    if (!m) return '';
-    var t = [m.name, (m.cve || []).join(', ')].filter(Boolean).join(' — ');
-    return ' <span class="fw-badge fw-badge-' + sevClass(m.severity) + ' ms-1" title="' + esc(t) + '">' +
-      esc(m.severity || 'FortiGuard') + '</span>' +
-      ((m.cve && m.cve.length) ? ' <span class="text-muted small">' + esc(m.cve.slice(0, 2).join(', ')) + '</span>' : '');
-  }
-
-  // ── Per-signature modal (Details | Exception) ─────────────────────────────
-  function openSig(s, showExc) {
+  function openSig(s) {
     CUR = s;
-    document.getElementById('sd-id').textContent = s.id;
-    document.getElementById('sd-d-id').textContent = s.id;
-    document.getElementById('sd-d-class').textContent = s.main;
-    document.getElementById('sd-d-sub').textContent = s.sub;
-    document.getElementById('sd-d-desc').textContent = s.desc || '—';
-    var mrow = document.getElementById('sd-d-meta-row');
+    showEast(true);
+    $('sd-id').textContent = s.id; $('sd-d-id').textContent = s.id;
+    $('sd-d-class').textContent = s.main; $('sd-d-sub').textContent = s.sub || 'N/A';
+    $('sd-d-desc').textContent = s.desc || '—';
+    document.querySelectorAll('#sigd [data-live]').forEach(function (el) { el.textContent = '—'; });
+    $('sd-d-fpm-row').classList.add('d-none'); $('sd-d-refs-row').classList.add('d-none');
+    $('sd-sample-box').classList.add('d-none');
+    $('sd-alert').checked = !!s.alert_only;
+    $('sd-fpm').checked = !s.fpm_disabled;
+    $('sd-live-msg').textContent = '{{ _('Sensitivity Level, Found In, Attack Reference, Match Example and Threat Weight come from the device.') }}';
+    var mrow = $('sd-d-meta-row');
     if (s.meta) {
       var m = s.meta, parts = [];
       if (m.name) parts.push('<strong>' + esc(m.name) + '</strong>');
       if (m.severity) parts.push('<span class="fw-badge fw-badge-' + sevClass(m.severity) + '">' + esc(m.severity) + '</span>');
-      if (m.category) parts.push(esc(m.category));
       if (m.cve && m.cve.length) parts.push(m.cve.map(esc).join(', '));
-      if (m.url && /^https:\/\//.test(m.url)) parts.push('<a href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">' + '{{ _('Encyclopedia') }}' + ' <i class="bi bi-box-arrow-up-right"></i></a>');
-      if (m.summary) parts.push('<div class="text-muted mt-1">' + esc(m.summary) + '</div>');
-      document.getElementById('sd-d-meta').innerHTML = parts.join(' · ');
+      if (m.url && /^https:\/\//.test(m.url)) parts.push('<a href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">{{ _('Encyclopedia') }} <i class="bi bi-box-arrow-up-right"></i></a>');
+      $('sd-d-meta').innerHTML = parts.join(' · ');
       mrow.classList.remove('d-none');
-    } else {
-      mrow.classList.add('d-none');
-    }
-    document.getElementById('sd-d-status').innerHTML =
-      s.disabled ? 'Disabled' : (s.alert_only ? 'Alert Only' : 'Enabled');
-    document.getElementById('exc-form').style.display = 'none';
-    document.getElementById('exc-msg').innerHTML = '';
+    } else { mrow.classList.add('d-none'); }
+    $('sd-d-status').textContent = s.global_disabled ? '{{ _('Disabled in all policies') }}'
+      : (s.disabled ? '{{ _('Disabled') }}' : (s.alert_only ? '{{ _('Alert Only') }}' : '{{ _('Enabled') }}'));
+    $('exc-form').style.display = 'none'; $('exc-msg').innerHTML = '';
+    bootstrap.Tab.getOrCreateInstance(document.querySelector('[data-bs-target="#sd-tab-details"]')).show();
     loadExceptions();
-    var modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSig'));
-    modal.show();
-    if (showExc) {
-      var el = document.querySelector('[data-bs-target="#sd-tab-exc"]');
-      bootstrap.Tab.getOrCreateInstance(el).show();
-    }
   }
 
+  $('sd-live').addEventListener('click', function () {
+    if (!CUR) return;
+    var u = URL_DETAIL.replace('__SID__', encodeURIComponent(CUR.id)) +
+            '?main=' + encodeURIComponent(CUR.main_id) + '&sub=' + encodeURIComponent(CUR.sub_id);
+    $('sd-live-msg').textContent = '{{ _('Reading from the device…') }}';
+    fetch(u).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j.ok) { $('sd-live-msg').innerHTML = '<span class="text-danger">' + esc(j.error || 'read failed') + '</span>'; return; }
+      var d = j.detail || {};
+      $('sd-d-level').textContent = d.sensitivity_level != null ? d.sensitivity_level : '—';
+      $('sd-d-found').textContent = String(d.meet_target || '').replace(/\|/g, '\n') || '—';
+      if (d.main_class_name) $('sd-d-class').textContent = d.main_class_name;
+      $('sd-d-sub').textContent = d.sub_class_name || 'N/A';
+      $('sd-d-fpm-row').classList.toggle('d-none', String(d.fpm_mitigation) !== '1');
+      if (d.alert_only != null) $('sd-alert').checked = String(d.alert_only) === '1';
+      var refs = d.attack_refs || [];
+      $('sd-d-refs-row').classList.toggle('d-none', !refs.length);
+      $('sd-d-refs').innerHTML = refs.map(function (r) {
+        return /^https:\/\//.test(r.target)
+          ? '<a href="' + esc(r.target) + '" target="_blank" rel="noopener noreferrer">' + esc(r.label) + '</a>'
+          : esc(r.label + ' ' + r.target);
+      }).join('<br>');
+      var sample = String(d.sample || '').replace(/&lt;#|#&gt;/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+      $('sd-sample').textContent = sample;
+      $('sd-sample-box').classList.toggle('d-none', !sample);
+      $('sd-score').textContent = d.score == null ? '—' : (String(d.score) === '-1' ? '{{ _('Default') }}' : d.score);
+      $('sd-score-default').textContent = d.default_score == null ? '—' : d.default_score;
+      $('sd-live-msg').textContent = '{{ _('Read from the device just now.') }}';
+    }).catch(function () { $('sd-live-msg').innerHTML = '<span class="text-danger">{{ _('The read failed.') }}</span>'; });
+  });
+
+  // Alert Only and False Positive Mitigation Support of one signature: the
+  // policy's alert_only_list / fpm_disable_list rows
+  function toggleList(seg, on, rowId, input) {
+    var coll = 'waf/signature/' + seg;
+    var p = on ? saveRow(coll, null, { signature_id: CUR.id })
+               : (rowId ? deleteRow(coll, rowId) : Promise.resolve({ ok: false, error: '{{ _('row id unknown: refresh the list') }}' }));
+    p.then(function (j) {
+      if (!j.ok) { input.checked = !on; alert('{{ _('Write failed') }}: ' + (j.error || 'unknown')); return; }
+      LIVE = true; query();
+    });
+  }
+  $('sd-alert').addEventListener('change', function () {
+    if (!CUR) return;
+    if (!confirm((this.checked ? '{{ _('Set Alert Only for') }} ' : '{{ _('Remove Alert Only from') }} ') + CUR.id + '?')) { this.checked = !this.checked; return; }
+    toggleList('alert_only_list', this.checked, CUR.alert_row, this);
+  });
+  $('sd-fpm').addEventListener('change', function () {
+    if (!CUR) return;
+    // on = FPM applies (no fpm_disable_list row); off = a row disables it
+    if (!confirm((this.checked ? '{{ _('Enable False Positive Mitigation for') }} ' : '{{ _('Disable False Positive Mitigation for') }} ') + CUR.id + '?')) { this.checked = !this.checked; return; }
+    toggleList('fpm_disable_list', !this.checked, CUR.fpm_row, this);
+  });
+
   function loadExceptions() {
-    var tb = document.getElementById('exc-tbody');
-    tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-2">Loading…</td></tr>';
+    var tb = $('exc-tbody');
+    tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-2">{{ _('Loading…') }}</td></tr>';
     var u = URL_EXC.replace('__SID__', encodeURIComponent(CUR.id)) + (LIVE ? '?live=1' : '');
     fetch(u).then(function (r) { return r.json(); }).then(function (d) {
       var rows = d.rows || [];
       if (!rows.length) {
-        tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-2">No exception entries for this signature.</td></tr>';
+        tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-2">{{ _('No exception entries for this signature.') }}</td></tr>';
         return;
       }
       tb.innerHTML = rows.map(function (r) {
         var val = r.value || r.ip || r['http-method'] || '';
         if (r.name) val = r.name + (val ? ' = ' + val : '');
-        return '<tr>' +
-          '<td>' + esc(r.id) + '</td>' +
-          '<td>' + esc(lbl('match-target', r['match-target'])) + '</td>' +
-          '<td>' + esc(lbl('operator', r.operator)) + '</td>' +
-          '<td class="mono" style="font-size:12px;">' + esc(val || '—') + '</td>' +
+        return '<tr><td>' + esc(r.id) + '</td><td>' + esc(lbl('match-target', r['match-target'])) + '</td>' +
+          '<td>' + esc(lbl('operator', r.operator)) + '</td><td class="mono" style="font-size:12px;">' + esc(val || '—') + '</td>' +
           '<td>' + esc(r['concatenate-type'] || '—') + '</td>' +
-          '<td><button class="btn btn-sm btn-outline-danger" data-exc-del="' + esc(r.id) + '"><i class="bi bi-trash"></i></button></td>' +
-          '</tr>';
+          '<td><button class="btn btn-sm btn-outline-danger" data-exc-del="' + esc(r.id) + '"><i class="bi bi-trash"></i></button></td></tr>';
       }).join('');
       tb.querySelectorAll('[data-exc-del]').forEach(function (b) {
         b.addEventListener('click', function () {
           var rid = this.dataset.excDel;
-          if (!confirm('Delete exception entry #' + rid + ' of signature ' + CUR.id + '?')) return;
+          if (!confirm('{{ _('Delete exception entry') }} #' + rid + ' {{ _('of signature') }} ' + CUR.id + '?')) return;
           deleteRow('waf/signature/filter_list', rid).then(function (j) {
-            if (!j.ok) { alert('Delete failed: ' + (j.error || 'unknown')); return; }
+            if (!j.ok) { alert('{{ _('Delete failed') }}: ' + (j.error || 'unknown')); return; }
             LIVE = true; loadExceptions(); query();
           });
         });
@@ -458,134 +677,60 @@
     });
   }
 
-  // Exception create form — gated by Element Type exactly like the FortiWeb GUI
-  // (show_when from the curated signature_filter_item spec).
+  // Exception create form: gated by Element Type exactly like the FortiWeb GUI
   var SHOW_WHEN = FILTER_SPEC.show_when || {};
   var EXC_INPUT = { 'http-method': 'exc-method', 'ip': 'exc-ip', 'name': 'exc-name',
                     'value-check': 'exc-vcheck', 'value': 'exc-value' };
-
   function buildExcForm() {
-    var tgt = document.getElementById('exc-target');
-    var op = document.getElementById('exc-op');
     (FILTER_SPEC.enums && FILTER_SPEC.enums['match-target'] || []).forEach(function (v) {
-      tgt.insertAdjacentHTML('beforeend', '<option value="' + esc(v) + '">' + esc(lbl('match-target', v)) + '</option>');
+      $('exc-target').insertAdjacentHTML('beforeend', '<option value="' + esc(v) + '">' + esc(lbl('match-target', v)) + '</option>');
     });
     (FILTER_SPEC.enums && FILTER_SPEC.enums['operator'] || []).forEach(function (v) {
-      op.insertAdjacentHTML('beforeend', '<option value="' + esc(v) + '">' + esc(lbl('operator', v)) + '</option>');
+      $('exc-op').insertAdjacentHTML('beforeend', '<option value="' + esc(v) + '">' + esc(lbl('operator', v)) + '</option>');
     });
-    tgt.addEventListener('change', gateExcFields);
-    document.getElementById('exc-vcheck').addEventListener('change', gateExcFields);
+    $('exc-target').addEventListener('change', gateExcFields);
+    $('exc-vcheck').addEventListener('change', gateExcFields);
     gateExcFields();
   }
-
   function gateExcFields() {
-    var target = document.getElementById('exc-target').value;
+    var target = $('exc-target').value;
     Object.keys(EXC_INPUT).forEach(function (field) {
       var box = document.querySelector('[data-exc-field="' + field + '"]');
       if (!box) return;
       var rule = SHOW_WHEN[field];
       var show = !rule || (rule[0] === 'match-target' && rule[1].indexOf(target) !== -1);
-      // FortiWeb quirk: for named elements, Value only shows when Check-Value is enabled.
       if (field === 'value' && show) {
         var named = ['PARAMETER', 'COOKIE', 'HTTP_HEADER', 'JSON_ELEMENTS'].indexOf(target) !== -1;
-        if (named) show = document.getElementById('exc-vcheck').value === 'enable';
+        if (named) show = $('exc-vcheck').value === 'enable';
       }
       box.style.display = show ? '' : 'none';
     });
   }
-
-  document.getElementById('exc-new-btn').addEventListener('click', function () {
-    document.getElementById('exc-form').style.display = '';
-  });
-  document.getElementById('exc-cancel').addEventListener('click', function () {
-    document.getElementById('exc-form').style.display = 'none';
-  });
-  document.getElementById('exc-save').addEventListener('click', function () {
-    var target = document.getElementById('exc-target').value;
-    var fields = { signature_id: CUR.id, 'match-target': target,
-                   operator: document.getElementById('exc-op').value,
-                   'concatenate-type': document.getElementById('exc-concat').value };
+  $('exc-new-btn').addEventListener('click', function () { $('exc-form').style.display = ''; });
+  $('exc-cancel').addEventListener('click', function () { $('exc-form').style.display = 'none'; });
+  $('exc-save').addEventListener('click', function () {
+    var fields = { signature_id: CUR.id, 'match-target': $('exc-target').value,
+                   operator: $('exc-op').value, 'concatenate-type': $('exc-concat').value };
     Object.keys(EXC_INPUT).forEach(function (f) {
       var box = document.querySelector('[data-exc-field="' + f + '"]');
-      if (box && box.style.display !== 'none') {
-        fields[f] = document.getElementById(EXC_INPUT[f]).value;
-      }
+      if (box && box.style.display !== 'none') fields[f] = $(EXC_INPUT[f]).value;
     });
-    if (!confirm('Create this exception for signature ' + CUR.id + ' in policy ' + SET + '?\nThis writes to the device.')) return;
+    if (!confirm('{{ _('Create this exception for signature') }} ' + CUR.id + ' {{ _('in policy') }} ' + SET + '?')) return;
     saveRow('waf/signature/filter_list', null, fields).then(function (j) {
-      var el = document.getElementById('exc-msg');
-      if (!j.ok) {
-        el.innerHTML = '<div class="fw-alert fw-alert-danger">Write failed: ' + esc(j.error || 'unknown') + '</div>';
-        return;
-      }
-      el.innerHTML = '<div class="fw-alert fw-alert-success">Exception saved to the device.</div>';
-      document.getElementById('exc-form').style.display = 'none';
+      var el = $('exc-msg');
+      if (!j.ok) { el.innerHTML = '<div class="fw-alert fw-alert-danger">{{ _('Write failed') }}: ' + esc(j.error || 'unknown') + '</div>'; return; }
+      el.innerHTML = '<div class="fw-alert fw-alert-success">{{ _('Exception saved to the device.') }}</div>';
+      $('exc-form').style.display = 'none';
       LIVE = true; loadExceptions(); query();
     });
   });
 
-  // ── Signature Category edit modal ─────────────────────────────────────────
-  var CLS_ROW = null;
-  document.querySelectorAll('[data-js="edit-class"]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      CLS_ROW = this.dataset.row;
-      document.getElementById('cls-title').textContent =
-        (VLBL['main_class_id'] || {})[this.dataset.mc] || this.dataset.mc;
-      document.getElementById('cls-status').value = this.dataset.status || 'enable';
-      document.getElementById('cls-fpm').value = this.dataset.fpm || '';
-      document.getElementById('cls-action').value = this.dataset.action || '';
-      document.getElementById('cls-severity').value = this.dataset.severity || '';
-      document.getElementById('cls-block').value = this.dataset.block || '';
-      document.getElementById('cls-trigger').value = this.dataset.trigger || '';
-      document.getElementById('cls-status-msg').innerHTML = '';
-      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalClass')).show();
-    });
-  });
-  document.getElementById('cls-save').addEventListener('click', function () {
-    var fields = {
-      status: document.getElementById('cls-status').value,
-      action: document.getElementById('cls-action').value,
-      severity: document.getElementById('cls-severity').value,
-      trigger: document.getElementById('cls-trigger').value
-    };
-    var bp = document.getElementById('cls-block').value;
-    if (bp) fields['block-period'] = bp;
-    var fpm = document.getElementById('cls-fpm').value;
-    if (fpm) fields['fpm-status'] = fpm;
-    if (!confirm('Save these category settings to ' + SET + ' on the device?')) return;
-    saveRow('waf/signature/main_class_list', CLS_ROW, fields).then(function (j) {
-      var el = document.getElementById('cls-status-msg');
-      if (!j.ok) { el.innerHTML = '<div class="fw-alert fw-alert-danger">Write failed: ' + esc(j.error || 'unknown') + '</div>'; return; }
-      el.innerHTML = '<div class="fw-alert fw-alert-success">Saved. Reloading…</div>';
-      setTimeout(function () { window.location.reload(); }, 900);
-    });
-  });
-
-  // ── Filters wiring ────────────────────────────────────────────────────────
-  document.getElementById('sig-main').addEventListener('change', function () {
-    var sub = document.getElementById('sig-sub');
-    sub.innerHTML = '<option value="">All sub-classes</option>';
-    var m = CLASSES[this.value];
-    if (m) Object.keys(m.subs).forEach(function (sid) {
-      sub.insertAdjacentHTML('beforeend', '<option value="' + esc(sid) + '">' + esc(m.subs[sid]) + '</option>');
-    });
-    PAGE = 1; query();
-  });
-  document.getElementById('sig-sub').addEventListener('change', function () { PAGE = 1; query(); });
-  document.getElementById('sig-flt').addEventListener('change', function () { PAGE = 1; query(); });
-  var qTimer = null;
-  document.getElementById('sig-q').addEventListener('input', function () {
-    clearTimeout(qTimer); qTimer = setTimeout(function () { PAGE = 1; query(); }, 250);
-  });
-  document.getElementById('sig-prev').addEventListener('click', function () {
-    if (PAGE > 1) { PAGE--; query(); }
-  });
-  document.getElementById('sig-next').addEventListener('click', function () {
-    if (PAGE * PER < TOTAL) { PAGE++; query(); }
-  });
-
   buildExcForm();
-  query();
+  // ?main= / ?sub= open that node (the dialog's Signature Details opens the policy)
+  var qs = new URLSearchParams(location.search);
+  var start = qs.get('sub') ? document.querySelector('.sigd-node[data-sub="' + CSS.escape(qs.get('sub')) + '"]')
+            : (qs.get('main') ? document.querySelector('.sigd-node[data-node="main"][data-main="' + CSS.escape(qs.get('main')) + '"]') : null);
+  if (start) start.click();
 })();
 </script>
 {% endblock %}

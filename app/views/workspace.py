@@ -666,6 +666,51 @@ def _filtered_options(appl, endpoint, api, raw_filter):
     return jsonify(names=names, source='live', filter=flt)
 
 
+#: cmdb collections FortiWeb's own selectors list FILTERED by one row field
+#: (its typed source factories, 7.6.8 bundle: ``createOauthServerSource(type)``
+#: keeps ``item.type == type``; the server policy sources keep ``protocol``),
+#: with the fields measured on the rows (fortiweb19 7.6.8, 2026-11-01: device
+#: and cache rows both carry them).
+FILTERED_CMDB_LISTS = {
+    'user/oauth-user.request': frozenset({'type'}),
+    'server-policy/policy': frozenset({'protocol'}),
+}
+
+
+def _filtered_cmdb_options(appl, endpoint, raw_filter):
+    """The names a selector that filters a cmdb list offers (OAuth server's
+    request selectors by ``type``, a policy selector by ``protocol``): the
+    cache first (the rows carry the field), the device when the cache has
+    nothing. Only the measured collections and fields; never unfiltered."""
+    keys = FILTERED_CMDB_LISTS.get(endpoint)
+    try:
+        flt = json.loads(raw_filter)
+    except ValueError:
+        flt = None
+    if (keys is None or not isinstance(flt, dict) or not flt or not set(flt) <= keys
+            or not all(isinstance(v, (int, str)) and not isinstance(v, bool) for v in flt.values())):
+        return jsonify(error='filter not allowed', names=[]), 400
+
+    def keep(rows):
+        return [str(r.get('name')) for r in rows or []
+                if isinstance(r, dict) and r.get('name')
+                and all(str(r.get(k)) == str(v) for k, v in flt.items())]
+    from ..services import gui_pages
+    cached, _meta = gui_pages.rows(appl.id, endpoint)
+    if cached:
+        return jsonify(names=keep(cached), source='cache', filter=flt)
+    try:
+        resp = FortiWebClient(appl).api_call('GET', '/api/v2.0/cmdb/' + endpoint)
+        body = resp.json() if resp is not None and resp.status_code == 200 else None
+    except Exception as exc:  # noqa: BLE001
+        eid = log_exception(exc, context='workspace.cmdb_options.filtered_cmdb')
+        return jsonify(names=[], source='live', error=type(exc).__name__, error_id=eid)
+    rows = body.get('results') if isinstance(body, dict) else None
+    if not isinstance(rows, list):
+        return jsonify(names=[], source='live', error='the device did not list %s' % endpoint)
+    return jsonify(names=keep(rows), source='live', filter=flt)
+
+
 @bp.route('/<int:appliance_id>/cmdb-options')
 @login_required
 @require_permission('protection.view')
@@ -680,6 +725,8 @@ def cmdb_options(appliance_id):
     # GUI layouts name the collection a selector lists: ``ref_coll``).
     if endpoint not in ALL_REF_ENDPOINTS and not objform.is_known_collection(endpoint):
         return jsonify(error='endpoint not allowed', names=[]), 400
+    if request.args.get('filter') and not request.args.get('api'):
+        return _filtered_cmdb_options(appl, endpoint, request.args.get('filter', ''))
     if request.args.get('filter'):
         return _filtered_options(appl, endpoint, request.args.get('api', ''),
                                  request.args.get('filter', ''))

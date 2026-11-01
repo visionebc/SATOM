@@ -35,6 +35,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Baseline: 451 measured, 42 legacy (was 296 / 192).
 
 ### Changed
+- **Every FortiWeb selector the audit found as a text box gets its list.**
+  A render of every dialog of fortiweb19's build found 33 selectors drawn as
+  text boxes; the harvester now reads the forms their code uses (a selector
+  named by a map's values -- Threshold Based Detection's triggers --, a
+  source object inside a ternary -- OAuth server --, a registry source whose
+  data function takes its GUI API path -- Interface --, and typed factories
+  such as `createOauthServerSource("authz")`; harvester 652de51 and later),
+  and SATOM ties the GUI API lists to their cmdb twins (Interface, admin
+  local and CA certificates, CRL; measured or named on fortiweb19). A list
+  FortiWeb filters by a row field is filtered the same way: OAuth server's
+  request selectors offer only the requests of their type, a server-policy
+  selector only the policies of its protocol (cache first; only those
+  measured collections and fields).
 - **Every section of the Web Protection Profile opens with working tables
   and lists.** Request: "in Edit Custom Signature Group I cannot create more
   members ... do all this for every section of the web profile; put those

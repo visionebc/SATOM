@@ -782,7 +782,7 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
                                                   "idl-file")])])]),
         _n("GraphQL Validation", "cmdb/waf/graphql-validation.policy",
            "graphql-validation-policy", "API Protection",
-           children=[_n("GraphQL Rules", "cmdb/waf/graphql-validation.policy/rule-list",
+           children=[_n("GraphQL Rules", "cmdb/waf/graphql-validation.policy/graphql-rule-list",
                         children=[_n("GraphQL Validation Rule",
                                      "cmdb/waf/graphql-validation.rule", "rule",
                                      children=[_n("URL List",
@@ -845,7 +845,7 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
         _n("Site Publishing", "cmdb/waf/site-publish-helper.policy",
            "site-publisher-helper / site-publish-helper", "Application Delivery",
            children=[
-               _n("Site Publish Rules", "cmdb/waf/site-publish-helper.policy/rule-list",
+               _n("Site Publish Rules", "cmdb/waf/site-publish-helper.policy/rule",
                   children=[
                       _n("Site Publish Rule", "cmdb/waf/site-publish-helper.rule", "rule-name",
                          children=[

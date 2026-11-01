@@ -2837,7 +2837,7 @@ summary.fwg-sec-title::-webkit-details-marker{display:none;}
 .fwg-seg-btn:focus-within{outline:2px solid var(--fw-accent);outline-offset:1px;}
 a.fwg-pencil{text-decoration:none;}
 /* FortiWeb's Omniselect: the reference list in a panel with search, an Edit
-   entry pencil per entry and + Create at its foot (gui_dialog.html) */
+   entry pencil per entry and + Create at its top (gui_dialog.html) */
 .fwg-omni{position:relative;display:inline-block;min-width:220px;}
 .fwg-omni-btn{text-align:left;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .fwg-omni-pop{position:absolute;z-index:1060;left:0;top:100%;min-width:100%;max-width:420px;margin-top:2px;
@@ -2850,8 +2850,8 @@ a.fwg-pencil{text-decoration:none;}
 .fwg-omni-list li.is-sel{font-weight:600;}
 .fwg-omni-edit{color:var(--fw-text-primary);text-decoration:none;opacity:.7;}
 .fwg-omni-edit:hover{opacity:1;color:var(--fw-accent);}
-.fwg-omni-create{display:block;width:100%;margin-top:6px;padding:4px 6px;text-align:left;border:0;
-  border-top:1px solid var(--fw-border,#D6DAE0);background:none;color:var(--fw-accent);}
+.fwg-omni-create{display:block;width:100%;margin-bottom:6px;padding:4px 6px;text-align:left;border:0;
+  border-bottom:1px solid var(--fw-border,#D6DAE0);background:none;color:var(--fw-accent);}
 .fwg-pencil.is-off{opacity:.35;pointer-events:none;}
 .fwg-chip{display:inline-block;padding:0 7px;border-radius:2px;
   border:1px solid var(--fw-border,#D6DAE0);background:var(--fw-surface-alt,#F4F5F7);font-size:13px;}

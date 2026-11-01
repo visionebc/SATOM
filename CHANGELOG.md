@@ -7,6 +7,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **Every section of the Web Protection Profile opens with working tables
+  and lists.** Request: "in Edit Custom Signature Group I cannot create more
+  members ... do all this for every section of the web profile; put those
+  Create at the top." An audit of the 39 selectors of the Web Protection
+  Profile against fortiweb19 found: 35 of 98 tables with Create New had no
+  member dialog (the crawl opens one only from a row it can click, so an empty
+  Custom Signature Group stayed disabled). The harvester now reads each
+  table's member dialog off its parent's code (harvester ed10cf2, ba0d24c,
+  c7d31fb; packs kb-20261101.11 and .12): 102 of 106 on 7.6.8, the dialog
+  templates the crawl never drew fetched from fortiweb19's own GUI (same
+  build). Two catalog entries pointed at the wrong sub-table and are
+  corrected, measured on fortiweb19 (`waf/graphql-validation.policy/
+  graphql-rule-list`, `waf/site-publish-helper.policy/rule`; the old
+  `.../rule-list` answers the parent object). IP List's IP External now
+  lists the external resources (measured alias of the GUI's list to
+  `system/external-resource`; harvester e1da453, pack kb-20261101.13).
+  In the dropdown, **+ Create** sits at the top of the list.
 - **Known Bots, Syntax Detection and Web Shell Detection open as FortiWeb
   draws them; the signature-class and HTTP-constraint tables come from the
   device's build.** Request: "do it now ... finish everything and leave

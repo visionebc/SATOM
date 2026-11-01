@@ -641,8 +641,8 @@
     });
   });
   // FortiWeb's Omniselect: the list in a panel with a search box, an Edit
-  // entry pencil on each entry (source inlineEdit) and + Create at its foot
-  // (createNew). The native select stays (hidden) as the value the save
+  // entry pencil on each entry (source inlineEdit) and + Create at its top
+  // (createNew; FortiWeb puts it at the foot, the operator asked for the top). The native select stays (hidden) as the value the save
   // reads; every pick goes through it (change event), so nothing else moves.
   function omniOpenEntry(sel, pen, mkey) {
     var val = sel.closest('.fwg-value');
@@ -662,9 +662,11 @@
     var w = document.createElement('div');
     w.className = 'fwg-omni';
     w.innerHTML = '<button type="button" class="fwg-omni-btn form-select form-select-sm" aria-haspopup="listbox" aria-expanded="false"></button>' +
-      '<div class="fwg-omni-pop" hidden><input type="search" class="form-control form-control-sm fwg-omni-q" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}">' +
-      '<ul class="fwg-omni-list" role="listbox"></ul>' +
-      (create && sel.hasAttribute('data-create-new') ? '<button type="button" class="fwg-omni-create"><i class="bi bi-plus-lg"></i> {{ _('Create') }}</button>' : '') + '</div>';
+      // + Create at the TOP: with many objects the foot of the list is far away
+      '<div class="fwg-omni-pop" hidden>' +
+      (create && sel.hasAttribute('data-create-new') ? '<button type="button" class="fwg-omni-create"><i class="bi bi-plus-lg"></i> {{ _('Create') }}</button>' : '') +
+      '<input type="search" class="form-control form-control-sm fwg-omni-q" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}">' +
+      '<ul class="fwg-omni-list" role="listbox"></ul></div>';
     sel.insertAdjacentElement('afterend', w);
     sel.hidden = true;
     if (create && sel.hasAttribute('data-create-new')) create.hidden = true;  // it lives in the list now

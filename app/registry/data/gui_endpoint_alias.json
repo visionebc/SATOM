@@ -19,6 +19,10 @@
       "cmdb": "waf/openapi-file", "confidence": "measured",
       "evidence": "Same 6 OpenAPI files by name on fortiweb17; both empty on fortiweb18."
     },
+    "system/system_external_resource": {
+      "cmdb": "system/external-resource", "confidence": "measured",
+      "evidence": "fortiweb19 7.6.8 (2026-11-01): lab-ext-01 created over cmdb system/external-resource was listed by name in the GUI API's payload (IP List's IP External source), and gone from both after the delete."
+    },
     "system/certificate.local": {
       "cmdb": "system/certificate.local", "confidence": "measured",
       "evidence": "fortiweb19 7.6.8 (2026-11-01): GUI API and cmdb list the same 8 local certificates by name; only the GUI API row carries pkey_type (1 RSA, 3 ECC) and cert_type, which the GUI's Certificate Group and SNI selectors filter on."

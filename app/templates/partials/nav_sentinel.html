@@ -1,0 +1,43 @@
+{# ============================================================================
+   Sentinel ▸ — what is NOT configuration (operator, 2026-11-01: "what is
+   configured stays in Settings, the rest goes to Operations").
+
+   ONE definition, drawn by partials/nav_fleet.html right below Monitoring, so
+   it is in Operations of every device ADOM and in the Global block (which is
+   Global's Operations) in the same commit.  Until 2026-11-01 the console was a
+   single entry at the top of Global › Monitoring and the other surfaces were
+   Settings → AI → Sentinel panes.
+
+   Configuration stays in Settings → AI → Sentinel (Settings, Context,
+   Response policy).  Here: the incidents console, the overview (health,
+   pipeline, score, demo lab, CVE mirror, decision log), the border blocklist
+   (live entries and their release) and the architecture.
+
+   Gated on sentinel_active() as the old entry was (operator, 2026-10-23: not
+   configured = not in the menu); every page still answers by URL and
+   Settings → Sentinel links to the overview and the console.
+   ========================================================================= #}
+{% if sentinel_active() and (may_open('sentinel.index') or may_open('sentinel.overview')
+                             or may_open('sentinel.blocklist') or may_open('sentinel.docs')) %}
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint == 'sentinel' }}" data-nav-subgroup="Sentinel">
+  <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-shield-exclamation fw-nav-icon"></i><span>{{ _('Sentinel') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-subgroup-body">
+    {% if may_open('sentinel.index') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint in ('sentinel.index', 'sentinel.incident_view') else '' }}" href="{{ url_for('sentinel.index', _adom=product.key) }}">
+      <i class="bi bi-activity fw-nav-icon"></i><span>{{ _('Incidents console') }}</span></a>
+    {% endif %}
+    {% if may_open('sentinel.overview') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'sentinel.overview' else '' }}" href="{{ url_for('sentinel.overview', _adom=product.key) }}">
+      <i class="bi bi-heart-pulse fw-nav-icon"></i><span>{{ _('Overview') }}</span></a>
+    {% endif %}
+    {% if may_open('sentinel.blocklist') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'sentinel.blocklist' else '' }}" href="{{ url_for('sentinel.blocklist', _adom=product.key) }}">
+      <i class="bi bi-list-columns fw-nav-icon"></i><span>{{ _('Border blocklist') }}</span></a>
+    {% endif %}
+    {% if may_open('sentinel.docs') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'sentinel.docs' else '' }}" href="{{ url_for('sentinel.docs', _adom=product.key) }}">
+      <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

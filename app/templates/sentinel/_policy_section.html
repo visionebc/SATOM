@@ -204,31 +204,3 @@
     </table>
   </div>
 </div>
-
-<div class="fw-card" id="card-recent-decisions-refused-proposals-are-recorded">
-  <div class="fw-card-header"><strong><i class="bi bi-clock-history me-1"></i>Recent decisions</strong>{{ hint(sn_hint('policy.decisions')) }}</div>
-  <div class="fw-card-body">
-    <p class="small text-muted">
-      Refused proposals are recorded too — “Sentinel wanted to do X and was refused because Y” is
-      exactly the record needed to tune autonomy, and it is invisible if only permitted actions are kept.
-    </p>
-    <table class="table table-sm align-middle mb-0">
-      <thead><tr><th>When</th><th>Action</th><th>Status</th><th>By</th><th>Expires</th><th>Reason</th></tr></thead>
-      <tbody>
-      {% for a in recent %}
-        <tr>
-          <td class="small font-monospace">{{ a.created_at }}</td>
-          <td class="small"><code>{{ a.action_type }}</code>
-            {% if a.incident_id %}<a href="{{ url_for('sentinel.incident_view', iid=a.incident_id) }}">#{{ a.incident_id }}</a>{% endif %}</td>
-          <td class="small"><span class="fw-badge fw-badge-secondary">{{ a.status }}</span></td>
-          <td class="small">{{ a.approved_by or a.proposed_by }}</td>
-          <td class="small">{{ a.expires_at or '—' }}</td>
-          <td class="small">{{ a.detail }}</td>
-        </tr>
-      {% else %}
-        <tr><td colspan="6" class="small text-muted">Nothing proposed yet.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>

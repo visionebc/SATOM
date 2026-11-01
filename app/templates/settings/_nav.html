@@ -28,10 +28,8 @@
    leaving arrow.  Integrations was the first entry to use it: it is a whole
    page of its own (/settings/integrations), not a pane of the console, and it
    had NO menu entry at all until the operator asked for one -- a page reachable
-   only by typing its URL is a page that does not exist.  Sentinel's
-   Architecture, Incidents console, Context, Response policy and the Border
-   blocklist all became PANES at the operator's request, so all six of those
-   stay inside.  The arrow is the only thing that distinguishes a row which
+   only by typing its URL is a page that does not exist.  Sentinel's Context
+   and Response policy are PANES at the operator's request.  The arrow is the only thing that distinguishes a row which
    replaces the whole page from one which does not, and every entry that leaves
    must carry it.
 
@@ -89,15 +87,14 @@
    was.  The resolver list of DNS Lookup moved to the DNS Lookup page itself,
    so Network & DNS is gone too.  Sentinel and Scout still sit LAST.
 
-   Sentinel's six entries are ordered by what they are, not by when they were added:
-   the four CONFIGURATION surfaces first (Settings, Context, Response policy,
-   Border blocklist -- and Context is configuration, however little it looks
-   like it: it is the -35-point trusted-source weight, the largest single
-   number in the scoring table; the blocklist sits last of the four because it
-   is the one that is READ by something outside this product), then the
-   reference document, then the live console.  Interleaving
-   the live console among the knobs is what made Response policy reachable
-   only from a button inside a health tile.
+   Sentinel holds ONLY its configuration surfaces (operator, 2026-11-01: "what
+   is configured stays in Settings, the rest goes to Operations"): Settings,
+   Context (configuration however little it looks like it: it is the -35-point
+   trusted-source weight, the largest single number in the scoring table) and
+   Response policy.  The incidents console, the overview (health, pipeline,
+   score, demo lab, CVE mirror, decision log), the border blocklist (live
+   entries and their release) and the architecture are Operations › Sentinel
+   (partials/nav_sentinel.html).  Do not add them back here.
 
    NO Jinja comment may appear inside the list literal below: it lives inside a
    set-tag, and tests/test_user_guide_features.py parses that same text with
@@ -160,10 +157,7 @@
     {'sub': 'sentinel', 'icon': 'bi-shield-exclamation', 'label': _('Sentinel'), 'items': [
       {'t': 'tab-sentinel',          'icon': 'bi-sliders',          'label': _('Settings')},
       {'t': 'tab-sentinel-context',  'icon': 'bi-person-check',     'label': _('Context')},
-      {'t': 'tab-sentinel-policy',   'icon': 'bi-shield-lock',      'label': _('Response policy')},
-      {'t': 'tab-sentinel-blocklist','icon': 'bi-list-columns',     'label': _('Border blocklist')},
-      {'t': 'tab-sentinel-docs',     'icon': 'bi-diagram-3',        'label': _('Architecture')},
-      {'t': 'tab-sentinel-console',  'icon': 'bi-activity',         'label': _('Incidents console')}]}]}
+      {'t': 'tab-sentinel-policy',   'icon': 'bi-shield-lock',      'label': _('Response policy')}]}]}
 ] %}
 {% macro nav_leaf(it) -%}
             {%- if it.ep %}

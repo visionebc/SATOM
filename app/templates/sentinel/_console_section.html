@@ -26,9 +26,11 @@
 
    What still LEAVES, on both surfaces: an incident.  It is a page in its own
    right and it is drawn as a link.
+   Since 2026-11-01 this section has ONE surface: Operations › Sentinel (the
+   Admin Console pane is gone -- operator: "what is configured stays in
+   Settings, the rest goes to Operations"), so `sn_inline` is gone too.
 #}
 {% from "partials/_hint.html" import hint %}
-{% set sn_inline = sn_inline | default(false) %}
 {% set sn_targets = sweep_targets | default([]) %}
 <div class="fw-page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
@@ -63,7 +65,7 @@
     <div class="modal-content">
       <form method="post" action="{{ url_for('sentinel.run_now') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+        <input type="hidden" name="return_to" value="page">
         <div class="modal-header">
           <h5 class="modal-title"><i class="bi bi-play-fill me-2"></i>Run a sweep</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -218,7 +220,7 @@
       <div class="sn-tile-foot">
         <form method="post" action="{{ url_for('sentinel.recompute') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+          <input type="hidden" name="return_to" value="page">
           <button class="btn btn-fw-outline btn-sm text-nowrap" title="Recompute the baseline from the metrics store"><i class="bi bi-arrow-repeat me-1"></i>Recompute</button>
         </form>
       </div>
@@ -258,17 +260,7 @@
         {% if health.catalog_verified == 0 %}Nothing can execute — by design, until each mechanism is proved on a device.{% endif %}
       </div>
       <div class="sn-tile-foot">
-      {%- if sn_inline %}
-      {# NOT data-bs-toggle="tab": this button is outside the tab list, where
-         Bootstrap refuses to build a Tab and its own click handler then throws.
-         fw_pane_link.js forwards the click to the menu entry that owns the
-         pane, and falls back to the standalone page. #}
-      <button type="button" class="btn btn-fw-outline btn-sm"
-              data-fw-pane="#tab-sentinel-policy"
-              data-fw-pane-href="{{ url_for('sentinel.policies') }}"><i class="bi bi-sliders me-1"></i>Response policy</button>
-      {%- else %}
       <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.policies') }}"><i class="bi bi-sliders me-1"></i>Response policy</a>
-      {%- endif %}
       </div>
     </div></div>
   </div>
@@ -289,13 +281,7 @@
   {% if health.blocklist.next_expiry %}Next expiry {{ health.blocklist.next_expiry }}.{% endif %}
   A border that cannot reach this node keeps its last fetch, so those entries
   freeze rather than expire.
-  {%- if sn_inline %}
-  <button type="button" class="btn btn-fw-outline btn-sm ms-2"
-          data-fw-pane="#tab-sentinel-blocklist"
-          data-fw-pane-href="{{ url_for('sentinel.blocklist') }}">Open</button>
-  {%- else %}
   <a class="btn btn-fw-outline btn-sm ms-2" href="{{ url_for('sentinel.blocklist') }}">Open</a>
-  {%- endif %}
 </div>
 {% endif %}
 
@@ -320,8 +306,7 @@
     <div class="btn-group btn-group-sm">
       {% for key, label in [('live','Live'), ('closed','Closed'), ('false_positive','False positives'), ('all','All')] %}
       <a class="btn {{ 'btn-fw-primary' if status == key else 'btn-fw-outline' }}"
-         href="{{ (url_for('settings.index', sn_status=key) ~ '#tab-sentinel-console')
-                  if sn_inline else url_for('sentinel.index', status=key) }}">{{ label }}</a>
+         href="{{ url_for('sentinel.index', status=key) }}">{{ label }}</a>
       {% endfor %}
     </div>
   </div>

@@ -6,6 +6,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+- **Settings → Sentinel holds only configuration; the rest is Operations ›
+  Sentinel.** Operator rule: what is configured stays in Settings, everything
+  else goes to Operations. Settings → AI → Sentinel keeps three panes —
+  Settings (the form only), Context and Response policy. A new **Sentinel**
+  sub-menu right below Monitoring (Operations of every device ADOM, and the
+  Global block) holds the **Incidents console**, a new **Overview**
+  (`/sentinel/overview`: health, recent decisions, the local CVE mirror with
+  *Sync now* and manual CVE entry, the pipeline, the score bands and weights,
+  and the ten-scenario demo lab), the **Border blocklist** and the
+  **Architecture**. They used to be Settings panes (the console also a single
+  entry under Global › Monitoring); the CVE mirror sat under Context and the
+  decision log under Response policy. The sub-menu follows the old entry's rule:
+  it is drawn only while Sentinel is configured. The decision log keeps its
+  audience (*config write*).
+
 ### Fixed
 - **Sentinel under-rated FortiWeb 7.6.8 attacks.** The attack log on 7.6.8
   writes `threat_level` as a word (`Critical`, `Moderate`), not a number

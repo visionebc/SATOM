@@ -1751,42 +1751,16 @@
     {% include "settings/_sentinel_section.html" %}
   </div>
 
-  {# Architecture and the incidents console, in the console rather than one
-     click outside it.  Both are the SAME partials their standalone pages
-     render -- /sentinel/docs and /sentinel/ are still there for deep links,
-     the concept map and the manual -- so neither surface can drift from the
-     other.  The context is namespaced and unpacked with `with` on purpose:
-     these sections want names as generic as `settings`, `status` and
-     `catalog`, and this page already has two dozen of its own. #}
-  <div class="tab-pane fade" id="tab-sentinel-docs">
-    {% with sn_inline=True, weights=sentinel_docs.weights,
-            catalog=sentinel_docs.catalog, settings=sentinel_docs.settings,
-            layers=sentinel_docs.layers, families=sentinel_docs.families,
-            fp_reasons=sentinel_docs.fp_reasons,
-            assessments=sentinel_docs.assessments,
-            recommendations=sentinel_docs.recommendations,
-            bands=sentinel_docs.bands, verified=sentinel_docs.verified,
-            gate_order=sentinel_docs.gate_order,
-            handoffs=sentinel_docs.handoffs, ops=sentinel_docs.ops,
-            health=sentinel_docs.health %}
-      {% include "sentinel/_docs_section.html" %}
-    {% endwith %}
-  </div>
+  {# Architecture, the incidents console and the border blocklist were panes
+     here until 2026-11-01.  They are not configuration, so they are
+     Operations › Sentinel pages now (/sentinel/docs, /sentinel/,
+     /sentinel/blocklist) with the new overview (/sentinel/overview) -- operator:
+     "what is configured stays in Settings, the rest goes to Operations".
+     Do not add them back as panes. #}
 
-  <div class="tab-pane fade" id="tab-sentinel-console">
-    {% with sn_inline=True, incidents=sentinel_console.incidents,
-            stats=sentinel_console.stats, status=sentinel_console.status,
-            bands=sentinel_console.bands, health=sentinel_console.health,
-            sweep_targets=sentinel_console.sweep_targets %}
-      {% include "sentinel/_console_section.html" %}
-    {% endwith %}
-  </div>
-
-  {# Context and Response policy, panes for the same reason as the two above:
-     the operator asked for Sentinel's surfaces to live in this screen.  Both
-     used to be reachable only from a button at the top of the incidents
-     console, which is why removing those buttons had to come WITH these panes
-     -- a duplicate control is a redundancy, the only control is a door. #}
+  {# Context and Response policy: Sentinel's configuration surfaces besides the
+     form.  Their non-configuration cards (the CVE mirror, the decision log)
+     are on Operations › Sentinel › Overview since 2026-11-01. #}
   <div class="tab-pane fade" id="tab-sentinel-context">
     {% with sn_inline=True, trusted=sentinel_context.trusted,
             kinds=sentinel_context.kinds, windows=sentinel_context.windows,
@@ -1794,8 +1768,6 @@
             topology=sentinel_context.topology,
             sentinel_list=sentinel_context.sentinel_list,
             hypervisors=sentinel_context.hypervisors,
-            mirror=sentinel_context.mirror,
-            recent_cves=sentinel_context.recent_cves,
             edge_maps=sentinel_context.edge_maps,
             analyzers=sentinel_context.analyzers,
             edge_logtypes=sentinel_context.edge_logtypes,
@@ -1812,25 +1784,8 @@
             catalog=sentinel_policy.catalog, levels=sentinel_policy.levels,
             armed=sentinel_policy.armed, verified=sentinel_policy.verified,
             handoffs=sentinel_policy.handoffs, modes=sentinel_policy.modes,
-            mode_current=sentinel_policy.mode_current,
-            recent=sentinel_policy.recent %}
+            mode_current=sentinel_policy.mode_current %}
       {% include "sentinel/_policy_section.html" %}
-    {% endwith %}
-  </div>
-
-  {# The key list below is DERIVED from views.sentinel.blocklist_context() by
-     tests/test_sentinel_blocklist.py, not maintained by hand. That guard
-     exists because this {% with %} is a SECOND copy of the constructor's
-     output: the Context pane drifted from its constructor exactly this way
-     and took all of /settings/ down with a 500. #}
-  <div class="tab-pane fade" id="tab-sentinel-blocklist">
-    {% with sn_inline=True, entries=sentinel_blocklist.entries,
-            live=sentinel_blocklist.live, feed=sentinel_blocklist.feed,
-            feed_path=sentinel_blocklist.feed_path,
-            max_ttl=sentinel_blocklist.max_ttl,
-            preview=sentinel_blocklist.preview,
-            appliances=sentinel_blocklist.appliances %}
-      {% include "sentinel/_blocklist_section.html" %}
     {% endwith %}
   </div>
 

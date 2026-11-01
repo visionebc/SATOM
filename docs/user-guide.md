@@ -6323,8 +6323,8 @@ is a single **global** one, not per-ADOM.
 
 ## 26. Settings, tab by tab
 
-`Settings` is one page with a **grouped sidebar**: **8 groups, 37 panels**.
-All eight of the groups (37 panels) are admin-only (`user_manage`). Your own
+`Settings` is one page with a **grouped sidebar**: **8 groups, 34 panels**.
+All eight of the groups (34 panels) are admin-only (`user_manage`). Your own
 **Security** and **Change Password** are on your **Profile** (§1.1), not here;
 a non-admin who opens `/settings/` is sent there, and the sidebar offers
 Settings only to administrators. A group with nothing you may see is not
@@ -6339,7 +6339,7 @@ rendered at all, so the menu never offers a section that is not there.
 | **Certificates & Trust** | Certificate Manager · Trust store |
 | **Fleet & Devices** | ADOMs · Policy Links · Clone / Migrate |
 | **User Interface** | Appearance · Languages · ADOM Menus |
-| **AI** | *Scout ▸* Providers · Path Diagnostics · Architecture — *Sentinel ▸* Settings · Context · Response policy · Border blocklist · Architecture · Incidents console |
+| **AI** | *Scout ▸* Providers · Path Diagnostics · Architecture — *Sentinel ▸* Settings · Context · Response policy |
 
 A name followed by **▸** is a **sub-menu**: one level more inside its group,
 folded like the groups and opened by its own header. Selecting a section
@@ -6442,45 +6442,47 @@ read the manifest, and the repo they named declared `firmwares: []` while two
 images were loaded on the node. A setting that announces an authority nobody
 reads is worse than no setting, so it was removed rather than filled in.
 
-**Sentinel is a sub-menu of AI, and all six of its entries are panes.**
-They are ordered by what they are, not by when they arrived: the four
-configuration surfaces first, then the reference document, then the live
-console. The Border blocklist sits last of the four because it is the one
-that is *read by something outside this product*.
+**Sentinel is a sub-menu of AI, and it holds only what configures Sentinel** —
+all three of its entries are panes. Since 2026-11-01 the rule is the
+operator's: *what is configured stays in Settings, the rest goes to
+Operations.*
 
-**Settings** holds the whole section inline — the pipeline stage by stage, the
-live weight table, the ten runnable demonstrations and the form.
+**Settings** is the form — every knob, grouped by concern, the response kill
+switch last — and nothing else.
 **Context** is trusted sources, maintenance windows, the appliance ↔ VM ↔ host
-topology map and the local CVE mirror; it looks like reference data and is not,
-because a trusted source is worth **−35 points**, the largest single weight in
-the whole scoring table, and it is the only thing that tells an authorised scan
-apart from an intrusion — the two produce a byte-for-byte identical attack log.
+topology map, the border map and response arming; it looks like reference data
+and is not, because a trusted source is worth **−35 points**, the largest single
+weight in the whole scoring table, and it is the only thing that tells an
+authorised scan apart from an intrusion — the two produce a byte-for-byte
+identical attack log.
 **Response policy** is per-action autonomy and the four operating modes that
 preset it — *Alert only*, *Alert and block*, *High*, *Ultra high*, plus
 *Custom*, which is what the page reads the moment any of their values is
 edited by hand. A mode is a named set of values for knobs that already
 existed and nothing in the engine ever asks which one is active, so the name
-cannot describe behaviour the table below it does not have. **Architecture** renders the same document served at
-`/sentinel/docs` — including its cards 13–15 on Scout and Path Diagnostics
-(§33.10) — and **Incidents console** the same live console served at
-`/sentinel/` — health tiles, the seven-day figures and the incident table
-included.
+cannot describe behaviour the table below it does not have.
 
-Nothing in the group leaves the Admin Console, so none of the five is marked as
-doing so: every form returns to the pane it was fired from, and the status
-filter reloads Settings rather than jumping to `/sentinel/`. Opening one
-incident does leave, because an incident is a page of its own.
+Every form in those panes returns to the pane it was fired from. The standalone
+URLs (`/settings/sentinel`, `/sentinel/context`, `/sentinel/policies`) are still
+there, rendered from the same files as the panes.
 
-The incidents console no longer carries its own **Architecture** and
-**Context** buttons. They were removed at the same moment those two became menu
-entries, and only for that reason: until then the Context button was the *only*
-way to reach the page, so deleting it on its own would have removed the
-function rather than a duplicate.
+**Everything else is Operations › Sentinel** — a sub-menu right below
+Monitoring, in the Operations group of every device ADOM and in the Global
+block, drawn only while Sentinel is configured (switched on and at least one
+FortiWeb to sweep):
 
-Both standalone URLs are still there and unchanged — they are what the top
-navigation, the manual's links and the concept map use — and each is rendered
-from the *same* file as its pane, so the two surfaces cannot drift apart. The
-configure-once group **AI** (Scout and Sentinel) sits **last**.
+| Entry | Page | What it holds |
+|---|---|---|
+| **Incidents console** | `/sentinel/` | Health tiles, the seven-day figures and the incident table. |
+| **Overview** | `/sentinel/overview` | The health line, the log of recent decisions (refused proposals included; shown to holders of *config write*), the local CVE mirror with *Sync now* and *Add a CVE by hand*, the pipeline stage by stage, the score bands and the live weight table, and the ten demonstrations runnable against the real engine. |
+| **Border blocklist** | `/sentinel/blocklist` | The published feed's state, its audit mirror, listing an address, the live entries and their release, and what the border receives right now. The feed's settings stay in Settings → Sentinel. |
+| **Architecture** | `/sentinel/docs` | The reference document rendered from the live tables, including cards 13–15 on Scout and Path Diagnostics (§33.10). |
+
+Until 2026-11-01 the console was a single entry at the top of Global ›
+Monitoring and these four were panes of Settings → AI → Sentinel; the Settings
+pane also drew the pipeline, the weights and the demo lab above the form, and
+Context and Response policy carried the CVE mirror and the decision log. None
+of that sets a value, so it moved.
 
 The menu itself is defined **once**, in `app/templates/settings/_nav.html`, and
 every Settings surface includes that one file — the console and the standalone
@@ -6507,7 +6509,7 @@ because the setting is meaningless without it. They are not repeated here:
 | **Hypervisors** | §21.1 — the Proxmox / ESXi endpoints provisioning may build on |
 | **Clone / Migrate** | §6 — dummy-VIP rewrite rules and the copy-WPP default |
 | **Appearance** | §19 — themes, tokens, logo and favicon, and which sidebar entries are hidden |
-| **Sentinel** | `Settings → AI → Sentinel → Settings` — every knob next to the pipeline it configures, the live scoring weights, and ten demonstrations runnable against the real engine, all **rendered in the pane itself**. The same section is also served standalone at `/settings/sentinel` — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. **Context**, **Response policy**, **Architecture** and **Incidents console** are panes beside it, rendered from the same files as `/sentinel/context`, `/sentinel/policies`, `/sentinel/docs` and `/sentinel/`. The incidents console's own Architecture and Context buttons went away in the same change that made those two menu entries — a duplicate control, not a door. Every element of that pane — each knob, each group heading, each of the four health chips and each link out — carries a **?**; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes. |
+| **Sentinel** | `Settings → AI → Sentinel → Settings` — every knob Sentinel is configured by, **rendered in the pane itself**. The same section is also served standalone at `/settings/sentinel` — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. **Context** and **Response policy** are panes beside it, rendered from the same files as `/sentinel/context` and `/sentinel/policies`. The incidents console, the overview (health, pipeline, weights, demo lab, CVE mirror, decision log), the border blocklist and the architecture are **Operations › Sentinel** pages, not Settings panes. Every element of the form — each knob, each group heading and each link out — carries a **?**; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes. |
 
 The rest follow.
 
@@ -9787,8 +9789,8 @@ These are planned, in this order, and are **not** available today:
 
 ### 33.10 How Scout and Path Diagnostics work — in Sentinel's architecture
 
-Sentinel's architecture document (**Sentinel › Architecture**, `/sentinel/docs`,
-and the same pane under Settings › Sentinel) ends with three cards on the two
+Sentinel's architecture document (**Operations › Sentinel › Architecture**,
+`/sentinel/docs`) ends with three cards on the two
 operations tools. A link under the page title jumps to them.
 
 - **13 · Scout and Path Diagnostics — operations beside Sentinel.** Sentinel,
@@ -10759,7 +10761,7 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (134 today) or **excluded with a written
+   the console is either **on the map** (135 today) or **excluded with a written
    reason** (180 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.

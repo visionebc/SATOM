@@ -161,17 +161,12 @@ def index():
         # or the two surfaces disagree about the numbers they exist to show.
         **sentinel_ctx,
         sentinel_inline=True,
-        # Architecture and the incidents console, rendered in their own panes
-        # from the SAME partials their standalone pages use.
-        sentinel_docs=_sentinel_docs_context(sentinel_ctx.get('health')),
-        sentinel_console=_sentinel_console_context(sentinel_ctx.get('health')),
-        # Context and Response policy, the other two Sentinel surfaces. Both
-        # were pages reachable only from a button at the top of the incidents
-        # console; the operator asked for them here.
+        # Context and Response policy, Sentinel's other configuration
+        # surfaces. The console, the architecture, the border blocklist and
+        # the overview are Operations › Sentinel pages (operator, 2026-11-01:
+        # what is configured stays in Settings, the rest goes to Operations).
         sentinel_context=_sentinel_context_context(sentinel_ctx.get('health')),
         sentinel_policy=_sentinel_policy_context(sentinel_ctx.get('health')),
-        sentinel_blocklist=_sentinel_blocklist_context(
-            sentinel_ctx.get('health')),
         # Scout: the site knobs, the read-only criteria and the ladder. Same
         # posture as Sentinel's builders -- an optional module that will not
         # import renders an empty section rather than taking /settings/ down.
@@ -3829,36 +3824,21 @@ def _sentinel_view_context() -> dict:
 
     The section is drawn twice from one template -- inline in the Admin
     Console pane and on its own URL -- so it is built once here. Two builders
-    would let the pane and the page disagree about the very weights and bands
-    the section exists to explain, and both would keep rendering.
+    would let the pane and the page disagree about the form they both draw,
+    and both would keep rendering.
 
     Same failure posture as :func:`_sentinel_form`: a broken optional module
     yields an empty section, never a 500 on a page carrying two dozen
     unrelated ones.
     """
-    try:
-        from ..models_sentinel import SentinelIncident
-        from ..services.sentinel import actions as sn_actions
-        from ..services.sentinel import demo as sn_demo
-        from ..services.sentinel import scoring as sn_scoring
-        scenarios = sn_demo.catalog()
-        weights = sn_scoring.explain()
-        gate_order = sn_actions.GATE_ORDER
-        bands = {'observe': SentinelIncident.BAND_OBSERVE,
-                 'recommend': SentinelIncident.BAND_RECOMMEND,
-                 'semi_auto': SentinelIncident.BAND_SEMI_AUTO}
-    except Exception:  # noqa: BLE001
-        scenarios, weights, gate_order = [], [], ()
-        bands = {'observe': 40, 'recommend': 70, 'semi_auto': 85}
     health = _sentinel_health()
+    # Only the form, its hints and the health the form's prose reads. The
+    # demo lab, weights and bands left with the cards that drew them
+    # (Operations › Sentinel › Overview, views.sentinel.overview_context).
     return {'sentinel_settings': _sentinel_form(),
             'sentinel_ui_hints': _sentinel_ui_hints(),
             'sentinel_health': health,
-            'health': health,
-            'scenarios': scenarios,
-            'weights': weights,
-            'gate_order': gate_order,
-            'bands': bands}
+            'health': health}
 
 
 def _sentinel_section_context(builder, health) -> dict:
@@ -3881,25 +3861,6 @@ def _sentinel_section_context(builder, health) -> dict:
         return {}
 
 
-def _sentinel_docs_context(health) -> dict:
-    from ..views.sentinel import docs_context
-    return _sentinel_section_context(docs_context, health)
-
-
-def _sentinel_console_context(health) -> dict:
-    """The incidents list, filtered by ``?sn_status=``.
-
-    The filter is namespaced too: this page has its own ``status`` arguments,
-    and it is the SETTINGS url the pane's filter buttons reload — jumping to
-    /sentinel/ from a menu entry that had just promised to keep the operator
-    inside the console is the thing this whole change removes.
-    """
-    from ..views.sentinel import console_context
-    want = request.args.get('sn_status', 'live')
-    return _sentinel_section_context(
-        lambda h: console_context(want, h), health)
-
-
 def _sentinel_context_context(health) -> dict:
     """Trusted sources, maintenance windows, topology and the CVE mirror.
 
@@ -3915,13 +3876,6 @@ def _sentinel_policy_context(health) -> dict:
     """Per-action autonomy, and the operating modes that preset it."""
     from ..views.sentinel import policies_context
     return _sentinel_section_context(lambda _h: policies_context(), health)
-
-
-def _sentinel_blocklist_context(health) -> dict:
-    """The published border list, its feed state and its release point."""
-    from ..views.sentinel import blocklist_context
-    return _sentinel_section_context(lambda _h: blocklist_context(), health)
-
 
 
 def _scout_form():

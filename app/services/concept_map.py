@@ -199,6 +199,13 @@ PAGES: tuple[dict, ...] = (
        "respond breach suspicious spike who attacked",
        "Correlated incidents across every signal Sentinel collects, scored and "
        "banded by how far it is allowed to act on its own."),
+    _p("sentinel.overview", "Sentinel Overview", "monitoring",
+       "sentinel overview health pipeline how it works demo scenario "
+       "simulation weights score bands cve mirror kev sync decisions refused "
+       "proposals log",
+       "Operations › Sentinel: health, the pipeline and the score explained, "
+       "ten scenarios against the live engine, the local CVE mirror and the "
+       "log of every decision, refused ones included."),
     _p("sentinel.context", "Sentinel Context", "monitoring",
        "sentinel context trusted source maintenance window topology false "
        "positive scanner whitelist suppress",
@@ -221,11 +228,10 @@ PAGES: tuple[dict, ...] = (
        "an address is released from it. Nothing here is written to a "
        "FortiGate — the operator's own deny policy reads the feed."),
     _p("settings.sentinel_section", "Sentinel Settings", "monitoring",
-       "sentinel settings configure knobs demo scenario simulation pipeline "
-       "weights score bands kill switch arm response tune thresholds example",
-       "The whole Sentinel section: every knob, the pipeline stage by stage, "
-       "the live scoring weights, and ten demonstrations runnable against "
-       "the real engine."),
+       "sentinel settings configure knobs kill switch arm response tune "
+       "thresholds enable sweep ingest window baseline outbound sync",
+       "Every value Sentinel is configured by. Health, the pipeline, the score "
+       "and the demo lab are on the overview (Operations › Sentinel)."),
     _p("appliances.index", "Appliances", "fleet",
        "devices inventory appliance host add register credentials ip serial model",
        "The device inventory — every managed box and how SATOM reaches it."),

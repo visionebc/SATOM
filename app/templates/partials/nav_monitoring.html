@@ -41,20 +41,9 @@
     {% endif %}
     {% endif %}
 
-    {# Sentinel sits at the TOP of Monitoring on purpose: it is the only
-       entry here that answers "what is happening right now" rather than
-       displaying one measurement. Global ADOM only — the console spans
-       every product's devices, and a per-ADOM copy would show a partial
-       picture under a name that promises the whole one.
-       2026-10-23: only while Sentinel is configured (sentinel_active():
-       switched on in Settings > Sentinel AND a FortiWeb to sweep); otherwise
-       the console has nothing to show but "disabled" or an empty list. #}
-    {% if product.key == 'global' %}
-    {% if may_open('sentinel.index') and sentinel_active() %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'sentinel' else '' }}" href="{{ url_for('sentinel.index', _adom=product.key) }}">
-      <i class="bi bi-shield-exclamation fw-nav-icon"></i><span>{{ _('Sentinel') }}</span></a>
-    {% endif %}
-    {% endif %}
+    {# Sentinel left Monitoring on 2026-11-01 for its own Operations › Sentinel
+       subgroup (partials/nav_sentinel.html, drawn by nav_fleet.html right
+       below this submenu). #}
     {% if may_open('metrics.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index', _adom=product.key) }}">
       <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>{{ _('Metrics') }}</span></a>

@@ -38,24 +38,6 @@
       the last one on this page.
     </p>
 
-    {% if sentinel_health %}
-    <div class="d-flex flex-wrap gap-3 mb-3 small">
-      <span>Pipeline:
-        {% if not sentinel_health.enabled %}<span class="fw-badge fw-badge-danger">disabled</span>
-        {% elif sentinel_health.last_sweep_age_s is none %}<span class="fw-badge fw-badge-warning">never run</span>
-        {% else %}<span class="fw-badge fw-badge-success">{{ sentinel_health.last_sweep_age_s }}s ago</span>{% endif %}
-        {{ hint(ui_hints['health.pipeline'], _('About the pipeline indicator')) }}</span>
-      <span>Baseline usable: <strong>{{ sentinel_health.baseline.usable }}/{{ sentinel_health.baseline.total }}</strong>
-        {{ hint(ui_hints['health.baseline'], _('About baseline coverage')) }}</span>
-      <span>CVE mirror: <strong>{{ sentinel_health.vuln.total }}</strong>
-        {% if sentinel_health.vuln.stale %}<span class="fw-badge fw-badge-warning">stale</span>{% endif %}
-        {{ hint(ui_hints['health.vuln'], _('About the CVE mirror indicator')) }}</span>
-      <span>Action transports verified:
-        <strong>{{ sentinel_health.catalog_verified }}/{{ sentinel_health.catalog_total }}</strong>
-        {{ hint(ui_hints['health.catalog'], _('About verified action transports')) }}</span>
-    </div>
-    {% endif %}
-
     <form method="post" action="{{ url_for('settings.save_sentinel') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {# Where the form was RENDERED decides where the save lands.  Bouncing an
@@ -165,7 +147,7 @@
         <tr>
           <td class="small">CVE mirror content</td>
           <td class="small">Sync (needs the outbound switch above) or enter CVEs by hand under
-            Context. An empty mirror means CVE factors simply do not apply; it never fabricates one.</td>
+            <a href="{{ url_for('sentinel.overview') }}">Operations › Sentinel › Overview</a>. An empty mirror means CVE factors simply do not apply; it never fabricates one.</td>
         </tr>
       </tbody>
     </table>

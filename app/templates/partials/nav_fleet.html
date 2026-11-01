@@ -54,6 +54,8 @@
   <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Service Diagram') }}</span></a>
 {% endif %}
 {% include 'partials/nav_monitoring.html' %}
+{# Sentinel ▸ right below Monitoring (operator, 2026-11-01). #}
+{% include 'partials/nav_sentinel.html' %}
 {% if may_open('search.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
   <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>

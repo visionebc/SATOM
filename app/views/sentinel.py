@@ -8,12 +8,18 @@ Four pages, and the split between them is the product's argument made visible:
   time-aligned charts, the AI narrative clearly labelled as a model's opinion,
   and every gate that refused an action with its reason.
 * ``/sentinel/context`` — trusted sources, maintenance windows, topology and
-  the CVE mirror. The operator's levers over false positives.
+  the border map. The operator's levers over false positives.
+* ``/sentinel/overview`` — health, the pipeline and the score explained, the
+  demo lab, the CVE mirror and the decision log: Operations › Sentinel, not
+  Settings, because none of it is configuration (operator, 2026-11-01).
 * ``/sentinel/docs`` — the architecture, rendered FROM the live weight table,
   the live action catalog and the live settings spec. Not a copy of them.
 
-Every one of them is drawn from a partial that the Admin Console also renders
-as a pane (Settings → Sentinel), so the two surfaces cannot disagree.
+Context and Response policy are configuration, so the Admin Console also
+renders their partials as panes (Settings → AI → Sentinel) and the two surfaces
+cannot disagree. The console, the overview, the border blocklist and the
+architecture are Operations › Sentinel pages only (operator, 2026-11-01:
+"what is configured stays in Settings, the rest goes to Operations").
 
 Two rules the routes keep
 -------------------------
@@ -253,7 +259,9 @@ def _back_to(pane: str, endpoint: str):
 
 
 def _back_to_console():
-    return _back_to("tab-sentinel-console", "sentinel.index")
+    # Not a pane since 2026-11-01: the console is Operations › Sentinel, so a
+    # stale `return_to=pane` from an old Admin Console tab lands here too.
+    return redirect(url_for("sentinel.index"))
 
 
 def _back_to_context():
@@ -265,7 +273,12 @@ def _back_to_policies():
 
 
 def _back_to_blocklist():
-    return _back_to("tab-sentinel-blocklist", "sentinel.blocklist")
+    # Operations › Sentinel since 2026-11-01 (see _back_to_console).
+    return redirect(url_for("sentinel.blocklist"))
+
+
+def _back_to_overview():
+    return redirect(url_for("sentinel.overview"))
 
 
 def sweep_targets() -> list:
@@ -605,11 +618,7 @@ def context_context() -> dict:
         edge_enabled=bool(s["config"].get("edge_enabled")),
         edge_require=bool(s["config"].get("edge_require")),
         edge_mechanism=_edge().MECHANISM,
-        edge_probe=_EDGE_PROBE_RESULT.pop("result", None),
-        mirror=s["vuln"].mirror_health(),
-        recent_cves=[v.to_dict() for v in
-                     SentinelVuln.query.order_by(
-                         SentinelVuln.fetched_at.desc()).limit(25).all()])
+        edge_probe=_EDGE_PROBE_RESULT.pop("result", None))
 
 
 @bp.route("/context")
@@ -853,7 +862,7 @@ def vuln_sync():
     result = s["vuln"].sync()
     flash(result.get("detail") or result.get("reason", ""),
           "success" if result.get("ok") else "warning")
-    return _back_to_context()
+    return _back_to_overview()
 
 
 @bp.route("/vuln/manual", methods=["POST"])
@@ -875,10 +884,10 @@ def vuln_manual():
             source="manual")
     except ValueError as exc:
         flash(str(exc), "danger")
-        return _back_to_context()
+        return _back_to_overview()
     db.session.commit()
     flash(f"{row.cve} stored in the local mirror.", "success")
-    return _back_to_context()
+    return _back_to_overview()
 
 
 # --------------------------------------------------------------------------- #
@@ -903,10 +912,7 @@ def policies_context() -> dict:
                 verified=s["actions"].verified_count(),
                 handoffs=s["actions"].handoff_keys(),
                 modes=sn_modes.rows(),
-                mode_current=sn_modes.current(),
-                recent=[a.to_dict() for a in
-                        SentinelAction.query.order_by(
-                            SentinelAction.created_at.desc()).limit(50).all()])
+                mode_current=sn_modes.current())
 
 
 @bp.route("/policies")
@@ -1206,6 +1212,51 @@ def blocklist_feed(token):
 def config_enabled() -> bool:
     from ..services.sentinel import config as sn_config
     return bool(sn_config.get("feed_enabled"))
+
+
+# --------------------------------------------------------------------------- #
+#  Overview — what is not configuration (Operations › Sentinel)                 #
+# --------------------------------------------------------------------------- #
+def overview_context() -> dict:
+    """Everything ``sentinel/_overview_section.html`` needs.
+
+    Operator rule (2026-11-01): what is configured stays in Settings, the rest
+    goes to Operations. These parts used to sit in the Settings panes — health,
+    the pipeline drawn, the live weight table and the demo lab (Settings
+    pane), the CVE mirror (Context) and the decision log (Response policy) —
+    and none of them sets anything.
+
+    The decision log keeps the audience it had under Response policy
+    (``config_write``); the mirror's two buttons keep theirs (the routes say
+    ``config_write`` either way).
+    """
+    s = _svc()
+    from ..services.sentinel import demo as sn_demo
+    can_write = bool(current_user.can("config_write"))
+    return dict(
+        health=_health(),
+        scenarios=sn_demo.catalog(),
+        weights=s["scoring"].explain(),
+        gate_order=s["actions"].GATE_ORDER,
+        bands={"observe": SentinelIncident.BAND_OBSERVE,
+               "recommend": SentinelIncident.BAND_RECOMMEND,
+               "semi_auto": SentinelIncident.BAND_SEMI_AUTO},
+        mirror=s["vuln"].mirror_health(),
+        recent_cves=[v.to_dict() for v in
+                     SentinelVuln.query.order_by(
+                         SentinelVuln.fetched_at.desc()).limit(25).all()],
+        can_write=can_write,
+        recent=([a.to_dict() for a in
+                 SentinelAction.query.order_by(
+                     SentinelAction.created_at.desc()).limit(50).all()]
+                if can_write else []))
+
+
+@bp.route("/overview")
+@login_required
+@require_permission('monitoring.view')
+def overview():
+    return render_template("sentinel/overview.html", **overview_context())
 
 
 # --------------------------------------------------------------------------- #

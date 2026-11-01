@@ -20,6 +20,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `waf/site-publish-helper.form-based-delegation/additional-field-list` are
   the real ones (CLI schema and the GUI's member dialogs agree). The shipped
   baseline carries them, so a fresh installation gets them too.
+  A second pass measured the children that had no parent object on the lab,
+  without creating any (GET the child with a parent that does not exist:
+  200 with a list = a served sub-table, 500 errcode -3 = not a sub-table
+  path; calibrated on a known-good and an invented path): 41 more are
+  served; **15 legacy child entries are not paths FortiWeb serves at all**
+  (`xml-exempted-urls/url-list`, `dlp.exception/exception-list`,
+  `base-signature-disable/signature-list`... -- none used by code) and left
+  the catalog as measured absent; **19 sub-tables the GUI writes and the
+  catalog lacked** are registered (`traffic-mirror/mirror-rule`,
+  `ztna-profile/rule-list`, `waiting-room-policy/bypass-rules`, the Site
+  Publish pools' `members`, `dlp.sensor/entries`...). The dependency map
+  clones those three new children and its four wrong child paths are fixed.
+  Baseline: 451 measured, 42 legacy (was 296 / 192).
 
 ### Changed
 - **Every section of the Web Protection Profile opens with working tables

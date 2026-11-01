@@ -722,9 +722,7 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
                                      "input-rule",
                                      children=[
                                          _n("XML Schema File", "cmdb/waf/xml-schema.file", "schema-file"),
-                                         _n("XML DTD File", "cmdb/waf/xml-dtd.file", "dtd-file",
-                                            children=[_n("DTD File List",
-                                                         "cmdb/waf/xml-dtd.file/file-list")]),
+                                         _n("XML DTD File", "cmdb/waf/xml-dtd.file", "dtd-file"),
                                          _n("WSDL File", "cmdb/waf/xml-wsdl.file", "wsdl-file"),
                                          _n("WS-Security Rule", "cmdb/waf/ws-security.rule",
                                             "ws-security",
@@ -784,9 +782,7 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
            "graphql-validation-policy", "API Protection",
            children=[_n("GraphQL Rules", "cmdb/waf/graphql-validation.policy/graphql-rule-list",
                         children=[_n("GraphQL Validation Rule",
-                                     "cmdb/waf/graphql-validation.rule", "rule",
-                                     children=[_n("URL List",
-                                                  "cmdb/waf/graphql-validation.rule/url-list")])])]),
+                                     "cmdb/waf/graphql-validation.rule", "rule")])]),
         # -- IP Protection (Geo IP / IP List / XFF bound to the WPP — the WPP
         #    fields geo-block-list-policy / ip-list-policy / x-forwarded-for-rule,
         #    confirmed live on fw2 7.6.8) ------------------------------------
@@ -849,12 +845,12 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
                   children=[
                       _n("Site Publish Rule", "cmdb/waf/site-publish-helper.rule", "rule-name",
                          children=[
-                             _n("Rule Items", "cmdb/waf/site-publish-helper.rule/rule-list"),
+                             _n("Custom Headers", "cmdb/waf/site-publish-helper.rule/custom-headers"),
                              _n("Auth Server Pool",
                                 "cmdb/waf/site-publish-helper.authentication-server-pool",
                                 "auth-server-pool",
                                 children=[_n("Pool Members",
-                                             "cmdb/waf/site-publish-helper.authentication-server-pool/pserver-list")]),
+                                             "cmdb/waf/site-publish-helper.authentication-server-pool/members")]),
                              _n("Form-Based Delegation",
                                 "cmdb/waf/site-publish-helper.form-based-delegation",
                                 "form-based-delegation",
@@ -871,7 +867,8 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
                                      "input-rule",
                                      children=[_n("Match Condition",
                                                   "cmdb/waf/user-tracking.rule/match-condition")])])]),
-        _n("Waiting Room", "cmdb/waf/waiting-room-policy", "waiting-room-policy", "Tracking"),
+        _n("Waiting Room", "cmdb/waf/waiting-room-policy", "waiting-room-policy", "Tracking",
+           children=[_n("Bypass Rules", "cmdb/waf/waiting-room-policy/bypass-rules")]),
         # The WPP's `custom-response` field — the page the client is served
         # INSTEAD of being bounced to `redirect-url`. UNDOCUMENTED on the 7.6.8
         # CLI reference page for this profile, so the appliance is the only
@@ -1112,9 +1109,11 @@ SERVER_POLICY: DepNode = _n(
         _n("Public IP (One-click GSLB)", "cmdb/server-policy/policy/public-ip-list",
            "one-click-gslb = enable", "Server Policy"),
         _n("ZTNA Profile", "cmdb/server-policy/ztna-profile", "ztna-profile",
-           "Application Delivery · ZTNA"),
+           "Application Delivery · ZTNA",
+           children=[_n("ZTNA Rules", "cmdb/server-policy/ztna-profile/rule-list")]),
         _n("Traffic Mirror Profile", "cmdb/server-policy/traffic-mirror", "traffic-mirror-profile",
-           "System · traffic mirroring"),
+           "System · traffic mirroring",
+           children=[_n("Mirror Rules", "cmdb/server-policy/traffic-mirror/mirror-rule")]),
         _n("V-Zone (Bridge)", "cmdb/system/v-zone", "v-zone",
            "Network · transparent-mode bridge"),
         _n("Replacement Message Group", "cmdb/system/replacemsg", "replacemsg",

@@ -7,6 +7,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **Threat Weight is editable in Signature Details.** Request: "do everything
+  you can that does not depend on something external." Until now SATOM
+  showed a signature's Threat Weight read-only. It is now set the way
+  FortiWeb's own pane does (`PUT waf/signature.advanced.signature.score`,
+  measured on fortiweb19 7.6.8 from its GUI bundle and then live: 7, 0 and
+  the default `-1` are stored as sent and read back). Only FortiWeb's seven
+  levels are offered and accepted: the device answers a value outside them
+  with HTTP 200 and stores another level (3 was stored as 6), so SATOM refuses
+  anything else before it is sent and verifies every write by reading the
+  signature back. The current value is read first, the write is recorded in
+  the Audit Log (`signature.score`, with the before value and `verify`) and a
+  level the device does not keep fails (`signature.score.not_applied`). The
+  pane shows levels by name instead of the raw integer.
 - **"+ Create" beside a selector, from the device's own GUI; dialog tables in
   SATOM's table format.** Request: "that same section has the pencil to
   create and you did not put it; are you using the crawler to scan

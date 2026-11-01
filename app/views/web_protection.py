@@ -16,6 +16,7 @@ table (main-class rows), the searchable Signature Details list, and the
 per-signature **Exception** tab writing the signature set's ``filter_list``
 rows — the same flow as *Signature Details → <id> → Exception* on the box.
 """
+import json
 from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for, abort
 from flask_login import login_required, current_user
 from ..auth.decorators import require_permission
@@ -396,6 +397,7 @@ def signature_policy(id, name):
         tree=tree,
         back=back,
         sdg=sdg_data,
+        threat_levels=THREAT_LEVELS,
     )
 
 
@@ -528,6 +530,139 @@ SIG_DETAIL_FIELDS = ('main_class_name', 'sub_class_name', 'sensitivity_level', '
                      'meet_target', 'sample', 'sample2', 'score', 'default_score', 'concat')
 
 
+def _sig_ids_ok(sig_id, main, sub) -> bool:
+    import re as _re
+    return all(_re.fullmatch(r'\d{9}', str(v or '')) for v in (sig_id, main, sub))
+
+
+class _ReadError(str):
+    """Why a read failed; ``status`` = the device's HTTP status, if it refused."""
+    def __new__(cls, text, status=None):
+        obj = super().__new__(cls, text)
+        obj.status = status
+        return obj
+
+
+def _read_sigdetail(client, name, main, sub, sig_id):
+    """``(detail, "")`` of one signature from the device
+    (``waf/signature.sigdetail``), or ``(None, why)``: unreachable, refused,
+    not JSON, or a 200 that carries no signature (HTTP 200 is not success:
+    FortiWeb reports refusals in the body)."""
+    from urllib.parse import urlencode
+    path = '/api/v2.0/waf/signature.sigdetail?' + urlencode(
+        {'mkey': name, 'main_class_id': main, 'sub_class_id': sub, 'sig_id': sig_id})
+    try:
+        resp = client.api_call('GET', path)
+    except Exception as exc:  # noqa: BLE001 — unreachable: said, not hidden
+        return None, 'device unreachable: %s' % type(exc).__name__
+    if resp.status_code != 200:
+        return None, _ReadError('the device refused the read (HTTP %s)' % resp.status_code,
+                                resp.status_code)
+    try:
+        body = resp.json()
+    except ValueError:
+        return None, 'the device answered something that is not JSON'
+    res = body.get('results', body) if isinstance(body, dict) else None
+    if isinstance(res, list):
+        res = res[0] if len(res) == 1 and isinstance(res[0], dict) else None
+    if not isinstance(res, dict) or not any(k in res for k in SIG_DETAIL_FIELDS):
+        msg = res.get('errcode') if isinstance(res, dict) else None
+        return None, ('the device returned no signature detail%s'
+                      % (' (errcode %s)' % msg if msg is not None else ''))
+    return res, ''
+
+
+#: FortiWeb's Threat Weight levels, in its slider's order
+#: (``THREAT_LEVEL_WITH_OFF``, 7.6.8 GUI bundle): label -> the integer the
+#: device stores. ``-1`` puts the signature back on its default. Measured on
+#: fortiweb19 7.6.8 (2026-11-01): 7, 0 and -1 are stored as sent; a value
+#: outside this set is answered 200 ``status: 1`` and stored as ANOTHER level
+#: (3 -> 6), so nothing else is sent.
+THREAT_LEVELS = (('Off', 0), ('Informational', 5), ('Low', 1), ('Moderate', 6),
+                 ('Substantial', 7), ('Severe', 8), ('Critical', 4))
+_SCORE_OK = frozenset([-1] + [v for _l, v in THREAT_LEVELS])
+
+
+@bp.route('/<int:id>/signatures/<path:name>/detail/<sig_id>/score', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def sig_score(id, name, sig_id):
+    """Set one signature's Threat Weight in this signature policy, as
+    FortiWeb's Signature Details does (``PUT waf/signature.advanced.signature
+    .score?mkey=&sig_id=&score=``, body ``{}``). Pre-check = the current value
+    read off the device; dry run unless ``apply``; after the write the
+    signature is READ BACK and only the value it holds counts (an accepted
+    write the device does not hold FAILS). Recorded in ChangeHistory and the
+    Audit Log with the before value and the verdict."""
+    from urllib.parse import urlencode
+    from ..models import ChangeHistory
+    appliance = visible_appliance_or_404(id)
+    if getattr(appliance, 'kind', 'fortiweb') != 'fortiweb':
+        return jsonify(ok=False, error='Threat Weight is a FortiWeb signature setting'), 400
+    body = request.get_json(silent=True) or {}
+    main = str(body.get('main') or '').strip()
+    sub = str(body.get('sub') or '').strip()
+    if not _sig_ids_ok(sig_id, main, sub):
+        return jsonify(ok=False, error='signature, main and sub class ids are 9 digits'), 400
+    try:
+        score = int(body.get('score'))
+    except (TypeError, ValueError):
+        score = None
+    if score not in _SCORE_OK:
+        return jsonify(ok=False, error='score must be one of %s'
+                       % ', '.join(str(v) for v in sorted(_SCORE_OK))), 400
+    client = FortiWebClient(appliance)
+    before, err = _read_sigdetail(client, name, main, sub, sig_id)
+    if err:
+        return jsonify(ok=False, error='pre-check: %s' % err), 502
+    path = '/api/v2.0/waf/signature.advanced.signature.score?' + urlencode(
+        {'mkey': name, 'sig_id': sig_id, 'score': score})
+    req = {'method': 'PUT', 'path': path, 'body': {}}
+    was = before.get('score')
+    if not body.get('apply'):
+        return jsonify(ok=True, dry_run=True, request=req, before=was,
+                       default=before.get('default_score'))
+    try:
+        resp = client.api_call('PUT', path, {})
+        ans = resp.json() if resp is not None else None
+    except Exception as exc:  # noqa: BLE001
+        resp, ans, err = None, None, 'device unreachable: %s' % type(exc).__name__
+    if resp is not None:
+        res = ans.get('results') if isinstance(ans, dict) else None
+        if resp.status_code != 200:
+            err = 'the device refused the write (HTTP %s)' % resp.status_code
+        elif not isinstance(res, dict) or str(res.get('status')) != '1':
+            err = 'the device did not accept the write: %s' % (
+                res.get('errcode') if isinstance(res, dict) and 'errcode' in res else ans)
+    verdict, held = 'unverified', None
+    if not err:
+        from ..services import jobs as _jobs
+        _jobs.note_write(appliance.id)
+        after, rerr = _read_sigdetail(client, name, main, sub, sig_id)
+        if rerr:
+            verdict = 'unverified'
+        else:
+            held = after.get('score')
+            verdict = 'verified' if str(held) == str(score) else 'mismatch'
+            if verdict == 'mismatch':
+                err = ('Not applied: the device kept Threat Weight = %s (sent %s)'
+                       % (held, score))
+    try:
+        db.session.add(ChangeHistory(
+            appliance_id=appliance.id, endpoint='waf/signature.advanced.signature.score',
+            mkey='%s/%s' % (name, sig_id), action='update',
+            before=json.dumps({'score': was}), after=json.dumps({'score': score}),
+            dry_run=False, username=current_user.username))
+        db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+    log_action('signature.score' + ('.not_applied' if verdict == 'mismatch' else ''),
+               target='%s/%s' % (name, sig_id), appliance_id=appliance.id,
+               detail='score %s -> %s error=%s' % (was, score, err), verify=verdict)
+    return jsonify(ok=not err, dry_run=False, request=req, before=was, score=held,
+                   verify=verdict, error=err)
+
+
 @bp.route('/<int:id>/signatures/<path:name>/detail/<sig_id>')
 @login_required
 @require_permission('protection.view')
@@ -537,36 +672,18 @@ def sig_detail(id, name, sig_id):
     reference, match example, threat weight). A device read, so an explicit
     operator action (the pane's "Read from device"), audited; a refused read
     is an error with the device's status, never an empty pane."""
-    import re as _re
     appliance = visible_appliance_or_404(id)
     main = (request.args.get('main') or '').strip()
     sub = (request.args.get('sub') or '').strip()
-    if not all(_re.fullmatch(r'\d{9}', v) for v in (str(sig_id), main, sub)):
+    if not _sig_ids_ok(sig_id, main, sub):
         return jsonify(ok=False, error='signature, main and sub class ids are 9 digits'), 400
-    from urllib.parse import urlencode
-    path = '/api/v2.0/waf/signature.sigdetail?' + urlencode(
-        {'mkey': name, 'main_class_id': main, 'sub_class_id': sub, 'sig_id': sig_id})
     log_action('signature.detail_read', target='%s/%s' % (name, sig_id),
                appliance_id=appliance.id)
-    try:
-        resp = FortiWebClient(appliance).api_call('GET', path)
-    except Exception as exc:  # noqa: BLE001 — unreachable: said, not hidden
-        return jsonify(ok=False, error='device unreachable: %s' % type(exc).__name__), 502
-    if resp.status_code != 200:
-        return jsonify(ok=False, status=resp.status_code,
-                       error='the device refused the read (HTTP %s)' % resp.status_code), 502
-    try:
-        body = resp.json()
-    except ValueError:
-        return jsonify(ok=False, error='the device answered something that is not JSON'), 502
-    res = body.get('results', body) if isinstance(body, dict) else None
-    if isinstance(res, list):
-        res = res[0] if len(res) == 1 and isinstance(res[0], dict) else None
-    # HTTP 200 is not success: FortiWeb reports refusals in the body
-    if not isinstance(res, dict) or not any(k in res for k in SIG_DETAIL_FIELDS):
-        msg = res.get('errcode') if isinstance(res, dict) else None
-        return jsonify(ok=False, error='the device returned no signature detail%s'
-                       % (' (errcode %s)' % msg if msg is not None else '')), 502
+    res, err = _read_sigdetail(FortiWebClient(appliance), name, main, sub, sig_id)
+    if err:
+        extra = {'status': err.status} if getattr(err, 'status', None) else {}
+        return jsonify(ok=False, error=str(err), **extra), 502
+    import re as _re
     out = {k: res.get(k) for k in SIG_DETAIL_FIELDS if k in res}
     refs = []
     for line in str(out.get('attack_reference') or '').split('\n'):

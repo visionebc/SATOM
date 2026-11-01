@@ -317,7 +317,17 @@
             <tr><td>{{ _('Threat Weight') }}:</td><td id="sd-score" data-live></td></tr>
             <tr><td>{{ _('Default') }}:</td><td id="sd-score-default" data-live></td></tr>
           </tbody></table>
-          <p class="text-muted small mb-0">{{ _('Read from the device with "Read from device" on the Signature tab. Changing the weight is done on the device for now; SATOM shows it read-only.') }}</p>
+          {% if current_user.can('config_write') %}
+          <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+            <select id="sd-score-sel" class="form-select fw-form-control form-select-sm" style="max-width:200px" disabled>
+              {% for lbl, v in threat_levels %}<option value="{{ v }}">{{ _(lbl) }}</option>{% endfor %}
+            </select>
+            <button type="button" class="btn btn-fw-primary btn-sm" id="sd-score-save" disabled><i class="bi bi-check-lg me-1"></i>{{ _('Save to device') }}</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="sd-score-restore" disabled>{{ _('Restore default') }}</button>
+          </div>
+          <div id="sd-score-msg" class="small mt-1"></div>
+          {% endif %}
+          <p class="text-muted small mb-0">{{ _('Read the signature with "Read from device" on the Signature tab; the weight is set for this signature policy and read back from the device after saving.') }}</p>
         </div>
       </div>
     </div>
@@ -331,6 +341,10 @@
   var URL_SEARCH = {{ url_for('web_protection.sig_search', id=appliance.id, name=set_name) | tojson }};
   var URL_EXC = {{ url_for('web_protection.sig_exceptions', id=appliance.id, name=set_name, sig_id='__SID__') | tojson }};
   var URL_DETAIL = {{ url_for('web_protection.sig_detail', id=appliance.id, name=set_name, sig_id='__SID__') | tojson }};
+  var URL_SCORE = {{ url_for('web_protection.sig_score', id=appliance.id, name=set_name, sig_id='__SID__') | tojson }};
+  var TLVL = {};
+  {% for lbl, v in threat_levels %}TLVL[{{ v }}] = {{ _(lbl) | tojson }};
+  {% endfor %}
   var CLASS_ROWS = {{ (state.classes or []) | tojson }};
   var SDG = {{ sdg | tojson }};
   var FILTER_SPEC = {{ filter_spec | tojson }};
@@ -697,6 +711,12 @@
     $('sd-d-fpm-row').classList.add('d-none'); $('sd-d-refs-row').classList.add('d-none');
     $('sd-sample-box').classList.add('d-none');
     $('sd-alert').checked = !!s.alert_only;
+    // another signature: its weight is unknown until it is read from the device
+    $('sd-score').textContent = $('sd-score-default').textContent = '—';
+    if ($('sd-score-sel')) {
+      $('sd-score-sel').disabled = $('sd-score-save').disabled = $('sd-score-restore').disabled = true;
+      $('sd-score-msg').textContent = '';
+    }
     $('sd-fpm').checked = !s.fpm_disabled;
     $('sd-live-msg').textContent = '{{ _('Sensitivity Level, Found In, Attack Reference, Match Example and Threat Weight come from the device.') }}';
     var mrow = $('sd-d-meta-row');
@@ -740,11 +760,42 @@
       var sample = String(d.sample || '').replace(/&lt;#|#&gt;/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
       $('sd-sample').textContent = sample;
       $('sd-sample-box').classList.toggle('d-none', !sample);
-      $('sd-score').textContent = d.score == null ? '—' : (String(d.score) === '-1' ? '{{ _('Default') }}' : d.score);
-      $('sd-score-default').textContent = d.default_score == null ? '—' : d.default_score;
+      showScore(d.score, d.default_score);
       $('sd-live-msg').textContent = '{{ _('Read from the device just now.') }}';
     }).catch(function () { $('sd-live-msg').innerHTML = '<span class="text-danger">{{ _('The read failed.') }}</span>'; });
   });
+
+  // Threat Weight: FortiWeb's levels by name (the device stores integers);
+  // -1 = the signature's default
+  function lvl(v) { return v == null ? '—' : (TLVL[v] != null ? TLVL[v] : String(v)); }
+  function showScore(score, def) {
+    $('sd-score').textContent = score == null ? '—'
+      : (String(score) === '-1' ? '{{ _('Default') }} (' + lvl(def) + ')' : lvl(score));
+    $('sd-score-default').textContent = lvl(def);
+    var sel = $('sd-score-sel');
+    if (!sel) return;
+    var cur = String(score) === '-1' ? def : score;
+    if (cur != null && TLVL[cur] != null) sel.value = String(cur);
+    sel.disabled = $('sd-score-save').disabled = false;
+    $('sd-score-restore').disabled = String(score) === '-1';
+  }
+  function writeScore(score) {
+    if (!CUR) return;
+    if (!confirm('{{ _('Set Threat Weight of signature') }} ' + CUR.id + ' {{ _('in policy') }} ' + SET + ' {{ _('to') }} ' + (score === -1 ? '{{ _('Default') }}' : lvl(score)) + '?')) return;
+    $('sd-score-msg').textContent = '{{ _('Writing to the device…') }}';
+    post(URL_SCORE.replace('__SID__', encodeURIComponent(CUR.id)),
+         { main: CUR.main_id, sub: CUR.sub_id, score: score, apply: true }).then(function (j) {
+      if (!j.ok) { $('sd-score-msg').innerHTML = '<span class="text-danger">' + esc(j.error || 'write failed') + '</span>'; return; }
+      $('sd-score-msg').textContent = j.verify === 'verified'
+        ? '{{ _('Saved; the device holds it (read back).') }}'
+        : '{{ _('Saved, but the read-back was not possible: unverified.') }}';
+      $('sd-live').click();
+    }).catch(function () { $('sd-score-msg').innerHTML = '<span class="text-danger">{{ _('The write failed.') }}</span>'; });
+  }
+  if ($('sd-score-save')) {
+    $('sd-score-save').addEventListener('click', function () { writeScore(parseInt($('sd-score-sel').value, 10)); });
+    $('sd-score-restore').addEventListener('click', function () { writeScore(-1); });
+  }
 
   // Alert Only and False Positive Mitigation Support of one signature: the
   // policy's alert_only_list / fpm_disable_list rows

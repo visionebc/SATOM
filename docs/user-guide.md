@@ -1454,7 +1454,12 @@ SATOM's own tools are still served:
   signature: **Signature** (categories, Alert Only and False Positive
   Mitigation Support switches, description, FortiGuard data),
   **Exception** (the per-signature exceptions, with the same
-  element-type-gated form as the appliance GUI) and **Threat Weight**.
+  element-type-gated form as the appliance GUI) and **Threat Weight** (the
+  signature's weight in this policy, by FortiWeb's level names: Off,
+  Informational, Low, Moderate, Substantial, Severe, Critical; **Save to
+  device** writes the chosen level, **Restore default** puts the signature
+  back on its default; after either, SATOM reads the signature back and a
+  level the device did not keep fails with the level it kept).
   Sensitivity Level, Found In, Attack Reference, Match Example and Threat
   Weight are read from the device only when you press **Read from device**; a
   refused read shows the device's answer, never an empty pane. A CVE search

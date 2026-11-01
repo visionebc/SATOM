@@ -630,8 +630,19 @@ def cmdb_options(appliance_id):
     (so this can't be used to read arbitrary cmdb paths)."""
     appl = visible_appliance_or_404(appliance_id)
     endpoint = request.args.get('endpoint', '')
-    if endpoint not in ALL_REF_ENDPOINTS:
+    from ..services import objform, read_layer
+    # Allow-list: a schema-declared ref endpoint, or a registry collection (the
+    # GUI layouts name the collection a selector lists: ``ref_coll``).
+    if endpoint not in ALL_REF_ENDPOINTS and not objform.is_known_collection(endpoint):
         return jsonify(error='endpoint not allowed', names=[]), 400
+    # Cache first (the Collector's copy): a dialog with 42 selectors made 42
+    # device calls on every open. The device is asked when the cache has
+    # nothing for the collection, or on request (?live=1). A name created in
+    # the edit-entry panel is put into the select by the panel itself.
+    if not request.args.get('live'):
+        cached = read_layer.cached_ref_names(appl.id, endpoint)
+        if cached:
+            return jsonify(names=cached, source='cache')
     names, err, eid = [], '', None
     try:
         names = FortiWebClient(appl).cmdb_names(endpoint)
@@ -642,7 +653,6 @@ def cmdb_options(appliance_id):
         return jsonify(names=names, source='live')
     # DB-first net: an offline / license-locked box answers with nothing — serve
     # the cached object names so the policy form's dropdowns stay usable.
-    from ..services import read_layer
     cached = read_layer.cached_ref_names(appl.id, endpoint)
     if cached:
         return jsonify(names=cached, source='cache', error=err)
@@ -839,8 +849,32 @@ def _gui_device(appl):
     except Exception as exc:  # noqa: BLE001
         log_exception(exc, context='workspace.gui.visibility')
         vis = {}
+    # The GUI's own visibility map (system/state admin.visibility, cached by
+    # device_sync) also carries facts cmdb feature-visibility does not:
+    # advanced-bot-protection. Cmdb toggles win where both speak.
+    try:
+        st, _m = read_layer.read_objects(appl.id, 'state')
+        gv = ((st[0] if st else {}).get('admin') or {}).get('visibility') or {}
+        for k, v in gv.items():
+            if isinstance(v, bool):
+                vis.setdefault(k, 'enable' if v else 'disable')
+    except Exception as exc:  # noqa: BLE001 — unknown stays unknown
+        log_exception(exc, context='workspace.gui.state_visibility')
+    def cmdb(path, _cache={}):
+        # a cmdb object a GUI condition reads (singletons: the first row), from
+        # the SATOM cache -- never the device. Memoised per page render.
+        if path not in _cache:
+            from ..services import gui_pages
+            try:
+                rows, _m = gui_pages.rows(appl.id, path)
+            except Exception as exc:  # noqa: BLE001 — unknown, not "off"
+                log_exception(exc, context='workspace.gui.cmdb_ctx')
+                rows = []
+            _cache[path] = rows[0] if rows else None
+        return _cache[path]
     return gui_template.device_context(opmode=opmode, visibility=vis,
-                                       firmware=appl.firmware, model=appl.model)
+                                       firmware=appl.firmware, model=appl.model,
+                                       cmdb=cmdb)
 
 
 def _int_or_zero(v) -> int:

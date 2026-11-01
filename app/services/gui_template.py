@@ -65,7 +65,8 @@ def select(product: str, page: str, fw_version: str | None):
 # Device context: what the conditions ask about the device
 # --------------------------------------------------------------------------- #
 def device_context(*, opmode: str | None, visibility: dict | None,
-                   firmware: str | None, model: str | None = None) -> dict:
+                   firmware: str | None, model: str | None = None,
+                   cmdb=None) -> dict:
     """Facts a template's ``contexts`` resolve against.
 
     ``visibility`` is ``system feature-visibility`` (feature -> enable/disable).
@@ -80,8 +81,11 @@ def device_context(*, opmode: str | None, visibility: dict | None,
         if m:
             platform = m.group(1)
             break
-    return {"opmode": opmode or None, "visibility": dict(visibility or {}),
-            "platform": platform}
+    out = {"opmode": opmode or None, "visibility": dict(visibility or {}),
+           "platform": platform}
+    if cmdb is not None:
+        out["cmdb"] = cmdb      # callable(path) -> the cached object, or None
+    return out
 
 
 def _ctx_value(name: str, defs: dict, dev: dict):
@@ -98,6 +102,36 @@ def _ctx_value(name: str, defs: dict, dev: dict):
     if "visibility" in d:
         v = vis.get(d["visibility"])
         parts.append(None if v is None else v == "enable")
+    if "opmode_in" in d:
+        # "reverse-proxy"==this.opMode||"transparent"==...?this.showWaitingRoom=!0
+        if dev.get("opmode") is None:
+            return None
+        parts.append(dev["opmode"] in d["opmode_in"])
+    if "model_not_in" in d:
+        # this.showABP="FWB_100D"!==CONFIG_SYSTEM_MODEL&&... : the model token is
+        # not in the status string, so only what the platform word settles is
+        # answered (a KVM/VMware/Hyper-V/Xen VM is FWB_VM*, a container
+        # FWB_DOCKER*, hardware FWB_<model>); a cloud image (on-demand vs BYOL)
+        # stays unknown.
+        plat = dev.get("platform") or ""
+        bad = set(d["model_not_in"])
+        if plat in ("KVM", "VMware", "HyperV", "XEN"):
+            parts.append(not any(m.startswith("FWB_VM") for m in bad))
+        elif plat.lower() == "docker":
+            parts.append(not any(m.startswith("FWB_DOCKER") for m in bad))
+        elif re.fullmatch(r"\d{3,4}[A-Z]{1,6}", plat):
+            parts.append(("FWB_" + plat) not in bad)
+        else:
+            parts.append(None)
+    if "cmdb" in d:
+        # a field of a cmdb object the GUI reads when the dialog opens
+        # (WPP: server-policy/pattern.threat-weight -> threat-score-profile),
+        # from the SATOM cache. Its VALUE is the fact: conditions compare it.
+        reader = dev.get("cmdb")
+        obj = reader(d["cmdb"]) if callable(reader) else None
+        if not isinstance(obj, dict) or d.get("field") not in obj:
+            return None
+        return obj.get(d["field"])
     if "device_config" in d:
         if d["device_config"] == "HAVE_VIRT_DOCKER" and dev.get("platform"):
             parts.append(dev["platform"].lower() == "docker")
@@ -377,7 +411,8 @@ def _edit_spec(f: dict, d: dict, data: dict, dev: dict, *, new: bool = False) ->
         "off": f.get("off", "disable"),
         "opts": [{"value": str(o.get("value")), "label": o.get("label")}
                  for o in _options(f, dev)] if kind in ("select", "radio", "checks") else [],
-        "ref": REF_ENDPOINTS.get(wkey or "", "") if kind == "ref" else "",
+        "ref": (REF_ENDPOINTS.get(wkey or "", "") or f.get("ref_coll") or "")
+        if kind == "ref" else "",
         "min": f.get("min"),
         "max": f.get("max"),
     }
@@ -464,6 +499,8 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                             for o in _options(f, dev)] if f.get("kind") == "radio" else [],
                 "dialog": f.get("dialog"),
                 "source": f.get("source"),
+                "text": f.get("text") or "",
+                "style": f.get("style") or "",
                 "edit_shortcut": bool(f.get("edit_shortcut")),
                 "table": _table_view(f, (subrows or {}).get(f.get("subtable")), refs)
                 if f.get("kind") == "table" else None,

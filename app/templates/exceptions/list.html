@@ -436,6 +436,7 @@
 .hce-cat td{background:var(--fw-content-bg,#F3F6FC);cursor:pointer;font-weight:600;user-select:none}
 .hce-table td{vertical-align:middle}
 .sig-table .sig-pick{cursor:pointer}
+.gx-title{font-weight:600;font-size:.9rem;background:var(--fw-content-bg,#F3F6FC);border-bottom:1px solid #dfe5f1;padding:4px 8px;margin:10px 0 8px}
 .sig-table td:nth-child(-n+3),.sig-table th:nth-child(-n+3){white-space:nowrap}
 </style>
 
@@ -478,9 +479,10 @@ function fieldInput(f, val){
   }
   return input;
 }
-function renderFields(fields, payload, layout){
+function renderFields(fields, payload, layout, gui){
   payload = payload || {};
   if (layout && layout.kind === 'http_constraint_exception'){ renderHce(payload, layout); excRefreshVis(); hceLoadState(); return; }
+  if (gui && gui.blocks && gui.blocks.length){ renderGui(gui); return; }
   const box = document.getElementById('exc-fields');
   box.innerHTML = '';
   fields.forEach(function(f){
@@ -550,6 +552,119 @@ function excSigLookup(now){
 document.getElementById('exc-fields').addEventListener('input', function(ev){
   if (ev.target.dataset && ev.target.dataset.key === 'signature_id') excSigLookup(false);
 });
+// ── Any other type: the row dialog FortiWeb opens for it (GUI crawl) ──────
+// Same condition language as the fwgui pages (gui_template.evaluate): a
+// field whose condition is false is hidden and never sent; null = cannot
+// tell = shown.
+function gEv(a, row){
+  if (a === null || a === undefined) return true;
+  if ('raw' in a) return null;
+  if ('lit' in a) return a.lit === undefined ? null : a.lit;
+  if ('field' in a){ const v = row[a.field]; return (v === undefined || v === null) ? '' : v; }
+  if ('ref_set' in a) return !!row[a.ref_set];
+  if ('ctx' in a) return null;
+  const args = a.args || [];
+  const t = function(v){ return !!v && v !== '' && v !== 0 && v !== '0'; };
+  if (a.op === 'not'){ const x = gEv(args[0], row); return x === null ? null : !t(x); }
+  if (a.op === 'eq' || a.op === 'ne'){
+    const x = gEv(args[0], row), y = gEv(args[1], row);
+    if (x === null || y === null) return null;
+    const same = (typeof x !== 'boolean' && typeof y !== 'boolean') ? String(x) === String(y) : x === y;
+    return a.op === 'eq' ? same : !same;
+  }
+  const vals = args.map(function(n){ return gEv(n, row); });
+  if (a.op === 'and'){ for (const v of vals) if (v !== null && !t(v)) return false; return vals.indexOf(null) >= 0 ? null : true; }
+  if (a.op === 'or'){ for (const v of vals) if (v !== null && t(v)) return true; return vals.indexOf(null) >= 0 ? null : false; }
+  return null;
+}
+function gRow(){
+  const r = {};
+  document.querySelectorAll('#exc-fields .exc-fld').forEach(function(el){
+    const k = el.dataset.key;
+    if (el.type === 'checkbox') r[k] = el.checked ? (el.dataset.on || 'enable') : (el.dataset.off || 'disable');
+    else if (el.dataset.kind === 'seg') r[k] = el.dataset.value || '';
+    else if (el.dataset.kind === 'checks') r[k] = Array.prototype.map.call(el.querySelectorAll('input:checked'), function(c){ return c.value; }).join(' ');
+    else r[k] = el.value;
+  });
+  return r;
+}
+function gRefresh(){
+  const r = gRow();
+  document.querySelectorAll('#exc-fields [data-gcond]').forEach(function(el){
+    let c = null; try { c = JSON.parse(el.dataset.gcond); } catch(e){}
+    const v = gEv(c, r);
+    const truthy = !!v && v !== '' && v !== 0 && v !== '0';
+    el.style.display = (v !== null && !truthy) ? 'none' : '';
+  });
+}
+function renderGui(g){
+  const box = document.getElementById('exc-fields');
+  let h = '<div class="col-12"><div class="gx">';
+  h += '<div class="small text-muted mb-2"><i class="bi bi-layout-text-window me-1"></i>'+esc(g.title || '')+' — '
+     + esc(g.measured)+' GUI layout ('+esc(g.page)+')</div>';
+  g.blocks.forEach(function(b){
+    h += '<div class="gx-block"'+(b.cond ? ' data-gcond="'+esc(JSON.stringify(b.cond))+'"' : '')+'>';
+    if (b.title) h += '<div class="gx-title">'+esc(b.title)+'</div>';
+    b.fields.forEach(function(f){
+      const wrap = ' class="hce-line exc-fld-wrap"'+(f.cond ? ' data-gcond="'+esc(JSON.stringify(f.cond))+'"' : '');
+      const lab = esc(f.label)+(f.required ? ' <span class="text-danger">*</span>' : '')
+        + (f.help ? ' <i class="bi bi-info-circle-fill text-primary" title="'+esc(f.help)+'"></i>' : '');
+      let c = '';
+      const k = esc(f.key);
+      if (f.kind === 'static'){
+        if (!f.text) return;
+        h += '<div'+wrap+'><label></label><div><div class="fw-alert fw-alert-info mb-0 small"><i class="bi bi-info-circle-fill me-1"></i>'+esc(f.text)+'</div></div></div>';
+        return;
+      } else if (f.kind === 'toggle' || f.kind === 'check'){
+        c = '<div class="form-check form-switch m-0"><input class="form-check-input exc-fld" type="checkbox" role="switch" data-explicit="1" data-key="'+k+'" data-on="'+esc(f.on)+'" data-off="'+esc(f.off)+'"'+(f.raw === f.on ? ' checked' : '')+'></div>';
+      } else if (f.kind === 'radio'){
+        const cur = f.raw || ((f.opts[0] || {}).value || '');
+        c = '<div class="btn-group btn-group-sm exc-fld" role="group" data-kind="seg" data-key="'+k+'" data-value="'+esc(cur)+'">'
+          + f.opts.map(function(o){ return '<button type="button" class="btn '+(o.value === cur ? 'btn-primary' : 'btn-outline-secondary')+'" data-seg="'+esc(o.value)+'">'+esc(o.label)+'</button>'; }).join('')+'</div>';
+      } else if (f.kind === 'checks'){
+        const cur = String(f.raw || '').split(/\s+/);
+        c = '<span class="exc-fld" data-kind="checks" data-key="'+k+'">'
+          + f.opts.map(function(o){ return '<label class="form-check form-check-inline mb-0"><input type="checkbox" class="form-check-input" value="'+esc(o.value)+'"'+(cur.indexOf(o.value) >= 0 ? ' checked' : '')+'> '+esc(o.label)+'</label>'; }).join('')+'</span>';
+      } else if (f.kind === 'select'){
+        c = '<select class="form-select form-select-sm exc-fld" data-key="'+k+'">'
+          + (f.opts.some(function(o){ return o.value === f.raw; }) || !f.raw ? '' : '<option value="'+esc(f.raw)+'" selected>'+esc(f.raw)+'</option>')
+          + f.opts.map(function(o){ return '<option value="'+esc(o.value)+'"'+(o.value === f.raw ? ' selected' : '')+'>'+esc(o.label)+'</option>'; }).join('')+'</select>';
+      } else if (f.kind === 'ref' && f.ref){
+        c = '<select class="form-select form-select-sm exc-fld" data-key="'+k+'" data-ref="'+esc(f.ref)+'"><option value="">— none —</option>'
+          + (f.raw ? '<option value="'+esc(f.raw)+'" selected>'+esc(f.raw)+'</option>' : '')+'</select>';
+      } else if (f.kind === 'textarea'){
+        c = '<textarea class="form-control form-control-sm exc-fld" rows="2" data-key="'+k+'">'+esc(f.raw)+'</textarea>';
+      } else if (f.kind === 'number'){
+        c = '<input type="number" class="form-control form-control-sm exc-fld" data-key="'+k+'" value="'+esc(f.raw)+'"'
+          + (f.min !== null && f.min !== undefined ? ' min="'+f.min+'"' : '') + (f.max !== null && f.max !== undefined ? ' max="'+f.max+'"' : '')+'>';
+      } else {
+        c = '<input class="form-control form-control-sm exc-fld" data-key="'+k+'" value="'+esc(f.raw)+'"'
+          + (f.kind === 'multiselect' ? ' placeholder="space-separated values"' : '')+'>';
+      }
+      h += '<div'+wrap+'><label>'+lab+'</label><div>'+c+'</div></div>';
+    });
+    h += '</div>';
+  });
+  box.innerHTML = h + '</div></div>';
+  // reference lists: cache first (objedit.ref_options)
+  box.querySelectorAll('select[data-ref]').forEach(function(sel){
+    fetch('/objedit/'+EXC_AID+'/ref-options?endpoint='+encodeURIComponent(sel.dataset.ref)).then(r=>r.json()).then(function(j){
+      const cur = sel.value;
+      (j.names||[]).forEach(function(n){ if (n !== cur) sel.insertAdjacentHTML('beforeend', '<option value="'+esc(n)+'">'+esc(n)+'</option>'); });
+    }).catch(function(){});
+  });
+  gRefresh();
+}
+document.getElementById('exc-fields').addEventListener('click', function(ev){
+  const b = ev.target.closest && ev.target.closest('[data-seg]');
+  if (!b) return;
+  const g = b.parentNode;
+  g.dataset.value = b.dataset.seg;
+  g.querySelectorAll('[data-seg]').forEach(function(x){ x.className = 'btn '+(x === b ? 'btn-primary' : 'btn-outline-secondary'); });
+  gRefresh();
+});
+document.getElementById('exc-fields').addEventListener('change', gRefresh);
+document.getElementById('exc-fields').addEventListener('input', gRefresh);
 // ── HTTP Constraint Exception rule, laid out as FortiWeb draws it ─────────
 // (measured on the device GUI: services/http_constraints_gui.py)
 function hceOn(v){ return v === 'enable' || v === true || v === 'true'; }
@@ -738,8 +853,10 @@ function showTypeHelp(h){
 function loadFields(payload){
   const t = document.getElementById('exc-type').value;
   if (!t){ document.getElementById('exc-fields').innerHTML = ''; showTypeHelp(null); return Promise.resolve(); }
-  return fetch('/exceptions/type-fields?type='+encodeURIComponent(t)).then(r=>r.json())
-    .then(function(j){ renderFields(j.fields||[], payload, j.layout); showTypeHelp(j.help); });
+  let q = '/exceptions/type-fields?type='+encodeURIComponent(t)+'&aid='+EXC_AID;
+  if (payload && Object.keys(payload).length) q += '&payload='+encodeURIComponent(JSON.stringify(payload));
+  return fetch(q).then(r=>r.json())
+    .then(function(j){ renderFields(j.fields||[], payload, j.layout, j.gui); showTypeHelp(j.help); });
 }
 function collectFields(){
   const out = {};
@@ -750,8 +867,15 @@ function collectFields(){
     if (el.type === 'checkbox'){
       // A constraint switch is sent only when ON (off = the device default);
       // a status switch is always sent so "off" is explicit.
-      if (el.checked) out[el.dataset.key] = 'enable';
-      else if (el.dataset.explicit) out[el.dataset.key] = 'disable';
+      const on = el.dataset.on || 'enable', off = el.dataset.off || 'disable';
+      if (el.checked) out[el.dataset.key] = on;
+      else if (el.dataset.explicit) out[el.dataset.key] = off;
+      return;
+    }
+    if (el.dataset.kind === 'seg'){ if (el.dataset.value) out[el.dataset.key] = el.dataset.value; return; }
+    if (el.dataset.kind === 'checks'){
+      const v = Array.prototype.map.call(el.querySelectorAll('input[type=checkbox]:checked'), function(c){ return c.value; }).join(' ');
+      if (v) out[el.dataset.key] = v;
       return;
     }
     if (el.value !== '') out[el.dataset.key] = el.value;

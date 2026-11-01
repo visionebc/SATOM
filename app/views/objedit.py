@@ -429,6 +429,15 @@ def ref_options(appliance_id):
     coll = request.args.get('endpoint', '')
     if coll not in ALL_REF_ENDPOINTS and not objform.is_known_collection(coll):
         return jsonify(error='endpoint not allowed', names=[]), 400
+    # Cache first (the Collector's copy): a dialog with 42 selectors (the Web
+    # Protection Profile) made 42 device calls on every open. The device is
+    # asked only when the cache has nothing for the collection, or when the
+    # page asks for it explicitly (?live=1).
+    from ..services import read_layer
+    if not request.args.get('live'):
+        cached = read_layer.cached_ref_names(appl.id, coll)
+        if cached:
+            return jsonify(names=cached, source='cache')
     names, err = [], ''
     try:
         names = FortiWebClient(appl).cmdb_names(coll)
@@ -436,9 +445,6 @@ def ref_options(appliance_id):
         err = str(exc)
     if names:
         return jsonify(names=names, source='live')
-    # DB-first net: an offline / license-locked box answers with nothing — serve
-    # the cached object names so reference dropdowns stay usable.
-    from ..services import read_layer
     cached = read_layer.cached_ref_names(appl.id, coll)
     if cached:
         return jsonify(names=cached, source='cache', error=err)

@@ -171,6 +171,8 @@
     {% else %}<span class="text-muted">{{ f.label }}</span>{% endif %}
   {% elif f.kind == 'textarea' %}
     <span class="fwg-textarea">{{ f.value or '' }}</span>
+  {% elif f.kind == 'static' and f.text %}
+    <div class="fw-alert fw-alert-info fwg-note-box mb-0"><i class="bi bi-info-circle-fill me-1"></i>{{ f.text }}</div>
   {% elif f.kind == 'display' or f.kind == 'static' %}
     <span>{{ f.value if not empty else '' }}</span>
   {% else %}

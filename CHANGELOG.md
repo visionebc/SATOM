@@ -7,6 +7,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **Web Protection pages drawn as FortiWeb draws them (FortiWeb 7.6.8).**
+  Request: "the Web Protection Profile page is not the same as on the
+  FortiWeb; take that as the example but improve the WPP profiles, their
+  exceptions and all of Web Protection, Bot Mitigation, API Protection, DoS
+  Protection and IP Protection, identical in behaviour, menus and windows; use
+  the harvester fully." The GUI was re-read with the harvester on a lab
+  FortiWeb (50 pages) and the harvester's extractor and crawler were fixed
+  where they lost what the device draws: section titles (the profile dialog
+  has 15), the dialog's own notes, the collection each selector lists, the
+  collection each sub-table lists, conditions that read a device object
+  (Threat Score Profile shows only while threat scoring is enabled), the
+  operation-mode and model rules (Waiting Room, Advanced Bot Protection),
+  repeated method checkboxes and the row dialogs of tabbed pages. SATOM
+  resolves those conditions from its cache, so fields appear and disappear as
+  on the device.
+- **Exceptions: every type with a measured row dialog is authored in it.**
+  Cookie Security, File Exception, Allow Method, Bot Mitigation, URL
+  Encryption and Link Cloaking exceptions (and the others as the device
+  exposes them) take FortiWeb's own fields, order, choices and conditions,
+  including fields the old form lacked (Cookie Wildcard). A type with no
+  measured dialog keeps the field list.
 - **Exceptions: an HTTP Protocol Constraints exception is authored the way
   FortiWeb draws it.** Request: "on fortiweb19 HTTP constraints is far more
   polished and easy to use; here the user does not know what it depends on or
@@ -34,6 +55,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   instead of free text, still shown only for Element Type = HTTP Method.
 
 ### Fixed
+- **A device registered while its REST API was licence-locked kept an empty
+  firmware**, and the GUI pages took the version from the model typed by hand
+  (a 7.6.8 box was drawn with the 8.0.6 layout and the page said "This device
+  runs 8.0.6"). The hourly device sync now re-reads the firmware when it was
+  never read or is older than 6 hours, and a version that comes from the model
+  on record is labelled as such.
+- **Reference lists are served from the cache first.** Every selector of a
+  dialog asked the device on each open (42 calls for a Web Protection
+  Profile); the device is asked only when the cache has nothing.
+- **The device sync caches the GUI's own visibility map** (`system/state`),
+  which carries facts the configuration does not (Advanced Bot Protection on
+  an unlicensed VM).
 - **A signature exception built from the Attack log carried the method as the
   log prints it (`GET`)**; FortiWeb stores `get`. It is now lower-cased, like
   the Allow Method exception already was.

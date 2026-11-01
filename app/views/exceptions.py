@@ -186,7 +186,26 @@ def type_fields(id=None):
     layout = None
     if store.canonical_type(key) == hce_gui.EXC_TYPE:
         layout = hce_gui.exception_layout(fields)
-    return jsonify(ok=True, type=t, fields=fields, layout=layout,
+    # The row dialog FortiWeb opens for this type, measured by the GUI crawl
+    # for the device's firmware (?aid=): sections, order, choices, conditions.
+    gui = None
+    aid = request.args.get('aid', type=int)
+    if aid and layout is None:
+        appliance = visible_appliance_or_404(aid)
+        if appliance.kind == 'fortiweb':
+            from ..services import exception_gui
+            from .workspace import _gui_device
+            payload = {}
+            raw = request.args.get('payload')
+            if raw:
+                try:
+                    payload = json.loads(raw) or {}
+                except ValueError:
+                    payload = {}
+            gui = exception_gui.form(appliance, store.canonical_type(key),
+                                     payload if isinstance(payload, dict) else {},
+                                     _gui_device(appliance))
+    return jsonify(ok=True, type=t, fields=fields, layout=layout, gui=gui,
                    help=store.help_for(key))
 
 

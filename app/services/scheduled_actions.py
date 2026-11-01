@@ -1270,10 +1270,73 @@ def _do_device_sync(appliance, params: dict, dry_run: bool, *, publish: bool) ->
     run = _ds.sync_device(appliance, publish=publish, trigger="scheduled")
     ok = getattr(run, "status", "") == "ok"
     if ok:
+        _refresh_firmware(appliance)
+        _refresh_gui_state(appliance)
         _refresh_hardware(appliance)
     return {"ok": ok,
             "summary": f"{appliance.name}: {getattr(run, 'detail', '')}",
             "log": getattr(run, "detail", "") or ""}
+
+
+#: How old the recorded firmware may get before the sync reads it again (one
+#: status call). An upgrade done on the box shows within this window.
+FIRMWARE_MAX_AGE_HOURS = 6
+
+
+def _refresh_firmware(appliance) -> None:
+    """Re-read the running firmware (``firmware_probe.refresh``) when it was
+    never attested or the attestation is older than FIRMWARE_MAX_AGE_HOURS.
+
+    Nothing on a schedule wrote ``firmware`` before: only a discovery run or
+    the API did. A device registered while its REST was licence-locked kept
+    the column empty, and every reader fell back to the operator-entered model
+    -- fortiweb19 said "FortiWeb-KVM 8.0.6" while running 7.6.8 build1128, so
+    its GUI pages were drawn with the 8.0.6 layout (2026-11-01). Best effort:
+    a failed read writes nothing (the probe's contract) and never fails the
+    sync."""
+    from datetime import datetime, timedelta
+    try:
+        at = getattr(appliance, "firmware_checked_at", None)
+        if appliance.firmware and at and \
+                at > datetime.utcnow() - timedelta(hours=FIRMWARE_MAX_AGE_HOURS):
+            return
+        from . import firmware_probe
+        firmware_probe.refresh(appliance)
+    except Exception:  # noqa: BLE001 — the sync result stands on its own
+        from ..extensions import db
+        db.session.rollback()
+
+
+#: Cache section holding only ``system/state`` (ingest replaces a whole
+#: section: sharing "System" would wipe the other system objects).
+GUI_STATE_SECTION = "System State"
+
+
+def _refresh_gui_state(appliance) -> None:
+    """Cache ``/api/v2.0/system/state`` (logical ``state``) on each good sync.
+
+    The FortiWeb GUI shows and hides fields on ``admin.visibility``, which is
+    the cmdb ``feature-visibility`` toggles PLUS facts the cmdb object does not
+    carry (``advanced-bot-protection``: false on an unlicensed VM, so the Web
+    Protection Profile dialog has no Advanced Bot Protection selector). The
+    sweep reads cmdb only; without this the GUI pages could not tell and drew
+    the selector as "conditional". One read; a refusal writes nothing."""
+    if (appliance.kind or "fortiweb") != "fortiweb":
+        return
+    try:
+        from ..clients.fortiweb import FortiWebClient
+        from . import device_store
+        raw = FortiWebClient(appliance, timeout=15.0).get("/api/v2.0/system/state").json()
+        res = raw.get("results", raw.get("resutls")) if isinstance(raw, dict) else None
+        if not isinstance(res, dict) or not isinstance(res.get("admin"), dict):
+            return
+        device_store.ingest_sections(appliance.id, {GUI_STATE_SECTION: {"state": [res]}},
+                                     source="live")
+        from ..extensions import db
+        db.session.commit()
+    except Exception:  # noqa: BLE001 — the sync result stands on its own
+        from ..extensions import db
+        db.session.rollback()
 
 
 #: How old a FortiWeb's hardware facts may get before the hourly sync rescans.

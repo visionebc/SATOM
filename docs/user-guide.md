@@ -1159,6 +1159,20 @@ hosts them, which says *Served only by the CLI on this build*.
 
 ### 7.4 Pages in FortiWeb's layout: banner and badges
 
+The dialogs keep FortiWeb's sections (the Web Protection Profile has fifteen:
+Standard Protection, Cookie, Advanced Protection, … Redirect), the notes the
+device prints under a field, and an **Edit entry** pencil beside every
+selector that has one on the device. A selector lists the objects of the
+collection the device's own page lists, served from SATOM's cache.
+
+Fields appear and disappear as on the device. The condition behind each one is
+resolved from what SATOM has cached for the device: the field values of the
+dialog, the operation mode, the feature visibility (including the GUI's own
+map, e.g. Advanced Bot Protection on an unlicensed VM) and objects the device
+reads to decide (Threat Score Profile appears only while threat scoring is
+enabled on the device). A field is marked **conditional** only when SATOM
+cannot tell; hover the badge to see what it depends on.
+
 The note above every list and dialog names the layout it is drawn from:
 *FortiWeb 7.6.x GUI layout — template built from FortiWeb 7.6.8 build …. This
 device runs 7.6.8.* A **knowledge pack** badge means the layout came from an
@@ -1171,6 +1185,7 @@ fit is not exact, the note becomes a warning:
 | *This layout was built from … Newer firmware adds or renames fields …* | The device runs a newer build than any layout. Fields the newer build adds are not shown in the form. |
 | *… older than every layout template … Some fields shown may not exist on this firmware* | The device runs an older build than any layout. |
 | *The firmware of this device is not known yet* | Run a firmware check on the device. |
+| *Firmware not read from the device yet: chosen by the model on record (…)* | The layout was picked by the model typed on the device record, not by a firmware SATOM read. The hourly device sync reads the firmware (when it was never read, or the reading is older than 6 hours); until then the layout may belong to another build. |
 | *Operation mode not cached for this device* | Fields that depend on the operation mode are shown and marked. |
 
 Fields **show and hide as you edit**, the way FortiWeb's GUI does: every field
@@ -1781,6 +1796,31 @@ show *no evidence* for their fields: that is a **warning, never a pass**, and
 the gate starts to bite on its own once a sweep or a knowledge pack records
 those fields. Line Profiles show the build of each line's WPP template and the
 builds its approval covers.
+
+### 9.9 The authoring form, type by type
+
+**New carve-out** draws each type the way FortiWeb's own exception dialog
+draws it, when SATOM has the dialog measured for the device's firmware: the
+same fields, order, choices and show/hide rules (for example the **Wildcard**
+switch of a Cookie Security exception, or the method checkboxes of an Allow
+Method exception). The line above the fields names the dialog and the build it
+was measured on. A type with no measured dialog shows its field list.
+
+- **Signature ID** — type it, or click **Browse…** to pick it from SATOM's
+  signature index: search by id, attack class or words of the description,
+  filter by attack class, click a row. The class and description of the chosen
+  signature show under the field. The ID that blocked a request is the
+  *Signature ID* column of the Attack log.
+- **HTTP Method** (signature exception, Element Type = HTTP Method) — a
+  select of the device's tokens (GET … OTHERS).
+- **HTTP Protocol Constraints** — laid out as FortiWeb's exception rule: Host
+  Status and Host (greyed while off), Source IP and its range (shown while
+  on), URL Type (Simple String / Regular Expression), URL Pattern, then the
+  44 constraints in FortiWeb's seven collapsible categories with the device's
+  names and descriptions. Pick the Web Protection Profile first: the **In the
+  profile** column then says, for each constraint, whether the profile's HTTP
+  Protocol Constraints enforce it. Exempting a constraint that is off there
+  changes nothing.
 
 ## 10. Certificate Manager
 

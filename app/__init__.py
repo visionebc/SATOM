@@ -89,8 +89,9 @@ CHROME_BPS = frozenset({'bookmarks', 'wiki'})
 
 
 #: Endpoints that may be framed by SATOM itself (X-Frame-Options SAMEORIGIN):
-#: the device-layout dialogs the "Edit entry" pencil stacks over a dialog.
-_SAME_ORIGIN_FRAMES = ("workspace.fwgui_", "workspace.gui_")
+#: the device-layout dialogs the "Edit entry" pencil stacks over a dialog, and
+#: Signature Details, which slides in over Edit Signature Policy.
+_SAME_ORIGIN_FRAMES = ("workspace.fwgui_", "workspace.gui_", "web_protection.signature_policy")
 
 
 def create_app(config_override: object | None = None) -> Flask:

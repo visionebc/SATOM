@@ -166,5 +166,20 @@
   "detail_button": "Signature Details",
   "refs": {
     "custom-protection-group": "waf/custom-protection-group"
+  },
+  "missing_row": {
+    "status": "disable",
+    "fpm-status": "disable",
+    "action": "alert",
+    "block-period": 600,
+    "severity": "High",
+    "trigger": ""
+  },
+  "missing_row_note": "fwb-signature-dialog.js $onInit (edit): when main_class_list has fewer rows than main_order, each absent main class is pushed as main_class_default[id] with action='alert', severity='High', status='disable', fpm-status='disable' (block-period 600, trigger ''), then sorted by main_order. A policy created over REST has no rows (lab-sr-01..06 on fortiweb19: sz_main_class_list 0) and FortiWeb still draws the ten classes. Creating a row: POST cmdb/waf/signature/main_class_list?mkey=<policy> with main_class_id in the body (measured 2026-11-01, fortiweb19 7.6.8 build1128: 200, the row id is the main_class_id).",
+  "detail_tree": {
+    "collapsed_root": true,
+    "expansion_controls": true,
+    "west_collapsible": true,
+    "source": "fwb-signature-detail.html: f-tree-view expansion-controls=\"true\" collapsed-root=\"true\"; west pane collapse button (fa-angle-left, closeTree) and Return (signature.return_str, closePage -> the dialog)"
   }
 }

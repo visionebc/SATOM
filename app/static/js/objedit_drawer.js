@@ -29,6 +29,7 @@
   var BASE_W = 880;          // px, top-most panel; deeper panels shave STEP each
   var STEP = 34;
   var MIN_W = 420;
+  var WIDE_W = 1500;         // px, a page FortiWeb slides in full width (Signature Details)
 
   function nonce() {
     var m = document.querySelector('meta[name=csp-nonce]');
@@ -80,7 +81,8 @@
     STACK.forEach(function (p, i) {
       var depth = STACK.length - 1 - i;                    // 0 = top panel
       var w = Math.max(MIN_W, BASE_W - depth * STEP);
-      p.style.width = 'min(' + w + 'px, 94vw)';
+      p.style.width = p.classList.contains('is-wide') ? 'min(' + (WIDE_W - depth * STEP) + 'px, 97vw)'
+                                                       : 'min(' + w + 'px, 94vw)';
       p.style.zIndex = String(1051 + i);
       p.classList.toggle('fw-drawer-under', depth > 0);
     });
@@ -131,10 +133,14 @@
   }
 
   function open(opts) {
-    if (aid() == null) return;
+    // the generic editor builds its URL from the appliance id; a framed page
+    // comes with its whole URL
+    if (!opts.frame && aid() == null) return;
     var p = build(opts.title, opts.coll);
     p.dataset.url = opts.url;
     p._opener = opts.opener || null;       // the <select> that spawned the panel
+    p._onClose = opts.onClose || null;     // told how the framed page closed
+    if (opts.wide) p.classList.add('is-wide');
     STACK.push(p);
     syncChrome();
     if (opts.frame) frame(p); else load(p);
@@ -156,11 +162,15 @@
     body.appendChild(f);
   }
 
-  function pop(panel) {
+  function pop(panel, info) {
     var p = panel || STACK[STACK.length - 1];
     if (!p) return;
     var i = STACK.indexOf(p);
     if (i >= 0) STACK.splice(i, 1);
+    // a framed page that wrote to the device says so (changed): its opener
+    // refreshes, as FortiWeb's slide does on close (onSlideDone)
+    var changed = !!(p._changed || (info && info.changed));
+    if (p._onClose) { try { p._onClose({changed: changed}); } catch (e) { /* opener gone */ } }
     p.classList.remove('show');
     setTimeout(function () { p.remove(); }, 250);
     syncChrome();
@@ -195,7 +205,8 @@
       opts = opts || {};
       var t = opts.title || (coll || '').split('/').pop();
       return open({url: url, title: t + ' — ' + mkey, coll: coll,
-                   opener: opts.opener, frame: true});
+                   opener: opts.opener, frame: true, wide: !!opts.wide,
+                   onClose: opts.onClose});
     },
     reload: function (panel) {
       if (!panel || !panel.dataset.url) return;
@@ -262,15 +273,21 @@
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Escape') return;
     if (STACK.length) { ev.stopPropagation(); pop(); return; }
-    if (window.self !== window.top) window.parent.postMessage({fwDrawer: 'close'}, location.origin);
+    if (window.self !== window.top) window.parent.postMessage({fwDrawer: 'close', changed: !!window.__fwFrameChanged}, location.origin);
   }, true);
 
   // A framed dialog asks to close (Cancel, Esc): pop the panel holding it.
   window.addEventListener('message', function (ev) {
-    if (ev.origin !== location.origin || !ev.data || ev.data.fwDrawer !== 'close') return;
+    if (ev.origin !== location.origin || !ev.data) return;
+    var kind = ev.data.fwDrawer;
+    if (kind !== 'close' && kind !== 'changed') return;
     for (var i = STACK.length - 1; i >= 0; i--) {
       var f = STACK[i].querySelector('.fw-drawer-frame');
-      if (f && f.contentWindow === ev.source) { pop(STACK[i]); return; }
+      if (f && f.contentWindow === ev.source) {
+        // a write inside the frame (it may reload itself afterwards): remembered
+        if (kind === 'changed') { STACK[i]._changed = true; return; }
+        pop(STACK[i], ev.data); return;
+      }
     }
   });
 

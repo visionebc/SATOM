@@ -1417,11 +1417,25 @@ policy opens in the FortiWeb-layout object editor.
 
 SATOM's own tools are still served:
 
+- **Edit Signature Policy** lists the ten signature categories under its
+  fields (Status, False Positive Mitigation, Action, Block Period, Severity,
+  Trigger Policy), as the device does. A policy created over the API may have
+  no category rows yet: the categories are then shown as FortiWeb shows them
+  (Alert, High, disabled, 600 s) and a category is written to the device only
+  when you change it. If the device refuses the read and SATOM has no copy,
+  the dialog says so with the device's answer instead of showing an empty
+  table.
 - **Signature Details:** the **Signature Details** button of Edit Signature
-  Policy opens it, laid out as FortiWeb lays it out. On the left,
+  Policy slides it in from the right over the dialog, laid out as FortiWeb
+  lays it out; **Back to Signatures** closes it, and a change you wrote there
+  reloads the dialog. On the left,
   **Dictionaries**: each main category with its sub-categories and the status
   this policy gives them (a category without sub-categories is one entry that
-  lists its signatures), then **Search** and **Filters**. In the middle, the
+  lists its signatures), then **Search** and **Filters**. Categories open
+  collapsed; the arrow beside one expands it, and the chevron in the
+  Dictionaries header hides the pane (the chevron on the left brings it back).
+  Right-click a category or sub-category for **Enable** or **Disable** in this
+  policy. In the middle, the
   selected entry: a main category shows its settings in this policy (False
   Positive Mitigation for the SQL Injection categories, Action, Block Period,
   Severity, Trigger Policy; **Apply** writes them); a sub-category lists its
@@ -1438,8 +1452,8 @@ SATOM's own tools are still served:
   Weight are read from the device only when you press **Read from device**; a
   refused read shows the device's answer, never an empty pane. A CVE search
   needs the FortiGuard signature metadata of a knowledge pack and says so when
-  there is none. **Back to Signatures** returns to the dialog. The page is
-  also at `/web/web-protection/<device id>/signatures/<signature policy>`.
+  there is none. The page is also at
+  `/web/web-protection/<device id>/signatures/<signature policy>`.
 - **166 curated object kinds** (ported from the desktop manager and validated
   against the vendor admin guide) drive SATOM's own object forms: correct
   enums, field gating, inline help ("what does this do", "how the backend

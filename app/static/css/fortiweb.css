@@ -1761,6 +1761,8 @@ body.fw-entering-page {
   transition: transform .25s ease, width .2s ease, filter .2s ease;
 }
 .fw-drawer.show { transform: none; }
+/* a page FortiWeb slides in at full width (Signature Details over its dialog) */
+.fw-drawer.is-wide { width: min(1500px, 97vw); }
 .fw-drawer.fw-drawer-under { filter: brightness(.92); }
 
 .fw-drawer-head {

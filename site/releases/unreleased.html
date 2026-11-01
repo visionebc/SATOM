@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · Fixed · 18 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · Fixed · 21 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · Fixed · 18 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · Fixed · 21 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · Fixed · 18 entries</span>
-        <ul class="rel-leads"><li>Signature Details as FortiWeb lays it out</li><li>Each selector lists what the device&#x27;s GUI lists</li><li>Help tips written with the lang filter are shown</li><li class="rel-more">… and 15 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · Fixed · 21 entries</span>
+        <ul class="rel-leads"><li>Edit Signature Policy draws its ten categories even when the policy has no rows; Signature Details slides in over the dialog</li><li>Signature Details as FortiWeb lays it out</li><li>Each selector lists what the device&#x27;s GUI lists</li><li class="rel-more">… and 18 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v4.8.0.html" data-rel-version="4.8.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 4.8.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -532,6 +532,27 @@
       <div class="mdx">
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>Edit Signature Policy draws its ten categories even when the policy has
+  no rows; Signature Details slides in over the dialog.</strong> Request: "the table
+  is empty in SATOM; Signature Details goes to another page while FortiWeb
+  opens it as a side window; the signature types menu is collapsible."
+  A signature policy created over the REST API has no <code>main_class_list</code> rows
+  (lab-sr-01 to lab-sr-06 on {device}), so the dialog drew the table header
+  with nothing under it. FortiWeb's dialog fills every missing category with
+  Alert, High, disabled, False Positive Mitigation disabled, 600 s and no
+  trigger (<code>fwb-signature-dialog.js</code>, 7.6.8); SATOM now does the same, in the
+  dialog and in Signature Details. Such a category is written only if you
+  change it, and then it is created with its whole row and its
+  <code>main_class_id</code> (a PUT on a row that does not exist fails), with a dry run
+  first and a re-read after (measured on {device} 7.6.8: created and
+  verified, then removed). <strong>Signature Details</strong> now slides in from the right
+  over the dialog in a wide panel instead of leaving it; <strong>Back to
+  Signatures</strong> closes the panel, and a change written there reloads the
+  dialog under it. <strong>Dictionaries</strong> folds as FortiWeb's tree does: categories
+  with sub-categories open collapsed, each with an expand control; the pane
+  itself folds away (chevron) and comes back. A right-click on a category or
+  sub-category offers <strong>Enable</strong> and <strong>Disable</strong>, as on the device (a
+  category: its row's status; a sub-category: <code>sub_class_disable_list</code>).</li>
 <li><strong>Signature Details as FortiWeb lays it out.</strong> Request: "do everything,
   leave nothing pending." The <strong>Signature Details</strong> button of Edit Signature
   Policy now opens the policy's Signature Details page (it opened the
@@ -657,6 +678,19 @@
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>A refused device read is no longer an empty signature policy.</strong> The class
+  table and Signature Details read the policy's lists through a call that
+  dropped the error: a 401 or a licence lock read as "no rows" (an empty
+  table) or as "every signature enabled". A refusal now falls back to the
+  SATOM cache; with nothing cached the dialog says so with the device's
+  answer, the Dictionaries status reads unknown, and the signature search
+  returns the error instead of rows.</li>
+<li><strong>Signatures disabled in all policies show as such.</strong> Signature Details
+  read the <code>waf/base-signature-disable</code> entries by their cache key, which is
+  the sequence id FortiWeb gives each entry (1, 2...), so no signature ever
+  matched; it now reads each entry's <code>signature_id</code>. The <em>Disable in all
+  policies</em> write is measured on {device} 7.6.8 (create, present on the
+  device, delete) and is no longer marked unverified on this build.</li>
 <li><strong>A device registered while its REST API was licence-locked kept an empty
   firmware</strong>, and the GUI pages took the version from the model typed by hand
   (a 7.6.8 box was drawn with the 8.0.6 layout and the page said "This device

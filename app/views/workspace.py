@@ -1552,20 +1552,27 @@ def _with_signature_table(appl, dview: dict, key: str, name: str, row: dict) -> 
     False Positive Mitigation, Action, Block Period, Severity, Trigger Policy)
     and the PII Detection Threshold by hand, outside the GUI layout (measured
     separately, services.signature_dialog_gui). Rows are read as the dialog's
-    inline tables are: the device first, else the SATOM cache; unknown stays
-    unknown (None), never an empty table."""
+    inline tables are: the device first, else the SATOM cache. A device that
+    ANSWERS with no rows (a policy created over REST) gets FortiWeb's ten
+    default classes (sdg.fill_classes); a device that REFUSES (401, licence,
+    unreachable) is not "no rows": the cache, else unknown (None) with the
+    device's error -- never an empty table, never invented defaults."""
+    from ..services import objform
     from ..services import signature_dialog_gui as sdg
-    from .objedit import _cached_rows, _read_rows
+    from .objedit import _cached_rows
     if key != sdg.DIALOG or not name:
         return
     st = sdg.data()['subtable']
     try:
-        rows = _read_rows(FortiWebClient(appl), 'waf/signature/' + st, name)
+        rows, err = FortiWebClient(appl).list_with_error(
+            objform.scoped_path('waf/signature/' + st, name))
     except Exception as exc:  # noqa: BLE001 — unreachable: the cache decides
         log_exception(exc, context='workspace.fwgui.signature_classes')
-        rows = None
-    if not rows:
-        rows = _cached_rows(appl.id, 'waf/signature', name, st) or (rows if rows == [] else None)
+        rows, err = [], str(exc) or exc.__class__.__name__
+    if err:
+        rows = _cached_rows(appl.id, 'waf/signature', name, st) or None
+        if rows is None:
+            dview['sig_table_error'] = err
     dview['sig_table'] = sdg.class_table(rows, row)
     tip = sdg.help_for('sensitivity-level')
     for b in dview.get('blocks') or []:

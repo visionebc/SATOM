@@ -1569,11 +1569,25 @@ policy opens in the FortiWeb-layout object editor.</p>
 <em>Known Attacks → Signatures, drawn from the device's own GUI layout</em></p>
 <p>SATOM's own tools are still served:</p>
 <ul>
+<li><strong>Edit Signature Policy</strong> lists the ten signature categories under its
+  fields (Status, False Positive Mitigation, Action, Block Period, Severity,
+  Trigger Policy), as the device does. A policy created over the API may have
+  no category rows yet: the categories are then shown as FortiWeb shows them
+  (Alert, High, disabled, 600 s) and a category is written to the device only
+  when you change it. If the device refuses the read and SATOM has no copy,
+  the dialog says so with the device's answer instead of showing an empty
+  table.</li>
 <li><strong>Signature Details:</strong> the <strong>Signature Details</strong> button of Edit Signature
-  Policy opens it, laid out as FortiWeb lays it out. On the left,
+  Policy slides it in from the right over the dialog, laid out as FortiWeb
+  lays it out; <strong>Back to Signatures</strong> closes it, and a change you wrote there
+  reloads the dialog. On the left,
   <strong>Dictionaries</strong>: each main category with its sub-categories and the status
   this policy gives them (a category without sub-categories is one entry that
-  lists its signatures), then <strong>Search</strong> and <strong>Filters</strong>. In the middle, the
+  lists its signatures), then <strong>Search</strong> and <strong>Filters</strong>. Categories open
+  collapsed; the arrow beside one expands it, and the chevron in the
+  Dictionaries header hides the pane (the chevron on the left brings it back).
+  Right-click a category or sub-category for <strong>Enable</strong> or <strong>Disable</strong> in this
+  policy. In the middle, the
   selected entry: a main category shows its settings in this policy (False
   Positive Mitigation for the SQL Injection categories, Action, Block Period,
   Severity, Trigger Policy; <strong>Apply</strong> writes them); a sub-category lists its
@@ -1590,8 +1604,8 @@ policy opens in the FortiWeb-layout object editor.</p>
   Weight are read from the device only when you press <strong>Read from device</strong>; a
   refused read shows the device's answer, never an empty pane. A CVE search
   needs the FortiGuard signature metadata of a knowledge pack and says so when
-  there is none. <strong>Back to Signatures</strong> returns to the dialog. The page is
-  also at <code>/web/web-protection/&lt;device id&gt;/signatures/&lt;signature policy&gt;</code>.</li>
+  there is none. The page is also at
+  <code>/web/web-protection/&lt;device id&gt;/signatures/&lt;signature policy&gt;</code>.</li>
 <li><strong>166 curated object kinds</strong> (ported from the desktop manager and validated
   against the vendor admin guide) drive SATOM's own object forms: correct
   enums, field gating, inline help ("what does this do", "how the backend

@@ -7,6 +7,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **Edit Signature Policy draws its ten categories even when the policy has
+  no rows; Signature Details slides in over the dialog.** Request: "the table
+  is empty in SATOM; Signature Details goes to another page while FortiWeb
+  opens it as a side window; the signature types menu is collapsible."
+  A signature policy created over the REST API has no `main_class_list` rows
+  (lab-sr-01 to lab-sr-06 on fortiweb19), so the dialog drew the table header
+  with nothing under it. FortiWeb's dialog fills every missing category with
+  Alert, High, disabled, False Positive Mitigation disabled, 600 s and no
+  trigger (`fwb-signature-dialog.js`, 7.6.8); SATOM now does the same, in the
+  dialog and in Signature Details. Such a category is written only if you
+  change it, and then it is created with its whole row and its
+  `main_class_id` (a PUT on a row that does not exist fails), with a dry run
+  first and a re-read after (measured on fortiweb19 7.6.8: created and
+  verified, then removed). **Signature Details** now slides in from the right
+  over the dialog in a wide panel instead of leaving it; **Back to
+  Signatures** closes the panel, and a change written there reloads the
+  dialog under it. **Dictionaries** folds as FortiWeb's tree does: categories
+  with sub-categories open collapsed, each with an expand control; the pane
+  itself folds away (chevron) and comes back. A right-click on a category or
+  sub-category offers **Enable** and **Disable**, as on the device (a
+  category: its row's status; a sub-category: `sub_class_disable_list`).
 - **Signature Details as FortiWeb lays it out.** Request: "do everything,
   leave nothing pending." The **Signature Details** button of Edit Signature
   Policy now opens the policy's Signature Details page (it opened the
@@ -131,6 +152,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   instead of free text, still shown only for Element Type = HTTP Method.
 
 ### Fixed
+- **A refused device read is no longer an empty signature policy.** The class
+  table and Signature Details read the policy's lists through a call that
+  dropped the error: a 401 or a licence lock read as "no rows" (an empty
+  table) or as "every signature enabled". A refusal now falls back to the
+  SATOM cache; with nothing cached the dialog says so with the device's
+  answer, the Dictionaries status reads unknown, and the signature search
+  returns the error instead of rows.
+- **Signatures disabled in all policies show as such.** Signature Details
+  read the `waf/base-signature-disable` entries by their cache key, which is
+  the sequence id FortiWeb gives each entry (1, 2...), so no signature ever
+  matched; it now reads each entry's `signature_id`. The *Disable in all
+  policies* write is measured on fortiweb19 7.6.8 (create, present on the
+  device, delete) and is no longer marked unverified on this build.
 - **A device registered while its REST API was licence-locked kept an empty
   firmware**, and the GUI pages took the version from the model typed by hand
   (a 7.6.8 box was drawn with the 8.0.6 layout and the page said "This device

@@ -235,15 +235,13 @@ def _sig_state(appliance, name, force_live=False):
     """The signature set's sub-lists — DB-first (deep-capture layer), live
     ``?mkey=`` scoped reads as fallback. ``force_live=True`` skips the cache
     (used right after a write, when the box is ahead of the local DB).
-    Returns (state dict, source str)."""
+    Returns (state dict, source str): ``none`` when neither answered -- a
+    device REFUSAL (401, licence) is not an empty policy; its text is in
+    ``state['error']``."""
     state = {v: [] for v in _SIG_SUBLISTS.values()}
     if force_live:
         try:
-            from .objedit import _read_rows
-            client = FortiWebClient(appliance)
-            for seg, key in _SIG_SUBLISTS.items():
-                state[key] = _read_rows(client, 'waf/signature/%s' % seg, name)
-            return state, 'live'
+            return _sig_state_live(appliance, name), 'live'
         except Exception:  # noqa: BLE001 — fall through to the cached path
             state = {v: [] for v in _SIG_SUBLISTS.values()}
     # 1) deep layer: the signature node cached under a policy/WPP tree carries
@@ -272,13 +270,50 @@ def _sig_state(appliance, name, force_live=False):
         pass
     # 2) live scoped reads (works only when the device is reachable/licensed).
     try:
-        from .objedit import _read_rows
-        client = FortiWebClient(appliance)
-        for seg, key in _SIG_SUBLISTS.items():
-            state[key] = _read_rows(client, 'waf/signature/%s' % seg, name)
-        return state, 'live'
-    except Exception:  # noqa: BLE001
+        return _sig_state_live(appliance, name), 'live'
+    except Exception as exc:  # noqa: BLE001
+        state['error'] = str(exc) or exc.__class__.__name__
         return state, 'none'
+
+
+def _global_disabled(appliance_id) -> set:
+    """Signature ids disabled in every policy: the ``signature_id`` of each
+    cached waf/base-signature-disable row. Not the cached mkey: the cache keys
+    a row by its first of name/mkey/id, and FortiWeb gives these rows a
+    sequence ``id`` (1, 2...) while its own key is ``signature_id`` (measured,
+    fortiweb19 7.6.8: GET ?mkey=<signature id> returns the row). No cache:
+    nothing is claimed."""
+    from ..extensions import db as _db
+    from ..models_cache import DeviceObject
+    from ..services import read_layer
+    out = set()
+    try:
+        for ln in read_layer.registry_logicals('waf/base-signature-disable'):
+            q = (_db.session.query(DeviceObject.payload)
+                 .filter(DeviceObject.appliance_id == appliance_id,
+                         _db.or_(DeviceObject.logical_name == ln,
+                                 DeviceObject.logical_name.like('%/' + ln))))
+            for (payload,) in q.all():
+                sid = str((payload or {}).get('signature_id') or '').strip()
+                if sid:
+                    out.add(sid)
+    except Exception:  # noqa: BLE001 — no cache: nothing claimed
+        return set()
+    return out
+
+
+def _sig_state_live(appliance, name):
+    """Every sub-list read from the device; the first refusal raises (an
+    answered empty list is a real empty list)."""
+    from ..services import objform
+    client = FortiWebClient(appliance)
+    state = {}
+    for seg, key in _SIG_SUBLISTS.items():
+        rows, err = client.list_with_error(objform.scoped_path('waf/signature/%s' % seg, name))
+        if err:
+            raise RuntimeError('%s: %s' % (seg, err))
+        state[key] = rows or []
+    return state
 
 
 def _sig_catalog():
@@ -308,6 +343,11 @@ def signature_policy(id, name):
             sig_obj = None
 
     state, state_source = _sig_state(appliance, name)
+    from ..services import signature_dialog_gui as sdg
+    # FortiWeb draws all ten classes; one the policy has no row for (a policy
+    # made over REST) with its defaults, saved by creating the row
+    if state_source != 'none':
+        state = dict(state, classes=sdg.fill_classes(state.get('classes') or []))
     catalog = _sig_catalog()
     # Class tree for the filters (small: ~10 main classes, ~50 sub-classes).
     classes = {}
@@ -321,14 +361,18 @@ def signature_policy(id, name):
     # sub_class_disable_list), then Search and Filters
     main_on = {str(c.get('main_class_id')): c.get('status') == 'enable'
                for c in state.get('classes') or [] if isinstance(c, dict)}
-    sub_off = {str(r.get('sub_class_id') or r.get('id') or '')
+    # sub_class_disable_list: sub-class id -> its row id (Enable deletes it)
+    sub_off = {str(r.get('sub_class_id') or r.get('id') or ''): str(r.get('id', r.get('_id', '')))
                for r in state.get('subclass') or [] if isinstance(r, dict)}
-    from ..services import signature_dialog_gui as sdg
     sdg_data = sdg.data()
     rank = {mid: i for i, mid in enumerate(sdg_data.get('order') or [])}
-    tree = [{'id': mid, 'name': m['name'], 'on': main_on.get(mid),
-             'subs': [{'id': sid, 'name': sname, 'on': (main_on.get(mid) is not False)
-                       and sid not in sub_off} for sid, sname in m['subs'].items()]}
+    # status None = unknown (nothing answered): drawn as unknown, not enabled
+    known = state_source != 'none'
+    tree = [{'id': mid, 'name': m['name'], 'on': main_on.get(mid) if known else None,
+             'subs': [{'id': sid, 'name': sname,
+                       'on': ((main_on.get(mid) is not False) and sid not in sub_off) if known else None,
+                       'row': sub_off.get(sid, '')}
+                      for sid, sname in m['subs'].items()]}
             for mid, m in sorted(classes.items(), key=lambda kv: (rank.get(kv[0], 99), kv[0]))]
     back = request.args.get('back') or ''
     if not (back.startswith('/') and not back.startswith('//')):
@@ -380,6 +424,11 @@ def sig_search(id, name):
                        error='No signature catalog cached — sync it in '
                              'Administrator → Signatures first.')
     state, src = _sig_state(appliance, name, force_live=force_live)
+    if src == 'none':
+        # nothing answered: every signature would read "enabled" -- say it
+        return jsonify(ok=False, total=0, rows=[],
+                       error="This policy's signature state could not be read "
+                             "(no SATOM cache; the device: %s)." % (state.get('error') or 'no answer'))
     # sig id → sub-row id (needed to DELETE a disable / alert-only row).
     disabled = {str(r.get('signature_id') or '').strip():
                 str(r.get('id', r.get('_id', '')))
@@ -390,13 +439,8 @@ def sig_search(id, name):
     fpm_off = {str(r.get('signature_id') or '').strip(): str(r.get('id', r.get('_id', '')))
                for r in state.get('fpm') or [] if isinstance(r, dict)}
     # disabled in every policy (Disable in all policies): the cached
-    # waf/base-signature-disable rows, keyed by signature id
-    from ..services import read_layer
-    try:
-        global_off = {str(n) for n in read_layer.cached_ref_names(appliance.id,
-                                                                 'waf/base-signature-disable')}
-    except Exception:  # noqa: BLE001 — no cache: nothing claimed
-        global_off = set()
+    # waf/base-signature-disable rows
+    global_off = _global_disabled(appliance.id)
     exc_count = {}
     for r in state['exceptions']:
         if isinstance(r, dict):

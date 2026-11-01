@@ -331,11 +331,19 @@
   {%- endmacro %}
   <style nonce="{{ csp_nonce }}">
   .fwg-sig{overflow-x:auto}
-  .fwg-sig-table{width:100%}
+  /* column widths as FortiWeb draws them (fwb-signature-dialog, 7.6.8:
+     Name wide, Block Period and Trigger Policy narrow); a narrow panel
+     scrolls the table instead of squeezing it */
+  .fwg-sig-table{width:100%;min-width:1040px;table-layout:fixed}
+  .fwg-sig-table col:nth-child(1){width:3%}.fwg-sig-table col:nth-child(2){width:24%}
+  .fwg-sig-table col:nth-child(3){width:5%}.fwg-sig-table col:nth-child(4){width:16%}
+  .fwg-sig-table col:nth-child(5){width:19%}.fwg-sig-table col:nth-child(6){width:9%}
+  .fwg-sig-table col:nth-child(7){width:13%}.fwg-sig-table col:nth-child(8){width:11%}
   .fwg-sig-table td{vertical-align:middle}
   .fwg-sig-table td.c{text-align:center}
-  .fwg-sig-table select{width:175px;max-width:100%}
-  .fwg-sig-table input[type=number]{width:7rem}
+  /* .fwg-edit's 220px minimum (fortiweb.css) would overflow the narrow columns */
+  .fwg-sig-table select.fwg-edit{width:100%;min-width:0}
+  .fwg-sig-table input.fwg-edit[type=number]{width:100%;min-width:0;max-width:7rem}
   .fwg-sig-toggle{border:0;background:none;padding:0 .25rem;color:var(--fw-text-muted,#5a6b7d)}
   .fwg-sig-warn{color:#8B1C2A;font-size:12px}
   </style>
@@ -343,9 +351,12 @@
      scrolls the table sideways instead #}
   <div class="fwg-block fwg-sig" data-sig-table data-fit="off">
     <table class="fwg-table fwg-sig-table">
+      <colgroup><col><col><col><col><col><col><col><col></colgroup>
       <thead><tr>{% for c in sg.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
       <tbody>
-      {% for r in sg.rows %}<tr data-sig-row="{{ r.id }}">
+      {#- a class the policy has no row for is drawn with FortiWeb's values
+          (data-sig-new): saving it creates the row, untouched it is not written -#}
+      {% for r in sg.rows %}<tr data-sig-row="{{ r.id }}"{% if r.new %} data-sig-new="1"{% endif %}>
         <td>{% if r.ident and sg.threshold %}<button type="button" class="fwg-sig-toggle" data-sig-expand aria-expanded="false" title="{{ sg.threshold.label }}"><i class="bi bi-plus-square"></i></button>{% endif %}</td>
         <td>{{ r.name }}</td>
         <td class="c"><span class="form-check form-switch mb-0 d-inline-block"><input type="checkbox" class="form-check-input fwg-in" role="switch" data-sig-status data-gkey="{{ r.status.key }}" data-orig="{{ r.status.raw }}" data-on="enable" data-off="disable" aria-label="{{ r.name }}"{{ ' checked' if r.status.raw == 'enable' }}{{ ' disabled' if not can_edit }}></span></td>
@@ -397,7 +408,7 @@
   })();
   </script>
   {% else %}
-  <div class="fw-alert fw-alert-warning" data-sig-unknown>{{ _('The signature classes of this policy could not be read: %(dev)s did not answer and the SATOM cache has none. They are not drawn rather than drawn empty.', dev=appliance.name) }}</div>
+  <div class="fw-alert fw-alert-warning" data-sig-unknown>{{ _('The signature classes of this policy could not be read: %(dev)s refused or did not answer and the SATOM cache has none. They are not drawn rather than drawn empty.', dev=appliance.name) }}{% if view.sig_table_error %} <code>{{ view.sig_table_error }}</code>{% endif %}</div>
   {% endif %}
   {% endif %}
   {% if (not is_new or not _fwp) and view.key == main and not row_ctx %}
@@ -427,7 +438,7 @@
     <span class="fwg-btn is-primary" aria-disabled="true" title="{{ _('Read-only: nothing is sent to the device.') }}">{{ _('OK') }}</span>
     {% endif %}
     <a class="fwg-btn" href="{{ back }}" data-fwg-cancel>{{ _('Cancel') }}</a>
-    {% if view.key == 'signature_dialog' and name and _fwp %}<a class="fwg-btn" data-fwg-sig-detail href="{{ url_for('web_protection.signature_policy', id=appliance.id, name=name, back=url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=name)) }}" target="_top" title="{{ _("Opens the policy's Signature Details page, as FortiWeb does: Dictionaries tree, signatures per sub-category, and each signature's detail and exceptions.") }}">{{ _('Signature Details') }}</a>{% endif %}
+    {% if view.key == 'signature_dialog' and name and _fwp %}<a class="fwg-btn" data-fwg-sig-detail href="{{ url_for('web_protection.signature_policy', id=appliance.id, name=name, back=url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=name)) }}" target="_top" title="{{ _("Slides in the policy's Signature Details over this dialog, as FortiWeb does: Dictionaries tree, signatures per sub-category, and each signature's detail and exceptions.") }}">{{ _('Signature Details') }}</a>{% endif %}
   </div>
 </div>
 {% if gp and gp.form and satom is defined and satom and satom.lib %}{% set tlib = satom.lib %}{% include 'section_config/_template_library.html' %}{% endif %}
@@ -771,6 +782,22 @@
     var n = changes().length;
     say(n ? n + (n > 1 ? ' unsaved changes' : ' unsaved change') : '');
   });
+  // Signature Details slides in over the dialog, as FortiWeb's does (a wide
+  // panel of the top window's stack, so it stays wide when this dialog is
+  // itself in a panel); its Return closes it, and a write made there reloads
+  // this dialog (FortiWeb's onSlideDone). The href is the no-script fallback.
+  var sigDetail = document.querySelector('[data-fwg-sig-detail]');
+  if (sigDetail) sigDetail.addEventListener('click', function (e) {
+    var top = window.top, drw = null;
+    try { drw = top.FWDrawer || window.FWDrawer; } catch (err) { drw = window.FWDrawer; }
+    if (!drw || !drw.openFrame) return;
+    e.preventDefault();
+    var url = sigDetail.getAttribute('href').replace(/([?&])back=[^&]*&?/, '$1').replace(/[?&]$/, '');
+    var panel = drw.openFrame(url + (url.indexOf('?') < 0 ? '?' : '&') + 'slide=1', 'waf/signature', GP.name || '',
+                              {title: 'Signature Details', wide: true,
+                               onClose: function (r) { if (r && r.changed) window.location.reload(); }});
+    if (!panel) window.top.location.href = sigDetail.getAttribute('href');
+  });
   // The edit-entry pencil opens the object the select currently names.
   document.querySelectorAll('select[data-ref]').forEach(function (sel) {
     var pen = sel.parentElement.querySelector('[data-fwg-pencil]');
@@ -811,12 +838,24 @@
       else { main[k] = fields[k]; }
     });
     // a row of an inline table the dialog draws by hand (signature classes):
-    // its own save-row step, the row id outside the body
+    // its own save-row step, the row id outside the body. A class the policy
+    // had no row for (data-sig-new) is CREATED with every value the row shows
+    // and its main_class_id, as FortiWeb's OK writes the whole row.
     Object.keys(subs).forEach(function (rk) {
       var s = subs[rk], ep = GP.collection + '/' + s.st, pfx = '^' + s.st + '|' + s.id + '#';
-      steps.push({ep: ep + ' [' + s.id + ']', url: SAVE_ROW, pfx: pfx,
-                  keys: Object.keys(s.f).map(function (f) { return pfx + f; }),
-                  make: function (a) { return {collection: ep, parent: GP.name, sub_id: s.id, fields: s.f, apply: !!a}; }});
+      var tr = document.querySelector('[data-sig-row="' + s.id + '"]');
+      var isNew = !!(tr && tr.dataset.sigNew);
+      var f = s.f;
+      if (isNew) {
+        f = {main_class_id: s.id};
+        tr.querySelectorAll('.fwg-in[data-gkey]').forEach(function (el) {
+          if (el.dataset.gkey.indexOf(pfx) === 0) f[el.dataset.gkey.slice(pfx.length)] = current(el);
+        });
+        Object.keys(s.f).forEach(function (k) { f[k] = s.f[k]; });
+      }
+      steps.push({ep: ep + ' [' + s.id + ']' + (isNew ? ' (new row)' : ''), url: SAVE_ROW, pfx: pfx,
+                  keys: Object.keys(s.f).map(function (k) { return pfx + k; }),
+                  make: function (a) { return {collection: ep, parent: GP.name, sub_id: isNew ? null : s.id, fields: f, apply: !!a}; }});
     });
     if (Object.keys(main).length) {
       if (GP && GP.api) {

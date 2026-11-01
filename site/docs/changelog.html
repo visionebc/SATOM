@@ -114,6 +114,27 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>Edit Signature Policy draws its ten categories even when the policy has
+  no rows; Signature Details slides in over the dialog.</strong> Request: "the table
+  is empty in SATOM; Signature Details goes to another page while FortiWeb
+  opens it as a side window; the signature types menu is collapsible."
+  A signature policy created over the REST API has no <code>main_class_list</code> rows
+  (lab-sr-01 to lab-sr-06 on {device}), so the dialog drew the table header
+  with nothing under it. FortiWeb's dialog fills every missing category with
+  Alert, High, disabled, False Positive Mitigation disabled, 600 s and no
+  trigger (<code>fwb-signature-dialog.js</code>, 7.6.8); SATOM now does the same, in the
+  dialog and in Signature Details. Such a category is written only if you
+  change it, and then it is created with its whole row and its
+  <code>main_class_id</code> (a PUT on a row that does not exist fails), with a dry run
+  first and a re-read after (measured on {device} 7.6.8: created and
+  verified, then removed). <strong>Signature Details</strong> now slides in from the right
+  over the dialog in a wide panel instead of leaving it; <strong>Back to
+  Signatures</strong> closes the panel, and a change written there reloads the
+  dialog under it. <strong>Dictionaries</strong> folds as FortiWeb's tree does: categories
+  with sub-categories open collapsed, each with an expand control; the pane
+  itself folds away (chevron) and comes back. A right-click on a category or
+  sub-category offers <strong>Enable</strong> and <strong>Disable</strong>, as on the device (a
+  category: its row's status; a sub-category: <code>sub_class_disable_list</code>).</li>
 <li><strong>Signature Details as FortiWeb lays it out.</strong> Request: "do everything,
   leave nothing pending." The <strong>Signature Details</strong> button of Edit Signature
   Policy now opens the policy's Signature Details page (it opened the
@@ -239,6 +260,19 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>A refused device read is no longer an empty signature policy.</strong> The class
+  table and Signature Details read the policy's lists through a call that
+  dropped the error: a 401 or a licence lock read as "no rows" (an empty
+  table) or as "every signature enabled". A refusal now falls back to the
+  SATOM cache; with nothing cached the dialog says so with the device's
+  answer, the Dictionaries status reads unknown, and the signature search
+  returns the error instead of rows.</li>
+<li><strong>Signatures disabled in all policies show as such.</strong> Signature Details
+  read the <code>waf/base-signature-disable</code> entries by their cache key, which is
+  the sequence id FortiWeb gives each entry (1, 2...), so no signature ever
+  matched; it now reads each entry's <code>signature_id</code>. The <em>Disable in all
+  policies</em> write is measured on {device} 7.6.8 (create, present on the
+  device, delete) and is no longer marked unverified on this build.</li>
 <li><strong>A device registered while its REST API was licence-locked kept an empty
   firmware</strong>, and the GUI pages took the version from the model typed by hand
   (a 7.6.8 box was drawn with the 8.0.6 layout and the page said "This device

@@ -38,21 +38,48 @@ def row_key(subtable: str, row_id: str, field: str) -> str:
     return "^%s|%s#%s" % (subtable, row_id, field)
 
 
-def class_table(rows, obj: dict | None) -> dict | None:
-    """The main-class table of one signature policy as FortiWeb draws it, or
-    None when its rows are unknown (device unreachable and nothing cached --
-    never drawn as an empty table). Rows in FortiWeb's order; a class the
-    object lacks is not invented."""
+def _cid(r: dict) -> str:
+    return str(r.get("main_class_id") or r.get("id") or "")
+
+
+def fill_classes(rows):
+    """The policy's main classes as FortiWeb's dialog edits them: every class of
+    ``main_order``, in that order. A class the policy has no row for (a policy
+    created over REST has none) is drawn as FortiWeb draws it -- Alert, High,
+    disabled, FPM disabled, 600 s, no trigger (``missing_row``) -- and marked
+    ``_missing``: saving it CREATES the row; it is never written unchanged.
+    None (rows unknown) stays None."""
     if rows is None:
         return None
     d = data()
+    by_id = {}
+    for r in rows:
+        if isinstance(r, dict) and _cid(r):
+            by_id[_cid(r)] = r
+    out = []
+    for cid in d["order"]:
+        if cid in by_id:
+            out.append(dict(by_id[cid]))
+        else:
+            out.append(dict(d["missing_row"], id=cid, main_class_id=cid, _missing=True))
+    out += [dict(by_id[i]) for i in sorted(by_id) if i not in d["order"]]
+    return out
+
+
+def class_table(rows, obj: dict | None) -> dict | None:
+    """The main-class table of one signature policy as FortiWeb draws it, or
+    None when its rows are unknown (device refused or unreachable and nothing
+    cached -- never drawn as an empty table). All ten classes in FortiWeb's
+    order (:func:`fill_classes`); a row the device lacks is ``new``."""
+    filled = fill_classes(rows)
+    if filled is None:
+        return None
+    d = data()
     st = d["subtable"]
-    by_id = {str(r.get("id") or r.get("main_class_id") or ""): r for r in rows if isinstance(r, dict)}
-    order = [i for i in d["order"] if i in by_id] + sorted(i for i in by_id if i not in d["order"])
     opts = d["options"]
     out = []
-    for cid in order:
-        r = by_id[cid]
+    for r in filled:
+        cid = _cid(r)
 
         def cell(field, _r=r, _cid=cid):
             v = _r.get(field)
@@ -78,6 +105,7 @@ def class_table(rows, obj: dict | None) -> dict | None:
             "severity": cell("severity"),
             "trigger": cell("trigger"),
             "ident": cid == d["ident_id"],
+            "new": bool(r.get("_missing")),
         })
     thr = d["threshold"]
     obj = obj or {}

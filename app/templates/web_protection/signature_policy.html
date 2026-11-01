@@ -51,6 +51,23 @@
   .sigd-kv td { padding:4px 6px; font-size:12.5px; vertical-align:top; }
   .sigd-kv td:first-child { color:#3D4550; width:42%; }
   .sigd-pre { white-space:pre-wrap; font-size:12px; background:#F3F6FC; border:1px solid var(--fw-border, #DCE3EE); border-radius:4px; padding:6px; margin:0; max-height:160px; overflow:auto; }
+  .sigd-caret { display:inline-flex; align-items:center; justify-content:center; width:14px; border:0; background:none; padding:0; color:#3D4550; font-size:10px; flex:0 0 14px; }
+  .sigd-caret i { transition: transform .15s ease; }
+  .sigd-caret[aria-expanded="true"] i { transform: rotate(90deg); }
+  .sigd-tree ul .sigd-node { padding-left:24px; }
+  .sigd-node .bi-question-circle { color:#7A5700; }
+  .sigd-fold, .sigd-unfold { border:0; background:none; padding:0 2px; color:#3D4550; }
+  .sigd-unfold { align-self:start; border:1px solid var(--fw-border, #DCE3EE); border-radius:6px; background:#fff; padding:8px 4px; }
+  .sigd.is-folded { grid-template-columns: 28px minmax(0,1fr) 380px; }
+  .sigd.is-folded.no-east { grid-template-columns: 28px minmax(0,1fr); }
+  .sigd.is-folded .sigd-west { display:none; }
+  .sigd-ctx { position:fixed; z-index:1100; background:#fff; border:1px solid var(--fw-border, #DCE3EE); border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.12); min-width:150px; }
+  .sigd-ctx button { display:block; width:100%; text-align:left; border:0; background:none; padding:6px 12px; font-size:13px; }
+  .sigd-ctx button:hover:not(:disabled) { background:#F3F6FC; }
+  .sigd-ctx button:disabled { color:#9AA3B2; cursor:not-allowed; }
+  .sigd-ctx .bi-check-circle-fill { color:#15692A; } .sigd-ctx .bi-x-circle-fill { color:#8B1C2A; }
+  .sigd-ctx button:disabled i { color:#9AA3B2; }
+  html.fw-framed .fw-alert { margin-bottom:.5rem; }
   @media (max-width: 1100px) { .sigd, .sigd.no-east { grid-template-columns: 1fr; } }
 </style>
 
@@ -86,37 +103,48 @@
   {# ── west: Dictionaries ── #}
   <div class="sigd-pane sigd-west">
     <a class="sigd-back" href="{{ back }}" data-sigd-back><i class="bi bi-arrow-left"></i>{{ _('Back to Signatures') }}</a>
-    <div class="sigd-hd">{{ _('Dictionaries') }}</div>
+    <div class="sigd-hd d-flex align-items-center justify-content-between">{{ _('Dictionaries') }}
+      <button type="button" class="sigd-fold" data-sigd-fold title="{{ _('Hide the Dictionaries pane') }}" aria-label="{{ _('Hide the Dictionaries pane') }}"><i class="bi bi-chevron-left"></i></button></div>
+    {#- FortiWeb's f-tree-view (expansion-controls, collapsed-root): each
+        category with sub-categories folds, all folded when the page opens;
+        right-click a node for Enable / Disable (update_class_status) -#}
+    {%- macro st_icon(on) -%}
+      <i class="bi {{ 'bi-question-circle' if on is none else ('bi-check-circle-fill' if on else 'bi-x-circle-fill') }}"
+         title="{{ _('Unknown: neither the SATOM cache nor the device answered') if on is none else (_('Enabled') if on else _('Disabled')) }}"></i>
+    {%- endmacro %}
     <ul class="sigd-tree" id="sigd-tree">
       {% for m in tree %}
       {% if m.subs|length == 1 and m.subs[0].id == '000000000' %}
       {#- no sub-category: FortiWeb's leaf (type 2, sub 000000000) lists the
-          category's signatures directly -#}
-      <li><div class="sigd-node" data-node="sub" data-main="{{ m.id }}" data-sub="000000000" data-name="{{ m.name }}">
-        <i class="bi {{ 'bi-check-circle-fill' if m.on is not false else 'bi-x-circle-fill' }}"
-           title="{{ _('Enabled') if m.on is not false else _('Disabled') }}"></i>{{ m.name }}
+          category's signatures directly; its status is the category's -#}
+      <li><div class="sigd-node" data-node="sub" data-main="{{ m.id }}" data-sub="000000000" data-name="{{ m.name }}" data-on="{{ '' if m.on is none else (1 if m.on else 0) }}">
+        <span class="sigd-caret is-leaf"></span>{{ st_icon(m.on) }}{{ m.name }}
       </div></li>
       {% else %}
-      <li>
-        <div class="sigd-node" data-node="main" data-main="{{ m.id }}" data-name="{{ m.name }}">
-          <i class="bi {{ 'bi-check-circle-fill' if m.on is not false else 'bi-x-circle-fill' }}"
-             title="{{ _('Enabled') if m.on is not false else _('Disabled') }}"></i>{{ m.name }}
+      <li class="sigd-branch">
+        <div class="sigd-node" data-node="main" data-main="{{ m.id }}" data-name="{{ m.name }}" data-on="{{ '' if m.on is none else (1 if m.on else 0) }}">
+          <button type="button" class="sigd-caret" data-sigd-caret aria-expanded="false" aria-label="{{ _('Expand') }} {{ m.name }}"><i class="bi bi-caret-right-fill"></i></button>{{ st_icon(m.on) }}{{ m.name }}
         </div>
-        <ul>
+        <ul hidden>
           {% for s in m.subs %}
-          <li><div class="sigd-node" data-node="sub" data-main="{{ m.id }}" data-sub="{{ s.id }}" data-name="{{ s.name }}">
-            <i class="bi {{ 'bi-check-circle-fill' if s.on else 'bi-x-circle-fill' }}"
-               title="{{ _('Enabled') if s.on else _('Disabled') }}"></i>{{ s.name }}
+          <li><div class="sigd-node" data-node="sub" data-main="{{ m.id }}" data-sub="{{ s.id }}" data-name="{{ s.name }}" data-on="{{ '' if s.on is none else (1 if s.on else 0) }}" data-row="{{ s.row }}">
+            {{ st_icon(s.on) }}{{ s.name }}
           </div></li>
           {% endfor %}
         </ul>
       </li>
       {% endif %}
       {% endfor %}
-      <li><div class="sigd-node" data-node="search"><i class="bi bi-search"></i>{{ _('Search') }}</div></li>
-      <li><div class="sigd-node" data-node="filter"><i class="bi bi-funnel"></i>{{ _('Filters') }}</div></li>
+      <li><div class="sigd-node" data-node="search"><span class="sigd-caret is-leaf"></span><i class="bi bi-search"></i>{{ _('Search') }}</div></li>
+      <li><div class="sigd-node" data-node="filter"><span class="sigd-caret is-leaf"></span><i class="bi bi-funnel"></i>{{ _('Filters') }}</div></li>
     </ul>
+    <div id="sigd-ctx-msg"></div>
+    <div class="sigd-ctx" id="sigd-ctx" role="menu" hidden>
+      <button type="button" role="menuitem" data-ctx="1"><i class="bi bi-check-circle-fill me-1"></i>{{ _('Enable') }}</button>
+      <button type="button" role="menuitem" data-ctx="0"><i class="bi bi-x-circle-fill me-1"></i>{{ _('Disable') }}</button>
+    </div>
   </div>
+  <button type="button" class="sigd-unfold" data-sigd-unfold hidden title="{{ _('Show the Dictionaries pane') }}" aria-label="{{ _('Show the Dictionaries pane') }}"><i class="bi bi-chevron-right"></i></button>
 
   {# ── central: the selected node ── #}
   <div class="sigd-pane sigd-main">
@@ -322,7 +350,15 @@
   function csrf() { var m = document.querySelector('meta[name="csrf-token"]'); return m ? m.content : ''; }
   function post(url, body) {
     return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
-                        body: JSON.stringify(body) }).then(function (r) { return r.json(); });
+                        body: JSON.stringify(body) }).then(function (r) { return r.json(); })
+      .then(function (j) {
+        // slid in over the dialog: a write here reloads it when this closes
+        if (body && body.apply && j && j.ok) {
+          window.__fwFrameChanged = true;
+          if (window.self !== window.top) window.parent.postMessage({fwDrawer: 'changed'}, location.origin);
+        }
+        return j;
+      });
   }
   function saveRow(coll, subId, fields) {
     return post('/objedit/' + AID + '/save-row',
@@ -347,6 +383,93 @@
   }
   function showEast(on) { $('sigd').classList.toggle('no-east', !on); }
   $('sd-close').addEventListener('click', function () { showEast(false); });
+
+  // ── Return: slid in over the dialog, it closes the slide (FortiWeb's
+  //    closePage); on its own page it follows the link ────────────────────
+  var backA = document.querySelector('[data-sigd-back]');
+  if (backA && window.self !== window.top) backA.addEventListener('click', function (e) {
+    e.preventDefault();
+    window.parent.postMessage({fwDrawer: 'close', changed: !!window.__fwFrameChanged}, location.origin);
+  });
+  // ── the Dictionaries pane folds away (FortiWeb's closeTree / showTree) ─
+  var unfold = document.querySelector('[data-sigd-unfold]');
+  document.querySelector('[data-sigd-fold]').addEventListener('click', function () {
+    $('sigd').classList.add('is-folded'); unfold.hidden = false;
+  });
+  unfold.addEventListener('click', function () {
+    $('sigd').classList.remove('is-folded'); unfold.hidden = true;
+  });
+  // ── categories fold (collapsed when the page opens, as FortiWeb's tree) ──
+  function expand(caret, open) {
+    var ul = caret.closest('li').querySelector('ul');
+    if (!ul) return;
+    ul.hidden = !open;
+    caret.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  document.querySelectorAll('[data-sigd-caret]').forEach(function (c) {
+    c.addEventListener('click', function (e) {
+      e.stopPropagation();
+      expand(c, c.getAttribute('aria-expanded') !== 'true');
+    });
+  });
+  // ── right-click a node: Enable / Disable (FortiWeb's update_class_status):
+  //    a category (or a category without sub-categories) is its
+  //    main_class_list row's status; a sub-category is a row of
+  //    sub_class_disable_list (added to disable, deleted to enable) ────────
+  var ctx = $('sigd-ctx'), CTX = null;
+  function ctxClose() { ctx.hidden = true; CTX = null; }
+  document.querySelectorAll('#sigd-tree .sigd-node[data-main]').forEach(function (n) {
+    n.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      if (n.dataset.on === '') return;                    // unknown: nothing to toggle
+      CTX = n;
+      ctx.querySelector('[data-ctx="1"]').disabled = n.dataset.on === '1';
+      ctx.querySelector('[data-ctx="0"]').disabled = n.dataset.on === '0';
+      ctx.style.left = e.clientX + 'px'; ctx.style.top = e.clientY + 'px';
+      ctx.hidden = false;
+    });
+  });
+  document.addEventListener('click', function (e) { if (!ctx.hidden && !ctx.contains(e.target)) ctxClose(); });
+  // Esc closes the menu only: on window, capturing, so it runs before the
+  // slide-in panel's Esc (objedit_drawer.js, document) that closes the slide
+  window.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !ctx.hidden) { e.stopPropagation(); ctxClose(); } }, true);
+  function classRow(mid) {
+    return CLASS_ROWS.filter(function (r) { return String(r.main_class_id || r.id) === String(mid); })[0];
+  }
+  // a main_class_list row: PUT when the policy has it, else CREATE it with
+  // the values FortiWeb draws for it (sdg.fill_classes) and these fields
+  function writeClass(mid, fields) {
+    var row = classRow(mid);
+    if (!row) return Promise.resolve({ ok: false, error: '{{ _('this category is not in the policy state') }}' });
+    if (row._missing) {
+      var full = { main_class_id: String(mid) };
+      ['status', 'fpm-status', 'action', 'block-period', 'severity', 'trigger'].forEach(function (k) {
+        if (row[k] != null) full[k] = row[k];
+      });
+      Object.keys(fields).forEach(function (k) { full[k] = fields[k]; });
+      return saveRow('waf/signature/main_class_list', null, full);
+    }
+    return saveRow('waf/signature/main_class_list', String(row.id != null ? row.id : (row._id || mid)), fields);
+  }
+  ctx.querySelectorAll('[data-ctx]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var n = CTX; ctxClose();
+      if (!n) return;
+      var on = b.dataset.ctx === '1', p;
+      if (n.dataset.node === 'main' || n.dataset.sub === '000000000') {
+        p = writeClass(n.dataset.main, { status: on ? 'enable' : 'disable' });
+      } else if (on) {
+        p = n.dataset.row ? deleteRow('waf/signature/sub_class_disable_list', n.dataset.row)
+                          : Promise.resolve({ ok: false, error: '{{ _('row id unknown: refresh the page') }}' });
+      } else {
+        p = saveRow('waf/signature/sub_class_disable_list', null, { sub_class_id: n.dataset.sub });
+      }
+      p.then(function (j) {
+        if (!j.ok) { $('sigd-ctx-msg').innerHTML = '<div class="fw-alert fw-alert-danger m-2">{{ _('Write failed') }}: ' + esc(j.error || 'unknown') + '</div>'; return; }
+        window.location.reload();
+      });
+    });
+  });
 
   // ── Dictionaries tree ────────────────────────────────────────────────────
   document.querySelectorAll('#sigd-tree .sigd-node').forEach(function (n) {
@@ -385,7 +508,7 @@
   }
   function openClass(mid, name) {
     setMode(1, 0, name);
-    var row = CLASS_ROWS.filter(function (r) { return String(r.main_class_id) === String(mid); })[0];
+    var row = classRow(mid);
     var msg = $('cls-status-msg'); msg.innerHTML = '';
     if (!row) {
       CLS_ROW = null;
@@ -394,7 +517,7 @@
       return;
     }
     $('cls-save').disabled = false;
-    CLS_ROW = String(row.id != null ? row.id : (row._id || ''));
+    CLS_ROW = String(mid);
     $('cls-status').value = row.status || 'enable';
     $('cls-fpm-row').style.display = (SDG.fpm_ids || []).indexOf(String(mid)) !== -1 ? '' : 'none';
     $('cls-fpm').value = row['fpm-status'] || 'disable';
@@ -416,7 +539,7 @@
     if (!$('cls-block').disabled && $('cls-block').value) fields['block-period'] = $('cls-block').value;
     if ($('cls-fpm-row').style.display !== 'none') fields['fpm-status'] = $('cls-fpm').value;
     if (!confirm('{{ _('Apply these category settings to') }} ' + SET + ' {{ _('on the device?') }}')) return;
-    saveRow('waf/signature/main_class_list', CLS_ROW, fields).then(function (j) {
+    writeClass(CLS_ROW, fields).then(function (j) {
       var el = $('cls-status-msg');
       if (!j.ok) { el.innerHTML = '<div class="fw-alert fw-alert-danger">{{ _('Write failed') }}: ' + esc(j.error || 'unknown') + '</div>'; return; }
       el.innerHTML = '<div class="fw-alert fw-alert-success">{{ _('Saved. Reloading…') }}</div>';
@@ -465,7 +588,7 @@
         '<td class="sigd-menu"><button type="button" class="btn btn-sm btn-outline-secondary" data-menu="' + i + '" title="{{ _('Actions') }}"><i class="bi bi-three-dots-vertical"></i></button>' +
         '<div class="sigd-menu-list" id="sigm-' + i + '">' +
           '<button data-do="enable" data-i="' + i + '"' + (en ? ' disabled' : '') + '>{{ _('Enable') }}</button>' +
-          '<button data-do="global" data-i="' + i + '" title="{{ _('Writes a waf/base-signature-disable entry: unverified on this build') }}"' + (s.global_disabled || s.disabled ? ' disabled' : '') + '>{{ _('Disable in all policies') }}</button>' +
+          '<button data-do="global" data-i="' + i + '" title="{{ _('Writes a waf/base-signature-disable entry (every signature policy of this device)') }}"' + (s.global_disabled || s.disabled ? ' disabled' : '') + '>{{ _('Disable in all policies') }}</button>' +
           '<button data-do="group" data-i="' + i + '"' + (s.global_disabled || s.disabled ? ' disabled' : '') + '>{{ _('Disable in current policy') }}</button>' +
         '</div></td></tr>';
     }).join('');
@@ -510,8 +633,8 @@
       if (!confirm('{{ _('Disable signature') }} ' + s.id + ' {{ _('in policy') }} ' + SET + '?')) return;
       saveRow('waf/signature/signature_disable_list', null, { signature_id: s.id }).then(after);
     } else if (act === 'global') {
-      // TODO verify: FortiWeb 7.6.8 waf/base-signature-disable create (schema
-      // measured: table keyed by signature_id; the write round trip is not)
+      // waf/base-signature-disable is keyed by signature_id (its "id" is a
+      // sequence); create and delete measured on fortiweb19 7.6.8 (2026-11-01)
       if (!confirm('{{ _('Disable signature') }} ' + s.id + ' {{ _('in ALL signature policies of') }} {{ appliance.name }}?')) return;
       post('/objedit/' + AID + '/create-object',
            { collection: 'waf/base-signature-disable', mkey: s.id, fields: { signature_id: s.id }, apply: true }).then(after);

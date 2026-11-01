@@ -1503,6 +1503,17 @@ def _with_constraint_table(dview: dict, key: str, row: dict) -> None:
     dview["hce_table"] = tbl
 
 
+def _drop_table_keys(dview: dict, *sections) -> None:
+    """The keys the constraints table draws are in the GUI: out of the
+    "Not in GUI, but in CLI" section(s) (366 of them on a constraints profile)."""
+    if not dview.get('hce_table'):
+        return
+    placed = set(dview['hce_table']['keys'])
+    for sec in sections:
+        if isinstance(sec, dict) and isinstance(sec.get('fields'), list):
+            sec['fields'] = [f for f in sec['fields'] if f.get('key') not in placed]
+
+
 @bp.route('/<int:appliance_id>/fwgui/<page>/o/<path:name>')
 @login_required
 @require_permission('protection.view')
@@ -1578,6 +1589,7 @@ def fwgui_object(appliance_id, page, name):
         if nig_edit is None:
             from ..services import not_in_gui
             nig = not_in_gui.for_view(appl, coll, obj)
+        _drop_table_keys(dview, nig_edit, nig)
     gp = {'page': page, 'v': vi, 'collection': coll, 'name': name,
           'mode': 'row' if row_ctx else 'object', 'bound': groups if key == main else {},
           'product': 'fortiweb'}

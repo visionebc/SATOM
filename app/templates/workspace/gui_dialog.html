@@ -272,7 +272,10 @@
   <style nonce="{{ csp_nonce }}">
   .fwg-hce-table td{vertical-align:middle}
   .fwg-hce-head td{background:var(--fw-content-bg,#F3F6FC);cursor:pointer;font-weight:600;user-select:none}
-  .fwg-hce-table select,.fwg-hce-table input[type=number]{min-width:7rem}
+  .fwg-hce-table{width:100%;table-layout:auto}
+  .fwg-hce-table td:nth-child(2){min-width:14rem;max-width:22rem}
+  .fwg-hce-table select{min-width:6.5rem}
+  .fwg-hce-table input[type=number]{width:6.5rem}
   </style>
   <div class="fwg-block fwg-hce" data-hce-table>
     <table class="fwg-table fwg-hce-table">

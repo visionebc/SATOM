@@ -1184,7 +1184,7 @@ Custom Signature Group, IP List, Exception Policy…); when you save it, the
 panel closes and the new object is selected in the field. A selector opens as
 FortiWeb's list: type to filter it, and where the device offers it each entry
 has its own **Edit entry** pencil (that object's dialog opens in the panel)
-and **+ Create** sits at the foot of the list. Arrows, Enter and Esc work as
+and **+ Create** sits at the top of the list. Arrows, Enter and Esc work as
 in the device's list.
 
 Dialogs that FortiWeb draws as a table of categories (Known Bots, Syntax

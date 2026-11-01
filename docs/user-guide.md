@@ -1173,6 +1173,13 @@ reads to decide (Threat Score Profile appears only while threat scoring is
 enabled on the device). A field is marked **conditional** only when SATOM
 cannot tell; hover the badge to see what it depends on.
 
+**HTTP Protocol Constraints** profiles open with the constraints table FortiWeb
+draws: the seven categories (Content Length, HTTP Header, HTTP Parameter, HTTP
+Request, HTTP/2, HTTP/3, Others) collapsed, one click opens them; each
+constraint has its Status switch, Length where it has one, Action, Block
+Period, Severity, Threat Weight (0–5), Trigger Policy and the protocols it
+applies to.
+
 The note above every list and dialog names the layout it is drawn from:
 *FortiWeb 7.6.x GUI layout — template built from FortiWeb 7.6.8 build …. This
 device runs 7.6.8.* A **knowledge pack** badge means the layout came from an

@@ -16,7 +16,8 @@
      "check": "max-http-content-length-check",
      "weight": "max-http-content-length-threat-weight",
      "desc": "Maximum acceptable length in bytes of the request body (16,384 by default).",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Illegal Content Length",
@@ -24,7 +25,8 @@
      "check": "Illegal-content-length-check",
      "weight": "Illegal-content-length-check-threat-weight",
      "desc": "Checks that the Content-Length header includes numeric characters only.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Present with Transfer Encoding",
@@ -32,7 +34,8 @@
      "check": "cl-te-coexist-check",
      "weight": "cl-te-coexist-threat-weight",
      "desc": "Checks that the Content-Length and Transfer-Encoding headers coexist.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Inconsistent with Body Length",
@@ -40,7 +43,8 @@
      "check": "inconsistent-cl-check",
      "weight": "inconsistent-cl-threat-weight",
      "desc": "Checks for inconsistent response body length with the Content-Length header",
-     "proto": "HTTP/1.X Only"
+     "proto": "HTTP/1.X Only",
+     "has_length": false
     }
    ]
   },
@@ -53,7 +57,8 @@
      "check": "max-http-header-length-check",
      "weight": "max-http-header-length-threat-weight",
      "desc": "Maximum acceptable size in bytes of all HTTP header lines (8192 bytes by default).",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Header Name Length",
@@ -61,7 +66,8 @@
      "check": "max-http-header-name-length-check",
      "weight": "max-http-header-name-length-threat-weight",
      "desc": "Maximum acceptable size in bytes of a single HTTP header name (50 bytes by default).For example, Host, Content-Type, User-Agent",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Header Value Length",
@@ -69,7 +75,8 @@
      "check": "max-http-header-value-length-check",
      "weight": "max-http-header-value-length-threat-weight",
      "desc": "Maximum acceptable size in bytes of a single HTTP header value (4096 bytes by default).For example, Host, Content-Type, User-Agent",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Illegal Character in Header Name",
@@ -77,7 +84,8 @@
      "check": "Illegal-header-name-check",
      "weight": "Illegal-header-name-check-threat-weight",
      "desc": "Checks for illegal characters in the HTTP header name.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Illegal Character in Header Value",
@@ -85,7 +93,8 @@
      "check": "Illegal-header-value-check",
      "weight": "Illegal-header-value-check-threat-weight",
      "desc": "Checks for illegal characters in the HTTP header value.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Redundant HTTP Headers",
@@ -93,7 +102,8 @@
      "check": "redundant-header-check",
      "weight": "redundant-header-threat-weight",
      "desc": "Invoked if an HTTP request contains multiple redundant headers.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     }
    ]
   },
@@ -106,7 +116,8 @@
      "check": "max-url-parameter-length-check",
      "weight": "max-url-parameter-length-threat-weight",
      "desc": "Maximum acceptable length in bytes of all parameters, including their names and values, in the URL (8192 bytes by default).",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Total Body Parameters Length",
@@ -114,7 +125,8 @@
      "check": "max-http-body-parameter-length-check",
      "weight": "max-http-body-parameter-length-threat-weight",
      "desc": "Maximum total acceptable size in bytes of all parameters in the URL and/or, for HTTP POST requests, the HTTP body (8192 bytes by default).",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Number of URL Parameters",
@@ -122,7 +134,8 @@
      "check": "max-url-parameter-check",
      "weight": "max-url-parameter-threat-weight",
      "desc": "Maximum number of parameters in a URL (128 by default).",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "NULL Character in Parameter Name",
@@ -130,7 +143,8 @@
      "check": "parameter-name-check",
      "weight": "parameter-name-check-threat-weight",
      "desc": "Checks for NULL characters in parameter names.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "NULL Character in Parameter Value",
@@ -138,7 +152,8 @@
      "check": "parameter-value-check",
      "weight": "parameter-value-check-threat-weight",
      "desc": "Checks for NULL characters in parameter values.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Maximum URL Parameter Name Length",
@@ -146,7 +161,8 @@
      "check": "max-url-param-name-len-check",
      "weight": "max-url-param-name-len-threat-weight",
      "desc": "Maximum acceptable length in bytes of a single URL parameter name (4096 bytes by default).",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Maximum URL Parameter Value Length",
@@ -154,7 +170,8 @@
      "check": "max-url-param-value-len-check",
      "weight": "max-url-param-value-len-threat-weight",
      "desc": "Maximum acceptable length in bytes of a single URL parameter value (4096 bytes by default).",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Illegal Character in Parameter Name",
@@ -162,7 +179,8 @@
      "check": "url-param-name-check",
      "weight": "url-param-name-check-threat-weight",
      "desc": "Checks for illegal characters in the parameter name. For example, non-printable ASCII characters.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Illegal Character in Parameter Value",
@@ -170,7 +188,8 @@
      "check": "url-param-value-check",
      "weight": "url-param-value-check-threat-weight",
      "desc": "Checks for illegal characters in the parameter value. For example, non-printable ASCII characters.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Duplicate Parameter Name",
@@ -178,7 +197,8 @@
      "check": "duplicate-paramname-check",
      "weight": "duplicate-paramname-threat-weight",
      "desc": "Checks for duplicated parameter name.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     }
    ]
   },
@@ -191,7 +211,8 @@
      "check": "Illegal-http-request-method-check",
      "weight": "Illegal-http-request-method-threat-weight",
      "desc": "Checks for invalid HTTP request methods according to RFC 2616 or RFC 4918. Any method undefined in these RFCs \u2014 including misspellings like GETT as well as other HTTP extension methods (e.g. CalDAV) like MKCALENDAR \u2014 are considered illegal.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "HTTP Request Filename Length",
@@ -199,7 +220,8 @@
      "check": "max-http-request-filename-length-check",
      "weight": "max-http-request-filename-length-threat-weight",
      "desc": "Maximum acceptable length of HTTP request filename (2048 bytes by default).",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "HTTP Request Length",
@@ -207,7 +229,8 @@
      "check": "max-http-request-length-check",
      "weight": "max-http-request-length-threat-weight",
      "desc": "Maximum acceptable length of the entire HTTP request, including both headers and body (2048 KB by default).",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Number of Header Lines in Request",
@@ -215,7 +238,8 @@
      "check": "max-header-line-request-check",
      "weight": "max-header-line-request-threat-weight",
      "desc": "Maximum acceptable number of lines in the HTTP header (64 by default).",
-     "proto": "HTTP/1.X Only"
+     "proto": "HTTP/1.X Only",
+     "has_length": true
     },
     {
      "label": "Missing Content Type",
@@ -223,7 +247,8 @@
      "check": "Post-request-ctype-check",
      "weight": "Post-request-ctype-check-threat-weight",
      "desc": "Checks that the Content-Type header is available.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Missing Host",
@@ -231,7 +256,8 @@
      "check": "missing-host-check",
      "weight": "missing-host-threat-weight",
      "desc": "Checks that the Host header is available",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "NULL Character in URL",
@@ -239,7 +265,8 @@
      "check": "null-byte-in-url-check",
      "weight": "null-byte-in-url-threat-weight",
      "desc": "Checks for NULL characters in URLs.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Illegal Character in URL",
@@ -247,7 +274,8 @@
      "check": "illegal-byte-in-url-check",
      "weight": "illegal-byte-in-url-threat-weight",
      "desc": "Checks for illegal characters in URLs.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Odd and Even Space Attack",
@@ -255,7 +283,8 @@
      "check": "odd-and-even-space-attack-check",
      "weight": "odd-and-even-space-attack-weight",
      "desc": "Checks for odd and even space attack.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Malformed URL",
@@ -263,7 +292,8 @@
      "check": "malformed-url-check",
      "weight": "malformed-url-weight",
      "desc": "Checks that the URL in a request begins with a \"/\" character, includes a protocol and host prefix (e.g. http://myserver.com/default.asp).",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     }
    ]
   },
@@ -276,7 +306,8 @@
      "check": "max-setting-header-table-size-check",
      "weight": "max-setting-header-table-size-threat-weight",
      "desc": "Maximum acceptable header compression table size in request SETTINGS frame.",
-     "proto": "HTTP/2 Only"
+     "proto": "HTTP/2 Only",
+     "has_length": true
     },
     {
      "label": "Number of Concurrent Streams",
@@ -284,7 +315,8 @@
      "check": "max-setting-current-streams-num-check",
      "weight": "max-setting-current-streams-num-threat-weight",
      "desc": "Maximum acceptable concurrent streams in request SETTINGS frame.",
-     "proto": "HTTP/2 Only"
+     "proto": "HTTP/2 Only",
+     "has_length": true
     },
     {
      "label": "Initial Window Size",
@@ -292,7 +324,8 @@
      "check": "max-setting-initial-window-size-check",
      "weight": "max-setting-initial-window-size-threat-weight",
      "desc": "Maximum acceptable initial window size in request SETTINGS frame.",
-     "proto": "HTTP/2 Only"
+     "proto": "HTTP/2 Only",
+     "has_length": true
     },
     {
      "label": "Frame Size",
@@ -300,7 +333,8 @@
      "check": "max-setting-frame-size-check",
      "weight": "max-setting-frame-size-threat-weight",
      "desc": "Maximum acceptable frame payload size in request SETTINGS frame.",
-     "proto": "HTTP/2 Only"
+     "proto": "HTTP/2 Only",
+     "has_length": true
     },
     {
      "label": "Header List Size",
@@ -308,7 +342,8 @@
      "check": "max-setting-header-list-size-check",
      "weight": "max-setting-header-list-size-threat-weight",
      "desc": "Maximum acceptable header list size in request SETTINGS frame.",
-     "proto": "HTTP/2 Only"
+     "proto": "HTTP/2 Only",
+     "has_length": true
     },
     {
      "label": "HTTP/2 Max Requests",
@@ -316,7 +351,8 @@
      "check": "http2-max-requests-check",
      "weight": "http2-max-requests-threat-weight",
      "desc": "The maximum acceptable number of requests in an HTTP/2 connection.",
-     "proto": "HTTP/2 Only"
+     "proto": "HTTP/2 Only",
+     "has_length": true
     },
     {
      "label": "HTTP/2 RST Stream",
@@ -324,7 +360,8 @@
      "check": "h2-rst-stream-check",
      "weight": "h2-rst-stream-threat-weight",
      "desc": "Check for the RST Stream in an HTTP/2 connection.",
-     "proto": "HTTP/2 Only"
+     "proto": "HTTP/2 Only",
+     "has_length": true
     },
     {
      "label": "HTTP/2 RST Stream Frequency",
@@ -332,7 +369,8 @@
      "check": "h2-rst-stream-freq-check",
      "weight": "h2-rst-stream-freq-threat-weight",
      "desc": "Check for the RST Stream frequency every second in an HTTP/2 connection.",
-     "proto": "HTTP/2 Only"
+     "proto": "HTTP/2 Only",
+     "has_length": true
     }
    ]
   },
@@ -345,7 +383,8 @@
      "check": "h3-max-table-capacity-check",
      "weight": "h3-max-table-capacity-threat-weight",
      "desc": "Maximum acceptable max table capacity in request SETTINGS frame.",
-     "proto": "HTTP/3 Only"
+     "proto": "HTTP/3 Only",
+     "has_length": true
     },
     {
      "label": "Max Field Section Size",
@@ -353,7 +392,8 @@
      "check": "h3-max-field-section-size-check",
      "weight": "h3-max-field-section-size-threat-weight",
      "desc": "Maximum acceptable max field section size in request SETTINGS frame.",
-     "proto": "HTTP/3 Only"
+     "proto": "HTTP/3 Only",
+     "has_length": true
     },
     {
      "label": "Blocked Streams",
@@ -361,7 +401,8 @@
      "check": "h3-block-streams-check",
      "weight": "h3-block-streams-threat-weight",
      "desc": "Maximum acceptable blocked streams in request SETTINGS frame.",
-     "proto": "HTTP/3 Only"
+     "proto": "HTTP/3 Only",
+     "has_length": true
     },
     {
      "label": "Bidirectional Concurrent Streams",
@@ -369,7 +410,8 @@
      "check": "h3-bidir-concurrent-stream-check",
      "weight": "h3-bidir-concurrent-stream-threat-weight",
      "desc": "The maximum acceptable number of bidirectional concurrent streams in an HTTP/3 connection.",
-     "proto": "HTTP/3 Only"
+     "proto": "HTTP/3 Only",
+     "has_length": true
     },
     {
      "label": "Unidirectional Concurrent Streams",
@@ -377,7 +419,8 @@
      "check": "h3-unidir-concurrent-stream-check",
      "weight": "h3-unidir-concurrent-stream-threat-weight",
      "desc": "The maximum acceptable number of unidirectional concurrent streams in an HTTP/3 connection.",
-     "proto": "HTTP/3 Only"
+     "proto": "HTTP/3 Only",
+     "has_length": true
     }
    ]
   },
@@ -390,7 +433,8 @@
      "check": "Illegal-content-type-check",
      "weight": "Illegal-content-type-check-threat-weight",
      "desc": "Content type must be in the format of type/subtype.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Illegal Response Code",
@@ -398,7 +442,8 @@
      "check": "Illegal-response-code-check",
      "weight": "Illegal-response-code-check-threat-weight",
      "desc": "HTTP response code must be a 3 digit number.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Illegal Host Name",
@@ -406,7 +451,8 @@
      "check": "Illegal-host-name-check",
      "weight": "Illegal-host-name-check-threat-weight",
      "desc": "Checks for illegal characters in the Host: line of the HTTP header, such as null characters or encoded characters.For example, characters such as 0x0 or %2500* will be considered illegal.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Illegal HTTP Version",
@@ -414,7 +460,8 @@
      "check": "Illegal-http-version-check",
      "weight": "Illegal-http-version-threat-weight",
      "desc": "Checks for invalid HTTP version numbers. Currently, the only valid version strings are HTTP/0.9, HTTP/1.0 or HTTP/1.1.",
-     "proto": "HTTP/1.X Only"
+     "proto": "HTTP/1.X Only",
+     "has_length": false
     },
     {
      "label": "Body Length",
@@ -422,7 +469,8 @@
      "check": "max-http-body-length-check",
      "weight": "max-http-body-length-threat-weight",
      "desc": "The length of HTTP body must not exceed the maximum defined length (16384KB by default).",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Number of Cookies in Request",
@@ -430,7 +478,8 @@
      "check": "max-cookie-in-request-check",
      "weight": "max-cookie-in-request-threat-weight",
      "desc": "Maximum acceptable number of cookies in an HTTP request (128 by default).",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Number of Ranges in Range Header",
@@ -438,7 +487,8 @@
      "check": "number-of-ranges-in-range-header-check",
      "weight": "number-of-ranges-in-range-header-threat-weight",
      "desc": "Maximum acceptable number of Range: lines in each HTTP header. The default value is 5.",
-     "proto": ""
+     "proto": "",
+     "has_length": true
     },
     {
      "label": "Malformed Request",
@@ -446,7 +496,8 @@
      "check": "block-malformed-request-check",
      "weight": "block-malformed-request-threat-weight",
      "desc": "Request exceeds the maximum buffer size allowed by FortiWeb's HTTP parser or a specific malformed packet that causes the parser to work incorrectly.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "RPC Protocol",
@@ -454,7 +505,8 @@
      "check": "rpc-protocol-check",
      "weight": "rpc-protocol-threat-weight",
      "desc": "Checks for RPC Over HTTP traffic.",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "WebSocket Protocol",
@@ -462,7 +514,8 @@
      "check": "web-socket-protocol-check",
      "weight": "web-socket-protocol-threat-weight",
      "desc": "Checks for WebSocket traffic.",
-     "proto": "HTTP/1.X Only"
+     "proto": "HTTP/1.X Only",
+     "has_length": false
     },
     {
      "label": "Illegal Chunk Size",
@@ -470,7 +523,8 @@
      "check": "chunk-size-check",
      "weight": "chunk-size-weight",
      "desc": "Checks for illegal characters in the Chunk size field. Only numeric values are allowed.",
-     "proto": "HTTP/1.X Only"
+     "proto": "HTTP/1.X Only",
+     "has_length": false
     },
     {
      "label": "Range Overlapping",
@@ -478,7 +532,8 @@
      "check": "range-overlapping-check",
      "weight": "range-overlapping-threat-weight",
      "desc": "Checks for overlapping range in the Range header",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     },
     {
      "label": "Multipart/form-data Bad Request",
@@ -486,7 +541,8 @@
      "check": "multipart-formdata-bad-request-check",
      "weight": "multipart-formdata-bad-request-threat-weight",
      "desc": "Checks that each multipart request chunk contains Content-Disposition and Name",
-     "proto": ""
+     "proto": "",
+     "has_length": false
     }
    ]
   }
@@ -809,5 +865,74 @@
     ]
    }
   ]
+ },
+ "options": {
+  "action": [
+   [
+    "alert",
+    "Alert"
+   ],
+   [
+    "alert_deny",
+    "Alert & Deny"
+   ],
+   [
+    "deny_no_log",
+    "Deny (no log)"
+   ],
+   [
+    "block-period",
+    "Block Period"
+   ],
+   [
+    "client-id-block-period",
+    "Client ID Block Period"
+   ]
+  ],
+  "severity": [
+   [
+    "High",
+    "High"
+   ],
+   [
+    "Medium",
+    "Medium"
+   ],
+   [
+    "Low",
+    "Low"
+   ],
+   [
+    "Info",
+    "Informative"
+   ]
+  ],
+  "threat_weight": [
+   [
+    "informational",
+    "0"
+   ],
+   [
+    "low",
+    "1"
+   ],
+   [
+    "moderate",
+    "2"
+   ],
+   [
+    "substantial",
+    "3"
+   ],
+   [
+    "severe",
+    "4"
+   ],
+   [
+    "critical",
+    "5"
+   ]
+  ],
+  "measured": "Values: api_library cli_tree FortiWeb 7.6.8; labels and the threat-weight numbers: the device's own Edit HTTP Protocol Constraints dialog (2026-11-01)."
  }
 }

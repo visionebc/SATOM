@@ -1487,6 +1487,22 @@ def _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs):
                            writable_subtables=[], gp=gp, gx=_gx(appl))
 
 
+def _with_constraint_table(dview: dict, key: str, row: dict) -> None:
+    """HTTP Protocol Constraints: FortiWeb draws the constraints as a
+    categorised table the GUI layout does not carry (measured separately,
+    services.http_constraints_gui). Its cells replace the stray single fields
+    the layout left for them."""
+    from ..services import http_constraints_gui as hce
+    if key != hce.CONSTRAINTS_DIALOG:
+        return
+    tbl = hce.constraint_table(row or {})
+    placed = set(tbl["keys"])
+    for b in dview.get("blocks") or []:
+        b["fields"] = [f for f in b.get("fields") or [] if f.get("key") not in placed]
+    dview["blocks"] = [b for b in dview.get("blocks") or [] if b.get("fields")]
+    dview["hce_table"] = tbl
+
+
 @bp.route('/<int:appliance_id>/fwgui/<page>/o/<path:name>')
 @login_required
 @require_permission('protection.view')
@@ -1546,6 +1562,8 @@ def fwgui_object(appliance_id, page, name):
         can_edit = writer and objform.is_known_collection(coll)
         tpl, prow, groups = gui_bound.prepare(tpl, key, obj, appl)
         dview = gui_template.dialog_view(tpl, key, prow, dev, subrows=subrows, live=can_edit)
+        if page == 'http-protocol':
+            _with_constraint_table(dview, key, prow)
     else:
         abort(404)
     writable_subtables = sorted(

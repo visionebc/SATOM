@@ -63,6 +63,47 @@ def exception_layout(fields: list[dict]) -> dict:
     }
 
 
+CONSTRAINTS_PAGE = "http-protocol"
+CONSTRAINTS_DIALOG = "http_constraints_dialog"
+
+
+def constraint_table(row: dict) -> dict:
+    """The constraints of one HTTP Protocol Constraints profile as FortiWeb's
+    Edit dialog draws them: seven collapsible categories, a row per constraint
+    with Status, Length (where the constraint has one), Action, Block Period,
+    Severity, Threat Weight, Trigger Policy and protocol support. Each cell is
+    the REST key it edits (``key``) and its current value (``raw``); a key the
+    object does not carry is not drawn. ``keys``: every key placed here."""
+    d = data()
+    row = row or {}
+    keys: set = set()
+
+    def cell(k):
+        if not k or k not in row:
+            return None
+        keys.add(k)
+        v = row.get(k)
+        return {"key": k, "raw": "" if v is None else str(v)}
+
+    cats = []
+    for c in d["constraints"]:
+        rows = []
+        for r in c["rows"]:
+            cid = r["id"]
+            rows.append({
+                "label": r["label"], "desc": r.get("desc", ""), "proto": r.get("proto", ""),
+                "status": cell(r.get("check") or cid),
+                "length": cell(cid) if r.get("has_length") else None,
+                "action": cell(cid + "-action"),
+                "block_period": cell(cid + "-block-period"),
+                "severity": cell(cid + "-severity"),
+                "threat_weight": cell(r.get("weight")),
+                "trigger": cell(cid + "-trigger"),
+            })
+        cats.append({"title": c["title"], "rows": rows})
+    return {"categories": cats, "options": d.get("options") or {}, "keys": sorted(keys)}
+
+
 def profile_state(appliance_id: int, wpp: str) -> dict:
     """Which constraints are ON in the HTTP Protocol Constraints profile the
     WPP binds, read from the SATOM cache. ``read`` False = could not tell

@@ -22,6 +22,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   repeated method checkboxes and the row dialogs of tabbed pages. SATOM
   resolves those conditions from its cache, so fields appear and disappear as
   on the device.
+- **HTTP Protocol Constraints: the profile's constraints in FortiWeb's
+  table.** The Edit dialog lists the 56 constraints in the device's seven
+  collapsible categories, each with Status, Length (where the constraint has
+  one), Action, Block Period, Severity, Threat Weight (0-5, as the device
+  shows it), Trigger Policy and protocol support -- measured on the device's
+  own dialog -- instead of two stray number fields marked "conditional".
+  Every cell edits its REST key through the same Save.
 - **Exceptions: every type with a measured row dialog is authored in it.**
   Cookie Security, File Exception, Allow Method, Bot Mitigation, URL
   Encryption and Link Cloaking exceptions (and the others as the device

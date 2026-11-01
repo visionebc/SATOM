@@ -262,6 +262,54 @@
     {% endif %}
     </div>
   {% endfor %}
+  {% if view.hce_table %}{% set ht = view.hce_table %}
+  {% macro hce_sel(c, opts) -%}
+    {%- if c -%}<select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ c.key }}" data-orig="{{ c.raw }}"{{ ' disabled' if not can_edit }}>
+      {%- if c.raw not in opts|map('first')|list %}<option value="{{ c.raw }}" selected>{{ c.raw }}</option>{% endif -%}
+      {%- for v, l in opts %}<option value="{{ v }}"{{ ' selected' if v == c.raw }}>{{ l }}</option>{% endfor -%}
+    </select>{%- endif -%}
+  {%- endmacro %}
+  <style nonce="{{ csp_nonce }}">
+  .fwg-hce-table td{vertical-align:middle}
+  .fwg-hce-head td{background:var(--fw-content-bg,#F3F6FC);cursor:pointer;font-weight:600;user-select:none}
+  .fwg-hce-table select,.fwg-hce-table input[type=number]{min-width:7rem}
+  </style>
+  <div class="fwg-block fwg-hce" data-hce-table>
+    <table class="fwg-table fwg-hce-table">
+      <thead><tr><th>Status</th><th>Name</th><th>Length</th><th>Action</th><th>Block Period</th><th>Severity</th><th>Threat Weight</th><th>Trigger Policy</th><th>HTTP Protocol Support</th></tr></thead>
+      {% for c in ht.categories %}
+      <tbody><tr class="fwg-hce-head" data-hce-cat="{{ loop.index0 }}"><td colspan="9"><i class="bi bi-plus-square"></i> {{ c.title }}({{ c.rows|length }})</td></tr></tbody>
+      <tbody data-hce-rows="{{ loop.index0 }}" hidden>
+      {% for r in c.rows %}<tr>
+        <td>{% if r.status %}<span class="form-check form-switch mb-0"><input type="checkbox" class="form-check-input fwg-in" role="switch" data-gkey="{{ r.status.key }}" data-orig="{{ r.status.raw }}" data-on="enable" data-off="disable" aria-label="{{ r.label }}"{{ ' checked' if r.status.raw == 'enable' }}{{ ' disabled' if not can_edit }}></span>{% endif %}</td>
+        <td>{{ r.label }}<div class="small text-muted">{{ r.desc }}</div></td>
+        <td>{% if r.length %}<input type="number" class="form-control form-control-sm fwg-in fwg-edit" data-gkey="{{ r.length.key }}" data-orig="{{ r.length.raw }}" value="{{ r.length.raw }}"{{ ' disabled' if not can_edit }}>{% endif %}</td>
+        <td>{{ hce_sel(r.action, ht.options.action) }}</td>
+        <td>{% if r.block_period %}<input type="number" min="1" max="3600" class="form-control form-control-sm fwg-in fwg-edit" data-gkey="{{ r.block_period.key }}" data-orig="{{ r.block_period.raw }}" value="{{ r.block_period.raw }}"{{ ' disabled' if not can_edit }}>{% endif %}</td>
+        <td>{{ hce_sel(r.severity, ht.options.severity) }}</td>
+        <td>{{ hce_sel(r.threat_weight, ht.options.threat_weight) }}</td>
+        <td>{% if r.trigger %}<select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ r.trigger.key }}" data-orig="{{ r.trigger.raw }}" data-ref="log/trigger-policy"{{ ' disabled' if not can_edit }}><option value="">{{ _('— none —') }}</option>{% if r.trigger.raw %}<option value="{{ r.trigger.raw }}" selected>{{ r.trigger.raw }}</option>{% endif %}</select>{% endif %}</td>
+        <td class="small">{{ r.proto }}</td>
+      </tr>{% endfor %}
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    // FortiWeb's categories: collapsed, one click opens them.
+    document.querySelectorAll('[data-hce-cat]').forEach(function (h) {
+      h.addEventListener('click', function () {
+        var rows = document.querySelector('[data-hce-rows="' + h.dataset.hceCat + '"]');
+        if (!rows) return;
+        rows.hidden = !rows.hidden;
+        var i = h.querySelector('i');
+        if (i) i.className = 'bi bi-' + (rows.hidden ? 'plus' : 'dash') + '-square';
+      });
+    });
+  })();
+  </script>
+  {% endif %}
   {% if (not is_new or not _fwp) and view.key == main and not row_ctx %}
     {% if nig_edit %}
       <div class="fw-card mt-3 p-3 fw-nig-tab">{{ nig_editable(nig_edit, create=is_new, mkey=name, collection=save_ep, endpoint=(gp.nig_endpoint if gp else ''), singleton=(gp.form if gp else false)) }}</div>
@@ -627,11 +675,15 @@
       pen.setAttribute('href', sel.value ? pen.dataset.base + '&mkey=' + encodeURIComponent(sel.value) : '#');
     });
   });
-  // Reference lists come from the device (cache fallback), once per select.
+  // Reference lists come from SATOM's cache (the device when it has none),
+  // one request per collection however many selects list it (the HTTP
+  // Protocol Constraints table has a Trigger Policy select per constraint).
+  var REFS = {};
   document.querySelectorAll('select[data-ref]').forEach(function (sel) {
     var first = sel.dataset.ref.split('|')[0];
-    fetch(OPTS + '?endpoint=' + encodeURIComponent(first)).then(function (r) { return r.json(); })
-      .then(function (j) {
+    var req = REFS[first] || (REFS[first] = fetch(OPTS + '?endpoint=' + encodeURIComponent(first))
+      .then(function (r) { return r.json(); }));
+    req.then(function (j) {
         var have = {};
         Array.prototype.forEach.call(sel.options, function (o) { have[o.value] = true; });
         (j.names || []).forEach(function (n) {

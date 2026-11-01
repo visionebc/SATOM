@@ -428,8 +428,14 @@ def _assemble(row: dict, exc_type: str,
             target, field = _SIG_ELEMENT[chosen]
             payload['match-target'] = target
             payload['operator'] = 'STRING_MATCH'
-            payload[field] = (_path_of(_val(row, chosen))
-                              if chosen == 'http_url' else _val(row, chosen))
+            val = _val(row, chosen)
+            if chosen == 'http_url':
+                val = _path_of(val)
+            elif chosen == 'http_method':
+                # The log prints GET; the box stores get (CLI tree of
+                # 7.6.8/8.0.6 offers lower-case tokens only).
+                val = val.lower()
+            payload[field] = val
             if field == 'value':
                 payload['value-check'] = 'enable'
             used.append(chosen)

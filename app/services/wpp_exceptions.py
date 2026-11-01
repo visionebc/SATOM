@@ -132,6 +132,26 @@ def _f(key, label, widget="text", options=None):
     return {"key": key, "label": label, "widget": widget, "options": options or []}
 
 
+# Device tokens of a signature exception's ``http-method``, read from the CLI
+# tree of 7.6.8 AND 8.0.6 (api_library ``waf/signature/filter_list``,
+# cli_type ``option`` = ONE value). The box stores them lower-case; the GUI
+# prints them upper-case. The generated WAF catalog has no enum for this key,
+# so without this the form offered a free-text box nobody could fill right.
+HTTP_METHOD_TOKENS = ["get", "post", "head", "options", "trace", "connect",
+                      "delete", "put", "patch", "others"]
+
+# One line under the input: where the operator gets the value from.
+FIELD_HINTS: dict[str, str] = {
+    "signature_id": ("The signature that blocked the request: the Signature ID "
+                     "column of the Attack log (Create exception there fills "
+                     "this form). Type an id, attack class or words of the "
+                     "description to search the signature index."),
+    "http-method": ("The method of the blocked request (Attack log, HTTP "
+                    "Method column). The signature is skipped only for "
+                    "requests using this method."),
+}
+
+
 FIELD_SPECS: dict[str, list[dict]] = {
     "signature_filter_item": [
         _f("signature_id", "Signature ID"),
@@ -140,7 +160,8 @@ FIELD_SPECS: dict[str, list[dict]] = {
             "COOKIE", "HTTP_HEADER", "JSON_ELEMENTS"]),
         _f("operator", "Operation", "enum",
            ["STRING_MATCH", "REGEXP_MATCH", "EQ", "NE", "INCLUDE", "EXCLUDE"]),
-        _f("http-method", "HTTP Method"),
+        dict(_f("http-method", "HTTP Method", "enum", HTTP_METHOD_TOKENS),
+             option_labels={m: m.upper() for m in HTTP_METHOD_TOKENS}),
         _f("ip", "Client IP"),
         _f("name", "Name"),
         _f("value-check", "Check Value", "toggle"),
@@ -559,13 +580,24 @@ def fields_for(exc_type: str) -> list[dict]:
     exc_type = canonical_type(exc_type)
     kind = _KIND_ALIAS.get(exc_type, exc_type)
     required = set(REQUIRED_FIELDS.get(exc_type, ()))
+    seed = {f["key"]: f for f in FIELD_SPECS.get(exc_type, [])}
     if kind in KIND_SPECS:
         out = []
         for key in kind_keys(kind):
             if key == "id":
                 continue
             d = descriptor(kind, key, "", {})
+            # A curated seed enum fills a key the generated catalog left as
+            # free text (``http-method``); the engine wins everywhere else.
+            s = seed.get(key)
+            if d.get("widget") == "text" and s and s.get("widget") == "enum":
+                d["widget"] = "enum"
+                d["options"] = list(s["options"])
+                if s.get("option_labels"):
+                    d["option_labels"] = dict(s["option_labels"])
             d["required"] = key in required
+            if key in FIELD_HINTS:
+                d["hint"] = FIELD_HINTS[key]
             out.append(d)
         if out:
             return out
@@ -573,6 +605,8 @@ def fields_for(exc_type: str) -> list[dict]:
     for f in FIELD_SPECS.get(exc_type, []):
         f = dict(f)
         f["required"] = f["key"] in required
+        if f["key"] in FIELD_HINTS:
+            f["hint"] = FIELD_HINTS[f["key"]]
         flat.append(f)
     return flat
 

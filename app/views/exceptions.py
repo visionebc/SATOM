@@ -185,6 +185,21 @@ def type_fields(id=None):
                    help=store.help_for(key))
 
 
+@bp.route('/signature-lookup')
+@login_required
+@require_permission('protection.view')
+def signature_lookup():
+    """Signature ids for the Signature ID input, from the LOCAL index
+    (``signature_index``) -- never the device. ``indexed`` = 0 tells the form
+    the index was never built, so an empty answer is not read as "no match"."""
+    from ..services import signature_index as sidx
+    q = (request.args.get('q') or '').strip()[:80]
+    rows = sidx.search('fortiweb', q, limit=25) if len(q) >= 2 else []
+    return jsonify(ok=True, indexed=sidx.entry_count('fortiweb'), results=[
+        {'id': r.sig_id, 'main': r.main_name, 'sub': r.sub_name,
+         'desc': (r.description or '')[:200]} for r in rows])
+
+
 @bp.route('/<int:id>/save', methods=['POST'])
 @require_permission('config_write')
 def save(id):

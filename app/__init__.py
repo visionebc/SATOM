@@ -711,7 +711,7 @@ def create_app(config_override: object | None = None) -> Flask:
         ep = request.endpoint or ''
         # Pure-metadata JSON endpoints need no device context — gating them
         # only breaks the forms (and tests) that fetch field specs.
-        if ep in ('exceptions.type_fields',):
+        if ep in ('exceptions.type_fields', 'exceptions.signature_lookup'):
             return None
         bp_name = ep.split('.', 1)[0]
         device_bps = {'workspace', 'spo_wizard', 'server_objects', 'web_protection',

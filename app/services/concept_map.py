@@ -770,6 +770,7 @@ EXCLUDED: dict[str, str] = {
     "system_backup.git_bundle_external_download": "file download",
     "system_backup.git_bundle_external_list": "json feed",
     "exceptions.type_fields": "json feed", "firmware.manifest": "json feed",
+    "exceptions.signature_lookup": "json feed",
     "logs.history": "json feed",
     "diag_battery.discover_status": "json feed",
     "logs.status": "json feed", "regex_lab.examples": "json feed",

@@ -6,6 +6,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+- **Exceptions: the form says where Signature ID and HTTP Method come from.**
+  Request: "Signature ID — how will the user know which signature id to pick?
+  And HTTP Method — where does that come from?" Signature ID now searches the
+  local signature index as you type (id, attack class or description) and
+  shows the picked signature's class and description, with a note that the
+  value is the Attack log's Signature ID column. HTTP Method is a select of
+  the device tokens (GET … OTHERS, read from the 7.6.8 and 8.0.6 CLI tree)
+  instead of free text, still shown only for Element Type = HTTP Method.
+
+### Fixed
+- **A signature exception built from the Attack log carried the method as the
+  log prints it (`GET`)**; FortiWeb stores `get`. It is now lower-cased, like
+  the Allow Method exception already was.
+- **Exceptions: no gap between the Purge and Detect cards.**
+
 ## [4.8.0] - 2026-10-31
 
 **Names written in one place, and Troubleshooting as plugins.** Naming

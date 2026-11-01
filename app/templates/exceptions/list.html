@@ -338,7 +338,7 @@
 </div>
 
 {# ── purge (clean migration) ───────────────────────────────────────────── #}
-<div class="card border-danger-subtle">
+<div class="card mb-4 border-danger-subtle">
   <div class="card-header text-danger"><strong>{{ _('Purge (clean migration)') }}</strong></div>
   <div class="card-body">
     <p class="text-muted small mb-2">{{ _('Remove every carve-out bound to a Server Policy (e.g. before migrating it to another box).') }}</p>
@@ -426,6 +426,11 @@ function fieldInput(f, val){
     if (val && (f.options||[]).indexOf(val) < 0) html += '<option value="'+esc(val)+'" selected>'+esc(lab[val]||val)+'</option>';
     return html + '</select>';
   }
+  if (f.key === 'signature_id'){
+    // Searchable over the local signature index (id, class, description).
+    return '<input class="form-control form-control-sm exc-fld" data-key="signature_id" list="exc-sig-list" autocomplete="off" value="'+esc(val)+'">'
+      + '<datalist id="exc-sig-list"></datalist><div class="small mt-1" id="exc-sig-info"></div>';
+  }
   let input = '<input class="form-control form-control-sm exc-fld" data-key="'+f.key+'" value="'+esc(val)+'">';
   if (f.regex){
     // "Prove it first" — the .* button opens the regex calculator seeded with
@@ -443,9 +448,11 @@ function renderFields(fields, payload){
     const col = document.createElement('div'); col.className = 'col-md-4 exc-fld-wrap';
     if (f.vis) col.setAttribute('data-vis', JSON.stringify(f.vis));
     const req = f.required ? ' <span class="text-danger">*</span>' : '';
-    col.innerHTML = '<label class="form-label small">'+esc(f.label)+req+' <code class="text-muted">'+esc(f.key)+'</code></label>' + fieldInput(f, payload[f.key]);
+    col.innerHTML = '<label class="form-label small">'+esc(f.label)+req+' <code class="text-muted">'+esc(f.key)+'</code></label>' + fieldInput(f, payload[f.key])
+      + (f.hint ? '<div class="form-text">'+esc(f.hint)+'</div>' : '');
     box.appendChild(col);
   });
+  if (box.querySelector('[data-key="signature_id"]')) excSigLookup(true);
   if (!fields.length) box.innerHTML = '<div class="col-12 text-muted small">This type has no curated fields — bind it and add details in the reason.</div>';
   excRefreshVis();
 }
@@ -460,6 +467,45 @@ function excRefreshVis(){
     w.style.display = show ? '' : 'none';
   });
 }
+// Signature ID: suggestions + the picked signature's class and description.
+var excSigTimer = null, excSigRows = {};
+function excSigShow(){
+  const inp = document.querySelector('#exc-fields .exc-fld[data-key="signature_id"]');
+  const info = document.getElementById('exc-sig-info');
+  if (!inp || !info) return;
+  const r = excSigRows[inp.value.trim()];
+  info.className = 'small mt-1';
+  if (r){ info.innerHTML = '<strong>'+esc(r.main)+(r.sub && r.sub !== r.main ? ' · '+esc(r.sub) : '')+'</strong>'+(r.desc ? ' — <span class="text-muted">'+esc(r.desc)+'</span>' : ''); }
+  else if (/^\d{9,10}$/.test(inp.value.trim()) && excSigRows.__done){ info.className = 'small mt-1 text-danger'; info.textContent = 'Not in the signature index — check the id against the Attack log.'; }
+  else { info.textContent = ''; }
+}
+function excSigLookup(now){
+  const inp = document.querySelector('#exc-fields .exc-fld[data-key="signature_id"]');
+  if (!inp) return;
+  clearTimeout(excSigTimer);
+  excSigTimer = setTimeout(function(){
+    const q = inp.value.trim();
+    if (q.length < 2){ excSigShow(); return; }
+    fetch('/exceptions/signature-lookup?q='+encodeURIComponent(q)).then(r=>r.json()).then(function(j){
+      const dl = document.getElementById('exc-sig-list');
+      excSigRows = {__done: true};
+      if (dl) dl.innerHTML = '';
+      (j.results||[]).forEach(function(r){
+        excSigRows[r.id] = r;
+        if (dl) dl.insertAdjacentHTML('beforeend', '<option value="'+esc(r.id)+'">'+esc(r.main+(r.sub && r.sub !== r.main ? ' · '+r.sub : '')+' — '+r.desc.slice(0,90))+'</option>');
+      });
+      if (!j.indexed){
+        const info = document.getElementById('exc-sig-info');
+        if (info){ info.className = 'small mt-1 text-warning'; info.textContent = 'The signature index is empty — build it under Signatures (Sync) to search here.'; }
+        return;
+      }
+      excSigShow();
+    }).catch(function(){});
+  }, now ? 0 : 250);
+}
+document.getElementById('exc-fields').addEventListener('input', function(ev){
+  if (ev.target.dataset && ev.target.dataset.key === 'signature_id') excSigLookup(false);
+});
 document.getElementById('exc-fields').addEventListener('change', excRefreshVis);
 document.getElementById('exc-fields').addEventListener('click', function(ev){
   const rx = ev.target.closest && ev.target.closest('.fw-rx-btn');

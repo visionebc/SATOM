@@ -132,7 +132,21 @@ class FortiWebOps:
 
     # -- real apply (device contact + snapshot + audit) -------------------
     def _record(self, action, endpoint, mkey, before, after, dry_run, error="",
-                forced=False):
+                forced=False, refresh=None):
+        """One ChangeHistory row + one audit line. A create names no mkey in
+        its request: the object's own name (from the payload) is recorded, so
+        the audit search finds "x" (2026-11-01: ``mkey=None`` on every create).
+        ``refresh`` (``object_refresh.after_write``) adds the re-read verdict
+        and what happened to SATOM's copy, as their own keys -- never inside
+        ``detail``, whose ``error=`` runs to the end of the string
+        (``drift_attribution._ERR_RE``)."""
+        if not mkey and action == "create":
+            from .object_refresh import _name_of
+            mkey = _name_of(after) or None
+        extra = {}
+        if isinstance(refresh, dict):
+            extra["verify"] = str((refresh.get("verify") or {}).get("verdict") or "")
+            extra["cache"] = str(refresh.get("why") or "")
         try:
             db.session.add(ChangeHistory(
                 appliance_id=getattr(self.appliance, "id", None),
@@ -149,7 +163,7 @@ class FortiWebOps:
         log_action(f"config.{action}", target=endpoint or "",
                    appliance_id=getattr(self.appliance, "id", None),
                    detail=(f"mkey={mkey} dry_run={dry_run} error={error}"
-                           + (" ref_check=forced" if forced else "")))
+                           + (" ref_check=forced" if forced else "")), **extra)
 
     @staticmethod
     def _response_ok(resp):
@@ -205,8 +219,6 @@ class FortiWebOps:
         try:
             resp = self.client.api_call(method, path, payload)
             ok, err = self._response_ok(resp)
-            self._record(action, endpoint, mkey, before, payload, False, err,
-                         forced=forced)
             # Targeted rediscovery + verification: re-read what this write
             # touched (one object or one sub-table) right here, for every
             # caller at once — the cache follows the device, and ``verify``
@@ -221,6 +233,10 @@ class FortiWebOps:
                 from . import object_refresh
                 refresh = object_refresh.after_write(self.appliance, self.client,
                                                      action, path, payload)
+            # recorded AFTER the re-read, so the line says what it found
+            self._record(action, endpoint, mkey, before, payload, False, err,
+                         forced=forced, refresh=refresh)
+            if ok:
                 v = refresh.get("verify") or {}
                 if v.get("verdict") == object_refresh.MISMATCH:
                     log_action(f"config.{action}.not_applied", target=endpoint or "",

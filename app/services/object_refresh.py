@@ -199,15 +199,7 @@ def _cached(session, appliance_id, logical, mkey=None, *, layer=None) -> bool:
 
 
 def _covered_section(session, appliance_id, logical):
-    """The section under which the device's last good sweep READ ``logical``
-    (empty), from :class:`DeviceCoverage`; None when that sweep did not read
-    it (SATOM does not cache that type: nothing is invented)."""
-    try:
-        from .device_sync import coverage_for
-        cov = coverage_for(appliance_id, session=session)
-        return ((cov.tables or {}).get(logical) or None) if cov is not None else None
-    except Exception:  # noqa: BLE001 — not known: not cached
-        return None
+    return wt.covered_section(session, appliance_id, logical)
 
 
 def _subtable(session, aid, client, action, base, logical, sub, q, data, out):

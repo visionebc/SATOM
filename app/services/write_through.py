@@ -204,6 +204,18 @@ def local_subrows(appliance_id, logical, mkey, subtable, rows, *, session=None) 
     return len(fresh)
 
 
+def covered_section(session, appliance_id, logical):
+    """The section under which the device's last good sweep READ ``logical``
+    (empty), from :class:`DeviceCoverage`; None when that sweep did not read
+    it (SATOM does not cache that type: nothing is invented)."""
+    try:
+        from .device_sync import coverage_for
+        cov = coverage_for(appliance_id, session=session)
+        return ((cov.tables or {}).get(logical) or None) if cov is not None else None
+    except Exception:  # noqa: BLE001 — not known: not cached
+        return None
+
+
 def local_insert(appliance_id, logical, mkey, payload, *, session=None,
                  section: str | None = None) -> bool:
     """Cache a top-level object just created on the device (config layer),
@@ -224,6 +236,12 @@ def local_insert(appliance_id, logical, mkey, payload, *, session=None,
     sib = (session.query(DeviceObject)
            .filter_by(appliance_id=appliance_id, logical_name=logical, depth=0,
                       layer="config").first())
+    if sib is None and not section:
+        # the first object of a table the last good sweep read EMPTY: every
+        # writer (FortiWeb object editor, FortiAuthenticator, FortiADC, the
+        # re-read after a write) caches it under the section DeviceCoverage
+        # recorded -- not only the callers that remembered to pass it
+        section = covered_section(session, appliance_id, logical)
     if sib is None and not section:
         return False
     obj = DeviceObject(appliance_id=appliance_id,

@@ -2107,9 +2107,9 @@ class GuiOps:
                                                 req["body"])
         except Exception as exc:  # noqa: BLE001 -- a dead device is an answer
             ok, err = False, "%s: %s" % (type(exc).__name__, exc)
-        self._record(op, endpoint, mkey, before, req["body"], err)
         out = {"ok": ok, "dry_run": False, "request": req, "error": err, "before": before}
         if not ok:
+            self._record(op, endpoint, mkey, before, req["body"], err)
             return out
         try:
             out.update(self._verify(op, endpoint, mkey, body, pkey, table, before, known,
@@ -2119,6 +2119,10 @@ class GuiOps:
                        after=None, mkey=mkey, sub_id=None)
         v = out.get("verify") or {}
         out["verdict"] = verdict_view(v)
+        # recorded AFTER the re-read: a create names its own object (the
+        # request had no mkey) and the line says what the re-read found
+        self._record(op, endpoint, out.get("mkey") or mkey, before, req["body"], err,
+                     verify=v, cache=out.get("cache_refresh"))
         if v.get("verdict") == "mismatch":
             # accepted, not held: the operation FAILED, saying what the device
             # kept; audited as on FortiWeb (``FortiWebOps._apply``)
@@ -2242,7 +2246,7 @@ class GuiOps:
         out["sub_id"] = row_id(hit) if hit else (str(sub_id) if sub_id else "")
         return out
 
-    def _record(self, op, endpoint, mkey, before, after, error):
+    def _record(self, op, endpoint, mkey, before, after, error, verify=None, cache=None):
         from ..models import ChangeHistory, db
         from .audit import log_action
         from .fortiweb_ops import _current_username
@@ -2258,7 +2262,10 @@ class GuiOps:
             db.session.rollback()
         log_action("config.%s" % op, target="%s:%s" % (self.ad.product, endpoint),
                    appliance_id=getattr(self.appliance, "id", None),
-                   detail="mkey=%s dry_run=False error=%s" % (mkey, error))
+                   detail="mkey=%s dry_run=False error=%s" % (mkey, error),
+                   **({"verify": str((verify or {}).get("verdict") or ""),
+                       "cache": str((cache or {}).get("why") or "")}
+                      if verify is not None else {}))
 
 
 # --------------------------------------------------------------------------- #

@@ -177,6 +177,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   last sync read empty is now cached under that table's section (as FortiADC
   already was), and a dialog whose object is not cached yet reads that one
   object from the device; one the device does not have is still "not found".
+- **Every writer caches the first object of an empty table, and the Audit Log
+  names what a create created.** Request: "this must never happen, we have to
+  solve it always; and if it is in the log, why don't I see this insertion?"
+  The empty-table fallback of the previous fix lived in one caller only: the
+  object editor, FortiAuthenticator and FortiADC writes still left the first
+  object of an empty table out of SATOM's copy. It now lives in the one
+  function every writer uses. And every create was audited as `mkey=None` (a
+  create's request names no object), so searching the Audit Log for the new
+  object's name found nothing: the line now carries the object's own name
+  (FortiWeb: from the payload; FortiGate, FortiAuthenticator, FortiADC,
+  FortiAnalyzer: the key the re-read found) and two new fields, `verify` (what
+  the re-read of the device found: verified, mismatch, unverified) and `cache`
+  (what happened to SATOM's copy). The line is written after the re-read, so
+  it states what the device holds. Earlier entries keep what they recorded.
 - **A refused device read is no longer an empty signature policy.** The class
   table and Signature Details read the policy's lists through a call that
   dropped the error: a 401 or a licence lock read as "no rows" (an empty

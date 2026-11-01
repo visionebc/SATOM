@@ -9802,6 +9802,17 @@ Every write SATOM makes is recorded here: who, when, from which address, against
 which target, with the payload. It is the page a compliance question ends on, so
 it is read-only by construction — there is no edit or delete control, for anyone.
 
+**A device write says what the device holds.** SATOM writes to the device,
+reads the object back, updates its own copy from that read-back, and only then
+writes the audit line. A `config.create` / `config.update` / `config.delete`
+entry names the object (a create carries the new object's own name or id, so
+searching for that name finds it) and its detail has two extra fields:
+`verify` (the read-back: `verified`, `mismatch` — the device accepted the write
+but does not hold it, also logged as `config.<op>.not_applied` — or
+`unverified`) and `cache` (what happened to SATOM's copy, e.g. "first object of
+an empty table"). Entries written before 2026-11-01 have neither, and a create
+there reads `mkey=None`.
+
 **Each entry has an ID, and it is the handle for everything else.** The first
 column shows it as `#4821`. Click the ID to copy it — that click does *not* open
 the detail panel, so copying the handle never buries it. Clicking anywhere else

@@ -1172,7 +1172,12 @@ The dialogs keep FortiWeb's sections (the Web Protection Profile has fifteen:
 Standard Protection, Cookie, Advanced Protection, … Redirect), the notes the
 device prints under a field, and an **Edit entry** pencil beside every
 selector that has one on the device. A selector lists the objects of the
-collection the device's own page lists, served from SATOM's cache. Where the
+collection the device's own page lists, served from SATOM's cache. A
+selector the device filters lists only what the device lists there: the
+Certificate Group's RSA, DSA and ECDSA Certificate show only the local
+certificates of that key type, read from the device when the dialog opens
+(SATOM's cache does not hold the key type); if that read fails the list stays
+empty and says why, rather than offering every certificate. Where the
 device's list offers **Create**, a **+** beside the selector opens that
 object's own empty dialog in a panel over the current one (Trigger Policy,
 Custom Signature Group, IP List, Exception Policy…); when you save it, the

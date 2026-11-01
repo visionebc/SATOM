@@ -427,6 +427,11 @@ def _edit_spec(f: dict, d: dict, data: dict, dev: dict, *, new: bool = False) ->
         # "service" apart (Firewall Policy lists system/firewall.service)
         "ref": (f.get("ref_coll") or REF_ENDPOINTS.get(wkey or "", "") or _api_twin(f) or "")
         if kind == "ref" else "",
+        # the GUI lists only the source's rows that match (Certificate Group:
+        # pkey_type 1/2/3; SNI: cert_type local): the list comes from the GUI
+        # API that carries those fields (``ref_api``), never unfiltered
+        "ref_filter": (f.get("source_filter") or None) if kind == "ref" and f.get("ref_api") else None,
+        "ref_api": (f.get("ref_api") or "") if kind == "ref" and f.get("source_filter") else "",
         "min": f.get("min"),
         "max": f.get("max"),
     }

@@ -19,6 +19,10 @@
       "cmdb": "waf/openapi-file", "confidence": "measured",
       "evidence": "Same 6 OpenAPI files by name on fortiweb17; both empty on fortiweb18."
     },
+    "system/certificate.local": {
+      "cmdb": "system/certificate.local", "confidence": "measured",
+      "evidence": "fortiweb19 7.6.8 (2026-11-01): GUI API and cmdb list the same 8 local certificates by name; only the GUI API row carries pkey_type (1 RSA, 3 ECC) and cert_type, which the GUI's Certificate Group and SNI selectors filter on."
+    },
     "system/certificate.ocsp_sign_certs": {
       "cmdb": "system/certificate.ocsp-signing-certs", "confidence": "measured",
       "evidence": "Every layout key among the measured fields of the cmdb collection on 7.6.8 and 8.0.6; both empty on the lab."

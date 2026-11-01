@@ -98,7 +98,7 @@
     {% for o in f.opts %}<label class="form-check form-check-inline mb-0"><input type="checkbox" class="form-check-input" value="{{ o.value }}"{{ ' checked' if o.value in cur }}> {{ o.label }}</label>{% endfor %}
     </span>
   {% elif f.kind == 'ref' and f.ref %}
-    <select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ k }}" data-orig="{{ f.raw }}" data-ref="{{ f.ref }}">
+    <select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ k }}" data-orig="{{ f.raw }}" data-ref="{{ f.ref }}"{% if f.ref_filter %} data-ref-api="{{ f.ref_api }}" data-ref-filter="{{ f.ref_filter|tojson|forceescape }}"{% endif %}>
       <option value="">{{ _('— none —') }}</option>
       {% if f.raw %}<option value="{{ f.raw }}" selected>{{ f.raw }}</option>{% endif %}
     </select>
@@ -855,7 +855,12 @@
   var REFS = {};
   document.querySelectorAll('select[data-ref]').forEach(function (sel) {
     var first = sel.dataset.ref.split('|')[0];
-    var req = REFS[first] || (REFS[first] = fetch(OPTS + '?endpoint=' + encodeURIComponent(first))
+    var qs = '?endpoint=' + encodeURIComponent(first);
+    if (sel.dataset.refFilter) {
+      // the GUI's own filter (RSA / ECC certificates…): its GUI API list
+      qs += '&api=' + encodeURIComponent(sel.dataset.refApi) + '&filter=' + encodeURIComponent(sel.dataset.refFilter);
+    }
+    var req = REFS[qs] || (REFS[qs] = fetch(OPTS + qs)
       .then(function (r) { return r.json(); }));
     req.then(function (j) {
         var have = {};

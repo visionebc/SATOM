@@ -1,3 +1,4 @@
+import json
 import re
 from urllib.parse import quote
 
@@ -621,6 +622,50 @@ def policy_health(appliance_id, name):
     return jsonify(ok=True, members=members)
 
 
+#: GUI API lists FortiWeb's own selectors FILTER (its Omniselect source
+#: ``system.certificate.local``, 7.6.8 bundle: rows with ``status == "OK"``,
+#: kept when every filter key equals the row's value exactly), with the cmdb
+#: collection their names live in and the filter keys measured on them
+#: (fortiweb19 7.6.8, 2026-11-01: ``pkey_type`` 1 RSA / 3 ECC, ``cert_type``).
+FILTERED_GUI_LISTS = {
+    'system/certificate.local': {'cmdb': 'system/certificate.local',
+                                 'keys': frozenset({'pkey_type', 'cert_type'})},
+}
+
+
+def _filtered_options(appl, endpoint, api, raw_filter):
+    """The names a selector that FILTERS its list offers (Certificate Group's
+    RSA / DSA / ECDSA, SNI's local certificate). Read from the device's GUI
+    API: the cmdb rows SATOM caches do not carry the fields the filter reads,
+    so the cache cannot answer. A failed read is an error with an EMPTY list,
+    never the unfiltered one (an ECC certificate offered as the RSA one is a
+    write the device refuses)."""
+    spec = FILTERED_GUI_LISTS.get(api)
+    try:
+        flt = json.loads(raw_filter)
+    except ValueError:
+        flt = None
+    if (spec is None or spec['cmdb'] != endpoint or not isinstance(flt, dict) or not flt
+            or not set(flt) <= spec['keys']
+            or not all(isinstance(v, (int, str)) and not isinstance(v, bool) for v in flt.values())):
+        return jsonify(error='filter not allowed', names=[]), 400
+    try:
+        resp = FortiWebClient(appl).api_call('GET', '/api/v2.0/' + api)
+        body = resp.json() if resp is not None and resp.status_code == 200 else None
+    except Exception as exc:  # noqa: BLE001
+        body, eid = None, log_exception(exc, context='workspace.cmdb_options.filtered')
+        return jsonify(names=[], source='live', error=type(exc).__name__, error_id=eid)
+    rows = body.get('results') if isinstance(body, dict) else body
+    if not isinstance(rows, list):
+        return jsonify(names=[], source='live',
+                       error='the device did not list %s (HTTP %s)'
+                       % (api, getattr(resp, 'status_code', '?')))
+    names = [str(r.get('name')) for r in rows
+             if isinstance(r, dict) and r.get('name') and r.get('status') == 'OK'
+             and all(k in r and r[k] == v for k, v in flt.items())]
+    return jsonify(names=names, source='live', filter=flt)
+
+
 @bp.route('/<int:appliance_id>/cmdb-options')
 @login_required
 @require_permission('protection.view')
@@ -635,6 +680,9 @@ def cmdb_options(appliance_id):
     # GUI layouts name the collection a selector lists: ``ref_coll``).
     if endpoint not in ALL_REF_ENDPOINTS and not objform.is_known_collection(endpoint):
         return jsonify(error='endpoint not allowed', names=[]), 400
+    if request.args.get('filter'):
+        return _filtered_options(appl, endpoint, request.args.get('api', ''),
+                                 request.args.get('filter', ''))
     # Cache first (the Collector's copy): a dialog with 42 selectors made 42
     # device calls on every open. The device is asked when the cache has
     # nothing for the collection, or on request (?live=1). A name created in

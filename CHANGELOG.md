@@ -7,6 +7,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **Certificate selectors list what FortiWeb lists, filtered by key type.**
+  The Certificate Group dialog's RSA, DSA and ECDSA Certificate selectors
+  were text boxes (the ECDSA one could not even be saved: it had no field
+  name). FortiWeb lists the local certificates there filtered by key type
+  (`pkey_type` 1 / 2 / 3), from its GUI API, whose rows carry that field while
+  the cmdb rows SATOM caches do not. The harvester now extracts that filter
+  (harvester bac5516, knowledge pack kb-20261101.7: 4 templates, only those
+  fields; the ECDSA selector is `ecc-cert`), and SATOM reads the GUI API list
+  and offers only the matching certificates (measured on fortiweb19 7.6.8:
+  RSA and ECC certificates in their own lists). A failed read leaves the list
+  empty with the error, never every certificate; only that measured list and
+  its two filter fields can be read this way. OCSP Stapling's Local
+  Certificate and the server pool's certificates list the local certificates
+  as FortiWeb does (unfiltered).
 - **Threat Weight is editable in Signature Details.** Request: "do everything
   you can that does not depend on something external." Until now SATOM
   showed a signature's Threat Weight read-only. It is now set the way

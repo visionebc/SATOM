@@ -7,6 +7,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Fixed
+- **Sentinel under-rated FortiWeb 7.6.8 attacks.** The attack log on 7.6.8
+  writes `threat_level` as a word (`Critical`, `Moderate`), not a number
+  (measured on fortiweb19). Sentinel only read the numeric form, so an
+  IP-list block the device rated Critical was stored as `low` and scored 24
+  points too low. The word is now read too (FortiWeb's own `Informative` and
+  `Substantial` levels included), and the worse of the two severities still
+  wins. Events already stored keep the severity they were stored with.
 - **The catalog's child tables are measured, and three were wrong.** Every
   child (sub-table) entry of the FortiWeb catalog was a legacy guess never
   measured on a device. All of them were probed on fortiweb19 7.6.8 (GET the

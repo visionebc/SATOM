@@ -58,6 +58,9 @@ _SEVERITY_WORDS = {
     "medium": "medium", "moderate": "medium", "warning": "medium",
     "high": "high", "severe": "high", "error": "high",
     "critical": "critical", "alert": "critical", "emergency": "critical",
+    # FortiWeb's own threat-level words (7.6.8 attack log, measured on
+    # fortiweb19 2026-11-01: ``threat_level`` = "Critical" / "Moderate").
+    "informative": "info", "substantial": "high",
 }
 
 #: Actions that mean the request was STOPPED. ``alert`` and ``monitor`` mean
@@ -118,6 +121,13 @@ def severity(row: dict) -> str:
     if mapped:
         best = mapped
     threat = _int(row, "threat_level")
+    if threat is None:
+        # 7.6.8 writes the threat level as a WORD ("Critical"), not a number —
+        # measured on fortiweb19 2026-11-01. Reading only the numeric form
+        # filed an IP-list block the device rated Critical as "low".
+        worded = _SEVERITY_WORDS.get(_text(row, "threat_level").lower())
+        if worded and ranks.get(worded, 0) > ranks.get(best, 0):
+            best = worded
     if threat is not None:
         # FortiWeb's threat_level is 0..100-ish; the bands below were chosen to
         # line up with the word severities the same rows carry.

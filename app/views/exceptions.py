@@ -185,7 +185,12 @@ def type_fields(id=None):
     fields = store.fields_for(key)
     layout = None
     if store.canonical_type(key) == hce_gui.EXC_TYPE:
-        layout = hce_gui.exception_layout(fields)
+        # the exception rule as the device's build draws it (?aid=)
+        fw = None
+        if request.args.get('aid', type=int):
+            from ..services import gui_store
+            fw = gui_store.firmware_of(visible_appliance_or_404(request.args.get('aid', type=int)))
+        layout = hce_gui.exception_layout(fields, fw)
     # The row dialog FortiWeb opens for this type, measured by the GUI crawl
     # for the device's firmware (?aid=): sections, order, choices, conditions.
     gui = None
@@ -243,8 +248,10 @@ def http_constraint_state(id):
     """Which constraints are ON in the HTTP Protocol Constraints profile the
     chosen WPP binds (SATOM cache, never the device)."""
     appliance = visible_appliance_or_404(id)
+    from ..services import gui_store
     return jsonify(ok=True, **hce_gui.profile_state(appliance.id,
-                                                    (request.args.get('wpp') or '')[:255]))
+                                                    (request.args.get('wpp') or '')[:255],
+                                                    gui_store.firmware_of(appliance)))
 
 
 @bp.route('/<int:id>/save', methods=['POST'])

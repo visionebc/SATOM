@@ -344,11 +344,12 @@ def signature_policy(id, name):
             sig_obj = None
 
     state, state_source = _sig_state(appliance, name)
-    from ..services import signature_dialog_gui as sdg
+    from ..services import gui_store, signature_dialog_gui as sdg
+    sig_fw = gui_store.firmware_of(appliance)
     # FortiWeb draws all ten classes; one the policy has no row for (a policy
     # made over REST) with its defaults, saved by creating the row
     if state_source != 'none':
-        state = dict(state, classes=sdg.fill_classes(state.get('classes') or []))
+        state = dict(state, classes=sdg.fill_classes(state.get('classes') or [], sig_fw))
     catalog = _sig_catalog()
     # Class tree for the filters (small: ~10 main classes, ~50 sub-classes).
     classes = {}
@@ -365,7 +366,7 @@ def signature_policy(id, name):
     # sub_class_disable_list: sub-class id -> its row id (Enable deletes it)
     sub_off = {str(r.get('sub_class_id') or r.get('id') or ''): str(r.get('id', r.get('_id', '')))
                for r in state.get('subclass') or [] if isinstance(r, dict)}
-    sdg_data = sdg.data()
+    sdg_data = sdg.data(sig_fw)
     rank = {mid: i for i, mid in enumerate(sdg_data.get('order') or [])}
     # status None = unknown (nothing answered): drawn as unknown, not enabled
     known = state_source != 'none'

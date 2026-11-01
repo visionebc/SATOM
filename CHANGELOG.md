@@ -7,6 +7,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **Known Bots, Syntax Detection and Web Shell Detection open as FortiWeb
+  draws them; the signature-class and HTTP-constraint tables come from the
+  device's build.** Request: "do it now ... finish everything and leave
+  nothing pending." Those three dialogs are, for most of their content, a
+  table FortiWeb draws by hand (categories of rows, each row the object's own
+  Status / Action / Block Period / Severity / Threat Weight / Trigger Policy
+  fields); SATOM drew only their two to six header fields. The harvester now
+  reads such tables off each dialog's code, row by row (harvester 252027b,
+  7f9a652, f7b3888; knowledge packs kb-20261101.8 to .10), and SATOM draws
+  them with the object's values: categories that fold, Block Period usable
+  only for a block action, the warning FortiWeb shows for Client ID Block
+  Period, threat-weight levels by name, a cell the build's schema does not
+  carry read-only. Edit Signature Policy's classes and HTTP Protocol
+  Constraints (and its exception rule) now come from the same tables of the
+  device's build instead of two JSON files measured by hand, which are gone
+  (on fortiweb19 7.6.8 the extracted tables equal those files row for row).
+  Per build: on 8.0.6 False Positive Mitigation is drawn where the device's
+  class row carries `fpm_cap` (7.6.8: the two SQL Injection classes); a
+  build whose template lacks a table takes the nearest build's and says
+  which. The PII Detection Threshold's GUI name is mapped to its cmdb key
+  (`credit-card-detection-threshold`), measured on fortiweb19 by writing it.
+- **Reference selectors are FortiWeb's dropdown, with Edit entry on each
+  entry.** A selector whose GUI source declares per-entry edit (199 of 220
+  sources on 7.6.8) opens a list with a search box, an Edit entry pencil on
+  each entry (it opens that entry's dialog in the panel) and + Create at its
+  foot, keyboard included (arrows, Enter, Esc). The saved value is the same
+  select as before.
 - **Certificate selectors list what FortiWeb lists, filtered by key type.**
   The Certificate Group dialog's RSA, DSA and ECDSA Certificate selectors
   were text boxes (the ECDSA one could not even be saved: it had no field

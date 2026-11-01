@@ -533,7 +533,10 @@
     $('cls-save').disabled = false;
     CLS_ROW = String(mid);
     $('cls-status').value = row.status || 'enable';
-    $('cls-fpm-row').style.display = (SDG.fpm_ids || []).indexOf(String(mid)) !== -1 ? '' : 'none';
+    // a fixed list of classes (7.6.8), or the device's own row flag (8.0.6 fpm_cap)
+    var fpmOn = (SDG.fpm_ids || []).indexOf(String(mid)) !== -1 ||
+                (SDG.fpm_if && row[SDG.fpm_if] && String(row[SDG.fpm_if]) !== '0');
+    $('cls-fpm-row').style.display = fpmOn ? '' : 'none';
     $('cls-fpm').value = row['fpm-status'] || 'disable';
     var sel = $('cls-action'); sel.innerHTML = '';
     actionOptions(String(mid)).forEach(function (p) {

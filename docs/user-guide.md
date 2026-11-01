@@ -1181,7 +1181,19 @@ empty and says why, rather than offering every certificate. Where the
 device's list offers **Create**, a **+** beside the selector opens that
 object's own empty dialog in a panel over the current one (Trigger Policy,
 Custom Signature Group, IP List, Exception Policy…); when you save it, the
-panel closes and the new object is selected in the field. Interfaces and
+panel closes and the new object is selected in the field. A selector opens as
+FortiWeb's list: type to filter it, and where the device offers it each entry
+has its own **Edit entry** pencil (that object's dialog opens in the panel)
+and **+ Create** sits at the foot of the list. Arrows, Enter and Esc work as
+in the device's list.
+
+Dialogs that FortiWeb draws as a table of categories (Known Bots, Syntax
+Detection, Web Shell Detection, HTTP Protocol Constraints, Edit Signature
+Policy's classes) show that table as the device's build draws it: each row's
+Status, Action, Block Period (usable only for a block action), Severity,
+Threat Weight and Trigger Policy are fields of the object and are saved with
+it. A cell shown with a question mark is not in this build's schema: it is
+shown, not saved. Interfaces and
 predefined objects have no **+**, as on the device. The tables inside these
 dialogs (sub-tables, HTTP Protocol Constraints, signature categories) use
 SATOM's table format.

@@ -9,8 +9,8 @@
       "keys": {"alertOnlyCount": "sz_alert_only_list", "signatureDisabledCount": "sz_signature_disable_list",
                "exceptionCount": "sz_filter_list", "fpmDisableCount": "sz_fpm_disable_list",
                "subClassDisabledCount": "sz_sub_class_disable_list",
-               "customSignatureGroup": "custom-protection-group", "sensitivity_level": "sensitivity-level"},
-      "key_evidence": "alertOnlyCount / signatureDisabledCount equal on every row with varying values; the other five equal on every row (16/16, 10/10) with constant values.",
+               "customSignatureGroup": "custom-protection-group", "sensitivity_level": "sensitivity-level", "creditCardDetectionThreshold": "credit-card-detection-threshold"},
+      "key_evidence": "creditCardDetectionThreshold: fortiweb19 7.6.8 (2026-11-01) equal on 16/16 sets, and lab-sr-03 set to 7 over cmdb read 7 in the GUI API, back to 1 read 1. alertOnlyCount / signatureDisabledCount equal on every row with varying values; the other five equal on every row (16/16, 10/10) with constant values.",
       "derived": {"mainClassEnabledCount": {
         "count": "main_class_list", "where": {"status": "enable"}, "size": "sz_main_class_list",
         "evidence": "fortiweb17 7.6.8, 2026-10-11: the GUI list's mainClassEnabledCount equals the set's main_class_list rows with status enable on 16/16 sets (6 of 10, 9 of 10, and 0 for the 6 empty sets)."}}

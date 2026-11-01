@@ -98,7 +98,7 @@
     {% for o in f.opts %}<label class="form-check form-check-inline mb-0"><input type="checkbox" class="form-check-input" value="{{ o.value }}"{{ ' checked' if o.value in cur }}> {{ o.label }}</label>{% endfor %}
     </span>
   {% elif f.kind == 'ref' and f.ref %}
-    <select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ k }}" data-orig="{{ f.raw }}" data-ref="{{ f.ref }}"{% if f.ref_filter %} data-ref-api="{{ f.ref_api }}" data-ref-filter="{{ f.ref_filter|tojson|forceescape }}"{% endif %}>
+    <select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ k }}" data-orig="{{ f.raw }}" data-ref="{{ f.ref }}" data-omni{% if f.inline_edit %} data-inline-edit{% endif %}{% if f.create_new %} data-create-new{% endif %}{% if f.ref_filter %} data-ref-api="{{ f.ref_api }}" data-ref-filter="{{ f.ref_filter|tojson|forceescape }}"{% endif %}>
       <option value="">{{ _('— none —') }}</option>
       {% if f.raw %}<option value="{{ f.raw }}" selected>{{ f.raw }}</option>{% endif %}
     </select>
@@ -325,6 +325,71 @@
         rows.hidden = !rows.hidden;
         var i = h.querySelector('i');
         if (i) i.className = 'bi bi-' + (rows.hidden ? 'plus' : 'dash') + '-square';
+      });
+    });
+  })();
+  </script>
+  {% endif %}
+  {% if view.grids %}
+  {# The categorised tables FortiWeb draws by hand (Known Bots, Syntax
+     Detection, Web Shell Detection): every cell is one of the object's own
+     fields, from the template's resolved rows (services.gui_grid). A cell the
+     build's schema does not carry is read-only. #}
+  {% macro grid_cell(x, r) -%}
+    {%- if not x -%}
+    {%- elif x.kind == 'text' -%}{{ x.text }}
+    {%- elif x.kind == 'toggle' -%}<span class="form-check form-switch mb-0"><input type="checkbox" class="form-check-input fwg-in" role="switch" data-gkey="{{ x.key }}" data-orig="{{ x.raw }}" data-on="{{ x.on }}" data-off="{{ x.off }}" aria-label="{{ r.label }}"{{ ' checked' if x.raw == x.on }}{{ ' disabled' if not x.editable }}></span>
+    {%- elif x.kind == 'select' -%}<select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ x.key }}" data-orig="{{ x.raw }}"{% if x.warn_on %} data-warn-value="{{ x.warn_on.value }}" data-warn-text="{{ x.warn_on.text }}"{% endif %}{{ ' disabled' if not x.editable }}>
+      {%- if x.raw not in x.opts|map('first')|list %}<option value="{{ x.raw }}" selected>{{ x.raw }}</option>{% endif -%}
+      {%- for v, l in x.opts %}<option value="{{ v }}"{{ ' selected' if v == x.raw }}>{{ l }}</option>{% endfor -%}
+    </select>
+    {%- elif x.kind == 'number' -%}<input type="number" class="form-control form-control-sm fwg-in fwg-edit" data-gkey="{{ x.key }}" data-orig="{{ x.raw }}" value="{{ x.raw }}"{% if x.min is not none %} min="{{ x.min }}"{% endif %}{% if x.max is not none %} max="{{ x.max }}"{% endif %}{% if x.enabled_when %} data-enable-key="{{ x.enabled_when.key }}" data-enable-values="{{ x.enabled_when['values']|join(' ') }}"{% endif %}{{ ' disabled' if not x.editable }}>{% if x.unit %} <span class="small text-muted">{{ x.unit }}</span>{% endif %}
+    {%- elif x.kind == 'ref' -%}<select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ x.key }}" data-orig="{{ x.raw }}"{% if x.ref %} data-ref="{{ x.ref }}" data-omni{% if x.inline_edit %} data-inline-edit{% endif %}{% if x.create_new %} data-create-new{% endif %}{% endif %}{{ ' disabled' if not x.editable }}><option value="">{{ _('— none —') }}</option>{% if x.raw %}<option value="{{ x.raw }}" selected>{{ x.raw }}</option>{% endif %}</select>
+      {%- if x.ref %}{{ pencil(x.ref, x.raw) }}{% if x.create_new %}{{ creator(x.ref, r.label) }}{% endif %}{% endif -%}
+    {%- endif -%}
+    {%- if x and x.unverified %} <span class="small text-muted" title="{{ _('unverified on this build: shown, not saved') }}"><i class="bi bi-question-circle"></i></span>{% endif -%}
+  {%- endmacro %}
+  {% for gt in view.grids %}{% set gi = loop.index0 %}
+  <div class="fwg-block fwg-hce" data-grid-table>
+    <table class="fwg-table fwg-hce-table">
+      <thead><tr>{% for c in gt.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+      {% for c in gt.categories %}
+      <tbody><tr class="fwg-hce-head" data-grid-cat="{{ gi }}-{{ loop.index0 }}"><td colspan="{{ gt.columns|length }}"><i class="bi bi-dash-square"></i> {{ c.title }} ({{ c.rows|length }})</td></tr></tbody>
+      <tbody data-grid-rows="{{ gi }}-{{ loop.index0 }}">
+      {% for r in c.rows %}<tr{% if r.tip %} title="{{ r.tip }}"{% endif %}>{% for x in r.cells %}<td>{{ grid_cell(x, r) }}</td>{% endfor %}</tr>{% endfor %}
+      </tbody>
+      {% endfor %}
+    </table>
+    <div class="small text-warning mt-1" data-grid-warn hidden></div>
+  </div>
+  {% endfor %}
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    // categories open as FortiWeb opens them; one click folds them
+    document.querySelectorAll('[data-grid-cat]').forEach(function (h) {
+      h.addEventListener('click', function () {
+        var rows = document.querySelector('[data-grid-rows="' + h.dataset.gridCat + '"]');
+        if (!rows) return;
+        rows.hidden = !rows.hidden;
+        var i = h.querySelector('i');
+        if (i) i.className = 'bi bi-' + (rows.hidden ? 'plus' : 'dash') + '-square';
+      });
+    });
+    // Block Period is usable only while its row's action is a block action
+    document.querySelectorAll('[data-grid-table] [data-enable-key]').forEach(function (n) {
+      var act = document.querySelector('[data-grid-table] [data-gkey="' + n.dataset.enableKey + '"]');
+      if (!act || n.disabled) return;
+      var ok = n.dataset.enableValues.split(' ');
+      function sync() { n.disabled = ok.indexOf(act.value) < 0; }
+      act.addEventListener('change', sync); sync();
+    });
+    // the warning FortiWeb shows for one action (Client ID Block Period)
+    document.querySelectorAll('[data-grid-table] select[data-warn-value]').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var box = sel.closest('[data-grid-table]').querySelector('[data-grid-warn]');
+        if (!box) return;
+        box.hidden = sel.value !== sel.dataset.warnValue;
+        box.textContent = box.hidden ? '' : sel.dataset.warnText;
       });
     });
   })();
@@ -574,6 +639,91 @@
       if (window.FWDrawer) { window.FWDrawer.openEdit(pen.dataset.coll, mkey, {title: title, opener: sel}); return; }
       window.location.href = pen.getAttribute('href');
     });
+  });
+  // FortiWeb's Omniselect: the list in a panel with a search box, an Edit
+  // entry pencil on each entry (source inlineEdit) and + Create at its foot
+  // (createNew). The native select stays (hidden) as the value the save
+  // reads; every pick goes through it (change event), so nothing else moves.
+  function omniOpenEntry(sel, pen, mkey) {
+    var val = sel.closest('.fwg-value');
+    var lab = val && val.previousElementSibling;
+    var title = lab ? lab.textContent.trim() : (pen ? pen.dataset.coll.split('/').pop() : '');
+    if (!pen || !mkey) return;
+    if (window.FWDrawer && pen.dataset.gui && window.FWDrawer.openFrame) {
+      window.FWDrawer.openFrame(pen.dataset.gui.replace('__N__', encodeURIComponent(mkey)), pen.dataset.coll, mkey, {title: title, opener: sel});
+    } else if (window.FWDrawer) {
+      window.FWDrawer.openEdit(pen.dataset.coll, mkey, {title: title, opener: sel});
+    }
+  }
+  document.querySelectorAll('select[data-omni]').forEach(function (sel) {
+    var box = sel.parentElement;
+    var pen = box.querySelector('[data-fwg-pencil]');
+    var create = box.querySelector('[data-fwg-create]');
+    var w = document.createElement('div');
+    w.className = 'fwg-omni';
+    w.innerHTML = '<button type="button" class="fwg-omni-btn form-select form-select-sm" aria-haspopup="listbox" aria-expanded="false"></button>' +
+      '<div class="fwg-omni-pop" hidden><input type="search" class="form-control form-control-sm fwg-omni-q" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}">' +
+      '<ul class="fwg-omni-list" role="listbox"></ul>' +
+      (create && sel.hasAttribute('data-create-new') ? '<button type="button" class="fwg-omni-create"><i class="bi bi-plus-lg"></i> {{ _('Create') }}</button>' : '') + '</div>';
+    sel.insertAdjacentElement('afterend', w);
+    sel.hidden = true;
+    if (create && sel.hasAttribute('data-create-new')) create.hidden = true;  // it lives in the list now
+    var btn = w.querySelector('.fwg-omni-btn'), pop = w.querySelector('.fwg-omni-pop');
+    var q = w.querySelector('.fwg-omni-q'), list = w.querySelector('.fwg-omni-list');
+    var active = -1;
+    function label() { var o = sel.options[sel.selectedIndex]; btn.textContent = o && o.value ? o.textContent : '{{ _('— none —') }}'; }
+    function items() { return Array.prototype.slice.call(list.querySelectorAll('li[data-v]')); }
+    function mark(i) {
+      var it = items(); if (!it.length) return;
+      active = (i + it.length) % it.length;
+      it.forEach(function (li, j) { li.classList.toggle('is-active', j === active); });
+      it[active].scrollIntoView({block: 'nearest'});
+    }
+    function draw() {
+      var f = q.value.trim().toLowerCase();
+      list.innerHTML = '';
+      Array.prototype.forEach.call(sel.options, function (o) {
+        if (f && o.textContent.toLowerCase().indexOf(f) < 0) return;
+        var li = document.createElement('li');
+        li.setAttribute('role', 'option'); li.dataset.v = o.value;
+        if (o.value === sel.value) li.classList.add('is-sel');
+        var t = document.createElement('span'); t.textContent = o.value ? o.textContent : '{{ _('— none —') }}';
+        li.appendChild(t);
+        if (o.value && pen && sel.hasAttribute('data-inline-edit')) {
+          var e = document.createElement('a');
+          e.href = '#'; e.className = 'fwg-omni-edit'; e.title = '{{ _('Edit entry') }}';
+          e.setAttribute('aria-label', '{{ _('Edit entry') }} ' + o.value);
+          e.innerHTML = '<i class="bi bi-pencil-fill" aria-hidden="true"></i>';
+          e.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); close(); omniOpenEntry(sel, pen, o.value); });
+          li.appendChild(e);
+        }
+        li.addEventListener('click', function () { pick(o.value); });
+        list.appendChild(li);
+      });
+      active = -1;
+    }
+    function open() { if (sel.disabled) return; draw(); pop.hidden = false; btn.setAttribute('aria-expanded', 'true'); q.value = ''; q.focus(); }
+    function close() { pop.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+    function pick(v) {
+      sel.value = v; sel.dispatchEvent(new Event('change', {bubbles: true})); label(); close(); btn.focus();
+    }
+    btn.disabled = sel.disabled;
+    btn.addEventListener('click', function () { pop.hidden ? open() : close(); });
+    btn.addEventListener('keydown', function (e) { if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); open(); } });
+    q.addEventListener('input', draw);
+    q.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); mark(active + 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); mark(active - 1); }
+      else if (e.key === 'Enter') { e.preventDefault(); var it = items(); if (it[active]) pick(it[active].dataset.v); }
+      else if (e.key === 'Escape') { e.preventDefault(); close(); btn.focus(); }
+    });
+    var cr = w.querySelector('.fwg-omni-create');
+    if (cr) cr.addEventListener('click', function () { close(); create.click(); });
+    document.addEventListener('click', function (e) { if (!w.contains(e.target)) close(); });
+    // the list loads late (cache/device) and + Create adds to it: follow the select
+    sel.addEventListener('change', label);
+    new MutationObserver(function () { label(); if (!pop.hidden) draw(); }).observe(sel, {childList: true});
+    label();
   });
   // "+ Create": the object's empty dialog in the panel; what it saves is
   // added to the list and selected here, then the panel closes (FortiWeb's

@@ -1588,7 +1588,7 @@ def _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs):
                            writable_subtables=[], gp=gp, gx=_gx(appl))
 
 
-def _with_constraint_table(dview: dict, key: str, row: dict) -> None:
+def _with_constraint_table(dview: dict, key: str, row: dict, firmware=None) -> None:
     """HTTP Protocol Constraints: FortiWeb draws the constraints as a
     categorised table the GUI layout does not carry (measured separately,
     services.http_constraints_gui). Its cells replace the stray single fields
@@ -1596,7 +1596,9 @@ def _with_constraint_table(dview: dict, key: str, row: dict) -> None:
     from ..services import http_constraints_gui as hce
     if key != hce.CONSTRAINTS_DIALOG:
         return
-    tbl = hce.constraint_table(row or {})
+    if not hce.data(firmware):
+        return          # no template of this build carries the table
+    tbl = hce.constraint_table(row or {}, firmware)
     placed = set(tbl["keys"])
     for b in dview.get("blocks") or []:
         b["fields"] = [f for f in b.get("fields") or [] if f.get("key") not in placed]
@@ -1644,7 +1646,11 @@ def _with_signature_table(appl, dview: dict, key: str, name: str, row: dict) -> 
     from .objedit import _cached_rows
     if key != sdg.DIALOG or not name:
         return
-    st = sdg.data()['subtable']
+    from ..services import gui_store
+    fw = gui_store.firmware_of(appl)
+    if not sdg.data(fw):
+        return          # no template of this build carries the table
+    st = sdg.data(fw)['subtable']
     try:
         rows, err = FortiWebClient(appl).list_with_error(
             objform.scoped_path('waf/signature/' + st, name))
@@ -1655,15 +1661,28 @@ def _with_signature_table(appl, dview: dict, key: str, name: str, row: dict) -> 
         rows = _cached_rows(appl.id, 'waf/signature', name, st) or None
         if rows is None:
             dview['sig_table_error'] = err
-    dview['sig_table'] = sdg.class_table(rows, row)
-    tip = sdg.help_for('sensitivity-level')
+    dview['sig_table'] = sdg.class_table(rows, row, fw)
+    # Sensitivity Level's tip and Custom Signature Group's collection come
+    # with the template's own fields (harvester a41df4a)
+
+
+def _with_grids(dview: dict, tpl: dict, key: str, row: dict, can_edit: bool) -> None:
+    """The categorised tables FortiWeb draws by hand in this dialog (Known
+    Bots, Syntax Detection, Web Shell Detection), from the template
+    (services.gui_grid); HTTP Protocol Constraints keeps its own table. The
+    stray single fields the layout left for those keys go."""
+    from ..services import gui_grid
+    if dview.get('hce_table'):
+        return
+    views = [gui_grid.category_view(g, row, can_edit) for g in gui_grid.category_grids(tpl, key)]
+    views = [v for v in views if v['categories']]
+    if not views:
+        return
+    placed = {k for v in views for k in v['keys']}
     for b in dview.get('blocks') or []:
-        for f in b.get('fields') or []:
-            if f.get('key') == 'sensitivity-level' and not f.get('help'):
-                f['help'] = tip
-            ref = sdg.ref_for(f.get('key') or '')
-            if ref and not f.get('ref'):
-                f.update(kind='ref', ref=ref, edit_shortcut=True)
+        b['fields'] = [f for f in b.get('fields') or [] if f.get('key') not in placed]
+    dview['blocks'] = [b for b in dview.get('blocks') or [] if b.get('fields')]
+    dview['grids'] = views
 
 
 def _drop_table_keys(dview: dict, *sections) -> None:
@@ -1671,7 +1690,8 @@ def _drop_table_keys(dview: dict, *sections) -> None:
     in the GUI: out of the "Not in GUI, but in CLI" section(s) (366 of them on
     a constraints profile)."""
     placed = set((dview.get('hce_table') or {}).get('keys') or ()) | \
-        set((dview.get('sig_table') or {}).get('keys') or ())
+        set((dview.get('sig_table') or {}).get('keys') or ()) | \
+        {k for g in dview.get('grids') or () for k in g.get('keys') or ()}
     if not placed:
         return
     for sec in sections:
@@ -1761,9 +1781,11 @@ def fwgui_object(appliance_id, page, name):
         dview = gui_template.dialog_view(tpl, key, prow, dev, subrows=subrows, live=can_edit)
         _bind_refs(dview, coll)
         if page == 'http-protocol':
-            _with_constraint_table(dview, key, prow)
+            from ..services import gui_store
+            _with_constraint_table(dview, key, prow, gui_store.firmware_of(appl))
         if page == 'signature':
             _with_signature_table(appl, dview, key, name, prow)
+        _with_grids(dview, tpl, key, prow, can_edit)
     else:
         abort(404)
     writable_subtables = sorted(

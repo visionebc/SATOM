@@ -127,6 +127,7 @@ def strip_fortiweb_refs(view: dict) -> None:
             f["ref"] = ""
             f["edit_shortcut"] = False
             f["create_new"] = False
+            f["inline_edit"] = False
 
 
 def lib_key(product: str, endpoint: str) -> str:

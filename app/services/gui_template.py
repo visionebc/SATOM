@@ -487,7 +487,8 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                 continue
         fields = []
         for f in b["fields"]:
-            if f.get("kind") == "spacer":
+            if f.get("kind") in ("spacer", "category_grid", "subtable_grid"):
+                # a table the dialog draws by hand: drawn apart (gui_grid)
                 continue
             st = evaluate(f.get("cond"), data, defs, dev)
             fhidden = st is not None and not _truthy(st)
@@ -523,6 +524,8 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                 "edit_shortcut": bool(f.get("edit_shortcut")),
                 # FortiWeb's "+ Create" in the selector (source createNew)
                 "create_new": bool(f.get("create_new")),
+                # and its Edit pencil on each entry of the list (inlineEdit)
+                "inline_edit": bool(f.get("inline_edit")),
                 "table": _table_view(f, (subrows or {}).get(f.get("subtable")), refs)
                 if f.get("kind") == "table" else None,
                 "unknown": unknown,

@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.9.0] - 2026-11-01
+
+**Web Protection drawn as FortiWeb draws it, and Sentinel split between
+Settings and Operations.** The Web Protection Profile, its exceptions and the
+Bot Mitigation, API, DoS and IP Protection dialogs follow the device's own
+layout (FortiWeb 7.6.8, re-read with the harvester): Edit Signature Policy
+with its ten classes, Signature Details in FortiWeb's three panes with an
+editable Threat Weight, the HTTP Protocol Constraints, Known Bots, Syntax and
+Web Shell tables taken from the device's build, and every selector with its
+list, **+ Create** and an Edit entry pencil that opens the device's dialog.
+The FortiWeb catalog's child tables are measured (three wrong paths
+corrected), a create is cached and named in the Audit Log, Sentinel reads
+FortiWeb 7.6.8's word severities, and Settings › Sentinel keeps only the
+configuration while the rest moves to Operations › Sentinel.
+
 ### Changed
 - **Settings → Sentinel holds only configuration; the rest is Operations ›
   Sentinel.** Operator rule: what is configured stays in Settings, everything
@@ -22,42 +37,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   it is drawn only while Sentinel is configured. The decision log keeps its
   audience (*config write*).
 
-### Fixed
-- **Sentinel under-rated FortiWeb 7.6.8 attacks.** The attack log on 7.6.8
-  writes `threat_level` as a word (`Critical`, `Moderate`), not a number
-  (measured on fortiweb19). Sentinel only read the numeric form, so an
-  IP-list block the device rated Critical was stored as `low` and scored 24
-  points too low. The word is now read too (FortiWeb's own `Informative` and
-  `Substantial` levels included), and the worse of the two severities still
-  wins. Events already stored keep the severity they were stored with.
-- **The catalog's child tables are measured, and three were wrong.** Every
-  child (sub-table) entry of the FortiWeb catalog was a legacy guess never
-  measured on a device. All of them were probed on fortiweb19 7.6.8 (GET the
-  child with an existing parent): 95 answer as sub-tables and are now
-  measured evidence (manual evidence 113; baseline promoted and re-sealed:
-  391 measured, 97 legacy left -- those have no parent object on the lab to
-  probe). Three answered the PARENT object (FortiWeb ignores an unknown
-  suffix), so whatever SATOM read or wrote there went to the wrong place:
-  `waf/graphql-validation.policy/graphql-rule-list`,
-  `waf/site-publish-helper.policy/rule` and
-  `waf/site-publish-helper.form-based-delegation/additional-field-list` are
-  the real ones (CLI schema and the GUI's member dialogs agree). The shipped
-  baseline carries them, so a fresh installation gets them too.
-  A second pass measured the children that had no parent object on the lab,
-  without creating any (GET the child with a parent that does not exist:
-  200 with a list = a served sub-table, 500 errcode -3 = not a sub-table
-  path; calibrated on a known-good and an invented path): 41 more are
-  served; **15 legacy child entries are not paths FortiWeb serves at all**
-  (`xml-exempted-urls/url-list`, `dlp.exception/exception-list`,
-  `base-signature-disable/signature-list`... -- none used by code) and left
-  the catalog as measured absent; **19 sub-tables the GUI writes and the
-  catalog lacked** are registered (`traffic-mirror/mirror-rule`,
-  `ztna-profile/rule-list`, `waiting-room-policy/bypass-rules`, the Site
-  Publish pools' `members`, `dlp.sensor/entries`...). The dependency map
-  clones those three new children and its four wrong child paths are fixed.
-  Baseline: 451 measured, 42 legacy (was 296 / 192).
-
-### Changed
 - **Every FortiWeb selector the audit found as a text box gets its list.**
   A render of every dialog of fortiweb19's build found 33 selectors drawn as
   text boxes; the harvester now reads the forms their code uses (a selector
@@ -304,6 +283,40 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   instead of free text, still shown only for Element Type = HTTP Method.
 
 ### Fixed
+- **Sentinel under-rated FortiWeb 7.6.8 attacks.** The attack log on 7.6.8
+  writes `threat_level` as a word (`Critical`, `Moderate`), not a number
+  (measured on fortiweb19). Sentinel only read the numeric form, so an
+  IP-list block the device rated Critical was stored as `low` and scored 24
+  points too low. The word is now read too (FortiWeb's own `Informative` and
+  `Substantial` levels included), and the worse of the two severities still
+  wins. Events already stored keep the severity they were stored with.
+- **The catalog's child tables are measured, and three were wrong.** Every
+  child (sub-table) entry of the FortiWeb catalog was a legacy guess never
+  measured on a device. All of them were probed on fortiweb19 7.6.8 (GET the
+  child with an existing parent): 95 answer as sub-tables and are now
+  measured evidence (manual evidence 113; baseline promoted and re-sealed:
+  391 measured, 97 legacy left -- those have no parent object on the lab to
+  probe). Three answered the PARENT object (FortiWeb ignores an unknown
+  suffix), so whatever SATOM read or wrote there went to the wrong place:
+  `waf/graphql-validation.policy/graphql-rule-list`,
+  `waf/site-publish-helper.policy/rule` and
+  `waf/site-publish-helper.form-based-delegation/additional-field-list` are
+  the real ones (CLI schema and the GUI's member dialogs agree). The shipped
+  baseline carries them, so a fresh installation gets them too.
+  A second pass measured the children that had no parent object on the lab,
+  without creating any (GET the child with a parent that does not exist:
+  200 with a list = a served sub-table, 500 errcode -3 = not a sub-table
+  path; calibrated on a known-good and an invented path): 41 more are
+  served; **15 legacy child entries are not paths FortiWeb serves at all**
+  (`xml-exempted-urls/url-list`, `dlp.exception/exception-list`,
+  `base-signature-disable/signature-list`... -- none used by code) and left
+  the catalog as measured absent; **19 sub-tables the GUI writes and the
+  catalog lacked** are registered (`traffic-mirror/mirror-rule`,
+  `ztna-profile/rule-list`, `waiting-room-policy/bypass-rules`, the Site
+  Publish pools' `members`, `dlp.sensor/entries`...). The dependency map
+  clones those three new children and its four wrong child paths are fixed.
+  Baseline: 451 measured, 42 legacy (was 296 / 192).
+
 - **An object just created opens in its dialog (no more "Page not found").**
   A Custom Signature Group created with the "+" of Edit Signature Policy
   landed on the device, but its pencil answered "Page not found": SATOM

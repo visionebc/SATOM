@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#490---2026-11-01">[4.9.0] - 2026-11-01</a>
       <a href="#480---2026-10-31">[4.8.0] - 2026-10-31</a>
       <a href="#470---2026-10-30">[4.7.0] - 2026-10-30</a>
       <a href="#460---2026-10-27">[4.6.0] - 2026-10-27</a>
@@ -104,7 +105,6 @@
       <a href="#291---2026-10-02">[2.9.1] - 2026-10-02</a>
       <a href="#290---2026-10-02">[2.9.0] - 2026-10-02</a>
       <a href="#280---2026-10-02">[2.8.0] - 2026-10-02</a>
-      <a href="#270---2026-10-02">[2.7.0] - 2026-10-02</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,8 +112,123 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="490---2026-11-01">[4.9.0] - 2026-11-01</h2>
+<p><strong>Web Protection drawn as FortiWeb draws it, and Sentinel split between
+Settings and Operations.</strong> The Web Protection Profile, its exceptions and the
+Bot Mitigation, API, DoS and IP Protection dialogs follow the device's own
+layout (FortiWeb 7.6.8, re-read with the harvester): Edit Signature Policy
+with its ten classes, Signature Details in FortiWeb's three panes with an
+editable Threat Weight, the HTTP Protocol Constraints, Known Bots, Syntax and
+Web Shell tables taken from the device's build, and every selector with its
+list, <strong>+ Create</strong> and an Edit entry pencil that opens the device's dialog.
+The FortiWeb catalog's child tables are measured (three wrong paths
+corrected), a create is cached and named in the Audit Log, Sentinel reads
+FortiWeb 7.6.8's word severities, and Settings › Sentinel keeps only the
+configuration while the rest moves to Operations › Sentinel.</p>
 <h3 id="changed">Changed</h3>
 <ul>
+<li>
+<p><strong>Settings → Sentinel holds only configuration; the rest is Operations ›
+  Sentinel.</strong> Operator rule: what is configured stays in Settings, everything
+  else goes to Operations. Settings → AI → Sentinel keeps three panes —
+  Settings (the form only), Context and Response policy. A new <strong>Sentinel</strong>
+  sub-menu right below Monitoring (Operations of every device ADOM, and the
+  Global block) holds the <strong>Incidents console</strong>, a new <strong>Overview</strong>
+  (<code>/sentinel/overview</code>: health, recent decisions, the local CVE mirror with
+  <em>Sync now</em> and manual CVE entry, the pipeline, the score bands and weights,
+  and the ten-scenario demo lab), the <strong>Border blocklist</strong> and the
+  <strong>Architecture</strong>. They used to be Settings panes (the console also a single
+  entry under Global › Monitoring); the CVE mirror sat under Context and the
+  decision log under Response policy. The sub-menu follows the old entry's rule:
+  it is drawn only while Sentinel is configured. The decision log keeps its
+  audience (<em>config write</em>).</p>
+</li>
+<li>
+<p><strong>Every FortiWeb selector the audit found as a text box gets its list.</strong>
+  A render of every dialog of {device}'s build found 33 selectors drawn as
+  text boxes; the harvester now reads the forms their code uses (a selector
+  named by a map's values -- Threshold Based Detection's triggers --, a
+  source object inside a ternary -- OAuth server --, a registry source whose
+  data function takes its GUI API path -- Interface --, and typed factories
+  such as <code>createOauthServerSource("authz")</code>; harvester 652de51 and later),
+  and SATOM ties the GUI API lists to their cmdb twins (Interface, admin
+  local and CA certificates, CRL; measured or named on {device}). A list
+  FortiWeb filters by a row field is filtered the same way: OAuth server's
+  request selectors offer only the requests of their type, a server-policy
+  selector only the policies of its protocol (cache first; only those
+  measured collections and fields).</p>
+</li>
+<li><strong>Every section of the Web Protection Profile opens with working tables
+  and lists.</strong> Request: "in Edit Custom Signature Group I cannot create more
+  members ... do all this for every section of the web profile; put those
+  Create at the top." An audit of the 39 selectors of the Web Protection
+  Profile against {device} found: 35 of 98 tables with Create New had no
+  member dialog (the crawl opens one only from a row it can click, so an empty
+  Custom Signature Group stayed disabled). The harvester now reads each
+  table's member dialog off its parent's code (harvester ed10cf2, ba0d24c,
+  c7d31fb; packs kb-20261101.11 and .12): 102 of 106 on 7.6.8, the dialog
+  templates the crawl never drew fetched from {device}'s own GUI (same
+  build). Two catalog entries pointed at the wrong sub-table and are
+  corrected, measured on {device} (<code>waf/graphql-validation.policy/
+  graphql-rule-list</code>, <code>waf/site-publish-helper.policy/rule</code>; the old
+  <code>.../rule-list</code> answers the parent object). IP List's IP External now
+  lists the external resources (measured alias of the GUI's list to
+  <code>system/external-resource</code>; harvester e1da453, pack kb-20261101.13).
+  In the dropdown, <strong>+ Create</strong> sits at the top of the list.</li>
+<li><strong>Known Bots, Syntax Detection and Web Shell Detection open as FortiWeb
+  draws them; the signature-class and HTTP-constraint tables come from the
+  device's build.</strong> Request: "do it now ... finish everything and leave
+  nothing pending." Those three dialogs are, for most of their content, a
+  table FortiWeb draws by hand (categories of rows, each row the object's own
+  Status / Action / Block Period / Severity / Threat Weight / Trigger Policy
+  fields); SATOM drew only their two to six header fields. The harvester now
+  reads such tables off each dialog's code, row by row (harvester 252027b,
+  7f9a652, f7b3888; knowledge packs kb-20261101.8 to .10), and SATOM draws
+  them with the object's values: categories that fold, Block Period usable
+  only for a block action, the warning FortiWeb shows for Client ID Block
+  Period, threat-weight levels by name, a cell the build's schema does not
+  carry read-only. Edit Signature Policy's classes and HTTP Protocol
+  Constraints (and its exception rule) now come from the same tables of the
+  device's build instead of two JSON files measured by hand, which are gone
+  (on {device} 7.6.8 the extracted tables equal those files row for row).
+  Per build: on 8.0.6 False Positive Mitigation is drawn where the device's
+  class row carries <code>fpm_cap</code> (7.6.8: the two SQL Injection classes); a
+  build whose template lacks a table takes the nearest build's and says
+  which. The PII Detection Threshold's GUI name is mapped to its cmdb key
+  (<code>credit-card-detection-threshold</code>), measured on {device} by writing it.</li>
+<li><strong>Reference selectors are FortiWeb's dropdown, with Edit entry on each
+  entry.</strong> A selector whose GUI source declares per-entry edit (199 of 220
+  sources on 7.6.8) opens a list with a search box, an Edit entry pencil on
+  each entry (it opens that entry's dialog in the panel) and + Create at its
+  foot, keyboard included (arrows, Enter, Esc). The saved value is the same
+  select as before.</li>
+<li><strong>Certificate selectors list what FortiWeb lists, filtered by key type.</strong>
+  The Certificate Group dialog's RSA, DSA and ECDSA Certificate selectors
+  were text boxes (the ECDSA one could not even be saved: it had no field
+  name). FortiWeb lists the local certificates there filtered by key type
+  (<code>pkey_type</code> 1 / 2 / 3), from its GUI API, whose rows carry that field while
+  the cmdb rows SATOM caches do not. The harvester now extracts that filter
+  (harvester bac5516, knowledge pack kb-20261101.7: 4 templates, only those
+  fields; the ECDSA selector is <code>ecc-cert</code>), and SATOM reads the GUI API list
+  and offers only the matching certificates (measured on {device} 7.6.8:
+  RSA and ECC certificates in their own lists). A failed read leaves the list
+  empty with the error, never every certificate; only that measured list and
+  its two filter fields can be read this way. OCSP Stapling's Local
+  Certificate and the server pool's certificates list the local certificates
+  as FortiWeb does (unfiltered).</li>
+<li><strong>Threat Weight is editable in Signature Details.</strong> Request: "do everything
+  you can that does not depend on something external." Until now SATOM
+  showed a signature's Threat Weight read-only. It is now set the way
+  FortiWeb's own pane does (<code>PUT waf/signature.advanced.signature.score</code>,
+  measured on {device} 7.6.8 from its GUI bundle and then live: 7, 0 and
+  the default <code>-1</code> are stored as sent and read back). Only FortiWeb's seven
+  levels are offered and accepted: the device answers a value outside them
+  with HTTP 200 and stores another level (3 was stored as 6), so SATOM refuses
+  anything else before it is sent and verifies every write by reading the
+  signature back. The current value is read first, the write is recorded in
+  the Audit Log (<code>signature.score</code>, with the before value and <code>verify</code>) and a
+  level the device does not keep fails (<code>signature.score.not_applied</code>). The
+  pane shows levels by name instead of the raw integer.</li>
 <li><strong>"+ Create" beside a selector, from the device's own GUI; dialog tables in
   SATOM's table format.</strong> Request: "that same section has the pencil to
   create and you did not put it; are you using the crawler to scan
@@ -277,14 +392,65 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>An object just created opens in its dialog (no more "Page not found").</strong>
+<li><strong>Sentinel under-rated FortiWeb 7.6.8 attacks.</strong> The attack log on 7.6.8
+  writes <code>threat_level</code> as a word (<code>Critical</code>, <code>Moderate</code>), not a number
+  (measured on {device}). Sentinel only read the numeric form, so an
+  IP-list block the device rated Critical was stored as <code>low</code> and scored 24
+  points too low. The word is now read too (FortiWeb's own <code>Informative</code> and
+  <code>Substantial</code> levels included), and the worse of the two severities still
+  wins. Events already stored keep the severity they were stored with.</li>
+<li>
+<p><strong>The catalog's child tables are measured, and three were wrong.</strong> Every
+  child (sub-table) entry of the FortiWeb catalog was a legacy guess never
+  measured on a device. All of them were probed on {device} 7.6.8 (GET the
+  child with an existing parent): 95 answer as sub-tables and are now
+  measured evidence (manual evidence 113; baseline promoted and re-sealed:
+  391 measured, 97 legacy left -- those have no parent object on the lab to
+  probe). Three answered the PARENT object (FortiWeb ignores an unknown
+  suffix), so whatever SATOM read or wrote there went to the wrong place:
+  <code>waf/graphql-validation.policy/graphql-rule-list</code>,
+  <code>waf/site-publish-helper.policy/rule</code> and
+  <code>waf/site-publish-helper.form-based-delegation/additional-field-list</code> are
+  the real ones (CLI schema and the GUI's member dialogs agree). The shipped
+  baseline carries them, so a fresh installation gets them too.
+  A second pass measured the children that had no parent object on the lab,
+  without creating any (GET the child with a parent that does not exist:
+  200 with a list = a served sub-table, 500 errcode -3 = not a sub-table
+  path; calibrated on a known-good and an invented path): 41 more are
+  served; <strong>15 legacy child entries are not paths FortiWeb serves at all</strong>
+  (<code>xml-exempted-urls/url-list</code>, <code>dlp.exception/exception-list</code>,
+  <code>base-signature-disable/signature-list</code>... -- none used by code) and left
+  the catalog as measured absent; <strong>19 sub-tables the GUI writes and the
+  catalog lacked</strong> are registered (<code>traffic-mirror/mirror-rule</code>,
+  <code>ztna-profile/rule-list</code>, <code>waiting-room-policy/bypass-rules</code>, the Site
+  Publish pools' <code>members</code>, <code>dlp.sensor/entries</code>...). The dependency map
+  clones those three new children and its four wrong child paths are fixed.
+  Baseline: 451 measured, 42 legacy (was 296 / 192).</p>
+</li>
+<li>
+<p><strong>An object just created opens in its dialog (no more "Page not found").</strong>
   A Custom Signature Group created with the "+" of Edit Signature Policy
   landed on the device, but its pencil answered "Page not found": SATOM
   cached a new FortiWeb object only when that type already had a cached
   object, and the dialog read the cache alone. The first object of a table the
   last sync read empty is now cached under that table's section (as FortiADC
   already was), and a dialog whose object is not cached yet reads that one
-  object from the device; one the device does not have is still "not found".</li>
+  object from the device; one the device does not have is still "not found".</p>
+</li>
+<li><strong>Every writer caches the first object of an empty table, and the Audit Log
+  names what a create created.</strong> Request: "this must never happen, we have to
+  solve it always; and if it is in the log, why don't I see this insertion?"
+  The empty-table fallback of the previous fix lived in one caller only: the
+  object editor, FortiAuthenticator and FortiADC writes still left the first
+  object of an empty table out of SATOM's copy. It now lives in the one
+  function every writer uses. And every create was audited as <code>mkey=None</code> (a
+  create's request names no object), so searching the Audit Log for the new
+  object's name found nothing: the line now carries the object's own name
+  (FortiWeb: from the payload; FortiGate, FortiAuthenticator, FortiADC,
+  FortiAnalyzer: the key the re-read found) and two new fields, <code>verify</code> (what
+  the re-read of the device found: verified, mismatch, unverified) and <code>cache</code>
+  (what happened to SATOM's copy). The line is written after the re-read, so
+  it states what the device holds. Earlier entries keep what they recorded.</li>
 <li><strong>A refused device read is no longer an empty signature policy.</strong> The class
   table and Signature Details read the policy's lists through a call that
   dropped the error: a 401 or a licence lock read as "no rows" (an empty

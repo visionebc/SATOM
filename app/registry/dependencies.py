@@ -859,7 +859,7 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
                                 "cmdb/waf/site-publish-helper.form-based-delegation",
                                 "form-based-delegation",
                                 children=[_n("Delegation Rules",
-                                             "cmdb/waf/site-publish-helper.form-based-delegation/rule-list")]),
+                                             "cmdb/waf/site-publish-helper.form-based-delegation/additional-field-list")]),
                          ]),
                   ]),
            ]),

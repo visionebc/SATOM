@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **The catalog's child tables are measured, and three were wrong.** Every
+  child (sub-table) entry of the FortiWeb catalog was a legacy guess never
+  measured on a device. All of them were probed on fortiweb19 7.6.8 (GET the
+  child with an existing parent): 95 answer as sub-tables and are now
+  measured evidence (manual evidence 113; baseline promoted and re-sealed:
+  391 measured, 97 legacy left -- those have no parent object on the lab to
+  probe). Three answered the PARENT object (FortiWeb ignores an unknown
+  suffix), so whatever SATOM read or wrote there went to the wrong place:
+  `waf/graphql-validation.policy/graphql-rule-list`,
+  `waf/site-publish-helper.policy/rule` and
+  `waf/site-publish-helper.form-based-delegation/additional-field-list` are
+  the real ones (CLI schema and the GUI's member dialogs agree). The shipped
+  baseline carries them, so a fresh installation gets them too.
+
 ### Changed
 - **Every section of the Web Protection Profile opens with working tables
   and lists.** Request: "in Edit Custom Signature Group I cannot create more

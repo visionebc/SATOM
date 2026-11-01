@@ -169,6 +169,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   instead of free text, still shown only for Element Type = HTTP Method.
 
 ### Fixed
+- **An object just created opens in its dialog (no more "Page not found").**
+  A Custom Signature Group created with the "+" of Edit Signature Policy
+  landed on the device, but its pencil answered "Page not found": SATOM
+  cached a new FortiWeb object only when that type already had a cached
+  object, and the dialog read the cache alone. The first object of a table the
+  last sync read empty is now cached under that table's section (as FortiADC
+  already was), and a dialog whose object is not cached yet reads that one
+  object from the device; one the device does not have is still "not found".
 - **A refused device read is no longer an empty signature policy.** The class
   table and Signature Details read the policy's lists through a call that
   dropped the error: a 401 or a licence lock read as "no rows" (an empty

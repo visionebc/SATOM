@@ -1631,6 +1631,20 @@ def _drop_table_keys(dview: dict, *sections) -> None:
             sec['fields'] = [f for f in sec['fields'] if f.get('key') not in placed]
 
 
+def _fwgui_live_object(appl, coll: str, name: str):
+    """One object of ``coll`` read from the device, or None (refused,
+    unreachable, absent, or a reply that is not that object)."""
+    from ..services import objform
+    try:
+        got = FortiWebClient(appl)._safe_one(objform.rest_path(coll) + '?mkey=' + quote(name, safe=''))
+    except Exception as exc:  # noqa: BLE001 — not found is the answer
+        log_exception(exc, context='workspace.fwgui_live_object')
+        return None
+    if not isinstance(got, dict) or str(got.get('name', got.get('id', ''))) != name:
+        return None
+    return got
+
+
 @bp.route('/<int:appliance_id>/fwgui/<page>/o/<path:name>')
 @login_required
 @require_permission('protection.view')
@@ -1651,6 +1665,12 @@ def fwgui_object(appliance_id, page, name):
     if obj is None:
         from .objedit import _cached_object
         obj, _row = _cached_object(appl.id, coll, name)
+    if obj is None and coll:
+        # not in SATOM's cache yet (created on the device or in another
+        # session since the last sync): the object itself, read from the
+        # device (one GET), rather than "page not found"; a refusal or an
+        # object the device does not have stays a 404
+        obj = _fwgui_live_object(appl, coll, name)
     if obj is None:
         abort(404)
     main = gui_pages.dialog_for(view, obj)

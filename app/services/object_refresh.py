@@ -198,6 +198,18 @@ def _cached(session, appliance_id, logical, mkey=None, *, layer=None) -> bool:
     return q.first() is not None
 
 
+def _covered_section(session, appliance_id, logical):
+    """The section under which the device's last good sweep READ ``logical``
+    (empty), from :class:`DeviceCoverage`; None when that sweep did not read
+    it (SATOM does not cache that type: nothing is invented)."""
+    try:
+        from .device_sync import coverage_for
+        cov = coverage_for(appliance_id, session=session)
+        return ((cov.tables or {}).get(logical) or None) if cov is not None else None
+    except Exception:  # noqa: BLE001 — not known: not cached
+        return None
+
+
 def _subtable(session, aid, client, action, base, logical, sub, q, data, out):
     mkey, row_id = q.get("mkey") or "", q.get("sub_mkey") or ""
     out["what"] = "%s/%s:%s" % (logical, sub, mkey)
@@ -302,7 +314,18 @@ def after_write(appliance, client, action: str, path: str, data=None, *,
         if not kind or aid is None:
             out["why"] = "not a registry collection"
         elif not _cached(session, aid, logical, name if action != "create" else None):
-            out["why"] = "type not cached on this device"
+            # the first object of a table the last good sweep read EMPTY
+            # (DeviceCoverage): cached under that section, as FortiADC's
+            # write-through does -- before, it stayed out of the cache until
+            # the next sync and its dialog answered 404 (2026-11-01: a Custom
+            # Signature Group created from Edit Signature Policy's "+")
+            section = _covered_section(session, aid, logical) if action == "create" else None
+            if section:
+                out["refreshed"] = bool(wt.local_insert(aid, logical, name, obj,
+                                                        session=session, section=section))
+                out["why"] = "first object of an empty table" if out["refreshed"] else "not cached"
+            else:
+                out["why"] = "type not cached on this device"
         else:
             out["refreshed"] = bool(wt.local_insert(aid, logical, name, obj,
                                                     session=session))

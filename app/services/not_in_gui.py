@@ -68,6 +68,7 @@ def layout_pages() -> dict:
     if hit and time.monotonic() - hit[0] < 60:
         return {**hit[1], **out}
     gen: dict = {}
+    absent: dict = {}
     from . import gui_products
     for product in gui_products.PRODUCTS:
         for page in gui_pages.page_ids(product):
@@ -76,13 +77,19 @@ def layout_pages() -> dict:
             tpl, _m = gui_pages.template(page, None, product)
             if not tpl:
                 continue
+            # a page of the devices own GUI wins over SATOMs schema-built
+            # one (``gui_absent``: it places every field): Signatures edits
+            # waf/signature through the GUI API, and ``not-in-gui-waf``
+            # sorting first had taken it -- its "Not in GUI" listed nothing
+            into = absent if tpl.get("gui_absent") else gen
             eps = [tpl.get("endpoint")] + [v.get("endpoint") for v in gui_pages.views(tpl)]
             for ep in eps:
                 # a GUI-only page (``gui:``) or a FortiGate monitor view edits
                 # no REST object: it places no field of one
                 if ep and not gui_products.read_only_endpoint(ep):
-                    gen.setdefault((product, endpoint_key(gui_products.lib_key(product, ep))),
-                                   page)
+                    into.setdefault((product, endpoint_key(gui_products.lib_key(product, ep))),
+                                    page)
+    gen = {**absent, **gen}
     _pages_cache[root] = (time.monotonic(), gen)
     return {**gen, **out}
 

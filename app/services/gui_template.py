@@ -388,6 +388,17 @@ _EDIT_KINDS = {"toggle", "check", "radio", "select", "text", "number", "textarea
                "multiselect", "checks", "toggle_rows"}
 
 
+def _api_twin(f: dict) -> str:
+    """The cmdb collection of a selector whose GUI lists a GUI API path
+    (ref_api: system/certificate.ocsp_sign_certs): only the twin the
+    alias table measured or named (services.gui_alias), never a guess."""
+    api = f.get("ref_api")
+    if not api:
+        return ""
+    from .gui_alias import table
+    return ((table()["aliases"].get(api) or {}).get("cmdb")) or ""
+
+
 def _edit_spec(f: dict, d: dict, data: dict, dev: dict, *, new: bool = False) -> dict:
     """How the field is written: the REST key (aliases resolved), the raw value
     the input starts from, and the choices a select / radio / checks offers.
@@ -411,7 +422,10 @@ def _edit_spec(f: dict, d: dict, data: dict, dev: dict, *, new: bool = False) ->
         "off": f.get("off", "disable"),
         "opts": [{"value": str(o.get("value")), "label": o.get("label")}
                  for o in _options(f, dev)] if kind in ("select", "radio", "checks") else [],
-        "ref": (REF_ENDPOINTS.get(wkey or "", "") or f.get("ref_coll") or "")
+        # the collection the GUI itself lists (measured: its Omniselect
+        # source) over SATOMs per-key map, which cannot tell two dialogs
+        # "service" apart (Firewall Policy lists system/firewall.service)
+        "ref": (f.get("ref_coll") or REF_ENDPOINTS.get(wkey or "", "") or _api_twin(f) or "")
         if kind == "ref" else "",
         "min": f.get("min"),
         "max": f.get("max"),

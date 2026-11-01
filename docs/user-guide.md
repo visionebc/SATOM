@@ -1187,6 +1187,13 @@ has its own **Edit entry** pencil (that object's dialog opens in the panel)
 and **+ Create** sits at the top of the list. Arrows, Enter and Esc work as
 in the device's list.
 
+Every table inside a dialog that has **Create New** on the device opens its
+member dialog the way FortiWeb does, also on an object that has no rows yet
+(an empty Custom Signature Group): the member dialog is read off the device
+GUI's own code. A selector the device fills from one kind of object only
+(the OAuth server's request selectors, a server-policy selector of one
+protocol) offers only those.
+
 Dialogs that FortiWeb draws as a table of categories (Known Bots, Syntax
 Detection, Web Shell Detection, HTTP Protocol Constraints, Edit Signature
 Policy's classes) show that table as the device's build draws it: each row's

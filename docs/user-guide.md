@@ -1019,8 +1019,12 @@ explains the banner and the badges, and §7.5 explains how Save works.
   never written blind.
 - **Reference selectors** are filled from the device's own objects. The pencil
   beside one opens the selected object in a **panel stacked over the dialog**,
-  the way FortiWeb drops in a sub-page. **Esc** closes the panel, and choices
-  made in the panel feed back into the selector that opened it.
+  the way FortiWeb drops in a sub-page. When a FortiWeb page lists that kind of
+  object, the panel holds **the dialog the device draws for it** (for example
+  the pencil on a Web Protection Profile's Signatures opens Edit Signature
+  Policy with its signature classes table); otherwise it holds the object
+  editor below. **Cancel** or **Esc** closes the panel, and choices made in an
+  object-editor panel feed back into the selector that opened it.
 - Below the main dialog, **Not in GUI, but in CLI** lists the fields this
   object has on the build that FortiWeb's GUI does not show (§7.6).
 

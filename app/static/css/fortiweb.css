@@ -1781,6 +1781,16 @@ body.fw-entering-page {
 
 .fw-drawer-body { flex: 1 1 auto; overflow: auto; padding: 1rem; }
 .fw-drawer-body .fw-objedit > .d-flex:first-child { margin-top: -.25rem; }
+/* A device-layout dialog in a panel (FWDrawer.openFrame): its own document in
+   a same-origin frame, so its scripts never meet the dialog under it. */
+.fw-drawer-body.is-frame { padding: 0; overflow: hidden; }
+.fw-drawer-frame { border: 0; width: 100%; height: 100%; display: block; background: var(--fw-content-bg); }
+/* ...and that document draws the dialog alone (base.html marks it framed). */
+html.fw-framed .fw-topbar, html.fw-framed #fw-sidebar, html.fw-framed #fw-bookmarks,
+html.fw-framed .fw-breadcrumb, html.fw-framed .fw-page-header, html.fw-framed #fw-footer { display: none !important; }
+html.fw-framed .fw-body { padding-top: 0; }
+html.fw-framed .fw-main { margin-left: 0; padding: 12px; }
+html.fw-framed .fw-drawer { top: 0; }
 
 
 /* == PRODUCTION POLISH 2026-07-06 == */

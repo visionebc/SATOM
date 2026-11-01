@@ -40,8 +40,10 @@
 {# pencil(ref, name): FortiWeb's "Edit entry" shortcut beside a reference
    selector -- opens the selected object in a panel stacked over the dialog
    (FWDrawer), as FortiWeb does and as the SATOM Server Policy page always
-   did; never a new window. The href (same tab) is only the fallback when the
-   drawer script is missing. #}
+   did; never a new window. When a measured page lists the collection
+   (data-gui, fwg_ref_page) the panel holds the dialog the device draws for
+   that object; otherwise the generic object editor. The href (same tab) is
+   only the fallback when the drawer script is missing. #}
 {# sub_url(dialog, new, sub): a sub-table row dialog of the current object. #}
 {% macro sub_url(dialog, new=None, sub=None) -%}
   {%- if gp -%}{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=_oname, v=gp.v, d=dialog, new=new, sub=sub) }}
@@ -51,7 +53,7 @@
   {%- set coll = (ref or '').split('|')[0] -%}
   {%- if coll -%}
   <a class="fwg-pencil{{ ' is-off' if not name }}" title="{{ _('Edit entry') }}" aria-label="{{ _('Edit entry') }}"
-     data-fwg-pencil data-coll="{{ coll }}" data-mkey="{{ name or '' }}" data-base="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=coll) }}"
+     data-fwg-pencil data-coll="{{ coll }}" data-mkey="{{ name or '' }}" data-base="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=coll) }}" data-gui="{{ fwg_ref_page(appliance, coll) }}"
      href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=coll, mkey=name) if name else '#' }}"><i class="bi bi-pencil-fill" aria-hidden="true"></i></a>
   {%- else -%}<i class="bi bi-pencil-fill fwg-pencil is-off" aria-hidden="true"></i>{%- endif -%}
 {%- endmacro %}
@@ -314,6 +316,90 @@
   })();
   </script>
   {% endif %}
+  {% if view.key == 'signature_dialog' and name and _fwp %}
+  {# Edit Signature Policy: the main-class table FortiWeb draws by hand under
+     the four fields (services.signature_dialog_gui, measured). Each cell is a
+     row of main_class_list ("^main_class_list|<id>#<field>"); Save writes each
+     changed row through the object editor's save-row. #}
+  {% set sg = view.sig_table %}
+  {% if sg %}
+  {% macro sg_sel(c, opts, off, extra) -%}
+    <select class="form-select form-select-sm fwg-in fwg-edit" {{ extra }} data-gkey="{{ c.key }}" data-orig="{{ c.raw }}"{{ ' disabled' if off or not can_edit }}>
+      {%- if c.raw not in opts|map('first')|list %}<option value="{{ c.raw }}" selected>{{ c.raw }}</option>{% endif -%}
+      {%- for v, l in opts %}<option value="{{ v }}"{{ ' selected' if v == c.raw }}>{{ l }}</option>{% endfor -%}
+    </select>
+  {%- endmacro %}
+  <style nonce="{{ csp_nonce }}">
+  .fwg-sig{overflow-x:auto}
+  .fwg-sig-table{width:100%}
+  .fwg-sig-table td{vertical-align:middle}
+  .fwg-sig-table td.c{text-align:center}
+  .fwg-sig-table select{width:175px;max-width:100%}
+  .fwg-sig-table input[type=number]{width:7rem}
+  .fwg-sig-toggle{border:0;background:none;padding:0 .25rem;color:var(--fw-text-muted,#5a6b7d)}
+  .fwg-sig-warn{color:#8B1C2A;font-size:12px}
+  </style>
+  {# every column FortiWeb draws stays drawn (no auto-hide): a narrow panel
+     scrolls the table sideways instead #}
+  <div class="fwg-block fwg-sig" data-sig-table data-fit="off">
+    <table class="fwg-table fwg-sig-table">
+      <thead><tr>{% for c in sg.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for r in sg.rows %}<tr data-sig-row="{{ r.id }}">
+        <td>{% if r.ident and sg.threshold %}<button type="button" class="fwg-sig-toggle" data-sig-expand aria-expanded="false" title="{{ sg.threshold.label }}"><i class="bi bi-plus-square"></i></button>{% endif %}</td>
+        <td>{{ r.name }}</td>
+        <td class="c"><span class="form-check form-switch mb-0 d-inline-block"><input type="checkbox" class="form-check-input fwg-in" role="switch" data-sig-status data-gkey="{{ r.status.key }}" data-orig="{{ r.status.raw }}" data-on="enable" data-off="disable" aria-label="{{ r.name }}"{{ ' checked' if r.status.raw == 'enable' }}{{ ' disabled' if not can_edit }}></span></td>
+        <td class="c">{% if r.fpm %}<span class="form-check form-switch mb-0 d-inline-block"><input type="checkbox" class="form-check-input fwg-in" role="switch" data-sig-dep data-gkey="{{ r.fpm.key }}" data-orig="{{ r.fpm.raw }}" data-on="enable" data-off="disable" aria-label="{{ r.name }} — False Positive Mitigation"{{ ' checked' if r.fpm.raw == 'enable' }}{{ ' disabled' if r.off or not can_edit }}></span>{% endif %}</td>
+        <td class="c">{{ sg_sel(r.action, r.actions, r.off, 'data-sig-dep data-sig-action') }}</td>
+        <td class="c"><input type="number" min="1" max="3600" class="form-control form-control-sm fwg-in fwg-edit d-inline-block" data-sig-block data-gkey="{{ r.block_period.key }}" data-orig="{{ r.block_period.raw }}" value="{{ r.block_period.raw }}"{{ ' disabled' if r.off or not r.block_on or not can_edit }}></td>
+        <td class="c">{{ sg_sel(r.severity, sg.options.severity, r.off, 'data-sig-dep') }}</td>
+        <td><select class="form-select form-select-sm fwg-in fwg-edit" data-sig-dep data-gkey="{{ r.trigger.key }}" data-orig="{{ r.trigger.raw }}" data-ref="log/trigger-policy"{{ ' disabled' if r.off or not can_edit }}><option value="">{{ _('— none —') }}</option>{% if r.trigger.raw %}<option value="{{ r.trigger.raw }}" selected>{{ r.trigger.raw }}</option>{% endif %}</select></td>
+      </tr>
+      {% if r.ident and sg.threshold %}<tr data-sig-threshold hidden>
+        <td></td><td>{{ sg.threshold.label }}</td>
+        <td colspan="6"><input type="number" min="{{ sg.threshold.min }}" max="{{ sg.threshold.max }}" class="form-control form-control-sm fwg-in fwg-edit d-inline-block" style="min-width:275px;width:auto" data-gkey="{{ sg.threshold.key }}" data-orig="{{ sg.threshold.raw }}" value="{{ sg.threshold.raw }}"{{ ' disabled' if not can_edit }}></td>
+      </tr>{% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="fwg-sig-warn" data-sig-warn hidden>{{ sg.client_id_warning }}</div>
+  </div>
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    // As FortiWeb's dialog: a disabled class greys its row; Block Period is
+    // editable only for a block-period action; the PII row folds out its
+    // Detection Threshold; Client ID Block Period needs Client Management.
+    var CAN = {{ can_edit|tojson }}, BLOCK = {{ sg.block_actions|tojson }};
+    function sync(tr) {
+      var st = tr.querySelector('[data-sig-status]'), off = !(st && st.checked);
+      tr.querySelectorAll('[data-sig-dep]').forEach(function (el) { el.disabled = off || !CAN; });
+      var act = tr.querySelector('[data-sig-action]'), bp = tr.querySelector('[data-sig-block]');
+      if (bp) bp.disabled = off || !CAN || !act || BLOCK.indexOf(act.value) < 0;
+    }
+    var rows = document.querySelectorAll('[data-sig-row]');
+    rows.forEach(function (tr) {
+      sync(tr);
+      tr.addEventListener('change', function (e) {
+        sync(tr);
+        if (e.target.matches('[data-sig-action]') && e.target.value === 'client-id-block-period') {
+          var w = document.querySelector('[data-sig-warn]'); if (w) w.hidden = false;
+        }
+      });
+    });
+    var ex = document.querySelector('[data-sig-expand]');
+    if (ex) ex.addEventListener('click', function () {
+      var t = document.querySelector('[data-sig-threshold]');
+      if (!t) return;
+      t.hidden = !t.hidden;
+      ex.setAttribute('aria-expanded', t.hidden ? 'false' : 'true');
+      ex.querySelector('i').className = 'bi bi-' + (t.hidden ? 'plus' : 'dash') + '-square';
+    });
+  })();
+  </script>
+  {% else %}
+  <div class="fw-alert fw-alert-warning" data-sig-unknown>{{ _('The signature classes of this policy could not be read: %(dev)s did not answer and the SATOM cache has none. They are not drawn rather than drawn empty.', dev=appliance.name) }}</div>
+  {% endif %}
+  {% endif %}
   {% if (not is_new or not _fwp) and view.key == main and not row_ctx %}
     {% if nig_edit %}
       <div class="fw-card mt-3 p-3 fw-nig-tab">{{ nig_editable(nig_edit, create=is_new, mkey=name, collection=save_ep, endpoint=(gp.nig_endpoint if gp else ''), singleton=(gp.form if gp else false)) }}</div>
@@ -340,7 +426,8 @@
     {% else %}
     <span class="fwg-btn is-primary" aria-disabled="true" title="{{ _('Read-only: nothing is sent to the device.') }}">{{ _('OK') }}</span>
     {% endif %}
-    <a class="fwg-btn" href="{{ back }}">{{ _('Cancel') }}</a>
+    <a class="fwg-btn" href="{{ back }}" data-fwg-cancel>{{ _('Cancel') }}</a>
+    {% if view.key == 'signature_dialog' and name and _fwp %}<a class="fwg-btn" data-fwg-sig-detail href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/signature', mkey=name) }}" title="{{ _("FortiWeb opens the signature list of this policy here; SATOM opens the policy's alert-only, disabled-signature and exception lists in the object editor.") }}">{{ _('Signature Details') }}</a>{% endif %}
   </div>
 </div>
 {% if gp and gp.form and satom is defined and satom and satom.lib %}{% set tlib = satom.lib %}{% include 'section_config/_template_library.html' %}{% endif %}
@@ -400,6 +487,16 @@
   // this dialog (FWDrawer), never in a new window. The panel's selects feed
   // back into the one that opened it, as on the Server Policy page.
   window.OBJEDIT_AID = {{ appliance.id }};
+  // In a panel (framed): Cancel closes the panel, as FortiWeb's Cancel
+  // returns to the dialog that opened this one.
+  if (window.self !== window.top) {
+    document.querySelectorAll('[data-fwg-cancel]').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        window.parent.postMessage({fwDrawer: 'close'}, location.origin);
+      });
+    });
+  }
   // "Read values over CLI" in "Not in GUI, but in CLI": the object's CLI-only
   // values over a read-only SSH session (show full-configuration), filled into
   // the inputs as value AND data-orig (an unchanged field is never sent back).
@@ -442,6 +539,10 @@
       var val = pen.closest('.fwg-value');
       var lab = val && val.previousElementSibling;
       var title = lab ? lab.textContent.trim() : pen.dataset.coll.split('/').pop();
+      if (window.FWDrawer && pen.dataset.gui && window.FWDrawer.openFrame) {
+        window.FWDrawer.openFrame(pen.dataset.gui.replace('__N__', encodeURIComponent(mkey)), pen.dataset.coll, mkey, {title: title, opener: sel});
+        return;
+      }
       if (window.FWDrawer) { window.FWDrawer.openEdit(pen.dataset.coll, mkey, {title: title, opener: sel}); return; }
       window.location.href = pen.getAttribute('href');
     });
@@ -700,11 +801,22 @@
   // a form FortiWeb's GUI writes through its own API (GP.api: GUI API save).
   var SAVE_API = {{ url_for('workspace.fwgui_save_api', appliance_id=appliance.id)|tojson }};
   var SAVE_OBJ = {{ url_for('objedit.save_object', appliance_id=appliance.id)|tojson }};
+  var SAVE_ROW = {{ url_for('objedit.save_row', appliance_id=appliance.id)|tojson }};
   function plan(fields) {
-    var main = {}, bound = {}, steps = [];
+    var main = {}, bound = {}, subs = {}, steps = [];
     Object.keys(fields).forEach(function (k) {
-      var m = /^@(.+?)#(.+)$/.exec(k);
-      if (m) { (bound[m[1]] = bound[m[1]] || {})[m[2]] = fields[k]; } else { main[k] = fields[k]; }
+      var m = /^@(.+?)#(.+)$/.exec(k), r = /^\^(.+?)\|(.+?)#(.+)$/.exec(k);
+      if (m) { (bound[m[1]] = bound[m[1]] || {})[m[2]] = fields[k]; }
+      else if (r) { var rk = r[1] + '|' + r[2]; (subs[rk] = subs[rk] || {st: r[1], id: r[2], f: {}}).f[r[3]] = fields[k]; }
+      else { main[k] = fields[k]; }
+    });
+    // a row of an inline table the dialog draws by hand (signature classes):
+    // its own save-row step, the row id outside the body
+    Object.keys(subs).forEach(function (rk) {
+      var s = subs[rk], ep = GP.collection + '/' + s.st, pfx = '^' + s.st + '|' + s.id + '#';
+      steps.push({ep: ep + ' [' + s.id + ']', url: SAVE_ROW, pfx: pfx,
+                  keys: Object.keys(s.f).map(function (f) { return pfx + f; }),
+                  make: function (a) { return {collection: ep, parent: GP.name, sub_id: s.id, fields: s.f, apply: !!a}; }});
     });
     if (Object.keys(main).length) {
       if (GP && GP.api) {
@@ -730,7 +842,7 @@
       return p.then(function (prev) {
         if (prev && !prev.ok) return prev;          // stop at the first refusal
         // each step goes to ITS endpoint's route (object editor / GUI API save)
-        return post(st.make(apply), st.url).then(function (r) { r._ep = st.ep; r._keys = st.keys; r._bound = !!st.bound; out.push(r); return r; });
+        return post(st.make(apply), st.url).then(function (r) { r._ep = st.ep; r._keys = st.keys; r._bound = !!st.bound; r._pfx = st.pfx || ''; out.push(r); return r; });
       });
     }, Promise.resolve(null)).then(function () { return out; });
   }
@@ -754,14 +866,14 @@
       // every save route names the fields it sends by CLI (cli_fields); a bound
       // object's fields are keyed '@<endpoint>#<field>' in this dialog
       res.forEach(function (r) {
-        (r.cli_fields || []).forEach(function (f) { cli.push(r._bound ? '@' + r._ep + '#' + f : f); });
+        (r.cli_fields || []).forEach(function (f) { cli.push(r._bound ? '@' + r._ep + '#' + f : (r._pfx ? r._pfx + f : f)); });
       });
       var multi = steps.length > 1 || steps.some(function (st) { return !st.main; });
       var h = '<table class="fwg-table"><thead><tr><th>Field</th><th>Was</th><th>New</th><th>Channel</th>' +
               (multi ? '<th>Endpoint</th>' : '') + '</tr></thead><tbody>';
       ch.forEach(function (c) {
         var ep = epOf(c.key, steps);
-        var key = c.key.replace(/^@.+?#/, '');
+        var key = c.key.replace(/^@.+?#/, '').replace(/^\^(.+?)\|(.+?)#/, '$1[$2].');
         var chan = cli.indexOf(c.key) >= 0 ? 'CLI' : (ep.indexOf('api:') === 0 ? 'REST (GUI API)' : 'REST');
         h += '<tr><td><code>' + esc(key) + '</code></td><td class="text-muted">' + esc(c.was) +
              '</td><td>' + esc(c.now) + '</td><td>' + chan + '</td>' + (multi ? '<td><code>' + esc(ep) + '</code></td>' : '') + '</tr>';

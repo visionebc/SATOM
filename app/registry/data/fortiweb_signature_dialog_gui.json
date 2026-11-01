@@ -1,0 +1,170 @@
+{
+  "measured": {
+    "device": "fortiweb19",
+    "firmware": "FortiWeb-KVM 7.6.8,build1128",
+    "source": "GUI bundle ng/app/waf/signature/fwb-signature-dialog.html + .js and lang/en.json (crawl 2026-11-01)",
+    "note": "The Edit Signature Policy dialog draws the main-class table by hand (ng-repeat over formData.main_class_list), outside f-field: the GUI layout crawl does not carry it.",
+    "refs_note": "Custom Signature Group is f-omniselect sources \"waf.custom-signature-group\" with inline-edit-shortcut; the crawl left it unbound (drawn as text)."
+  },
+  "subtable": "main_class_list",
+  "order": [
+    "010000000",
+    "020000000",
+    "030000000",
+    "040000000",
+    "050000000",
+    "060000000",
+    "090000000",
+    "070000000",
+    "080000000",
+    "100000000"
+  ],
+  "names": {
+    "010000000": "Cross Site Scripting",
+    "020000000": "Cross Site Scripting (Extended)",
+    "030000000": "SQL Injection",
+    "040000000": "SQL Injection (Extended)",
+    "050000000": "Generic Attacks",
+    "060000000": "Generic Attacks(Extended)",
+    "090000000": "Known Exploits",
+    "070000000": "Trojans",
+    "080000000": "Information Disclosure",
+    "100000000": "Personally Identifiable Information"
+  },
+  "fpm_ids": [
+    "030000000",
+    "040000000"
+  ],
+  "info_id": "080000000",
+  "ident_id": "100000000",
+  "block_actions": [
+    "block-period",
+    "client-id-block-period"
+  ],
+  "options": {
+    "action": [
+      [
+        "alert",
+        "Alert"
+      ],
+      [
+        "alert_deny",
+        "Alert & Deny"
+      ],
+      [
+        "deny_no_log",
+        "Deny (no log)"
+      ],
+      [
+        "block-period",
+        "Block Period"
+      ],
+      [
+        "redirect",
+        "Redirect"
+      ],
+      [
+        "send_http_response",
+        "Send HTTP Response"
+      ],
+      [
+        "client-id-block-period",
+        "Client ID Block Period"
+      ]
+    ],
+    "info_action": [
+      [
+        "alert",
+        "Alert"
+      ],
+      [
+        "alert_erase",
+        "Erase & Alert"
+      ],
+      [
+        "only_erase",
+        "Erase, no Alert"
+      ],
+      [
+        "redirect",
+        "Redirect"
+      ],
+      [
+        "send_http_response",
+        "Send HTTP Response"
+      ]
+    ],
+    "ident_action": [
+      [
+        "alert",
+        "Alert"
+      ],
+      [
+        "alert_deny",
+        "Alert & Deny"
+      ],
+      [
+        "deny_no_log",
+        "Deny (no log)"
+      ],
+      [
+        "alert_erase",
+        "Erase & Alert"
+      ],
+      [
+        "block-period",
+        "Block Period"
+      ],
+      [
+        "send_http_response",
+        "Send HTTP Response"
+      ],
+      [
+        "client-id-block-period",
+        "Client ID Block Period"
+      ]
+    ],
+    "severity": [
+      [
+        "High",
+        "High"
+      ],
+      [
+        "Medium",
+        "Medium"
+      ],
+      [
+        "Low",
+        "Low"
+      ],
+      [
+        "Info",
+        "Informative"
+      ]
+    ]
+  },
+  "columns": [
+    "",
+    "Name",
+    "Status",
+    "False Positive Mitigation",
+    "Action",
+    "Block Period",
+    "Severity",
+    "Trigger Policy"
+  ],
+  "threshold": {
+    "key": "credit-card-detection-threshold",
+    "label": "Detection Threshold",
+    "min": 1,
+    "max": 128
+  },
+  "help": {
+    "sensitivity-level": "Increasing the level adds additional signatures but also adds the chance of blocking legitimate traffic."
+  },
+  "client_id_warning": "To apply action \"Client ID Block Period\", you must enable Client Management in your \"Web Protection Profile\".",
+  "detail_button": "Signature Details",
+  "refs": {
+    "custom-protection-group": "waf/custom-protection-group"
+  }
+}

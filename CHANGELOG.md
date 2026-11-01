@@ -7,6 +7,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **The Edit entry pencil opens the dialog the device draws.** Request:
+  "on the Web Protection Profile, the pencil on Signatures opens a screen that
+  is not exactly what FortiWeb shows, and this happens in many places; clone
+  exactly what is there and keep the help texts already added." The pencil
+  beside a selector in a device-layout dialog used to open SATOM's generic
+  object editor in the stacked panel; it now opens the referenced object in
+  the dialog FortiWeb draws for it (146 selectors on FortiWeb 7.6.8; the
+  generic editor stays the fallback where no page lists the collection, 3
+  today). The panel holds the dialog in a same-origin frame, so its own Save,
+  live show/hide and pencils work there; Cancel and Esc close it. Only those
+  dialog pages may be framed, and only by SATOM itself (X-Frame-Options
+  SAMEORIGIN; every other page stays DENY).
+- **Edit Signature Policy as on the device.** Name, Custom Signature Group
+  (with its list and Edit entry pencil), Sensitivity Level (with FortiWeb's
+  tip) and Comments, then the signature classes table FortiWeb draws by hand:
+  ten classes in the device's order with Status, False Positive Mitigation
+  (SQL Injection rows only), Action (Information Disclosure and PII have their
+  own choices), Block Period (only for a block-period action), Severity and
+  Trigger Policy, and the PII Detection Threshold folded under its row; plus
+  the **Signature Details** button. Changed classes are written row by row,
+  dry run first. Rows SATOM cannot read are reported, never drawn empty.
+- **Selectors the GUI crawl left unbound now list their objects.** 38
+  selectors (Trigger Policy, exceptions, rules…) were drawn as text boxes
+  with no list and no pencil; they take the collection the device schema
+  names for the field. The remaining 40 stay text boxes until the crawl
+  measures them (no guessed lists).
 - **Web Protection pages drawn as FortiWeb draws them (FortiWeb 7.6.8).**
   Request: "the Web Protection Profile page is not the same as on the
   FortiWeb; take that as the example but improve the WPP profiles, their

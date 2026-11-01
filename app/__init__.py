@@ -88,6 +88,11 @@ def widen_plan(tables, live_widths):
 CHROME_BPS = frozenset({'bookmarks', 'wiki'})
 
 
+#: Endpoints that may be framed by SATOM itself (X-Frame-Options SAMEORIGIN):
+#: the device-layout dialogs the "Edit entry" pencil stacks over a dialog.
+_SAME_ORIGIN_FRAMES = ("workspace.fwgui_", "workspace.gui_")
+
+
 def create_app(config_override: object | None = None) -> Flask:
     app = Flask(__name__, instance_relative_config=False)
 
@@ -1394,6 +1399,12 @@ def create_app(config_override: object | None = None) -> Flask:
     def set_security_headers(response):
         # Plugin frame route (views/plugins.py) sets SAMEORIGIN so it can be
         # embedded in its own sandboxed iframe; don't clobber it with DENY.
+        # The device-layout dialogs open inside SATOM's own stacked panel
+        # (the "Edit entry" pencil, objedit_drawer.js FWDrawer.openFrame):
+        # same origin only, never a third-party frame.
+        if "X-Frame-Options" not in response.headers and \
+                (request.endpoint or "").startswith(_SAME_ORIGIN_FRAMES):
+            response.headers["X-Frame-Options"] = "SAMEORIGIN"
         if "X-Frame-Options" not in response.headers:
             response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"

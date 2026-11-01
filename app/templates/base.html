@@ -8,6 +8,11 @@
      inline scripts arriving in a fetched body — without it, every inline
      script would be CSP-blocked after the first Turbo navigation. #}
   <meta name="csp-nonce" content="{{ csp_nonce }}">
+  {# Inside SATOM's own stacked panel (a device-layout dialog the "Edit entry"
+     pencil opened, objedit_drawer.js openFrame) the page draws the dialog
+     alone: no top bar, sidebar, bookmarks or breadcrumb (fortiweb.css). On
+     <html> so it survives Turbo body swaps inside the frame. #}
+  <script nonce="{{ csp_nonce }}">if (window.self !== window.top) document.documentElement.classList.add('fw-framed');</script>
   {# Per-tab ADOM: the effective product THIS response was rendered in.
      turbo-boot.js mirrors it into sessionStorage (per browser tab) and sends
      it back as X-ADOM on every request, so each tab keeps its own ADOM. #}

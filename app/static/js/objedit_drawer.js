@@ -8,6 +8,8 @@
  *
  *   ✎ / ↗  on a reference field  → FWDrawer.openEdit(coll, name)   (edit panel)
  *   ＋      on a reference field  → FWDrawer.openCreate(coll)       (create panel)
+ *   ✎ in a device-layout dialog   → FWDrawer.openFrame(url, …)       (the device's
+ *                                    own dialog for that object, in a frame)
  *
  * Each panel loads /objedit/<aid>/edit?partial=1 — the SAME editor fragment the
  * full page uses, so sub-tables (rows, exceptions, members…) are editable in
@@ -135,8 +137,23 @@
     p._opener = opts.opener || null;       // the <select> that spawned the panel
     STACK.push(p);
     syncChrome();
-    load(p);
+    if (opts.frame) frame(p); else load(p);
     return p;
+  }
+
+  // A device-layout dialog (workspace.fwgui_object) in the panel: its own
+  // document in a same-origin frame, so its scripts (Save, live show/hide,
+  // its own pencils) never meet the dialog underneath. The framed page draws
+  // the dialog alone (html.fw-framed) and asks to close through postMessage.
+  function frame(panel) {
+    var body = panel.querySelector('.fw-drawer-body');
+    body.classList.add('is-frame');
+    body.innerHTML = '';
+    var f = document.createElement('iframe');
+    f.className = 'fw-drawer-frame';
+    f.src = panel.dataset.url;
+    f.title = panel.querySelector('.fw-drawer-title').textContent;
+    body.appendChild(f);
   }
 
   function pop(panel) {
@@ -172,7 +189,20 @@
       return open({url: editUrl(coll, '', t, true), title: 'New ' + t,
                    coll: coll, opener: opts.opener});
     },
-    reload: function (panel) { if (panel && panel.dataset.url) load(panel); },
+    // ✎ on a reference whose collection has a device-layout page: that
+    // dialog, as the device draws it (url from the fwg_ref_page global).
+    openFrame: function (url, coll, mkey, opts) {
+      opts = opts || {};
+      var t = opts.title || (coll || '').split('/').pop();
+      return open({url: url, title: t + ' — ' + mkey, coll: coll,
+                   opener: opts.opener, frame: true});
+    },
+    reload: function (panel) {
+      if (!panel || !panel.dataset.url) return;
+      var f = panel.querySelector('.fw-drawer-frame');
+      if (f) { f.src = panel.dataset.url; return; }
+      load(panel);
+    },
     // A create inside the panel succeeded: select the new name back into the
     // dropdown that opened the panel, then promote the panel to the object's
     // edit view so its sub-tables can be filled — the FortiWeb flow.
@@ -208,7 +238,7 @@
     var x = t.closest('.fw-drawer-close');
     if (x) { pop(x.closest('.fw-drawer')); return; }
     var r = t.closest('.fw-drawer-reload');
-    if (r) { load(r.closest('.fw-drawer')); return; }
+    if (r) { FWDrawer.reload(r.closest('.fw-drawer')); return; }
 
     // ✎ / ＋ on reference fields — ONLY inside the generic editor fragment
     // (the Server Policy workspace has its own modal handlers).
@@ -230,8 +260,19 @@
   }, true);
 
   document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape' && STACK.length) { ev.stopPropagation(); pop(); }
+    if (ev.key !== 'Escape') return;
+    if (STACK.length) { ev.stopPropagation(); pop(); return; }
+    if (window.self !== window.top) window.parent.postMessage({fwDrawer: 'close'}, location.origin);
   }, true);
+
+  // A framed dialog asks to close (Cancel, Esc): pop the panel holding it.
+  window.addEventListener('message', function (ev) {
+    if (ev.origin !== location.origin || !ev.data || ev.data.fwDrawer !== 'close') return;
+    for (var i = STACK.length - 1; i >= 0; i--) {
+      var f = STACK[i].querySelector('.fw-drawer-frame');
+      if (f && f.contentWindow === ev.source) { pop(STACK[i]); return; }
+    }
+  });
 
   // Turbo Drive swaps the <body>: the panel/backdrop NODES die with it — drop
   // the stale stack so the next page starts clean.

@@ -1190,6 +1190,25 @@ def _gx_device(appl):
                                        firmware=appl.firmware, model=appl.model)
 
 
+@bp.app_template_global('fwg_ref_page')
+def fwg_ref_page(appl, collection: str) -> str:
+    """URL (object name as ``__N__``, framed) of the dialog the device draws
+    for an object of ``collection``, or '' when no measured page lists it --
+    the "Edit entry" pencil then falls back to the generic object editor."""
+    from ..services import gui_pages, gui_products, gui_store
+    try:
+        if appl is None or gui_products.product_of(appl) != 'fortiweb' or not collection:
+            return ''
+        hit = gui_pages.page_for_collection(collection, gui_store.firmware_of(appl), 'fortiweb')
+    except Exception as exc:  # noqa: BLE001 — a pencil never breaks the dialog
+        log_exception(exc, context='workspace.fwg_ref_page')
+        return ''
+    if not hit:
+        return ''
+    return url_for('workspace.fwgui_object', appliance_id=appl.id, page=hit[0],
+                   name='__N__', v=hit[1] or None, framed=1)
+
+
 def _fwgui_subrows(appl, tpl, key, name, obj_row):
     """{sub-table: rows | None} of a dialog's inline tables, read as the object
     editor reads them: the device first (a row saved here shows at once), the
@@ -1503,12 +1522,69 @@ def _with_constraint_table(dview: dict, key: str, row: dict) -> None:
     dview["hce_table"] = tbl
 
 
-def _drop_table_keys(dview: dict, *sections) -> None:
-    """The keys the constraints table draws are in the GUI: out of the
-    "Not in GUI, but in CLI" section(s) (366 of them on a constraints profile)."""
-    if not dview.get('hce_table'):
+def _bind_refs(dview: dict, collection: str) -> int:
+    """A FortiWeb selector the GUI crawl could not tie to a collection
+    (Trigger Policy, Exception, Rule… -- 78 of them on 7.6.8) was drawn as a
+    text box with no list and no Edit entry pencil. The device schema the
+    object editor draws the same field from knows its collection
+    (fortiweb_field_schema: the kind's refs, else REF_ENDPOINTS): bind it
+    there. A field neither knows stays as it was (never a guessed list).
+    Returns how many were bound."""
+    from ..services import fortiweb_field_schema as ffs, objform
+    if not collection:
+        return 0
+    refs = (ffs.KIND_SPECS.get(objform.object_kind(collection)) or {}).get('refs') or {}
+    n = 0
+    for b in dview.get('blocks') or []:
+        for f in b.get('fields') or []:
+            k = f.get('key')
+            if f.get('kind') != 'ref' or f.get('ref') or not k:
+                continue
+            tgt = refs.get(k) or ffs.REF_ENDPOINTS.get(k)
+            if tgt:
+                f['ref'] = tgt
+                n += 1
+    return n
+
+
+def _with_signature_table(appl, dview: dict, key: str, name: str, row: dict) -> None:
+    """Edit Signature Policy: FortiWeb draws the main-class table (Status,
+    False Positive Mitigation, Action, Block Period, Severity, Trigger Policy)
+    and the PII Detection Threshold by hand, outside the GUI layout (measured
+    separately, services.signature_dialog_gui). Rows are read as the dialog's
+    inline tables are: the device first, else the SATOM cache; unknown stays
+    unknown (None), never an empty table."""
+    from ..services import signature_dialog_gui as sdg
+    from .objedit import _cached_rows, _read_rows
+    if key != sdg.DIALOG or not name:
         return
-    placed = set(dview['hce_table']['keys'])
+    st = sdg.data()['subtable']
+    try:
+        rows = _read_rows(FortiWebClient(appl), 'waf/signature/' + st, name)
+    except Exception as exc:  # noqa: BLE001 — unreachable: the cache decides
+        log_exception(exc, context='workspace.fwgui.signature_classes')
+        rows = None
+    if not rows:
+        rows = _cached_rows(appl.id, 'waf/signature', name, st) or (rows if rows == [] else None)
+    dview['sig_table'] = sdg.class_table(rows, row)
+    tip = sdg.help_for('sensitivity-level')
+    for b in dview.get('blocks') or []:
+        for f in b.get('fields') or []:
+            if f.get('key') == 'sensitivity-level' and not f.get('help'):
+                f['help'] = tip
+            ref = sdg.ref_for(f.get('key') or '')
+            if ref and not f.get('ref'):
+                f.update(kind='ref', ref=ref, edit_shortcut=True)
+
+
+def _drop_table_keys(dview: dict, *sections) -> None:
+    """The keys the constraints table (or the signature class table) draws are
+    in the GUI: out of the "Not in GUI, but in CLI" section(s) (366 of them on
+    a constraints profile)."""
+    placed = set((dview.get('hce_table') or {}).get('keys') or ()) | \
+        set((dview.get('sig_table') or {}).get('keys') or ())
+    if not placed:
+        return
     for sec in sections:
         if isinstance(sec, dict) and isinstance(sec.get('fields'), list):
             sec['fields'] = [f for f in sec['fields'] if f.get('key') not in placed]
@@ -1564,6 +1640,7 @@ def fwgui_object(appliance_id, page, name):
             is_new_row = False
         writable = writer and bool(sub_coll) and objform.is_known_collection(sub_coll)
         dview = gui_template.dialog_view(tpl, key, row, dev, live=writable)
+        _bind_refs(dview, sub_coll)
         row_ctx = {'subtable': st, 'collection': sub_coll, 'writable': writable,
                    'sub_id': '' if is_new_row else str(row.get('id', '')), 'new': is_new_row}
         can_edit = writable
@@ -1573,8 +1650,11 @@ def fwgui_object(appliance_id, page, name):
         can_edit = writer and objform.is_known_collection(coll)
         tpl, prow, groups = gui_bound.prepare(tpl, key, obj, appl)
         dview = gui_template.dialog_view(tpl, key, prow, dev, subrows=subrows, live=can_edit)
+        _bind_refs(dview, coll)
         if page == 'http-protocol':
             _with_constraint_table(dview, key, prow)
+        if page == 'signature':
+            _with_signature_table(appl, dview, key, name, prow)
     else:
         abort(404)
     writable_subtables = sorted(
@@ -1632,6 +1712,7 @@ def fwgui_new(appliance_id, page, dialog):
     tpl, row, groups = gui_bound.prepare(tpl, dialog, row, appl, read_device=False)
     dview = gui_template.dialog_view(tpl, dialog, row, dev, subrows=subrows,
                                      live=can_edit, new=can_edit)
+    _bind_refs(dview, coll)
     gp = {'page': page, 'v': vi, 'collection': coll, 'name': None, 'mode': 'new-object',
           'bound': groups, 'product': 'fortiweb'}
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,

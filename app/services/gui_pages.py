@@ -385,6 +385,38 @@ def view_for_dialog(tpl: dict, dialog: str) -> tuple:
     return view_of(tpl, 0)
 
 
+_coll_pages: dict = {}
+
+
+def page_for_collection(collection: str, firmware, product: str = PRODUCT):
+    """(page, view index) of the GUI page that lists ``collection`` for this
+    firmware, or None. What the "Edit entry" pencil opens: the object in the
+    dialog the device draws for it, not the generic object editor. The
+    "Not in GUI" catalogue pages and the bespoke pages (SPECIAL) are never
+    the answer."""
+    try:
+        ck = (str(gui_store.root()), product, str(firmware or ""))
+    except RuntimeError:
+        return None
+    hit = _coll_pages.get(ck)
+    m = hit[1] if hit and time.monotonic() - hit[0] < 300 else None
+    if m is None:
+        m = {}
+        special = SPECIAL if product == PRODUCT else {}
+        for page in page_ids(product):
+            if page.startswith("not-in-gui") or page in special:
+                continue
+            tpl, _match = template(page, firmware, product)
+            if tpl is None:
+                continue
+            for i, v in enumerate(views(tpl)):
+                ep = v.get("endpoint") or ""
+                if ep and ep not in m and dialog_for(v, None) in (tpl.get("dialogs") or {}):
+                    m[ep] = (page, i)
+        _coll_pages[ck] = (time.monotonic(), m)
+    return m.get(collection)
+
+
 def table_endpoint(tpl: dict, dialog: str, subtable: str) -> str:
     for b in tpl["dialogs"][dialog]["blocks"]:
         for f in b["fields"]:

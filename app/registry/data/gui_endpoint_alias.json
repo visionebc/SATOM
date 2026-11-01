@@ -19,6 +19,22 @@
       "cmdb": "waf/openapi-file", "confidence": "measured",
       "evidence": "Same 6 OpenAPI files by name on fortiweb17; both empty on fortiweb18."
     },
+    "system/network.datasource_interface": {
+      "cmdb": "system/interface", "confidence": "measured",
+      "evidence": "fortiweb19 7.6.8 (2026-11-01): the GUI's Interface source and cmdb system/interface list the same names (port1, port2, port3)."
+    },
+    "system/admin.certlocal": {
+      "cmdb": "system/admin-certificate.local", "confidence": "measured",
+      "evidence": "fortiweb19 7.6.8 (2026-11-01): the GUI API and cmdb system/admin-certificate.local list the same 2 certificates by name."
+    },
+    "system/admin.certca": {
+      "cmdb": "system/admin-certificate.ca", "confidence": "named",
+      "evidence": "Same family as system/admin.certlocal -> admin-certificate.local (measured); both empty on fortiweb19 7.6.8 (2026-11-01)."
+    },
+    "system/certificate.crl": {
+      "cmdb": "system/certificate.crl", "confidence": "named",
+      "evidence": "GUI API and cmdb both answer 200 and both are empty on fortiweb19 7.6.8 (2026-11-01); same name."
+    },
     "system/system_external_resource": {
       "cmdb": "system/external-resource", "confidence": "measured",
       "evidence": "fortiweb19 7.6.8 (2026-11-01): lab-ext-01 created over cmdb system/external-resource was listed by name in the GUI API's payload (IP List's IP External source), and gone from both after the delete."

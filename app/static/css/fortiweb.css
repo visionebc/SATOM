@@ -1752,7 +1752,7 @@ body.fw-entering-page {
 
 .fw-drawer {
   position: fixed; top: var(--fw-topbar-height); right: 0; bottom: 0;
-  width: min(1012px, 94vw);
+  width: min(1113px, 94vw);
   background: var(--fw-content-bg);
   border-left: 3px solid var(--fw-accent);
   box-shadow: -14px 0 34px rgba(0, 0, 0, 0.28);
@@ -1762,7 +1762,7 @@ body.fw-entering-page {
 }
 .fw-drawer.show { transform: none; }
 /* a page FortiWeb slides in at full width (Signature Details over its dialog) */
-.fw-drawer.is-wide { width: min(1725px, 97vw); }
+.fw-drawer.is-wide { width: min(1898px, 97vw); }
 .fw-drawer.fw-drawer-under { filter: brightness(.92); }
 
 .fw-drawer-head {

@@ -26,10 +26,10 @@
   'use strict';
 
   var STACK = [];            // bottom → top panel elements
-  var BASE_W = 1012;         // px, top-most panel; deeper panels shave STEP each
-  var STEP = 39;
-  var MIN_W = 483;
-  var WIDE_W = 1725;         // px, a page FortiWeb slides in full width (Signature Details)
+  var BASE_W = 1113;         // px, top-most panel; deeper panels shave STEP each
+  var STEP = 43;
+  var MIN_W = 531;
+  var WIDE_W = 1898;         // px, a page FortiWeb slides in full width (Signature Details)
 
   function nonce() {
     var m = document.querySelector('meta[name=csp-nonce]');

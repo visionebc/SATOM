@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.10.0] - 2026-11-02
+
 ### Added
 - **Notifications page in the Audit Log's layout, with filters and a
   troubleshooting guide.** Operator request: "the notifications section should

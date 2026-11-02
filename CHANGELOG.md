@@ -6,6 +6,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **The 4.10.0 screens rendered in English for Spanish, German, French and
+  Italian operators.** 120 strings of the Notifications page and its
+  troubleshooting guide, the signature policy editor (Web Protection ›
+  Signatures), Exceptions › Select a signature and the workspace dialog were
+  not in the catalogues, so gettext fell back to English. All 120 are now
+  translated in es/de/fr/it with their placeholders intact. Three older
+  entries were also wrong: Spanish "Signatures" read "Firma digital" (now
+  "Firmas"), German "Signatures" read "Unterschriften" (handwritten
+  signatures, now "Signaturen") and German "Severity" read
+  "Geschwindigkeit" (speed, now "Schweregrad").
+
 ## [4.10.0] - 2026-11-02
 
 ### Added

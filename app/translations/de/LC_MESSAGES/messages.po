@@ -10266,7 +10266,7 @@ msgstr "Einstellungen → Passwort ändern"
 #: app/templates/web_protection/signature_policy.html:59
 #: app/templates/web_protection/signature_policy.html:175
 msgid "Severity"
-msgstr "Geschwindigkeit"
+msgstr "Schweregrad"
 
 #: app/templates/errors/500.html:39
 msgid "Share this reference with your administrator so they can locate the exact problem in the logs."
@@ -10402,7 +10402,7 @@ msgstr "Signaturrichtlinie auf"
 #: app/templates/web_protection/overview.html:83
 #: app/templates/web_protection/overview.html:159
 msgid "Signatures"
-msgstr "Unterschriften"
+msgstr "Signaturen"
 
 #: app/templates/settings/index.html:1434
 #: app/templates/settings/index.html:1480
@@ -28599,3 +28599,363 @@ msgstr "ist, wo die Site veröffentlicht wird: der Wert, den Administrator > Cla
 
 msgid "The publication scope object names carry as {scope} (Administrator > Naming, e.g. spo-{scope}-{service}-{port}). This is the only place it is written: a site published in one zone takes that zone's value, one published in more than one zone takes the “More than one zone” value. An empty value, or the switch off, gives names without a scope."
 msgstr "Der Veröffentlichungs-Scope, den Objektnamen als {scope} tragen (Administrator > Naming, z. B. spo-{scope}-{service}-{port}). Nur hier wird er festgelegt: eine Site in einer Zone erhält den Wert dieser Zone, eine Site in mehr als einer Zone den Wert „Mehr als eine Zone“. Ein leerer Wert oder der ausgeschaltete Schalter ergibt Namen ohne Scope."
+
+msgid "Select a signature"
+msgstr "Signatur auswählen"
+
+msgid "Search: id, attack class or words of the description"
+msgstr "Suche: ID, Angriffsklasse oder Wörter der Beschreibung"
+
+msgid "All attack classes"
+msgstr "Alle Angriffsklassen"
+
+msgid "Attack class"
+msgstr "Angriffsklasse"
+
+msgid "Load more"
+msgstr "Mehr laden"
+
+msgid "From SATOM's signature index (Signatures › Sync). The ID that blocked a request is the Signature ID column of the Attack log."
+msgstr "Aus dem Signaturindex von SATOM (Signatures › Sync). Die ID, die eine Anfrage blockiert hat, steht in der Spalte Signature ID des Angriffsprotokolls."
+
+msgid "Troubleshooting guide"
+msgstr "Leitfaden zur Fehlerbehebung"
+
+msgid "The notifications SATOM raises most often: what each one means, why it usually fires and how to resolve it."
+msgstr "Die Benachrichtigungen, die SATOM am häufigsten auslöst: was jede bedeutet, warum sie meist auftritt und wie man sie behebt."
+
+msgid "Back to notifications"
+msgstr "Zurück zu den Benachrichtigungen"
+
+msgid "Paste a notification title or a phrase, e.g. no write of its own"
+msgstr "Titel einer Benachrichtigung oder einen Satz einfügen, z. B. no write of its own"
+
+msgid "All categories"
+msgstr "Alle Kategorien"
+
+msgid "entries"
+msgstr "Einträge"
+
+msgid "\"Last 30 days\" counts the notifications of that kind you received."
+msgstr "\"Letzte 30 Tage\" zählt die Benachrichtigungen dieser Art, die Sie erhalten haben."
+
+msgid "Show them on the Notifications page"
+msgstr "Auf der Seite Benachrichtigungen anzeigen"
+
+msgid "in the last 30 days"
+msgstr "in den letzten 30 Tagen"
+
+msgid "Example"
+msgstr "Beispiel"
+
+msgid "What it means"
+msgstr "Was es bedeutet"
+
+msgid "Common causes"
+msgstr "Häufige Ursachen"
+
+msgid "What to do"
+msgstr "Was zu tun ist"
+
+msgid "Related pages"
+msgstr "Verwandte Seiten"
+
+msgid "No guide entry matches"
+msgstr "Kein Eintrag im Leitfaden passt"
+
+msgid "Try a shorter phrase, or clear the category."
+msgstr "Versuchen Sie einen kürzeren Satz oder entfernen Sie die Kategorie."
+
+msgid "Info"
+msgstr "Info"
+
+msgid "Alerts, background jobs and bug-report updates raised for your account. Click a row for the full message and how to resolve it."
+msgstr "Warnungen, Hintergrundjobs und Aktualisierungen von Fehlerberichten für Ihr Konto. Klicken Sie auf eine Zeile für die vollständige Meldung und die Lösung."
+
+msgid "Download the notifications matching the current filters"
+msgstr "Die Benachrichtigungen herunterladen, die den aktuellen Filtern entsprechen"
+
+msgid "Search (title · message · ID)"
+msgstr "Suche (Titel · Meldung · ID)"
+
+msgid "e.g. a device name, fortiweb19, or an ID like #1234"
+msgstr "z. B. ein Gerätename, fortiweb19 oder eine ID wie #1234"
+
+msgid "All severities"
+msgstr "Alle Schweregrade"
+
+msgid "Quick search on this page…"
+msgstr "Schnellsuche auf dieser Seite…"
+
+msgid "Notification"
+msgstr "Benachrichtigung"
+
+msgid "Click to copy this ID"
+msgstr "Klicken, um diese ID zu kopieren"
+
+msgid "New since your last visit"
+msgstr "Neu seit Ihrem letzten Besuch"
+
+msgid "Has a resolution guide"
+msgstr "Hat einen Lösungsleitfaden"
+
+msgid "No notification matches these filters"
+msgstr "Keine Benachrichtigung entspricht diesen Filtern"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "Message"
+msgstr "Meldung"
+
+msgid "Open related page"
+msgstr "Verwandte Seite öffnen"
+
+msgid "How to resolve"
+msgstr "Wie man es behebt"
+
+msgid "Copied"
+msgstr "Kopiert"
+
+msgid "Open in the troubleshooting guide"
+msgstr "Im Leitfaden zur Fehlerbehebung öffnen"
+
+msgid "No guide entry for this notification yet. The message above is all SATOM recorded; the troubleshooting guide lists the recurring ones."
+msgstr "Für diese Benachrichtigung gibt es noch keinen Leitfadeneintrag. Die Meldung oben ist alles, was SATOM aufgezeichnet hat; der Leitfaden zur Fehlerbehebung führt die wiederkehrenden auf."
+
+msgid "Health, the pipeline explained, the score bands, the demo lab, the CVE mirror and the decision log are in"
+msgstr "Zustand, die erklärte Pipeline, die Bewertungsbänder, das Demo-Labor, der CVE-Spiegel und das Entscheidungsprotokoll befinden sich unter"
+
+msgid "incidents, the border blocklist and the architecture are next to it."
+msgstr "die Vorfälle, die Grenz-Sperrliste und die Architektur liegen daneben."
+
+msgid "Signature Details on"
+msgstr "Signaturdetails auf"
+
+msgid "FortiWeb predefined signature policy: read-only; clone it to customize"
+msgstr "Vordefinierte Signaturrichtlinie von FortiWeb: schreibgeschützt; zum Anpassen klonen"
+
+msgid "state source"
+msgstr "Quelle des Zustands"
+
+msgid "signatures in the catalog"
+msgstr "Signaturen im Katalog"
+
+msgid "No signature database cached: signature names, descriptions and the search need it. Sync it once in"
+msgstr "Keine Signaturdatenbank im Cache: Signaturnamen, Beschreibungen und die Suche benötigen sie. Einmal synchronisieren unter"
+
+msgid "Back to Signatures"
+msgstr "Zurück zu den Signaturen"
+
+msgid "Dictionaries"
+msgstr "Wörterbücher"
+
+msgid "Hide the Dictionaries pane"
+msgstr "Bereich Wörterbücher ausblenden"
+
+msgid "Unknown: neither the SATOM cache nor the device answered"
+msgstr "Unbekannt: weder der SATOM-Cache noch das Gerät haben geantwortet"
+
+msgid "Show the Dictionaries pane"
+msgstr "Bereich Wörterbücher einblenden"
+
+msgid "Select a category, a sub-category, Search or Filters"
+msgstr "Kategorie, Unterkategorie, Suche oder Filter auswählen"
+
+msgid "Pick a node in Dictionaries. A main category shows its settings in this policy; a sub-category lists its signatures."
+msgstr "Wählen Sie einen Knoten unter Wörterbücher. Eine Hauptkategorie zeigt ihre Einstellungen in dieser Richtlinie; eine Unterkategorie listet ihre Signaturen."
+
+msgid "Seconds (1 - 3600)"
+msgstr "Sekunden (1 - 3600)"
+
+msgid "Search Description"
+msgstr "Beschreibung durchsuchen"
+
+msgid "Search Type"
+msgstr "Suchtyp"
+
+msgid "CVE Number"
+msgstr "CVE-Nummer"
+
+msgid "Keywords"
+msgstr "Schlüsselwörter"
+
+msgid "Filter by"
+msgstr "Filtern nach"
+
+msgid "False Positive Mitigation Disabled"
+msgstr "Minderung von Falsch-Positiven deaktiviert"
+
+msgid "Prev"
+msgstr "Zurück"
+
+msgid "Threat Weight"
+msgstr "Bedrohungsgewicht"
+
+msgid "Main Category"
+msgstr "Hauptkategorie"
+
+msgid "Sub Category"
+msgstr "Unterkategorie"
+
+msgid "Sensitivity Level"
+msgstr "Empfindlichkeitsstufe"
+
+msgid "False Positive Mitigation Support"
+msgstr "Unterstützung der Minderung von Falsch-Positiven"
+
+msgid "Attack Reference"
+msgstr "Angriffsreferenz"
+
+msgid "Found In"
+msgstr "Gefunden in"
+
+msgid "FortiWeb reads these fields off the device for each signature (waf/signature.sigdetail); SATOM does it when you ask"
+msgstr "FortiWeb liest diese Felder für jede Signatur vom Gerät (waf/signature.sigdetail); SATOM tut es, wenn Sie es anfordern"
+
+msgid "Read from device"
+msgstr "Vom Gerät lesen"
+
+msgid "Sensitivity Level, Found In, Attack Reference, Match Example and Threat Weight come from the device."
+msgstr "Empfindlichkeitsstufe, Gefunden in, Angriffsreferenz, Treffer-Beispiel und Bedrohungsgewicht kommen vom Gerät."
+
+msgid "Match Example"
+msgstr "Treffer-Beispiel"
+
+msgid "192.0.2.1 or range"
+msgstr "192.0.2.1 oder Bereich"
+
+msgid "Restore default"
+msgstr "Standard wiederherstellen"
+
+msgid "Read the signature with \"Read from device\" on the Signature tab; the weight is set for this signature policy and read back from the device after saving."
+msgstr "Lesen Sie die Signatur mit \"Vom Gerät lesen\" auf der Registerkarte Signatur; das Gewicht gilt für diese Signaturrichtlinie und wird nach dem Speichern vom Gerät zurückgelesen."
+
+msgid "this category is not in the policy state"
+msgstr "diese Kategorie ist nicht im Zustand der Richtlinie"
+
+msgid "row id unknown: refresh the page"
+msgstr "Zeilen-ID unbekannt: Seite neu laden"
+
+msgid "Write failed"
+msgstr "Schreiben fehlgeschlagen"
+
+msgid "This policy row is not in the cache and the device did not return it: nothing to show or save."
+msgstr "Diese Richtlinienzeile ist nicht im Cache und das Gerät hat sie nicht zurückgegeben: nichts anzuzeigen oder zu speichern."
+
+msgid "Apply these category settings to"
+msgstr "Diese Kategorieeinstellungen anwenden auf"
+
+msgid "on the device?"
+msgstr "auf dem Gerät?"
+
+msgid "Saved. Reloading…"
+msgstr "Gespeichert. Wird neu geladen…"
+
+msgid "Disabled in all policies"
+msgstr "In allen Richtlinien deaktiviert"
+
+msgid "Disabled (all policies)"
+msgstr "Deaktiviert (alle Richtlinien)"
+
+msgid "Exception entries"
+msgstr "Ausnahmeeinträge"
+
+msgid "signature(s)"
+msgstr "Signatur(en)"
+
+msgid "Writes a waf/base-signature-disable entry (every signature policy of this device)"
+msgstr "Schreibt einen Eintrag waf/base-signature-disable (alle Signaturrichtlinien dieses Geräts)"
+
+msgid "Disable in all policies"
+msgstr "In allen Richtlinien deaktivieren"
+
+msgid "Disable in current policy"
+msgstr "In der aktuellen Richtlinie deaktivieren"
+
+msgid "Saved on the device."
+msgstr "Auf dem Gerät gespeichert."
+
+msgid "Disable signature"
+msgstr "Signatur deaktivieren"
+
+msgid "in policy"
+msgstr "in der Richtlinie"
+
+msgid "in ALL signature policies of"
+msgstr "in ALLEN Signaturrichtlinien von"
+
+msgid "A CVE number is two groups of digits (CVE-2021-44228)."
+msgstr "Eine CVE-Nummer besteht aus zwei Zifferngruppen (CVE-2021-44228)."
+
+msgid "You must input a valid Signature ID."
+msgstr "Sie müssen eine gültige Signatur-ID eingeben."
+
+msgid "Reading from the device…"
+msgstr "Wird vom Gerät gelesen…"
+
+msgid "Read from the device just now."
+msgstr "Soeben vom Gerät gelesen."
+
+msgid "The read failed."
+msgstr "Das Lesen ist fehlgeschlagen."
+
+msgid "Set Threat Weight of signature"
+msgstr "Bedrohungsgewicht der Signatur festlegen"
+
+msgid "Writing to the device…"
+msgstr "Wird auf das Gerät geschrieben…"
+
+msgid "Saved; the device holds it (read back)."
+msgstr "Gespeichert; das Gerät hält den Wert (zurückgelesen)."
+
+msgid "Saved, but the read-back was not possible: unverified."
+msgstr "Gespeichert, aber das Zurücklesen war nicht möglich: unbestätigt."
+
+msgid "The write failed."
+msgstr "Das Schreiben ist fehlgeschlagen."
+
+msgid "row id unknown: refresh the list"
+msgstr "Zeilen-ID unbekannt: Liste neu laden"
+
+msgid "Set Alert Only for"
+msgstr "Nur Warnung festlegen für"
+
+msgid "Remove Alert Only from"
+msgstr "Nur Warnung entfernen von"
+
+msgid "Enable False Positive Mitigation for"
+msgstr "Minderung von Falsch-Positiven aktivieren für"
+
+msgid "Disable False Positive Mitigation for"
+msgstr "Minderung von Falsch-Positiven deaktivieren für"
+
+msgid "No exception entries for this signature."
+msgstr "Keine Ausnahmeeinträge für diese Signatur."
+
+msgid "Delete exception entry"
+msgstr "Ausnahmeeintrag löschen"
+
+msgid "of signature"
+msgstr "der Signatur"
+
+msgid "Delete failed"
+msgstr "Löschen fehlgeschlagen"
+
+msgid "Create this exception for signature"
+msgstr "Diese Ausnahme erstellen für Signatur"
+
+msgid "Exception saved to the device."
+msgstr "Ausnahme auf dem Gerät gespeichert."
+
+msgid "Firmware not read from the device yet: chosen by the model on record (%(dv)s)."
+msgstr "Firmware noch nicht vom Gerät gelesen: nach dem hinterlegten Modell gewählt (%(dv)s)."
+
+msgid "unverified on this build: shown, not saved"
+msgstr "auf diesem Build nicht verifiziert: angezeigt, nicht gespeichert"
+
+msgid "The signature classes of this policy could not be read: %(dev)s refused or did not answer and the SATOM cache has none. They are not drawn rather than drawn empty."
+msgstr "Die Signaturklassen dieser Richtlinie konnten nicht gelesen werden: %(dev)s hat abgelehnt oder nicht geantwortet, und der SATOM-Cache hat keine. Sie werden nicht gezeichnet statt leer gezeichnet."
+
+msgid "Slides in the policy's Signature Details over this dialog, as FortiWeb does: Dictionaries tree, signatures per sub-category, and each signature's detail and exceptions."
+msgstr "Blendet über diesem Dialog die Signaturdetails der Richtlinie ein, wie FortiWeb es tut: Wörterbuch-Baum, Signaturen pro Unterkategorie sowie Details und Ausnahmen jeder Signatur."

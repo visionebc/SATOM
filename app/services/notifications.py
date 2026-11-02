@@ -52,6 +52,11 @@ def _shown(user_id: int, n: Notification) -> bool:
         return False
 
 
+#: Public name for the pages that query notifications themselves (the
+#: Notifications page filters and paginates in SQL, then applies the gate).
+shown = _shown
+
+
 def _gated(query):
     """Rows of ``query`` a gate may hide (their link holds a marker)."""
     from sqlalchemy import or_

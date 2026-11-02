@@ -240,7 +240,7 @@
         <div class="fw-notif-dd-list">
           {% for n in notification_preview %}
           <a class="fw-notif-dd-item{% if not n.read %} unread{% endif %}"
-             href="{{ n.link or url_for('notifications.index') }}">
+             href="{{ n.link or url_for('notifications.index', q='#' ~ n.id, open=n.id) }}">
             <span class="fw-notif-dd-ic" style="color:{{ n.color }};"><i class="bi {{ n.icon }}"></i></span>
             <span class="fw-notif-dd-main">
               <span class="fw-notif-dd-title">{{ n.title }}</span>

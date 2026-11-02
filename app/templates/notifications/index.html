@@ -10,18 +10,33 @@
 </div>
 {% endblock %}
 
+
+
 {% block content %}
+{% set _sev = {'error': (_('Error'), 'fw-badge-danger'), 'warning': (_('Warning'), 'fw-badge-warning'),
+               'info': (_('Info'), 'fw-badge-info'), 'success': (_('Success'), 'fw-badge-success')} %}
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title">
       <i class="bi bi-bell me-2 text-accent"></i>{{ _('Notifications') }}
     </h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      {{ _('Background jobs, bug-report updates and other alerts raised for your account.') }}
+      {{ _('Alerts, background jobs and bug-report updates raised for your account. Click a row for the full message and how to resolve it.') }}
     </p>
   </div>
-  {% if notifications %}
-  <div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('notifications.guide_page') }}" class="btn btn-fw-outline btn-sm">
+      <i class="bi bi-journal-text me-1"></i>{{ _('Troubleshooting guide') }}
+    </a>
+    <button class="btn btn-fw-outline btn-sm" data-js="notif-refresh">
+      <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}
+    </button>
+    {% set _export_args = request.args.to_dict() %}{% set _noop = _export_args.pop('page', None) %}{% set _noop = _export_args.pop('open', None) %}
+    <a href="{{ url_for('notifications.export_csv', **_export_args) }}"
+       class="btn btn-sm btn-outline-secondary" title="{{ _('Download the notifications matching the current filters') }}">
+      <i class="bi bi-download me-1"></i>{{ _('Export CSV') }}
+    </a>
+    {% if notifications %}
     <form method="POST" action="{{ url_for('notifications.clear') }}" class="m-0" id="fw-notif-clear-form"
           data-confirm="{{ _('Delete all your notifications? This cannot be undone.') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -29,76 +44,309 @@
         <i class="bi bi-trash me-1"></i>{{ _('Clear all') }}
       </button>
     </form>
-  </div>
-  {% endif %}
-</div>
-
-<div class="fw-card">
-  <div class="fw-card-body p-0">
-    {% if notifications %}
-    <ul class="list-unstyled mb-0 fw-notif-list">
-      {% for n in notifications %}
-      <li class="fw-notif-row{% if n.id in unread_ids %} fw-notif-unread{% endif %}">
-        {% if n.link %}
-        <a href="{{ n.link }}" class="fw-notif-link">
-        {% else %}
-        <div class="fw-notif-link">
-        {% endif %}
-          <span class="fw-notif-icon" style="color:{{ n.color }};">
-            <i class="bi {{ n.icon }}"></i>
-          </span>
-          <span class="fw-notif-main">
-            <span class="fw-notif-title">
-              {% if n.id in unread_ids %}<span class="fw-notif-dot"></span>{% endif %}
-              {{ n.title }}
-            </span>
-            {% if n.body %}
-            <span class="fw-notif-body">{{ n.body }}</span>
-            {% endif %}
-            <span class="fw-notif-time" title="{{ n.created_at }}">
-              {{ n.created_at | localtime }}
-            </span>
-          </span>
-          {% if n.link %}<i class="bi bi-chevron-right fw-notif-chev"></i>{% endif %}
-        {% if n.link %}</a>{% else %}</div>{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <div class="text-center text-muted py-5">
-      <i class="bi bi-bell-slash" style="font-size:34px;opacity:.4;"></i>
-      <p class="mb-0 mt-2" style="font-size:13px;">{{ _('You\'re all caught up — no notifications.') }}</p>
-    </div>
     {% endif %}
   </div>
 </div>
 
+<!-- Filter Bar -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-funnel me-2"></i>{{ _('Filters') }}</span>
+    <a href="{{ url_for('notifications.index') }}" class="btn btn-sm btn-secondary">
+      <i class="bi bi-x-lg me-1"></i>{{ _('Clear') }}
+    </a>
+  </div>
+  <div class="fw-card-body">
+    <form method="GET" action="{{ url_for('notifications.index') }}" class="row g-3 align-items-end" id="notifFilters">
+      <div class="col-md-12">
+        <label class="fw-form-label">{{ _('Search (title · message · ID)') }}</label>
+        <input type="text" name="q" class="form-control form-control-sm"
+               placeholder="{{ _('e.g. a device name, fortiweb19, or an ID like #1234') }}"
+               value="{{ filters.q }}">
+      </div>
+      <div class="col-md-3">
+        <label class="fw-form-label">{{ _('Severity') }}</label>
+        <select name="kind" class="form-select form-select-sm" data-js="autosubmit">
+          <option value="">{{ _('All severities') }}</option>
+          {% for k, label in severities %}
+          <option value="{{ k }}" {{ 'selected' if filters.kind == k }}>{{ _(label) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="fw-form-label">{{ _('Category') }}</label>
+        <select name="category" class="form-select form-select-sm" data-js="autosubmit">
+          <option value="">{{ _('All categories') }}</option>
+          {% for k, label in categories %}
+          <option value="{{ k }}" {{ 'selected' if filters.category == k }}>{{ _(label) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label">{{ _('From Date') }}</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label">{{ _('To Date') }}</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-fw-primary btn-sm w-100">
+          <i class="bi bi-search me-1"></i>{{ _('Apply') }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% set _filtered = filters.q or filters.kind or filters.category or filters.date_from or filters.date_to %}
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <span class="text-muted" style="font-size:13px;">
+    {{ _('Showing') }} <strong>{{ notifications|length }}</strong> {{ _('of') }}
+    <strong id="notifTotal">{{ pagination.total }}</strong>
+    {% if _filtered %}({{ _('filtered') }}){% endif %}
+  </span>
+  <div class="fw-search-box" style="max-width:240px;">
+    <i class="bi bi-search search-icon"></i>
+    <input type="text" id="notifSearch" placeholder="{{ _('Quick search on this page…') }}">
+  </div>
+</div>
+
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="notifTable">
+    <thead>
+      <tr>
+        <th style="width:84px;">ID</th>
+        <th style="width:150px;">{{ _('Time') }}</th>
+        <th style="width:96px;">{{ _('Severity') }}</th>
+        <th style="width:170px;">{{ _('Category') }}</th>
+        <th>{{ _('Notification') }}</th>
+        <th data-priority="1">{{ _('Detail') }}</th>
+        <th style="width:34px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for n in notifications %}
+      {% set _s = _sev.get(n.kind, (n.kind, 'fw-badge-secondary')) %}
+      <tr class="notif-row{% if n.id in unread_ids %} notif-unread{% endif %}" style="cursor:pointer;"
+          data-id="{{ n.id }}"
+          data-ts="{{ n.created_at | localtime }}"
+          data-kind="{{ _s[0] }}" data-badge="{{ _s[1] }}"
+          data-category="{{ category_of[n.id] }}"
+          data-title="{{ n.title }}"
+          data-body="{{ n.body or '' }}"
+          data-link="{{ n.link or '' }}"
+          data-guide="{{ guide_of[n.id] }}">
+        <td><span class="notif-id" data-id="{{ n.id }}" title="{{ _('Click to copy this ID') }}">#{{ n.id }}</span></td>
+        <td class="text-nowrap mono" style="font-size:12px;">{{ n.created_at | localtime }}</td>
+        <td><span class="fw-badge {{ _s[1] }}">{{ _s[0] }}</span></td>
+        <td style="font-size:12.5px;">{{ category_of[n.id] }}</td>
+        <td style="font-size:13px;font-weight:600;">
+          {% if n.id in unread_ids %}<span class="notif-dot" title="{{ _('New since your last visit') }}"></span>{% endif %}
+          {{ n.title }}
+          {% if guide_of[n.id] %}<i class="bi bi-journal-text notif-has-guide" title="{{ _('Has a resolution guide') }}"></i>{% endif %}
+        </td>
+        <td class="notif-detail" title="{{ n.body or '' }}">{{ n.body or '—' }}</td>
+        <td class="text-center text-muted"><i class="bi bi-chevron-right"></i></td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7">
+          <div class="fw-empty-state">
+            <div class="fw-empty-state-icon"><i class="bi bi-bell-slash"></i></div>
+            <div class="fw-empty-state-title">
+              {% if _filtered %}{{ _('No notification matches these filters') }}{% else %}{{ _('You\'re all caught up — no notifications.') }}{% endif %}
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if pagination and (pagination.page > 1 or pagination.has_next) %}
+{% set _page_args = request.args.to_dict() %}{% set _noop = _page_args.pop('open', None) %}
+<div class="d-flex justify-content-between align-items-center mt-3">
+  <span class="text-muted" style="font-size:13px;">{{ _('Page') }} {{ pagination.page }}{% if pagination.pages %} / {{ pagination.pages }}{% endif %}</span>
+  <div class="d-flex gap-2">
+    {% if pagination.has_prev %}
+      {% set _noop = _page_args.update({'page': pagination.page - 1}) %}
+      <a href="{{ url_for('notifications.index', **_page_args) }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-chevron-left"></i> {{ _('Previous') }}
+      </a>
+    {% endif %}
+    {% if pagination.has_next %}
+      {% set _noop = _page_args.update({'page': pagination.page + 1}) %}
+      <a href="{{ url_for('notifications.index', **_page_args) }}" class="btn btn-outline-secondary btn-sm">
+        {{ _('Next') }} <i class="bi bi-chevron-right"></i>
+      </a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ===== Detail drawer (click a row to open) ===== -->
+<div id="notifBackdrop" class="notif-backdrop"></div>
+<aside id="notifPanel" class="notif-panel" aria-hidden="true">
+  <div class="notif-panel-head">
+    <h5><i class="bi bi-bell me-2 text-accent"></i>{{ _('Notification') }}</h5>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-js="notif-close" aria-label="{{ _('Close') }}">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+  <div id="notifPanelBody" class="notif-panel-body"></div>
+</aside>
+
+<script type="application/json" id="notifGuide">{{ guide_entries | tojson }}</script>
+<script type="application/json" id="notifStrings">{{ {
+  'id': _('ID'), 'time': _('Time'), 'severity': _('Severity'), 'category': _('Category'),
+  'message': _('Message'), 'open': _('Open related page'), 'resolve': _('How to resolve'),
+  'meaning': _('What it means'), 'causes': _('Common causes'), 'steps': _('What to do'),
+  'pages': _('Related pages'), 'copy': _('Copy'), 'copied': _('Copied'),
+  'fullguide': _('Open in the troubleshooting guide'),
+  'noguide': _('No guide entry for this notification yet. The message above is all SATOM recorded; the troubleshooting guide lists the recurring ones.'),
+  'guideurl': url_for('notifications.guide_page')} | tojson }}</script>
+{% if open_id %}<span id="notifOpen" data-id="{{ open_id }}" hidden></span>{% endif %}
+
 <style nonce="{{ csp_nonce }}">
-.fw-notif-row { border-bottom:1px solid var(--fw-border-light); }
-.fw-notif-row:last-child { border-bottom:none; }
-.fw-notif-link {
-  display:flex; align-items:flex-start; gap:12px; padding:13px 16px;
-  text-decoration:none; color:inherit; transition:background var(--fw-transition);
-}
-a.fw-notif-link:hover { background:var(--fw-content-bg); text-decoration:none; }
-.fw-notif-unread { background:var(--fw-accent-light); }
-.fw-notif-icon { font-size:18px; line-height:1.3; flex:0 0 auto; }
-.fw-notif-main { display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 auto; }
-.fw-notif-title { color:var(--fw-text-primary); font-size:13.5px; font-weight:600; }
-.fw-notif-dot {
-  display:inline-block; width:7px; height:7px; border-radius:50%;
-  background:var(--fw-accent); margin-right:6px; vertical-align:middle;
-}
-.fw-notif-body { color:var(--fw-text-secondary); font-size:12.5px; word-break:break-word; white-space:pre-line; }
-.fw-notif-time { color:var(--fw-text-secondary); font-size:11px; margin-top:2px; opacity:.85; }
-.fw-notif-chev { color:var(--fw-text-secondary); align-self:center; flex:0 0 auto; }
+.notif-id { font-family:'Consolas','Monaco',monospace; font-size:12px; color:var(--fw-text-secondary); cursor:pointer; white-space:nowrap; }
+.notif-id:hover { color:var(--fw-accent); text-decoration:underline; }
+.notif-unread td { background:var(--fw-accent-light); }
+.notif-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--fw-accent); margin-right:6px; vertical-align:middle; }
+.notif-has-guide { color:var(--fw-accent); margin-left:6px; font-size:12px; }
+.notif-detail { font-size:12px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fw-text-secondary); }
+.notif-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.28); opacity:0; visibility:hidden;
+  transition:opacity .2s ease,visibility .2s ease; z-index:1080; }
+.notif-backdrop.open { opacity:1; visibility:visible; }
+.notif-panel { position:fixed; top:0; right:0; height:100%; width:560px; max-width:94vw; background:#FFFFFF;
+  border-left:1px solid var(--fw-border-light); box-shadow:-16px 0 40px rgba(15,23,42,.18);
+  transform:translateX(100%); transition:transform .26s cubic-bezier(.4,0,.2,1); z-index:1081;
+  display:flex; flex-direction:column; color:var(--fw-text-primary); }
+.notif-panel.open { transform:translateX(0); }
+.notif-panel-head { display:flex; align-items:center; justify-content:space-between; padding:14px 18px;
+  background:var(--fw-content-bg); border-bottom:1px solid var(--fw-border-light); }
+.notif-panel-head h5 { margin:0; font-size:15px; font-weight:700; }
+.notif-panel-body { padding:18px; overflow-y:auto; flex:1; font-size:13px; }
+.notif-k { text-transform:uppercase; letter-spacing:.04em; font-size:10.5px; color:var(--fw-text-secondary); margin-bottom:3px; }
+.notif-f { margin-bottom:13px; }
+.notif-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 16px; }
+.notif-title-big { font-size:15px; font-weight:700; margin-bottom:14px; word-break:break-word; }
+.notif-pre { background:var(--fw-content-bg); border:1px solid var(--fw-border-light); border-radius:8px; padding:11px 12px;
+  margin:0; font-size:12px; white-space:pre-wrap; word-break:break-word; max-height:34vh; overflow:auto; color:var(--fw-text-primary); }
+.notif-guide { margin-top:18px; border:1px solid var(--fw-border-light); border-left:3px solid var(--fw-accent);
+  border-radius:8px; padding:14px 16px; background:#FFFFFF; }
+.notif-guide h6 { font-size:14px; font-weight:700; margin:0 0 10px; }
+.notif-guide p, .notif-guide li { font-size:12.5px; line-height:1.5; }
+.notif-guide ul, .notif-guide ol { padding-left:18px; margin-bottom:10px; }
+.notif-guide .notif-k { margin-top:8px; }
+.notif-links a { display:inline-block; margin:0 6px 6px 0; }
+.notif-noguide { margin-top:18px; font-size:12.5px; color:var(--fw-text-secondary); }
 </style>
+{% endblock %}
+
+{% block scripts %}
 <script nonce="{{ csp_nonce }}">
 (function () {
+  var GUIDE = JSON.parse(document.getElementById('notifGuide').textContent || '{}');
+  var T = JSON.parse(document.getElementById('notifStrings').textContent || '{}');
+
+  function esc(s) {
+    return (s == null ? '' : String(s)).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function field(label, html) {
+    return '<div class="notif-f"><div class="notif-k">' + esc(label) + '</div><div>' + html + '</div></div>';
+  }
+  function list(tag, items) {
+    return '<' + tag + '>' + (items || []).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</' + tag + '>';
+  }
+  // Only same-site paths become links: a notification link is data, not markup.
+  function safeHref(h) { return (typeof h === 'string' && /^\/(?!\/)/.test(h)) ? h : ''; }
+
+  function guideHtml(slug) {
+    var g = slug && GUIDE[slug];
+    if (!g) {
+      return '<div class="notif-noguide"><i class="bi bi-journal-text me-1"></i>' + esc(T.noguide) +
+        ' <a href="' + esc(T.guideurl) + '">' + esc(T.fullguide) + ' &rsaquo;</a></div>';
+    }
+    var links = (g.links || []).map(function (l) {
+      var h = safeHref(l.href);
+      return h ? '<a class="btn btn-sm btn-outline-secondary" href="' + esc(h) + '">' + esc(l.label) + '</a>' : '';
+    }).join('');
+    return '<div class="notif-guide">' +
+      '<h6><i class="bi bi-life-preserver me-2 text-accent"></i>' + esc(T.resolve) + '</h6>' +
+      '<div class="notif-k">' + esc(T.meaning) + '</div><p>' + esc(g.meaning) + '</p>' +
+      '<div class="notif-k">' + esc(T.causes) + '</div>' + list('ul', g.causes) +
+      '<div class="notif-k">' + esc(T.steps) + '</div>' + list('ol', g.steps) +
+      (links ? '<div class="notif-k">' + esc(T.pages) + '</div><div class="notif-links">' + links + '</div>' : '') +
+      '<div class="mt-2"><a href="' + esc(T.guideurl) + '#' + esc(g.slug) + '">' + esc(T.fullguide) + ' &rsaquo;</a></div>' +
+    '</div>';
+  }
+
+  function openRow(row) {
+    var d = row.dataset, link = safeHref(d.link);
+    var html = '<div class="notif-title-big">' + esc(d.title) + '</div>' +
+      '<div class="notif-grid">' +
+        field(T.id, '<span class="mono">#' + esc(d.id) + '</span> <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 ms-1" data-js="copy-id" data-id="' + esc(d.id) + '">' + esc(T.copy) + '</button>') +
+        field(T.time, '<span class="mono">' + esc(d.ts) + '</span>') +
+        field(T.severity, '<span class="fw-badge ' + esc(d.badge) + '">' + esc(d.kind) + '</span>') +
+        field(T.category, esc(d.category)) +
+      '</div>' +
+      field(T.message, '<pre class="notif-pre">' + (d.body ? esc(d.body) : '—') + '</pre>') +
+      (link ? '<a class="btn btn-sm btn-fw-primary" href="' + esc(link) + '"><i class="bi bi-box-arrow-up-right me-1"></i>' + esc(T.open) + '</a>' : '') +
+      guideHtml(d.guide);
+    var body = document.getElementById('notifPanelBody');
+    body.innerHTML = html;
+    body.querySelectorAll('[data-js="copy-id"]').forEach(function (b) {
+      b.addEventListener('click', function () { copy(this, this.dataset.id); });
+    });
+    document.getElementById('notifBackdrop').classList.add('open');
+    var p = document.getElementById('notifPanel');
+    p.classList.add('open'); p.setAttribute('aria-hidden', 'false');
+  }
+  function closePanel() {
+    document.getElementById('notifBackdrop').classList.remove('open');
+    var p = document.getElementById('notifPanel');
+    p.classList.remove('open'); p.setAttribute('aria-hidden', 'true');
+  }
+  function copy(el, text) {
+    if (!navigator.clipboard) return;
+    navigator.clipboard.writeText(text).then(function () {
+      var old = el.textContent; el.textContent = T.copied + ' ✓';
+      setTimeout(function () { el.textContent = old; }, 1000);
+    });
+  }
+
+  document.querySelectorAll('#notifTable tbody tr.notif-row').forEach(function (row) {
+    row.addEventListener('click', function () { openRow(this); });
+  });
+  document.querySelectorAll('#notifTable .notif-id').forEach(function (el) {
+    el.addEventListener('click', function (ev) { ev.stopPropagation(); copy(this, this.dataset.id); });
+  });
+  document.getElementById('notifBackdrop').addEventListener('click', closePanel);
+  document.querySelector('[data-js="notif-close"]').addEventListener('click', closePanel);
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closePanel(); });
+  document.querySelector('[data-js="notif-refresh"]').addEventListener('click', function () { window.location.reload(); });
+  document.querySelectorAll('#notifFilters [data-js="autosubmit"]').forEach(function (s) {
+    s.addEventListener('change', function () { this.form.submit(); });
+  });
+  document.getElementById('notifSearch').addEventListener('input', function () {
+    var q = this.value.toLowerCase();
+    document.querySelectorAll('#notifTable tbody tr.notif-row').forEach(function (row) {
+      row.style.display = row.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+    });
+  });
   var f = document.getElementById('fw-notif-clear-form');
   if (f) f.addEventListener('submit', function (e) {
     if (!window.confirm(f.getAttribute('data-confirm'))) e.preventDefault();
   });
+  var o = document.getElementById('notifOpen');
+  if (o) {
+    var row = document.querySelector('#notifTable tr.notif-row[data-id="' + o.dataset.id + '"]');
+    if (row) openRow(row);
+  }
 })();
 </script>
 {% endblock %}

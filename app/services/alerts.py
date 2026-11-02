@@ -478,6 +478,17 @@ def _product_of(appliance) -> str:
 #: Characters of a finding's detail stored in the in-app notification.
 BELL_BODY_MAX = 1500
 
+
+def bell_kind(severity: str) -> str:
+    """The notification kind a finding of ``severity`` is stored with.
+
+    Until 2026-11-02 warning and critical were both stored as ``error``, so a
+    memory reading at its warning line drew the same red cross as a device
+    that was down, and the Notifications page could not tell them apart."""
+    from ..models_notifications import Notification as N
+    return {SEV_CRITICAL: N.KIND_ERROR,
+            SEV_WARNING: N.KIND_WARNING}.get(severity, N.KIND_INFO)
+
 #: Alerting probes spelled out per device finding; the rest are counted.
 PROBE_LINES_MAX = 6
 
@@ -710,12 +721,17 @@ def _action_page(action) -> str:
     """The list that owns ``action``: /automations/ for operator work,
     /scheduled-actions/ (System Automations) for SATOM's own. Since the
     2026-10-14 regroup an upgrade or reboot row lives on the first; pointing
-    every alert at the second sent the operator to a page that cannot open it."""
+    every alert at the second sent the operator to a page that cannot open it.
+
+    Both lists live under ``/web/``. ``/scheduled-actions/`` happens to
+    redirect there; ``/automations/`` does not and answered 404 until
+    2026-11-02, so the operator-work alerts linked to nothing."""
     try:
         from ..views.scheduled_actions import endpoint_for
-        return "/automations/" if endpoint_for(action) == "automations" else "/scheduled-actions/"
+        return ("/web/automations/" if endpoint_for(action) == "automations"
+                else "/web/scheduled-actions/")
     except Exception:  # noqa: BLE001 - a link must never cost the alert
-        return "/scheduled-actions/"
+        return "/web/scheduled-actions/"
 
 
 def _bundle_stamp(entry: dict):
@@ -1487,9 +1503,7 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
 
     admin_ids = _admin_ids()
     for f in bell:
-        kind = (notify.Notification.KIND_ERROR
-                if f["severity"] in (SEV_CRITICAL, SEV_WARNING)
-                else notify.Notification.KIND_INFO)
+        kind = bell_kind(f["severity"])
         if admin_ids:
             # product=None means "stamp from the session", which is '' in this
             # worker thread. Device findings carry the device's ADOM instead.

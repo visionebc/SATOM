@@ -179,7 +179,16 @@ menu (**More actions**); toolbars stay on one line.
 **Notifications.** The bell in the top bar collects job results and system
 notices, scoped to the product you are working in. The bell's *Clear* only marks
 them read; **Clear all** on the Notifications page deletes them (after a
-confirmation).
+confirmation). The Notifications page works like the Audit Log: filters for
+search (title, message or `#ID`), **Severity**, **Category** and dates, a
+paginated table, **Export CSV**, and a side panel with the full message when you
+click a row. For recurring alerts the panel adds **How to resolve** (what it
+means, common causes, the steps and the pages involved); all of them are
+collected in the **Troubleshooting guide** (`/notifications/guide`). Example:
+*Config drift on <device>* with "SATOM recorded no write of its own to this
+device" means the configuration changed and SATOM has no write of its own in the
+interval the change must fall in, so it came from the device side; compare the
+two versions on System Backup & Restore and accept or roll back the change.
 
 **The names, in the industry's words.** SATOM is mapped to the **NAF
 Framework**, the Network Automation Forum's vendor-neutral model of a network

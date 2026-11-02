@@ -6,6 +6,40 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Notifications page in the Audit Log's layout, with filters and a
+  troubleshooting guide.** Operator request: "the notifications section should
+  look like the one in audit/, with filters, and a manual of the most recurring
+  ones and how to resolve them, for example *SATOM recorded no write of its own
+  to this device*". `/notifications/` now lists every notification (50 per
+  page, it used to stop at the latest 100) with server-side filters — search
+  (title, message or `#ID`), **Severity**, **Category** (Configuration drift,
+  Device health, Signatures, Scheduled automations, SATOM node & HA,
+  Certificates, Backups, Templates & intent, API catalog, Alert engine, Jobs &
+  other) and a date range — plus **Export CSV** of the filtered rows. Clicking
+  a row opens a side panel with the full message and, for recurring alerts,
+  **How to resolve**: what it means, common causes, the steps in order and
+  links to the pages involved. The same procedures make up the new
+  **Troubleshooting guide** (`/notifications/guide`, 22 entries) with search
+  (a title pasted from the bell finds its entry), a category filter and how
+  many of each reached you in the last 30 days. A bell entry with no page of
+  its own now opens that notification with its panel open. Every title the
+  alert engine can raise has a guide entry; `tests/test_notification_guide.py`
+  reads them from the source and fails when one is missing.
+
+### Fixed
+- **Warning alerts were stored as errors.** The alert engine mapped critical
+  AND warning findings to the `error` kind, so a memory reading at its warning
+  line drew the same red cross as a device that was down (1,823 notifications
+  on the primary, almost all red). Warnings are now stored as `warning`;
+  migration `notifkind01` re-labels the existing rows whose severity follows
+  from the title (drift, degraded device or host, stale signatures, stale
+  code, backups, intent…) and leaves the others untouched.
+- **Alerts about operator automations linked to a 404.** "Scheduled automation
+  failing/not firing" pointed operator automations at `/automations/`, which
+  does not exist; the links now go to `/web/automations/` and
+  `/web/scheduled-actions/`.
+
 ## [4.9.0] - 2026-11-01
 
 **Web Protection drawn as FortiWeb draws it, and Sentinel split between

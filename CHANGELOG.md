@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.10.1] - 2026-11-02
+
 ### Fixed
 - **The 4.10.0 screens rendered in English for Spanish, German, French and
   Italian operators.** 120 strings of the Notifications page and its

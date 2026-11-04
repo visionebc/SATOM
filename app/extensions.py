@@ -18,6 +18,15 @@ def real_client_ip() -> str:
     direct peer is a trusted proxy (``TRUSTED_PROXIES`` env), and we take the
     last (proxy-appended, non-forgeable) hop so a direct client can't spoof it.
     Falls back to the peer IP — i.e. the old behaviour — if anything is off.
+
+    TWO proxies in a row (fleet edge -> local nginx) append two hops:
+    ``<client>, <edge>``. Taking only the last one logged every sign-in through
+    the edge as the edge -- one rate-limit bucket and one audit address for
+    every operator (found 2026-11-04: 67 ``login`` rows from 192.0.2.40). So
+    the walk goes right to left past every hop that is itself a trusted proxy,
+    like nginx ``real_ip_recursive``: each of those was appended by a proxy we
+    trust, and the first untrusted one is the client. Anything to its left is
+    what the client sent and is never read.
     """
     import os
     from flask import request
@@ -32,8 +41,13 @@ def real_client_ip() -> str:
     xff = request.headers.get("X-Forwarded-For", "")
     if xff and peer in trusted:
         hops = [h.strip() for h in xff.split(",") if h.strip()]
+        for hop in reversed(hops):
+            if hop not in trusted:
+                return hop
         if hops:
-            return hops[-1]
+            # Every hop is a trusted proxy: the innermost one is the closest
+            # thing to a client the chain names.
+            return hops[0]
     return peer
 
 

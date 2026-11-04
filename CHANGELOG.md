@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+- **Profile page layout: About first, session details on the account card.**
+  Operator request: "About SATOM at the very top; the top-bar banner card
+  across both columns; Active Sessions into the banner with the admin role,
+  plus the last IP connected." The About card is now the first card of the
+  Profile. The account card (name and role) shows the active session, the IP
+  it comes from and when it signed in, the **previous sign-in** with its date
+  and IP (read from the `login` rows of the Audit Log; "none recorded" on a
+  first sign-in), and the Sign Out button. The separate Active Sessions card
+  is gone. Branding — Top-bar Banner spans the full width.
+
 ### Added
 - **Switch notification categories off for your own account.** Operator
   request: "in the user profile I want to be able to turn off certain
@@ -22,6 +33,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   change is audited as `profile.notifications`.
 
 ### Fixed
+- **Sign-ins through the fleet edge are attributed to the client, not to the
+  edge proxy.** With two proxies in a row (edge -> local nginx) the
+  forwarded header reaches SATOM as `<client>, <edge>`, and only the last hop
+  was read, so every operator who came through the edge was audited, and
+  rate-limited, under the edge's address — one shared lockout bucket. The
+  resolver now walks right to left past every hop that is itself a configured
+  trusted proxy (`TRUSTED_PROXIES`), like nginx `real_ip_recursive`; the
+  first untrusted hop is the client, and anything a client pre-filled to the
+  left of it is never read. Older audit rows keep the address they were
+  written with.
 - **The alert engine no longer counts a bell notice nobody received as
   delivered.** The in-app sink was credited after every write attempt,
   including one that wrote no row, so a failed write still reported

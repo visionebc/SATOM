@@ -17,16 +17,82 @@
   </div>
 </div>
 
-<!-- Account card -->
-<div class="fw-card mb-3">
+<!-- ABOUT (first card of the page, full width) -->
+<div class="fw-card mb-3" id="about">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>{{ _('About %(product)s', product=(product.title if product else 'SATOM')) }}</span>
+  </div>
   <div class="fw-card-body">
-    <div class="d-flex align-items-center gap-3">
+    <div class="row g-3 align-items-center">
+      <div class="col-lg-7">
+        <div class="d-flex align-items-center gap-3 mb-2">
+          {# Brand emblem, never product.mark: this card is About the CONSOLE,
+             and product.mark is the ACTIVE ADOM's icon -- it drew the Global
+             globe here, and a FortiWeb logo inside a FortiWeb ADOM. #}
+          <img src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}"
+               alt="{{ settings.app_name if settings else (product.title if product else 'SATOM') }}"
+               style="width:48px;height:48px;border-radius:10px;object-fit:contain;">
+          <div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <h5 class="mb-0" style="font-weight:700;">{{ settings.app_name if settings else product.title }}</h5>
+              <span class="fw-badge fw-badge-primary">v{{ app_version }}</span>
+            </div>
+            <div class="text-muted" style="font-size:12px; font-weight:500; letter-spacing:.2px;">System Automation & Task Orchestration Manager</div>
+          </div>
+        </div>
+        <p class="mb-0" style="font-size:13.5px; color:#495057;">
+          {{ _('Multi-user appliance management console built on Flask + SQLAlchemy. OWASP-hardened with full audit logging, RBAC, and encrypted credential storage.') }}
+        </p>
+      </div>
+      <div class="col-lg-5">
+        <dl class="row mb-0" style="font-size:13px;">
+          <dt class="col-sm-4 text-muted">{{ _('Repository') }}</dt>
+          <dd class="col-sm-8"><a href="https://github.com/visionebc/SATOM" target="_blank" rel="noopener">{{ _('visionebc/SATOM') }}</a></dd>
+          <dt class="col-sm-4 text-muted">{{ _('RBAC Roles') }}</dt>
+          <dd class="col-sm-8">{{ _('readonly, operator, admin') }}</dd>
+          <dt class="col-sm-4 text-muted">{{ _('UI Framework') }}</dt>
+          <dd class="col-sm-8 mb-0">{{ _('Bootstrap 5.3 + SATOM theme') }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Account card: who, role, this session and where it came from -->
+<div class="fw-card mb-3" id="account">
+  <div class="fw-card-body">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
       <div class="fw-avatar" style="width:46px;height:46px;font-size:18px;">
         {{ current_user.username[0].upper() if current_user and current_user.username else 'U' }}
       </div>
       <div>
         <div style="font-size:15px; font-weight:600;">{{ current_user.username }}</div>
         <div class="text-muted" style="font-size:13px;">{{ _('Role:') }} <strong>{{ current_user.role }}</strong></div>
+      </div>
+      <div class="ms-lg-4" id="account-session" style="font-size:12.5px;">
+        <div>
+          <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>{{ _('Active session') }}</span>
+          {% if sign_ins.current_ip %}
+          <span class="text-muted ms-1">{{ _('from') }}</span> <code id="account-current-ip">{{ sign_ins.current_ip }}</code>
+          {% endif %}
+          {% if sign_ins.current_at %}
+          <span class="text-muted">&middot; {{ _('signed in') }} {{ sign_ins.current_at|localtime('%Y-%m-%d %H:%M') }}</span>
+          {% endif %}
+        </div>
+        <div class="text-muted mt-1" id="account-previous">
+          {{ _('Previous sign-in:') }}
+          {% if sign_ins.previous_at %}
+            {{ sign_ins.previous_at|localtime('%Y-%m-%d %H:%M') }}
+            {% if sign_ins.previous_ip %}{{ _('from') }} <code id="account-previous-ip">{{ sign_ins.previous_ip }}</code>{% endif %}
+          {% else %}
+            {{ _('none recorded') }}
+          {% endif %}
+        </div>
+      </div>
+      <div class="ms-auto">
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-box-arrow-right me-1"></i>{{ _('Sign Out') }}
+        </a>
       </div>
     </div>
   </div>
@@ -152,29 +218,6 @@
           </div>
           <button type="submit" class="btn btn-fw-primary w-100"><i class="bi bi-check-lg me-1"></i>{{ _('Update Password') }}</button>
         </form>
-      </div>
-    </div>
-    <div class="fw-card mt-3">
-      <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-lock me-2 text-accent"></i>{{ _('Active Sessions') }}</span>
-      </div>
-      <div class="fw-card-body">
-        <p class="text-muted" style="font-size:13px;">{{ _('Your current session. Use Sign Out to end it securely.') }}</p>
-        <div class="d-flex align-items-center gap-3 p-3" style="background:#F4F5F7; border-radius:8px;">
-          <div class="fw-avatar">{{ current_user.username[0].upper() if current_user and current_user.username else 'U' }}</div>
-          <div>
-            <div style="font-size:13.5px; font-weight:500;">{{ current_user.username if current_user else '—' }}</div>
-            <div class="text-muted" style="font-size:12px;">{{ _('Current session') }}</div>
-          </div>
-          <div class="ms-auto">
-            <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>{{ _('Active') }}</span>
-          </div>
-        </div>
-        <div class="mt-3">
-          <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-danger btn-sm">
-            <i class="bi bi-box-arrow-right me-1"></i>{{ _('Sign Out') }}
-          </a>
-        </div>
       </div>
     </div>
   </div>
@@ -340,8 +383,8 @@
 
 <div class="row g-3">
 
-  <!-- BRANDING (per-user setting, saved in the DB) -->
-  <div class="col-lg-7">
+  <!-- BRANDING (per-user setting, saved in the DB; full width since 2026-11-04) -->
+  <div class="col-12" id="branding">
     <div class="fw-card">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-palette me-2 text-accent"></i>{{ _('Branding — Top-bar Banner') }}</span>
@@ -373,43 +416,6 @@
             <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save Banners') }}</button>
           </div>
         </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- ABOUT (user setting) -->
-  <div class="col-lg-5">
-    <div class="fw-card">
-      <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>{{ _('About %(product)s', product=(product.title if product else 'SATOM')) }}</span>
-      </div>
-      <div class="fw-card-body">
-        <div class="d-flex align-items-center gap-3 mb-4">
-          {# Brand emblem, never product.mark: this card is About the CONSOLE,
-             and product.mark is the ACTIVE ADOM's icon -- it drew the Global
-             globe here, and a FortiWeb logo inside a FortiWeb ADOM. #}
-          <img src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}"
-               alt="{{ settings.app_name if settings else (product.title if product else 'SATOM') }}"
-               style="width:48px;height:48px;border-radius:10px;object-fit:contain;">
-          <div>
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-              <h5 class="mb-0" style="font-weight:700;">{{ settings.app_name if settings else product.title }}</h5>
-              <span class="fw-badge fw-badge-primary">v{{ app_version }}</span>
-            </div>
-            <div class="text-muted" style="font-size:12px; font-weight:500; letter-spacing:.2px;">System Automation & Task Orchestration Manager</div>
-          </div>
-        </div>
-        <p style="font-size:13.5px; color:#495057;">
-          {{ _('Multi-user appliance management console built on Flask + SQLAlchemy. OWASP-hardened with full audit logging, RBAC, and encrypted credential storage.') }}
-        </p>
-        <dl class="row" style="font-size:13px;">
-          <dt class="col-sm-4 text-muted">{{ _('Repository') }}</dt>
-          <dd class="col-sm-8"><a href="https://github.com/visionebc/SATOM" target="_blank" rel="noopener">{{ _('visionebc/SATOM') }}</a></dd>
-          <dt class="col-sm-4 text-muted">{{ _('RBAC Roles') }}</dt>
-          <dd class="col-sm-8">{{ _('readonly, operator, admin') }}</dd>
-          <dt class="col-sm-4 text-muted">{{ _('UI Framework') }}</dt>
-          <dd class="col-sm-8">{{ _('Bootstrap 5.3 + SATOM theme') }}</dd>
-        </dl>
       </div>
     </div>
   </div>

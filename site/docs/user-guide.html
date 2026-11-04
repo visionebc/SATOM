@@ -210,8 +210,14 @@ codebase is assumed. For architecture and internals see the
   the manual this node serves itself — no internet needed, no sign-in
   needed (§47).</p>
 <h3 id="11-your-profile--security-and-change-password-for-every-account">1.1 Your Profile — Security and Change Password, for every account</h3>
-<p>Open it from the user menu (top right) → <strong>Profile</strong>. The <strong>Security</strong> and
-<strong>Change Password</strong> cards sit at the top, above your bookmarks order,
+<p>Open it from the user menu (top right) → <strong>Profile</strong>. The page opens with
+the <strong>About</strong> card (product, version, repository), then your <strong>account card</strong>:
+name, role, the <strong>active session</strong> with the IP it comes from and when it signed
+in, your <strong>previous sign-in</strong> (date and IP, from the Audit Log; "none
+recorded" the first time) and <strong>Sign Out</strong>. A previous sign-in from an address
+you do not recognise is the cue to change your password and check the Audit
+Log. The <strong>Security</strong> and <strong>Change Password</strong> cards follow, above your
+bookmarks order,
 language, calendar and banner preferences. They belong to your account, not
 to the installation, so they are not in Settings: until 3.5.0 they were the
 <em>My Account</em> group there, and links to <code>/settings/#tab-security</code> or
@@ -228,13 +234,28 @@ to the installation, so they are not in Settings: until 3.5.0 they were the
   reset link. Changing it also asks for your current password (and a code when
   2FA is on). It needs server email (§26.6) configured to be worth anything.
   A reset link is single-use and stops working as soon as the password changes.</li>
-<li>Your <strong>active session</strong>, with a clean sign-out. (The hard-coded "Security
-  status" checklist that sat here was removed: it computed nothing. The live
+<li>The session and Sign Out are on the account card at the top (no separate
+  Active Sessions card since 2026-11). (The hard-coded "Security status"
+  checklist that once sat here was removed: it computed nothing. The live
   checks are on Monitoring → SATOM health.)</li>
 <li><strong>Change Password</strong> — current, new, confirm; 12 to 1024 characters.</li>
 </ul>
 <p>Directory-backed accounts see an explicit note instead of these controls: they
 manage password and MFA at the directory.</p>
+<p><strong>Notifications — choose what reaches your bell.</strong> The <strong>Notifications</strong> card
+has one switch per bell category: Configuration drift, Device health,
+Signatures, Scheduled automations, SATOM node &amp; HA, Certificates, Backups,
+Templates &amp; intent, API catalog and Alert engine. Switch one off and Save: new
+notifications of that category are no longer created for you, and your unread
+ones are marked read (nothing is deleted; they stay on the Notifications page
+under their category). It affects your account only and silences the bell,
+not the finding: drift and the other checks keep running, are recorded in the
+Audit Log and are still e-mailed by the alert rules in Settings. Results of
+your own jobs, bug reports and Wiki notices cannot be muted. The Notifications
+page has a <strong>Preferences</strong> button that opens this card and, while something is
+muted, a line saying which categories. If every administrator mutes a
+category, the alert engine reports those findings as <code>in_app_muted</code> instead of
+delivered.</p>
 <p>Sign-in protections that apply to every account: after the password, the 2FA
 code must be entered within <strong>5 minutes</strong>; wrong codes count toward the same
 lockout as wrong passwords (10 failures lock the account for 15 minutes) and

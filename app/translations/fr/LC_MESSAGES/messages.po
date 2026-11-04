@@ -28997,3 +28997,12 @@ msgstr "Moteur d'alertes"
 
 msgid "Jobs & other"
 msgstr "Tâches et autres"
+
+msgid "Active session"
+msgstr "Session active"
+
+msgid "signed in"
+msgstr "connecté"
+
+msgid "Previous sign-in:"
+msgstr "Connexion précédente :"

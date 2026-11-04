@@ -28995,3 +28995,12 @@ msgstr "Alarm-Engine"
 
 msgid "Jobs & other"
 msgstr "Jobs & Sonstiges"
+
+msgid "Active session"
+msgstr "Aktive Sitzung"
+
+msgid "signed in"
+msgstr "angemeldet"
+
+msgid "Previous sign-in:"
+msgstr "Vorherige Anmeldung:"

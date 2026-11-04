@@ -29016,3 +29016,12 @@ msgstr "Motor de alertas"
 
 msgid "Jobs & other"
 msgstr "Trabajos y otros"
+
+msgid "Active session"
+msgstr "Sesión activa"
+
+msgid "signed in"
+msgstr "inició sesión"
+
+msgid "Previous sign-in:"
+msgstr "Inicio de sesión anterior:"

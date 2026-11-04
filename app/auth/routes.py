@@ -446,6 +446,34 @@ def reset_password(token):
 # ---------------------------------------------------------------------------
 # Profile
 # ---------------------------------------------------------------------------
+def _sign_ins(user_id: int) -> dict:
+    """This session's sign-in and the one before it, read from the audit log.
+
+    Every successful sign-in (local, 2FA, SSO, Apps portal) goes through
+    ``_post_login``, which writes one ``login`` row carrying the client IP --
+    so the newest row is THIS session and the next one is the previous visit.
+    ``User`` keeps no IP of its own; a second copy would drift from the audit
+    trail an operator checks when the account card looks wrong. A failing
+    query renders the card without the line, never an error page.
+    """
+    from ..models import AuditLog
+    try:
+        rows = (AuditLog.query
+                .filter_by(user_id=user_id, action='login')
+                .order_by(AuditLog.timestamp.desc(), AuditLog.id.desc())
+                .limit(2).all())
+    except Exception:  # noqa: BLE001 -- the profile must still render
+        db.session.rollback()
+        rows = []
+    current = rows[0] if rows else None
+    return {
+        'current_ip': real_client_ip() or (current.ip_address if current else ''),
+        'current_at': current.timestamp if current else None,
+        'previous_ip': (rows[1].ip_address or '') if len(rows) > 1 else '',
+        'previous_at': rows[1].timestamp if len(rows) > 1 else None,
+    }
+
+
 @bp.route('/profile')
 @login_required
 def profile():
@@ -498,6 +526,7 @@ def profile():
         },
         notify_categories=notification_guide.CATEGORIES,
         notify_muted=user_store.muted_categories(current_user.id),
+        sign_ins=_sign_ins(current_user.id),
         # Popped, not read: the codes are shown exactly once, on the page the
         # enable / regenerate routes redirect to -- which is this one.
         backup_codes_once=session.pop('twofa_backup_codes_once', None),

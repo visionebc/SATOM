@@ -105,8 +105,14 @@
 
 ### 1.1 Your Profile — Security and Change Password, for every account
 
-Open it from the user menu (top right) → **Profile**. The **Security** and
-**Change Password** cards sit at the top, above your bookmarks order,
+Open it from the user menu (top right) → **Profile**. The page opens with
+the **About** card (product, version, repository), then your **account card**:
+name, role, the **active session** with the IP it comes from and when it signed
+in, your **previous sign-in** (date and IP, from the Audit Log; "none
+recorded" the first time) and **Sign Out**. A previous sign-in from an address
+you do not recognise is the cue to change your password and check the Audit
+Log. The **Security** and **Change Password** cards follow, above your
+bookmarks order,
 language, calendar and banner preferences. They belong to your account, not
 to the installation, so they are not in Settings: until 3.5.0 they were the
 *My Account* group there, and links to `/settings/#tab-security` or
@@ -123,8 +129,9 @@ to the installation, so they are not in Settings: until 3.5.0 they were the
   reset link. Changing it also asks for your current password (and a code when
   2FA is on). It needs server email (§26.6) configured to be worth anything.
   A reset link is single-use and stops working as soon as the password changes.
-- Your **active session**, with a clean sign-out. (The hard-coded "Security
-  status" checklist that sat here was removed: it computed nothing. The live
+- The session and Sign Out are on the account card at the top (no separate
+  Active Sessions card since 2026-11). (The hard-coded "Security status"
+  checklist that once sat here was removed: it computed nothing. The live
   checks are on Monitoring → SATOM health.)
 - **Change Password** — current, new, confirm; 12 to 1024 characters.
 

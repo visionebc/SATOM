@@ -29032,3 +29032,12 @@ msgstr "Motore degli avvisi"
 
 msgid "Jobs & other"
 msgstr "Job e altro"
+
+msgid "Active session"
+msgstr "Sessione attiva"
+
+msgid "signed in"
+msgstr "accesso effettuato"
+
+msgid "Previous sign-in:"
+msgstr "Accesso precedente:"

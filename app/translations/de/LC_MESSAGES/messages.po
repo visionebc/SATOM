@@ -28959,3 +28959,39 @@ msgstr "Die Signaturklassen dieser Richtlinie konnten nicht gelesen werden: %(de
 
 msgid "Slides in the policy's Signature Details over this dialog, as FortiWeb does: Dictionaries tree, signatures per sub-category, and each signature's detail and exceptions."
 msgstr "Blendet über diesem Dialog die Signaturdetails der Richtlinie ein, wie FortiWeb es tut: Wörterbuch-Baum, Signaturen pro Unterkategorie sowie Details und Ausnahmen jeder Signatur."
+
+msgid "Choose which categories reach your bell. A category switched off stops creating notifications for you alone; its unread ones are marked read. Nobody else's bell changes."
+msgstr "Wählen Sie, welche Kategorien Ihre Glocke erreichen. Eine ausgeschaltete Kategorie erzeugt nur für Sie keine Benachrichtigungen mehr; ihre ungelesenen werden als gelesen markiert. Die Glocke der anderen ändert sich nicht."
+
+msgid "Muted for your account: %(cats)s. New notifications of these categories are not created for you."
+msgstr "Für Ihr Konto stummgeschaltet: %(cats)s. Neue Benachrichtigungen dieser Kategorien werden für Sie nicht erzeugt."
+
+msgid "Preferences"
+msgstr "Einstellungen"
+
+msgid "This silences the bell, not the finding. Drift and the other checks keep running, are recorded in the Audit Log and are still sent by the e-mail alert rules in Settings. Results of your own jobs, bug reports and Wiki notices are always delivered."
+msgstr "Damit wird die Glocke stummgeschaltet, nicht der Befund. Drift und die übrigen Prüfungen laufen weiter, werden im Audit Log erfasst und von den E-Mail-Alarmregeln in den Settings weiterhin versendet. Ergebnisse Ihrer eigenen Jobs, Fehlerberichte und Wiki-Hinweise werden immer zugestellt."
+
+msgid "What these notifications mean"
+msgstr "Was diese Benachrichtigungen bedeuten"
+
+msgid "Configuration drift"
+msgstr "Konfigurationsabweichung"
+
+msgid "Scheduled automations"
+msgstr "Geplante Automatisierungen"
+
+msgid "SATOM node & HA"
+msgstr "SATOM-Knoten & HA"
+
+msgid "Templates & intent"
+msgstr "Vorlagen & Intent"
+
+msgid "API catalog"
+msgstr "API-Katalog"
+
+msgid "Alert engine"
+msgstr "Alarm-Engine"
+
+msgid "Jobs & other"
+msgstr "Jobs & Sonstiges"

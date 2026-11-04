@@ -77,6 +77,8 @@ def _filtered_query(uid: int, f: dict):
 @login_required
 def index():
     from ..services import notification_guide as guide
+    from flask_babel import gettext as _gt
+    from ..services.user_settings_store import muted_categories
     uid = _me()
     try:
         page = max(1, int(request.args.get("page", 1)))
@@ -104,7 +106,9 @@ def index():
         guide_of={nid: (e["slug"] if e else "") for nid, e in matched.items()},
         category_of={nid: guide.category_label(e["category"] if e else guide.OTHER)
                      for nid, e in matched.items()},
-        guide_entries=used, open_id=request.args.get("open", type=int))
+        guide_entries=used, open_id=request.args.get("open", type=int),
+        muted_labels=[_gt(guide.category_label(k)) for k, _l in guide.CATEGORIES
+                      if k in muted_categories(uid)])
 
 
 @bp.route("/export.csv", methods=["GET"])

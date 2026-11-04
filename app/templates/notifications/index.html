@@ -28,6 +28,9 @@
     <a href="{{ url_for('notifications.guide_page') }}" class="btn btn-fw-outline btn-sm">
       <i class="bi bi-journal-text me-1"></i>{{ _('Troubleshooting guide') }}
     </a>
+    <a href="{{ url_for('auth.profile') }}#notifications" class="btn btn-fw-outline btn-sm">
+      <i class="bi bi-sliders me-1"></i>{{ _('Preferences') }}
+    </a>
     <button class="btn btn-fw-outline btn-sm" data-js="notif-refresh">
       <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}
     </button>
@@ -47,6 +50,14 @@
     {% endif %}
   </div>
 </div>
+
+{% if muted_labels %}
+<div class="fw-alert fw-alert-info mb-3" style="font-size:12.5px;" id="notif-muted">
+  <i class="bi bi-bell-slash me-1"></i>
+  {{ _('Muted for your account: %(cats)s. New notifications of these categories are not created for you.', cats=muted_labels|join(', ')) }}
+  <a href="{{ url_for('auth.profile') }}#notifications" class="ms-1">{{ _('Change') }}</a>
+</div>
+{% endif %}
 
 <!-- Filter Bar -->
 <div class="fw-card mb-3">

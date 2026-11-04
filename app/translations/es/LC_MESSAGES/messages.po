@@ -28980,3 +28980,39 @@ msgstr "No se pudieron leer las clases de firmas de esta política: %(dev)s rech
 
 msgid "Slides in the policy's Signature Details over this dialog, as FortiWeb does: Dictionaries tree, signatures per sub-category, and each signature's detail and exceptions."
 msgstr "Despliega sobre este diálogo los Detalles de firma de la política, como hace FortiWeb: árbol de Diccionarios, firmas por subcategoría y el detalle y las excepciones de cada firma."
+
+msgid "Choose which categories reach your bell. A category switched off stops creating notifications for you alone; its unread ones are marked read. Nobody else's bell changes."
+msgstr "Elige qué categorías llegan a tu campana. Una categoría desactivada deja de crear notificaciones solo para ti; las no leídas se marcan como leídas. La campana de los demás no cambia."
+
+msgid "Muted for your account: %(cats)s. New notifications of these categories are not created for you."
+msgstr "Silenciadas para tu cuenta: %(cats)s. No se crean para ti nuevas notificaciones de estas categorías."
+
+msgid "Preferences"
+msgstr "Preferencias"
+
+msgid "This silences the bell, not the finding. Drift and the other checks keep running, are recorded in the Audit Log and are still sent by the e-mail alert rules in Settings. Results of your own jobs, bug reports and Wiki notices are always delivered."
+msgstr "Esto silencia la campana, no el hallazgo. La deriva y las demás comprobaciones siguen ejecutándose, se registran en el Audit Log y las reglas de alerta por correo de Settings las siguen enviando. Los resultados de tus propios trabajos, los informes de errores y los avisos de la Wiki se entregan siempre."
+
+msgid "What these notifications mean"
+msgstr "Qué significan estas notificaciones"
+
+msgid "Configuration drift"
+msgstr "Deriva de configuración"
+
+msgid "Scheduled automations"
+msgstr "Automatizaciones programadas"
+
+msgid "SATOM node & HA"
+msgstr "Nodo SATOM y HA"
+
+msgid "Templates & intent"
+msgstr "Plantillas e intención"
+
+msgid "API catalog"
+msgstr "Catálogo de API"
+
+msgid "Alert engine"
+msgstr "Motor de alertas"
+
+msgid "Jobs & other"
+msgstr "Trabajos y otros"

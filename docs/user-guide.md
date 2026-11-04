@@ -131,6 +131,21 @@ to the installation, so they are not in Settings: until 3.5.0 they were the
 Directory-backed accounts see an explicit note instead of these controls: they
 manage password and MFA at the directory.
 
+**Notifications — choose what reaches your bell.** The **Notifications** card
+has one switch per bell category: Configuration drift, Device health,
+Signatures, Scheduled automations, SATOM node & HA, Certificates, Backups,
+Templates & intent, API catalog and Alert engine. Switch one off and Save: new
+notifications of that category are no longer created for you, and your unread
+ones are marked read (nothing is deleted; they stay on the Notifications page
+under their category). It affects your account only and silences the bell,
+not the finding: drift and the other checks keep running, are recorded in the
+Audit Log and are still e-mailed by the alert rules in Settings. Results of
+your own jobs, bug reports and Wiki notices cannot be muted. The Notifications
+page has a **Preferences** button that opens this card and, while something is
+muted, a line saying which categories. If every administrator mutes a
+category, the alert engine reports those findings as `in_app_muted` instead of
+delivered.
+
 Sign-in protections that apply to every account: after the password, the 2FA
 code must be entered within **5 minutes**; wrong codes count toward the same
 lockout as wrong passwords (10 failures lock the account for 15 minutes) and

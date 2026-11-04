@@ -1307,6 +1307,20 @@ def evaluate() -> list[dict]:
 
 
 # ---- dispatch -------------------------------------------------------------
+def _muted_by_all(user_ids, title: str) -> bool:
+    """Did every one of ``user_ids`` switch off the bell category of ``title``
+    (profile › Notifications)? False on any doubt: an unreadable preference is
+    reported as a delivery failure, never as a choice."""
+    try:
+        from . import notification_guide as guide
+        from .user_settings_store import muted_categories
+        cat = guide.category_of(title)
+        ids = list(user_ids or [])
+        return bool(ids) and all(cat in muted_categories(uid) for uid in ids)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _admin_ids() -> list[int]:
     from ..models import User
     ids = []
@@ -1440,7 +1454,7 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
 
     result = {"node": node, "evaluated": len(findings),
               "fresh": len(fresh), "dispatched": 0, "email": None,
-              "in_app": 0, "channels": [], "delivery_failed": [],
+              "in_app": 0, "in_app_muted": [], "channels": [], "delivery_failed": [],
               "syslog": syslog_res, "webhook": None,
               "hooks": None, "queued": 0, "routed": {},
               "enabled": is_enabled()}
@@ -1510,13 +1524,25 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
             try:
                 # 1500, not 400: at 400 the per-probe evidence (reading,
                 # limits, where they are set) was cut before it began.
-                notify.push_many(admin_ids, f["title"], kind=kind,
-                                 body=f["detail"][:BELL_BODY_MAX],
-                                 product=f.get("product") or None)
-                result["in_app"] += 1
-                delivered.add(f["key"])
+                written = notify.push_many(admin_ids, f["title"], kind=kind,
+                                           body=f["detail"][:BELL_BODY_MAX],
+                                           product=f.get("product") or None)
             except Exception as exc:  # noqa: BLE001 — count it, don't sink the run
                 result["delivery_failed"].append("in-app: %s" % exc)
+                continue
+            # Credited only when a row was WRITTEN. ``push`` never raises, so
+            # a failed write used to count as delivered; and a category every
+            # admin switched off in their profile reaches nobody either. The
+            # second case is a choice, not a failure: reported apart, and not
+            # stamped, so the first admin who switches it back on gets it.
+            if written:
+                result["in_app"] += 1
+                delivered.add(f["key"])
+            elif _muted_by_all(admin_ids, f["title"]):
+                result["in_app_muted"].append(f["title"])
+            else:
+                result["delivery_failed"].append(
+                    "in-app: no notification written for %r" % f["title"])
     if bell and not admin_ids:
         result["delivery_failed"].append(
             "in-app: no admin recipients — nobody holds the bell")

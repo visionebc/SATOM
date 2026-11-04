@@ -63,12 +63,40 @@ def _gated(query):
     return query.filter(or_(*[Notification.link.like("%" + m + "%") for m in GATES]))
 
 
+def _muted(user_id: int, title: str) -> bool:
+    """Has this user switched off the category ``title`` belongs to?
+
+    Decided at write time, so a muted notice is never stored: the bell, the
+    page, its count and its CSV agree without each one filtering. Results of
+    the user's own jobs, bug reports and Wiki notices (category ``other``)
+    are never muted. Any failure answers "not muted": a preference that cannot
+    be read must not swallow a finding.
+    """
+    try:
+        from . import notification_guide as guide
+        from .user_settings_store import muted_categories
+        muted = muted_categories(int(user_id))
+        if not muted:
+            return False
+        cat = guide.category_of(title)
+        if cat in muted:
+            logger.debug("notification muted by user %s (%s): %r",
+                         user_id, cat, title)
+            return True
+        return False
+    except Exception:  # noqa: BLE001 - deliver rather than drop
+        logger.debug("mute check failed (user=%s)", user_id, exc_info=True)
+        return False
+
+
 def push(user_id: int, title: str, *, kind: str = Notification.KIND_INFO,
          body: str | None = None, link: str | None = None,
          product: str | None = None) -> Notification | None:
     """Create a notification for one user. Returns the row, or ``None`` on any
     failure (logged, never raised)."""
     if not user_id or not title:
+        return None
+    if _muted(user_id, title):
         return None
     try:
         n = Notification(
@@ -167,6 +195,33 @@ def mark_read(user_id: int, notif_id: int) -> bool:
         except Exception:  # noqa: BLE001
             pass
         return False
+
+
+def mark_categories_read(user_id: int, categories) -> int:
+    """Mark this user's unread notices of ``categories`` read, in every ADOM
+    (muting is per user, not per ADOM). Used when a category is switched off,
+    so the bell stops counting what the user just said they do not want.
+    Nothing is deleted: the rows stay on the page under their category."""
+    from . import notification_guide as guide
+    cats = [c for c in (categories or []) if c in guide.CATEGORY_LABEL]
+    if not user_id or not cats:
+        return 0
+    try:
+        total = 0
+        for cat in cats:
+            q = guide.filter_category(
+                Notification.query.filter_by(user_id=user_id, read=False),
+                Notification.title, cat)
+            total += q.update({"read": True}, synchronize_session=False)
+        db.session.commit()
+        return total
+    except Exception:  # noqa: BLE001
+        logger.exception("mark_categories_read failed (user=%s)", user_id)
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return 0
 
 
 def clear_all(user_id: int) -> int:

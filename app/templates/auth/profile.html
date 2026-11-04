@@ -302,6 +302,42 @@
 </div>
 {% endif %}
 
+<!-- NOTIFICATIONS (per-user muted categories, saved in the DB) -->
+<div class="fw-card mb-3" id="notifications">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-bell me-2 text-accent"></i>{{ _('Notifications') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('Choose which categories reach your bell. A category switched off stops creating notifications for you alone; its unread ones are marked read. Nobody else\'s bell changes.') }}
+    </p>
+    <form method="POST" action="{{ url_for('auth.save_notification_prefs') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="notif-pref-grid mb-2">
+        {% for key, label in notify_categories|default([]) %}
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch" id="notif_on_{{ key }}"
+                 name="on_{{ key }}" value="1" {{ '' if key in notify_muted|default([]) else 'checked' }}>
+          <label class="form-check-label" for="notif_on_{{ key }}" style="font-size:13px;">
+            {{ _(label) }}
+            <a href="{{ url_for('notifications.guide_page', category=key) }}" class="ms-1" title="{{ _('What these notifications mean') }}"><i class="bi bi-journal-text"></i></a>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="fw-alert fw-alert-info mb-2" style="font-size:12px;">
+        <i class="bi bi-info-circle me-1"></i>
+        {{ _('This silences the bell, not the finding. Drift and the other checks keep running, are recorded in the Audit Log and are still sent by the e-mail alert rules in Settings. Results of your own jobs, bug reports and Wiki notices are always delivered.') }}
+      </div>
+      <button type="submit" class="btn btn-fw-primary btn-sm">
+        <i class="bi bi-check-lg me-1"></i>{{ _('Save') }}</button>
+    </form>
+  </div>
+</div>
+<style>
+.notif-pref-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:4px 16px; }
+</style>
+
 <div class="row g-3">
 
   <!-- BRANDING (per-user setting, saved in the DB) -->

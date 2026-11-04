@@ -6,7 +6,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Switch notification categories off for your own account.** Operator
+  request: "in the user profile I want to be able to turn off certain
+  notifications, for example config drift." **Profile → Notifications** has
+  one switch per bell category (Configuration drift, Device health,
+  Signatures, Scheduled automations, SATOM node & HA, Certificates, Backups,
+  Templates & intent, API catalog, Alert engine). A category switched off no
+  longer creates notifications for that user, and its unread ones are marked
+  read (nothing is deleted); every other user's bell is unchanged. It silences
+  the bell, not the finding: drift and the other checks keep running, are
+  audited and are still sent by the e-mail alert rules. Results of your own
+  jobs, bug reports and Wiki notices are always delivered. The Notifications
+  page has a **Preferences** button and says which categories you muted. The
+  change is audited as `profile.notifications`.
+
 ### Fixed
+- **The alert engine no longer counts a bell notice nobody received as
+  delivered.** The in-app sink was credited after every write attempt,
+  including one that wrote no row, so a failed write still reported
+  "delivered" and stamped the cooldown. It is now credited only when a
+  notification was written. A finding whose category every administrator
+  muted is listed under `in_app_muted` (a choice, not a failure) and is not
+  stamped, so the first administrator who switches it back on receives it.
+  The category labels of the Notifications filter, the Troubleshooting guide
+  and the new profile card are now translated (es, de, fr, it).
 - **Two people changing the same object no longer overwrite each other
   without a word.** Operator question: "what happens if a user makes the same
   change on the same object, or on the same sub-object?" Three gaps answered

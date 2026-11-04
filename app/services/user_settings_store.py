@@ -177,3 +177,55 @@ def save_calendar_enabled(user_id: int, on: bool) -> bool:
     value = "0" if on else "1"
     UserSetting.set(user_id, K_CALENDAR_OFF, value)
     return value != "1"
+
+
+# ---------------------------------------------------------------------------
+# Muted notification categories (per user, DB-backed)
+# ---------------------------------------------------------------------------
+
+K_NOTIFY_MUTED = "notify.muted"
+
+
+def _known_categories() -> set[str]:
+    from . import notification_guide as _guide
+    return set(_guide.CATEGORY_LABEL)
+
+
+def muted_categories(user_id: int) -> set[str]:
+    """Bell categories this user switched off. Default: none.
+
+    Stored as the deviation from the default (a JSON list of the muted keys),
+    the same direction as ``calendar.disabled``: a user who never opened the
+    card has no row and receives everything.
+
+    Only keys the guide still knows are returned. A category renamed or
+    removed later must not keep silencing whatever ends up under a new key,
+    and ``other`` (results of the user's own jobs, bug reports, Wiki) can
+    never be muted, whatever the row says. A broken row degrades to "nothing
+    muted": a lost preference costs a few notices; a preference that silences
+    findings nobody asked to silence costs the finding.
+    """
+    try:
+        raw = UserSetting.get(user_id, K_NOTIFY_MUTED)
+        if not raw:
+            return set()
+        import json as _json
+        got = _json.loads(raw)
+        if not isinstance(got, list):
+            return set()
+        return {str(k) for k in got} & _known_categories()
+    except Exception:  # noqa: BLE001 - a preference must not stop a notice
+        return set()
+
+
+def save_muted_categories(user_id: int, keys) -> list[str]:
+    """Persist the muted set; return what is now in force (sorted).
+
+    Unknown keys are dropped, not stored. An empty set is written as ``[]``
+    rather than deleting the row, so the audit line beside it stays readable
+    next to a value.
+    """
+    import json as _json
+    clean = sorted({str(k) for k in (keys or [])} & _known_categories())
+    UserSetting.set(user_id, K_NOTIFY_MUTED, _json.dumps(clean))
+    return clean

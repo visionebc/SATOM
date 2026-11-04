@@ -456,6 +456,7 @@ def profile():
     back here (``#security`` / ``#password``)."""
     from ..services import cr_document, lang_policy, langs as lang_registry
     from ..services import bookmarks as bookmarks_svc
+    from ..services import notification_guide
     is_admin = bool(current_user and current_user.can(Permission.USER_MANAGE))
     _pref = user_store.language(current_user.id)
     return render_template(
@@ -495,6 +496,8 @@ def profile():
             'remaining_codes': twofa.remaining_backup_codes(
                 getattr(current_user, 'backup_codes', None)),
         },
+        notify_categories=notification_guide.CATEGORIES,
+        notify_muted=user_store.muted_categories(current_user.id),
         # Popped, not read: the codes are shown exactly once, on the page the
         # enable / regenerate routes redirect to -- which is this one.
         backup_codes_once=session.pop('twofa_backup_codes_once', None),
@@ -558,6 +561,42 @@ def save_calendar_pref():
           'are unaffected \u2014 they still run on their windows.',
           'success')
     return redirect(url_for('auth.profile') + '#calendar')
+
+
+@bp.route('/profile/notifications', methods=['POST'])
+@login_required
+def save_notification_prefs():
+    """Switch bell categories (Configuration drift, Device health…) on or off,
+    for this user only.
+
+    One checkbox per category; PRESENT == on, as on the Calendar switch (an
+    unchecked box sends nothing, so "off" is the absence). Muting stops new
+    notices of that category being written for this user and marks the unread
+    ones read so the bell stops counting them; nothing is deleted. It does not
+    stop the finding: drift is still detected, audited and e-mailed by the
+    alert rules in Settings, and every other user keeps receiving it.
+    """
+    from ..services import notification_guide
+    from ..services import notifications as notify
+    before = user_store.muted_categories(current_user.id)
+    muted = [key for key, _label in notification_guide.CATEGORIES
+             if ('on_' + key) not in request.form]
+    now = user_store.save_muted_categories(current_user.id, muted)
+    cleared = notify.mark_categories_read(
+        current_user.id, [k for k in now if k not in before])
+    log_action('profile.notifications', target=(','.join(now) or 'none'),
+               extra={'muted': now, 'marked_read': cleared})
+    if now:
+        labels = ', '.join(notification_guide.category_label(k) for k in now)
+        msg = ('Notifications saved. Muted for your account: %s. These findings '
+               'are still detected and audited, and other users still receive '
+               'them.' % labels)
+        if cleared:
+            msg += ' %d unread notice(s) of those categories marked read.' % cleared
+        flash(msg, 'success')
+    else:
+        flash('Notifications saved. You receive every category.', 'success')
+    return redirect(url_for('auth.profile') + '#notifications')
 
 
 @bp.route('/profile/bookmark-view', methods=['POST'])

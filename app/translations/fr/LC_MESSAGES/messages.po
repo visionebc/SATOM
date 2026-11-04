@@ -28961,3 +28961,39 @@ msgstr "Les classes de signatures de cette politique n'ont pas pu être lues : %
 
 msgid "Slides in the policy's Signature Details over this dialog, as FortiWeb does: Dictionaries tree, signatures per sub-category, and each signature's detail and exceptions."
 msgstr "Fait glisser les Détails de signature de la politique par-dessus ce dialogue, comme le fait FortiWeb : arbre des Dictionnaires, signatures par sous-catégorie, et le détail et les exceptions de chaque signature."
+
+msgid "Choose which categories reach your bell. A category switched off stops creating notifications for you alone; its unread ones are marked read. Nobody else's bell changes."
+msgstr "Choisissez les catégories qui arrivent sur votre cloche. Une catégorie désactivée cesse de créer des notifications pour vous seul ; ses notifications non lues sont marquées comme lues. La cloche des autres ne change pas."
+
+msgid "Muted for your account: %(cats)s. New notifications of these categories are not created for you."
+msgstr "En sourdine pour votre compte : %(cats)s. Aucune nouvelle notification de ces catégories n'est créée pour vous."
+
+msgid "Preferences"
+msgstr "Préférences"
+
+msgid "This silences the bell, not the finding. Drift and the other checks keep running, are recorded in the Audit Log and are still sent by the e-mail alert rules in Settings. Results of your own jobs, bug reports and Wiki notices are always delivered."
+msgstr "Cela met la cloche en sourdine, pas le constat. La dérive et les autres contrôles continuent de s'exécuter, sont consignés dans l'Audit Log et restent envoyés par les règles d'alerte e-mail des Settings. Les résultats de vos propres tâches, les rapports de bogue et les avis du Wiki sont toujours remis."
+
+msgid "What these notifications mean"
+msgstr "Ce que signifient ces notifications"
+
+msgid "Configuration drift"
+msgstr "Dérive de configuration"
+
+msgid "Scheduled automations"
+msgstr "Automatisations planifiées"
+
+msgid "SATOM node & HA"
+msgstr "Nœud SATOM et HA"
+
+msgid "Templates & intent"
+msgstr "Modèles et intention"
+
+msgid "API catalog"
+msgstr "Catalogue d'API"
+
+msgid "Alert engine"
+msgstr "Moteur d'alertes"
+
+msgid "Jobs & other"
+msgstr "Tâches et autres"

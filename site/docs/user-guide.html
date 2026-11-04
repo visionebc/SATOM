@@ -6402,7 +6402,8 @@ nothing.</p>
   downloaded or copied; <strong>Row buttons</strong> put buttons on every row of a table,
   below), <em>Read a data store</em>,
   <em>Write a data store</em> (insert, update, upsert, delete), <em>Query a database</em>,
-  <em>Call an API</em> (with <em>Keep only (JSON path)</em>) and <em>Run a script</em> (the
+  <em>Call an API</em> (with <em>Keep only (JSON path)</em>, and <em>For each (list)</em>: one
+  request per item, <code>{{ item }}</code> being that item — below) and <em>Run a script</em> (the
   published version of a Script Library script, with its form values), the
   <strong>runbook steps</strong> (<em>Ask a person</em>, <em>Load an appliance</em>, <em>HTTP check</em>, <em>TCP
   check</em>, <em>Console read</em>, <em>Appliance fact</em>, <em>Collect diagnostics</em> — see
@@ -6571,12 +6572,12 @@ a whole provisioning chain is one diagram whose failures the author routes:</p>
 </tr>
 <tr>
 <td><em>DNS: look names up</em></td>
-<td>Every enabled resolver (Administrator › Objects › DNS Resolvers) for each name, as the DNS &amp; LB Lookup page does (at most 50 names, <code>name TYPE</code> accepted, optional TTL). Saves <code>rows</code> (a column per resolver), <code>answers</code>, <code>unresolved</code> and <code>tsv</code> — the page's <em>Copy DNS</em> text. No resolver configured is an <strong>error</strong>, never an empty table. Needs <code>network.view</code></td>
+<td>Every enabled resolver (Administrator › Objects › DNS Resolvers) for each name, as the DNS &amp; LB Lookup page does (at most 50 names, <code>name TYPE</code> accepted, optional TTL). Saves <code>rows</code> (a column per resolver), <code>answers</code>, <code>unresolved</code>, <code>ptr</code> (for each address looked up, <code>{ip, hostname}</code> from its PTR answer — an address without one is in <code>unresolved</code>, never in <code>ptr</code>) and <code>tsv</code> — the page's <em>Copy DNS</em> text. No resolver configured is an <strong>error</strong>, never an empty table. Needs <code>network.view</code></td>
 <td>—</td>
 </tr>
 <tr>
 <td><em>LB: match names to the fleet</em></td>
-<td>Each name matched to this ADOM's FortiWeb server policies and FortiADC virtual servers <strong>from the device cache</strong> (never the device). Saves <code>rows</code> (the page's columns, <code>Path</code> = policy › pool › members with their status, and <code>_aid</code>, <code>_policy</code>, <code>_hostname</code>, <code>_url</code> for buttons), <code>gateways</code>, <code>unmatched</code>, <code>not_found</code> (no answer and no match, when given the DNS result) and <code>tsv</code> (<em>Copy LB</em>). A cache that cannot be read is an <strong>error</strong>. Needs <code>network.view</code></td>
+<td>Each name matched to this ADOM's FortiWeb server policies and FortiADC virtual servers <strong>from the device cache</strong> (never the device). Saves <code>rows</code> (the page's columns, <code>Path</code> = policy › pool › members with their status, and <code>_aid</code>, <code>_policy</code>, <code>_hostname</code>, <code>_url</code>, <code>_members</code> — the row's pool members as <code>{ip, port, status}</code> — for buttons), <code>members</code> (every member address once, all rows), <code>gateways</code>, <code>unmatched</code>, <code>not_found</code> (no answer and no match, when given the DNS result) and <code>tsv</code> (<em>Copy LB</em>). A cache that cannot be read is an <strong>error</strong>. Needs <code>network.view</code></td>
 <td>—</td>
 </tr>
 <tr>
@@ -6601,6 +6602,7 @@ a whole provisioning chain is one diagram whose failures the author routes:</p>
 </tr>
 </tbody>
 </table>
+<p><strong>Asking an API about each pool member.</strong> <em>LB: match</em> → <em>DNS: look names up</em> with entries <code>{{ lb.members }}</code> (the PTR names) → <em>Call an API</em> with <em>For each</em> <code>{{ dns.ptr }}</code> and a path such as <code>/hosts/{{ item.hostname }}</code>. The answer is a table: the item's columns, then <code>Status</code>, <code>Answer</code> (after <em>Keep only</em>) and <code>Error</code>. Duplicates are asked once; one host that fails is a row with its error and the others are still asked; only every request failing takes the error arrow (the rows stay in the saved variable). More than 50 items is refused, never cut, and a run out of time stops asking and says how many were not asked. The credential is the HTTP connection's: the diagram never sees it.</p>
 <p><strong>The DNS &amp; LB Lookup steps answer for the person who runs the app.</strong> Each
 asks that person for the permission the page's own route asks, so an app
 shared with more people never widens who looks names up, edits a record or

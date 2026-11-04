@@ -126,6 +126,18 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>Plugin Studio: ask an API about each LB pool member (SOC Search).</strong>
+  Operator request: "in the SOC Search diagram, a way to ask an API about the
+  host that appears in the members of the search result" — the API wants a
+  host name. <em>Call an API</em> has a new <strong>For each (list)</strong> field: one request
+  per item with <code>{{ item }}</code> = that item, duplicates asked once, at most 50
+  (more is refused, never cut). The answer is a table — the item's columns,
+  <code>Status</code>, <code>Answer</code>, <code>Error</code> — where a host that fails is a row with its
+  error and the others are still asked; only every request failing takes the
+  error arrow. <em>LB: match names to the fleet</em> now saves <code>members</code> (every pool
+  member address once) and <code>_members</code> per row (<code>{ip, port, status}</code>), and
+  <em>DNS: look names up</em> saves <code>ptr</code> (<code>{ip, hostname}</code> for each address with a
+  PTR answer), so a diagram goes members → host names → API.</li>
 <li><strong>Clone a plugin app: with its data, only its structure, or on the same
   data as the original.</strong> Operator
   request: "in the plugins section I want them to be clonable; the clone must

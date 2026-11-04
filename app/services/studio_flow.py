@@ -343,6 +343,11 @@ def kinds(choices: dict | None = None) -> list[Kind]:
               Param("path", "Path", help="Under the base URL, e.g. /tickets/{{ form.id }}"),
               Param("query", "Query string (JSON)", "json"), Param("body", "Body (JSON)", "json"),
               Param("extract", "Keep only (JSON path)", help="e.g. items[*].name"),
+              Param("for_each", "For each (list)",
+                    help="One request per item, {{ item }} being that item, e.g. "
+                         "{{ dns.ptr }} with the path /hosts/{{ item.hostname }}. The answer "
+                         "is a table: one row per item with its status, answer or error. "
+                         "At most 50 items; empty = one request."),
               _save_as("response")], writes=True,
              extra={"catalog": dict(ch.get("catalog") or {})}),
         Kind("script", "Run a script", "act", "The published version of a Script Library script.",
@@ -782,24 +787,12 @@ def _run_step(node: dict, ctx: Ctx):
             raise FlowError(str(exc)) from None
         return "ok", r["rows"], "%d row(s), %d ms" % (len(r["rows"]), r["ms"])
     if kind == "api_call":
-        from . import studio_connections as SC
         c = _connection(node, "http")
-        method, path = _endpoint(node, ctx, c)
-        body = _json(node, ctx, "body", "Body")
-        _rpc_check(c, method, path, body)
-        try:
-            r = SC.http_call(c, method, path,
-                             query=_json(node, ctx, "query", "Query string"),
-                             body=body)
-        except SC.ConnectionError_ as exc:
-            raise FlowError(str(exc)) from None
-        body = r.get("json") if "json" in r else r.get("text")
-        if not r["ok"]:
-            ctx.vars["last_response"] = {"status": r["status"], "body": body}
-            raise FlowError("HTTP %d from %s" % (r["status"], c.slug))
-        ex = str(_p(node, "extract") or "")
-        value = SC.json_path(body, ex) if ex else body
-        return "ok", value, "HTTP %d, %d ms" % (r["status"], r["ms"])
+        items = _for_each_items(node, ctx)
+        if items is not None:
+            return _api_call_each(node, ctx, c, items)
+        status, value, ms = _api_request(node, ctx, c)
+        return "ok", value, "HTTP %d, %d ms" % (status, ms)
     if kind == "script":
         if not ctx.scripts:
             plan = {k: v for k, v in (node.get("params") or {}).items() if k != "save_as"}
@@ -810,6 +803,97 @@ def _run_step(node: dict, ctx: Ctx):
     if kind in S.KIND_KEYS:
         return S.run(node, ctx)
     raise FlowError("unknown step kind %r" % kind)
+
+
+def _api_request(node, ctx, c) -> tuple:
+    """One request of an api_call step: ``(status, value, ms)``, the value
+    narrowed by ``extract``. A non-2xx answer is a FlowError, with the answer
+    left in ``last_response``."""
+    from . import studio_connections as SC
+    method, path = _endpoint(node, ctx, c)
+    body = _json(node, ctx, "body", "Body")
+    _rpc_check(c, method, path, body)
+    try:
+        r = SC.http_call(c, method, path,
+                         query=_json(node, ctx, "query", "Query string"),
+                         body=body)
+    except SC.ConnectionError_ as exc:
+        raise FlowError(str(exc)) from None
+    body = r.get("json") if "json" in r else r.get("text")
+    if not r["ok"]:
+        ctx.vars["last_response"] = {"status": r["status"], "body": body}
+        raise FlowError("HTTP %d from %s" % (r["status"], c.slug))
+    ex = str(_p(node, "extract") or "")
+    return r["status"], (SC.json_path(body, ex) if ex else body), r["ms"]
+
+
+#: An api_call's For each sends at most this many requests.
+MAX_FOR_EACH = 50
+
+
+def _for_each_items(node, ctx):
+    """The list an api_call repeats over, duplicates dropped, or ``None``
+    when the step has no For each (one request). More than MAX_FOR_EACH is
+    refused, never cut: a cut list would show a partial answer as whole."""
+    raw = _p(node, "for_each", None)
+    if raw is None or not str(raw).strip():
+        return None
+    val = _json(node, ctx, "for_each", "For each")
+    if val in (None, ""):
+        val = []
+    if not isinstance(val, list):
+        raise FlowError("For each is a list, e.g. {{ dns.ptr }} (it gave %s)"
+                        % type(val).__name__)
+    out = []
+    for it in val:
+        if it not in out:
+            out.append(it)
+    if len(out) > MAX_FOR_EACH:
+        raise FlowError("For each: %d items, at most %d requests per step"
+                        % (len(out), MAX_FOR_EACH))
+    return out
+
+
+def _api_call_each(node, ctx, c, items) -> tuple:
+    """One request per item with ``{{ item }}`` = that item. The value is a
+    table: the item (its keys, when it is an object, else ``Item``), then
+    ``Status``, ``Answer`` and ``Error``; ``_ok`` says which rows answered.
+    One item that fails is a row with its error and the others go on; the
+    error arrow is taken only when every request failed. A run out of time
+    stops asking and says how many were not asked."""
+    had, old = "item" in ctx.vars, ctx.vars.get("item")
+    rows, skipped = [], 0
+    try:
+        for it in items:
+            if ctx.deadline and time.time() > ctx.deadline:
+                skipped = len(items) - len(rows)
+                break
+            ctx.vars["item"] = it
+            row = dict(it) if isinstance(it, dict) else {"Item": it}
+            try:
+                status, value, _ms = _api_request(node, ctx, c)
+                row.update({"Status": status, "Answer": value, "Error": "", "_ok": True})
+            except FlowError as exc:
+                lr = ctx.vars.get("last_response") or {}
+                row.update({"Status": lr.get("status", "") if "HTTP" in str(exc) else "",
+                            "Answer": None, "Error": str(exc), "_ok": False})
+            rows.append(row)
+    finally:
+        if had:
+            ctx.vars["item"] = old
+        else:
+            ctx.vars.pop("item", None)
+    ok = sum(1 for r in rows if r["_ok"])
+    detail = "%d request(s): %d ok, %d failed" % (len(rows), ok, len(rows) - ok)
+    if skipped:
+        detail += ", %d not asked (run out of time)" % skipped
+    if rows and not ok:
+        # what each item answered stays readable on the error arrow
+        ctx.vars[str(_p(node, "save_as", "") or "response")] = rows
+        raise FlowError("every request failed (%d); the first: %s" % (len(rows), rows[0]["Error"]))
+    if skipped and not rows:
+        raise FlowError("the run ran out of time before the first request")
+    return "ok", rows, detail
 
 
 def _rpc_check(c, method: str, path: str, body) -> None:

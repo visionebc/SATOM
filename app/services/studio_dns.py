@@ -221,7 +221,7 @@ def dns_lookup(entries: list[str], *, ttl: bool = False) -> dict:
                           "DNS Resolvers")
     found = dns_tool.lookup_many(entries, servers, show_ttl=ttl)
     names = [s["name"] for s in servers]
-    rows, answers, resolved_of, unresolved = [], {}, {}, []
+    rows, answers, resolved_of, unresolved, ptr = [], {}, {}, [], []
     tsv = ["\t".join(["Entry"] + names)]
     for e in entries:
         query, _rtype = dns_tool.parse_entry(e)
@@ -235,8 +235,29 @@ def dns_lookup(entries: list[str], *, ttl: bool = False) -> dict:
         row.update({"_entry": e, "_resolved": resolved})
         rows.append(row)
         tsv.append("\t".join([e] + ["; ".join(per[n]) for n in names]))
+        if dns_tool._is_ip(resolved):
+            host = ptr_name(per)
+            if host:
+                ptr.append({"ip": resolved, "hostname": host})
     return {"entries": entries, "servers": names, "rows": rows, "answers": answers,
-            "resolved": resolved_of, "unresolved": unresolved, "tsv": "\n".join(tsv)}
+            "resolved": resolved_of, "unresolved": unresolved, "ptr": ptr,
+            "tsv": "\n".join(tsv)}
+
+
+def ptr_name(per: dict) -> str:
+    """The host name an address's PTR answers give: the first real answer,
+    resolvers in their configured order, without the root dot or the TTL
+    suffix. An API that wants a host name (``api_call`` For each over
+    ``{{ dns.ptr }}``) is asked with this; an address with no PTR is in
+    ``unresolved`` instead and is never sent."""
+    for vals in per.values():
+        for v in vals:
+            if v in NO_ANSWER:
+                continue
+            name = str(v).split(" (TTL:")[0].strip().rstrip(".")
+            if name:
+                return name
+    return ""
 
 
 # --------------------------------------------------------------------------- #
@@ -273,7 +294,7 @@ def path_of(m: dict) -> str:
 def lb_lookup(entries: list[str], lb_rows: list[dict], *, exact: bool = False,
               dns: dict | None = None) -> dict:
     from . import dns_tool
-    rows, gateways, unmatched = [], [], []
+    rows, gateways, unmatched, members = [], [], [], []
     tsv = ["\t".join(label for _k, label in dns_tool.COLUMNS)]
     for e in entries:
         query, _rtype = dns_tool.parse_entry(e)
@@ -290,7 +311,10 @@ def lb_lookup(entries: list[str], lb_rows: list[dict], *, exact: bool = False,
             row["Path"] = path_of(m)
             row.update({"_entry": e, "_hostname": resolved, "_aid": m.get("_aid"),
                         "_kind": m.get("_kind") or "", "_policy": m.get("policy") or "",
-                        "_url": policy_url(m)})
+                        "_url": policy_url(m), "_members": member_list(m)})
+            for b in row["_members"]:
+                if b["ip"] and b["ip"] not in members:
+                    members.append(b["ip"])
             rows.append(row)
             tsv.append("\t".join(str(m.get(k, "")) for k, _l in dns_tool.COLUMNS))
     not_found = []
@@ -298,7 +322,17 @@ def lb_lookup(entries: list[str], lb_rows: list[dict], *, exact: bool = False,
         nores = set(dns["unresolved"])
         not_found = [e for e in unmatched if e in nores]
     return {"rows": rows, "gateways": gateways, "unmatched": unmatched,
-            "not_found": not_found, "tsv": "\n".join(tsv)}
+            "not_found": not_found, "members": members, "tsv": "\n".join(tsv)}
+
+
+def member_list(m: dict) -> list[dict]:
+    """A match's pool members as ``{ip, port, status}`` (the cache's
+    ``_backends``): the Members column is text for people, this is the list a
+    step goes on with -- ``{{ lb.members }}`` (every address once, all rows)
+    or ``{{ row._members }}`` in a row button."""
+    return [{"ip": str(b.get("ip") or ""), "port": str(b.get("port") or ""),
+             "status": str(b.get("status") or "")}
+            for b in (m.get("_backends") or []) if isinstance(b, dict)]
 
 
 # --------------------------------------------------------------------------- #

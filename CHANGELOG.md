@@ -18,6 +18,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   is gone. Branding — Top-bar Banner spans the full width.
 
 ### Added
+- **Plugin Studio: ask an API about each LB pool member (SOC Search).**
+  Operator request: "in the SOC Search diagram, a way to ask an API about the
+  host that appears in the members of the search result" — the API wants a
+  host name. *Call an API* has a new **For each (list)** field: one request
+  per item with `{{ item }}` = that item, duplicates asked once, at most 50
+  (more is refused, never cut). The answer is a table — the item's columns,
+  `Status`, `Answer`, `Error` — where a host that fails is a row with its
+  error and the others are still asked; only every request failing takes the
+  error arrow. *LB: match names to the fleet* now saves `members` (every pool
+  member address once) and `_members` per row (`{ip, port, status}`), and
+  *DNS: look names up* saves `ptr` (`{ip, hostname}` for each address with a
+  PTR answer), so a diagram goes members → host names → API.
 - **Clone a plugin app: with its data, only its structure, or on the same
   data as the original.** Operator
   request: "in the plugins section I want them to be clonable; the clone must

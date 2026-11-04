@@ -29061,3 +29061,6 @@ msgstr "sin copia: las dos apps leen y escriben los mismos almacenes de datos, a
 
 msgid "With Everything or Structure only, the copy writes to its own data stores, never to the original's; with Same data, to the original's. The form, diagram and actions are the copy's own either way. It starts as a draft: publish it when it is ready. Runs, published versions, automations, sign-in rules and secrets are not copied; connections and scripts stay shared."
 msgstr "Con Todo o Solo la estructura, la copia escribe en sus propios almacenes de datos, nunca en los del original; con Los mismos datos, en los del original. El formulario, el diagrama y las acciones son siempre de la copia. Empieza como borrador: publícala cuando esté lista. No se copian ejecuciones, versiones publicadas, automatizaciones, reglas de inicio de sesión ni secretos; las conexiones y los scripts siguen compartidos."
+
+msgid "For each (list)"
+msgstr "Para cada elemento (lista)"

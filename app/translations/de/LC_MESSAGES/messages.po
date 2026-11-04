@@ -29040,3 +29040,6 @@ msgstr "keine Kopie: beide Apps lesen und schreiben dieselben Datenspeicher, ein
 
 msgid "With Everything or Structure only, the copy writes to its own data stores, never to the original's; with Same data, to the original's. The form, diagram and actions are the copy's own either way. It starts as a draft: publish it when it is ready. Runs, published versions, automations, sign-in rules and secrets are not copied; connections and scripts stay shared."
 msgstr "Mit Alles oder Nur die Struktur schreibt die Kopie in ihre eigenen Datenspeicher, nie in die des Originals; mit Dieselben Daten in die des Originals. Formular, Diagramm und Aktionen gehören in jedem Fall der Kopie. Sie beginnt als Entwurf: Veröffentlichen Sie sie, wenn sie fertig ist. Läufe, veröffentlichte Versionen, Automatisierungen, Anmelderegeln und Geheimnisse werden nicht kopiert; Verbindungen und Skripte bleiben gemeinsam genutzt."
+
+msgid "For each (list)"
+msgstr "Für jedes (Liste)"

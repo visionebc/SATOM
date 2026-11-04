@@ -29042,3 +29042,6 @@ msgstr "pas de copie : les deux apps lisent et écrivent les mêmes magasins de 
 
 msgid "With Everything or Structure only, the copy writes to its own data stores, never to the original's; with Same data, to the original's. The form, diagram and actions are the copy's own either way. It starts as a draft: publish it when it is ready. Runs, published versions, automations, sign-in rules and secrets are not copied; connections and scripts stay shared."
 msgstr "Avec Tout ou Structure seulement, la copie écrit dans ses propres magasins de données, jamais dans ceux de l'original ; avec Les mêmes données, dans ceux de l'original. Le formulaire, le diagramme et les actions appartiennent toujours à la copie. Elle démarre en brouillon : publiez-la quand elle est prête. Les exécutions, versions publiées, automatisations, règles de connexion et secrets ne sont pas copiés ; les connexions et les scripts restent partagés."
+
+msgid "For each (list)"
+msgstr "Pour chaque élément (liste)"

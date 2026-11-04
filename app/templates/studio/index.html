@@ -237,6 +237,7 @@
                             title="{{ _('More actions') }}" aria-label="{{ _('More actions') }}"><i class="bi bi-three-dots"></i></button>
                     <ul class="dropdown-menu dropdown-menu-end">
                       <li><button type="button" class="dropdown-item" data-app-act="group" data-group="{{ r.group }}" title="{{ _('The submenu of Plugins the app is drawn in') }}"><i class="bi bi-folder2"></i>{{ _('Set menu group') }}</button></li>
+                      {% if not r.missing %}<li><button type="button" class="dropdown-item" data-app-act="clone" title="{{ _('A new draft app from this one: with its data or only its structure') }}"><i class="bi bi-copy"></i>{{ _('Clone') }}</button></li>{% endif %}
                       <li><a class="dropdown-item" href="{{ url_for('studio.app_data', slug=a.slug) }}" title="{{ _('Download data: runs and data stores (zip)') }}"><i class="bi bi-database-down"></i>{{ _('Download data') }}</a></li>
                       {% if r.kind == 'script' %}
                       {% if not r.missing %}<li><a class="dropdown-item" href="{{ url_for('script_library.download', slug=a.script_slug) }}"><i class="bi bi-file-earmark-zip"></i>{{ _('Download the code') }}</a></li>{% endif %}
@@ -454,6 +455,41 @@
   </div></div>
 </div>
 {% endif %}
+{% if can_library %}
+<div class="modal fade fw-modal" id="apCloneModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title"><i class="bi bi-copy me-2"></i>{{ _('Clone') }} <code class="ms-1" id="apCloneSrc"></code></h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button></div>
+    <div class="modal-body" style="font-size:13px;">
+      <div class="row g-2 mb-3">
+        <div class="col-5"><label class="form-label small" for="apCloneSlug">{{ _('New id') }}</label>
+          <input class="form-control form-control-sm" id="apCloneSlug" maxlength="48" autocomplete="off" pattern="[a-z0-9][a-z0-9_-]{1,47}"></div>
+        <div class="col-7"><label class="form-label small" for="apCloneName">{{ _('New name') }}</label>
+          <input class="form-control form-control-sm" id="apCloneName" maxlength="120" autocomplete="off"></div>
+      </div>
+      <div id="apCloneFlow">
+        <div class="fw-form-label mb-1">{{ _('What does the copy take?') }}</div>
+        <div class="form-check"><input class="form-check-input" type="radio" name="apCloneMode" id="apCloneAll" value="all">
+          <label class="form-check-label" for="apCloneAll"><strong>{{ _('Everything') }}</strong> — {{ _('the structure and the data: the rows of its data stores are copied') }}</label></div>
+        <div class="form-check mb-2"><input class="form-check-input" type="radio" name="apCloneMode" id="apCloneStructure" value="structure">
+          <label class="form-check-label" for="apCloneStructure"><strong>{{ _('Structure only') }}</strong> — {{ _('the same data stores and columns, empty') }}</label></div>
+        <div class="text-muted" id="apCloneOwn"></div>
+        <div id="apCloneSharedBox" class="mt-2 d-none">
+          <div class="text-muted" id="apCloneShared"></div>
+          <div class="form-check mt-1"><input class="form-check-input" type="checkbox" id="apCloneCopyShared">
+            <label class="form-check-label" for="apCloneCopyShared">{{ _('Copy these too (otherwise the copy keeps reading and writing them)') }}</label></div>
+        </div>
+        <div class="form-text">{{ _("The copy writes to its own data stores, never to the original's. It starts as a draft: publish it when it is ready. Runs, published versions, automations, sign-in rules and secrets are not copied; connections and scripts stay shared.") }}</div>
+      </div>
+      <div id="apCloneScript" class="d-none text-muted">{{ _('A script app: a new script with the same code, form and settings. Credential values and saved runs are not copied.') }}</div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+      <button type="button" class="btn btn-fw-primary" id="apCloneGo" disabled><i class="bi bi-copy me-1"></i>{{ _('Clone') }}</button>
+    </div>
+  </div></div>
+</div>
+{% endif %}
 <div class="modal fade fw-modal" id="apiLibModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog"><div class="modal-content">
     <div class="modal-header"><h5 class="modal-title"><i class="bi bi-collection me-2"></i>{{ _("Add from SATOM's API library") }}</h5>
@@ -478,7 +514,7 @@
   </div></div>
 </div>
 <script type="application/json" id="ex-config">{{ {'install': url_for('studio.example_install', key='KEY'), 'back': url_for('studio.index', pane='examples')}|tojson }}</script>
-<script type="application/json" id="ap-config">{{ {'enable': url_for('studio.app_enable', slug='SLUG'), 'group': url_for('studio.app_group', slug='SLUG'), 'reset': url_for('studio.app_reset', slug='SLUG'), 'delete': url_for('studio.app_delete', slug='SLUG'), 'back': url_for('studio.index', pane='apps')}|tojson }}</script>
+<script type="application/json" id="ap-config">{{ {'enable': url_for('studio.app_enable', slug='SLUG'), 'group': url_for('studio.app_group', slug='SLUG'), 'reset': url_for('studio.app_reset', slug='SLUG'), 'delete': url_for('studio.app_delete', slug='SLUG'), 'clone': url_for('studio.app_clone', slug='SLUG'), 'clone_plan': url_for('studio.app_clone_plan', slug='SLUG'), 'back': url_for('studio.index', pane='apps')}|tojson }}</script>
 <script src="{{ asset('js/studio_apps_list.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/studio_explorer.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/studio_examples.js') }}" nonce="{{ csp_nonce }}"></script>

@@ -6307,6 +6307,10 @@ and its published version. The <strong>Actions</strong> column:</p>
 <td>The app as a <code>.satomplugin</code> package (§23.7 <em>packages</em>); for a script app, the code as a zip.</td>
 </tr>
 <tr>
+<td><strong>Clone</strong></td>
+<td>A new <strong>draft</strong> app from this one (flow or script). The dialog asks for the new id and name and — for a flow app — <strong>what the copy takes</strong>: <strong>Everything</strong> (the structure <em>and</em> the rows of its data stores) or <strong>Structure only</strong> (the same data stores and columns, empty). Neither is preselected. See <em>Cloning an app</em> below.</td>
+</tr>
+<tr>
 <td><strong>Reset</strong></td>
 <td>Deletes the app's data from the database: its run history and every row of the data stores <strong>only it</strong> uses. Stores another app uses keep their rows (the answer lists them). The design, versions, connections and settings stay. Refused while a run of the app is in progress. You type the app id to confirm.</td>
 </tr>
@@ -6317,9 +6321,43 @@ and its published version. The <strong>Actions</strong> column:</p>
 </tbody>
 </table>
 <p><strong>Templates.</strong> What <em>Examples</em> installs (§23.8) is a <strong>template</strong>: it shows
-the <em>Template</em> badge, can be edited, disabled, reset and downloaded, and is
+the <em>Template</em> badge, can be edited, disabled, reset, downloaded and
+<strong>cloned</strong> (the clone is an ordinary app you may delete), and is
 <strong>never deleted</strong> — no Delete button, and every delete route (app, script,
 data store, connection) refuses it with the reason.</p>
+<p><strong>Cloning an app</strong> (2026-11-04). <em>Actions → ⋯ → Clone</em> makes a new app from
+the original's <strong>draft</strong>, in one step that either completes or writes
+nothing.</p>
+<ul>
+<li><strong>A flow app gets its own data.</strong> Every data store only the original uses
+  is copied as a new store: its id is the original's with the app id swapped
+  (<code>dns-records-hosts</code> → <code>dns-lab-hosts</code>), or with the new app id appended
+  (<code>log</code> → <code>log-dns-lab</code>); <code>-2</code>, <code>-3</code>… when taken. The copy's diagram steps
+  (<em>Read / Write a data store</em>), <em>Save to a data store</em> actions and
+  data-store list fields are pointed at the copies, so <strong>a run of the clone
+  reads and writes its own stores and never the original's</strong> (and the other
+  way round). <strong>Everything</strong> copies the rows as well; <strong>Structure only</strong>
+  copies the columns and leaves the stores empty.</li>
+<li><strong>Shared stores.</strong> A store another app uses too is listed separately and
+  stays <strong>shared</strong> by default: the copy keeps reading and writing it (the
+  answer says so). Tick <em>Copy these too</em> to give the clone its own copy of
+  those as well.</li>
+<li><strong>What the copy takes:</strong> form, diagram, actions, design and its images,
+  icon, description, menu group, ADOMs and the access list. An action that
+  opens the app itself opens the copy.</li>
+<li><strong>What it does not take:</strong> the published versions (the copy starts as a
+  draft at v0: test it and <strong>Publish</strong>), runs, automations, the app's
+  sign-in rules, API token grants and every secret. Connections, scripts and
+  APIs stay shared; they are never duplicated.</li>
+<li><strong>A script app</strong> is cloned as a new Script Library script with the
+  original's draft files, form and settings, unpublished. Credentials are
+  declared on the copy but their values are not copied: type them on the
+  copy. Saved runs stay with the original.</li>
+<li>Refused, with nothing written: an id that exists or is a template's id, a
+  mode other than <em>Everything</em> / <em>Structure only</em>, or more data stores than a
+  node keeps (200). Audited as <code>studio.app.clone</code> (source, mode, the stores
+  copied and the ones left shared).</li>
+</ul>
 <p>The editor has seven tabs:</p>
 <ul>
 <li><strong>Settings</strong> — name and icon of the menu entry, description, <strong>where</strong> it

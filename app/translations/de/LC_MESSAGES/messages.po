@@ -29004,3 +29004,30 @@ msgstr "angemeldet"
 
 msgid "Previous sign-in:"
 msgstr "Vorherige Anmeldung:"
+
+msgid "A new draft app from this one: with its data or only its structure"
+msgstr "Eine neue Entwurfs-App aus dieser: mit ihren Daten oder nur mit ihrer Struktur"
+
+msgid "New id"
+msgstr "Neue ID"
+
+msgid "What does the copy take?"
+msgstr "Was übernimmt die Kopie?"
+
+msgid "the structure and the data: the rows of its data stores are copied"
+msgstr "die Struktur und die Daten: die Zeilen ihrer Datenspeicher werden kopiert"
+
+msgid "Structure only"
+msgstr "Nur die Struktur"
+
+msgid "the same data stores and columns, empty"
+msgstr "dieselben Datenspeicher und Spalten, leer"
+
+msgid "Copy these too (otherwise the copy keeps reading and writing them)"
+msgstr "Diese auch kopieren (sonst liest und schreibt die Kopie weiterhin diese)"
+
+msgid "The copy writes to its own data stores, never to the original's. It starts as a draft: publish it when it is ready. Runs, published versions, automations, sign-in rules and secrets are not copied; connections and scripts stay shared."
+msgstr "Die Kopie schreibt in ihre eigenen Datenspeicher, nie in die des Originals. Sie beginnt als Entwurf: Veröffentlichen Sie sie, wenn sie fertig ist. Läufe, veröffentlichte Versionen, Automatisierungen, Anmelderegeln und Geheimnisse werden nicht kopiert; Verbindungen und Skripte bleiben gemeinsam genutzt."
+
+msgid "A script app: a new script with the same code, form and settings. Credential values and saved runs are not copied."
+msgstr "Eine Skript-App: ein neues Skript mit demselben Code, Formular und denselben Einstellungen. Werte von Anmeldedaten und gespeicherte Läufe werden nicht kopiert."

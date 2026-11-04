@@ -860,6 +860,198 @@ def data_zip(a: StudioApp) -> tuple[str, bytes]:
     return "%s-data-%s.zip" % (a.slug, stamp), buf.getvalue()
 
 
+# --------------------------------------------------------------------------- #
+#  clone (2026-11-04, operator: "plugins can be cloned; the clone asks for     #
+#  everything or only the structure, without the data -- and the apps must    #
+#  be able to write in their data section")                                    #
+# --------------------------------------------------------------------------- #
+#: What a clone copies: "all" = the structure and the rows of the data stores;
+#: "structure" = the same stores, empty.
+CLONE_MODES = ("all", "structure")
+
+
+def _clone_store_slug(store: str, src_app: str, new_app: str, taken: set) -> str:
+    """The id of a store's copy: the app's id swapped when the store's id
+    starts with it (``dns-records-hosts`` -> ``dns-lab-hosts``), else the new
+    app's id appended; ``-2``, ``-3``... when that is taken."""
+    from . import studio_examples as EX
+    from . import studio_store as SS
+    if store.startswith(src_app) and store != src_app:
+        base = new_app + store[len(src_app):]
+    else:
+        base = "%s-%s" % (store, new_app)
+    base = base[:48].rstrip("-_") or new_app
+    cand, i = base, 1
+    while (cand in taken or SS.get(cand) is not None or EX.is_template("store", cand)
+           or not _SLUG_RE.match(cand)):
+        i += 1
+        cand = "%s-%d" % (base[:44].rstrip("-_"), i)
+        if i > 99:
+            raise AppError("no free data store id for the copy of %s" % store)
+    taken.add(cand)
+    return cand
+
+
+def _remap(items, key: str, mapping: dict, in_params: bool) -> list:
+    """*items* (nodes, actions or fields) with ``key`` renamed by *mapping*."""
+    out = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            out.append(it)
+            continue
+        it = json.loads(json.dumps(it))
+        holder = it.get("params") if in_params else it
+        if isinstance(holder, dict) and str(holder.get(key) or "") in mapping:
+            holder[key] = mapping[str(holder[key])]
+        out.append(it)
+    return out
+
+
+def clone_plan(a: StudioApp) -> dict:
+    """What a clone of *a* would copy, for the dialog: the stores only it uses
+    (copied), the stores other apps use too (kept shared unless asked), with
+    their row counts."""
+    from . import studio_store as SS
+    if a.kind == "script":
+        return {"kind": "script", "own": [], "shared": []}
+    names = _refs(a.graph, a.actions, a.fields, "store")
+    own, shared = [], []
+    for s in sorted(names):
+        st = SS.get(s)
+        entry = {"slug": s, "rows": SS.count(st) if st is not None else 0,
+                 "missing": st is None}
+        (shared if [x for x in used_by("store", s) if x != a.slug] else own).append(entry)
+    return {"kind": "flow", "own": own, "shared": shared}
+
+
+def clone(a: StudioApp, new_slug: str, new_name: str, *, mode: str = "structure",
+          copy_shared: bool = False, by: str) -> dict:
+    """A new DRAFT app from *a*'s draft, in ONE transaction (nothing is left
+    behind when a step is refused).
+
+    A flow app gets its OWN copy of every data store its draft names, with
+    the form, diagram and actions pointed at the copies: the clone reads and
+    writes its own data, never the original's. ``mode="all"`` copies the rows,
+    ``"structure"`` the columns only. A store other apps use too stays shared
+    (the clone keeps reading and writing it) unless *copy_shared*.
+
+    Copied: form, diagram, actions, design and its images, icon, description,
+    menu group, ADOMs, access list. Not copied: the published versions (the
+    clone starts at v0, a draft), runs, automations, the app's sign-in rules,
+    API token grants, and every secret -- connections, scripts and APIs are
+    shared, not duplicated.
+
+    A script app gets a new Script Library script with the source script's
+    DRAFT files and settings; credentials are declared but their values stay
+    in the source's vault (typed again on the copy). Saved runs stay behind.
+    """
+    from . import studio_examples as EX
+    from . import studio_store as SS
+    from sqlalchemy import literal, select
+    from ..models_studio import StudioAppAsset, StudioDataStore, StudioRow
+    if mode not in CLONE_MODES:
+        raise AppError("mode is all or structure")
+    new_slug = (new_slug or "").strip()
+    if not _SLUG_RE.match(new_slug):
+        raise AppError("Id: lowercase letters, digits, - and _, 2 to 48 characters.")
+    if get(new_slug) is not None:
+        raise AppError("an app with id %s already exists" % new_slug)
+    if EX.is_template("app", new_slug):
+        raise AppError("%s is the id of a template (Plugin Studio > Examples)" % new_slug)
+    new_name = (new_name or "").strip()[:120] or ("%s (copy)" % a.name)[:120]
+    if a.kind == "script":
+        return _clone_script(a, new_slug, new_name, by)
+
+    plan = clone_plan(a)
+    to_copy = [s["slug"] for s in plan["own"] + (plan["shared"] if copy_shared else [])
+               if not s["missing"]]
+    kept = [s["slug"] for s in plan["shared"] if not copy_shared and not s["missing"]]
+    missing = [s["slug"] for s in plan["own"] + plan["shared"] if s["missing"]]
+    if StudioDataStore.query.count() + len(to_copy) > SS.MAX_STORES:
+        raise AppError("the copy needs %d new data store(s) and a node keeps at most %d"
+                       % (len(to_copy), SS.MAX_STORES))
+    taken: set = set()
+    mapping = {s: _clone_store_slug(s, a.slug, new_slug, taken) for s in to_copy}
+    apps = {a.slug: new_slug}            # an action that opens the app itself
+    graph = a.graph
+    nodes = _remap(_remap(graph.get("nodes") or [], "store", mapping, True),
+                   "app", apps, True)
+    actions = _remap(_remap(a.actions, "store", mapping, True), "app", apps, True)
+    fields = _remap(a.fields, "store", mapping, False)
+    stores = []
+    try:
+        b = StudioApp(slug=new_slug, name=new_name, icon=a.icon, kind="flow",
+                      description=a.description or "", status="draft", version=0,
+                      adoms_json=a.adoms_json or "[]", access_json=a.access_json or "{}",
+                      fields_json=json.dumps(fields),
+                      graph_json=json.dumps({**graph, "nodes": nodes}),
+                      actions_json=json.dumps(actions), design_json=a.design_json or "{}",
+                      menu_group=a.menu_group or "", published_json="{}",
+                      login_json="{}", enabled=True, created_by=by, updated_by=by)
+        db.session.add(b)
+        db.session.flush()
+        for row in StudioAppAsset.query.filter_by(app_id=a.id).all():
+            db.session.add(StudioAppAsset(app_id=b.id, sha256=row.sha256, mime=row.mime,
+                                          name=row.name, size=row.size, data=row.data,
+                                          created_by=by, created_at=datetime.utcnow()))
+        for src_slug, dst_slug in mapping.items():
+            src = SS.get(src_slug)
+            dst = StudioDataStore(slug=dst_slug, name=("%s · %s" % (src.name, new_slug))[:120],
+                                  description=src.description or "",
+                                  columns_json=src.columns_json, created_by=by, updated_by=by)
+            db.session.add(dst)
+            db.session.flush()
+            rows = 0
+            if mode == "all":
+                t = StudioRow.__table__
+                cols = ("data_json", "created_by", "updated_by", "created_at", "updated_at")
+                db.session.execute(t.insert().from_select(
+                    ("store_id",) + cols,
+                    select(literal(dst.id), *(t.c[c] for c in cols))
+                    .where(t.c.store_id == src.id).order_by(t.c.id)))
+                rows = SS.count(dst)
+            stores.append({"from": src_slug, "to": dst_slug, "rows": rows})
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    todo = ["review the copy and Publish it (Plugin Studio › Apps › %s)" % new_slug]
+    if kept:
+        todo.append("the copy still writes the shared data store(s) %s" % ", ".join(kept))
+    return {"app": b, "kind": "flow", "mode": mode, "stores": stores, "shared": kept,
+            "missing": missing, "todo": todo}
+
+
+def _clone_script(a: StudioApp, new_slug: str, new_name: str, by: str) -> dict:
+    from . import script_library as SL
+    src = SL.get(a.script_slug or "")
+    if src is None:
+        raise AppError("the script of %s is missing; there is nothing to copy" % a.slug)
+    if SL.exists(new_slug):
+        raise AppError("a script with id %s already exists" % new_slug)
+    settings = {k: src.get(k) for k in ("description", "network", "audience", "timeout",
+                                        "fields", "credentials", "connections")}
+    settings["name"] = new_name
+    try:
+        SL.create(new_slug, new_name, by)
+        SL.save_draft(new_slug, src.get("files") or {}, settings, by, kind="save",
+                      note="cloned from %s" % a.script_slug)
+    except SL.ScriptError as exc:
+        if SL.exists(new_slug):
+            SL.delete(new_slug)
+        raise AppError(str(exc)) from None
+    b = ensure_script_app(new_slug, by)
+    b.menu_group = a.menu_group or ""
+    b.icon = a.icon
+    db.session.commit()
+    todo = ["review the copy and Publish it (Script Library › %s)" % new_slug]
+    creds = [c["name"] for c in src.get("credentials") or []]
+    if creds:
+        todo.append("type the credential values of the copy: %s" % ", ".join(creds))
+    return {"app": b, "kind": "script", "mode": "structure", "stores": [], "shared": [],
+            "missing": [], "todo": todo}
+
+
 def remove(a: StudioApp) -> dict:
     """Delete an app for good. Refused for a template (Examples) and for an
     app another app runs. A flow app takes its runs and the data stores only

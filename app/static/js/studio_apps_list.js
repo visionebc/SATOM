@@ -1,8 +1,8 @@
 /* Plugin Studio > Apps (studio/index.html): the Actions column -- enable /
- * disable, menu group, reset, delete -- the search box and the menu-group
+ * disable, menu group, clone, reset, delete -- the search box and the menu-group
  * filter. Server side: app/views/studio.py (app_enable, app_group,
- * app_reset, app_delete) and app/services/studio_apps.py (set_enabled,
- * set_group, reset, remove). Reset and Delete
+ * app_clone, app_reset, app_delete) and app/services/studio_apps.py
+ * (set_enabled, set_group, clone, reset, remove). Reset and Delete
  * cannot be undone, so they ask for the app's id typed back. A template
  * (from Examples) has no Delete button and the server refuses it anyway.
  */
@@ -44,6 +44,7 @@
     var act = b.getAttribute('data-app-act');
     var url, body = {}, done;
     if (act === 'group') { askGroup(slug, b.getAttribute('data-group') || ''); return; }
+    if (act === 'clone') { askClone(slug); return; }
     if (act === 'enable' || act === 'disable') {
       url = CFG.enable; body = { enabled: act === 'enable' };
       done = function () { return (act === 'enable' ? 'Enabled ' : 'Disabled ') + slug + '.'; };
@@ -98,6 +99,71 @@
         window.setTimeout(function () { window.location = CFG.back; }, 900);
       })
       .catch(function (e) { gSave.disabled = false; msg(e.message, true); });
+  });
+  // Clone: a dialog that asks for the new id and name and, for a flow app,
+  // whether the copy takes everything (the rows of its data stores) or only
+  // the structure (the same stores, empty). No mode is preselected: the
+  // operator chooses. The copy writes to its own stores
+  // (studio_apps.clone); stores other apps use too stay shared unless ticked.
+  var cModal = document.getElementById('apCloneModal');
+  var cSrc = null, cKind = 'flow';
+  var cGo = document.getElementById('apCloneGo');
+  function stores(xs) {
+    return xs.map(function (s) { return s.slug + ' (' + s.rows + ' row' + (s.rows === 1 ? '' : 's') + ')'; }).join(', ');
+  }
+  function cloneReady() {
+    if (!cGo) return;
+    var slugOk = /^[a-z0-9][a-z0-9_-]{1,47}$/.test(document.getElementById('apCloneSlug').value.trim());
+    var mode = document.querySelector('input[name="apCloneMode"]:checked');
+    cGo.disabled = !(slugOk && (cKind === 'script' || mode));
+  }
+  function askClone(slug) {
+    if (!cModal || !window.bootstrap) return;
+    fetch(CFG.clone_plan.replace('SLUG', encodeURIComponent(slug)),
+          { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .then(function (p) {
+        if (!p.ok) throw new Error(p.error || 'cannot read the app');
+        cSrc = slug; cKind = p.kind;
+        document.getElementById('apCloneSrc').textContent = slug;
+        var base = (slug.slice(0, 43) + '-copy');
+        document.getElementById('apCloneSlug').value = base;
+        document.getElementById('apCloneName').value = (p.name + ' (copy)').slice(0, 120);
+        document.querySelectorAll('input[name="apCloneMode"]').forEach(function (r) { r.checked = false; });
+        document.getElementById('apCloneCopyShared').checked = false;
+        document.getElementById('apCloneFlow').classList.toggle('d-none', p.kind === 'script');
+        document.getElementById('apCloneScript').classList.toggle('d-none', p.kind !== 'script');
+        document.getElementById('apCloneOwn').textContent = p.own.length
+          ? 'Data stores the copy gets its own copy of: ' + stores(p.own) + '.'
+          : 'This app uses no data store of its own.';
+        document.getElementById('apCloneSharedBox').classList.toggle('d-none', !p.shared.length);
+        document.getElementById('apCloneShared').textContent = p.shared.length
+          ? 'Shared with other apps: ' + stores(p.shared) + '.' : '';
+        cloneReady();
+        window.bootstrap.Modal.getOrCreateInstance(cModal).show();
+      })
+      .catch(function (e) { msg(e.message, true); });
+  }
+  if (cModal) {
+    cModal.addEventListener('input', cloneReady);
+    cModal.addEventListener('change', cloneReady);
+  }
+  if (cGo) cGo.addEventListener('click', function () {
+    if (!cSrc) return;
+    var mode = document.querySelector('input[name="apCloneMode"]:checked');
+    cGo.disabled = true;
+    post(CFG.clone.replace('SLUG', encodeURIComponent(cSrc)), {
+      slug: document.getElementById('apCloneSlug').value.trim(),
+      name: document.getElementById('apCloneName').value.trim(),
+      mode: cKind === 'script' ? 'structure' : (mode ? mode.value : ''),
+      copy_shared: document.getElementById('apCloneCopyShared').checked
+    }).then(function (d) {
+      window.bootstrap.Modal.getOrCreateInstance(cModal).hide();
+      var copied = (d.stores || []).map(function (s) { return s.from + ' → ' + s.to + ' (' + s.rows + ' rows)'; });
+      msg('Cloned ' + cSrc + ' as ' + d.slug + (copied.length ? ': ' + copied.join(', ') : '') +
+          (d.shared && d.shared.length ? '; still shared: ' + d.shared.join(', ') : '') + '. Opening the copy…');
+      window.setTimeout(function () { window.location = d.edit; }, 1200);
+    }).catch(function (e) { cGo.disabled = false; msg(e.message, true); });
   });
   // Search and menu-group filter: a row shows when it matches both.
   var search = document.getElementById('apSearch');

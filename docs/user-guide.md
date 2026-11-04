@@ -5642,13 +5642,48 @@ and its published version. The **Actions** column:
 | **Disable / Enable** | A disabled app leaves every menu and starts no run — an operator run, an event automation, *Run another app*, a *Run a script* step or a saved script schedule (the schedule is *skipped*, not paused, so enabling the app resumes it). Nothing is deleted; an author can still test the draft. |
 | **Download data** | A zip: `app.json`, the runs (`runs.json`, or one JSON per run of a script) and a CSV per data store the app uses. |
 | **Export app package** / **Download the code** | The app as a `.satomplugin` package (§23.7 *packages*); for a script app, the code as a zip. |
+| **Clone** | A new **draft** app from this one (flow or script). The dialog asks for the new id and name and — for a flow app — **what the copy takes**: **Everything** (the structure *and* the rows of its data stores) or **Structure only** (the same data stores and columns, empty). Neither is preselected. See *Cloning an app* below. |
 | **Reset** | Deletes the app's data from the database: its run history and every row of the data stores **only it** uses. Stores another app uses keep their rows (the answer lists them). The design, versions, connections and settings stay. Refused while a run of the app is in progress. You type the app id to confirm. |
 | **Delete** | Deletes the app for good: its runs and the data stores only it uses (a script app: the script, its versions, saved runs, run records and vaulted credentials). Connections and APIs are never deleted here. Refused for a **template** and for an app another app runs. You type the app id to confirm. |
 
 **Templates.** What *Examples* installs (§23.8) is a **template**: it shows
-the *Template* badge, can be edited, disabled, reset and downloaded, and is
+the *Template* badge, can be edited, disabled, reset, downloaded and
+**cloned** (the clone is an ordinary app you may delete), and is
 **never deleted** — no Delete button, and every delete route (app, script,
 data store, connection) refuses it with the reason.
+
+**Cloning an app** (2026-11-04). *Actions → ⋯ → Clone* makes a new app from
+the original's **draft**, in one step that either completes or writes
+nothing.
+
+- **A flow app gets its own data.** Every data store only the original uses
+  is copied as a new store: its id is the original's with the app id swapped
+  (`dns-records-hosts` → `dns-lab-hosts`), or with the new app id appended
+  (`log` → `log-dns-lab`); `-2`, `-3`… when taken. The copy's diagram steps
+  (*Read / Write a data store*), *Save to a data store* actions and
+  data-store list fields are pointed at the copies, so **a run of the clone
+  reads and writes its own stores and never the original's** (and the other
+  way round). **Everything** copies the rows as well; **Structure only**
+  copies the columns and leaves the stores empty.
+- **Shared stores.** A store another app uses too is listed separately and
+  stays **shared** by default: the copy keeps reading and writing it (the
+  answer says so). Tick *Copy these too* to give the clone its own copy of
+  those as well.
+- **What the copy takes:** form, diagram, actions, design and its images,
+  icon, description, menu group, ADOMs and the access list. An action that
+  opens the app itself opens the copy.
+- **What it does not take:** the published versions (the copy starts as a
+  draft at v0: test it and **Publish**), runs, automations, the app's
+  sign-in rules, API token grants and every secret. Connections, scripts and
+  APIs stay shared; they are never duplicated.
+- **A script app** is cloned as a new Script Library script with the
+  original's draft files, form and settings, unpublished. Credentials are
+  declared on the copy but their values are not copied: type them on the
+  copy. Saved runs stay with the original.
+- Refused, with nothing written: an id that exists or is a template's id, a
+  mode other than *Everything* / *Structure only*, or more data stores than a
+  node keeps (200). Audited as `studio.app.clone` (source, mode, the stores
+  copied and the ones left shared).
 
 The editor has seven tabs:
 

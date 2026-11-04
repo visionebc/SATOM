@@ -29006,3 +29006,30 @@ msgstr "connecté"
 
 msgid "Previous sign-in:"
 msgstr "Connexion précédente :"
+
+msgid "A new draft app from this one: with its data or only its structure"
+msgstr "Une nouvelle app brouillon à partir de celle-ci : avec ses données ou seulement sa structure"
+
+msgid "New id"
+msgstr "Nouvel id"
+
+msgid "What does the copy take?"
+msgstr "Que reprend la copie ?"
+
+msgid "the structure and the data: the rows of its data stores are copied"
+msgstr "la structure et les données : les lignes de ses magasins de données sont copiées"
+
+msgid "Structure only"
+msgstr "Structure seulement"
+
+msgid "the same data stores and columns, empty"
+msgstr "les mêmes magasins de données et colonnes, vides"
+
+msgid "Copy these too (otherwise the copy keeps reading and writing them)"
+msgstr "Les copier aussi (sinon la copie continue de les lire et de les écrire)"
+
+msgid "The copy writes to its own data stores, never to the original's. It starts as a draft: publish it when it is ready. Runs, published versions, automations, sign-in rules and secrets are not copied; connections and scripts stay shared."
+msgstr "La copie écrit dans ses propres magasins de données, jamais dans ceux de l'original. Elle démarre en brouillon : publiez-la quand elle est prête. Les exécutions, versions publiées, automatisations, règles de connexion et secrets ne sont pas copiés ; les connexions et les scripts restent partagés."
+
+msgid "A script app: a new script with the same code, form and settings. Credential values and saved runs are not copied."
+msgstr "Une app script : un nouveau script avec le même code, le même formulaire et les mêmes réglages. Les valeurs des identifiants et les exécutions enregistrées ne sont pas copiées."

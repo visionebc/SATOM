@@ -1140,3 +1140,40 @@ def app_data(slug):
     log_action("studio.app.data_download", target=slug, extra={"bytes": len(data)})
     return Response(data, mimetype="application/zip",
                     headers={"Content-Disposition": 'attachment; filename="%s"' % name})
+
+
+@bp.route("/apps/<slug>/clone-plan")
+@login_required
+@require_permission(LIBRARY)
+def app_clone_plan(slug):
+    """What a clone would copy (studio_apps.clone_plan), for the Clone dialog."""
+    from ..services import studio_apps as SA
+    a = _app_or_404(slug)
+    return jsonify({"ok": True, "slug": a.slug, "name": a.name, **SA.clone_plan(a)})
+
+
+@bp.route("/apps/<slug>/clone", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_clone(slug):
+    """A new draft app from this one (studio_apps.clone): ``mode`` "all"
+    copies the rows of its data stores, "structure" only their columns. The
+    copy writes to its own stores. Templates can be cloned."""
+    from ..extensions import db
+    from ..services import script_library as SL
+    from ..services import studio_apps as SA
+    from ..services import studio_store as SS
+    a = _app_or_404(slug)
+    body = request.get_json(silent=True) or {}
+    try:
+        res = SA.clone(a, str(body.get("slug") or ""), str(body.get("name") or ""),
+                       mode=str(body.get("mode") or ""),
+                       copy_shared=bool(body.get("copy_shared")), by=_who())
+    except (SA.AppError, SS.StoreError, SL.ScriptError) as exc:
+        db.session.rollback()
+        return _err(exc, 409)
+    b = res.pop("app")
+    log_action("studio.app.clone", target=b.slug, extra={"from": a.slug, **res})
+    edit = (url_for("script_library.edit", slug=b.script_slug) if b.kind == "script"
+            else url_for("studio.app_edit", slug=b.slug))
+    return jsonify({"ok": True, "slug": b.slug, "edit": edit, **res})

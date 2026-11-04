@@ -29041,3 +29041,30 @@ msgstr "accesso effettuato"
 
 msgid "Previous sign-in:"
 msgstr "Accesso precedente:"
+
+msgid "A new draft app from this one: with its data or only its structure"
+msgstr "Una nuova app in bozza a partire da questa: con i suoi dati o solo con la sua struttura"
+
+msgid "New id"
+msgstr "Nuovo id"
+
+msgid "What does the copy take?"
+msgstr "Cosa include la copia?"
+
+msgid "the structure and the data: the rows of its data stores are copied"
+msgstr "la struttura e i dati: le righe dei suoi archivi dati vengono copiate"
+
+msgid "Structure only"
+msgstr "Solo la struttura"
+
+msgid "the same data stores and columns, empty"
+msgstr "gli stessi archivi dati e colonne, vuoti"
+
+msgid "Copy these too (otherwise the copy keeps reading and writing them)"
+msgstr "Copia anche questi (altrimenti la copia continua a leggerli e scriverli)"
+
+msgid "The copy writes to its own data stores, never to the original's. It starts as a draft: publish it when it is ready. Runs, published versions, automations, sign-in rules and secrets are not copied; connections and scripts stay shared."
+msgstr "La copia scrive nei propri archivi dati, mai in quelli dell'originale. Parte come bozza: pubblicala quando è pronta. Esecuzioni, versioni pubblicate, automazioni, regole di accesso e segreti non vengono copiati; connessioni e script restano condivisi."
+
+msgid "A script app: a new script with the same code, form and settings. Credential values and saved runs are not copied."
+msgstr "Un'app script: un nuovo script con lo stesso codice, modulo e impostazioni. I valori delle credenziali e le esecuzioni salvate non vengono copiati."

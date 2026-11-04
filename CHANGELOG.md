@@ -18,6 +18,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   is gone. Branding — Top-bar Banner spans the full width.
 
 ### Added
+- **Clone a plugin app, with its data or only its structure.** Operator
+  request: "in the plugins section I want them to be clonable; the clone must
+  ask whether everything, or the structure as it is, without the data — and
+  the apps must be able to write in their data section." **Plugin Studio →
+  Apps → ⋯ → Clone** asks for the new id and name and, for a flow app, what
+  the copy takes: **Everything** (the structure and the rows of its data
+  stores) or **Structure only** (the same stores and columns, empty); neither
+  is preselected. Every data store only the original uses becomes the
+  clone's own copy and the clone's steps, *Save to a data store* actions and
+  list fields point at it, so the clone writes its own data and never the
+  original's. Stores other apps use stay shared unless *Copy these too* is
+  ticked. The clone is a draft (form, diagram, actions, design and images,
+  icon, menu group, ADOMs, access); runs, published versions, automations,
+  sign-in rules and secrets are not copied. Templates from Examples can be
+  cloned. A script app becomes a new Script Library script with the same
+  files and settings (credential values are typed again). One transaction:
+  a refused or failed clone leaves nothing behind. Audited as
+  `studio.app.clone`.
 - **Switch notification categories off for your own account.** Operator
   request: "in the user profile I want to be able to turn off certain
   notifications, for example config drift." **Profile → Notifications** has

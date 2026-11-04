@@ -35,14 +35,14 @@ bp = Blueprint("plugins", __name__, url_prefix="/plugins")
 def _examples_json() -> str:
     """Serialize the example catalog for the editor's JSON island (neutralise
     any ``</script>`` so it can sit safely inside a <script> tag)."""
-    return json.dumps(examples.all_examples()).replace("</", "<\\/")
+    return plugin_frame.json_island(examples.all_examples())
 
 
 def _dev_opts_json() -> str:
     """Live appliance options (scoped to the current ADOM) for the editor's
     device-selector builder, safe to embed in a <script> island."""
     opts = sandbox._appliance_options(stamp())
-    return json.dumps(opts).replace("</", "<\\/")
+    return plugin_frame.json_island(opts)
 
 
 def _plugin_or_404(pid: int) -> Plugin:
@@ -93,7 +93,7 @@ def edit(pid):
     return render_template("plugins/editor.html", plugin=plugin,
                            datasets=PD.picker(),
                            examples_json=_examples_json(),
-                           params_json=json.dumps(plugin.param_defs).replace("</", "<\\/"),
+                           params_json=plugin_frame.json_island(plugin.param_defs),
                            device_options_json=_dev_opts_json(),
                            example_cats=examples.categories(),
                            css_findings=plugin_css.lint(plugin.css or ""))

@@ -74,7 +74,7 @@
       <strong>Custom.</strong> {{ mode_current.summary }}
       {% for m in modes %}{% if m.differs and m.differs|length <= 3 %}
         <div class="mt-1">{{ m.label }} is {{ m.differs|length }} value(s) away:
-          <code>{{ m.differs|join('</code>, <code>')|safe }}</code>.</div>
+          {% for k in m.differs %}<code>{{ k }}</code>{{ ', ' if not loop.last }}{% endfor %}.</div>
       {% endif %}{% endfor %}
     </div>
     {% endif %}

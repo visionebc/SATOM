@@ -25,6 +25,24 @@ KIT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)),
 _kit_cache: "str | None" = None
 
 
+def json_island(obj) -> str:
+    """``obj`` as JSON that is safe inside ``<script type="application/json">``.
+
+    Every ``<``, ``>`` and ``&`` is written as its ``\\u00XX`` escape -- the same
+    value to ``JSON.parse``, and no markup to the HTML tokenizer. Replacing only
+    ``</`` (what every island did until 2026-11-04) is not enough: a value
+    holding ``<!--<script>`` puts the tokenizer in the "double-escaped" state,
+    the island's own ``</script>`` no longer closes it, and the rest of the
+    document -- the next island, the markup after it and the page's script --
+    is swallowed as text (measured in headless Chromium). The values are not
+    all ours: a dataset row carries what a device synced (a policy comment),
+    and a monitored server's process names will travel the same way.
+    ``json.dumps`` already writes U+2028/U+2029 as escapes (``ensure_ascii``).
+    Stdlib only: the rules pack runs this module in a bare interpreter."""
+    return (json.dumps(obj).replace("<", "\\u003c").replace(">", "\\u003e")
+            .replace("&", "\\u0026"))
+
+
 def kit_css_from(text: str) -> str:
     """The class kit as the frame inlines it: comments stripped."""
     return re.sub(r"/\*.*?\*/\n?", "", text or "", flags=re.S)
@@ -70,11 +88,10 @@ def frame_document(plugin, body_html: str, data: dict, params: dict | None = Non
     # A ``</style`` in the plugin's CSS would end the element and turn the rest
     # into HTML. ``<\/`` is the same text to the CSS parser (``\/`` is ``/``).
     css = css.replace("</", "<\\/")
-    # Neutralise any ``</script>`` in the injected JSON so a dataset/param value
-    # (e.g. a device policy comment synced from a FortiWeb) can never break out
-    # of its <script> island -- the same guard the editor's JSON islands use.
-    data_json = json.dumps(data).replace("</", "<\\/")
-    params_json = json.dumps(params or {}).replace("</", "<\\/")
+    # A dataset/param value (e.g. a device policy comment synced from a
+    # FortiWeb) must never end or swallow its <script> island: see json_island.
+    data_json = json_island(data)
+    params_json = json_island(params or {})
     tokens = tokens_css() if tokens is None else tokens
     kit = kit_css() if kit is None else kit
     # Datasets are ALSO exposed to the plugin JS as a JSON island (it can't fetch

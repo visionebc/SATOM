@@ -19,6 +19,7 @@ from ..models import LuaScript, Permission, Appliance
 from ..models import visible_appliances, visible_appliance_or_404
 from ..services import lua_studio as lua
 from ..services import lua_examples as examples
+from ..services import plugin_frame
 from ..services.audit import log_action
 from ..services.product_scope import stamp, scope_query
 
@@ -27,7 +28,7 @@ bp = Blueprint("lua_studio", __name__, url_prefix="/lua")
 
 def _examples_json(target: str) -> str:
     """Example catalog for one target, serialized for the editor JSON island."""
-    return json.dumps(examples.for_target(target)).replace("</", "<\\/")
+    return plugin_frame.json_island(examples.for_target(target))
 
 
 def superadmin_required(fn):

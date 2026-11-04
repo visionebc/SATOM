@@ -13,6 +13,8 @@ Python and immune to client-library drift.
 from __future__ import annotations
 
 import json
+import math
+import re
 import time
 import os
 import urllib.parse
@@ -99,16 +101,61 @@ def _http(path: str, *, data: bytes | None = None, timeout: float = 10.0,
     return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310 — loopback
 
 
+#: The store's limit on ONE label value, in UTF-8 bytes. Measured on the
+#: shipped binary (v1.148, 2026-11-04): 4096 bytes is stored, 4097 is not --
+#: and the import still answers 204. The whole SERIES is dropped, logged only
+#: as a store-side warning and ``vm_rows_ignored_total{reason=
+#: "too_long_label_value"}``, so a collector reported "ok" for a sample that
+#: never landed. A value is cut to fit instead; a truncated label is visible,
+#: a missing series is not.
+MAX_LABEL_VALUE_BYTES = 4096
+_TRUNC_MARK = "…"
+_NAME_RE = re.compile(r"[A-Za-z_:][A-Za-z0-9_:]*\Z")
+_LABEL_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+# C0 controls and DEL. The store keeps a CR inside a quoted value as a byte of
+# the value (measured: it does NOT start a new line), so this is about what a
+# page or a CSV later prints, not about the exposition format.
+_CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
 def escape_label(v) -> str:
-    return (str(v).replace("\\", "\\\\").replace('"', '\\"')
-            .replace("\n", " "))
+    """A label value the store keeps verbatim: no control characters, and no
+    longer than :data:`MAX_LABEL_VALUE_BYTES` once escaped (cut on a character
+    boundary, never mid-UTF-8 sequence and never mid-escape)."""
+    s = _CTRL_RE.sub(" ", str(v))
+    out = s.replace("\\", "\\\\").replace('"', '\\"')
+    if len(out.encode("utf-8")) <= MAX_LABEL_VALUE_BYTES:
+        return out
+    budget = MAX_LABEL_VALUE_BYTES - len(_TRUNC_MARK.encode("utf-8"))
+    kept, used = [], 0
+    for ch in s:
+        piece = "\\\\" if ch == "\\" else '\\"' if ch == '"' else ch
+        size = len(piece.encode("utf-8"))
+        if used + size > budget:
+            break
+        kept.append(piece)
+        used += size
+    return "".join(kept) + _TRUNC_MARK
 
 
 def line(name: str, labels: dict, value, ts_ms: int | None = None) -> str:
-    """One exposition line. ``None``/non-numeric values yield '' (skip)."""
+    """One exposition line, or '' (skip) for a value that is not a finite
+    number or a metric/label name the format cannot carry.
+
+    NaN is skipped because the store files it as a staleness marker (measured:
+    the series reads as absent), and +/-Inf because no gauge here can be
+    infinite -- it is a division by zero or a value someone made up, and it
+    would sit in a panel as a real sample. "A reading we do not have is
+    skipped, never written" is the rule every collector already keeps."""
     try:
         num = float(value)
     except (TypeError, ValueError):
+        return ""
+    if not math.isfinite(num):
+        return ""
+    if not _NAME_RE.match(str(name)):
+        return ""
+    if any(not _LABEL_RE.match(str(k)) for k, v in labels.items() if v is not None):
         return ""
     lab = ",".join('%s="%s"' % (k, escape_label(v))
                    for k, v in sorted(labels.items()) if v is not None)

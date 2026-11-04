@@ -142,6 +142,21 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>A label value over 4 KB no longer makes a metric vanish silently.</strong> The
+  metrics store (VictoriaMetrics) drops a whole series when one label value is
+  longer than 4096 bytes, and still answers the write with success, so a
+  collector reported "ok" for a sample that never landed. Values are now cut
+  to fit with a <code>…</code> mark; control characters in a label become spaces; NaN
+  and infinite readings are skipped like any reading the device does not
+  have. No series written so far was affected (checked on both nodes).</li>
+<li><strong>A device-synced value can no longer blank a plugin page.</strong> Plugin data
+  and the Plugin / Lua Studio editors embed JSON in <code>&lt;script&gt;</code> islands that
+  only neutralised <code>&lt;/</code>. A value such as a policy comment containing
+  <code>&lt;!--&lt;script&gt;</code> made the browser swallow the rest of the page — the next
+  island, the markup after it and the page's script. Every island now writes
+  <code>&lt;</code>, <code>&gt;</code> and <code>&amp;</code> as JSON escapes (same value to the script, no markup to the
+  browser). The Sentinel "N value(s) away" note no longer bypasses HTML
+  escaping.</li>
 <li><strong>Sign-ins through the fleet edge are attributed to the client, not to the
   edge proxy.</strong> With two proxies in a row (edge -&gt; local nginx) the
   forwarded header reaches SATOM as <code>&lt;client&gt;, &lt;edge&gt;</code>, and only the last hop
@@ -194,6 +209,19 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <li>A REST API v1 call now writes as its token's owner. The API has no login
   session, so the edit-lock check saw nobody and refused the owner's own call
   like an unattended run's.</li>
+</ul>
+<h3 id="security">Security</h3>
+<ul>
+<li><strong>Servers ADOM, stage 0: the ingestion gate.</strong> Groundwork for monitoring
+  Linux and Windows servers: every answer a monitored server gives passes one
+  gate before SATOM uses it — a size cap before parsing, strict JSON (no
+  <code>NaN</code>/<code>Infinity</code>, no duplicate keys, bounded nesting), and a closed schema
+  per reading (memory, filesystems, processes, services) with types, ranges,
+  lengths, character sets and consistency checks. Text with control
+  characters or bidi/zero-width marks is refused, unknown fields are
+  dropped, and one bad value rejects the whole answer. A rejection names the
+  field and the rule, never the value. Every <code>|safe</code> in the templates is now
+  on a reviewed list enforced by a test. No collector uses the gate yet.</li>
 </ul>
 <h2 id="4101---2026-11-02">[4.10.1] - 2026-11-02</h2>
 <h3 id="fixed_1">Fixed</h3>
@@ -1717,7 +1745,7 @@ SATOM, and users then bring it into their production SATOM".</p>
   (<code>services/plugin_frame.py</code>) for the console page, the editor preview, the
   Builder rehearsal and the Builder's local preview.</li>
 </ul>
-<h3 id="security">Security</h3>
+<h3 id="security_1">Security</h3>
 <p>Root no longer acts BY PATH where the service account (<code>satom</code>) can point the
 path somewhere else. The application tree and <code>data/</code> belong to that account,
 which can turn any entry into a symbolic link at any moment, including between
@@ -2633,7 +2661,7 @@ bundle, Wiki mail links, metrics range).</p>
   created it).</p>
 </li>
 </ul>
-<h3 id="security_1">Security</h3>
+<h3 id="security_2">Security</h3>
 <ul>
 <li><strong>certifi 2026.10.19</strong> (pinned in <code>requirements.txt</code>, was unpinned and
   2026.6.17 on installed nodes): earlier bundles trust the `emSign ECC Root CA</li>
@@ -3368,7 +3396,7 @@ whose scripts need more raises them in a systemd drop-in.</p>
   files and a restore puts them back next to the theme rows. A bundle made
   before this change has no such folder and leaves the node's files alone.</li>
 </ul>
-<h3 id="security_2">Security</h3>
+<h3 id="security_3">Security</h3>
 <ul>
 <li><strong>Python Studio security review</strong> (asked for as "a security test, verify as
   well as you can that these scripts do not interfere with the
@@ -12557,7 +12585,7 @@ an opaque <code>-651</code> at deploy time.</p>
   unspecified space did not. Each class is now named separately so a future
   edit cannot drop one silently. Found by mutation, with the guards green.</li>
 </ul>
-<h3 id="security_3">Security</h3>
+<h3 id="security_4">Security</h3>
 <ul>
 <li>
 <p>The feed answers <strong>without a login</strong>, because a threat-feed connector cannot
@@ -13655,7 +13683,7 @@ missing half was the half that writes.</strong></p>
 </li>
 </ul>
 <h2 id="1100---2026-08-17">[1.10.0] - 2026-08-17</h2>
-<h3 id="security_4">Security</h3>
+<h3 id="security_5">Security</h3>
 <ul>
 <li><strong>A saved link bookmark can no longer carry a <code>javascript:</code> URL.</strong> The only
   check on the field was that it was non-empty, so any account able to save a
@@ -18242,7 +18270,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   standby — one of them deleted the node-written HA units and stopped
   replication.</li>
 </ul>
-<h3 id="security_5">Security</h3>
+<h3 id="security_6">Security</h3>
 <ul>
 <li>SSRF blocklist in the device API proxy now also refuses loopback targets.</li>
 <li>Triaged an internal AI security audit (14 findings): 1 real and fixed, 13

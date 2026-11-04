@@ -16614,6 +16614,65 @@ removed; parent walk removed from <code>keys_for</code>; stale rule always passi
 conflict never returned by <code>FortiWebOps.update</code>; <code>GuiOps</code> check off; release
 by any tab; the view ignoring <code>lease_token</code>; <code>None</code> no longer equal to <code>""</code>;
 <code>_gx_stale</code> off; the API-owner branch removed.</p>
+<h2 id="216--an-answer-satom-did-not-write-teststest_server_ingestpy-teststest_vm_store_hardeningpy-teststest_template_safe_allowlistpy-2026-11-04">§216 — an answer SATOM did not write (<code>tests/test_server_ingest.py</code>, <code>tests/test_vm_store_hardening.py</code>, <code>tests/test_template_safe_allowlist.py</code>, 2026-11-04)</h2>
+<p><strong>What it guards.</strong> Stage 0 of the Servers ADOM: before SATOM reads a single
+byte from a Linux or Windows host, the path that byte takes is closed. The
+connection only goes SATOM -&gt; host, but the answer travels back, and a host
+(or whoever owns it) writes every byte of it. Three layers:</p>
+<ul>
+<li><strong>The gate</strong> (<code>server_ingest.ingest</code>): size before parse; strict stdlib JSON
+  (no <code>NaN</code>/<code>Infinity</code>, no duplicate keys, invalid UTF-8, over-deep nesting
+  or over-long integers refused); a closed schema per collector (<code>MEMORY</code>,
+  <code>FILESYSTEMS</code>, <code>PROCESSES</code>, <code>SERVICES</code>) with types, ranges, lengths,
+  character sets and cross-field checks ("used &lt;= size"); <code>True</code> is not an
+  integer; text with control characters or bidi/zero-width marks refused;
+  unknown keys dropped. <strong>One violation rejects the whole answer</strong> — nothing
+  is repaired. The verdict never raises and never echoes the value: a
+  rejection is <code>&lt;schema path&gt;: &lt;rule&gt;</code> plus a 16-hex digest of the body.</li>
+<li><strong>The metrics store</strong> (<code>vm_store.line</code> / <code>escape_label</code>): label values cut
+  to <code>MAX_LABEL_VALUE_BYTES</code> (4096, UTF-8, never mid-character or
+  mid-escape) with a <code>…</code> mark; control characters become spaces; NaN and
+  ±Inf skipped; metric and label names the exposition format cannot carry
+  skipped.</li>
+<li><strong>The page</strong> (<code>plugin_frame.json_island</code>, the <code>|safe</code> allowlist): every
+  JSON island escapes <code>&lt;</code>, <code>&gt;</code>, <code>&amp;</code>; every <code>|safe</code> in a template is listed
+  with the reason it cannot carry device or host text.</li>
+</ul>
+<p><strong>What it does not do.</strong> Decide that <code>&lt;script&gt;</code> is not a process name — it
+can be one. The gate settles shape; the output context settles encoding. And
+nothing catches a host that lies consistently: server data is "reported by
+the host", never "measured by SATOM".</p>
+<p><strong>The traps.</strong></p>
+<ul>
+<li><em>The store says 204 and drops the series.</em> VictoriaMetrics v1.148 refuses a
+  label value over 4096 bytes by ignoring the whole series
+  (<code>vm_rows_ignored_total{reason="too_long_label_value"}</code>), so a collector
+  reported "ok" for a sample that never landed. Measured on a throwaway
+  instance of the shipped binary; production a1/a2 had 0 such rows.</li>
+<li><em>NaN is not "no value" to the store, it is a staleness marker</em> — the series
+  reads as absent. <code>+Inf</code> is stored and drawn.</li>
+<li><em>A CR is not a line break in a quoted label</em> (measured): the old
+  <code>escape_label</code> was not injectable through it; control characters are
+  stripped for what pages and CSVs print, not for the exposition format.</li>
+<li><em><code>&lt;/</code>-only escaping is not enough for a script island.</em> A value holding
+  <code>&lt;!--&lt;script&gt;</code> puts the HTML tokenizer in the double-escaped state and the
+  island's own <code>&lt;/script&gt;</code> no longer closes it: the next island, the markup
+  after it and the page's script are swallowed (headless Chromium). Plugin
+  datasets carry device-synced text (policy comments), so a comment could
+  blank every plugin that shows it.</li>
+<li><em>Python thinks <code>True == 1</code>.</em> An <code>isinstance(v, int)</code> check accepts booleans;
+  the gate tests <code>bool</code> first.</li>
+<li><em>A recursive depth check is itself the DoS.</em> <code>_depth</code> walks iteratively;
+  the C JSON scanner's <code>RecursionError</code> is caught as "too deep".</li>
+<li><em>A rejection message is read by humans.</em> Echoing the offending value would
+  put a secret (a command-line password) or a payload in front of whoever
+  reads the log; the reason carries only SATOM-written text.</li>
+</ul>
+<p><strong>Mutations that must bite</strong> (all do): label never truncated; NaN/Inf
+written; control characters kept; bidi check off; booleans accepted as
+integers; duplicate keys accepted; <code>json_island</code> back to <code>&lt;/</code>-only; size cap
+off; cross-field checks skipped; a bad list row skipped instead of rejecting
+the answer.</p>
     </div>
   </div>
 </section>

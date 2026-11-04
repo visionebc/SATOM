@@ -33,6 +33,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   change is audited as `profile.notifications`.
 
 ### Fixed
+- **A label value over 4 KB no longer makes a metric vanish silently.** The
+  metrics store (VictoriaMetrics) drops a whole series when one label value is
+  longer than 4096 bytes, and still answers the write with success, so a
+  collector reported "ok" for a sample that never landed. Values are now cut
+  to fit with a `…` mark; control characters in a label become spaces; NaN
+  and infinite readings are skipped like any reading the device does not
+  have. No series written so far was affected (checked on both nodes).
+- **A device-synced value can no longer blank a plugin page.** Plugin data
+  and the Plugin / Lua Studio editors embed JSON in `<script>` islands that
+  only neutralised `</`. A value such as a policy comment containing
+  `<!--<script>` made the browser swallow the rest of the page — the next
+  island, the markup after it and the page's script. Every island now writes
+  `<`, `>` and `&` as JSON escapes (same value to the script, no markup to the
+  browser). The Sentinel "N value(s) away" note no longer bypasses HTML
+  escaping.
 - **Sign-ins through the fleet edge are attributed to the client, not to the
   edge proxy.** With two proxies in a row (edge -> local nginx) the
   forwarded header reaches SATOM as `<client>, <edge>`, and only the last hop
@@ -85,6 +100,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - A REST API v1 call now writes as its token's owner. The API has no login
   session, so the edit-lock check saw nobody and refused the owner's own call
   like an unattended run's.
+
+### Security
+- **Servers ADOM, stage 0: the ingestion gate.** Groundwork for monitoring
+  Linux and Windows servers: every answer a monitored server gives passes one
+  gate before SATOM uses it — a size cap before parsing, strict JSON (no
+  `NaN`/`Infinity`, no duplicate keys, bounded nesting), and a closed schema
+  per reading (memory, filesystems, processes, services) with types, ranges,
+  lengths, character sets and consistency checks. Text with control
+  characters or bidi/zero-width marks is refused, unknown fields are
+  dropped, and one bad value rejects the whole answer. A rejection names the
+  field and the rule, never the value. Every `|safe` in the templates is now
+  on a reviewed list enforced by a test. No collector uses the gate yet.
 
 ## [4.10.1] - 2026-11-02
 

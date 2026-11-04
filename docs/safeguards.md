@@ -17170,3 +17170,64 @@ conflict never returned by `FortiWebOps.update`; `GuiOps` check off; release
 by any tab; the view ignoring `lease_token`; `None` no longer equal to `""`;
 `_gx_stale` off; the API-owner branch removed.
 
+## §216 — an answer SATOM did not write (`tests/test_server_ingest.py`, `tests/test_vm_store_hardening.py`, `tests/test_template_safe_allowlist.py`, 2026-11-04)
+
+**What it guards.** Stage 0 of the Servers ADOM: before SATOM reads a single
+byte from a Linux or Windows host, the path that byte takes is closed. The
+connection only goes SATOM -> host, but the answer travels back, and a host
+(or whoever owns it) writes every byte of it. Three layers:
+
+- **The gate** (`server_ingest.ingest`): size before parse; strict stdlib JSON
+  (no `NaN`/`Infinity`, no duplicate keys, invalid UTF-8, over-deep nesting
+  or over-long integers refused); a closed schema per collector (`MEMORY`,
+  `FILESYSTEMS`, `PROCESSES`, `SERVICES`) with types, ranges, lengths,
+  character sets and cross-field checks ("used <= size"); `True` is not an
+  integer; text with control characters or bidi/zero-width marks refused;
+  unknown keys dropped. **One violation rejects the whole answer** — nothing
+  is repaired. The verdict never raises and never echoes the value: a
+  rejection is `<schema path>: <rule>` plus a 16-hex digest of the body.
+- **The metrics store** (`vm_store.line` / `escape_label`): label values cut
+  to `MAX_LABEL_VALUE_BYTES` (4096, UTF-8, never mid-character or
+  mid-escape) with a `…` mark; control characters become spaces; NaN and
+  ±Inf skipped; metric and label names the exposition format cannot carry
+  skipped.
+- **The page** (`plugin_frame.json_island`, the `|safe` allowlist): every
+  JSON island escapes `<`, `>`, `&`; every `|safe` in a template is listed
+  with the reason it cannot carry device or host text.
+
+**What it does not do.** Decide that `<script>` is not a process name — it
+can be one. The gate settles shape; the output context settles encoding. And
+nothing catches a host that lies consistently: server data is "reported by
+the host", never "measured by SATOM".
+
+**The traps.**
+
+* *The store says 204 and drops the series.* VictoriaMetrics v1.148 refuses a
+  label value over 4096 bytes by ignoring the whole series
+  (`vm_rows_ignored_total{reason="too_long_label_value"}`), so a collector
+  reported "ok" for a sample that never landed. Measured on a throwaway
+  instance of the shipped binary; production a1/a2 had 0 such rows.
+* *NaN is not "no value" to the store, it is a staleness marker* — the series
+  reads as absent. `+Inf` is stored and drawn.
+* *A CR is not a line break in a quoted label* (measured): the old
+  `escape_label` was not injectable through it; control characters are
+  stripped for what pages and CSVs print, not for the exposition format.
+* *`</`-only escaping is not enough for a script island.* A value holding
+  `<!--<script>` puts the HTML tokenizer in the double-escaped state and the
+  island's own `</script>` no longer closes it: the next island, the markup
+  after it and the page's script are swallowed (headless Chromium). Plugin
+  datasets carry device-synced text (policy comments), so a comment could
+  blank every plugin that shows it.
+* *Python thinks `True == 1`.* An `isinstance(v, int)` check accepts booleans;
+  the gate tests `bool` first.
+* *A recursive depth check is itself the DoS.* `_depth` walks iteratively;
+  the C JSON scanner's `RecursionError` is caught as "too deep".
+* *A rejection message is read by humans.* Echoing the offending value would
+  put a secret (a command-line password) or a payload in front of whoever
+  reads the log; the reason carries only SATOM-written text.
+
+**Mutations that must bite** (all do): label never truncated; NaN/Inf
+written; control characters kept; bidi check off; booleans accepted as
+integers; duplicate keys accepted; `json_island` back to `</`-only; size cap
+off; cross-field checks skipped; a bad list row skipped instead of rejecting
+the answer.

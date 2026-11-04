@@ -89,7 +89,7 @@
       </div>
       <div class="fw-card-body p-0">
         <div class="d-flex" style="min-height:560px;">
-          <div style="width:200px;border-right:1px solid var(--fw-border,#DFE1E6);padding:10px;">
+          <div style="width:200px;flex-shrink:0;border-right:1px solid var(--fw-border,#DFE1E6);padding:10px;">
             <div class="text-muted mb-1" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">{{ _('Add a step') }}</div>
             {% for group, title in [('flow', _('Flow')), ('check', _('Checks')), ('data', _('Data')), ('act', _('Actions')), ('satom', _('SATOM'))] %}
               <div class="mt-2 mb-1" style="font-size:11px;font-weight:600;color:#5E6C84;">{{ title }}</div>
@@ -99,7 +99,7 @@
             {% endfor %}
           </div>
           <div style="flex:1;min-width:0;position:relative;">
-            <div class="p-2 border-bottom d-flex gap-2 align-items-center" style="font-size:12px;">
+            <div class="p-2 border-bottom d-flex flex-wrap gap-2 align-items-center" style="font-size:12px;">
               <button type="button" id="proc-connect" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-right me-1"></i>{{ _('Connect') }}</button>
               <button type="button" id="proc-delete" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>{{ _('Delete selected') }}</button>
               <button type="button" id="proc-fit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrows-fullscreen me-1"></i>{{ _('Fit') }}</button>
@@ -111,7 +111,7 @@
             </div>
             <div id="proc-canvas" style="height:510px;overflow:hidden;background:#FAFBFC;"></div>
           </div>
-          <div style="width:320px;border-left:1px solid var(--fw-border,#DFE1E6);padding:10px;overflow:auto;max-height:560px;">
+          <div style="width:320px;flex-shrink:0;border-left:1px solid var(--fw-border,#DFE1E6);padding:10px;overflow:auto;max-height:560px;">
             <div class="text-muted mb-2" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">{{ _('Selected step') }}</div>
             <div id="proc-inspector" class="text-muted" style="font-size:12.5px;">{{ _('Click a step to edit it.') }}</div>
           </div>

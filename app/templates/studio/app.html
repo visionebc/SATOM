@@ -83,9 +83,17 @@
   {# ------------------------------------------------------------- diagram #}
   <div class="tab-pane fade" id="ap-tab-diagram">
     <div class="fw-card mb-3">
-      <div class="fw-card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-diagram-3 me-2"></i>{{ _('Diagram') }}</span>
+      <div class="fw-card-header d-flex flex-wrap gap-2 align-items-center justify-content-start" style="padding:8px 14px;font-size:12px;">
+        <span class="me-2" style="font-size:14px;"><i class="bi bi-diagram-3 me-2"></i>{{ _('Diagram') }}</span>
+        <button type="button" id="proc-connect" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-right me-1"></i>{{ _('Connect') }}</button>
+        <button type="button" id="proc-delete" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>{{ _('Delete selected') }}</button>
+        <button type="button" id="proc-fit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrows-fullscreen me-1"></i>{{ _('Fit') }}</button>
+        <button type="button" id="ap-analyze" class="btn btn-sm btn-outline-primary" title="{{ _('Explain the diagram step by step and what each failure leaves behind') }}"><i class="bi bi-search me-1"></i>{{ _('Analyze') }}</button>
+        <button type="button" id="ap-lastrun" class="btn btn-sm btn-outline-secondary" title="{{ _('Colour each step by how it ended in the newest run') }}"><i class="bi bi-clock-history me-1"></i>{{ _('Last run') }}</button>
+        <button type="button" id="ap-sim-open" class="btn btn-sm btn-success" title="{{ _('Walk the whole process as a rehearsal and answer its questions here') }}"><i class="bi bi-play-fill me-1"></i>{{ _('Simulate') }}</button>
+        <span class="text-muted ms-auto" id="proc-hint"></span>
         <span id="proc-status" class="text-muted" style="font-weight:400;font-size:12px;"></span>
+        <button type="button" id="proc-save" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save diagram') }}</button>
       </div>
       <div class="fw-card-body p-0">
         <div class="d-flex" style="min-height:560px;">
@@ -99,17 +107,7 @@
             {% endfor %}
           </div>
           <div style="flex:1;min-width:0;position:relative;">
-            <div class="p-2 border-bottom d-flex flex-wrap gap-2 align-items-center" style="font-size:12px;">
-              <button type="button" id="proc-connect" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-right me-1"></i>{{ _('Connect') }}</button>
-              <button type="button" id="proc-delete" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>{{ _('Delete selected') }}</button>
-              <button type="button" id="proc-fit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrows-fullscreen me-1"></i>{{ _('Fit') }}</button>
-              <button type="button" id="ap-analyze" class="btn btn-sm btn-outline-primary" title="{{ _('Explain the diagram step by step and what each failure leaves behind') }}"><i class="bi bi-search me-1"></i>{{ _('Analyze') }}</button>
-              <button type="button" id="ap-lastrun" class="btn btn-sm btn-outline-secondary" title="{{ _('Colour each step by how it ended in the newest run') }}"><i class="bi bi-clock-history me-1"></i>{{ _('Last run') }}</button>
-              <button type="button" id="ap-sim-open" class="btn btn-sm btn-success" title="{{ _('Walk the whole process as a rehearsal and answer its questions here') }}"><i class="bi bi-play-fill me-1"></i>{{ _('Simulate') }}</button>
-              <span class="text-muted ms-auto" id="proc-hint"></span>
-              <button type="button" id="proc-save" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save diagram') }}</button>
-            </div>
-            <div id="proc-canvas" style="height:510px;overflow:hidden;background:#FAFBFC;"></div>
+            <div id="proc-canvas" style="height:560px;overflow:hidden;background:#FAFBFC;"></div>
           </div>
           <div style="width:320px;flex-shrink:0;border-left:1px solid var(--fw-border,#DFE1E6);padding:10px;overflow:auto;max-height:560px;">
             <div class="text-muted mb-2" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">{{ _('Selected step') }}</div>

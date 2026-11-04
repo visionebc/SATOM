@@ -459,6 +459,30 @@ def _payload(body):
     return {k: v for k, v in fields.items() if isinstance(fields, dict)}
 
 
+def _expected(body):
+    """The values the operator's form loaded for the fields it sends
+    (``expected``), or None (an old page, the API): with them the write is
+    checked against what the device holds NOW (``FortiWebOps.update``) and a
+    change made meanwhile by someone else is not overwritten unseen."""
+    exp = body.get('expected')
+    if not isinstance(exp, dict) or not exp:
+        return None
+    return {str(k): v for k, v in exp.items()}
+
+
+def _stale_kw(body):
+    """``FortiWebOps.update`` keywords of the stale-value check -- none when the
+    page sent no loaded values (the call is then exactly as before)."""
+    exp = _expected(body)
+    return {'expect': exp, 'overwrite': bool(body.get('overwrite'))} if exp else {}
+
+
+def _stale_reply(res, code=409):
+    """``(response, 409)`` for a save refused because the device changed."""
+    return jsonify(ok=False, dry_run=res.get('dry_run'), request=res.get('request'),
+                   error=res.get('error', ''), conflict=res.get('conflict')), code
+
+
 # Team rule: a Web Protection Profile governed by an APPROVED template is
 # read-only on every device page. It is edited ONLY in Administrator → WPP
 # Templates, and saving there deploys the change to ALL devices.
@@ -488,20 +512,20 @@ def _lease_conflict(appliance_id, coll, name):
 
     The server-side half of the lease. lock.js only advises in the browser; a
     user without the lease (or who never asked for one) used to overwrite the
-    holder's work by posting here directly."""
+    holder's work by posting here directly.
+
+    The editor sends its tab's ``lease_token``: the same operator in a second
+    tab is refused like a second user (the lease is per tab, lock_service)."""
     if not name:
         return None
     from ..services import lock_service
-    parts = objform.collection_of(coll).split('/')
-    me = getattr(current_user, 'id', None)
-    for i in range(len(parts), 0, -1):
-        info = lock_service.status(appliance_id,
-                                   '%s:%s' % ('/'.join(parts[:i]), name))
-        if info and info.get('owner_user_id') != me:
-            who = info.get('owner_label') or 'another user'
-            return (jsonify(ok=False, lock=info, error=(
-                '"%s" is being edited by %s. Take over the edit lock first; '
-                'nothing was sent to the device.' % (name, who))), 409)
+    token = (request.get_json(silent=True) or {}).get('lease_token') or None
+    info = lock_service.holder(appliance_id, objform.collection_of(coll), name,
+                               user_id=getattr(current_user, 'id', None),
+                               token=str(token)[:64] if token else None)
+    if info:
+        return (jsonify(ok=False, lock=info,
+                        error=lock_service.refusal(info, name)), 409)
     return None
 
 
@@ -613,7 +637,10 @@ def save_object(appliance_id):
     rest_fields = {k: v for k, v in fields.items() if k not in cli_fields}
     if rest_fields:
         res = _held(FortiWebOps(appl).update(objform.rest_path(coll), mkey,
-                                             {'data': rest_fields}, dry_run=not do_apply))
+                                             {'data': rest_fields}, dry_run=not do_apply,
+                                             **_stale_kw(body)))
+        if res.get('conflict'):
+            return _stale_reply(res)
     else:
         from ..services.fortiweb_ops import OpResult
         res = OpResult(ok=True, dry_run=not do_apply, request=None, error='')
@@ -642,7 +669,8 @@ def save_object(appliance_id):
     return jsonify(ok=ok, dry_run=res.get('dry_run'), request=res.get('request'),
                    diff=diff, error=error, verify=res.get('verify'),
                    unverified_refs=unverified, build_compat=compat, cli=cli,
-                   cli_fields=sorted(cli_fields), channel_warnings=_channel_warnings(split))
+                   cli_fields=sorted(cli_fields), channel_warnings=_channel_warnings(split),
+                   overwrote=res.get('overwrote'))
 
 
 def _channel_split(appl, coll, fields):
@@ -823,6 +851,15 @@ def save_row_for(appl, body):
                            request=res.get('request'), error=res.get('error', ''),
                            verify=res.get('verify'))
         rows = ops.client._safe_list(path) or []
+        # the row as the device holds it now: a value changed since the form
+        # loaded refuses the replace-set, as FortiWebOps.update does
+        from ..services import object_refresh
+        cur = next((r for r in rows if isinstance(r, dict)
+                    and str(r.get('id', r.get('_id', ''))) == str(sub_id)), None)
+        stale = object_refresh.stale_fields(_expected(body), fields, cur)
+        if stale and not body.get('overwrite'):
+            return jsonify(ok=False, dry_run=not do_apply, conflict=stale,
+                           error=object_refresh.describe_stale(stale)), 409
         desired = []
         for r in rows:
             if not isinstance(r, dict):
@@ -859,7 +896,10 @@ def save_row_for(appl, body):
         res = _held(ops.create(path, {'data': fields}, dry_run=not do_apply))
     elif rest_fields:
         path = objform.scoped_path(coll, parent, sub_id)
-        res = _held(ops.update(path, '', {'data': rest_fields}, dry_run=not do_apply))
+        res = _held(ops.update(path, '', {'data': rest_fields}, dry_run=not do_apply,
+                               **_stale_kw(body)))
+        if res.get('conflict'):
+            return _stale_reply(res)
     else:
         from ..services.fortiweb_ops import OpResult
         res = OpResult(ok=True, dry_run=not do_apply, request=None, error='')
@@ -868,7 +908,7 @@ def save_row_for(appl, body):
     ok = res.ok and (cli is None or bool(cli.get('ok')))
     error = res.get('error', '') or (_cli_error(cli) if cli and not cli.get('ok') else '')
     return jsonify(ok=ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   error=error, verify=res.get('verify'),
+                   error=error, verify=res.get('verify'), overwrote=res.get('overwrote'),
                    cache_refreshed=bool((res.get('cache_refresh') or {}).get('refreshed')),
                    build_compat=compat, cli=cli,
                    cli_fields=sorted(cli_fields), channel_warnings=_channel_warnings(split))

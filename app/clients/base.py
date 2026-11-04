@@ -130,7 +130,55 @@ class BaseClient:
         except Exception:  # noqa: BLE001
             return True
 
+    #: Writes an edit lease applies to (services.lock_service): they change or
+    #: remove what an operator may have open. A POST adds; it overwrites nothing.
+    LEASED_METHODS = frozenset({"PUT", "PATCH", "DELETE"})
+
+    def _lease_targets(self, method: str, path: str, params=None) -> list:
+        """``[(collection, name), …]`` an edit lease would cover for this
+        write. None here: a product whose editors take leases says how its
+        paths name an object (FortiWeb, FortiADC)."""
+        return []
+
+    def _lease_refused(self, method: str, path: str, params=None):
+        """A ready HTTP 409 when this write falls under an edit lease someone
+        else holds (``lock_service.write_refusal``), else None. Nothing reaches
+        the device; the refusal is audited and is a step of the job it ran in,
+        so a Mass Deploy, a Process or a scheduled action says why it stopped
+        instead of overwriting an operator's open edit."""
+        if str(method).upper() not in self.LEASED_METHODS:
+            return None
+        try:
+            targets = self._lease_targets(method, path, params)
+        except Exception:  # noqa: BLE001 — an unparsable path is not a lease
+            targets = []
+        if not targets:
+            return None
+        from ..services import lock_service
+        aid = getattr(getattr(self, "appliance", None), "id", None)
+        why = next((w for w in (lock_service.write_refusal(aid, c, n) for c, n in targets)
+                    if w), "")
+        if not why:
+            return None
+        url = self.base_url.rstrip('/') + '/' + path.lstrip('/')
+        try:
+            from ..services.audit import log_action
+            log_action("config.write.edit_locked", target=(path or "").split("?")[0],
+                       appliance_id=aid, detail="%s %s" % (str(method).upper(), why))
+        except Exception:  # noqa: BLE001 — outside an app: the answer still says it
+            pass
+        sink = job_progress.current()
+        if sink is not None:
+            sink.after_call(method, path, 409, time.monotonic())
+        return httpx.Response(
+            409, request=httpx.Request(str(method).upper(), url),
+            json={"results": {"errcode": "edit-lock", "message": why},
+                  "error": why})
+
     def _request(self, method: str, path: str, **kwargs):
+        refused = self._lease_refused(method, path, kwargs.get("params"))
+        if refused is not None:
+            return refused
         url = self.base_url.rstrip('/') + '/' + path.lstrip('/')
         shared = self._shared
         verify = self._verify_target() if shared is None else None

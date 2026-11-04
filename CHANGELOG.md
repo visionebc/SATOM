@@ -6,6 +6,38 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **Two people changing the same object no longer overwrite each other
+  without a word.** Operator question: "what happens if a user makes the same
+  change on the same object, or on the same sub-object?" Three gaps answered
+  it badly:
+  - *The edit lock only bound the object editor.* Mass Deploy, Processes,
+    Policy Clone, scripts, scheduled actions, the certificate and
+    DNS-decommission jobs and the FortiADC writers changed or deleted an
+    object an operator had open. The lock is now checked where every write
+    reaches the device (the FortiWeb and FortiADC clients, and every
+    FortiGate, FortiAuthenticator, FortiADC and FortiAnalyzer GUI save). A
+    refused write sends nothing, fails its job step with the holder's name and
+    is audited as `config.write.edit_locked`. A job started by the lock's
+    holder still writes; an unattended run never writes over an open edit.
+    Adding a new object or row is not blocked.
+  - *The lock belonged to a user, not to a page.* One operator with the
+    object open in two tabs overwrote themselves. A lock now belongs to the
+    page that took it: the second tab says "You have this open in another tab
+    or window" and offers Take over. Closing one tab no longer releases the
+    other tab's lock.
+  - *The last save won.* A form loaded before someone else's change sent its
+    old value and nobody was told, whether the change came from another user,
+    a job or the device's own GUI/CLI. Every editor now sends the values it
+    loaded. SATOM reads the object first and refuses a save whose field
+    changed meanwhile, showing what you loaded, what the device holds now and
+    your value. **Reload** (SATOM's copy is refreshed first) or **Overwrite
+    with mine** (audited as `config.update.overwrote`). The same change made
+    twice is not a conflict.
+- The Server Policy page and the GUI dialogs of every product now take the
+  edit lock (only the object editor did), so their saves show who holds it
+  instead of failing on save.
+
 ## [4.10.1] - 2026-11-02
 
 ### Fixed

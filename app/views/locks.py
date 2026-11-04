@@ -27,6 +27,12 @@ def _uid():
     return getattr(current_user, "id", None)
 
 
+def _token():
+    """The editor (browser tab) asking: one user may hold an object in one tab."""
+    data = request.get_json(silent=True) or request.form
+    return (str(data.get("token") or "").strip()[:64]) or None
+
+
 def _args():
     data = request.get_json(silent=True) or request.form
     appliance_id = data.get("appliance_id")
@@ -52,7 +58,7 @@ def acquire():
     if appliance_id is None or not key:
         return jsonify(ok=False, error="appliance_id and resource_key required"), 400
     ok, info = lock_service.acquire(
-        appliance_id, key, user_id=_uid(), owner_label=_label())
+        appliance_id, key, user_id=_uid(), owner_label=_label(), token=_token())
     return jsonify(ok=ok, mine=ok, lock=info)
 
 
@@ -63,7 +69,8 @@ def heartbeat():
     appliance_id, key = _args()
     if appliance_id is None or not key:
         return jsonify(ok=False, error="bad args"), 400
-    ok, info = lock_service.heartbeat(appliance_id, key, user_id=_uid())
+    ok, info = lock_service.heartbeat(appliance_id, key, user_id=_uid(),
+                                         token=_token())
     return jsonify(ok=ok, lock=info)
 
 
@@ -73,7 +80,7 @@ def release():
     appliance_id, key = _args()
     if appliance_id is None or not key:
         return jsonify(ok=False, error="bad args"), 400
-    ok = lock_service.release(appliance_id, key, user_id=_uid())
+    ok = lock_service.release(appliance_id, key, user_id=_uid(), token=_token())
     return jsonify(ok=ok)
 
 
@@ -85,7 +92,7 @@ def steal():
     if appliance_id is None or not key:
         return jsonify(ok=False, error="bad args"), 400
     ok, info = lock_service.steal(
-        appliance_id, key, user_id=_uid(), owner_label=_label())
+        appliance_id, key, user_id=_uid(), owner_label=_label(), token=_token())
     return jsonify(ok=ok, lock=info)
 
 

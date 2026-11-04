@@ -24,6 +24,15 @@
 [data-js="pool-new-open"], [data-js="apply-pending"] { display: none !important; }
 </style>
 <div class="fw-alert fw-alert-info mb-2" data-readonly-note>{{ _('Read-only: changing this policy needs the config_write permission.') }}</div>
+{% elif appliance %}
+{# Edit leases (lock.js): one per object this page writes, so a second user --
+   or this user in another tab -- sees who holds it and cannot overwrite it.
+   Each section names its lease with data-lease-key. #}
+<div class="fw-lock-guards">
+  <div class="fw-lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ lease_key(eps.policy, policy_name) }}"></div>
+  {% if pool_name %}<div class="fw-lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ lease_key(eps.pool, pool_name) }}"></div>{% endif %}
+  {% if vserver_name %}<div class="fw-lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ lease_key('server-policy/vserver', vserver_name) }}"></div>{% endif %}
+</div>
 {% endif %}
 <div class="fw-page-header">
   <div>
@@ -125,7 +134,7 @@
   <div class="fw-card-body">
     {% if vips %}
       {% for v in vips %}
-      <div class="fw-scope fw-row-card" data-endpoint="{{ eps.viplist }}" data-mkey="{{ vserver_name }}" data-child-id="{{ v.get('id') }}">
+      <div class="fw-scope fw-row-card" data-endpoint="{{ eps.viplist }}" data-mkey="{{ vserver_name }}" data-child-id="{{ v.get('id') }}" data-lease-key="{{ lease_key('server-policy/vserver', vserver_name) }}">
         <div class="fw-vip-ip">
           <span class="text-muted" style="font-size:12px;">{{ _('Answers on') }}</span>
           <span class="fw-vip-addr mono">{{ v.get('effective_ip') or '— (no IP resolved)' }}</span>
@@ -167,7 +176,7 @@
 </div>
 
 <!-- ───────────────────────── Server Policy config ───────────────────────── -->
-<div class="fw-card mb-3 fw-scope" id="policyConfig" data-endpoint="{{ eps.policy }}" data-mkey="{{ policy_name }}">
+<div class="fw-card mb-3 fw-scope" id="policyConfig" data-endpoint="{{ eps.policy }}" data-mkey="{{ policy_name }}" data-lease-key="{{ lease_key(eps.policy, policy_name) }}">
   <div class="fw-card-header">
     <span class="fw-card-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('Server Policy Configuration') }}</span>
     {{ savebar('Save policy') }}
@@ -243,7 +252,7 @@
   </div>
   <div class="fw-card-body">
     {% if pool %}
-      <div class="fw-scope" data-endpoint="{{ eps.pool }}" data-mkey="{{ pool_name }}">
+      <div class="fw-scope" data-endpoint="{{ eps.pool }}" data-mkey="{{ pool_name }}" data-lease-key="{{ lease_key(eps.pool, pool_name) }}">
         {% for sec in pool_groups %}
           <details class="fw-group" open>
             <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
@@ -262,7 +271,7 @@
           <thead><tr><th>{{ _('Type') }}</th><th>{{ _('IP / Domain') }}</th><th>{{ _('Port') }}</th><th>{{ _('Weight') }}</th><th>SSL</th><th>{{ _('Status') }}</th><th></th></tr></thead>
           <tbody>
           {% for b in backends %}
-          <tr class="fw-scope" data-endpoint="{{ eps.pserver }}" data-mkey="{{ pool_name }}" data-child-id="{{ b.get('id') }}">
+          <tr class="fw-scope" data-endpoint="{{ eps.pserver }}" data-mkey="{{ pool_name }}" data-child-id="{{ b.get('id') }}" data-lease-key="{{ lease_key(eps.pool, pool_name) }}">
             <td><select class="form-select form-select-sm fw-input" data-key="server-type" data-orig="{{ b.get('server-type') }}">
               {% for o in ['physical','domain','sdn-connector'] %}<option value="{{o}}" {{ 'selected' if o==b.get('server-type') }}>{{o}}</option>{% endfor %}
             </select></td>
@@ -387,6 +396,7 @@ var APPL_ID = {{ appliance.id }};
 // The FortiWeb-style slide-over panels (objedit_drawer.js) need the appliance id.
 window.OBJEDIT_AID = APPL_ID;
 var POLICY_NAME = {{ policy_name|tojson }};
+var POLICY_LEASE = {{ lease_key(eps.policy, policy_name)|tojson }};
 var CREATE_FIELDS = {{ create_fields|tojson }};
 var diffModal = (window.bootstrap && document.getElementById('diffModal')) ? new bootstrap.Modal(document.getElementById('diffModal')) : null;
 var pendingApply = null;
@@ -452,14 +462,33 @@ function refreshVis(){
   });
 }
 
-async function saveScope(btn){
+// Edit lease (lock.js): "" when this section may save, else why not.
+function leaseBlocked(node){ return window.fwLockBlocked ? window.fwLockBlocked(node) : ''; }
+function leaseToken(){ return window.fwLeaseToken ? window.fwLeaseToken() : ''; }
+// A save the device refused as stale (it changed since this page loaded):
+// say what it holds now and let the operator choose; true = overwrite.
+function confirmOverwrite(res){
+  const lines = Object.keys(res.conflict || {}).map(k => {
+    const c = res.conflict[k] || {};
+    return `${k}: you loaded "${c.loaded}", the device now has "${c.device}", yours is "${c.yours}"`;
+  });
+  return confirm('Changed on the device since you opened this page. Nothing was sent.\n\n'
+    + lines.join('\n') + '\n\nOK = overwrite the device with your values. Cancel = keep the device values (reload the page to see them).');
+}
+async function saveScope(btn, overwrite){
   const scope = btn.closest('.fw-scope');
+  const blocked = leaseBlocked(scope);
+  if(blocked){ window.FW.toast(blocked, 'warning'); return; }
   const dirty = dirtyInputs(scope);
   if(!dirty.length){ window.FW.toast('No changes in this section', 'info'); return; }
-  const fields = {}; dirty.forEach(el => fields[el.dataset.key] = el.value);
-  const base = {endpoint: scope.dataset.endpoint, mkey: scope.dataset.mkey, fields};
+  const fields = {}, expected = {};
+  dirty.forEach(el => { fields[el.dataset.key] = el.value; expected[el.dataset.key] = el.dataset.orig ?? ''; });
+  const base = {endpoint: scope.dataset.endpoint, mkey: scope.dataset.mkey, fields, expected,
+                lease_token: leaseToken()};
+  if(overwrite) base.overwrite = true;
   if(scope.dataset.childId !== undefined && scope.dataset.childId !== '') base.child_id = parseInt(scope.dataset.childId);
   const dry = await postJSON(`/workspace/${APPL_ID}/save`, base);
+  if(!dry.ok && dry.conflict){ if(confirmOverwrite(dry)) saveScope(btn, true); else location.reload(); return; }
   if(!dry.ok){ window.FW.toast('Preview failed: ' + (dry.error||''), 'danger'); return; }
   let html = `<p class="text-muted">Sending to <code>${esc(scope.dataset.mkey)}</code> via <code>${esc(scope.dataset.endpoint)}</code>:</p>`;
   html += '<table class="table table-sm"><thead><tr><th>Field</th><th>Was</th><th>New</th></tr></thead><tbody>';
@@ -476,6 +505,12 @@ async function applyPending(){
   const {scope, base} = pendingApply;
   const res = await postJSON(`/workspace/${APPL_ID}/save`, Object.assign({}, base, {apply:true}));
   if(diffModal) diffModal.hide();
+  if(!res.ok && res.conflict){
+    pendingApply = null;
+    if(confirmOverwrite(res)){ pendingApply = {scope, base: Object.assign({}, base, {overwrite: true})}; applyPending(); }
+    else location.reload();
+    return;
+  }
   if(res.ok){
     window.FW.toast('Saved to device', 'success');
     scope.querySelectorAll('.fw-input').forEach(el => { el.dataset.orig = el.value; el.classList.remove('fw-dirty'); });
@@ -603,7 +638,10 @@ async function saveCrRow(btn){
   const fields = crFields(tr);
   if(!fields['content-routing-policy-name']){ window.FW.toast('Pick a routing policy first', 'info'); return; }
   const sub_id = tr.dataset.crId || null;
-  const body = {collection:'server-policy/policy/http-content-routing-list', parent:POLICY_NAME, sub_id, fields};
+  const blocked = leaseBlocked(POLICY_LEASE);
+  if(blocked){ window.FW.toast(blocked, 'warning'); return; }
+  const body = {collection:'server-policy/policy/http-content-routing-list', parent:POLICY_NAME, sub_id, fields,
+                lease_token: leaseToken()};
   const dry = await postJSON(`/objedit/${APPL_ID}/save-row`, body);
   if(!dry.ok){ window.FW.toast('Preview failed: ' + (dry.error||''), 'danger'); return; }
   if(!confirm(`Apply content-routing rule to ${POLICY_NAME}?`)) return;
@@ -615,8 +653,11 @@ async function deleteCrRow(btn){
   const tr = btn.closest('tr');
   const sub_id = tr.dataset.crId || '';
   if(!sub_id){ tr.remove(); return; }   // unsaved new row
+  const blocked = leaseBlocked(POLICY_LEASE);
+  if(blocked){ window.FW.toast(blocked, 'warning'); return; }
   if(!confirm('Delete this content-routing rule?')) return;
-  const body = {collection:'server-policy/policy/http-content-routing-list', parent:POLICY_NAME, sub_id, apply:true};
+  const body = {collection:'server-policy/policy/http-content-routing-list', parent:POLICY_NAME, sub_id, apply:true,
+                lease_token: leaseToken()};
   const res = await postJSON(`/objedit/${APPL_ID}/delete-row`, body);
   if(res.ok){ window.FW.toast('Deleted', 'success'); setTimeout(()=>location.reload(), 600); }
   else window.FW.toast('Delete failed: ' + (res.error||''), 'danger');
@@ -808,4 +849,5 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 })();
 </script>
+<script src="{{ asset('js/lock.js') }}" nonce="{{ csp_nonce }}"></script>
 {% endblock %}

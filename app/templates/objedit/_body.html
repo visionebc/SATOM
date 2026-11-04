@@ -130,6 +130,19 @@ function fwCollectChanged(scope){
   });
   return out;
 }
+// The value each sent field showed when the form loaded: the server refuses
+// the save when the device has meanwhile changed it (someone else, a job, the
+// device's own GUI) instead of overwriting that change unseen.
+function fwCollectExpected(scope, fields){
+  const out = {};
+  scope.querySelectorAll('.fw-input').forEach(function(el){
+    const k = el.dataset.key;
+    if (k && Object.prototype.hasOwnProperty.call(fields, k)) out[k] = el.dataset.orig || '';
+  });
+  return out;
+}
+// This tab's edit lease (lock.js): another tab of the same operator is refused.
+function fwLeaseTok(node){ return window.fwLeaseToken ? window.fwLeaseToken(node) : ''; }
 // ── show_when visibility (FortiWeb-style field gating) ─────────────────────
 // rule = {t:'eq', key:<controlling field>, vals:[allowed…]} on .fw-fld[data-vis];
 // the controlling field lives in the SAME scope (.fw-scope / .fw-row-scope).
@@ -240,7 +253,31 @@ function fwCliHtml(j){
   }
   return h + '</div>';
 }
-function fwShow(el, j, applyFn){
+function fwReloadFrom(el){
+  const panel = el.closest && el.closest('.fw-drawer');
+  if (panel && window.FWDrawer){ FWDrawer.reload(panel); } else { location.reload(); }
+}
+// A save refused because the device changed since the form loaded: what it
+// holds now, and the two ways on -- Reload (take theirs) or Overwrite (mine).
+function fwShowConflict(el, j, overwriteFn){
+  let rows = '';
+  Object.keys(j.conflict || {}).forEach(function(k){
+    const c = j.conflict[k] || {};
+    rows += '<tr><td class="small fw-bold">'+fwEsc(k)+'</td><td class="small text-muted">'+fwEsc(c.loaded)
+      + '</td><td class="small">'+fwEsc(c.device)+'</td><td class="small">'+fwEsc(c.yours)+'</td></tr>';
+  });
+  el.innerHTML = '<div class="alert alert-warning mt-2 mb-0" data-stale-conflict>'
+    + '<div class="small fw-bold mb-1">Changed on the device since you opened it. Nothing was sent.</div>'
+    + '<table class="table table-sm mb-2"><thead><tr><th class="small">Field</th><th class="small">You loaded</th>'
+    + '<th class="small">Device now</th><th class="small">Yours</th></tr></thead><tbody>' + rows + '</tbody></table>'
+    + '<button type="button" class="btn btn-sm btn-outline-secondary fw-reload">Reload</button> '
+    + (overwriteFn ? '<button type="button" class="btn btn-sm btn-fw-danger fw-overwrite">Overwrite with mine</button>' : '')
+    + '</div>';
+  el.querySelector('.fw-reload').onclick = function(){ fwReloadFrom(el); };
+  if (overwriteFn) el.querySelector('.fw-overwrite').onclick = overwriteFn;
+}
+function fwShow(el, j, applyFn, overwriteFn){
+  if (!j.ok && j.conflict){ fwShowConflict(el, j, overwriteFn); return; }
   if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+fwEsc(j.error||'failed')
     + (j.cli ? fwCliHtml(j) : '') + '</div>'; return; }
   if (j.dry_run){
@@ -280,14 +317,17 @@ function fwShow(el, j, applyFn){
     else { setTimeout(function(){ location.reload(); }, 800); }
   }
 }
-function saveObject(btn){
+function saveObject(btn, overwrite){
   const scope = btn.closest('.fw-scope'), el = scope.querySelector('.fw-result');
   const fields = fwCollectChanged(scope);
   if (!Object.keys(fields).length){ el.innerHTML = '<div class="text-muted mt-2">No changes to save.</div>'; return; }
-  const base = {collection: scope.dataset.collection, mkey: scope.dataset.mkey, fields: fields};
+  const base = {collection: scope.dataset.collection, mkey: scope.dataset.mkey, fields: fields,
+                expected: fwCollectExpected(scope, fields), lease_token: fwLeaseTok(scope)};
+  if (overwrite) base.overwrite = true;
+  const again = function(){ saveObject(btn, true); };
   fwPost('/objedit/'+window.OBJEDIT_AID+'/save-object', base).then(function(j){
     fwShow(el, j, function(){ fwPost('/objedit/'+window.OBJEDIT_AID+'/save-object',
-      Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2); }); });
+      Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2, null, again); }); }, again);
   });
 }
 // ── Create a NEW top-level object, then open it in the editor to add sub-tables.
@@ -330,16 +370,21 @@ function createObject(btn){
   });
 }
 function fwRowBase(scope){
+  const fields = fwCollectChanged(scope);
   return {collection: scope.dataset.collection, parent: scope.dataset.parent,
-          sub_id: scope.dataset.subId || '', fields: fwCollectChanged(scope)};
+          sub_id: scope.dataset.subId || '', fields: fields,
+          expected: scope.dataset.subId ? fwCollectExpected(scope, fields) : {},
+          lease_token: fwLeaseTok(scope)};
 }
-function saveRow(btn){
+function saveRow(btn, overwrite){
   const scope = btn.closest('.fw-row-scope'), el = scope.querySelector('.fw-result');
   const base = fwRowBase(scope);
   if (!Object.keys(base.fields).length){ el.innerHTML = '<div class="text-muted mt-2">No changes to save.</div>'; return; }
+  if (overwrite) base.overwrite = true;
+  const again = function(){ saveRow(btn, true); };
   fwPost('/objedit/'+window.OBJEDIT_AID+'/save-row', base).then(function(j){
     fwShow(el, j, function(){ fwPost('/objedit/'+window.OBJEDIT_AID+'/save-row',
-      Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2); }); });
+      Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2, null, again); }); }, again);
   });
 }
 function createRow(btn){ saveRow(btn); }
@@ -394,7 +439,8 @@ function nigReadCli(btn){
 }
 function deleteRow(btn){
   const scope = btn.closest('.fw-row-scope'), el = scope.querySelector('.fw-result');
-  const base = {collection: scope.dataset.collection, parent: scope.dataset.parent, sub_id: scope.dataset.subId || ''};
+  const base = {collection: scope.dataset.collection, parent: scope.dataset.parent, sub_id: scope.dataset.subId || '',
+                lease_token: fwLeaseTok(scope)};
   if (!base.sub_id){ el.innerHTML = '<div class="text-muted mt-2">Row not saved yet.</div>'; return; }
   if (!confirm('Delete this row?')) return;
   fwPost('/objedit/'+window.OBJEDIT_AID+'/delete-row', base).then(function(j){

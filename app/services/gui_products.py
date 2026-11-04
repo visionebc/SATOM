@@ -2087,6 +2087,20 @@ class GuiOps:
         why = self.ad.preflight(op, endpoint, mkey)
         if why:
             return {"ok": False, "dry_run": dry_run, "request": req, "error": why}
+        if op != "create":
+            # someone else's edit lease on the object (a child row: on its
+            # parent) refuses an update or delete here, for every caller of
+            # GuiOps (a create adds and overwrites nothing, as on FortiWeb) --
+            # the dry run too: a preview that hides a certain refusal misleads
+            from .lock_service import write_refusal
+            aid = getattr(self.appliance, "id", None)
+            why = next((w for w in (write_refusal(aid, endpoint, n)
+                                    for n in (mkey, pkey) if n) if w), "")
+            if why:
+                if not dry_run:
+                    self._record(op, endpoint, mkey, None, req["body"], why)
+                return {"ok": False, "dry_run": dry_run, "request": req, "error": why,
+                        "edit_locked": True}
         if dry_run:
             return {"ok": True, "dry_run": True, "request": req, "error": ""}
         before = None

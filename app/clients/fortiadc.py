@@ -39,6 +39,8 @@ class FortiADCClient(BaseClient):
         self._password = appliance.password
         self._token = None
         self._cookies = None
+        # the row an edit lease is checked against (BaseClient._lease_refused)
+        self.appliance = appliance
         # The build this box runs: names resolve per build (registry.loader.resolve_for).
         from ..registry import loader
         self.fw_version = loader.version_of(appliance)
@@ -62,6 +64,18 @@ class FortiADCClient(BaseClient):
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json",
         }
+
+    def _lease_targets(self, method, path, params=None):
+        """``/api/<entity>?mkey=<name>`` (a child row: ``pkey=<parent>``); the
+        GUI dialog leases ``<entity>:<name>`` and a child row falls under its
+        parent's lease (lock_service.keys_for)."""
+        from urllib.parse import parse_qs
+        base, _, query = (path or '').partition('?')
+        q = {k: v[0] for k, v in parse_qs(query).items() if v}
+        q.update({k: str(v) for k, v in (params or {}).items() if v not in (None, '')})
+        entity = base.strip('/')
+        entity = entity[4:] if entity.startswith('api/') else entity
+        return [(entity, q[k]) for k in ('mkey', 'pkey') if q.get(k)]
 
     def _api(self, method: str, path: str, **kwargs):
         return self._request(method, path, headers=self._headers(),

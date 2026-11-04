@@ -832,12 +832,10 @@ def _lease_holder(appliance_id, writes, me) -> str:
     for w in writes:
         if not w.get("mkey"):
             continue
-        coll = objform.collection_of(w["endpoint"])
-        parts = coll.split("/")
-        for i in range(len(parts), 0, -1):
-            info = lock_service.status(appliance_id, "%s:%s" % ("/".join(parts[:i]), w["mkey"]))
-            if info and info.get("owner_user_id") != me:
-                return "%s is being edited by %s" % (w["mkey"], info.get("owner_label") or "another user")
+        info = lock_service.holder(appliance_id, objform.collection_of(w["endpoint"]),
+                                   w["mkey"], user_id=me)
+        if info:
+            return "%s is being edited by %s" % (w["mkey"], info.get("owner_label") or "another user")
     return ""
 
 

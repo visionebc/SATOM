@@ -36,6 +36,18 @@ class FortiWebClient(BaseClient):
         from ..registry import loader
         self.fw_version = loader.version_of(appliance)
 
+    def _lease_targets(self, method, path, params=None):
+        """A cmdb write names its object with ``?mkey=`` (a sub-table row: the
+        parent's name, the row in ``sub_mkey``); the editors lease
+        ``<collection>:<name>`` (objedit, workspace)."""
+        from urllib.parse import parse_qs
+        from ..services import objform
+        base, _, query = (path or '').partition('?')
+        if '/cmdb/' not in '/' + base.lstrip('/'):
+            return []
+        mkey = (parse_qs(query).get('mkey') or [''])[0]
+        return [(objform.collection_of(base), mkey)] if mkey else []
+
     def resolve(self, logical: str) -> str:
         """Registry name -> URN for THIS box's build (``loader.resolve_for``).
 

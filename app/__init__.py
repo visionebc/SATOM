@@ -766,6 +766,14 @@ def create_app(config_override: object | None = None) -> Flask:
         from .models import owns_device_scope as _o
         return bool(appl is not None and _o(appl))
 
+    # The edit-lease key of an object, spelled as every writer checks it
+    # (lock_service.keys_for): an editor that names its lease differently
+    # holds a lease no write ever meets.
+    @app.template_global()
+    def lease_key(collection, name):
+        from .services.objform import collection_of
+        return "%s:%s" % (collection_of(collection or ""), name or "")
+
     @app.template_global()
     def adom_menu(key, product):
         """Device-ADOM sidebar entry state: ``.on`` / ``.reason`` /
@@ -1935,6 +1943,8 @@ def create_app(config_override: object | None = None) -> Flask:
         """
         from sqlalchemy import inspect, text
         adds = {
+            # --- edit lease per editor tab (2026-11-04, migration leasetok01) ---
+            'resource_locks': [('owner_token', 'VARCHAR(64)')],
             # --- Wiki article description (2026-10-16, migration wiki02) ---
             'wiki_articles': [
                 ('summary', "VARCHAR(300) DEFAULT '' NOT NULL"),

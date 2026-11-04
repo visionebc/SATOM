@@ -786,7 +786,8 @@ def save(appliance_id):
     # of a mute -651; the build check refuses what this exact build rejects
     # and strips the fields it lacks. Child rows are gated on their parent.
     from .objedit import (_channel_split, _channel_warnings, _cli_part, _cli_error,
-                          _compat_gate, _lease_conflict, _ref_guard, _template_lock_error)
+                          _compat_gate, _lease_conflict, _ref_guard, _stale_kw,
+                          _stale_reply, _template_lock_error)
     lock = _template_lock_error(endpoint, mkey, appl.id)
     if lock:
         return jsonify(ok=False, error=lock), 403
@@ -811,12 +812,15 @@ def save(appliance_id):
     payload = {'data': {k: v for k, v in fields.items() if k not in cli_fields}}
     try:
         if payload['data']:
-            res = FortiWebOps(appl).update(ep, mkey, payload, dry_run=not do_apply)
+            res = FortiWebOps(appl).update(ep, mkey, payload, dry_run=not do_apply,
+                                           **_stale_kw(body))
         else:
             from ..services.fortiweb_ops import OpResult
             res = OpResult(ok=True, dry_run=not do_apply, request=None, error='')
     except Exception as exc:
         return json_error(exc, 'Save failed on the device', context='workspace.save')
+    if res.get('conflict'):
+        return _stale_reply(res)
     cli = _cli_part(appl, split, mkey, do_apply, res.ok) if cli_fields else None
     ok = res.ok and (cli is None or bool(cli.get('ok')))
     error = res.get('error', '') or (_cli_error(cli) if cli and not cli.get('ok') else '')
@@ -856,6 +860,7 @@ def save(appliance_id):
         stale_carveouts=stale_marked, unverified_refs=unverified,
         cache_refreshed=cache_refreshed, cli_fields=sorted(cli_fields),
         build_compat=compat, channel_warnings=_channel_warnings(split),
+        overwrote=res.get('overwrote'),
     )
 
 
@@ -1205,7 +1210,9 @@ def gui_save_row(appliance_id, name):
     sub_id = body.get('sub_id')
     resp = save_row_for(appl, {'collection': coll, 'parent': name,
                                'sub_id': None if sub_id in (None, '') else str(sub_id),
-                               'fields': body.get('fields') or {}, 'apply': do_apply})
+                               'fields': body.get('fields') or {}, 'apply': do_apply,
+                               'expected': body.get('expected'),
+                               'overwrite': bool(body.get('overwrite'))})
     resp, code = (resp if isinstance(resp, tuple) else (resp, 200))
     data = resp.get_json() or {}
     # The sub-table was already re-read into the cache by the write itself
@@ -2487,7 +2494,36 @@ def _gx_table_allowed(tpl, coll, field, appl, ad) -> bool:
     return False
 
 
-def _gx_save_row(appl, ad, tpl, coll, mkey, field, sub_id, op, fields, do_apply):
+def _gx_stale(body, fields, current, appl, ad, coll, mkey, pkey=None):
+    """``(response, 409)`` when a field of ``current`` (the object or row just
+    read from the device) changed since the dialog loaded it -- neither the
+    value the operator saw (``expected``) nor the one they send -- else None.
+    SATOM's copy is refreshed from that read so the Reload shows it.
+    ``overwrite`` is the operator's explicit "save mine anyway" (audited)."""
+    from ..services import gui_products, object_refresh
+    exp = (body or {}).get('expected')
+    if not isinstance(exp, dict) or not exp or not isinstance(current, dict):
+        return None
+    stale = object_refresh.stale_fields(_gx_uninvert(exp), fields,
+                                        gui_products.flat_dicts(current))
+    if not stale:
+        return None
+    if body.get('overwrite'):
+        if body.get('apply'):
+            from ..services.audit import log_action
+            log_action('config.update.overwrote', target='%s:%s' % (ad.product, coll),
+                       appliance_id=appl.id,
+                       detail='mkey=%s fields=%s' % (mkey or pkey or '', ','.join(sorted(stale))))
+        return None
+    try:
+        ad.after_write(appl, coll, mkey, current, 'update', pkey)
+    except Exception:  # noqa: BLE001 -- the refusal stands either way
+        pass
+    return jsonify(ok=False, dry_run=not body.get('apply'), conflict=stale,
+                   error=object_refresh.describe_stale(stale)), 409
+
+
+def _gx_save_row(appl, ad, tpl, coll, mkey, field, sub_id, op, fields, do_apply, body=None):
     """Create / update / delete ONE row of an inline table: the parent object
     is written with the changed row (same ritual as every save: dry run, then
     apply through GuiOps, which re-reads the parent and verifies THAT row)."""
@@ -2502,6 +2538,10 @@ def _gx_save_row(appl, ad, tpl, coll, mkey, field, sub_id, op, fields, do_apply)
                    and gui_products.row_id(r) == str(sub_id)), None) if op != 'create' else None
     if op != 'create' and before is None:
         return jsonify(ok=False, error='row %s is not in %s' % (sub_id, field)), 404
+    if op == 'update':
+        stale = _gx_stale(body, fields, before, appl, ad, coll, mkey or None)
+        if stale:
+            return stale
     row_body = ad.payload(fields, before or {}) if op != 'delete' else {}
     try:
         data, _b = gui_products.table_write(orig, field, op, sub_id, row_body)
@@ -2541,7 +2581,8 @@ def _gx_child_allowed(tpl, coll, child, appl) -> bool:
     return False
 
 
-def _gx_save_child(appl, ad, tpl, coll, parent, child, sub_id, op, fields, do_apply):
+def _gx_save_child(appl, ad, tpl, coll, parent, child, sub_id, op, fields, do_apply,
+                   body=None):
     """Create / update / delete ONE row of a FortiADC child table: the row is
     an object of its own under its parent (``POST|PUT|DELETE
     /api/<parent>_child_<t>?pkey=<parent>[&mkey=<row>]``, as the classic ADC
@@ -2559,8 +2600,12 @@ def _gx_save_child(appl, ad, tpl, coll, parent, child, sub_id, op, fields, do_ap
         if before is None:
             return jsonify(ok=False, error='row %s is not in %s of %s: nothing was sent'
                            % (sub_id, child, parent)), 404
-    body = ad.payload(fields, before or {}) if op != 'delete' else None
-    res = gui_products.GuiOps(appl).run(op, child, None if op == 'create' else sub_id, body,
+    if op == 'update':
+        stale = _gx_stale(body, fields, before, appl, ad, child, sub_id, pkey=parent)
+        if stale:
+            return stale
+    data = ad.payload(fields, before or {}) if op != 'delete' else None
+    res = gui_products.GuiOps(appl).run(op, child, None if op == 'create' else sub_id, data,
                                         dry_run=not do_apply, pkey=parent)
     diff = [{'key': '%s[%s].%s' % (child, sub_id or 'new', k), 'was': (before or {}).get(k),
              'now': v} for k, v in (fields or {}).items()]
@@ -2574,7 +2619,7 @@ def _gx_save_child(appl, ad, tpl, coll, parent, child, sub_id, op, fields, do_ap
                    mkey=parent, sub_id=new_id, channel_warnings=[], **_gx_verdict(res, do_apply))
 
 
-def _gx_save_cli(appl, ad, coll, mkey, op, fields, do_apply):
+def _gx_save_cli(appl, ad, coll, mkey, op, fields, do_apply, body=None):
     """Save a FortiAuthenticator object only the CLI serves (``cli:``)
     through the CLI writer: only its CLI-only fields, gated per exact build
     (``not_in_gui.save`` -> ``cli_writer.split_payload``); dry run renders the
@@ -2591,6 +2636,9 @@ def _gx_save_cli(appl, ad, coll, mkey, op, fields, do_apply):
     if orig is None:
         return jsonify(ok=False, error='the CLI did not show %s %s: nothing was sent'
                        % (gui_products.cli_object(coll), mkey)), 409
+    stale = _gx_stale(body, fields, orig, appl, ad, coll, mkey or None)
+    if stale:
+        return stale
     res = not_in_gui.save(appl, gui_products.cli_object(coll), mkey or None, fields,
                           apply=do_apply)
     cli = res.get('cli') or {}
@@ -2674,8 +2722,21 @@ def fwgui_save(appliance_id):
         return jsonify(ok=False, error='No API on this build (GUI only) for: %s; nothing was '
                                        'sent' % ', '.join(gui_only)), 400
     fields = _gx_uninvert(fields)
+    if op in ('update', 'delete') and mkey:
+        # another user's (or another tab's) edit lease on the object refuses
+        # the write -- a table row falls under its object's lease; GuiOps
+        # checks again for every other caller (lock_service.write_refusal)
+        from .objedit import _lease_conflict
+        held = _lease_conflict(appl.id, coll, mkey)
+        if held:
+            return held
+    if body.get('expected') and hasattr(ad, 'forget'):
+        # the stale-value check compares with the device, not with the page's
+        # few-second read cache
+        for ep in {coll, sub} - {''}:
+            ad.forget(appl, ep)
     if gui_products.is_cli(coll):
-        return _gx_save_cli(appl, ad, coll, mkey, op, fields, do_apply)
+        return _gx_save_cli(appl, ad, coll, mkey, op, fields, do_apply, body=body)
     if sub:
         if op == 'clone':
             return jsonify(ok=False, error='a table row is not cloned'), 400
@@ -2686,8 +2747,10 @@ def fwgui_save(appliance_id):
         if op != 'create' and not sub_id:
             return jsonify(ok=False, error='name the row'), 400
         if product == gui_products.FORTIADC and ad.is_child(sub):
-            return _gx_save_child(appl, ad, tpl, coll, mkey, sub, sub_id, op, fields, do_apply)
-        return _gx_save_row(appl, ad, tpl, coll, mkey, sub, sub_id, op, fields, do_apply)
+            return _gx_save_child(appl, ad, tpl, coll, mkey, sub, sub_id, op, fields, do_apply,
+                                  body=body)
+        return _gx_save_row(appl, ad, tpl, coll, mkey, sub, sub_id, op, fields, do_apply,
+                            body=body)
     is_form = any(v.get('form') and v.get('endpoint') == coll for v in gui_pages.views(tpl))
     if op != 'create' and not mkey and not is_form:
         return jsonify(ok=False, error='name the object'), 400
@@ -2703,6 +2766,10 @@ def fwgui_save(appliance_id):
         if orig is None:
             return jsonify(ok=False, error='the device did not answer for %s %s: nothing was '
                                            'sent' % (coll, mkey)), 409
+        if op == 'update':
+            stale = _gx_stale(body, fields, orig, appl, ad, coll, mkey or None, pkey=pkey)
+            if stale:
+                return stale
     # channel split (the same gate as every editor): CLI-only / hidden fields
     # of this exact build go by SSH, the rest by REST. A field of a nested
     # object (``ipv6.ip6-mode``) is REST: the library names top-level fields.

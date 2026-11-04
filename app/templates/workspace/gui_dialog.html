@@ -2,6 +2,18 @@
 {% set _t = view.title.get('new' if (is_new or (row_ctx and row_ctx.new)) else 'edit') or view.title.get('edit') or '' %}
 {% set _gxl = gx.label if gx is defined and gx else 'FortiWeb' %}
 {% set _fwp = not (gp and gp.product and gp.product != 'fortiweb') %}
+{#- The edit lease this dialog holds (lock.js), named as every writer checks
+    it: the top object -- a row falls under its object's lease, except a
+    FortiGate/FortiAuthenticator/FortiADC row that is an object of its own.
+    None for a Create New form (nothing to overwrite yet). -#}
+{% set _lease_key = '' %}
+{% if can_edit and not is_new and not (row_ctx and row_ctx.new) %}
+  {% if not gp %}{% set _lease_key = lease_key('server-policy/policy', name) %}
+  {% elif row_ctx and row_ctx.collection and not _fwp %}{% set _lease_key = lease_key(row_ctx.collection, row_ctx.sub_id) %}
+  {% elif row_ctx and not _fwp %}{% set _lease_key = lease_key(gp.collection, row_ctx.parent or gp.name or name) %}
+  {% else %}{% set _lease_key = lease_key(gp.collection, gp.name or name) %}{% endif %}
+  {% if _lease_key.endswith(':') %}{% set _lease_key = '' %}{% endif %}
+{% endif %}
 {# the object a row / sub-dialog URL names: a settings form has no name and is
    addressed as "~" (FortiGate / FortiAuthenticator) #}
 {% set _oname = name or ('~' if gp and gp.form and not _fwp else '') %}
@@ -216,6 +228,7 @@
   </div>
 {% endmacro %}
 {% block content %}
+{% if _lease_key %}<div class="fw-lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ _lease_key }}"></div>{% endif %}
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi {{ 'bi-layout-sidebar' if gp else 'bi-shield-check' }} me-2 text-accent"></i>{{ _t or view.key }}{% if name %} <span class="text-muted fw-normal">· {{ gp.display if gp and gp.display else name }}</span>{% endif %}</h1>
@@ -967,9 +980,35 @@
     if (badge) status.innerHTML = badge + esc(msg); else status.textContent = msg;
     status.classList.toggle('text-danger', !!bad);
   }
+  // every write carries this page's edit-lease token (lock.js): the same
+  // operator's other tab is refused like a second user
   function post(b, url) {
+    if (window.fwLeaseToken) b.lease_token = window.fwLeaseToken();
     return fetch(url || SAVE, {method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify(b)}).then(function (r) { return r.json(); });
+  }
+  // Stale-value check: each change carries the value the dialog loaded
+  // (``expected``); the server refuses it when the device has meanwhile been
+  // changed by someone else, instead of overwriting that unseen. OVERWRITE is
+  // the operator's explicit "save mine anyway" after being told.
+  var WAS = {}, OVERWRITE = false;
+  var NEW_FORM = MODE === 'new-policy' || MODE === 'new-object' || !!(ROW.new && (MODE === 'row' || MODE === 'gp-row'));
+  var LEASE_KEY = {{ (_lease_key or '')|tojson }};
+  function expectedFor(keys) {
+    var out = {};
+    (keys || []).forEach(function (K) {
+      if (!Object.prototype.hasOwnProperty.call(WAS, K)) return;
+      out[K.replace(/^@.+?#/, '').replace(/^\^.+?\|.+?#/, '')] = WAS[K];
+    });
+    return out;
+  }
+  function conflictText(r) {
+    return 'Changed on the device since this dialog opened. Nothing was sent.\n\n' +
+      Object.keys(r.conflict || {}).map(function (k) {
+        var c = r.conflict[k] || {};
+        return k + ': you loaded "' + c.loaded + '", the device now has "' + c.device + '", yours is "' + c.yours + '"';
+      }).join('\n') +
+      '\n\nOK = overwrite the device with your values. Cancel = keep the device values (the dialog reloads).';
   }
   document.addEventListener('change', function () {
     if (MODE === 'new-policy' || MODE === 'new-object') return;
@@ -1080,7 +1119,13 @@
       return p.then(function (prev) {
         if (prev && !prev.ok) return prev;          // stop at the first refusal
         // each step goes to ITS endpoint's route (object editor / GUI API save)
-        return post(st.make(apply), st.url).then(function (r) { r._ep = st.ep; r._keys = st.keys; r._bound = !!st.bound; r._pfx = st.pfx || ''; out.push(r); return r; });
+        var b = st.make(apply);
+        if (!NEW_FORM && b.fields) {
+          var exp = expectedFor(st.keys);
+          if (Object.keys(exp).length) b.expected = exp;
+          if (OVERWRITE) b.overwrite = true;
+        }
+        return post(b, st.url).then(function (r) { r._ep = st.ep; r._keys = st.keys; r._bound = !!st.bound; r._pfx = st.pfx || ''; out.push(r); return r; });
       });
     }, Promise.resolve(null)).then(function () { return out; });
   }
@@ -1088,17 +1133,26 @@
     for (var i = 0; i < steps.length; i++) if (steps[i].keys.indexOf(key) >= 0) return steps[i].ep;
     return '';
   }
-  document.querySelector('[data-fwg-save]').addEventListener('click', function () {
+  var saveBtn = document.querySelector('[data-fwg-save]');
+  saveBtn.addEventListener('click', function () {
+    var blocked = window.fwLockBlocked && LEASE_KEY ? window.fwLockBlocked(LEASE_KEY) : '';
+    if (blocked) { say(blocked, true); return; }
     var ch = changes();
     if (!ch.length) { say('No changes to save.'); return; }
     var fields = {};
-    ch.forEach(function (c) { fields[c.key] = c.now; });
+    WAS = {};
+    ch.forEach(function (c) { fields[c.key] = c.now; WAS[c.key] = c.was; });
     if (MODE === 'new-policy' && !fields.name) { say('Not saved: the policy needs a Name.', true); return; }
     if (MODE === 'new-object' && !PX && !fields.name) { say('Not saved: the object needs a Name.', true); return; }
     var steps = plan(fields);
     say('Checking the change…');
     runAll(steps, false).then(function (res) {
       var bad = res.filter(function (r) { return !r.ok; })[0];
+      if (bad && bad.conflict) {
+        if (window.confirm(conflictText(bad))) { OVERWRITE = true; saveBtn.click(); }
+        else window.location.reload();
+        return;
+      }
       if (bad) { say('Not saved: ' + (bad._ep ? bad._ep + ': ' : '') + (bad.error || 'the device refused the change'), true); return; }
       var cli = [];
       // every save route names the fields it sends by CLI (cli_fields); a bound
@@ -1138,6 +1192,12 @@
     runAll(steps, true).then(function (all) {
       var res = all.filter(function (r) { return !r.ok; })[0] || all[0] || {ok: false};
       btn.disabled = false;
+      if (!res.ok && res.conflict) {
+        // changed on the device between the preview and the apply
+        if (window.confirm(conflictText(res))) { OVERWRITE = true; btn.click(); }
+        else window.location.reload();
+        return;
+      }
       if (!res.ok) {
         var done = all.filter(function (r) { return r.ok; }).map(function (r) { return r._ep; });
         if (PX && notApplied(res)) { say(notApplied(res), true, res); return; }
@@ -1199,4 +1259,5 @@
 })();
 {% endif %}
 </script>
+{% if _lease_key %}<script src="{{ asset('js/lock.js') }}" nonce="{{ csp_nonce }}"></script>{% endif %}
 {% endblock %}

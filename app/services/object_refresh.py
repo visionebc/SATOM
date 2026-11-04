@@ -175,6 +175,73 @@ def compare(sent, device) -> dict:
     return out
 
 
+def _snorm(v) -> str:
+    """``_norm`` where an empty value and a missing one are the same: a form
+    shows ``None`` as an empty box."""
+    return "" if v is None else _norm(v)
+
+
+def stale_fields(expected, sent, device) -> dict:
+    """Pure: the fields someone changed on the device since the operator
+    loaded the form.
+
+    ``expected`` {field: the value the form showed}, ``sent`` {field: the new
+    value} (``{"data": …}`` or bare), ``device`` the object as the device holds
+    it NOW. A field is stale when the device holds neither what the operator
+    saw nor what they are sending: another user, a job, or the device's own
+    GUI/CLI changed it in between, and saving would overwrite that change
+    without anyone seeing it. The same change made twice is not a conflict.
+    What cannot be compared never blocks: a field the read does not return,
+    secrets, masked values (``******``), sub-tables and derived counters.
+
+    ``{field: {"loaded", "device", "yours"}}``; empty = nothing stale.
+    """
+    out = {}
+    if not isinstance(expected, dict) or not isinstance(device, dict):
+        return out
+    for k, mine in _inner(sent).items():
+        if k not in expected or isinstance(mine, (list, dict)):
+            continue
+        if any(h in str(k).lower() for h in _SECRET_HINTS) or str(k).startswith(_DERIVED_PREFIXES):
+            continue
+        if k not in device:
+            continue
+        dv = device[k]
+        if isinstance(dv, (list, dict)) or (isinstance(dv, str) and dv and set(dv) == {"*"}):
+            continue
+        loaded = expected[k]
+        if isinstance(loaded, (list, dict)):
+            continue
+        if _snorm(dv) in (_snorm(loaded), _snorm(mine)):
+            continue
+        out[k] = {"loaded": loaded, "device": dv, "yours": mine}
+    return out
+
+
+def object_at(res, key: str = ""):
+    """The one object a ``?mkey=`` / ``&sub_mkey=`` read answered: a dict as
+    is; from a list, the entry named (or numbered) ``key``, or the only one."""
+    if isinstance(res, dict):
+        return res
+    if isinstance(res, list):
+        rows = [r for r in res if isinstance(r, dict)]
+        hit = [r for r in rows if key and key in (str(r.get("name")), str(r.get("id")),
+                                                  str(r.get("_id")))]
+        if hit:
+            return hit[0]
+        if len(rows) == 1:
+            return rows[0]
+    return None
+
+
+def describe_stale(stale: dict) -> str:
+    """One sentence for a refused save: what the device holds now."""
+    parts = ["%s (you loaded %r, the device now has %r)" % (k, v.get("loaded"), v.get("device"))
+             for k, v in sorted(stale.items())]
+    return ("Changed on the device since you opened it: %s. Nothing was sent. Reload to "
+            "see the current values, or save again choosing Overwrite." % "; ".join(parts))
+
+
 def _gone(verdict_ok: bool, why: str) -> dict:
     return {"verdict": VERIFIED if verdict_ok else MISMATCH, "checked": [],
             "mismatch": {} if verdict_ok else {"(object)": {"sent": "deleted",

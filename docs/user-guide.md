@@ -1292,7 +1292,10 @@ before you have seen the change.
      refused and points you to the Template Library. This holds when the
      profile is opened from a policy's pencil, too;
    - another user's edit lease on the object blocks the save, and nothing is
-     sent. A row of an inline table is checked against its parent's lease;
+     sent. A row of an inline table is checked against its parent's lease.
+     Your own second tab is blocked the same way (§7.8);
+   - a field the device changed since the page loaded refuses the save,
+     unless you choose to overwrite it (§7.8);
    - every reference value must exist on the device (§7.1);
    - the build compatibility check runs (§7.3): a blocking finding refuses the
      apply and names the finding, and fields the build does not have are
@@ -1405,6 +1408,53 @@ check first. For a product with no measured GUI layout and no measured CLI
 tree, the page says that SATOM cannot split GUI fields from CLI-only fields yet.
 In that case every field the REST API returns stays in the object views, and
 nothing is hidden.
+
+### 7.8 Two people editing the same object
+
+SATOM protects an object in two ways when more than one person, or more than
+one tab, works on it.
+
+**The edit lock.** Opening an object for editing takes a lock on it. This holds
+in the object editor, the Server Policy page, and the dialogs of the pages in a
+device's own layout (FortiWeb, FortiGate, FortiAuthenticator, FortiADC,
+FortiAnalyzer). The page keeps the lock while it is open and gives it back when
+you leave. If you close the browser, the lock expires after two minutes.
+
+- When someone else holds the lock, the editor shows **Being edited by
+  <user>** and Save is blocked. **Take over** moves the lock to you. The other
+  person's page then shows *Your edit lock was lost* and their next save is
+  refused.
+- A lock belongs to one page, not to one user. If you open the same object in
+  a second tab or window, that tab shows **You have this open in another tab or
+  window** and cannot save until you take over.
+- A row of a table belongs to its object: the object's lock covers its rows.
+- The lock binds every writer, not only the editors. A Mass Deploy, a Process,
+  a scheduled action, a script, the certificate and DNS-decommission jobs and
+  the FortiADC writers all check it before they change or delete the object.
+  Their step fails with *"<name>" is being edited by <user>*, nothing reaches
+  the device, and the refusal is in the Audit Log as
+  `config.write.edit_locked`. A job you started yourself is not blocked by your
+  own lock. An unattended run (a schedule with nobody behind it) is blocked by
+  every lock. Adding a new object or row is never blocked: it overwrites
+  nothing.
+
+**The stale-value check.** A lock does not cover changes made outside SATOM,
+or changes made before you opened the page. So every save also sends the value
+each changed field had when your page loaded. SATOM reads the object from the
+device first. If a field now holds something else (neither the value you saw
+nor the one you are sending), the save is refused and nothing is sent. A table
+then shows, per field, what you loaded, what the device holds now and your
+value. You choose:
+
+- **Reload** shows the device's current values. SATOM refreshes its own copy of
+  the object first, so the reloaded page shows them.
+- **Overwrite with mine** sends your values anyway. The overwrite is recorded
+  in the Audit Log as `config.update.overwrote`, with the fields it replaced.
+
+The same change made twice is not a conflict. Fields that cannot be compared
+never block a save: secrets, masked values, tables, counters the device keeps
+itself, and fields the device's read does not return (for example a field only
+the CLI serves).
 
 ## 8. Web Protection (WAF)
 

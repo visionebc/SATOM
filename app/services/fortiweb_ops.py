@@ -254,9 +254,63 @@ class FortiWebOps:
     def create(self, endpoint, data, *, mkey=None, dry_run=True) -> OpResult:
         return self.preview("create", endpoint, mkey, data) if dry_run else self._apply("create", endpoint, mkey, data)
 
-    def update(self, endpoint, mkey, data, *, dry_run=True, sub_mkey=None) -> OpResult:
-        return (self.preview("update", endpoint, mkey, data, sub_mkey) if dry_run
-                else self._apply("update", endpoint, mkey, data, sub_mkey))
+    def update(self, endpoint, mkey, data, *, dry_run=True, sub_mkey=None,
+               expect=None, overwrite=False) -> OpResult:
+        """``expect`` ({field: the value the operator's form loaded}) turns on
+        the stale-value check: the object is read first and a field the device
+        now holds differently -- neither the loaded value nor the new one --
+        refuses the save (``conflict``) instead of overwriting a change nobody
+        saw (another user, a job, the device's own GUI/CLI). The dry run checks
+        too. ``overwrite`` is the operator's explicit "save mine anyway"; it is
+        audited (``config.update.overwrote``) and reported (``overwrote``)."""
+        stale = self._stale(endpoint, mkey, sub_mkey, data, expect) if expect else {}
+        if stale and not overwrite:
+            return self._conflict(endpoint, mkey, sub_mkey, data, stale, dry_run)
+        res = (self.preview("update", endpoint, mkey, data, sub_mkey) if dry_run
+               else self._apply("update", endpoint, mkey, data, sub_mkey))
+        if stale:
+            res["overwrote"] = stale
+            if not dry_run and res.ok:
+                log_action("config.update.overwrote", target=endpoint or "",
+                           appliance_id=getattr(self.appliance, "id", None),
+                           detail="mkey=%s fields=%s" % (mkey or sub_mkey or "",
+                                                          ",".join(sorted(stale))))
+        return res
+
+    def _stale(self, endpoint, mkey, sub_mkey, data, expect) -> dict:
+        """``object_refresh.stale_fields`` against a fresh read of the object;
+        {} when it cannot be read (an unreadable object never blocks: the
+        write itself then says what is wrong)."""
+        from . import object_refresh
+        path = _path(endpoint, mkey, sub_mkey)
+        try:
+            res = object_refresh._read(self.client, path)
+        except Exception:  # noqa: BLE001
+            return {}
+        if res is None or res is object_refresh._ABSENT:
+            return {}
+        q = object_refresh._split(path)[1]
+        obj = object_refresh.object_at(res, str(q.get("sub_mkey") or q.get("mkey") or mkey or ""))
+        return object_refresh.stale_fields(expect, data, obj)
+
+    def _conflict(self, endpoint, mkey, sub_mkey, data, stale, dry_run) -> OpResult:
+        """The refused save: nothing sent; SATOM's copy of the object is
+        re-read so the operator's Reload shows what the device holds (the
+        FortiWeb-layout dialogs draw from that copy -- without this a Reload
+        would show the same stale value and refuse again)."""
+        from . import object_refresh
+        path = _path(endpoint, mkey, sub_mkey)
+        error = object_refresh.describe_stale(stale)
+        try:
+            object_refresh.after_write(self.appliance, self.client, "update", path, None)
+        except Exception:  # noqa: BLE001 — the refusal stands either way
+            pass
+        payload = sanitize_payload(data)
+        if not dry_run:
+            self._record("update", endpoint, mkey, None, payload, False, error)
+        return OpResult(ok=False, action="update", endpoint=endpoint, mkey=mkey,
+                        dry_run=dry_run, request={"method": "PUT", "path": path, "body": payload},
+                        before=None, after=payload, error=error, conflict=stale)
 
     def delete(self, endpoint, mkey, *, dry_run=True, sub_mkey=None,
                check_refs=True, force=False) -> OpResult:

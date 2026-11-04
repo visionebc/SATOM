@@ -133,6 +133,8 @@ class ResourceLock(db.Model):
     resource_key = db.Column(db.String(256), nullable=False)   # e.g. server_policy:pol-x
     owner_user_id = db.Column(db.Integer, nullable=True)
     owner_label = db.Column(db.String(64), nullable=True)
+    # the editor (browser tab) that holds it: one user, two tabs = two editors
+    owner_token = db.Column(db.String(64), nullable=True)
     acquired_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     heartbeat_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     expires_at = db.Column(db.DateTime, nullable=False)

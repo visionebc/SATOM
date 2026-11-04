@@ -1456,6 +1456,40 @@ never block a save: secrets, masked values, tables, counters the device keeps
 itself, and fields the device's read does not return (for example a field only
 the CLI serves).
 
+**Case by case.** Alice opens the object first; Bob comes second. "Refused"
+always means HTTP 409 and nothing sent to the device.
+
+| Case | Result |
+|---|---|
+| Bob opens the same object | Banner *Being edited by alice*; Save blocked; **Take over** available |
+| Bob's save reaches the server anyway (an old page, the API) | Refused: *"<name>" is being edited by alice. Take over the edit lock first; nothing was sent to the device.* |
+| Bob takes over, then Alice saves | Alice's page shows *Your edit lock was lost*; her save is refused |
+| Alice closes the browser | The lock is released on unload, or expires 120 s after her last renewal |
+| Alice leaves the tab open | The tab keeps renewing the lock; it never expires by itself |
+| Bob edits a row of the object Alice has open | Refused: the object's lock covers its rows. Two people cannot edit different rows of one object at the same time |
+| Bob adds a row from a FortiWeb editor, or an inline-table row on a FortiGate, FortiAuthenticator or FortiAnalyzer page | Refused (the row is a change to the object) |
+| Bob adds a FortiADC child-table row, or a job adds a row or creates an object | Allowed: adding overwrites nothing |
+| A Mass Deploy, Process, Policy Clone run, script, scheduled action, certificate or DNS-decommission job changes or deletes the object | Refused; the job step shows `· 409` and *errcode edit-lock*; Audit Log `config.write.edit_locked` |
+| The job was started by Alice herself | Allowed |
+| The job has nobody behind it (unattended schedule) | Refused by any lock |
+| An HTTP Observatory fix plan touches the object | The whole plan is refused before its first write |
+| Sentinel removes an address from `satom-sentinel-block` or binds it to a policy or profile someone has open | Refused; adding an address still works |
+| A REST API v1 call by Alice's token | Allowed (the caller is the token's owner) |
+| Alice opens the object in a second tab | That tab shows *You have this open in another tab or window*; Save blocked until **Take over** |
+| Alice loaded `comment = a`, Bob saved `b`, Alice saves `c` | Refused: *You loaded a · Device now b · Yours c*; **Reload** or **Overwrite with mine** |
+| Same, but Alice saves `b` | Saved (the same change twice) |
+| Bob changed `comment`, Alice changes only `port` | Saved; `comment` keeps Bob's value (only changed fields are sent) |
+| The field was changed on the device's own GUI or CLI after Alice's page loaded | Refused, as above |
+| The device changed between the preview and **Apply** | **Apply** is refused, as above |
+
+Not covered: creating or cloning objects; device-wide settings forms without
+a name (no lock; the stale-value check still applies in the editors); FortiWeb
+settings saved through FortiWeb's own GUI API (log settings, admin settings),
+which get neither check; and Architecture drawings and Wiki articles, which
+have their own "saved meanwhile" check instead of a lock. The full reference,
+with the exact messages and API fields, is the Documentation Center article
+*Two people editing the same object*.
+
 ## 8. Web Protection (WAF)
 
 In the FortiWeb ADOM, the Web Protection pages belong to the device's own menu:

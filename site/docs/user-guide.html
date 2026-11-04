@@ -1444,7 +1444,10 @@ before you have seen the change.</p>
      refused and points you to the Template Library. This holds when the
      profile is opened from a policy's pencil, too;
    - another user's edit lease on the object blocks the save, and nothing is
-     sent. A row of an inline table is checked against its parent's lease;
+     sent. A row of an inline table is checked against its parent's lease.
+     Your own second tab is blocked the same way (§7.8);
+   - a field the device changed since the page loaded refuses the save,
+     unless you choose to overwrite it (§7.8);
    - every reference value must exist on the device (§7.1);
    - the build compatibility check runs (§7.3): a blocking finding refuses the
      apply and names the finding, and fields the build does not have are
@@ -1563,6 +1566,149 @@ check first. For a product with no measured GUI layout and no measured CLI
 tree, the page says that SATOM cannot split GUI fields from CLI-only fields yet.
 In that case every field the REST API returns stays in the object views, and
 nothing is hidden.</p>
+<h3 id="78-two-people-editing-the-same-object">7.8 Two people editing the same object</h3>
+<p>SATOM protects an object in two ways when more than one person, or more than
+one tab, works on it.</p>
+<p><strong>The edit lock.</strong> Opening an object for editing takes a lock on it. This holds
+in the object editor, the Server Policy page, and the dialogs of the pages in a
+device's own layout (FortiWeb, FortiGate, FortiAuthenticator, FortiADC,
+FortiAnalyzer). The page keeps the lock while it is open and gives it back when
+you leave. If you close the browser, the lock expires after two minutes.</p>
+<ul>
+<li>When someone else holds the lock, the editor shows <strong>Being edited by
+  <user></strong> and Save is blocked. <strong>Take over</strong> moves the lock to you. The other
+  person's page then shows <em>Your edit lock was lost</em> and their next save is
+  refused.</li>
+<li>A lock belongs to one page, not to one user. If you open the same object in
+  a second tab or window, that tab shows <strong>You have this open in another tab or
+  window</strong> and cannot save until you take over.</li>
+<li>A row of a table belongs to its object: the object's lock covers its rows.</li>
+<li>The lock binds every writer, not only the editors. A Mass Deploy, a Process,
+  a scheduled action, a script, the certificate and DNS-decommission jobs and
+  the FortiADC writers all check it before they change or delete the object.
+  Their step fails with <em>"<name>" is being edited by <user></em>, nothing reaches
+  the device, and the refusal is in the Audit Log as
+  <code>config.write.edit_locked</code>. A job you started yourself is not blocked by your
+  own lock. An unattended run (a schedule with nobody behind it) is blocked by
+  every lock. Adding a new object or row is never blocked: it overwrites
+  nothing.</li>
+</ul>
+<p><strong>The stale-value check.</strong> A lock does not cover changes made outside SATOM,
+or changes made before you opened the page. So every save also sends the value
+each changed field had when your page loaded. SATOM reads the object from the
+device first. If a field now holds something else (neither the value you saw
+nor the one you are sending), the save is refused and nothing is sent. A table
+then shows, per field, what you loaded, what the device holds now and your
+value. You choose:</p>
+<ul>
+<li><strong>Reload</strong> shows the device's current values. SATOM refreshes its own copy of
+  the object first, so the reloaded page shows them.</li>
+<li><strong>Overwrite with mine</strong> sends your values anyway. The overwrite is recorded
+  in the Audit Log as <code>config.update.overwrote</code>, with the fields it replaced.</li>
+</ul>
+<p>The same change made twice is not a conflict. Fields that cannot be compared
+never block a save: secrets, masked values, tables, counters the device keeps
+itself, and fields the device's read does not return (for example a field only
+the CLI serves).</p>
+<p><strong>Case by case.</strong> Alice opens the object first; Bob comes second. "Refused"
+always means HTTP 409 and nothing sent to the device.</p>
+<table>
+<thead>
+<tr>
+<th>Case</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bob opens the same object</td>
+<td>Banner <em>Being edited by alice</em>; Save blocked; <strong>Take over</strong> available</td>
+</tr>
+<tr>
+<td>Bob's save reaches the server anyway (an old page, the API)</td>
+<td>Refused: <em>"<name>" is being edited by alice. Take over the edit lock first; nothing was sent to the device.</em></td>
+</tr>
+<tr>
+<td>Bob takes over, then Alice saves</td>
+<td>Alice's page shows <em>Your edit lock was lost</em>; her save is refused</td>
+</tr>
+<tr>
+<td>Alice closes the browser</td>
+<td>The lock is released on unload, or expires 120 s after her last renewal</td>
+</tr>
+<tr>
+<td>Alice leaves the tab open</td>
+<td>The tab keeps renewing the lock; it never expires by itself</td>
+</tr>
+<tr>
+<td>Bob edits a row of the object Alice has open</td>
+<td>Refused: the object's lock covers its rows. Two people cannot edit different rows of one object at the same time</td>
+</tr>
+<tr>
+<td>Bob adds a row from a FortiWeb editor, or an inline-table row on a FortiGate, FortiAuthenticator or FortiAnalyzer page</td>
+<td>Refused (the row is a change to the object)</td>
+</tr>
+<tr>
+<td>Bob adds a FortiADC child-table row, or a job adds a row or creates an object</td>
+<td>Allowed: adding overwrites nothing</td>
+</tr>
+<tr>
+<td>A Mass Deploy, Process, Policy Clone run, script, scheduled action, certificate or DNS-decommission job changes or deletes the object</td>
+<td>Refused; the job step shows <code>· 409</code> and <em>errcode edit-lock</em>; Audit Log <code>config.write.edit_locked</code></td>
+</tr>
+<tr>
+<td>The job was started by Alice herself</td>
+<td>Allowed</td>
+</tr>
+<tr>
+<td>The job has nobody behind it (unattended schedule)</td>
+<td>Refused by any lock</td>
+</tr>
+<tr>
+<td>An HTTP Observatory fix plan touches the object</td>
+<td>The whole plan is refused before its first write</td>
+</tr>
+<tr>
+<td>Sentinel removes an address from <code>satom-sentinel-block</code> or binds it to a policy or profile someone has open</td>
+<td>Refused; adding an address still works</td>
+</tr>
+<tr>
+<td>A REST API v1 call by Alice's token</td>
+<td>Allowed (the caller is the token's owner)</td>
+</tr>
+<tr>
+<td>Alice opens the object in a second tab</td>
+<td>That tab shows <em>You have this open in another tab or window</em>; Save blocked until <strong>Take over</strong></td>
+</tr>
+<tr>
+<td>Alice loaded <code>comment = a</code>, Bob saved <code>b</code>, Alice saves <code>c</code></td>
+<td>Refused: <em>You loaded a · Device now b · Yours c</em>; <strong>Reload</strong> or <strong>Overwrite with mine</strong></td>
+</tr>
+<tr>
+<td>Same, but Alice saves <code>b</code></td>
+<td>Saved (the same change twice)</td>
+</tr>
+<tr>
+<td>Bob changed <code>comment</code>, Alice changes only <code>port</code></td>
+<td>Saved; <code>comment</code> keeps Bob's value (only changed fields are sent)</td>
+</tr>
+<tr>
+<td>The field was changed on the device's own GUI or CLI after Alice's page loaded</td>
+<td>Refused, as above</td>
+</tr>
+<tr>
+<td>The device changed between the preview and <strong>Apply</strong></td>
+<td><strong>Apply</strong> is refused, as above</td>
+</tr>
+</tbody>
+</table>
+<p>Not covered: creating or cloning objects; device-wide settings forms without
+a name (no lock; the stale-value check still applies in the editors); FortiWeb
+settings saved through FortiWeb's own GUI API (log settings, admin settings),
+which get neither check; and Architecture drawings and Wiki articles, which
+have their own "saved meanwhile" check instead of a lock. The full reference,
+with the exact messages and API fields, is the Documentation Center article
+<em>Two people editing the same object</em>.</p>
 <h2 id="8-web-protection-waf">8. Web Protection (WAF)</h2>
 <p>In the FortiWeb ADOM, the Web Protection pages belong to the device's own menu:
 the <strong>FortiWeb</strong> group in the sidebar. SATOM builds that group from the measured

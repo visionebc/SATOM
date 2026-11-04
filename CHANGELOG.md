@@ -37,6 +37,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - The Server Policy page and the GUI dialogs of every product now take the
   edit lock (only the object editor did), so their saves show who holds it
   instead of failing on save.
+- A REST API v1 call now writes as its token's owner. The API has no login
+  session, so the edit-lock check saw nobody and refused the owner's own call
+  like an unattended run's.
 
 ## [4.10.1] - 2026-11-02
 

@@ -18,8 +18,9 @@ Every writer honours a lease, not only the editors: :func:`holder` is the one
 check (the object, or the object a sub-table row belongs to), and the device
 clients call it for every write (``FortiWebClient._request``,
 ``FortiADCClient._api``, ``GuiOps.run``) with :func:`current_actor` -- the
-signed-in user of a request, the owner of a background job, or nobody (an
-unattended run, which never writes over an operator's open edit).
+signed-in user of a request (or the owner of a REST API token), the owner of a
+background job, or nobody (an unattended run, which never writes over an
+operator's open edit).
 
 Pure over the Store-style session: every function takes an optional ``session``
 so the tests drive it on a temp SQLite DB and the workers use their own conn.
@@ -272,17 +273,24 @@ def acting_as(user_id, token=None):
 
 def current_actor() -> tuple:
     """``(user_id, token)`` of whoever is writing now: :func:`acting_as`, else
-    the signed-in user of the request, else the owner of the background job
-    this thread runs, else ``(None, None)`` -- an unattended run."""
+    the signed-in user of the request (a REST API v1 call: its token's owner),
+    else the owner of the background job this thread runs, else
+    ``(None, None)`` -- an unattended run."""
     v = _ACTOR.get()
     if v is not None:
         return v
     try:
-        from flask import has_request_context
+        from flask import g, has_request_context
         if has_request_context():
             from flask_login import current_user
             if current_user and current_user.is_authenticated:
                 return getattr(current_user, "id", None), None
+            # a REST API v1 call: the token's owner (app/api_v1/auth.py binds
+            # it to g; the API has no login session, so current_user is
+            # anonymous and the owner's own lease used to refuse the call)
+            owner = getattr(g, "api_token_owner", None)
+            if owner is not None:
+                return getattr(owner, "id", None), None
     except Exception:  # noqa: BLE001 — outside an app: nobody
         pass
     try:

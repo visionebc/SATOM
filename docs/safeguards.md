@@ -17113,3 +17113,60 @@ every side:
   from its `cidr`/`gateway`, and those scalars mirror the first network for
   every reader written for one. A bad CIDR drops that network, never the
   segment.
+
+## §215 — two writers on one object (`tests/test_edit_conflicts.py`, 2026-11-04)
+
+**What it guards.** Nobody overwrites a change they never saw. Three rules,
+each one asserted where the write happens, not where the page draws it:
+
+- **Every writer meets the edit lock.** `BaseClient._lease_refused` answers a
+  PUT/PATCH/DELETE to a leased object (or to a row of one) with a synthetic
+  HTTP 409 before any byte leaves SATOM, audits `config.write.edit_locked` and
+  records the step in the running job. `FortiWebClient._lease_targets` names
+  the object from a cmdb path's `?mkey=`; `FortiADCClient._lease_targets` from
+  `/api/<entity>` plus `mkey`/`pkey`; `GuiOps.run` checks every FortiGate,
+  FortiAuthenticator, FortiADC and FortiAnalyzer GUI save (the dry run too).
+  POST is not checked: adding overwrites nothing.
+- **A lease belongs to a page, not to a user** (`resource_locks.owner_token`).
+  Another tab of the same user cannot save, renew or release it.
+- **A save based on an old read is refused** (`object_refresh.stale_fields`):
+  the editor sends the value it loaded; a field the device now holds as
+  neither that nor the new value refuses the save, refreshes SATOM's copy and
+  waits for the operator's Overwrite (`config.update.overwrote`).
+
+**Who is writing** (`lock_service.current_actor`): `acting_as`, else the
+request's signed-in user, else a REST API token's owner (`g.api_token_owner`),
+else the owner of the background job, else nobody. Nobody is kept out by every
+lease.
+
+**The traps.**
+
+* *A guard in the editor is a guard for the editor.* For months the lease was
+  checked in `objedit` and `workspace.save` only, and every automation wrote
+  straight past it. The check now lives in the clients; the editors keep their
+  own (with the page's token) for the nicer answer.
+* *Per-user means two tabs agree with each other.* A lease keyed on the user
+  let one operator's second tab overwrite the first, and closing it released
+  the first tab's lease.
+* *A per-key token breaks a page with several objects.* The Server Policy page
+  writes the policy, its pool and its virtual server. One token per lease key
+  sent the policy's token with the pool's write and was refused as "another
+  tab"; the token is one per page load (`window.__fwLeaseTok`).
+* *sessionStorage is copied by "Duplicate tab".* A token kept there would make
+  the copy pass for the same editor; it lives in the page.
+* *A refusal that does not refresh the copy loops.* The FortiWeb-layout
+  dialogs draw from SATOM's copy: refusing a stale save without re-reading the
+  object made Reload show the same stale value and refuse again.
+* *The API has no `current_user`.* REST API v1 binds the caller to
+  `g.api_token_owner`; read as nobody, the owner's own lease refused their call.
+* *Comparing what cannot be compared blocks forever.* Secrets, masked
+  `******`, lists, `sz_*` counters and fields the read does not return are
+  skipped, `None` equals an empty box, and `80` equals `"80"`; otherwise a
+  field could never be saved again.
+
+**Mutations that must bite** (all do): tab ignored in `_owns`; client guard
+removed; parent walk removed from `keys_for`; stale rule always passing;
+conflict never returned by `FortiWebOps.update`; `GuiOps` check off; release
+by any tab; the view ignoring `lease_token`; `None` no longer equal to `""`;
+`_gx_stale` off; the API-owner branch removed.
+

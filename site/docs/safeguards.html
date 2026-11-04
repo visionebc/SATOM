@@ -16561,6 +16561,59 @@ every side:</p>
   every reader written for one. A bad CIDR drops that network, never the
   segment.</li>
 </ul>
+<h2 id="215--two-writers-on-one-object-teststest_edit_conflictspy-2026-11-04">§215 — two writers on one object (<code>tests/test_edit_conflicts.py</code>, 2026-11-04)</h2>
+<p><strong>What it guards.</strong> Nobody overwrites a change they never saw. Three rules,
+each one asserted where the write happens, not where the page draws it:</p>
+<ul>
+<li><strong>Every writer meets the edit lock.</strong> <code>BaseClient._lease_refused</code> answers a
+  PUT/PATCH/DELETE to a leased object (or to a row of one) with a synthetic
+  HTTP 409 before any byte leaves SATOM, audits <code>config.write.edit_locked</code> and
+  records the step in the running job. <code>FortiWebClient._lease_targets</code> names
+  the object from a cmdb path's <code>?mkey=</code>; <code>FortiADCClient._lease_targets</code> from
+  <code>/api/&lt;entity&gt;</code> plus <code>mkey</code>/<code>pkey</code>; <code>GuiOps.run</code> checks every FortiGate,
+  FortiAuthenticator, FortiADC and FortiAnalyzer GUI save (the dry run too).
+  POST is not checked: adding overwrites nothing.</li>
+<li><strong>A lease belongs to a page, not to a user</strong> (<code>resource_locks.owner_token</code>).
+  Another tab of the same user cannot save, renew or release it.</li>
+<li><strong>A save based on an old read is refused</strong> (<code>object_refresh.stale_fields</code>):
+  the editor sends the value it loaded; a field the device now holds as
+  neither that nor the new value refuses the save, refreshes SATOM's copy and
+  waits for the operator's Overwrite (<code>config.update.overwrote</code>).</li>
+</ul>
+<p><strong>Who is writing</strong> (<code>lock_service.current_actor</code>): <code>acting_as</code>, else the
+request's signed-in user, else a REST API token's owner (<code>g.api_token_owner</code>),
+else the owner of the background job, else nobody. Nobody is kept out by every
+lease.</p>
+<p><strong>The traps.</strong></p>
+<ul>
+<li><em>A guard in the editor is a guard for the editor.</em> For months the lease was
+  checked in <code>objedit</code> and <code>workspace.save</code> only, and every automation wrote
+  straight past it. The check now lives in the clients; the editors keep their
+  own (with the page's token) for the nicer answer.</li>
+<li><em>Per-user means two tabs agree with each other.</em> A lease keyed on the user
+  let one operator's second tab overwrite the first, and closing it released
+  the first tab's lease.</li>
+<li><em>A per-key token breaks a page with several objects.</em> The Server Policy page
+  writes the policy, its pool and its virtual server. One token per lease key
+  sent the policy's token with the pool's write and was refused as "another
+  tab"; the token is one per page load (<code>window.__fwLeaseTok</code>).</li>
+<li><em>sessionStorage is copied by "Duplicate tab".</em> A token kept there would make
+  the copy pass for the same editor; it lives in the page.</li>
+<li><em>A refusal that does not refresh the copy loops.</em> The FortiWeb-layout
+  dialogs draw from SATOM's copy: refusing a stale save without re-reading the
+  object made Reload show the same stale value and refuse again.</li>
+<li><em>The API has no <code>current_user</code>.</em> REST API v1 binds the caller to
+  <code>g.api_token_owner</code>; read as nobody, the owner's own lease refused their call.</li>
+<li><em>Comparing what cannot be compared blocks forever.</em> Secrets, masked
+  <code>******</code>, lists, <code>sz_*</code> counters and fields the read does not return are
+  skipped, <code>None</code> equals an empty box, and <code>80</code> equals <code>"80"</code>; otherwise a
+  field could never be saved again.</li>
+</ul>
+<p><strong>Mutations that must bite</strong> (all do): tab ignored in <code>_owns</code>; client guard
+removed; parent walk removed from <code>keys_for</code>; stale rule always passing;
+conflict never returned by <code>FortiWebOps.update</code>; <code>GuiOps</code> check off; release
+by any tab; the view ignoring <code>lease_token</code>; <code>None</code> no longer equal to <code>""</code>;
+<code>_gx_stale</code> off; the API-owner branch removed.</p>
     </div>
   </div>
 </section>

@@ -18,17 +18,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   is gone. Branding — Top-bar Banner spans the full width.
 
 ### Added
-- **Clone a plugin app, with its data or only its structure.** Operator
+- **Clone a plugin app: with its data, only its structure, or on the same
+  data as the original.** Operator
   request: "in the plugins section I want them to be clonable; the clone must
   ask whether everything, or the structure as it is, without the data — and
   the apps must be able to write in their data section." **Plugin Studio →
   Apps → ⋯ → Clone** asks for the new id and name and, for a flow app, what
   the copy takes: **Everything** (the structure and the rows of its data
-  stores) or **Structure only** (the same stores and columns, empty); neither
-  is preselected. Every data store only the original uses becomes the
+  stores), **Structure only** (the same stores and columns, empty) or **Same
+  data as the original** (no copy: both apps read and write the original's
+  stores, so a row or a column one of them changes, the other sees — "an
+  option to use everything but add more things, with the original's
+  database, so a change is shared"); none is preselected. With Same data the
+  form, diagram and actions are still the copy's own: it can add steps and
+  data stores of its own, and a later change to the original's diagram does
+  not reach it. Every data store only the original uses becomes the
   clone's own copy and the clone's steps, *Save to a data store* actions and
-  list fields point at it, so the clone writes its own data and never the
-  original's. Stores other apps use stay shared unless *Copy these too* is
+  list fields point at it, so with Everything or Structure only the clone
+  writes its own data and never the original's. Stores other apps use stay shared unless *Copy these too* is
   ticked. The clone is a draft (form, diagram, actions, design and images,
   icon, menu group, ADOMs, access); runs, published versions, automations,
   sign-in rules and secrets are not copied. Templates from Examples can be

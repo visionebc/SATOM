@@ -866,8 +866,11 @@ def data_zip(a: StudioApp) -> tuple[str, bytes]:
 #  be able to write in their data section")                                    #
 # --------------------------------------------------------------------------- #
 #: What a clone copies: "all" = the structure and the rows of the data stores;
-#: "structure" = the same stores, empty.
-CLONE_MODES = ("all", "structure")
+#: "structure" = the same stores, empty; "shared" = no copy: the clone uses
+#: the original's stores, so a row or a column one of them changes, the other
+#: sees (operator, 2026-11-04: "an option to use everything but add more
+#: things -- the original's database, so a change is shared").
+CLONE_MODES = ("all", "structure", "shared")
 
 
 def _clone_store_slug(store: str, src_app: str, new_app: str, taken: set) -> str:
@@ -934,6 +937,10 @@ def clone(a: StudioApp, new_slug: str, new_name: str, *, mode: str = "structure"
     writes its own data, never the original's. ``mode="all"`` copies the rows,
     ``"structure"`` the columns only. A store other apps use too stays shared
     (the clone keeps reading and writing it) unless *copy_shared*.
+    ``mode="shared"`` copies no store: the clone reads and writes the
+    original's stores (rows and columns are common to both; the form,
+    diagram and actions are not -- each app keeps its own, and the clone may
+    add steps and stores of its own). *copy_shared* is ignored there.
 
     Copied: form, diagram, actions, design and its images, icon, description,
     menu group, ADOMs, access list. Not copied: the published versions (the
@@ -950,7 +957,7 @@ def clone(a: StudioApp, new_slug: str, new_name: str, *, mode: str = "structure"
     from sqlalchemy import literal, select
     from ..models_studio import StudioAppAsset, StudioDataStore, StudioRow
     if mode not in CLONE_MODES:
-        raise AppError("mode is all or structure")
+        raise AppError("mode is all, structure or shared")
     new_slug = (new_slug or "").strip()
     if not _SLUG_RE.match(new_slug):
         raise AppError("Id: lowercase letters, digits, - and _, 2 to 48 characters.")
@@ -963,9 +970,13 @@ def clone(a: StudioApp, new_slug: str, new_name: str, *, mode: str = "structure"
         return _clone_script(a, new_slug, new_name, by)
 
     plan = clone_plan(a)
-    to_copy = [s["slug"] for s in plan["own"] + (plan["shared"] if copy_shared else [])
-               if not s["missing"]]
-    kept = [s["slug"] for s in plan["shared"] if not copy_shared and not s["missing"]]
+    if mode == "shared":
+        to_copy = []
+        kept = [s["slug"] for s in plan["own"] + plan["shared"] if not s["missing"]]
+    else:
+        to_copy = [s["slug"] for s in plan["own"] + (plan["shared"] if copy_shared else [])
+                   if not s["missing"]]
+        kept = [s["slug"] for s in plan["shared"] if not copy_shared and not s["missing"]]
     missing = [s["slug"] for s in plan["own"] + plan["shared"] if s["missing"]]
     if StudioDataStore.query.count() + len(to_copy) > SS.MAX_STORES:
         raise AppError("the copy needs %d new data store(s) and a node keeps at most %d"
@@ -1016,7 +1027,10 @@ def clone(a: StudioApp, new_slug: str, new_name: str, *, mode: str = "structure"
         db.session.rollback()
         raise
     todo = ["review the copy and Publish it (Plugin Studio › Apps › %s)" % new_slug]
-    if kept:
+    if kept and mode == "shared":
+        todo.append("the copy reads and writes the original's data store(s) %s: a change "
+                    "made by either app is seen by both" % ", ".join(kept))
+    elif kept:
         todo.append("the copy still writes the shared data store(s) %s" % ", ".join(kept))
     return {"app": b, "kind": "flow", "mode": mode, "stores": stores, "shared": kept,
             "missing": missing, "todo": todo}

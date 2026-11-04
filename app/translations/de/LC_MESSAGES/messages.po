@@ -29031,3 +29031,12 @@ msgstr "Die Kopie schreibt in ihre eigenen Datenspeicher, nie in die des Origina
 
 msgid "A script app: a new script with the same code, form and settings. Credential values and saved runs are not copied."
 msgstr "Eine Skript-App: ein neues Skript mit demselben Code, Formular und denselben Einstellungen. Werte von Anmeldedaten und gespeicherte Läufe werden nicht kopiert."
+
+msgid "Same data as the original"
+msgstr "Dieselben Daten wie das Original"
+
+msgid "no copy: both apps read and write the same data stores, so a row or a column one of them changes, the other sees. The copy can still add steps and data stores of its own."
+msgstr "keine Kopie: beide Apps lesen und schreiben dieselben Datenspeicher, eine Zeile oder Spalte, die eine ändert, sieht die andere. Die Kopie kann trotzdem eigene Schritte und Datenspeicher hinzufügen."
+
+msgid "With Everything or Structure only, the copy writes to its own data stores, never to the original's; with Same data, to the original's. The form, diagram and actions are the copy's own either way. It starts as a draft: publish it when it is ready. Runs, published versions, automations, sign-in rules and secrets are not copied; connections and scripts stay shared."
+msgstr "Mit Alles oder Nur die Struktur schreibt die Kopie in ihre eigenen Datenspeicher, nie in die des Originals; mit Dieselben Daten in die des Originals. Formular, Diagramm und Aktionen gehören in jedem Fall der Kopie. Sie beginnt als Entwurf: Veröffentlichen Sie sie, wenn sie fertig ist. Läufe, veröffentlichte Versionen, Automatisierungen, Anmelderegeln und Geheimnisse werden nicht kopiert; Verbindungen und Skripte bleiben gemeinsam genutzt."

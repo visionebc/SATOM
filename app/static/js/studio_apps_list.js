@@ -101,8 +101,9 @@
       .catch(function (e) { gSave.disabled = false; msg(e.message, true); });
   });
   // Clone: a dialog that asks for the new id and name and, for a flow app,
-  // whether the copy takes everything (the rows of its data stores) or only
-  // the structure (the same stores, empty). No mode is preselected: the
+  // whether the copy takes everything (the rows of its data stores), only
+  // the structure (the same stores, empty) or the same data (no copy: both
+  // apps use the original's stores). No mode is preselected: the
   // operator chooses. The copy writes to its own stores
   // (studio_apps.clone); stores other apps use too stay shared unless ticked.
   var cModal = document.getElementById('apCloneModal');
@@ -115,6 +116,10 @@
     if (!cGo) return;
     var slugOk = /^[a-z0-9][a-z0-9_-]{1,47}$/.test(document.getElementById('apCloneSlug').value.trim());
     var mode = document.querySelector('input[name="apCloneMode"]:checked');
+    // Same data: nothing is copied, so "copy the shared stores too" has no say
+    var cs = document.getElementById('apCloneCopyShared');
+    cs.disabled = !!(mode && mode.value === 'shared');
+    if (cs.disabled) cs.checked = false;
     cGo.disabled = !(slugOk && (cKind === 'script' || mode));
   }
   function askClone(slug) {
@@ -134,7 +139,7 @@
         document.getElementById('apCloneFlow').classList.toggle('d-none', p.kind === 'script');
         document.getElementById('apCloneScript').classList.toggle('d-none', p.kind !== 'script');
         document.getElementById('apCloneOwn').textContent = p.own.length
-          ? 'Data stores the copy gets its own copy of: ' + stores(p.own) + '.'
+          ? 'Data stores only this app uses: ' + stores(p.own) + '.'
           : 'This app uses no data store of its own.';
         document.getElementById('apCloneSharedBox').classList.toggle('d-none', !p.shared.length);
         document.getElementById('apCloneShared').textContent = p.shared.length
@@ -161,7 +166,8 @@
       window.bootstrap.Modal.getOrCreateInstance(cModal).hide();
       var copied = (d.stores || []).map(function (s) { return s.from + ' → ' + s.to + ' (' + s.rows + ' rows)'; });
       msg('Cloned ' + cSrc + ' as ' + d.slug + (copied.length ? ': ' + copied.join(', ') : '') +
-          (d.shared && d.shared.length ? '; still shared: ' + d.shared.join(', ') : '') + '. Opening the copy…');
+          (d.shared && d.shared.length ? '; same data as the original: ' + d.shared.join(', ') : '') +
+          '. Opening the copy…');
       window.setTimeout(function () { window.location = d.edit; }, 1200);
     }).catch(function (e) { cGo.disabled = false; msg(e.message, true); });
   });

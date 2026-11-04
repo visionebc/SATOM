@@ -6308,7 +6308,7 @@ and its published version. The <strong>Actions</strong> column:</p>
 </tr>
 <tr>
 <td><strong>Clone</strong></td>
-<td>A new <strong>draft</strong> app from this one (flow or script). The dialog asks for the new id and name and — for a flow app — <strong>what the copy takes</strong>: <strong>Everything</strong> (the structure <em>and</em> the rows of its data stores) or <strong>Structure only</strong> (the same data stores and columns, empty). Neither is preselected. See <em>Cloning an app</em> below.</td>
+<td>A new <strong>draft</strong> app from this one (flow or script). The dialog asks for the new id and name and — for a flow app — <strong>what the copy takes</strong>: <strong>Everything</strong> (the structure <em>and</em> the rows of its data stores), <strong>Structure only</strong> (the same data stores and columns, empty) or <strong>Same data as the original</strong> (no copy: both apps use the original's stores). None is preselected. See <em>Cloning an app</em> below.</td>
 </tr>
 <tr>
 <td><strong>Reset</strong></td>
@@ -6338,6 +6338,15 @@ nothing.</p>
   reads and writes its own stores and never the original's</strong> (and the other
   way round). <strong>Everything</strong> copies the rows as well; <strong>Structure only</strong>
   copies the columns and leaves the stores empty.</li>
+<li><strong>Same data as the original</strong> copies no store: the clone's steps keep
+  naming the original's stores, so <strong>both apps read and write the same
+  rows</strong>, and a column added to a store is a column of both. What is shared
+  is the <em>data</em>: the form, diagram and actions are the clone's own — add
+  steps, fields or data stores of its own to it — and a later change to the
+  original's diagram does not reach the clone (nor the other way round).
+  The stores become <em>shared</em>, so <strong>Reset</strong> of either app no longer empties
+  them, and <strong>Delete</strong> of one keeps them for the other. <em>Copy these too</em>
+  has no effect with this choice.</li>
 <li><strong>Shared stores.</strong> A store another app uses too is listed separately and
   stays <strong>shared</strong> by default: the copy keeps reading and writing it (the
   answer says so). Tick <em>Copy these too</em> to give the clone its own copy of
@@ -6356,7 +6365,8 @@ nothing.</p>
 <li>Refused, with nothing written: an id that exists or is a template's id, a
   mode other than <em>Everything</em> / <em>Structure only</em>, or more data stores than a
   node keeps (200). Audited as <code>studio.app.clone</code> (source, mode, the stores
-  copied and the ones left shared).</li>
+  copied and the ones left shared). The API value of each choice:
+  <code>all</code>, <code>structure</code>, <code>shared</code>.</li>
 </ul>
 <p>The editor has seven tabs:</p>
 <ul>

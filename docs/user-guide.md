@@ -5642,7 +5642,7 @@ and its published version. The **Actions** column:
 | **Disable / Enable** | A disabled app leaves every menu and starts no run — an operator run, an event automation, *Run another app*, a *Run a script* step or a saved script schedule (the schedule is *skipped*, not paused, so enabling the app resumes it). Nothing is deleted; an author can still test the draft. |
 | **Download data** | A zip: `app.json`, the runs (`runs.json`, or one JSON per run of a script) and a CSV per data store the app uses. |
 | **Export app package** / **Download the code** | The app as a `.satomplugin` package (§23.7 *packages*); for a script app, the code as a zip. |
-| **Clone** | A new **draft** app from this one (flow or script). The dialog asks for the new id and name and — for a flow app — **what the copy takes**: **Everything** (the structure *and* the rows of its data stores) or **Structure only** (the same data stores and columns, empty). Neither is preselected. See *Cloning an app* below. |
+| **Clone** | A new **draft** app from this one (flow or script). The dialog asks for the new id and name and — for a flow app — **what the copy takes**: **Everything** (the structure *and* the rows of its data stores), **Structure only** (the same data stores and columns, empty) or **Same data as the original** (no copy: both apps use the original's stores). None is preselected. See *Cloning an app* below. |
 | **Reset** | Deletes the app's data from the database: its run history and every row of the data stores **only it** uses. Stores another app uses keep their rows (the answer lists them). The design, versions, connections and settings stay. Refused while a run of the app is in progress. You type the app id to confirm. |
 | **Delete** | Deletes the app for good: its runs and the data stores only it uses (a script app: the script, its versions, saved runs, run records and vaulted credentials). Connections and APIs are never deleted here. Refused for a **template** and for an app another app runs. You type the app id to confirm. |
 
@@ -5665,6 +5665,15 @@ nothing.
   reads and writes its own stores and never the original's** (and the other
   way round). **Everything** copies the rows as well; **Structure only**
   copies the columns and leaves the stores empty.
+- **Same data as the original** copies no store: the clone's steps keep
+  naming the original's stores, so **both apps read and write the same
+  rows**, and a column added to a store is a column of both. What is shared
+  is the *data*: the form, diagram and actions are the clone's own — add
+  steps, fields or data stores of its own to it — and a later change to the
+  original's diagram does not reach the clone (nor the other way round).
+  The stores become *shared*, so **Reset** of either app no longer empties
+  them, and **Delete** of one keeps them for the other. *Copy these too*
+  has no effect with this choice.
 - **Shared stores.** A store another app uses too is listed separately and
   stays **shared** by default: the copy keeps reading and writing it (the
   answer says so). Tick *Copy these too* to give the clone its own copy of
@@ -5683,7 +5692,8 @@ nothing.
 - Refused, with nothing written: an id that exists or is a template's id, a
   mode other than *Everything* / *Structure only*, or more data stores than a
   node keeps (200). Audited as `studio.app.clone` (source, mode, the stores
-  copied and the ones left shared).
+  copied and the ones left shared). The API value of each choice:
+  `all`, `structure`, `shared`.
 
 The editor has seven tabs:
 

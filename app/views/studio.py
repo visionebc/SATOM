@@ -1156,9 +1156,11 @@ def app_clone_plan(slug):
 @login_required
 @require_permission(LIBRARY)
 def app_clone(slug):
-    """A new draft app from this one (studio_apps.clone): ``mode`` "all"
+    """A new draft app from this one (studio_apps.clone): ``mode`` "shared"
+    uses the original's data stores (no copy), "all"
     copies the rows of its data stores, "structure" only their columns. The
-    copy writes to its own stores. Templates can be cloned."""
+    copy writes to its own stores, except with "shared". Templates can be
+    cloned."""
     from ..extensions import db
     from ..services import script_library as SL
     from ..services import studio_apps as SA

@@ -473,13 +473,15 @@
           <label class="form-check-label" for="apCloneAll"><strong>{{ _('Everything') }}</strong> — {{ _('the structure and the data: the rows of its data stores are copied') }}</label></div>
         <div class="form-check mb-2"><input class="form-check-input" type="radio" name="apCloneMode" id="apCloneStructure" value="structure">
           <label class="form-check-label" for="apCloneStructure"><strong>{{ _('Structure only') }}</strong> — {{ _('the same data stores and columns, empty') }}</label></div>
+        <div class="form-check mb-2"><input class="form-check-input" type="radio" name="apCloneMode" id="apCloneShared" value="shared">
+          <label class="form-check-label" for="apCloneShared"><strong>{{ _('Same data as the original') }}</strong> — {{ _('no copy: both apps read and write the same data stores, so a row or a column one of them changes, the other sees. The copy can still add steps and data stores of its own.') }}</label></div>
         <div class="text-muted" id="apCloneOwn"></div>
         <div id="apCloneSharedBox" class="mt-2 d-none">
           <div class="text-muted" id="apCloneShared"></div>
           <div class="form-check mt-1"><input class="form-check-input" type="checkbox" id="apCloneCopyShared">
             <label class="form-check-label" for="apCloneCopyShared">{{ _('Copy these too (otherwise the copy keeps reading and writing them)') }}</label></div>
         </div>
-        <div class="form-text">{{ _("The copy writes to its own data stores, never to the original's. It starts as a draft: publish it when it is ready. Runs, published versions, automations, sign-in rules and secrets are not copied; connections and scripts stay shared.") }}</div>
+        <div class="form-text">{{ _("With Everything or Structure only, the copy writes to its own data stores, never to the original's; with Same data, to the original's. The form, diagram and actions are the copy's own either way. It starts as a draft: publish it when it is ready. Runs, published versions, automations, sign-in rules and secrets are not copied; connections and scripts stay shared.") }}</div>
       </div>
       <div id="apCloneScript" class="d-none text-muted">{{ _('A script app: a new script with the same code, form and settings. Credential values and saved runs are not copied.') }}</div>
     </div>

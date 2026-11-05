@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, empty_state, filter_box, ago %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+{{ page_header('Audit log', 'Who changed what — sign-ins, sources, diagrams, collections (last 300)', 'journal-text') }}
+<div class="obs-toolbar">{{ filter_box('audit-table', 'Filter by user, action or target…') }}</div>
+<div class="fw-card"><div class="fw-card-body p-0 table-responsive">
+{% if rows %}
+<table class="table table-sm table-hover mb-0 obs-table" id="audit-table">
+  <thead><tr><th scope="col">When</th><th scope="col">User</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Detail</th></tr></thead>
+  <tbody>{% for a in rows %}
+    <tr data-filter-item class="{{ 'obs-row-error' if a.action.endswith('failed') }}"><td class="text-nowrap">{{ ago(a.at) }}</td><td>{{ a.user }}</td>
+      <td><code>{{ a.action }}</code></td><td>{{ a.target }}</td><td class="small">{{ a.detail }}</td></tr>
+  {% endfor %}</tbody>
+</table>
+{% else %}{{ empty_state('journal-text', 'Nothing recorded yet', 'Actions appear here as soon as someone signs in or changes something.') }}{% endif %}
+</div></div>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header %}
+{% block title %}{{ 'Edit ' + s.name if s.id else 'New source' }}{% endblock %}
+{% block content %}
+{{ page_header('Edit ' ~ s.name if s.id else 'New source', kind_label ~ ' — read-only connector', 'plug') }}
+<form method="post" class="obs-form obs-busy-form" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="kind" value="{{ s.kind }}">
+  <section class="fw-card mb-3"><div class="fw-card-body">
+    <h2 class="obs-form-title">Device</h2>
+    <div class="row g-3">
+      <div class="col-md-5"><label class="form-label" for="f-name">Name</label>
+        <input class="form-control form-control-sm" id="f-name" name="name" value="{{ s.name or '' }}" required aria-describedby="h-name">
+        <div class="form-text" id="h-name">How it appears in diagrams, e.g. <code>fortiweb19</code>.</div></div>
+      <div class="col-md-5"><label class="form-label" for="f-host">Host or IP</label>
+        <input class="form-control form-control-sm" id="f-host" name="host" value="{{ s.host or '' }}" required></div>
+      <div class="col-md-2"><label class="form-label" for="f-port">Port</label>
+        <input class="form-control form-control-sm" id="f-port" name="port" inputmode="numeric" value="{{ s.port or 443 }}"></div>
+    </div>
+  </div></section>
+  <section class="fw-card mb-3"><div class="fw-card-body">
+    <h2 class="obs-form-title">Credentials</h2>
+    <div class="row g-3">
+      {% if conn.uses_username %}
+      <div class="col-md-5"><label class="form-label" for="f-user">Username</label>
+        <input class="form-control form-control-sm" id="f-user" name="username" value="{{ s.username or '' }}" aria-describedby="h-user">
+        <div class="form-text" id="h-user">A read-only account (FortiWeb profile <code>prof_readonly_admin</code>) with this server in its trusted hosts.</div></div>
+      {% endif %}
+      <div class="col-md-{{ 5 if conn.uses_username else 10 }}"><label class="form-label" for="f-secret">{{ conn.secret_label }} {% if s.id %}<span class="text-muted fw-normal">(leave empty to keep)</span>{% endif %}</label>
+        <div class="input-group input-group-sm">
+          <input class="form-control" id="f-secret" type="password" name="secret" autocomplete="new-password" {{ '' if s.id else 'required' }}>
+          <button class="btn btn-outline-secondary obs-reveal" type="button" data-target="f-secret" aria-label="Show {{ conn.secret_label|lower }}" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button>
+        </div>
+        <div class="form-text">{{ conn.secret_help ~ ' ' if conn.secret_help }}Stored encrypted; never shown again, never logged.</div></div>
+      {% if conn.uses_vdom %}
+      <div class="col-md-2"><label class="form-label" for="f-vdom">ADOM / VDOM</label>
+        <input class="form-control form-control-sm" id="f-vdom" name="vdom" value="{{ (s.config or {}).get('vdom', '') }}" aria-describedby="h-vdom">
+        <div class="form-text" id="h-vdom">Only if enabled.</div></div>
+      {% endif %}
+    </div>
+  </div></section>
+  <section class="fw-card mb-3"><div class="fw-card-body">
+    <h2 class="obs-form-title">TLS</h2>
+    <div class="form-check form-switch mb-2">
+      <input class="form-check-input" type="checkbox" role="switch" name="tls_verify" id="f-tv" {{ 'checked' if s.tls_verify }}>
+      <label class="form-check-label" for="f-tv">Verify the device certificate</label>
+      <div class="form-text">Against the system trust store plus the CA below. Turn off only for a self-signed lab device — it is shown as a warning everywhere.</div>
+    </div>
+    <label class="form-label" for="f-ca">Extra CA <span class="text-muted fw-normal">(PEM, optional)</span></label>
+    <textarea class="form-control form-control-sm font-monospace" id="f-ca" name="ca_pem" rows="3" placeholder="-----BEGIN CERTIFICATE-----">{{ s.ca_pem or '' }}</textarea>
+  </div></section>
+  <section class="fw-card mb-3"><div class="fw-card-body">
+    <h2 class="obs-form-title">Collection</h2>
+    <div class="row g-3">
+      <div class="col-md-4"><label class="form-label" for="f-int">Collect every (seconds)</label>
+        <input class="form-control form-control-sm" id="f-int" name="interval_s" inputmode="numeric" value="{{ s.interval_s or 300 }}" aria-describedby="h-int">
+        <div class="form-text" id="h-int">Minimum 60.</div></div>
+      {% if s.kind == 'fortiweb' %}
+      <div class="col-md-4"><label class="form-label" for="f-cap">Back-end health reads per run</label>
+        <input class="form-control form-control-sm" id="f-cap" name="max_policy_detail" inputmode="numeric" value="{{ (s.config or {}).get('max_policy_detail', 60) }}" aria-describedby="h-cap">
+        <div class="form-text" id="h-cap">One request per enabled policy; caps load on the device.</div></div>
+      {% endif %}
+      <div class="col-md-4 d-flex align-items-center"><div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" role="switch" name="enabled" id="f-en" {{ 'checked' if s.enabled }}>
+        <label class="form-check-label" for="f-en">Collected by the scheduler</label></div></div>
+    </div>
+  </div></section>
+  <div class="obs-form-actions">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('sources.detail', sid=s.id) if s.id else url_for('sources.index') }}">Cancel</a>
+    <button class="btn btn-sm btn-primary"><span class="obs-btn-label">{{ 'Save changes' if s.id else 'Add source' }}</span></button>
+  </div>
+</form>
+{% endblock %}

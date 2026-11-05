@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, value %}
+{% from "_ui.html" import page_header, empty_state, filter_box, tile, ago %}
+{% block title %}{{ s.name }}{% endblock %}
+{% block content %}
+{% call page_header(s.name, s.kind ~ ' · ' ~ s.host ~ ':' ~ s.port ~ ' · ' ~ (s.build or 'build unknown'), 'shield-check') %}
+  {% if current_user.is_admin %}
+  <form method="post" action="{{ url_for('sources.test', sid=s.id) }}" class="obs-busy-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-sm btn-outline-primary"><span class="obs-btn-label"><i class="bi bi-plug" aria-hidden="true"></i> Test connection</span></button></form>
+  <form method="post" action="{{ url_for('sources.collect_now', sid=s.id) }}" class="obs-busy-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-sm btn-primary"><span class="obs-btn-label"><i class="bi bi-cloud-download" aria-hidden="true"></i> Collect now</span></button></form>
+  {% endif %}
+  {% if s.config.get('appliance_id') %}
+  <a class="obs-icon-btn" href="{{ satom_root }}/appliances/{{ s.config.get('appliance_id') }}" aria-label="Open {{ s.name }} in SATOM" title="Managed in SATOM › Devices"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+  {% endif %}
+{% endcall %}
+
+{% if not s.tls_verify %}<div class="alert alert-warning py-2 small" role="note"><i class="bi bi-unlock-fill" aria-hidden="true"></i> TLS verification is OFF for this device in SATOM (operator choice there). The device certificate is not checked.</div>{% endif %}
+{% if s.last_error %}<div class="alert alert-danger py-2 small" role="alert"><i class="bi bi-x-octagon-fill" aria-hidden="true"></i> {{ s.last_error }}</div>{% endif %}
+
+<div class="obs-tiles" role="list">
+  {{ tile('Last run', status_badge(s.last_status), ago(s.last_run_at), 'flag') }}
+  {{ tile('Reads OK', ((statuses|length - reads.failed|length) ~ ' / ' ~ statuses|length), ('%d failed' % reads.failed|length) if reads.failed else 'none failed', 'check2-square') }}
+  {% for layer in ['L1','L2','L3','L4','L7'] %}{% set L = ov.layers[layer] %}
+    {{ tile(layer, L.objects|length ~ ' obj', status_badge(L.state)) }}
+  {% endfor %}
+</div>
+
+<div class="row g-3">
+  <div class="col-xl-8">
+    <section class="fw-card" aria-label="Facts by layer">
+      <ul class="nav nav-tabs obs-layer-tabs px-2 pt-2" role="tablist">
+        {% for layer in ['device','L1','L2','L3','L4','L7'] %}{% set L = ov.layers[layer] %}
+        <li class="nav-item" role="presentation">
+          <button class="nav-link {{ 'active' if loop.index == 2 }}" id="tab-{{ layer }}" data-bs-toggle="tab" data-bs-target="#pane-{{ layer }}" type="button" role="tab" aria-controls="pane-{{ layer }}" aria-selected="{{ 'true' if loop.index == 2 else 'false' }}">
+            {{ 'Device' if layer == 'device' else layer }} <i class="bi bi-{{ {'ok':'check-circle-fill','error':'x-octagon-fill','stale':'clock-fill','none':'dash-circle'}[L.state] }} st-{{ L.state }}" aria-label="{{ L.state }}"></i>
+            <span class="obs-tab-count">{{ L.objects|length }}</span>
+          </button>
+        </li>
+        {% endfor %}
+      </ul>
+      <div class="tab-content">
+        {% for layer in ['device','L1','L2','L3','L4','L7'] %}{% set L = ov.layers[layer] %}
+        <div class="tab-pane fade {{ 'show active' if loop.index == 2 }}" id="pane-{{ layer }}" role="tabpanel" aria-labelledby="tab-{{ layer }}">
+          <div class="obs-pane-head">
+            {{ status_badge(L.state) }}
+            <span class="small text-muted">{{ ('read ' ~ L.read_at ~ ' UTC') if L.read_at else 'never read' }}</span>
+            {% if L.objects|length > 6 %}<div class="ms-auto">{{ filter_box('tbl-' ~ layer, 'Filter ' ~ layer ~ ' objects…') }}</div>{% endif %}
+          </div>
+          {% if L.why %}<div class="px-3 pb-2 small {{ 'text-danger' if L.state == 'error' else 'text-muted' }}" {{ 'role="alert"'|safe if L.state == 'error' }}>{{ L.why }}</div>{% endif %}
+          {% if L.objects %}
+          <div class="table-responsive"><table class="table table-sm mb-0 obs-layer-table" id="tbl-{{ layer }}">
+            <thead><tr><th scope="col" class="w-25">Object</th><th scope="col">Facts</th></tr></thead>
+            <tbody>
+            {% for ref, kv in L.objects.items() %}
+              <tr data-filter-item><td class="text-nowrap"><code>{{ ref }}</code></td>
+                <td><dl class="obs-kv">{% for k, v in kv.items() %}<dt>{{ k }}</dt><dd>{{ value(v) }}</dd>{% endfor %}</dl></td></tr>
+            {% endfor %}
+            </tbody></table></div>
+          {% else %}{{ empty_state('inbox', 'No data for ' ~ layer, 'Nothing was read for this layer yet — run a collection, or this build does not expose it.') }}{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+  <div class="col-xl-4">
+    {% macro read_row(st) %}<tr><td class="small">{{ st.endpoint }}<div class="text-muted">{{ st.layers }}</div></td>
+      <td class="text-end">{% if st.absent %}{{ status_badge('none') }}<div class="small text-muted">absent on this build</div>{% elif st.ok %}{{ status_badge('ok') }} <span class="small">{{ st.rows }} rows</span>{% else %}{{ status_badge('error') }}<div class="small text-danger">{{ st.error }}</div>{% endif %}</td></tr>{% endmacro %}
+    {% set failed, health, other = reads.failed, reads.health, reads.other %}
+    <section class="fw-card mb-3" aria-labelledby="h-reads"><div class="fw-card-header"><h2 class="fw-card-title h6 mb-0" id="h-reads">Reads (last run)</h2>
+      <span class="ms-auto small">{{ statuses|length - failed|length }}/{{ statuses|length }} OK</span></div>
+      <div class="fw-card-body p-0">
+        {% if not statuses %}{{ empty_state('cloud-download', 'Never collected', 'Run “Collect now” to read this source.') }}{% endif %}
+        {% if failed %}<table class="table table-sm mb-0"><caption class="px-3 small text-danger fw-semibold">Failed</caption>{% for st in failed %}{{ read_row(st) }}{% endfor %}</table>{% endif %}
+        {% if other %}<table class="table table-sm mb-0">{% for st in other %}{{ read_row(st) }}{% endfor %}</table>{% endif %}
+        {% if health %}<details class="obs-reads"><summary>Back-end health — {{ health|length }} policies read</summary>
+          <table class="table table-sm mb-0">{% for st in health %}{{ read_row(st) }}{% endfor %}</table></details>{% endif %}
+      </div></section>
+    <section class="fw-card" aria-labelledby="h-jobs"><div class="fw-card-header"><h2 class="fw-card-title h6 mb-0" id="h-jobs">Recent jobs</h2>
+      <a class="ms-auto small" href="{{ url_for('jobs.index') }}">All</a></div>
+      <div class="fw-card-body p-0"><table class="table table-sm mb-0">
+        {% for j in jobs %}<tr><td><a href="{{ url_for('jobs.detail', jid=j.id) }}">#{{ j.id }}</a> {{ j.kind }}</td><td>{{ status_badge(j.status) }}</td><td class="small">{{ j.summary }}</td></tr>
+        {% else %}<tr><td class="text-muted small p-3">None yet.</td></tr>{% endfor %}
+      </table></div></section>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ d.name }}{% endblock %}
+{% block body_class %}obs-wide{% endblock %}
+{% block content %}
+<div class="obs-editor"
+     data-layout-url="{{ url_for('diagrams.layout', did=d.id) }}"
+     data-save-url="{{ url_for('diagrams.save', did=d.id) }}"
+     data-overlay-url="{{ url_for('diagrams.live', did=d.id) }}"
+     data-objects-url="{{ url_for('diagrams.objects', did=d.id, sid=0) }}"
+     data-csrf="{{ csrf_token() }}">
+
+  <header class="obs-ed-head">
+    <a class="obs-icon-btn" href="{{ url_for('diagrams.index') }}" aria-label="Back to diagrams" title="Back to diagrams"><i class="bi bi-arrow-left" aria-hidden="true"></i></a>
+    <label class="visually-hidden" for="obs-name">Diagram name</label>
+    <input id="obs-name" class="obs-name-input" value="{{ d.name }}" maxlength="120">
+    <span class="obs-meta">#{{ d.id }} · {{ d.origin }}</span>
+    <span id="obs-live" class="obs-live" role="status" aria-live="polite"></span>
+    <div class="obs-ed-actions">
+      <div class="btn-group btn-group-sm" role="group" aria-label="Layer shown" id="obs-layers">
+        <button type="button" class="btn btn-outline-primary active" data-layer="all" aria-pressed="true">All</button>
+        {% for l in ['L1','L2','L3','L4','L7'] %}<button type="button" class="btn btn-outline-primary" data-layer="{{ l }}" aria-pressed="false">{{ l }}</button>{% endfor %}
+      </div>
+      <div class="btn-group btn-group-sm" role="group" aria-label="View">
+        <button type="button" class="btn btn-outline-secondary active" id="obs-view-graph" aria-pressed="true"><i class="bi bi-diagram-3" aria-hidden="true"></i> Diagram</button>
+        <button type="button" class="btn btn-outline-secondary" id="obs-view-list" aria-pressed="false"><i class="bi bi-list-ul" aria-hidden="true"></i> List</button>
+      </div>
+      <button class="btn btn-sm btn-outline-secondary" id="obs-linkmode" type="button" aria-pressed="false" title="Connect two elements (L)"><i class="bi bi-share" aria-hidden="true"></i> Link</button>
+      <button class="btn btn-sm btn-outline-secondary" id="obs-auto" type="button" aria-pressed="true" title="Re-read the overlay every 60 s"><i class="bi bi-pause-fill" aria-hidden="true"></i> Auto</button>
+      <button class="btn btn-sm btn-outline-secondary" id="obs-refresh" type="button" title="Re-read the overlay now (R)"><i class="bi bi-arrow-repeat" aria-hidden="true"></i></button>
+      <button class="btn btn-sm btn-primary" id="obs-save" type="button" title="Save (Ctrl+S)"><i class="bi bi-save" aria-hidden="true"></i> Save</button>
+    </div>
+  </header>
+
+  <div class="obs-ed-body" id="obs-body">
+    <aside class="obs-palette fw-card" id="obs-palette" aria-label="Add element">
+      <button type="button" class="obs-panel-toggle" id="obs-pal-toggle" aria-expanded="true" aria-controls="obs-palette" title="Collapse palette"><i class="bi bi-chevron-double-left" aria-hidden="true"></i><span>Elements</span></button>
+      <div class="obs-pal-list">
+      {% for key, t in node_types.items() %}
+        <button type="button" class="obs-pal-btn" data-type="{{ key }}" title="Add {{ t.label }}" aria-label="Add {{ t.label }}"><i class="bi bi-{{ t.icon }}" aria-hidden="true"></i><span>{{ t.label }}</span></button>
+      {% endfor %}
+      </div>
+    </aside>
+
+    <section class="obs-stage fw-card" aria-label="Diagram">
+      <svg id="obs-canvas" class="obs-canvas" xmlns="http://www.w3.org/2000/svg" role="application"
+           aria-label="Diagram canvas. Tab to elements; arrows move the selected element; plus and minus zoom; F fits."></svg>
+      <div id="obs-list" class="obs-list" hidden></div>
+      <div class="obs-zoom" role="group" aria-label="Zoom">
+        <button type="button" class="obs-icon-btn" id="obs-zoom-in" aria-label="Zoom in" title="Zoom in (+)"><i class="bi bi-plus-lg" aria-hidden="true"></i></button>
+        <button type="button" class="obs-icon-btn obs-zoom-pct" id="obs-zoom-100" title="Actual size (1)">100%</button>
+        <button type="button" class="obs-icon-btn" id="obs-zoom-out" aria-label="Zoom out" title="Zoom out (-)"><i class="bi bi-dash-lg" aria-hidden="true"></i></button>
+        <button type="button" class="obs-icon-btn" id="obs-fit" aria-label="Fit to screen" title="Fit to screen (F)"><i class="bi bi-arrows-fullscreen" aria-hidden="true"></i></button>
+        <button type="button" class="obs-icon-btn" id="obs-tidy" aria-label="Tidy layout" title="Tidy layout: left to right by the links (T)"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i></button>
+        <button type="button" class="obs-icon-btn" id="obs-full" aria-label="Full screen" title="Full screen"><i class="bi bi-fullscreen" aria-hidden="true"></i></button>
+      </div>
+      <svg id="obs-minimap" class="obs-minimap" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+      <div class="obs-legend" aria-label="Legend">
+        <span><i class="bi bi-check-circle-fill st-ok" aria-hidden="true"></i> OK</span>
+        <span><i class="bi bi-x-octagon-fill st-error" aria-hidden="true"></i> Error / down</span>
+        <span><i class="bi bi-clock-fill st-stale" aria-hidden="true"></i> Stale</span>
+        <span><i class="bi bi-dash-circle st-none" aria-hidden="true"></i> No data</span>
+      </div>
+      <div id="obs-status" class="obs-status small" role="status" aria-live="polite"></div>
+    </section>
+
+    <aside class="obs-side fw-card" id="obs-side" aria-label="Properties and live data">
+      <button type="button" class="obs-panel-toggle" id="obs-side-toggle" aria-expanded="true" aria-controls="obs-side" title="Collapse panel"><i class="bi bi-chevron-double-right" aria-hidden="true"></i><span>Details</span></button>
+      <div class="obs-side-body" id="obs-props"></div>
+    </aside>
+  </div>
+</div>
+<script type="application/json" id="obs-node-types">{{ node_types|tojson }}</script>
+<script type="application/json" id="obs-sources">{{ sources|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/diagram.js') }}?v={{ app_version }}"></script>{% endblock %}

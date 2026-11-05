@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block bare %}
+<div class="obs-login">
+  <section class="obs-login-brand" aria-hidden="true">
+    <div>
+      <div class="obs-login-mark"><i class="bi bi-diagram-3-fill"></i></div>
+      <h2>SATOM Observability</h2>
+      <p>Your service paths, drawn once and read live — layer by layer, L1 to L7.</p>
+      <ul>
+        <li><i class="bi bi-diagram-3"></i> Draw or import draw.io / Mermaid diagrams</li>
+        <li><i class="bi bi-activity"></i> Live overlay from the devices, with read time</li>
+        <li><i class="bi bi-shield-lock"></i> Read-only by construction</li>
+      </ul>
+    </div>
+  </section>
+  <section class="obs-login-form">
+    <div class="obs-login-card">
+      <h1 class="h4 mb-1">Sign in</h1>
+      <p class="text-muted small mb-3">Use your SATOM Observability account.</p>
+      {% with msgs = get_flashed_messages(with_categories=true) %}
+        {% for cat, m in msgs %}<div class="alert alert-{{ cat }} py-2 small" role="alert"><i class="bi bi-x-octagon-fill" aria-hidden="true"></i> {{ m }}</div>{% endfor %}
+      {% endwith %}
+      <form method="post" class="obs-busy-form" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="form-label small fw-semibold" for="u">Username</label>
+        <input class="form-control mb-3" id="u" name="username" autocomplete="username" required autofocus>
+        <label class="form-label small fw-semibold" for="p">Password</label>
+        <div class="input-group mb-3">
+          <input class="form-control" id="p" name="password" type="password" autocomplete="current-password" required>
+          <button class="btn btn-outline-secondary obs-reveal" type="button" data-target="p" aria-label="Show password" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button>
+        </div>
+        <button class="btn btn-primary w-100" type="submit"><span class="obs-btn-label">Sign in</span></button>
+      </form>
+    </div>
+  </section>
+</div>
+{% endblock %}

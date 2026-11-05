@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, ago %}
+{% block title %}Account{% endblock %}
+{% block content %}
+{{ page_header('Account', current_user.username ~ (' · administrator' if current_user.is_admin else ' · read-only user'), 'person-gear') }}
+<div class="row g-3">
+  <div class="col-lg-5">
+    <section class="fw-card" aria-labelledby="h-pw"><div class="fw-card-body">
+      <h2 class="obs-form-title" id="h-pw">Change password</h2>
+      <form method="post" class="obs-busy-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="form-label" for="a-cur">Current password</label>
+        <input class="form-control form-control-sm mb-3" id="a-cur" type="password" name="current" autocomplete="current-password" required>
+        <label class="form-label" for="a-new">New password</label>
+        <input class="form-control form-control-sm" id="a-new" type="password" name="new" autocomplete="new-password" minlength="12" required aria-describedby="h-new">
+        <div class="form-text mb-3" id="h-new">At least 12 characters. A passphrase of several words is easier to remember and harder to guess.</div>
+        <label class="form-label" for="a-again">New password again</label>
+        <input class="form-control form-control-sm mb-3" id="a-again" type="password" name="again" autocomplete="new-password" minlength="12" required>
+        <button class="btn btn-sm btn-primary"><span class="obs-btn-label">Change password</span></button>
+      </form>
+    </div></section>
+  </div>
+  <div class="col-lg-4">
+    <section class="fw-card" aria-labelledby="h-me"><div class="fw-card-body">
+      <h2 class="obs-form-title" id="h-me">This account</h2>
+      <dl class="obs-kv">
+        <dt>User</dt><dd>{{ current_user.username }}</dd>
+        <dt>Role</dt><dd>{{ 'Administrator' if current_user.is_admin else 'Read-only' }}</dd>
+        <dt>Last sign-in</dt><dd>{{ ago(current_user.last_login_at) }}</dd>
+        <dt>Created</dt><dd>{{ ago(current_user.created_at) }}</dd>
+      </dl>
+    </div></section>
+  </div>
+</div>
+{% endblock %}

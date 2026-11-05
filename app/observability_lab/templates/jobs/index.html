@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
+{% from "_ui.html" import page_header, empty_state, filter_box, ago %}
+{% block title %}Jobs{% endblock %}
+{% block content %}
+{{ page_header('Jobs', 'Every collection and connection test, one visible step per read', 'list-task') }}
+<div class="obs-toolbar">
+  <nav class="obs-seg" aria-label="Kind">
+    <a href="{{ url_for('jobs.index', status=status or None) }}" class="{{ 'active' if not kind }}" {{ 'aria-current="true"'|safe if not kind }}>All kinds</a>
+    {% for k in kinds %}<a href="{{ url_for('jobs.index', kind=k, status=status or None) }}" class="{{ 'active' if kind == k }}" {{ 'aria-current="true"'|safe if kind == k }}>{{ k|capitalize }}</a>{% endfor %}
+  </nav>
+  <nav class="obs-seg" aria-label="Status">
+    <a href="{{ url_for('jobs.index', kind=kind or None) }}" class="{{ 'active' if not status }}">Any status</a>
+    {% for s in statuses %}<a href="{{ url_for('jobs.index', kind=kind or None, status=s) }}" class="{{ 'active' if status == s }}">{{ s|capitalize }}</a>{% endfor %}
+  </nav>
+  {{ filter_box('jobs-table', 'Filter by source or summary…') }}
+</div>
+<div class="fw-card"><div class="fw-card-body p-0 table-responsive">
+{% if jobs %}
+<table class="table table-sm table-hover mb-0 obs-table" id="jobs-table">
+  <thead><tr><th scope="col">#</th><th scope="col">Kind</th><th scope="col">Source</th><th scope="col">By</th><th scope="col">Status</th><th scope="col">Summary</th><th scope="col">Started</th><th scope="col" class="text-end">Took</th></tr></thead>
+  <tbody>{% for j in jobs %}
+    <tr data-filter-item><td><a href="{{ url_for('jobs.detail', jid=j.id) }}">{{ j.id }}</a></td><td>{{ j.kind }}</td>
+      <td>{{ source_names.get(j.source_id, '—') }}</td><td>{{ j.created_by }}</td>
+      <td>{{ status_badge(j.status) }}</td><td>{{ j.summary }}</td><td>{{ ago(j.started_at) }}</td>
+      <td class="text-end">{{ ([0, (j.finished_at - j.started_at).total_seconds()]|max|round(1) ~ ' s') if j.finished_at else '…' }}</td></tr>
+  {% endfor %}</tbody>
+</table>
+{% else %}{{ empty_state('list-task', 'No jobs match', 'Change the filters, or run a collection from a source.', url_for('sources.index'), 'Go to sources') }}{% endif %}
+</div></div>
+{% endblock %}

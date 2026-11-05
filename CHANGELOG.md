@@ -28,24 +28,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 - **Observability (lab) at `/observability/` — trial.** Operator request:
-  "integrate what Observability has into SATOM, as a separate URL so nothing
-  of SATOM changes; the inventory and everything comes from the SATOM
-  database". The satom-observability views over the data SATOM already holds:
-  an **Overview** (every device you may see, its state from the collectors —
-  a failing collector or an interface with link down is critical, a stale
-  configuration snapshot a warning, no collector at all unknown — CPU, memory,
-  sessions, firmware, and a problems list), a **Device** page by layer (L1/L2
-  interfaces with link and traffic, L3 static routes, L4 VIPs / firewall
-  policies / address objects / virtual servers, L7 server policy -> VIP ->
-  pool -> back-ends), **End-to-end flows** (client -> VIP -> server policy ->
-  pool -> back-end, each back-end placed on the FortiWeb route it leaves by
-  and on the device interface whose subnet holds it) and a **Search** by
-  name or address. Read-only by construction: GET routes only, `view`
-  permission, ADOM and maintenance scoping, no device connection (cache and
-  metrics only), no schema change and no menu entry. What SATOM does not
-  collect yet (FortiWeb back-end health, FortiGate link state and policy
-  counters, …) is printed as "not measured", never as healthy; a failed
-  metrics query is an error, never zero.
+  "exactly what we have in the other project (SATOM Observability), as a
+  separate URL so nothing of SATOM changes; the inventory and everything
+  comes from the SATOM database". `/observability/` now serves the SATOM
+  Observability application itself (0.3.0: its overview, diagrams with the
+  draw.io / Mermaid / SATOM-layout import and live overlay, sources, jobs,
+  search, audit, and its own theme), behind SATOM: SATOM's sign-in, the
+  `view` permission (reaching a device from it needs `config_write`), the
+  ADOM gate, and an ADOM-confined account is refused. Its sources are SATOM's
+  appliances (FortiWeb and FortiGate; the other products are listed as not
+  yet supported), with no credential copied; the configuration is read from
+  SATOM's device cache through the same parsers, and only what SATOM does not
+  hold — live interface state and counters, policy status, back-end health,
+  licence, routing table, firewall-policy counters — is read from the device,
+  GET only, with the credential SATOM holds, as a visible job step. Its data
+  lives in its own schema of SATOM's database (no SATOM migration) and its
+  history in SATOM's metrics store under `obs_*` names. No menu entry; only
+  existing file touched: one blueprint line.
 - **Web hosting panel and certificates for managed web servers.** Operator
   request: "a separate, complete one with everything we agreed, something like
   a simple cPanel, where I can also manage the certificate", then "do A, B and

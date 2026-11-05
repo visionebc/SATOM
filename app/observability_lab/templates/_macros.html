@@ -1,0 +1,17 @@
+{# State = icon + text + colour, never colour alone. #}
+{% macro status_badge(s) -%}
+{%- set st = {'ok':'ok','done':'ok','partial':'stale','error':'error','failed':'error','running':'none','never':'none','stale':'stale','none':'none'}.get(s, 'none') -%}
+{%- set icon = {'ok':'check-circle-fill','error':'x-octagon-fill','stale':'exclamation-triangle-fill','none':'dash-circle'}[st] -%}
+{%- if s == 'running' %}{% set icon = 'hourglass-split' %}{% endif -%}
+<span class="obs-chip st-{{ st }}"><i class="bi bi-{{ icon }}" aria-hidden="true"></i> {{ {'none':'NO DATA'}.get(s, s|upper) }}</span>
+{%- endmacro %}
+
+{% macro value(v) -%}
+{%- if v is mapping -%}<code class="small">{{ v|tojson }}</code>
+{%- elif v is iterable and v is not string -%}
+  {%- if v and v[0] is mapping -%}
+  <table class="table table-sm obs-subtable mb-0"><thead><tr>{% for k in v[0].keys() %}<th>{{ k }}</th>{% endfor %}</tr></thead>
+  <tbody>{% for row in v %}<tr>{% for k in v[0].keys() %}<td>{{ row.get(k) if row.get(k) is not none else '' }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+  {%- else -%}{{ v|join(', ') }}{%- endif -%}
+{%- else -%}{{ v }}{%- endif -%}
+{%- endmacro %}

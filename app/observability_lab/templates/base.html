@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>{% block title %}{% endblock %} · SATOM Observability</title>
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}?v={{ app_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/observability.css') }}?v={{ app_version }}">
+  {% block head %}{% endblock %}
+  {# Applied before first paint so a collapsed menu does not flash open. #}
+  <script nonce="{{ csp_nonce }}">try{if(localStorage.getItem('obs.sb')==='1')document.documentElement.classList.add('obs-sb-collapsed')}catch(e){}</script>
+</head>
+<body class="{% block body_class %}{% endblock %}" data-root="{{ request.script_root }}">
+<a class="obs-skip" href="#obs-main">Skip to content</a>
+{% set flash_icon = {'success':'check-circle-fill','danger':'x-octagon-fill','warning':'exclamation-triangle-fill','info':'info-circle-fill'} %}
+{% macro flashes() %}
+  {% with msgs = get_flashed_messages(with_categories=true) %}{% if msgs %}
+  <div class="obs-flashes">
+    {% for cat, m in msgs %}
+    <div class="alert alert-{{ cat }} alert-dismissible obs-flash" role="{{ 'alert' if cat in ('danger','warning') else 'status' }}">
+      <i class="bi bi-{{ flash_icon.get(cat, 'info-circle-fill') }}" aria-hidden="true"></i> {{ m }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Dismiss"></button>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}{% endwith %}
+{% endmacro %}
+{% if current_user.is_authenticated %}
+<header class="obs-topbar" aria-label="Top bar">
+  <button class="obs-tb-btn" id="obs-sb-toggle" type="button" aria-controls="obs-sidebar" aria-expanded="true" title="Collapse menu ( [ )">
+    <i class="bi bi-layout-sidebar" aria-hidden="true"></i><span class="visually-hidden">Toggle menu</span>
+  </button>
+  <a class="obs-brand" href="{{ url_for('main.index') }}">
+    <span class="obs-brand-mark" aria-hidden="true"><i class="bi bi-activity"></i></span>
+    <span>SATOM <span class="obs-brand-sub">Observability</span></span>
+  </a>
+
+  <div class="obs-search" role="search">
+    <i class="bi bi-search" aria-hidden="true"></i>
+    <label class="visually-hidden" for="obs-q">Search sources, diagrams, interfaces, policies, back-ends</label>
+    <input id="obs-q" class="form-control" type="search" autocomplete="off" spellcheck="false"
+           placeholder="Search interfaces, policies, back-ends, diagrams…"
+           role="combobox" aria-expanded="false" aria-controls="obs-q-results" aria-autocomplete="list"
+           data-url="{{ url_for('api.search') }}">
+    <span class="obs-kbd" aria-hidden="true">/</span>
+    <div id="obs-q-results" class="obs-search-results" role="listbox" aria-label="Search results" hidden></div>
+  </div>
+
+  <div class="obs-tb-group">
+    <div class="obs-tb-field obs-hide-md" title="Which sources the dashboards show">
+      <i class="bi bi-hdd-stack" aria-hidden="true"></i>
+      <label class="visually-hidden" for="obs-scope">Source scope</label>
+      <select id="obs-scope" class="form-select obs-tb-select"><option value="">All sources</option></select>
+    </div>
+    <div class="obs-tb-field" title="Time range of the charts">
+      <i class="bi bi-clock-history" aria-hidden="true"></i>
+      <label class="visually-hidden" for="obs-range">Time range</label>
+      <select id="obs-range" class="form-select obs-tb-select">
+        {% for r, label in [('5m','Last 5 min'),('15m','Last 15 min'),('1h','Last hour'),('6h','Last 6 h'),('12h','Last 12 h'),('24h','Last 24 h'),('7d','Last 7 days'),('30d','Last 30 days')] %}
+        <option value="{{ r }}" {{ 'selected' if r == '1h' }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <span id="obs-live-pill" class="obs-pill st-none obs-hide-sm" role="status" aria-live="polite" title="Time of the last successful collection">
+      <span class="dot" aria-hidden="true"></span><span class="obs-tb-label-live">Checking…</span>
+    </span>
+    <span id="obs-health-pill" class="obs-pill st-none" title="Global health: failing reads, back-ends down, links down, stale sources">
+      <i class="bi bi-heart-pulse" aria-hidden="true"></i><span>…</span>
+    </span>
+    <span class="obs-ro-pill obs-hide-md" title="Every connector is read-only by construction"><i class="bi bi-shield-lock" aria-hidden="true"></i><span class="obs-tb-label">Read-only</span></span>
+    <span class="obs-tb-sep obs-hide-sm" aria-hidden="true"></span>
+    <div class="dropdown">
+      <button class="obs-tb-btn" id="obs-bell" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="Notifications">
+        <i class="bi bi-bell" aria-hidden="true"></i>
+        <span id="obs-bell-count" class="obs-bell-count" hidden></span>
+      </button>
+      <div class="dropdown-menu dropdown-menu-end obs-notif" aria-labelledby="obs-bell">
+        <div class="obs-notif-head">Needs attention <span id="obs-notif-total" class="ms-auto text-muted small"></span></div>
+        <div id="obs-notif-list"><div class="obs-notif-empty">Loading…</div></div>
+      </div>
+    </div>
+    <div class="dropdown">
+      <button class="obs-tb-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Account menu for {{ current_user.username }}">
+        <span class="obs-avatar" aria-hidden="true">{{ current_user.username[:1]|upper }}</span>
+        <span class="obs-tb-label">{{ current_user.username }}</span><i class="bi bi-chevron-down small" aria-hidden="true" style="font-size:11px"></i>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><h6 class="dropdown-header">{{ current_user.username }}{{ ' · admin' if current_user.is_admin }}</h6></li>
+        <li><a class="dropdown-item" href="{{ satom_root }}/"><i class="bi bi-box-arrow-up-left me-2" aria-hidden="true"></i>Back to SATOM</a></li>
+        <li><a class="dropdown-item" href="{{ url_for('auth.account') }}"><i class="bi bi-person-gear me-2" aria-hidden="true"></i>SATOM profile</a></li>
+        <li><a class="dropdown-item" href="{{ url_for('main.audit_log') }}"><i class="bi bi-journal-text me-2" aria-hidden="true"></i>Audit log</a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><form method="post" action="{{ url_for('auth.logout') }}" class="m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="dropdown-item" type="submit"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>Sign out</button>
+        </form></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+<aside id="obs-sidebar" class="obs-sidebar" aria-label="Main menu">
+  <nav class="obs-nav">
+    {% macro nav_item(endpoint, icon, label, active) -%}
+    <a class="obs-nav-item {{ 'active' if active }}" href="{{ url_for(endpoint) }}" title="{{ label }}" {{ 'aria-current="page"'|safe if active }}><i class="bi bi-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span></a>
+    {%- endmacro %}
+    {# Planned: shown so the structure is visible, never a page with fake data. #}
+    {% macro nav_planned(icon, label, phase) -%}
+    <span class="obs-nav-item is-planned" aria-disabled="true" title="{{ label }} — planned ({{ phase }})"><i class="bi bi-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span><span class="obs-nav-tag">soon</span></span>
+    {%- endmacro %}
+    {% set nav_ep, nav_bp = request.endpoint, request.blueprint %}
+    <div class="obs-nav-section">Monitor</div>
+    {{ nav_item('main.index', 'speedometer2', 'Overview', nav_ep == 'main.index') }}
+    {{ nav_planned('hdd-rack', 'Infrastructure', 'phase 7') }}
+    {{ nav_planned('ethernet', 'Network', 'phase 7') }}
+    {{ nav_planned('window-stack', 'Applications', 'phase 7') }}
+    <div class="obs-nav-section">Visualize</div>
+    {{ nav_planned('bezier', 'Data Flows', 'phase 5') }}
+    {{ nav_item('diagrams.index', 'diagram-3', 'Architecture Maps', nav_bp == 'diagrams') }}
+    {{ nav_planned('share', 'Dependencies', 'phase 7') }}
+    <div class="obs-nav-section">Analyze</div>
+    {{ nav_planned('graph-up-arrow', 'Analytics', 'phase 7') }}
+    {{ nav_planned('bell', 'Events & Alerts', 'phase 8') }}
+    {{ nav_planned('fire', 'Incidents', 'phase 8') }}
+    {{ nav_planned('file-earmark-bar-graph', 'Reports', 'phase 8') }}
+    <div class="obs-nav-section">Configure</div>
+    {{ nav_item('sources.index', 'plug', 'Integrations', nav_bp == 'sources') }}
+    {{ nav_item('jobs.index', 'list-task', 'Collection jobs', nav_bp == 'jobs') }}
+    {{ nav_item('main.audit_log', 'shield-check', 'Administration', nav_ep in ('main.audit_log', 'auth.account')) }}
+  </nav>
+  <div class="obs-sb-foot"><i class="bi bi-info-circle" aria-hidden="true"></i><span>v{{ app_version }} · read-only</span></div>
+</aside>
+
+<main id="obs-main" class="obs-main" tabindex="-1">
+  {{ flashes() }}
+  {% block content %}{% endblock %}
+</main>
+{% else %}
+<main id="obs-main" tabindex="-1">
+{% block bare %}{% endblock %}
+</main>
+{% endif %}
+<script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/common.js') }}?v={{ app_version }}"></script>
+{% if current_user.is_authenticated %}<script src="{{ url_for('static', filename='js/shell.js') }}?v={{ app_version }}" data-shell-url="{{ url_for('api.shell') }}"></script>{% endif %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
+{% from "_ui.html" import page_header, tile, filter_box, ago %}
+{% block title %}Job #{{ j.id }}{% endblock %}
+{% block content %}
+{% call page_header('Job #' ~ j.id ~ ' · ' ~ j.kind, j.summary, 'list-task') %}
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('jobs.index') }}"><i class="bi bi-arrow-left" aria-hidden="true"></i> All jobs</a>
+  {% if src %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('sources.detail', sid=src.id) }}"><i class="bi bi-plug" aria-hidden="true"></i> {{ src.name }}</a>{% endif %}
+{% endcall %}
+<div class="obs-tiles" role="list">
+  {{ tile('Status', status_badge(j.status), 'by ' ~ j.created_by, 'flag') }}
+  {{ tile('Steps', j.steps|length, (failed|length ~ ' failed') if failed else 'all OK', 'list-ol') }}
+  {{ tile('Duration', (([0, (j.finished_at - j.started_at).total_seconds()]|max|round(1)) ~ ' s') if j.finished_at else 'running…', '', 'stopwatch') }}
+  {{ tile('Started', j.started_at.strftime('%H:%M:%S') ~ ' UTC', j.started_at.strftime('%Y-%m-%d'), 'clock') }}
+</div>
+<div class="obs-toolbar">
+  {% if failed %}<label class="form-check obs-check"><input class="form-check-input" type="checkbox" id="only-failed" data-only-failed="steps-table"> <span class="form-check-label">Failed steps only ({{ failed|length }})</span></label>{% endif %}
+  {{ filter_box('steps-table', 'Filter steps…') }}
+</div>
+<div class="fw-card"><div class="fw-card-body p-0 table-responsive">
+<table class="table table-sm mb-0 obs-table" id="steps-table">
+  <thead><tr><th scope="col">At (UTC)</th><th scope="col">Step</th><th scope="col">Result</th><th scope="col">Detail</th><th scope="col" class="text-end">ms</th></tr></thead>
+  <tbody>{% for st in j.steps %}
+    <tr data-filter-item data-ok="{{ 1 if st.ok else 0 }}" class="{{ '' if st.ok else 'obs-row-error' }}"><td class="text-nowrap">{{ st.at.strftime('%H:%M:%S') }}</td><td><code>{{ st.name }}</code></td>
+      <td>{{ status_badge('ok' if st.ok else 'error') }}</td>
+      <td class="small">{{ st.detail }}</td><td class="text-end">{{ st.elapsed_ms }}</td></tr>
+  {% else %}<tr><td colspan="5" class="text-muted p-3">{{ 'Running… refresh in a moment.' if j.status == 'running' else 'No steps recorded.' }}</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

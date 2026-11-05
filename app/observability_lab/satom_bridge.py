@@ -127,6 +127,18 @@ def planned_devices() -> list:
         return [{"name": a.name, "kind": a.kind} for a in _appliances() if a.kind not in SUPPORTED]
 
 
+def credentials(appliance_id: int) -> tuple[str, str]:
+    """(username, secret) of a SATOM appliance, decrypted by SATOM, in memory
+    only — Observability reads the device AS SATOM (operator 2026-11-05:
+    "the data must be direct, it is SATOM in the end")."""
+    from ..models import Appliance
+    with _satom().app_context():
+        a = db_satom_get(Appliance, appliance_id)
+        if a is None:
+            raise RuntimeError("SATOM appliance %s no longer exists" % appliance_id)
+        return a.username or "", a.password or ""
+
+
 def db_satom_get(model, ident):
     from ..extensions import db as satom_db
     return satom_db.session.get(model, int(ident))
@@ -249,7 +261,9 @@ def inventory_coverage() -> list:
                 mode = ("SATOM cache only" if a.kind in ("fortiadc", "fortiauthenticator", "fortianalyzer")
                         else "SATOM cache (configuration) + device (live state)")
             if mode:
-                mode = "from SATOM (configuration cache + SATOM's own live collectors); never the device"
+                mode = ("direct, as SATOM (SATOM's credential, GET only); SATOM's cache when the device fails"
+                        if a.kind in ("fortiweb", "fortigate") else
+                        "from SATOM (configuration cache + SATOM's own live collectors) — no direct reader yet")
             out.append({"appliance_id": a.id, "name": a.name, "kind": a.kind, "host": a.host,
                         "vdom": a.vdom or "", "included": not why and a.kind in BY_PRODUCT,
                         "mode": mode, "why": why, "satom_status": a.last_status or ""})

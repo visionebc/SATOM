@@ -2966,6 +2966,10 @@ def _register_blueprints(app: Flask) -> None:
         # history, firmware, identity. NOT /web-prefixed: it is scoped by the
         # current ADOM, and every ADOM including global renders it.
         ("app.views.adom_assets", "bp"),
+        # Observability (lab, 2026-11-05): the satom-observability views over
+        # SATOM's own data at /observability/. Read-only, no menu entry, no
+        # schema -- removing the trial is this line plus its own files.
+        ("app.views.observability_lab", "bp"),
     ]
 
     # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).

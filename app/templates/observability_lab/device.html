@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% import "observability_lab/_lab.html" as lab %}
+
+{% block title %}{{ a.name }} — {{ _('Observability') }} — SATOM{% endblock %}
+{% block breadcrumb %}{{ lab.breadcrumb(a.name) }}{% endblock %}
+
+{% block content %}
+{{ lab.nav('device') }}
+
+<div class="fw-card mb-3"><div class="fw-card-body d-flex flex-wrap gap-4 align-items-center">
+  <div><div class="text-muted" style="font-size:12px">{{ _('Device') }}</div><strong style="font-size:18px">{{ a.name }}</strong></div>
+  <div><div class="text-muted" style="font-size:12px">{{ _('Product') }}</div>{{ kind_label }}</div>
+  <div><div class="text-muted" style="font-size:12px">{{ _('Address') }}</div>{{ a.host }}</div>
+  <div><div class="text-muted" style="font-size:12px">{{ _('Firmware') }}</div>{{ a.firmware or '—' }}</div>
+  <div><div class="text-muted" style="font-size:12px">{{ _('Serial') }}</div>{{ a.serial or '—' }}</div>
+  <div><div class="text-muted" style="font-size:12px">{{ _('Config snapshot') }}</div>{{ lab.when(d.snapshots.get('config')) }}</div>
+  {% if d.snapshots.get('deep') %}<div><div class="text-muted" style="font-size:12px">{{ _('Deep snapshot') }}</div>{{ lab.when(d.snapshots.get('deep')) }}</div>{% endif %}
+</div></div>
+
+{% if d.metric_error %}
+<div class="alert alert-danger py-2"><i class="bi bi-x-octagon me-1"></i>{{ _('Metrics store query failed:') }} {{ d.metric_error }}</div>
+{% endif %}
+
+{% if d.gaps %}
+<div class="alert alert-warning py-2" style="font-size:13px"><i class="bi bi-info-circle me-1"></i><strong>{{ _('Not collected by SATOM yet') }}</strong> — {{ _('shown as "not measured", never as healthy:') }}
+  <ul class="mb-0">{% for g in d.gaps %}<li>{{ g }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><h6 class="fw-card-title mb-0"><i class="bi bi-ethernet me-1"></i>{{ _('L1 / L2 — interfaces') }} <span class="text-muted">({{ d.l1|length }})</span></h6></div>
+  <div class="fw-card-body p-0"><div class="table-responsive"><table class="table table-sm mb-0 align-middle">
+    <thead><tr><th>{{ _('Interface') }}</th><th>{{ _('Type') }}</th><th>{{ _('Admin') }}</th><th>{{ _('Link') }}</th><th>{{ _('VLAN') }}</th><th>{{ _('L3 address') }}</th><th class="text-end">{{ _('In') }}</th><th class="text-end">{{ _('Out') }}</th></tr></thead>
+    <tbody>
+    {% for i in d.l1 %}
+    <tr><td><strong>{{ i.name }}</strong>{% if i.alias %} <span class="text-muted">({{ i.alias }})</span>{% endif %}{% if i.role %}<div class="text-muted" style="font-size:11px">{{ i.role }}{% if i.parent %} · {{ _('on') }} {{ i.parent }}{% endif %}</div>{% endif %}</td>
+      <td>{{ i.type }}</td><td>{{ i.admin }}</td><td>{{ lab.updown(i.link) }}</td><td>{{ i.vlan or '—' }}</td>
+      <td>{{ i.ip or '—' }}</td><td class="text-end">{{ lab.bps(i.rx_bps) }}</td><td class="text-end">{{ lab.bps(i.tx_bps) }}</td></tr>
+    {% else %}<tr><td colspan="8" class="text-muted">{{ _('No interface in the configuration cache.') }}</td></tr>{% endfor %}
+    </tbody></table></div></div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><h6 class="fw-card-title mb-0"><i class="bi bi-signpost-split me-1"></i>{{ _('L3 — static routes') }} <span class="text-muted">({{ d.l3_routes|length }})</span></h6></div>
+  <div class="fw-card-body p-0"><table class="table table-sm mb-0">
+    <thead><tr><th>{{ _('Destination') }}</th><th>{{ _('Gateway') }}</th><th>{{ _('Interface') }}</th></tr></thead>
+    <tbody>{% for r in d.l3_routes %}<tr><td>{{ r.dst or '—' }}</td><td>{{ r.gateway or '—' }}</td><td>{{ r.device or '—' }}</td></tr>
+    {% else %}<tr><td colspan="3" class="text-muted">{{ _('No static route in the configuration cache.') }}</td></tr>{% endfor %}</tbody></table></div>
+</div>
+
+{% if d.l4_vips is defined %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><h6 class="fw-card-title mb-0"><i class="bi bi-bullseye me-1"></i>{{ _('L4 — VIPs') }} <span class="text-muted">({{ d.l4_vips|length }})</span></h6></div>
+  <div class="fw-card-body p-0" style="max-height:320px;overflow:auto"><table class="table table-sm mb-0">
+    <thead><tr><th>{{ _('VIP') }}</th><th>{{ _('Address') }}</th><th>{{ _('Interface') }}</th></tr></thead>
+    <tbody>{% for v in d.l4_vips %}<tr><td>{{ v.name }}</td><td>{{ v.vip or '—' }}</td><td>{{ v.interface or '—' }}</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endif %}
+
+{% if d.l4_fw is defined %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><h6 class="fw-card-title mb-0"><i class="bi bi-shield-check me-1"></i>{{ _('L4 — firewall policies') }} <span class="text-muted">({{ d.l4_fw|length }})</span></h6></div>
+  <div class="fw-card-body p-0"><div class="table-responsive"><table class="table table-sm mb-0">
+    <thead><tr><th>#</th><th>{{ _('Name') }}</th><th>{{ _('From') }}</th><th>{{ _('To') }}</th><th>{{ _('Source') }}</th><th>{{ _('Destination') }}</th><th>{{ _('Service') }}</th><th>{{ _('Action') }}</th><th>{{ _('NAT') }}</th><th>{{ _('Status') }}</th></tr></thead>
+    <tbody>{% for p in d.l4_fw %}<tr><td>{{ p.id }}</td><td><strong>{{ p.name }}</strong></td><td>{{ p.srcintf|join(', ') }}</td><td>{{ p.dstintf|join(', ') }}</td>
+      <td>{{ p.srcaddr|join(', ') }}</td><td>{{ p.dstaddr|join(', ') }}</td><td>{{ p.service|join(', ') }}</td><td>{{ p.action }}</td><td>{{ p.nat }}</td><td>{{ p.status }}</td></tr>
+    {% else %}<tr><td colspan="10" class="text-muted">{{ _('No firewall policy in the configuration cache.') }}</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><h6 class="fw-card-title mb-0"><i class="bi bi-geo me-1"></i>{{ _('Address objects') }} <span class="text-muted">({{ d.l4_addrs|length }})</span></h6></div>
+  <div class="fw-card-body p-0" style="max-height:320px;overflow:auto"><table class="table table-sm mb-0">
+    <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Type') }}</th><th>{{ _('Value') }}</th></tr></thead>
+    <tbody>{% for x in d.l4_addrs %}<tr><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.subnet or '—' }}</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endif %}
+
+{% if d.l4_vs is defined %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><h6 class="fw-card-title mb-0"><i class="bi bi-bullseye me-1"></i>{{ _('L4 / L7 — virtual servers') }} <span class="text-muted">({{ d.l4_vs|length }})</span></h6></div>
+  <div class="fw-card-body p-0"><table class="table table-sm mb-0">
+    <thead><tr><th>{{ _('Virtual server') }}</th><th>{{ _('Type') }}</th><th>{{ _('Address') }}</th><th>{{ _('Port') }}</th><th>{{ _('Pool') }}</th><th>{{ _('Status') }}</th></tr></thead>
+    <tbody>{% for v in d.l4_vs %}<tr><td><strong>{{ v.name }}</strong></td><td>{{ v.type }}</td><td>{{ v.address }}</td><td>{{ v.port }}</td><td>{{ v.pool }}</td><td>{{ v.status }}</td></tr>{% endfor %}</tbody></table></div>
+</div>
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><h6 class="fw-card-title mb-0"><i class="bi bi-collection me-1"></i>{{ _('L7 — pools') }} <span class="text-muted">({{ d.l7_pools|length }})</span></h6></div>
+  <div class="fw-card-body p-0"><table class="table table-sm mb-0">
+    <thead><tr><th>{{ _('Pool') }}</th><th>{{ _('Members (real server : port, status)') }}</th></tr></thead>
+    <tbody>{% for p in d.l7_pools %}<tr><td><strong>{{ p.name }}</strong></td><td style="font-size:12px">{% for m in p.members %}{{ m.real_server }}:{{ m.port|trim }} ({{ m.status }}){{ ', ' if not loop.last }}{% else %}—{% endfor %}</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endif %}
+
+{% if d.l7 is defined %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between"><h6 class="fw-card-title mb-0"><i class="bi bi-layers me-1"></i>{{ _('L7 — server policies → pool → back-ends') }} <span class="text-muted">({{ d.l7|length }})</span></h6>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('observability_lab.flows') }}">{{ _('End-to-end view') }}</a></div>
+  <div class="fw-card-body p-0"><div class="table-responsive" style="max-height:560px;overflow:auto"><table class="table table-sm mb-0 align-middle">
+    <thead><tr><th>{{ _('Server policy') }}</th><th>{{ _('Status (measured)') }}</th><th class="text-end">{{ _('Sessions') }}</th><th>{{ _('VIP') }}</th><th>{{ _('Pool') }}</th><th>{{ _('Back-ends') }}</th><th>{{ _('Protection profile') }}</th></tr></thead>
+    <tbody>{% for p in d.l7 %}<tr>
+      <td><strong>{{ p.name }}</strong><div class="text-muted" style="font-size:11px">{{ p.mode }} · {{ p.service }}</div></td>
+      <td>{{ lab.updown(p.measured_up, _('Enabled'), _('Disabled')) }}</td>
+      <td class="text-end">{{ lab.num(p.sessions) }}</td>
+      <td style="font-size:12px">{{ p.vips|join(', ') or '—' }}</td>
+      <td>{{ p.pool or '—' }}</td>
+      <td style="font-size:12px">{% for b in p.backends %}{{ b.ip }}:{{ b.port }}{% if b.status != 'enable' %} <span class="fw-badge fw-badge-warning">{{ b.status }}</span>{% endif %}{{ ', ' if not loop.last }}{% else %}—{% endfor %}</td>
+      <td style="font-size:12px">{{ p.wpp or '—' }}</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><h6 class="fw-card-title mb-0"><i class="bi bi-database me-1"></i>{{ _('What SATOM has cached for this device') }}</h6></div>
+  <div class="fw-card-body" style="font-size:13px">{% for s, n in d.sections %}<span class="fw-badge me-1 mb-1">{{ s }}: {{ n }}</span>{% else %}<span class="text-muted">{{ _('Nothing cached yet.') }}</span>{% endfor %}</div>
+</div>
+{% endblock %}

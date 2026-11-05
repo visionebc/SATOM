@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% import "observability_lab/_lab.html" as lab %}
+
+{% block title %}{{ _('Observability') }} — SATOM{% endblock %}
+{% block breadcrumb %}{{ lab.breadcrumb() }}{% endblock %}
+
+{% block content %}
+{{ lab.nav('overview') }}
+
+{% if inv.metric_errors %}
+<div class="alert alert-danger py-2"><i class="bi bi-x-octagon me-1"></i>{{ _('Metrics store query failed — live values below are missing, not zero:') }}
+  {{ inv.metric_errors|join('; ') }}</div>
+{% endif %}
+
+<div class="row g-3 mb-3">
+  {% for key, label in [('ok', _('Healthy')), ('warning', _('Warning')), ('critical', _('Critical')), ('unknown', _('Unknown'))] %}
+  <div class="col-6 col-md-3">
+    <div class="fw-card h-100"><div class="fw-card-body">
+      <div class="text-muted" style="font-size:12px">{{ label }}</div>
+      <div class="d-flex align-items-center gap-2"><span style="font-size:26px;font-weight:600">{{ inv.counts[key] }}</span>{{ lab.state(key, _('devices')) }}</div>
+    </div></div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="fw-card">
+      <div class="fw-card-header"><h6 class="fw-card-title mb-0"><i class="bi bi-hdd-stack me-1"></i>{{ _('Inventory') }} <span class="text-muted">({{ inv.devices|length }})</span></h6></div>
+      <div class="fw-card-body p-0">
+        {% if not inv.devices %}
+        <p class="text-muted p-3 mb-0">{{ _('No device is visible to you in this ADOM. The Global ADOM shows every product.') }}</p>
+        {% else %}
+        <div class="table-responsive"><table class="table table-sm mb-0 align-middle">
+          <thead><tr><th>{{ _('Device') }}</th><th>{{ _('State') }}</th><th>{{ _('Firmware') }}</th>
+            <th class="text-end">{{ _('CPU') }}</th><th class="text-end">{{ _('Mem') }}</th><th class="text-end">{{ _('Sessions') }}</th>
+            <th>{{ _('Collectors') }}</th><th>{{ _('Config as of') }}</th></tr></thead>
+          <tbody>
+          {% for d in inv.devices %}
+          <tr>
+            <td><a href="{{ url_for('observability_lab.device', appliance_id=d.id) }}"><strong>{{ d.name }}</strong></a>
+              <div class="text-muted" style="font-size:12px">{{ d.kind_label }} · {{ d.host }}{% if d.maintenance %} · {{ _('maintenance') }}{% endif %}</div></td>
+            <td>{{ lab.state(d.state) }}{% if d.why %}<div class="text-muted" style="font-size:11px">{{ d.why }}</div>{% endif %}</td>
+            <td style="font-size:12px;max-width:180px" class="text-truncate" title="{{ d.firmware }}">{{ d.firmware or '—' }}</td>
+            <td class="text-end">{{ lab.num(d.cpu, '%') }}</td>
+            <td class="text-end">{{ lab.num(d.mem, '%') }}</td>
+            <td class="text-end">{{ lab.num(d.sessions) }}</td>
+            <td style="font-size:12px">{% for c in d.collectors %}<span class="fw-badge {{ 'fw-badge-success' if c.up else 'fw-badge-danger' }} me-1 mb-1"><i class="bi {{ 'bi-check' if c.up else 'bi-x' }}"></i>{{ c.collector }}</span>{% else %}<span class="text-muted">{{ _('none') }}</span>{% endfor %}</td>
+            <td style="font-size:12px">{{ lab.when(d.config_at) }}{% if d.stale %} <span class="fw-badge fw-badge-warning">{{ _('stale') }}</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="fw-card">
+      <div class="fw-card-header"><h6 class="fw-card-title mb-0"><i class="bi bi-bell me-1"></i>{{ _('Problems') }} <span class="text-muted">({{ inv.problems|length }})</span></h6></div>
+      <div class="fw-card-body">
+        {% for p in inv.problems %}
+        <div class="d-flex gap-2 mb-2">{{ lab.state(p.severity) }}
+          <div><a href="{{ url_for('observability_lab.device', appliance_id=p.id) }}">{{ p.device }}</a>
+            <div style="font-size:12px">{{ p.text }}</div></div></div>
+        {% else %}
+        <p class="text-muted mb-0"><i class="bi bi-check-circle me-1"></i>{{ _('Nothing failing in what SATOM measures.') }}</p>
+        {% endfor %}
+      </div>
+    </div>
+    <p class="text-muted mt-2" style="font-size:12px">{{ _('Read at') }} {{ lab.when(inv.read_at) }} UTC.
+      {{ _('Live values are the last scrape of the last 15 minutes.') }}</p>
+  </div>
+</div>
+{% endblock %}

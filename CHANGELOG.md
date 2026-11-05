@@ -27,6 +27,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   is gone. Branding — Top-bar Banner spans the full width.
 
 ### Added
+- **Observability (lab) at `/observability/` — trial.** Operator request:
+  "integrate what Observability has into SATOM, as a separate URL so nothing
+  of SATOM changes; the inventory and everything comes from the SATOM
+  database". The satom-observability views over the data SATOM already holds:
+  an **Overview** (every device you may see, its state from the collectors —
+  a failing collector or an interface with link down is critical, a stale
+  configuration snapshot a warning, no collector at all unknown — CPU, memory,
+  sessions, firmware, and a problems list), a **Device** page by layer (L1/L2
+  interfaces with link and traffic, L3 static routes, L4 VIPs / firewall
+  policies / address objects / virtual servers, L7 server policy -> VIP ->
+  pool -> back-ends), **End-to-end flows** (client -> VIP -> server policy ->
+  pool -> back-end, each back-end placed on the FortiWeb route it leaves by
+  and on the device interface whose subnet holds it) and a **Search** by
+  name or address. Read-only by construction: GET routes only, `view`
+  permission, ADOM and maintenance scoping, no device connection (cache and
+  metrics only), no schema change and no menu entry. What SATOM does not
+  collect yet (FortiWeb back-end health, FortiGate link state and policy
+  counters, …) is printed as "not measured", never as healthy; a failed
+  metrics query is an error, never zero.
 - **Web hosting panel and certificates for managed web servers.** Operator
   request: "a separate, complete one with everything we agreed, something like
   a simple cPanel, where I can also manage the certificate", then "do A, B and

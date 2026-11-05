@@ -1,0 +1,64 @@
+{#  Observability (lab) — shared macros. Light theme only: colours come from
+    .fw-badge-* and every state is icon + text, never colour alone.          #}
+
+{% macro nav(active) -%}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Observability') }}
+      <span class="fw-badge fw-badge-info ms-2" style="font-size:11px;vertical-align:middle">{{ _('lab') }}</span></h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('The satom-observability views over the data SATOM already holds: inventory, configuration cache and metrics. Read-only — this page never connects to a device.') }}
+    </p>
+  </div>
+  <form class="d-flex gap-2" method="get" action="{{ url_for('observability_lab.search') }}" role="search">
+    <input type="search" name="q" class="form-control form-control-sm" style="min-width:240px"
+           placeholder="{{ _('Search name, IP, policy…') }}" aria-label="{{ _('Search') }}" value="{{ request.args.get('q', '') }}">
+    <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-search"></i></button>
+  </form>
+</div>
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link {{ 'active' if active == 'overview' }}" href="{{ url_for('observability_lab.index') }}"><i class="bi bi-speedometer2 me-1"></i>{{ _('Overview') }}</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if active == 'flows' }}" href="{{ url_for('observability_lab.flows') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('End-to-end flows') }}</a></li>
+  {% if active == 'device' %}<li class="nav-item"><a class="nav-link active" href="#"><i class="bi bi-hdd-network me-1"></i>{{ _('Device') }}</a></li>{% endif %}
+  {% if active == 'search' %}<li class="nav-item"><a class="nav-link active" href="#"><i class="bi bi-search me-1"></i>{{ _('Search') }}</a></li>{% endif %}
+</ul>
+{%- endmacro %}
+
+{% macro breadcrumb(last=None) -%}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  {% if last %}<a href="{{ url_for('observability_lab.index') }}">{{ _('Observability') }}</a>
+  <span class="separator">/</span><span>{{ last }}</span>
+  {% else %}<span>{{ _('Observability') }}</span>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro state(s, text=None) -%}
+{% if s == 'ok' %}<span class="fw-badge fw-badge-success"><i class="bi bi-check-circle me-1"></i>{{ text or _('OK') }}</span>
+{% elif s == 'warning' %}<span class="fw-badge fw-badge-warning"><i class="bi bi-exclamation-triangle me-1"></i>{{ text or _('Warning') }}</span>
+{% elif s == 'critical' %}<span class="fw-badge fw-badge-danger"><i class="bi bi-x-octagon me-1"></i>{{ text or _('Critical') }}</span>
+{% else %}<span class="fw-badge"><i class="bi bi-question-circle me-1"></i>{{ text or _('Unknown') }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro updown(v, up=None, down=None, unmeasured=None) -%}
+{% if v is none %}<span class="text-muted" title="{{ _('SATOM does not measure this') }}"><i class="bi bi-dash-circle me-1"></i>{{ unmeasured or _('not measured') }}</span>
+{% elif v %}<span class="fw-badge fw-badge-success"><i class="bi bi-arrow-up-circle me-1"></i>{{ up or _('Up') }}</span>
+{% else %}<span class="fw-badge fw-badge-danger"><i class="bi bi-arrow-down-circle me-1"></i>{{ down or _('Down') }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro bps(v) -%}
+{% if v is none %}<span class="text-muted">—</span>
+{% elif v >= 1e9 %}{{ '%.1f'|format(v / 1e9) }} Gbit/s
+{% elif v >= 1e6 %}{{ '%.1f'|format(v / 1e6) }} Mbit/s
+{% elif v >= 1e3 %}{{ '%.1f'|format(v / 1e3) }} kbit/s
+{% else %}{{ '%.0f'|format(v) }} bit/s{% endif %}
+{%- endmacro %}
+
+{% macro num(v, unit='') -%}
+{% if v is none %}<span class="text-muted">—</span>{% else %}{{ '%.0f'|format(v) }}{{ unit }}{% endif %}
+{%- endmacro %}
+
+{% macro when(dt) -%}
+{% if dt %}<span title="UTC">{{ dt.strftime('%Y-%m-%d %H:%M') }}</span>{% else %}<span class="text-muted">{{ _('never') }}</span>{% endif %}
+{%- endmacro %}

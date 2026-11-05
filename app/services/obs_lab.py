@@ -424,13 +424,30 @@ def _owners() -> list:
 
 
 def _routes_of(a) -> list:
+    """Static routes plus the CONNECTED subnet of every interface of the
+    device (gateway ``""``): a back-end on the FortiWeb's own subnet leaves by
+    that port, not by the default route."""
     logical = "route" if a.kind == "fortiweb" else "router_static"
     out = []
     for o in _objects(a.id, logical):
         n = _net(_p(o).get("dst"))
         if n:
             out.append((ipaddress.ip_network(n), _p(o).get("gateway", ""), _p(o).get("device", "")))
+    for o in _objects(a.id, "interface_2" if a.kind == "fortiweb" else "system_interface"):
+        c = _cidr(_p(o).get("ip"))
+        if c:
+            out.append((ipaddress.ip_interface(c).network, "", _p(o).get("name") or o.mkey))
     return out
+
+
+def _longest(addr, rows) -> list:
+    """Every row of the longest prefix holding ``addr`` (ties kept: several
+    devices on one subnet are one segment, not a first-come winner)."""
+    hits = [r for r in rows if addr in r[0]]
+    if not hits:
+        return []
+    top = max(r[0].prefixlen for r in hits)
+    return [r for r in hits if r[0].prefixlen == top]
 
 
 def locate(ip: str, owners: list) -> str:
@@ -438,11 +455,10 @@ def locate(ip: str, owners: list) -> str:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return ""
-    best = None
-    for net, dev, iface in owners:
-        if addr in net and (best is None or net.prefixlen > best[0].prefixlen):
-            best = (net, dev, iface)
-    return "%s %s (%s)" % (best[1], best[2], best[0]) if best else ""
+    best = _longest(addr, owners)
+    if not best:
+        return ""
+    return "%s: %s" % (best[0][0], ", ".join("%s %s" % (dev, iface) for _, dev, iface in best))
 
 
 def egress(ip: str, routes: list) -> str:
@@ -450,13 +466,14 @@ def egress(ip: str, routes: list) -> str:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return ""
-    best = None
-    for net, gw, dev in routes:
-        if addr in net and (best is None or net.prefixlen > best[0].prefixlen):
-            best = (net, gw, dev)
+    best = _longest(addr, routes)
     if not best:
         return "no route"
-    return "%s via %s (%s)" % (best[2] or "?", best[1] or "connected", best[0])
+    connected = [r for r in best if not r[1]]
+    net, gw, dev = (connected or best)[0]
+    if not gw:
+        return "%s (connected %s)" % (dev or "?", net)
+    return "%s via %s (%s)" % (dev or "?", gw, net)
 
 
 def flows() -> list:

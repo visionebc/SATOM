@@ -183,7 +183,9 @@ it was read, so two people never overwrite each other silently.
 * **hostguard.** On both SATOM nodes, new connections coming from any managed
   server are dropped (nftables table `inet satom_hostguard`). The addresses of
   SATOM's own nodes, the default gateway, the trusted proxies and the name
-  servers are never blocked.
+  servers are never blocked. A request that comes through a reverse proxy in
+  front of SATOM is refused by the application itself (`403 Forbidden`)
+  when the forwarded client address is a managed server.
 
 ## 8. Logs, backups, troubleshooting
 

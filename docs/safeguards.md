@@ -17280,6 +17280,13 @@ attacker cannot remove it:
 * *One hostile file name must not block a folder.* satom-webctl leaves names
   with control/bidi characters out of a listing (`skipped`) instead of letting
   the gate reject the whole answer.
+* *A reverse proxy is another source address.* The kernel rules cannot
+  block the fleet edge (everyone uses it), and through it a managed server
+  reached SATOM's login page (measured: the edge had `test.example.net`
+  -> a1:8000 and `satom-node-1.example.net` -> a1:443). The app therefore
+  refuses, FIRST of all hooks (`hostguard.install_http_gate`, installed
+  last in `create_app` so nothing that inserts itself at the front comes
+  before it), every request whose forwarded client is a managed server.
 * *An unprivileged LXC without nesting* makes every SSH login wait 25 s
   (pam_systemd → logind timeout). The panel's LXC job now sets `nesting=1`.
 
@@ -17291,4 +17298,5 @@ for a server; runner never-block list ignored; the established/related accept
 removed from the ruleset; O_NOFOLLOW dropped on desired.json; boot publish
 ignoring the runner's status; server_call writes counted as reads; the
 package rule for server connections off; multiline text accepting every
-control character.
+control character; the HTTP gate letting everything through (#4272) and the HTTP gate
+registered last instead of first (#4271).

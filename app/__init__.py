@@ -2813,6 +2813,12 @@ def create_app(config_override: object | None = None) -> Flask:
     from .services import device_jobs
     device_jobs.install(app)
 
+    # hostguard: a managed server is refused even when it comes through a
+    # reverse proxy (services/hostguard.py). Installed LAST so that it runs
+    # FIRST: every other hook that inserts itself at the front is in by now.
+    from .services import hostguard as _hg_gate
+    _hg_gate.install_http_gate(app)
+
     return app
 
 

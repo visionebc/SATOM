@@ -168,7 +168,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   sessions SATOM opens still pass. The list is re-checked as root: SATOM's own
   nodes, the default gateway, the trusted proxies and the name servers are
   never blocked. The standby applies the same list after the data sync, and
-  the list is loaded again after a reboot.
+  the list is loaded again after a reboot. The same list is enforced at the
+  HTTP layer, before every other gate: a request that reaches SATOM through
+  a reverse proxy (the client address the trusted proxies forward) from a
+  managed server gets `403 Forbidden` -- no login page, no API.
 - **Servers ADOM, stage 0: the ingestion gate.** Groundwork for monitoring
   Linux and Windows servers: every answer a monitored server gives passes one
   gate before SATOM uses it — a size cap before parsing, strict JSON (no

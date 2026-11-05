@@ -21,6 +21,11 @@ Who does what:
   (``status()``). /run is emptied by a reboot -- exactly when the kernel rules
   are gone too -- so a missing status file is the signal to publish again.
 
+A reverse proxy in front of SATOM is another source address, so the same
+list is enforced at the HTTP layer too (:func:`install_http_gate`): a
+request whose forwarded client is a managed server is refused before any
+other gate.
+
 On the standby, ``data/`` arrives from the primary every 5 minutes
 (satom-ha-datasync), the same path unit fires, and the standby blocks the same
 servers.
@@ -147,3 +152,70 @@ def summary() -> dict:
             "ok": bool(st.get("ok")) and not missing, "missing": missing,
             "at": st.get("at") or "", "detail": st.get("detail") or "",
             "ran": bool(st)}
+
+
+# --------------------------------------------------------------------------- #
+#  the same rule at the HTTP layer                                             #
+# --------------------------------------------------------------------------- #
+# The kernel rules stop a managed server from opening a connection to a SATOM
+# node. A reverse proxy in front of SATOM (the fleet edge, a customer's load
+# balancer) is a different source address -- and must stay reachable for
+# everyone else -- so a request a managed server sends THROUGH it reaches the
+# app. Here it stops: the client address the trusted proxies forwarded
+# (extensions.real_client_ip) is compared with the same list, and the request
+# is refused before any other gate runs -- no login page, no API, nothing.
+_HTTP_CACHE: dict = {"mtime": None, "ips": frozenset()}
+
+
+def blocked_addresses() -> frozenset:
+    """The managed servers' addresses from desired.json, re-read when it
+    changes."""
+    try:
+        mtime = DESIRED.stat().st_mtime
+    except OSError:
+        _HTTP_CACHE.update(mtime=None, ips=frozenset())
+        return frozenset()
+    if mtime != _HTTP_CACHE["mtime"]:
+        body = _read(DESIRED)
+        ips = set()
+        for raw in (body.get("addresses") if isinstance(body, dict) else None) or []:
+            try:
+                addr = ipaddress.ip_address(str(raw))
+            except ValueError:
+                continue
+            ips.add(str(getattr(addr, "ipv4_mapped", None) or addr))
+        _HTTP_CACHE.update(mtime=mtime, ips=frozenset(ips))
+    return _HTTP_CACHE["ips"]
+
+
+def http_refused(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(str(ip).split("%", 1)[0])
+    except ValueError:
+        return False
+    return str(getattr(addr, "ipv4_mapped", None) or addr) in blocked_addresses()
+
+
+_LAST_LOG: dict = {}
+
+
+def install_http_gate(app) -> None:
+    """Refuse every request whose client is a managed server -- FIRST, before
+    the session, the login page or any other gate."""
+    import time
+    from flask import Response
+
+    def _hostguard_gate():
+        if app.config.get("TESTING") and not app.config.get("HOSTGUARD_PUBLISH"):
+            return None
+        from ..extensions import real_client_ip
+        ip = real_client_ip()
+        if not ip or not http_refused(ip):
+            return None
+        now = time.monotonic()
+        if now - _LAST_LOG.get(ip, -1e9) > 60:
+            _LAST_LOG[ip] = now
+            app.logger.warning("hostguard: refused a request from managed server %s", ip)
+        return Response("Forbidden\n", status=403, mimetype="text/plain")
+
+    app.before_request_funcs.setdefault(None, []).insert(0, _hostguard_gate)

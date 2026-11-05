@@ -6333,7 +6333,10 @@ backups in <code>/var/lib/satom-webctl/backups</code>, a log in <code>/var/log/s
   privileged runner when <code>data/hostguard/desired.json</code> changes;
   <code>satom-hostguard.path</code>). SATOM's own nodes, the default gateway, the trusted
   proxies and the name servers are never blocked. What each node applied is
-  in <code>/run/satom-hostguard.json</code>.
+  in <code>/run/satom-hostguard.json</code>. A reverse proxy in front of SATOM is not
+  blocked (everyone else uses it), so the same list is also enforced in the
+  app, before every other gate: a request whose forwarded client address
+  (<code>TRUSTED_PROXIES</code>) is a managed server gets <code>403 Forbidden</code>.
 - <strong>Pinned host key</strong> on every call; a changed key is refused.
 - <strong>Every answer passes the ingestion gate</strong> (<code>server_ingest</code>): size before
   parsing, strict JSON, one closed schema per operation, all or nothing.

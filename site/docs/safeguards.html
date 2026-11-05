@@ -16776,7 +16776,7 @@ server and stays there; everything that travels is public.</p>
   <code>studio_connections</code> pulled the scheduler into the rules pack; it lives in
   the trust view instead (<code>tests/test_builder_runtime.py</code> caught it).</li>
 </ul>
-<p><strong>Mutations that must bite</strong> (all do, satom-audit MUTATION_RUNS): install
+<p><strong>Mutations that must bite</strong> (all do, satom-audit #4298-#4311, 0 errors): install
 accepting any key; <code>cert.get</code> reading any path; no undo after a failed test;
 renewal written in place; a private key accepted by install; <code>cert_sign</code>
 without the permission; any returned certificate taken as the leaf; Run when

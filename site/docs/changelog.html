@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#4110---2026-11-06">[4.11.0] - 2026-11-06</a>
       <a href="#4101---2026-11-02">[4.10.1] - 2026-11-02</a>
       <a href="#4100---2026-11-02">[4.10.0] - 2026-11-02</a>
       <a href="#490---2026-11-01">[4.9.0] - 2026-11-01</a>
@@ -104,7 +105,6 @@
       <a href="#2110---2026-10-03">[2.11.0] - 2026-10-03</a>
       <a href="#2101---2026-10-03">[2.10.1] - 2026-10-03</a>
       <a href="#2100---2026-10-03">[2.10.0] - 2026-10-03</a>
-      <a href="#291---2026-10-02">[2.9.1] - 2026-10-02</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,6 +112,7 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="4110---2026-11-06">[4.11.0] - 2026-11-06</h2>
 <h3 id="changed">Changed</h3>
 <ul>
 <li><strong>Plugin Studio apps in a placeholder ADOM; the Web hosts apps in one group,
@@ -135,6 +136,29 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>Observability (lab) at <code>/observability/</code> — trial.</strong> Operator request:
+  "exactly what we have in the other project (SATOM Observability), as a
+  separate URL so nothing of SATOM changes; the inventory and everything
+  comes from the SATOM database". <code>/observability/</code> now serves the SATOM
+  Observability application itself (0.3.0: its overview, diagrams with the
+  draw.io / Mermaid / SATOM-layout import and live overlay, sources, jobs,
+  search, audit, and its own theme), behind SATOM: SATOM's sign-in, the
+  <code>view</code> permission (reaching a device from it needs <code>config_write</code>), the
+  ADOM gate, and an ADOM-confined account is refused. Its sources are every
+  SATOM appliance, with no credential copied. FortiWeb and FortiGate are read
+  directly, as SATOM: GET only, with the credential SATOM holds, one visible
+  job step per read — configuration, live interface state and counters,
+  policy status, back-end health, licence, the live routing table (per VDOM),
+  firewall-policy counters and detected devices. When a configuration read
+  fails, that table comes from SATOM's device cache and the step says so.
+  FortiADC, FortiAuthenticator and FortiAnalyzer come from SATOM's device
+  cache and Monitoring collectors; what SATOM does not collect for them is
+  shown as not collected, never invented. Its menu has Infrastructure,
+  Network, Applications, Data Flows, Dependencies, Analytics, Events &amp;
+  Alerts, Incidents and Reports, with a phase-by-phase path analysis. Its
+  data lives in its own schema of SATOM's database (no SATOM migration) and
+  its history in SATOM's metrics store under <code>obs_*</code> names. No menu entry in
+  SATOM; only existing file touched: one blueprint line.</li>
 <li><strong>Web hosting panel and certificates for managed web servers.</strong> Operator
   request: "a separate, complete one with everything we agreed, something like
   a simple cPanel, where I can also manage the certificate", then "do A, B and
@@ -292,6 +316,27 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>A licence-locked FortiADC no longer reads as "no payload" or as healthy.</strong>
+  The FortiADC VMs {device} and {device} answer every read with
+  <code>{"payload": "Invalid VM License"}</code>. The runtime reads behind SATOM's
+  Monitoring collectors swallowed that answer, so the <code>vservers</code> collector
+  failed with "vs_status returned no payload" and the <code>interfaces</code> collector
+  reported OK with no series. These reads now fail with the device's own
+  words ("device refused: Invalid VM License"), which Monitoring &gt; Collection
+  shows as the reason.</li>
+<li><strong>Observability (lab): every alert says why.</strong> Operator request: "why is
+  there critical? solve it and make it possible to see why the error is".
+  Each alert now has its own page (Events &amp; Alerts &gt; the alert, and the bell)
+  with the stored evidence (the value, where it was read and when), the
+  cause, marked <em>measured</em> or <em>inferred</em>, the impact and how to fix it. For a
+  server policy with failing back-ends it lists every back-end with the
+  device's own health word, the pool's health check and the path from the
+  device's routing table, with a link to the phased path analysis. A read the
+  device refuses for its licence is one licence alert instead of a read alert
+  per refused read plus a source alert, and a failing SATOM collector carries
+  the reason SATOM recorded. The bell, overview and search links stayed off
+  the <code>/observability/</code> prefix and opened SATOM's own pages; they now open
+  the alert's page.</li>
 <li><strong>Plugin Studio list fields from the Examples refused every value.</strong> A
   select's options given as a list were saved as ONE option, the text
   <code>"['nginx', 'apache']"</code>, so the form answered "'nginx' is not one of the

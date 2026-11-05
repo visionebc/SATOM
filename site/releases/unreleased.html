@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · Added · Fixed · Security · 14 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · Added · Fixed · Security · 14 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,11 +59,16 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · Added · Fixed · Security · 14 entries</span>
-        <ul class="rel-leads"><li>Profile page layout: About first, session details on the account card</li><li>Plugin Studio: ask an API about each LB pool member (SOC Search)</li><li>Clone a plugin app: with its data, only its structure, or on the same data as the original</li><li class="rel-more">… and 11 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
+        <ul class="rel-leads"></ul>
+      </a>
+      <a class="rel-nav-item" href="v4.11.0.html" data-rel-version="4.11.0">
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 4.11.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-meta">2026-11-06 · Changed · Added · Fixed · Security · 23 entries</span>
+        <ul class="rel-leads"><li>Plugin Studio apps in a placeholder ADOM; the Web hosts apps in one group, in Linux</li><li>Profile page layout: About first, session details on the account card</li><li>Observability (lab) at /observability/ — trial</li><li class="rel-more">… and 20 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v4.10.1.html" data-rel-version="4.10.1">
-        <span class="rel-nav-head"><span class="rel-nav-v">Version 4.10.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 4.10.1</span></span>
         <span class="rel-nav-meta">2026-11-02 · Fixed · 1 entry</span>
         <ul class="rel-leads"><li>The 4.10.0 screens rendered in English for Spanish, German, French and Italian operators</li></ul>
       </a>
@@ -545,191 +550,8 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="changed">Changed</h3>
-<ul>
-<li><strong>Profile page layout: About first, session details on the account card.</strong>
-  Operator request: "About SATOM at the very top; the top-bar banner card
-  across both columns; Active Sessions into the banner with the admin role,
-  plus the last IP connected." The About card is now the first card of the
-  Profile. The account card (name and role) shows the active session, the IP
-  it comes from and when it signed in, the <strong>previous sign-in</strong> with its date
-  and IP (read from the <code>login</code> rows of the Audit Log; "none recorded" on a
-  first sign-in), and the Sign Out button. The separate Active Sessions card
-  is gone. Branding — Top-bar Banner spans the full width.</li>
-</ul>
-<h3 id="added">Added</h3>
-<ul>
-<li><strong>Plugin Studio: ask an API about each LB pool member (SOC Search).</strong>
-  Operator request: "in the SOC Search diagram, a way to ask an API about the
-  host that appears in the members of the search result" — the API wants a
-  host name. <em>Call an API</em> has a new <strong>For each (list)</strong> field: one request
-  per item with <code>{{ item }}</code> = that item, duplicates asked once, at most 50
-  (more is refused, never cut). The answer is a table — the item's columns,
-  <code>Status</code>, <code>Answer</code>, <code>Error</code> — where a host that fails is a row with its
-  error and the others are still asked; only every request failing takes the
-  error arrow. <em>LB: match names to the fleet</em> now saves <code>members</code> (every pool
-  member address once) and <code>_members</code> per row (<code>{ip, port, status}</code>), and
-  <em>DNS: look names up</em> saves <code>ptr</code> (<code>{ip, hostname}</code> for each address with a
-  PTR answer), so a diagram goes members → host names → API.</li>
-<li><strong>Clone a plugin app: with its data, only its structure, or on the same
-  data as the original.</strong> Operator
-  request: "in the plugins section I want them to be clonable; the clone must
-  ask whether everything, or the structure as it is, without the data — and
-  the apps must be able to write in their data section." <strong>Plugin Studio →
-  Apps → ⋯ → Clone</strong> asks for the new id and name and, for a flow app, what
-  the copy takes: <strong>Everything</strong> (the structure and the rows of its data
-  stores), <strong>Structure only</strong> (the same stores and columns, empty) or <strong>Same
-  data as the original</strong> (no copy: both apps read and write the original's
-  stores, so a row or a column one of them changes, the other sees — "an
-  option to use everything but add more things, with the original's
-  database, so a change is shared"); none is preselected. With Same data the
-  form, diagram and actions are still the copy's own: it can add steps and
-  data stores of its own, and a later change to the original's diagram does
-  not reach it. Every data store only the original uses becomes the
-  clone's own copy and the clone's steps, <em>Save to a data store</em> actions and
-  list fields point at it, so with Everything or Structure only the clone
-  writes its own data and never the original's. Stores other apps use stay shared unless <em>Copy these too</em> is
-  ticked. The clone is a draft (form, diagram, actions, design and images,
-  icon, menu group, ADOMs, access); runs, published versions, automations,
-  sign-in rules and secrets are not copied. Templates from Examples can be
-  cloned. A script app becomes a new Script Library script with the same
-  files and settings (credential values are typed again). One transaction:
-  a refused or failed clone leaves nothing behind. Audited as
-  <code>studio.app.clone</code>.</li>
-<li>
-<p><strong>Switch notification categories off for your own account.</strong> Operator
-  request: "in the user profile I want to be able to turn off certain
-  notifications, for example config drift." <strong>Profile → Notifications</strong> has
-  one switch per bell category (Configuration drift, Device health,
-  Signatures, Scheduled automations, SATOM node &amp; HA, Certificates, Backups,
-  Templates &amp; intent, API catalog, Alert engine). A category switched off no
-  longer creates notifications for that user, and its unread ones are marked
-  read (nothing is deleted); every other user's bell is unchanged. It silences
-  the bell, not the finding: drift and the other checks keep running, are
-  audited and are still sent by the e-mail alert rules. Results of your own
-  jobs, bug reports and Wiki notices are always delivered. The Notifications
-  page has a <strong>Preferences</strong> button and says which categories you muted. The
-  change is audited as <code>profile.notifications</code>.</p>
-</li>
-<li>
-<p><strong>Plugin Studio: Server connections — manage nginx and Apache virtual hosts
-  and their files.</strong> Operator request: "a plugin to manage the vhosts of this
-  server and the files inside each one", with "the server must have no access
-  to SATOM". A new connection kind, <strong>Server</strong>, reaches a Linux web server over
-  SSH as the unprivileged account <code>satom-mon</code>, whose key is installed with
-  <code>restrict,command="satom-webctl"</code>: the key opens no shell and can only ask
-  for the operations of <code>satom-webctl</code> (<code>hostctl/</code>, Python standard library,
-  3.6+): list virtual hosts; read, change, create, enable, disable and delete
-  their configuration; list, read, write, rename, delete files and create
-  folders inside each document root. Every configuration change is backed up
-  and tested with the server's own test, restored when the test fails and
-  reloaded (never restarted) when it passes. SATOM generates the key (never
-  shown), the host key is pinned by an explicit <strong>Fetch and trust</strong>, writes
-  need <strong>Allow writes</strong>, and every answer passes the ingestion gate. The
-  installer (<code>install-satom-webctl.sh</code>, downloadable from the connection page)
-  supports Debian, RHEL and SUSE layouts, sets ACLs instead of changing owners,
-  and grants exactly two sudo commands per web server (config test, reload).
-  New flow step <strong>Act on a server</strong>; scripts call
-  <code>connection(...).server(op, **args)</code>. <strong>Plugin Studio → Examples → Web
-  hosts</strong> installs twelve chained apps (virtual hosts, configuration editor,
-  file browser and editor).</p>
-</li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li><strong>A label value over 4 KB no longer makes a metric vanish silently.</strong> The
-  metrics store (VictoriaMetrics) drops a whole series when one label value is
-  longer than 4096 bytes, and still answers the write with success, so a
-  collector reported "ok" for a sample that never landed. Values are now cut
-  to fit with a <code>…</code> mark; control characters in a label become spaces; NaN
-  and infinite readings are skipped like any reading the device does not
-  have. No series written so far was affected (checked on both nodes).</li>
-<li><strong>A device-synced value can no longer blank a plugin page.</strong> Plugin data
-  and the Plugin / Lua Studio editors embed JSON in <code>&lt;script&gt;</code> islands that
-  only neutralised <code>&lt;/</code>. A value such as a policy comment containing
-  <code>&lt;!--&lt;script&gt;</code> made the browser swallow the rest of the page — the next
-  island, the markup after it and the page's script. Every island now writes
-  <code>&lt;</code>, <code>&gt;</code> and <code>&amp;</code> as JSON escapes (same value to the script, no markup to the
-  browser). The Sentinel "N value(s) away" note no longer bypasses HTML
-  escaping.</li>
-<li><strong>Sign-ins through the fleet edge are attributed to the client, not to the
-  edge proxy.</strong> With two proxies in a row (edge -&gt; local nginx) the
-  forwarded header reaches SATOM as <code>&lt;client&gt;, &lt;edge&gt;</code>, and only the last hop
-  was read, so every operator who came through the edge was audited, and
-  rate-limited, under the edge's address — one shared lockout bucket. The
-  resolver now walks right to left past every hop that is itself a configured
-  trusted proxy (<code>TRUSTED_PROXIES</code>), like nginx <code>real_ip_recursive</code>; the
-  first untrusted hop is the client, and anything a client pre-filled to the
-  left of it is never read. Older audit rows keep the address they were
-  written with.</li>
-<li><strong>The alert engine no longer counts a bell notice nobody received as
-  delivered.</strong> The in-app sink was credited after every write attempt,
-  including one that wrote no row, so a failed write still reported
-  "delivered" and stamped the cooldown. It is now credited only when a
-  notification was written. A finding whose category every administrator
-  muted is listed under <code>in_app_muted</code> (a choice, not a failure) and is not
-  stamped, so the first administrator who switches it back on receives it.
-  The category labels of the Notifications filter, the Troubleshooting guide
-  and the new profile card are now translated (es, de, fr, it).</li>
-<li><strong>Two people changing the same object no longer overwrite each other
-  without a word.</strong> Operator question: "what happens if a user makes the same
-  change on the same object, or on the same sub-object?" Three gaps answered
-  it badly:</li>
-<li><em>The edit lock only bound the object editor.</em> Mass Deploy, Processes,
-    Policy Clone, scripts, scheduled actions, the certificate and
-    DNS-decommission jobs and the FortiADC writers changed or deleted an
-    object an operator had open. The lock is now checked where every write
-    reaches the device (the FortiWeb and FortiADC clients, and every
-    FortiGate, FortiAuthenticator, FortiADC and FortiAnalyzer GUI save). A
-    refused write sends nothing, fails its job step with the holder's name and
-    is audited as <code>config.write.edit_locked</code>. A job started by the lock's
-    holder still writes; an unattended run never writes over an open edit.
-    Adding a new object or row is not blocked.</li>
-<li><em>The lock belonged to a user, not to a page.</em> One operator with the
-    object open in two tabs overwrote themselves. A lock now belongs to the
-    page that took it: the second tab says "You have this open in another tab
-    or window" and offers Take over. Closing one tab no longer releases the
-    other tab's lock.</li>
-<li><em>The last save won.</em> A form loaded before someone else's change sent its
-    old value and nobody was told, whether the change came from another user,
-    a job or the device's own GUI/CLI. Every editor now sends the values it
-    loaded. SATOM reads the object first and refuses a save whose field
-    changed meanwhile, showing what you loaded, what the device holds now and
-    your value. <strong>Reload</strong> (SATOM's copy is refreshed first) or <strong>Overwrite
-    with mine</strong> (audited as <code>config.update.overwrote</code>). The same change made
-    twice is not a conflict.</li>
-<li>The Server Policy page and the GUI dialogs of every product now take the
-  edit lock (only the object editor did), so their saves show who holds it
-  instead of failing on save.</li>
-<li>A REST API v1 call now writes as its token's owner. The API has no login
-  session, so the edit-lock check saw nobody and refused the owner's own call
-  like an unattended run's.</li>
-</ul>
-<h3 id="security">Security</h3>
-<ul>
-<li><strong>hostguard: a managed server can never open a connection to SATOM.</strong> Both
-  nodes drop every new connection that comes from a server managed through a
-  Server connection (nftables table <code>inet satom_hostguard</code>, loaded by the
-  privileged runner through the new <code>satom-hostguard.path</code>). Replies to the
-  sessions SATOM opens still pass. The list is re-checked as root: SATOM's own
-  nodes, the default gateway, the trusted proxies and the name servers are
-  never blocked. The standby applies the same list after the data sync, and
-  the list is loaded again after a reboot. The same list is enforced at the
-  HTTP layer, before every other gate: a request that reaches SATOM through
-  a reverse proxy (the client address the trusted proxies forward) from a
-  managed server gets <code>403 Forbidden</code> -- no login page, no API.</li>
-<li><strong>Servers ADOM, stage 0: the ingestion gate.</strong> Groundwork for monitoring
-  Linux and Windows servers: every answer a monitored server gives passes one
-  gate before SATOM uses it — a size cap before parsing, strict JSON (no
-  <code>NaN</code>/<code>Infinity</code>, no duplicate keys, bounded nesting), and a closed schema
-  per reading (memory, filesystems, processes, services) with types, ranges,
-  lengths, character sets and consistency checks. Text with control
-  characters or bidi/zero-width marks is refused, unknown fields are
-  dropped, and one bad value rejects the whole answer. A rejection names the
-  field and the rule, never the value. Every <code>|safe</code> in the templates is now
-  on a reviewed list enforced by a test. No collector uses the gate yet.</li>
-</ul>
-<p class="rel-prevnext"><a href="v4.10.1.html">Version 4.10.1 →</a></p>
+
+<p class="rel-prevnext"><a href="v4.11.0.html">Version 4.11.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.0] - 2026-11-06
+
 ### Changed
 - **Plugin Studio apps in a placeholder ADOM; the Web hosts apps in one group,
   in Linux.** Operator request: "group the Linux plugins and assign them only
@@ -35,16 +37,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   draw.io / Mermaid / SATOM-layout import and live overlay, sources, jobs,
   search, audit, and its own theme), behind SATOM: SATOM's sign-in, the
   `view` permission (reaching a device from it needs `config_write`), the
-  ADOM gate, and an ADOM-confined account is refused. Its sources are SATOM's
-  appliances (FortiWeb and FortiGate; the other products are listed as not
-  yet supported), with no credential copied; the configuration is read from
-  SATOM's device cache through the same parsers, and only what SATOM does not
-  hold — live interface state and counters, policy status, back-end health,
-  licence, routing table, firewall-policy counters — is read from the device,
-  GET only, with the credential SATOM holds, as a visible job step. Its data
-  lives in its own schema of SATOM's database (no SATOM migration) and its
-  history in SATOM's metrics store under `obs_*` names. No menu entry; only
-  existing file touched: one blueprint line.
+  ADOM gate, and an ADOM-confined account is refused. Its sources are every
+  SATOM appliance, with no credential copied. FortiWeb and FortiGate are read
+  directly, as SATOM: GET only, with the credential SATOM holds, one visible
+  job step per read — configuration, live interface state and counters,
+  policy status, back-end health, licence, the live routing table (per VDOM),
+  firewall-policy counters and detected devices. When a configuration read
+  fails, that table comes from SATOM's device cache and the step says so.
+  FortiADC, FortiAuthenticator and FortiAnalyzer come from SATOM's device
+  cache and Monitoring collectors; what SATOM does not collect for them is
+  shown as not collected, never invented. Its menu has Infrastructure,
+  Network, Applications, Data Flows, Dependencies, Analytics, Events &
+  Alerts, Incidents and Reports, with a phase-by-phase path analysis. Its
+  data lives in its own schema of SATOM's database (no SATOM migration) and
+  its history in SATOM's metrics store under `obs_*` names. No menu entry in
+  SATOM; only existing file touched: one blueprint line.
 - **Web hosting panel and certificates for managed web servers.** Operator
   request: "a separate, complete one with everything we agreed, something like
   a simple cPanel, where I can also manage the certificate", then "do A, B and

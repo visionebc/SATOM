@@ -862,12 +862,16 @@ WEB_BUNDLE = {
                "each document root (browse, view, edit, create, rename, delete). The key "
                "opens no shell on the server; writes need Allow writes on the connection.",
     "connections": [WEB_CONNECTION], "stores": [], "scripts": [], "apps": WEB_APPS,
+    # Filed under one menu group, in the Linux ADOM when this console has one
+    # (operator, 2026-11-05); every ADOM otherwise.
+    "group": "Web hosts", "adoms": ["linux"],
     "setup": ["Open the connection ex-web-server: enter your server, Generate key, download "
               "satom-webctl and run the installer it shows on the server (as root, once).",
               "Fetch and trust the host key (compare its fingerprint with the server), then "
               "Test. Tick Allow writes when the apps may change the server.",
               "Publish the twelve apps (each app > Publish): a row button only opens an app "
-              "that is published. Then open Operations > Plugins > Web hosts (example). To "
+              "that is published. Then open Plugins > Web hosts > Web hosts (example) in the "
+              "Linux ADOM (in every ADOM when there is no Linux ADOM). To "
               "let other users run them, open each app > Settings and pick users or groups."]}
 
 BUNDLES.append(WEB_BUNDLE)
@@ -1022,6 +1026,8 @@ def install(key: str, by: str) -> dict:
             kept.append(a["slug"])
             continue
         new.append((a, SA.create(a["slug"], a["name"], by)))
+    from ..branding import PRODUCTS
+    adoms = [k for k in b.get("adoms") or () if k in PRODUCTS] or ["*"]
     for a, app in new:
         actions = _fgt_actions(_cr_key()) if a["actions"] == "fortigate" else a["actions"]
         probs = SA.save_draft(app, fields=a["fields"], graph=a["graph"], actions=actions, by=by)
@@ -1030,8 +1036,8 @@ def install(key: str, by: str) -> dict:
             raise ExampleError("example app %s does not validate: %s"
                                % (a["slug"], "; ".join(probs)))
         SA.save_settings(app, {"name": a["name"], "description": a["description"],
-                               "icon": a["icon"], "adoms": ["*"],
-                               "access": {"users": [], "groups": []}}, [], by)
+                               "icon": a["icon"], "adoms": adoms, "group": b.get("group") or "",
+                               "access": {"users": [], "groups": []}}, list(PRODUCTS), by)
         if a.get("publish"):
             SA.publish(app, "example, as installed", by)
         created.append(a["slug"])

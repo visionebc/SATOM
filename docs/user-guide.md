@@ -4899,7 +4899,12 @@ of Apps (flow and script apps alike). Both suggest the groups that exist;
 typing a name that differs only in case files the app under the existing
 group, and an empty field takes it out. In the sidebar every group is a
 collapsible submenu of **Plugins** (open when you are on one of its apps),
-followed by the apps without a group. The Apps list has a *Menu group*
+followed by the apps without a group. A placeholder ADOM (added in Settings >
+ADOMs with no backend yet, such as *Linux*) is an ADOM like any other here:
+the Settings tab offers it, and its sidebar draws **Plugins** below Dashboard
+with the apps shown there (no Plugins group when there are none; Report Studio
+and Lua Studio stay in device ADOMs). The Web hosts example installs its apps
+under the group **Web hosts**, in the Linux ADOM when there is one. The Apps list has a *Menu group*
 column and a filter next to the search box. A group is up to 48 letters,
 digits, spaces and `. & ( ) + , ' -`. It is not a user group: who may use
 the app is still *Who may use it*. An exported app package carries the

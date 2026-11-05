@@ -7,6 +7,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **Plugin Studio apps in a placeholder ADOM; the Web hosts apps in one group,
+  in Linux.** Operator request: "group the Linux plugins and assign them only
+  to Linux". A placeholder ADOM (one added in Settings > ADOMs that has no
+  backend yet, such as Linux) is now an ADOM an app can be drawn in: the app's
+  Settings tab offers it, and its sidebar has a **Plugins** group with the
+  apps shown there, by menu group (not drawn when there are none). The Web
+  hosts example installs its twelve apps under the menu group **Web hosts**,
+  in the Linux ADOM when the console has one and in every ADOM otherwise; an
+  already installed copy keeps what it has (change it in each app's Settings).
 - **Profile page layout: About first, session details on the account card.**
   Operator request: "About SATOM at the very top; the top-bar banner card
   across both columns; Active Sessions into the banner with the admin role,

@@ -833,9 +833,11 @@ def _product_key() -> str:
 
 
 def _adom_choices() -> list[tuple[str, str]]:
+    """Every active ADOM an app can be drawn in, placeholder ADOMs included
+    since 2026-11-05 (operator: the Web hosts apps "only in Linux"): their
+    sidebar has a Plugins group of apps (partials/nav_placeholder_apps.html)."""
     from ..branding import PRODUCTS
-    return [(k, v.get("name") or k) for k, v in PRODUCTS.items()
-            if not v.get("placeholder")]
+    return [(k, v.get("name") or k) for k, v in PRODUCTS.items()]
 
 
 @bp.route("/apps/create", methods=["POST"])

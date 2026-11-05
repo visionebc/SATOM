@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, empty_state, filter_box, tile %}
+{% block title %}Network{% endblock %}
+{% macro bytes(v) -%}{%- if v is number -%}{{ '%.1f'|format(v / 1e9) ~ ' GB' if v >= 1e9 else ('%.1f'|format(v / 1e6) ~ ' MB' if v >= 1e6 else ('%.1f'|format(v / 1e3) ~ ' kB' if v >= 1e3 else v ~ ' B')) }}{%- else -%}<span class="text-muted">—</span>{%- endif -%}{%- endmacro %}
+{% set ST = {'ok': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'admin_down': ('none', 'pause-circle', 'Admin down'), 'none': ('none', 'dash-circle', 'No state')} %}
+{% block content %}
+<div class="obs-page" data-scope="{{ scope }}" data-range="{{ range_key }}">
+{{ page_header('Network', 'Interfaces, segments, routing and what the devices see on the wire' ~ (' · ' ~ scope if scope else ''), 'ethernet') }}
+
+<div class="obs-tiles" role="list">
+  {{ tile('Interfaces', counts.values()|sum, counts.ok ~ ' up · ' ~ counts.down ~ ' down', 'ethernet') }}
+  {{ tile('Segments', segments|length, (segments|selectattr('shared')|list|length) ~ ' shared by several devices', 'diagram-3') }}
+  {{ tile('Routes', routes|length, (routes|selectattr('next_device')|list|length) ~ ' via a monitored device', 'signpost-split') }}
+  {{ tile('Detected devices', endpoints|length, 'seen by FortiGate', 'pc-display') }}
+  {{ tile('Address objects', addresses|length, (addresses|rejectattr('policies')|list|length) ~ ' unused', 'geo') }}
+</div>
+
+<div class="obs-grid mb-3">
+  <section class="fw-card obs-span-8" aria-labelledby="h-tp">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-tp"><i class="bi bi-arrow-left-right me-1" aria-hidden="true"></i>Throughput</h2>
+      <span class="obs-card-hint">all interfaces in scope · selected range</span></div>
+    <div class="fw-card-body"><div class="obs-chart-host" data-series="throughput" data-height="200"></div></div>
+  </section>
+  <section class="fw-card obs-span-4" aria-labelledby="h-topif">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-topif"><i class="bi bi-bar-chart-line me-1" aria-hidden="true"></i>Busiest interfaces</h2>
+      <span class="obs-card-hint">in + out, now</span></div>
+    <div class="fw-card-body"><div data-top="interfaces" data-unit="bps"></div></div>
+  </section>
+</div>
+
+<section class="fw-card mb-3" aria-labelledby="h-if">
+  <div class="fw-card-header flex-wrap gap-2"><h2 class="fw-card-title" id="h-if"><i class="bi bi-ethernet me-1" aria-hidden="true"></i>Interfaces</h2>
+    <nav class="obs-seg obs-seg-sm ms-auto" aria-label="Interface state">
+      <a href="{{ url_for('explore.network', source=scope or None) }}" class="{{ 'active' if not state }}" {{ 'aria-current="true"'|safe if not state }}>All</a>
+      {% for k, (st, icon, label) in ST.items() %}<a href="{{ url_for('explore.network', source=scope or None, state=k) }}" class="{{ 'active' if state == k }}" {{ 'aria-current="true"'|safe if state == k }}>{{ label }} <span class="obs-tab-count">{{ counts[k] }}</span></a>{% endfor %}
+    </nav>
+    {{ filter_box('tbl-if', 'Filter interfaces…') }}
+  </div>
+  <div class="fw-card-body p-0 table-responsive">
+  {% if rows %}
+  <table class="table table-sm obs-table mb-0" id="tbl-if">
+    <thead><tr><th scope="col">Device</th><th scope="col">Interface</th><th scope="col">State</th><th scope="col">Speed</th><th scope="col">Address</th><th scope="col">MAC</th><th scope="col">Role / type</th><th scope="col" class="text-end">In</th><th scope="col" class="text-end">Out</th><th scope="col" class="text-end">Errors</th><th scope="col">Management</th></tr></thead>
+    <tbody>{% for r in rows %}{% set st, icon, label = ST[r.state] %}
+      <tr data-filter-item><td><a href="{{ url_for('sources.detail', sid=r.source_id) }}#L1">{{ r.source }}</a></td>
+        <td><b>{{ r.name }}</b>{% if r.alias %} <span class="text-muted small">{{ r.alias }}</span>{% endif %}</td>
+        <td><span class="obs-chip st-{{ st }}"><i class="bi bi-{{ icon }}" aria-hidden="true"></i> {{ label }}</span></td>
+        <td class="small">{{ r.speed or r.speed_duplex or '—' }}</td>
+        <td><code>{{ r.address or r.configured_address or '—' }}</code></td>
+        <td><code class="small">{{ r.mac or '—' }}</code></td>
+        <td class="small">{{ [r.role, r.type]|select|join(' · ') or '—' }}</td>
+        <td class="text-end small">{{ bytes(r.rx_bytes) }}</td><td class="text-end small">{{ bytes(r.tx_bytes) }}</td>
+        <td class="text-end small">{% if r.rx_errors is number %}{% set e = r.rx_errors + (r.tx_errors or 0) %}<span class="{{ 'text-danger fw-semibold' if e }}">{{ e }}</span>{% else %}<span class="text-muted" title="not reported by this device">—</span>{% endif %}</td>
+        <td class="small">{{ r.management_access or '—' }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% else %}{{ empty_state('ethernet', 'No interfaces match', 'Change the state filter or the source scope.') }}{% endif %}
+  </div>
+</section>
+
+<div class="obs-grid">
+  <section class="fw-card obs-span-6" aria-labelledby="h-seg">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-seg"><i class="bi bi-diagram-3 me-1" aria-hidden="true"></i>Segments</h2>
+      <span class="obs-card-hint">connected subnets of the interfaces · who sits on each</span></div>
+    <div class="fw-card-body p-0">
+    {% if segments %}<ul class="obs-seg-list">{% for n in segments %}
+      <li><div class="obs-seg-head"><code>{{ n.cidr }}</code>
+        {% if n.shared %}<span class="obs-chip st-ok"><i class="bi bi-link-45deg" aria-hidden="true"></i> links {{ n.devices }} devices</span>{% endif %}</div>
+        <div class="obs-seg-members">{% for x in n.members %}<span class="obs-pillet"><i class="bi bi-hdd-network" aria-hidden="true"></i> {{ x.source }} {{ x.interface }} <code>{{ x.ip }}</code></span>{% endfor %}
+          {% for e in n.endpoints %}<span class="obs-pillet obs-pillet-ep"><i class="bi bi-pc-display" aria-hidden="true"></i> {{ e.ip }} <code class="small">{{ e.mac }}</code></span>{% endfor %}</div></li>
+    {% endfor %}</ul>
+    {% else %}{{ empty_state('diagram-3', 'No addressed interfaces', 'No interface reported an IP address.') }}{% endif %}
+    </div>
+  </section>
+
+  <section class="fw-card obs-span-6" aria-labelledby="h-rt">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-rt"><i class="bi bi-signpost-split me-1" aria-hidden="true"></i>Routing</h2>
+      <span class="obs-card-hint">routing table as read · next hop resolved to a monitored device when it is one</span></div>
+    <div class="fw-card-body p-0 table-responsive">
+    {% if routes %}<table class="table table-sm obs-table mb-0">
+      <thead><tr><th scope="col">Device</th><th scope="col">Destination</th><th scope="col">Via</th><th scope="col">Interface</th><th scope="col">Type</th></tr></thead>
+      <tbody>{% for r in routes %}<tr><td>{{ r.source }}</td><td><code>{{ r.dst }}</code></td>
+        <td>{% if r.gateway %}<code>{{ r.gateway }}</code>{% if r.next_device %} <span class="obs-chip st-ok" title="next hop is a monitored device"><i class="bi bi-arrow-right-circle" aria-hidden="true"></i> {{ r.next_device }}</span>{% endif %}{% else %}<span class="text-muted">connected</span>{% endif %}</td>
+        <td>{{ r.interface }}</td><td class="small">{{ r.type }}</td></tr>{% endfor %}</tbody>
+    </table>{% else %}{{ empty_state('signpost-split', 'No routes read', 'The routing table is read by the FortiGate and FortiWeb connectors.') }}{% endif %}
+    </div>
+  </section>
+
+  <section class="fw-card obs-span-6" aria-labelledby="h-ep">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-ep"><i class="bi bi-pc-display me-1" aria-hidden="true"></i>Detected devices</h2>
+      <span class="obs-card-hint">hosts a FortiGate has seen on its interfaces</span></div>
+    <div class="fw-card-body p-0 table-responsive">
+    {% if endpoints %}<table class="table table-sm obs-table mb-0">
+      <thead><tr><th scope="col">IP</th><th scope="col">MAC</th><th scope="col">Seen by</th><th scope="col">Online</th></tr></thead>
+      <tbody>{% for e in endpoints %}<tr><td><code>{{ e.ip }}</code></td><td><code class="small">{{ e.mac }}</code></td><td>{{ e.source }} {{ e.interface }}</td>
+        <td>{% if e.online %}<span class="obs-chip st-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> Online</span>{% elif e.online is sameas false %}<span class="obs-chip st-none"><i class="bi bi-dash-circle" aria-hidden="true"></i> Offline</span>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+    </table>{% else %}{{ empty_state('pc-display', 'No detected devices', 'Only FortiGate reports detected devices.') }}{% endif %}
+    </div>
+  </section>
+
+  <section class="fw-card obs-span-6" aria-labelledby="h-ad">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-ad"><i class="bi bi-geo me-1" aria-hidden="true"></i>Address objects</h2>
+      <span class="obs-card-hint">FortiGate · firewall policies that use each one</span>{{ filter_box('tbl-ad', 'Filter…') }}</div>
+    <div class="fw-card-body p-0 table-responsive obs-scroll-y">
+    {% if addresses %}<table class="table table-sm obs-table mb-0" id="tbl-ad">
+      <thead><tr><th scope="col">Name</th><th scope="col">Value</th><th scope="col">Used by</th></tr></thead>
+      <tbody>{% for a in addresses %}<tr data-filter-item><td>{{ a.name }} <span class="text-muted small">{{ a.source }}</span></td><td><code class="small">{{ a.subnet }}</code></td>
+        <td>{% if a.policies %}{% for p in a.policies %}<span class="obs-pillet">#{{ p }}</span>{% endfor %}{% else %}<span class="obs-chip st-none"><i class="bi bi-dash-circle" aria-hidden="true"></i> unused</span>{% endif %}</td></tr>{% endfor %}</tbody>
+    </table>{% else %}{{ empty_state('geo', 'No address objects', 'Only FortiGate reports address objects.') }}{% endif %}
+    </div>
+  </section>
+</div>
+<p class="obs-footnote"><i class="bi bi-info-circle" aria-hidden="true"></i> Address groups are not collected yet, so a policy that uses a group is listed under the group name only. Counters are cumulative since the device's last reset.</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/charts.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='js/explore.js') }}?v={{ app_version }}"></script>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+{{ page_header('Reports', 'Built on demand from the stored data: printable (save as PDF from the print dialog) and exportable as CSV', 'file-earmark-bar-graph') }}
+<div class="obs-card-grid">
+  {% for k, (title, icon, text) in reports.items() %}
+  <section class="fw-card obs-report-card" aria-labelledby="h-r-{{ k }}">
+    <div class="fw-card-body">
+      <h2 class="fw-card-title" id="h-r-{{ k }}"><i class="bi bi-{{ icon }} me-1" aria-hidden="true"></i>{{ title }}</h2>
+      <p class="small text-muted">{{ text }}</p>
+      {% if k == 'inventory' %}
+      <a class="btn btn-sm btn-primary" href="{{ url_for('ops.report', kind=k) }}">Open report</a>
+      {% else %}
+      <div class="obs-seg obs-seg-sm" role="group" aria-label="Period of {{ title }}">
+        {% for p in periods %}<a href="{{ url_for('ops.report', kind=k, period=p) }}">Last {{ p }}</a>{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

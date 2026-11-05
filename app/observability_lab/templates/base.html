@@ -108,25 +108,21 @@
     {% macro nav_item(endpoint, icon, label, active) -%}
     <a class="obs-nav-item {{ 'active' if active }}" href="{{ url_for(endpoint) }}" title="{{ label }}" {{ 'aria-current="page"'|safe if active }}><i class="bi bi-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span></a>
     {%- endmacro %}
-    {# Planned: shown so the structure is visible, never a page with fake data. #}
-    {% macro nav_planned(icon, label, phase) -%}
-    <span class="obs-nav-item is-planned" aria-disabled="true" title="{{ label }} — planned ({{ phase }})"><i class="bi bi-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span><span class="obs-nav-tag">soon</span></span>
-    {%- endmacro %}
     {% set nav_ep, nav_bp = request.endpoint, request.blueprint %}
     <div class="obs-nav-section">Monitor</div>
     {{ nav_item('main.index', 'speedometer2', 'Overview', nav_ep == 'main.index') }}
-    {{ nav_planned('hdd-rack', 'Infrastructure', 'phase 7') }}
-    {{ nav_planned('ethernet', 'Network', 'phase 7') }}
-    {{ nav_planned('window-stack', 'Applications', 'phase 7') }}
+    {{ nav_item('explore.infrastructure', 'hdd-rack', 'Infrastructure', nav_ep == 'explore.infrastructure') }}
+    {{ nav_item('explore.network', 'ethernet', 'Network', nav_ep == 'explore.network') }}
+    {{ nav_item('explore.applications', 'window-stack', 'Applications', nav_ep == 'explore.applications') }}
     <div class="obs-nav-section">Visualize</div>
-    {{ nav_planned('bezier', 'Data Flows', 'phase 5') }}
+    {{ nav_item('explore.flows', 'bezier', 'Data Flows', nav_ep == 'explore.flows') }}
     {{ nav_item('diagrams.index', 'diagram-3', 'Architecture Maps', nav_bp == 'diagrams') }}
-    {{ nav_planned('share', 'Dependencies', 'phase 7') }}
+    {{ nav_item('explore.dependencies', 'share', 'Dependencies', nav_ep == 'explore.dependencies') }}
     <div class="obs-nav-section">Analyze</div>
-    {{ nav_planned('graph-up-arrow', 'Analytics', 'phase 7') }}
-    {{ nav_planned('bell', 'Events & Alerts', 'phase 8') }}
-    {{ nav_planned('fire', 'Incidents', 'phase 8') }}
-    {{ nav_planned('file-earmark-bar-graph', 'Reports', 'phase 8') }}
+    {{ nav_item('explore.analytics', 'graph-up-arrow', 'Analytics', nav_ep == 'explore.analytics') }}
+    {{ nav_item('ops.events', 'bell', 'Events & Alerts', nav_ep == 'ops.events') }}
+    {{ nav_item('ops.incidents', 'fire', 'Incidents', nav_ep in ('ops.incidents', 'ops.incident')) }}
+    {{ nav_item('ops.reports', 'file-earmark-bar-graph', 'Reports', nav_ep in ('ops.reports', 'ops.report')) }}
     <div class="obs-nav-section">Configure</div>
     {{ nav_item('sources.index', 'plug', 'Integrations', nav_bp == 'sources') }}
     {{ nav_item('jobs.index', 'list-task', 'Collection jobs', nav_bp == 'jobs') }}

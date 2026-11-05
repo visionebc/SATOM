@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, empty_state, filter_box, tile, ago %}
+{% from "ops/_ops.html" import sev_chip, dur, inc_chip %}
+{% block title %}Incidents{% endblock %}
+{% block content %}
+{{ page_header('Incidents', 'The operators\' record: alerts linked, acknowledged, assigned, annotated and resolved by a person', 'fire') }}
+<div class="obs-tiles" role="list">
+  {{ tile('Open', counts.open, 'not acknowledged yet', 'fire') }}
+  {{ tile('Acknowledged', counts.acknowledged, 'being worked on', 'eye') }}
+  {{ tile('Resolved', counts.resolved, 'all time', 'check2-circle') }}
+  {{ tile('MTTA', dur(stats.mtta_s), 'mean time to acknowledge', 'stopwatch') }}
+  {{ tile('MTTR', dur(stats.mttr_s), 'mean time to resolve', 'hourglass-split') }}
+</div>
+
+<div class="obs-toolbar">
+  <nav class="obs-seg" aria-label="Status">
+    {% for k, label in [('active','Not resolved'),('open','Open'),('acknowledged','Acknowledged'),('resolved','Resolved'),('all','All')] %}
+    <a href="{{ url_for('ops.incidents', status=k) }}" class="{{ 'active' if status == k }}" {{ 'aria-current="true"'|safe if status == k }}>{{ label }}</a>{% endfor %}
+  </nav>
+  {{ filter_box('tbl-inc', 'Filter incidents…') }}
+</div>
+
+<section class="fw-card mb-3"><div class="fw-card-body p-0 table-responsive">
+{% if rows %}
+<table class="table table-sm table-hover obs-table mb-0" id="tbl-inc">
+  <thead><tr><th scope="col">#</th><th scope="col">Incident</th><th scope="col">Severity</th><th scope="col">Status</th><th scope="col">Assignee</th><th scope="col" class="text-end">Alerts</th><th scope="col">Opened</th><th scope="col" class="text-end">Age</th></tr></thead>
+  <tbody>{% for i in rows %}
+    <tr data-filter-item><td><a href="{{ url_for('ops.incident', iid=i.id) }}">#{{ i.id }}</a></td>
+      <td><a href="{{ url_for('ops.incident', iid=i.id) }}"><b>{{ i.title }}</b></a><div class="small text-muted">by {{ i.created_by or '—' }}</div></td>
+      <td>{{ sev_chip(i.severity) }}</td><td>{{ inc_chip(i.status) }}</td>
+      <td>{{ i.assignee or '—' }}</td>
+      <td class="text-end">{{ i.alerts|selectattr('status', 'equalto', 'active')|list|length }} / {{ i.alerts|length }}</td>
+      <td>{{ ago(i.created_at) }}</td>
+      <td class="text-end text-nowrap">{{ dur(age(i)) }}</td></tr>
+  {% endfor %}</tbody>
+</table>
+{% else %}{{ empty_state('fire', 'No incidents here', 'Open one from active alerts below, or change the status filter.') }}{% endif %}
+</div></section>
+
+{% if current_user.is_admin %}
+<section class="fw-card" id="new" aria-labelledby="h-new">
+  <div class="fw-card-header"><h2 class="fw-card-title" id="h-new"><i class="bi bi-plus-circle me-1" aria-hidden="true"></i>Open an incident</h2>
+    <span class="obs-card-hint">pick the alerts it covers — the severity follows the worst one</span></div>
+  <div class="fw-card-body">
+    <form method="post" action="{{ url_for('ops.incident_new') }}" class="obs-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-2 mb-2">
+        <div class="col-md-7"><label class="form-label small" for="inc-title">Title</label>
+          <input class="form-control form-control-sm" id="inc-title" name="title" maxlength="200" placeholder="Empty = title of the first alert"></div>
+        <div class="col-md-5"><label class="form-label small" for="inc-as">Assignee (SATOM user)</label>
+          <input class="form-control form-control-sm" id="inc-as" name="assignee" maxlength="64" value="{{ current_user.username }}"></div>
+      </div>
+      {% if unlinked %}
+      <fieldset class="obs-pick"><legend class="form-label small">Active alerts not in an incident ({{ unlinked|length }})</legend>
+        {% for a in unlinked %}<label class="obs-pick-row"><input type="checkbox" class="form-check-input" name="alert_id" value="{{ a.id }}"> {{ sev_chip(a.severity) }} <span>{{ a.title }}</span></label>{% endfor %}
+      </fieldset>
+      {% else %}<p class="small text-muted">No active alert is outside an incident.</p>{% endif %}
+      <button class="btn btn-sm btn-primary mt-2" type="submit"><i class="bi bi-fire" aria-hidden="true"></i> Open incident</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

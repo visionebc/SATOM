@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, empty_state, filter_box, tile %}
+{% block title %}Applications{% endblock %}
+{% set HS = {'all_down': ('error', 'x-octagon-fill'), 'degraded': ('stale', 'exclamation-triangle-fill'), 'no_data': ('none', 'dash-circle'), 'unchecked': ('none', 'question-circle'), 'ok': ('ok', 'check-circle-fill'), 'disabled': ('none', 'pause-circle')} %}
+{% set BH = {'up': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'unchecked': ('none', 'question-circle', 'No health check')} %}
+{% block content %}
+<div class="obs-page" data-scope="{{ scope }}" data-range="{{ range_key }}">
+{{ page_header('Applications', 'Published services (FortiWeb server policies): listener, pool, back-ends, traffic and health' ~ (' · ' ~ scope if scope else ''), 'window-stack') }}
+
+<div class="obs-tiles" role="list">
+  {{ tile('Services', total, counts.disabled ~ ' disabled', 'window-stack') }}
+  {{ tile('Healthy', counts.ok, 'every back-end up', 'check-circle') }}
+  {{ tile('Degraded', counts.degraded, 'some back-ends down', 'exclamation-triangle') }}
+  {{ tile('Down', counts.all_down, 'every back-end down', 'x-octagon') }}
+  {{ tile('Unknown', counts.unchecked + counts.no_data, 'no health check or not read', 'question-circle') }}
+</div>
+
+<div class="obs-grid mb-3">
+  <section class="fw-card obs-span-6" aria-labelledby="h-ses"><div class="fw-card-header"><h2 class="fw-card-title" id="h-ses"><i class="bi bi-people me-1" aria-hidden="true"></i>Active sessions</h2><span class="obs-card-hint">sum over server policies</span></div>
+    <div class="fw-card-body"><div class="obs-chart-host" data-series="sessions" data-height="170"></div></div></section>
+  <section class="fw-card obs-span-6" aria-labelledby="h-lat"><div class="fw-card-header"><h2 class="fw-card-title" id="h-lat"><i class="bi bi-stopwatch me-1" aria-hidden="true"></i>Latency</h2><span class="obs-card-hint">average · as reported by the device</span></div>
+    <div class="fw-card-body"><div class="obs-chart-host" data-series="latency" data-area="0" data-height="170"></div></div></section>
+</div>
+
+<section class="fw-card" aria-labelledby="h-apps">
+  <div class="fw-card-header flex-wrap gap-2"><h2 class="fw-card-title" id="h-apps"><i class="bi bi-window-stack me-1" aria-hidden="true"></i>Services</h2>
+    <nav class="obs-seg obs-seg-sm ms-auto" aria-label="Health">
+      <a href="{{ url_for('explore.applications', source=scope or None) }}" class="{{ 'active' if not health }}" {{ 'aria-current="true"'|safe if not health }}>All <span class="obs-tab-count">{{ total }}</span></a>
+      {% for h in ['all_down','degraded','unchecked','ok','no_data','disabled'] %}{% if counts[h] %}<a href="{{ url_for('explore.applications', source=scope or None, health=h) }}" class="{{ 'active' if health == h }}" {{ 'aria-current="true"'|safe if health == h }}>{{ health_label[h] }} <span class="obs-tab-count">{{ counts[h] }}</span></a>{% endif %}{% endfor %}
+    </nav>
+    {{ filter_box('tbl-apps', 'Filter by name, VIP, pool, back-end…') }}
+  </div>
+  <div class="fw-card-body p-0 table-responsive">
+  {% if pols %}
+  <table class="table table-sm obs-table mb-0 obs-app-table" id="tbl-apps">
+    <thead><tr><th scope="col">Service</th><th scope="col">Health</th><th scope="col">Listener</th><th scope="col">Pool</th><th scope="col" class="text-center">Back-ends</th><th scope="col" class="text-end">Sessions</th><th scope="col" class="text-end">Conn/s</th><th scope="col" class="text-end">App resp.</th></tr></thead>
+    {% for p in pols %}{% set st, icon = HS[p.health] %}
+    <tbody data-filter-item>
+      <tr>
+        <td><button class="obs-row-toggle" type="button" aria-expanded="false" data-toggle-next aria-label="Details of {{ p.name }}"><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
+          <b>{{ p.name }}</b><span class="text-muted small d-block obs-indent">{{ p.source }}{% if p.wpp %} · WPP {{ p.wpp }}{% endif %}</span></td>
+        <td><span class="obs-chip st-{{ st }}"><i class="bi bi-{{ icon }}" aria-hidden="true"></i> {{ health_label[p.health] }}</span></td>
+        <td><code>{{ p.listen or '—' }}</code><span class="text-muted small d-block">{{ p.protocol or '' }}{% if p.detail.ssl == 'enable' %} · SSL{% endif %}{% if p.vserver %} · {{ p.vserver }}{% endif %}</span></td>
+        <td>{{ p.server_pool or '—' }}{% if p.pool_kv %}<span class="text-muted small d-block">{{ p.pool_kv.lb_algo or '' }}{% if p.pool_kv.health_check %} · {{ p.pool_kv.health_check }}{% endif %}</span>{% endif %}</td>
+        <td class="text-center">{% if p.backends_total is none %}<span class="text-muted" title="back-end health not read">—</span>{% else %}
+          <span class="obs-bk"><span class="text-success" title="up">{{ p.backends_up }}↑</span> <span class="{{ 'text-danger fw-semibold' if p.backends_down }}" title="down">{{ p.backends_down }}↓</span> <span class="text-muted" title="no health check">{{ p.backends_unchecked }}?</span></span>{% endif %}</td>
+        <td class="text-end">{{ p.sessions if p.sessions is not none else '—' }}</td>
+        <td class="text-end">{{ p.conn_per_s if p.conn_per_s is not none else '—' }}</td>
+        <td class="text-end">{{ (p.app_response_time ~ ' ms') if p.app_response_time is not none else '—' }}</td>
+      </tr>
+      <tr class="obs-app-more" hidden><td colspan="8">
+        <div class="obs-app-detail">
+          <dl class="obs-kv obs-kv-2">
+            <dt>Status</dt><dd>{{ p.status or '—' }}</dd><dt>Mode</dt><dd>{{ p.detail.deployment_mode or '—' }}</dd>
+            <dt>Service</dt><dd>{{ p.detail.service or '—' }}{% if p.detail.https_service %} / {{ p.detail.https_service }}{% endif %}</dd>
+            <dt>Client RTT</dt><dd>{{ p.client_rtt if p.client_rtt is not none else '—' }}</dd><dt>Server RTT</dt><dd>{{ p.server_rtt if p.server_rtt is not none else '—' }}</dd>
+          </dl>
+          {% set bks = p.detail.backends or [] %}
+          {% if bks %}<table class="table table-sm obs-subtable mb-0"><thead><tr><th scope="col">Back-end</th><th scope="col">Health</th><th scope="col">Sessions</th><th scope="col">Backup</th></tr></thead>
+            <tbody>{% for b in bks %}{% set h = 'up' if (b.health|string|lower) == 'up' else ('down' if (b.health|string|lower) == 'down' else 'unchecked') %}{% set bs, bi, bl = BH[h] %}
+              <tr><td><code>{{ b.address }}:{{ b.port }}</code></td><td><span class="obs-chip st-{{ bs }}"><i class="bi bi-{{ bi }}" aria-hidden="true"></i> {{ bl }}</span></td><td>{{ b.sessions }}</td><td>{{ 'yes' if b.backup else 'no' }}</td></tr>{% endfor %}</tbody></table>
+          {% else %}<p class="text-muted small mb-0">Back-end health not read for this policy{{ ' (disabled)' if p.status != 'enable' }}.</p>{% endif %}
+          <a class="small" href="{{ url_for('explore.flows', source=scope or None) }}#flow-{{ p.source_id }}-{{ p.name }}"><i class="bi bi-bezier" aria-hidden="true"></i> Network path to the back-ends</a>
+        </div>
+      </td></tr>
+    </tbody>
+    {% endfor %}
+  </table>
+  {% else %}{{ empty_state('window-stack', 'No services match', 'Change the health filter, or collect a FortiWeb.', url_for('sources.index'), 'Integrations') }}{% endif %}
+  </div>
+</section>
+<p class="obs-footnote"><i class="bi bi-info-circle" aria-hidden="true"></i> Health is the device's own health check per back-end; a back-end without a health check is "unknown", never assumed up. Latency fields are as the device reports them (unit not verified with traffic on this build).</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/charts.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='js/explore.js') }}?v={{ app_version }}"></script>
+{% endblock %}

@@ -228,6 +228,8 @@ def tick() -> int:
         for s in list(collect.due_sources()):
             collect.run_source(s, "scheduler")
             n += 1
+        from . import alerts
+        alerts.evaluate()
         return n
     finally:
         if conn is not None:

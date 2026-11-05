@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, empty_state, filter_box, tile, ago %}
+{% from "ops/_ops.html" import sev_chip, dur %}
+{% block title %}Events & Alerts{% endblock %}
+{% set EK = {'opened': ('error', 'bell-fill', 'Opened'), 'resolved': ('ok', 'check-circle-fill', 'Resolved'), 'escalated': ('error', 'arrow-up-circle-fill', 'Escalated'), 'deescalated': ('stale', 'arrow-down-circle-fill', 'De-escalated')} %}
+{% block content %}
+{% call page_header('Events & Alerts', 'Alerts open while a condition holds; every change is an event that stays in the history', 'bell') %}
+  {% if current_user.is_admin and active %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('ops.incidents') }}#new"><i class="bi bi-fire" aria-hidden="true"></i> Open an incident</a>{% endif %}
+{% endcall %}
+<div class="obs-tiles" role="list">
+  {{ tile('Active alerts', counts.critical + counts.warning, counts.critical ~ ' critical · ' ~ counts.warning ~ ' warning', 'bell') }}
+  {{ tile('In an incident', counts.linked, 'of the active alerts', 'fire') }}
+  {{ tile('Events', events|length, 'in the last ' ~ period, 'clock-history') }}
+  {{ tile('Resolved', resolved_n, 'alerts cleared in the last ' ~ period, 'check2-circle') }}
+</div>
+
+<div class="obs-toolbar">
+  <nav class="obs-seg" aria-label="Severity">
+    <a href="{{ url_for('ops.events', kind=kind or None, period=period) }}" class="{{ 'active' if not sev }}">All severities</a>
+    {% for s in ['critical','warning'] %}<a href="{{ url_for('ops.events', severity=s, kind=kind or None, period=period) }}" class="{{ 'active' if sev == s }}" {{ 'aria-current="true"'|safe if sev == s }}>{{ s|capitalize }}</a>{% endfor %}
+  </nav>
+</div>
+
+<section class="fw-card mb-3" aria-labelledby="h-act">
+  <div class="fw-card-header"><h2 class="fw-card-title" id="h-act"><i class="bi bi-bell me-1" aria-hidden="true"></i>Active alerts</h2>
+    <span class="obs-card-hint">{{ active|length }} shown</span>{{ filter_box('tbl-active', 'Filter alerts…') }}</div>
+  <div class="fw-card-body p-0 table-responsive">
+  {% if active %}
+  <table class="table table-sm obs-table mb-0" id="tbl-active">
+    <thead><tr><th scope="col">Severity</th><th scope="col">Alert</th><th scope="col">Source</th><th scope="col">Since</th><th scope="col" class="text-end">For</th><th scope="col">Incident</th></tr></thead>
+    <tbody>{% for a in active %}
+      <tr data-filter-item><td>{{ sev_chip(a.severity) }}</td>
+        <td><a href="{{ request.script_root }}{{ a.url }}"><b>{{ a.title }}</b></a><div class="small text-muted">{{ a.detail }}</div></td>
+        <td>{{ names.get(a.source_id, '—') }} <span class="text-muted small">{{ a.kind }}</span></td>
+        <td>{{ ago(a.first_seen) }}</td><td class="text-end text-nowrap">{{ dur(duration(a, now)) }}</td>
+        <td>{% if a.incident_id %}<a href="{{ url_for('ops.incident', iid=a.incident_id) }}">#{{ a.incident_id }}</a>{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% else %}{{ empty_state('check2-circle', 'No active alerts', 'Every condition the platform checks is clear' ~ (' at this severity' if sev else '') ~ '.') }}{% endif %}
+  </div>
+</section>
+
+<div class="obs-grid">
+  <section class="fw-card obs-span-8" aria-labelledby="h-ev">
+    <div class="fw-card-header flex-wrap gap-2"><h2 class="fw-card-title" id="h-ev"><i class="bi bi-clock-history me-1" aria-hidden="true"></i>Event history</h2>
+      <nav class="obs-seg obs-seg-sm ms-auto" aria-label="Event kind">
+        <a href="{{ url_for('ops.events', severity=sev or None, period=period) }}" class="{{ 'active' if not kind }}">All</a>
+        {% for k in kinds %}<a href="{{ url_for('ops.events', severity=sev or None, kind=k, period=period) }}" class="{{ 'active' if kind == k }}" {{ 'aria-current="true"'|safe if kind == k }}>{{ EK[k][2] }}</a>{% endfor %}
+      </nav>
+      <nav class="obs-seg obs-seg-sm" aria-label="Period">
+        {% for p in periods %}<a href="{{ url_for('ops.events', severity=sev or None, kind=kind or None, period=p) }}" class="{{ 'active' if period == p }}" {{ 'aria-current="true"'|safe if period == p }}>{{ p }}</a>{% endfor %}
+      </nav></div>
+    <div class="fw-card-body">
+    {% if events %}
+    <ol class="obs-timeline obs-timeline-tall">{% for e in events %}{% set st, icon, label = EK[e.kind] %}
+      <li class="st-{{ st }}"><span class="obs-tl-dot" aria-hidden="true"></span>
+        <span><span class="obs-chip st-{{ st }}"><i class="bi bi-{{ icon }}" aria-hidden="true"></i> {{ label }}</span> {{ sev_chip(e.severity) }} <b>{{ e.title }}</b></span>
+        <time datetime="{{ e.at.isoformat() }}Z" title="{{ e.at.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ e.at.strftime('%Y-%m-%d %H:%M') }} UTC</time>
+        <span class="obs-tl-s">{{ names.get(e.source_id, '') }}{% if e.detail %} · {{ e.detail }}{% endif %}</span></li>
+    {% endfor %}</ol>
+    {% else %}{{ empty_state('clock-history', 'No events in this period', 'Events appear when an alert opens, changes severity or clears.') }}{% endif %}
+    </div>
+  </section>
+  <section class="fw-card obs-span-4" aria-labelledby="h-rules">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-rules"><i class="bi bi-sliders me-1" aria-hidden="true"></i>Alert rules</h2><span class="obs-card-hint">built in · evaluated after every collection</span></div>
+    <div class="fw-card-body p-0"><table class="table table-sm obs-table mb-0">
+      <tbody>{% for k, sev_, text in rules %}<tr><td><b>{{ k }}</b><div class="small text-muted">{{ sev_ }}</div></td><td class="small">{{ text }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+</div>
+{% endblock %}

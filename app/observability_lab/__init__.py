@@ -34,7 +34,7 @@ from flask import Flask, g, request
 
 from .extensions import csrf, db, login_manager
 
-VERSION = "0.3.0-satom"
+VERSION = "0.4.0-satom"
 SCHEMA = "observability"
 
 
@@ -85,8 +85,8 @@ def create_app(satom_app: Flask) -> Flask:
 
     from . import models  # noqa: F401 — register tables
     from . import satom_bridge
-    from .views import api, auth, diagrams, jobs, main, sources
-    for bp in (auth.bp, main.bp, diagrams.bp, sources.bp, jobs.bp, api.bp):
+    from .views import api, auth, diagrams, explore, jobs, main, ops, sources
+    for bp in (auth.bp, main.bp, diagrams.bp, sources.bp, jobs.bp, api.bp, explore.bp, ops.bp):
         app.register_blueprint(bp)
     csrf.exempt(api.health)
 

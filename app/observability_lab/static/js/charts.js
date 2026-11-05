@@ -25,6 +25,7 @@
     switch (unit) {
       case 'bps': return si(v, 1000) + 'bit/s';
       case 'pps': return si(v, 1000) + 'pkt/s';
+      case 'bytes': return si(v, 1000) + 'B';
       case 'cps': return si(v, 1000).trim() + '/s';
       case 'ms': return (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v === 0 ? '0' : v.toFixed(3)).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '') + ' ms';
       case 'ratio': return (v * 100).toFixed(v >= 0.9995 ? 0 : 1) + ' %';

@@ -113,23 +113,36 @@ def devices(sources) -> list[dict]:
     return sorted(rows.values(), key=lambda r: r["source"])
 
 
+#: Device resource thresholds (percent): (warning, critical). Built-in rules,
+#: listed on Events & Alerts; a device that does not report a value is not
+#: judged (FortiWeb's connector does not read CPU/memory yet).
+RESOURCE_RULES = {"cpu_pct": ("CPU", 80, 95), "mem_pct": ("memory", 85, 95), "disk_pct": ("disk", 85, 95)}
+
+
 def problems(sources) -> list[dict]:
-    """What needs attention, worst first. Feeds the bell and the health pill."""
+    """What needs attention, worst first. Feeds the bell, the health pill and
+    the alerts (``key`` is stable while the condition holds, so a change of
+    severity of the same condition is one alert, not two)."""
     out = []
     names = {s.id: s.name for s in sources}
+
+    def add(key, sid, severity, kind, title, detail, url):
+        out.append({"key": key, "source_id": sid, "severity": severity, "kind": kind,
+                    "title": title, "detail": detail, "url": url})
+
     for s in sources:
         st = source_state(s)
         if st in ("error", "stale"):
-            out.append({"severity": "critical" if st == "error" else "warning",
-                        "kind": "source", "title": "%s: %s" % (s.name, "collection failing" if st == "error" else "data is stale"),
-                        "detail": s.last_error or ("last read %s UTC" % s.last_run_at.strftime("%Y-%m-%d %H:%M")
-                                                   if s.last_run_at else ""),
-                        "url": "/sources/%d" % s.id})
+            add("source:%d" % s.id, s.id, "critical" if st == "error" else "warning", "source",
+                "%s: %s" % (s.name, "collection failing" if st == "error" else "data is stale"),
+                s.last_error or ("last read %s UTC" % s.last_run_at.strftime("%Y-%m-%d %H:%M")
+                                 if s.last_run_at else ""),
+                "/sources/%d" % s.id)
     for st in EndpointStatus.query.filter(EndpointStatus.source_id.in_(names.keys()),
                                           EndpointStatus.ok.is_(False)):
-        out.append({"severity": "critical", "kind": "read",
-                    "title": "%s: read failed — %s" % (names[st.source_id], st.endpoint),
-                    "detail": st.error[:200], "url": "/sources/%d" % st.source_id})
+        add("read:%d:%s" % (st.source_id, st.endpoint), st.source_id, "critical", "read",
+            "%s: read failed — %s" % (names[st.source_id], st.endpoint), st.error[:200],
+            "/sources/%d" % st.source_id)
     # Licence: an invalid licence silently disables features (FortiWeb
     # signatures, FortiGate updates), so it is critical, not informational.
     for f in Fact.query.filter(Fact.source_id.in_(names.keys()), Fact.object_ref == "device",
@@ -137,26 +150,31 @@ def problems(sources) -> list[dict]:
         bad = (f.key == "licence_valid" and f.value is False) or \
               (f.key == "vm_licence" and str(f.value).lower() == "invalid")
         if bad:
-            out.append({"severity": "critical", "kind": "licence",
-                        "title": "%s: licence not valid" % names[f.source_id],
-                        "detail": "features that need a licence are inactive (%s = %s)" % (f.key, f.value),
-                        "url": "/sources/%d#device" % f.source_id})
+            add("licence:%d" % f.source_id, f.source_id, "critical", "licence",
+                "%s: licence not valid" % names[f.source_id],
+                "features that need a licence are inactive (%s = %s)" % (f.key, f.value),
+                "/sources/%d#device" % f.source_id)
+    for d in devices(sources):
+        for key, (label, warn, crit) in RESOURCE_RULES.items():
+            v = d.get(key)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= warn:
+                add("resource:%d:%s" % (d["source_id"], key), d["source_id"],
+                    "critical" if v >= crit else "warning", "resource",
+                    "%s: %s at %s %%" % (d["source"], label, v),
+                    "threshold %d %% warning, %d %% critical" % (warn, crit),
+                    "/infrastructure#src-%d" % d["source_id"])
     for p in policies(sources):
-        if p["health"] == "all_down":
-            out.append({"severity": "critical", "kind": "policy",
-                        "title": "%s: every back-end down" % p["name"],
-                        "detail": "%d of %d back-ends down" % (p["backends_down"], p["backends_total"]),
-                        "url": "/sources/%d#L7" % p["source_id"]})
-        elif p["health"] == "degraded":
-            out.append({"severity": "warning", "kind": "policy",
-                        "title": "%s: back-ends down" % p["name"],
-                        "detail": "%d of %d back-ends down" % (p["backends_down"], p["backends_total"]),
-                        "url": "/sources/%d#L7" % p["source_id"]})
+        if p["health"] in ("all_down", "degraded"):
+            add("policy:%d:%s" % (p["source_id"], p["name"]), p["source_id"],
+                "critical" if p["health"] == "all_down" else "warning", "policy",
+                "%s: %s" % (p["name"], "every back-end down" if p["health"] == "all_down" else "back-ends down"),
+                "%d of %d back-ends down" % (p["backends_down"], p["backends_total"]),
+                "/sources/%d#L7" % p["source_id"])
     for i in interfaces(sources):
         if i["state"] == "down":
-            out.append({"severity": "critical", "kind": "interface",
-                        "title": "%s: %s link down" % (i["source"], i["name"]),
-                        "detail": "administratively up, no link", "url": "/sources/%d#L1" % i["source_id"]})
+            add("if:%d:%s" % (i["source_id"], i["name"]), i["source_id"], "critical", "interface",
+                "%s: %s link down" % (i["source"], i["name"]), "administratively up, no link",
+                "/sources/%d#L1" % i["source_id"])
     rank = {"critical": 0, "warning": 1}
     out.sort(key=lambda p: rank[p["severity"]])
     return out

@@ -136,3 +136,68 @@ class Audit(db.Model):
 
 def audit(user: str, action: str, target: str = "", detail: str = "") -> None:
     db.session.add(Audit(user=user or "", action=action, target=target[:200], detail=detail))
+
+
+# ── events, alerts, incidents (phase 8) ───────────────────────────────────────
+# An ALERT is one condition of insights.problems() while it holds (opened when
+# it first appears, resolved when it is gone); an EVENT is one transition of an
+# alert, so the history survives after the condition clears. An INCIDENT is
+# the operator's record: alerts are linked to it, it is acknowledged, assigned,
+# annotated and resolved by a person — never closed by the platform.
+
+class Incident(db.Model):
+    __tablename__ = "incidents"
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    severity = db.Column(db.String(16), nullable=False, default="warning")
+    status = db.Column(db.String(16), nullable=False, default="open", index=True)
+    assignee = db.Column(db.String(64), nullable=False, default="")
+    created_by = db.Column(db.String(64), nullable=False, default="")
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    acked_by = db.Column(db.String(64), nullable=False, default="")
+    acked_at = db.Column(db.DateTime)
+    resolved_by = db.Column(db.String(64), nullable=False, default="")
+    resolved_at = db.Column(db.DateTime)
+    notes = db.relationship("IncidentNote", backref="incident", order_by="IncidentNote.id",
+                            cascade="all, delete-orphan")
+
+
+class IncidentNote(db.Model):
+    __tablename__ = "incident_notes"
+    id = db.Column(db.Integer, primary_key=True)
+    incident_id = db.Column(db.Integer, db.ForeignKey("incidents.id", ondelete="CASCADE"),
+                            nullable=False, index=True)
+    at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    user = db.Column(db.String(64), nullable=False, default="")
+    kind = db.Column(db.String(16), nullable=False, default="note")  # note|status|assign|link
+    text = db.Column(db.Text, nullable=False, default="")
+
+
+class Alert(db.Model):
+    __tablename__ = "alerts"
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(255), nullable=False, index=True)
+    source_id = db.Column(db.Integer, db.ForeignKey("sources.id", ondelete="SET NULL"))
+    severity = db.Column(db.String(16), nullable=False)
+    kind = db.Column(db.String(32), nullable=False)
+    title = db.Column(db.String(300), nullable=False)
+    detail = db.Column(db.Text, nullable=False, default="")
+    url = db.Column(db.String(255), nullable=False, default="")
+    status = db.Column(db.String(16), nullable=False, default="active", index=True)
+    first_seen = db.Column(db.DateTime, nullable=False, default=utcnow)
+    last_seen = db.Column(db.DateTime, nullable=False, default=utcnow)
+    resolved_at = db.Column(db.DateTime)
+    incident_id = db.Column(db.Integer, db.ForeignKey("incidents.id", ondelete="SET NULL"), index=True)
+    incident = db.relationship("Incident", backref="alerts")
+
+
+class Event(db.Model):
+    __tablename__ = "events"
+    id = db.Column(db.Integer, primary_key=True)
+    at = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
+    alert_id = db.Column(db.Integer, db.ForeignKey("alerts.id", ondelete="CASCADE"), index=True)
+    source_id = db.Column(db.Integer, db.ForeignKey("sources.id", ondelete="SET NULL"))
+    kind = db.Column(db.String(24), nullable=False)  # opened|resolved|escalated|deescalated
+    severity = db.Column(db.String(16), nullable=False)
+    title = db.Column(db.String(300), nullable=False)
+    detail = db.Column(db.Text, nullable=False, default="")

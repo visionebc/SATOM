@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, empty_state, filter_box, tile %}
+{% block title %}Dependencies{% endblock %}
+{% set BH = {'up': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'unchecked': ('none', 'question-circle', 'No health check')} %}
+{% block content %}
+<div class="obs-page" data-scope="{{ scope }}" data-range="{{ range_key }}">
+{{ page_header('Dependencies', 'What rides on what: if this fails, these are affected' ~ (' · ' ~ scope if scope else ''), 'share') }}
+{% set multi = [] %}{% for b in dep.backends %}{% if b.dependents|length > 1 %}{% set _ = multi.append(b) %}{% endif %}{% endfor %}
+<div class="obs-tiles" role="list">
+  {{ tile('Back-ends', dep.backends|length, multi|length ~ ' shared by several services', 'server') }}
+  {{ tile('Pools', dep.pools|length, 'used by server policies', 'collection') }}
+  {{ tile('Interfaces carrying traffic', dep.interfaces|selectattr('dependents')|list|length, 'of ' ~ dep.interfaces|length, 'ethernet') }}
+  {{ tile('Gateways', dep.gateways|length, (dep.gateways|selectattr('device')|list|length) ~ ' are monitored devices', 'signpost-split') }}
+  {{ tile('Shared segments', segments|length, 'links between devices', 'link-45deg') }}
+</div>
+
+<div class="obs-toolbar">{{ filter_box('dep-root', 'What depends on… (address, interface, policy, pool)') }}</div>
+<div id="dep-root" class="obs-grid">
+  <section class="fw-card obs-span-7" aria-labelledby="h-bk">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-bk"><i class="bi bi-server me-1" aria-hidden="true"></i>Back-end servers</h2>
+      <span class="obs-card-hint">most depended-on first · a shared back-end is a single point of failure</span></div>
+    <div class="fw-card-body p-0 table-responsive obs-scroll-y">
+    {% if dep.backends %}<table class="table table-sm obs-table mb-0">
+      <thead><tr><th scope="col">Back-end</th><th scope="col">Health</th><th scope="col" class="text-end">Services</th><th scope="col">Depended on by</th></tr></thead>
+      <tbody>{% for b in dep.backends %}{% set bs, bi, bl = BH[b.health] %}
+        <tr data-filter-item><td class="text-nowrap"><code>{{ b.address }}:{{ b.port }}</code></td>
+          <td><span class="obs-chip st-{{ bs }}"><i class="bi bi-{{ bi }}" aria-hidden="true"></i> {{ bl }}</span></td>
+          <td class="text-end"><b>{{ b.dependents|length }}</b></td>
+          <td>{% for d in b.dependents %}<span class="obs-pillet{{ ' obs-pillet-off' if not d.enabled }}" title="{{ d.source }} · pool {{ d.pool }}{{ ' · policy disabled' if not d.enabled }}">{{ d.policy }}</span>{% endfor %}</td></tr>
+      {% endfor %}</tbody></table>
+    {% else %}{{ empty_state('server', 'No back-ends known', 'Back-ends come from the FortiWeb back-end health reads.') }}{% endif %}
+    </div>
+  </section>
+
+  <section class="fw-card obs-span-5" aria-labelledby="h-gw">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-gw"><i class="bi bi-signpost-split me-1" aria-hidden="true"></i>Gateways</h2>
+      <span class="obs-card-hint">next hops the devices route through</span></div>
+    <div class="fw-card-body p-0 table-responsive">
+    {% if dep.gateways %}<table class="table table-sm obs-table mb-0">
+      <thead><tr><th scope="col">Gateway</th><th scope="col">Is</th><th scope="col">Used for</th></tr></thead>
+      <tbody>{% for g in dep.gateways %}<tr data-filter-item><td><code>{{ g.gateway }}</code></td>
+        <td>{% if g.device %}<span class="obs-chip st-ok"><i class="bi bi-hdd-network" aria-hidden="true"></i> {{ g.device }}</span>{% else %}<span class="obs-chip st-none" title="not a monitored device — its health is unknown here"><i class="bi bi-question-circle" aria-hidden="true"></i> not monitored</span>{% endif %}</td>
+        <td>{% for u in g.users %}<div class="small">{{ u.source }} <code>{{ u.dst }}</code> via {{ u.interface }}</div>{% endfor %}</td></tr>{% endfor %}</tbody>
+    </table>{% else %}{{ empty_state('signpost-split', 'No gateways', 'No static route was read.') }}{% endif %}
+    </div>
+  </section>
+
+  <section class="fw-card obs-span-7" aria-labelledby="h-if">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-if"><i class="bi bi-ethernet me-1" aria-hidden="true"></i>Interfaces</h2>
+      <span class="obs-card-hint">VIPs listening, services whose back-end traffic leaves through it, firewall policies, hosts seen</span></div>
+    <div class="fw-card-body p-0 table-responsive obs-scroll-y">
+    <table class="table table-sm obs-table mb-0">
+      <thead><tr><th scope="col">Interface</th><th scope="col">State</th><th scope="col" class="text-end">VIPs</th><th scope="col">Back-end traffic of</th><th scope="col">Firewall policies</th><th scope="col">Routes</th></tr></thead>
+      <tbody>{% for r in dep.interfaces %}
+        <tr data-filter-item class="{{ 'obs-muted-row' if not r.dependents }}"><td class="text-nowrap"><b>{{ r.source }}</b> {{ r.interface }}</td>
+          <td>{% if r.state == 'ok' %}<span class="obs-chip st-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> Up</span>{% elif r.state == 'down' %}<span class="obs-chip st-error"><i class="bi bi-x-octagon-fill" aria-hidden="true"></i> Down</span>{% else %}<span class="obs-chip st-none"><i class="bi bi-dash-circle" aria-hidden="true"></i> {{ r.state or 'unknown' }}</span>{% endif %}</td>
+          <td class="text-end">{{ r.vips|length or '—' }}</td>
+          <td>{% if r.egress %}<details><summary>{{ r.egress|length }} service{{ 's' if r.egress|length != 1 }}</summary>{% for e in r.egress %}<span class="obs-pillet">{{ e }}</span>{% endfor %}</details>{% else %}—{% endif %}</td>
+          <td>{% for p in r.fwpolicies %}<span class="obs-pillet">{{ p }}</span>{% else %}—{% endfor %}</td>
+          <td class="small">{{ r.routes|join(', ') or '—' }}</td></tr>
+      {% endfor %}</tbody></table>
+    </div>
+  </section>
+
+  <section class="fw-card obs-span-5" aria-labelledby="h-pool">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-pool"><i class="bi bi-collection me-1" aria-hidden="true"></i>Pools</h2>
+      <span class="obs-card-hint">a pool used by several policies affects all of them</span></div>
+    <div class="fw-card-body p-0 table-responsive obs-scroll-y">
+    {% if dep.pools %}<table class="table table-sm obs-table mb-0">
+      <thead><tr><th scope="col">Pool</th><th scope="col" class="text-end">Members</th><th scope="col">Used by</th></tr></thead>
+      <tbody>{% for p in dep.pools %}<tr data-filter-item><td>{{ p.pool }} <span class="text-muted small">{{ p.source }}</span></td><td class="text-end">{{ p.members if p.members is not none else '—' }}</td>
+        <td>{% for x in p.policies %}<span class="obs-pillet">{{ x }}</span>{% endfor %}</td></tr>{% endfor %}</tbody>
+    </table>{% else %}{{ empty_state('collection', 'No pools', 'Pools come from the FortiWeb server pools.') }}{% endif %}
+    </div>
+  </section>
+
+  {% if segments %}
+  <section class="fw-card obs-span-12" aria-labelledby="h-seg">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-seg"><i class="bi bi-link-45deg me-1" aria-hidden="true"></i>Device-to-device links</h2>
+      <span class="obs-card-hint">subnets where more than one monitored device has an interface</span></div>
+    <div class="fw-card-body"><div class="obs-links">
+      {% for n in segments %}<div class="obs-link" data-filter-item>
+        {% for x in n.members %}<span class="obs-pillet"><i class="bi bi-hdd-network" aria-hidden="true"></i> {{ x.source }} {{ x.interface }} <code>{{ x.ip }}</code></span>{% if not loop.last %}<span class="obs-link-line" aria-hidden="true"></span>{% endif %}{% endfor %}
+        <code class="obs-link-net">{{ n.cidr }}</code></div>{% endfor %}
+    </div></div>
+  </section>
+  {% endif %}
+</div>
+<p class="obs-footnote"><i class="bi bi-info-circle" aria-hidden="true"></i> Built from the stored reads (routing, interfaces, server policies, pools, back-end health, firewall policies). A dependency the devices do not report — DNS, a database behind a back-end — is not invented.</p>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/explore.js') }}?v={{ app_version }}"></script>{% endblock %}

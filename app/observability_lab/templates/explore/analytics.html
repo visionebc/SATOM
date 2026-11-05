@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header %}
+{% block title %}Analytics{% endblock %}
+{% block content %}
+<div class="obs-page" data-scope="{{ scope }}" data-range="{{ range_key }}">
+{% call page_header('Analytics', 'Every collected series over the selected range, with min / avg / p95 / max, and how the estate is made up' ~ (' · ' ~ scope if scope else ''), 'graph-up-arrow') %}
+  <div class="obs-seg obs-seg-sm" role="group" aria-label="Layout">
+    <button type="button" class="active" data-cols="2" aria-pressed="true">2 columns</button><button type="button" data-cols="1" aria-pressed="false">1 column</button>
+  </div>
+{% endcall %}
+
+<h2 class="obs-section-title">Time series</h2>
+<div class="obs-grid obs-an-grid" id="an-grid">
+  {% for name, icon in panels %}{% set title, unit, parts = series[name] %}
+  <section class="fw-card obs-span-6" aria-labelledby="h-an-{{ name }}">
+    <div class="fw-card-header"><h3 class="fw-card-title" id="h-an-{{ name }}"><i class="bi bi-{{ icon }} me-1" aria-hidden="true"></i>{{ title }}</h3></div>
+    <div class="fw-card-body">
+      <div class="obs-chart-host" data-series="{{ name }}" data-stats="st-{{ name }}" data-height="170" {{ 'data-area="0"'|safe if name in ('latency', 'resources') }}></div>
+      <table class="table table-sm obs-stats mb-0" id="st-{{ name }}" aria-label="Statistics of {{ title }}">
+        <thead><tr><th scope="col">Series</th><th scope="col" class="text-end">Min</th><th scope="col" class="text-end">Avg</th><th scope="col" class="text-end">p95</th><th scope="col" class="text-end">Max</th><th scope="col" class="text-end">Last</th></tr></thead>
+        <tbody><tr><td colspan="6" class="text-muted small">Loading…</td></tr></tbody></table>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+
+<h2 class="obs-section-title mt-4">Rankings</h2>
+<div class="obs-grid">
+  <section class="fw-card obs-span-6"><div class="fw-card-header"><h3 class="fw-card-title"><i class="bi bi-ethernet me-1" aria-hidden="true"></i>Busiest interfaces now</h3></div>
+    <div class="fw-card-body"><div data-top="interfaces" data-unit="bps"></div></div></section>
+  <section class="fw-card obs-span-6"><div class="fw-card-header"><h3 class="fw-card-title"><i class="bi bi-bricks me-1" aria-hidden="true"></i>Firewall policies by bytes in the range</h3></div>
+    <div class="fw-card-body"><div data-top="fw_bytes" data-unit="bytes"></div></div></section>
+</div>
+
+<h2 class="obs-section-title mt-4">Composition</h2>
+<div class="obs-grid">
+  {% for group, ds in dists %}
+  <section class="fw-card obs-span-6" aria-label="{{ group }}">
+    <div class="fw-card-header"><h3 class="fw-card-title">{{ group }}</h3></div>
+    <div class="fw-card-body obs-dists">
+      {% for d in ds %}{% set total = d.rows|map(attribute=1)|sum %}
+      <div class="obs-dist"><h4 class="obs-sub-title">{{ d.label }}</h4>
+        {% if d.rows %}<ul class="obs-dist-list">{% for k, n in d.rows %}
+          <li><span class="obs-dist-l">{{ health_label.get(k, path_label.get(k, k)) }}</span>
+            <svg class="obs-dist-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="obs-meter-bg" width="100" height="8" rx="2"/><rect class="obs-dist-fill" width="{{ (100 * n / total)|round(1) }}" height="8" rx="2"/></svg>
+            <span class="obs-dist-v">{{ n }} <span class="text-muted">· {{ (100 * n / total)|round|int }} %</span></span></li>{% endfor %}</ul>
+        {% else %}<p class="text-muted small mb-0">Nothing collected.</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+<p class="obs-footnote"><i class="bi bi-info-circle" aria-hidden="true"></i> Series come from the metrics store (one sample per collection, default every 5 min), so ranges shorter than ~15 min have few points. A failed query is shown as an error, never as an empty chart. HTTP error rates and request percentiles are not collected yet.</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/charts.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='js/explore.js') }}?v={{ app_version }}"></script>
+{% endblock %}

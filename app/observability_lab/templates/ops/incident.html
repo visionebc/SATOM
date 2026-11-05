@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, empty_state, ago %}
+{% from "ops/_ops.html" import sev_chip, dur, inc_chip %}
+{% block title %}Incident #{{ inc.id }}{% endblock %}
+{% set NK = {'note': 'chat-left-text', 'status': 'flag', 'assign': 'person', 'link': 'link-45deg'} %}
+{% block content %}
+{% call page_header('#' ~ inc.id ~ ' ' ~ inc.title, 'Opened ' ~ inc.created_at.strftime('%Y-%m-%d %H:%M') ~ ' UTC by ' ~ (inc.created_by or '—'), 'fire') %}
+  {{ sev_chip(inc.severity) }} {{ inc_chip(inc.status) }}
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('ops.incidents') }}"><i class="bi bi-arrow-left" aria-hidden="true"></i> Incidents</a>
+{% endcall %}
+<div class="row g-3">
+  <div class="col-xl-8">
+    <section class="fw-card mb-3" aria-labelledby="h-al">
+      <div class="fw-card-header"><h2 class="fw-card-title" id="h-al"><i class="bi bi-bell me-1" aria-hidden="true"></i>Linked alerts</h2></div>
+      <div class="fw-card-body p-0 table-responsive">
+      {% if inc.alerts %}<table class="table table-sm obs-table mb-0">
+        <thead><tr><th scope="col">Severity</th><th scope="col">Alert</th><th scope="col">State</th><th scope="col" class="text-end">Duration</th></tr></thead>
+        <tbody>{% for a in inc.alerts %}<tr><td>{{ sev_chip(a.severity) }}</td>
+          <td><a href="{{ request.script_root }}{{ a.url }}">{{ a.title }}</a><div class="small text-muted">{{ names.get(a.source_id, '') }} · {{ a.detail }}</div></td>
+          <td>{% if a.status == 'active' %}<span class="obs-chip st-error"><i class="bi bi-bell-fill" aria-hidden="true"></i> Active</span>{% else %}<span class="obs-chip st-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> Cleared</span>{% endif %}</td>
+          <td class="text-end text-nowrap">{{ dur(duration(a, now)) }}</td></tr>{% endfor %}</tbody>
+      </table>{% else %}{{ empty_state('bell', 'No alerts linked', 'Link the alerts this incident covers below.') }}{% endif %}
+      </div>
+    </section>
+    <section class="fw-card" aria-labelledby="h-tl">
+      <div class="fw-card-header"><h2 class="fw-card-title" id="h-tl"><i class="bi bi-clock-history me-1" aria-hidden="true"></i>Timeline</h2></div>
+      <div class="fw-card-body">
+        <ol class="obs-timeline obs-timeline-tall">{% for n in inc.notes|reverse %}
+          <li class="st-{{ 'ok' if n.kind == 'status' and 'Resolved' in n.text else 'none' }}"><span class="obs-tl-dot" aria-hidden="true"></span>
+            <span><i class="bi bi-{{ NK.get(n.kind, 'dot') }}" aria-hidden="true"></i> {% if n.kind == 'note' %}<span class="obs-note">{{ n.text }}</span>{% else %}<b>{{ n.text }}</b>{% endif %}</span>
+            <time datetime="{{ n.at.isoformat() }}Z">{{ n.at.strftime('%Y-%m-%d %H:%M') }} UTC</time>
+            <span class="obs-tl-s">{{ n.user or 'platform' }}</span></li>{% endfor %}</ol>
+      </div>
+    </section>
+  </div>
+  <div class="col-xl-4">
+    <section class="fw-card mb-3" aria-labelledby="h-facts">
+      <div class="fw-card-header"><h2 class="fw-card-title" id="h-facts">Details</h2></div>
+      <div class="fw-card-body"><dl class="obs-kv obs-kv-2">
+        <dt>Assignee</dt><dd>{{ inc.assignee or '—' }}</dd>
+        <dt>Acknowledged</dt><dd>{% if inc.acked_at %}{{ ago(inc.acked_at) }} by {{ inc.acked_by }} <span class="text-muted">({{ dur(((inc.acked_at - inc.created_at).total_seconds())|int) }})</span>{% else %}—{% endif %}</dd>
+        <dt>Resolved</dt><dd>{% if inc.resolved_at %}{{ ago(inc.resolved_at) }} by {{ inc.resolved_by }} <span class="text-muted">({{ dur(((inc.resolved_at - inc.created_at).total_seconds())|int) }})</span>{% else %}—{% endif %}</dd>
+      </dl></div>
+    </section>
+    {% if current_user.is_admin %}
+    <section class="fw-card" aria-labelledby="h-upd">
+      <div class="fw-card-header"><h2 class="fw-card-title" id="h-upd"><i class="bi bi-pencil-square me-1" aria-hidden="true"></i>Update</h2></div>
+      <div class="fw-card-body">
+        <form method="post" action="{{ url_for('ops.incident_update', iid=inc.id) }}" class="obs-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="obs-seg obs-seg-sm mb-2" role="group" aria-label="Status">
+            {% if inc.status == 'open' %}<button class="btn btn-sm" name="status" value="acknowledged"><i class="bi bi-eye" aria-hidden="true"></i> Acknowledge</button>{% endif %}
+            {% if inc.status != 'resolved' %}<button class="btn btn-sm" name="status" value="resolved"><i class="bi bi-check2-circle" aria-hidden="true"></i> Resolve</button>
+            {% else %}<button class="btn btn-sm" name="status" value="open"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Reopen</button>{% endif %}
+          </div>
+          <label class="form-label small" for="i-as">Assignee</label>
+          <input class="form-control form-control-sm mb-2" id="i-as" name="assignee" maxlength="64" value="{{ inc.assignee }}">
+          <label class="form-label small" for="i-sev">Severity</label>
+          <select class="form-select form-select-sm mb-2" id="i-sev" name="severity">{% for s in ['critical','warning'] %}<option value="{{ s }}" {{ 'selected' if inc.severity == s }}>{{ s|capitalize }}</option>{% endfor %}</select>
+          {% if candidates %}<fieldset class="obs-pick mb-2"><legend class="form-label small">Link active alerts</legend>
+            {% for a in candidates %}<label class="obs-pick-row"><input type="checkbox" class="form-check-input" name="alert_id" value="{{ a.id }}"> {{ sev_chip(a.severity) }} <span>{{ a.title }}</span></label>{% endfor %}</fieldset>{% endif %}
+          <label class="form-label small" for="i-note">Note</label>
+          <textarea class="form-control form-control-sm mb-2" id="i-note" name="note" rows="3" maxlength="4000" placeholder="What was found, what was done…"></textarea>
+          <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-save" aria-hidden="true"></i> Save</button>
+        </form>
+      </div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

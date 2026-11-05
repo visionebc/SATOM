@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, empty_state, filter_box, tile %}
+{% from "explore/_hops.html" import path_chain %}
+{% block title %}Data Flows{% endblock %}
+{% set HS = {'all_down': ('error', 'x-octagon-fill'), 'degraded': ('stale', 'exclamation-triangle-fill'), 'no_data': ('none', 'dash-circle'), 'unchecked': ('none', 'question-circle'), 'ok': ('ok', 'check-circle-fill'), 'disabled': ('none', 'pause-circle')} %}
+{% set BH = {'up': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'unchecked': ('none', 'question-circle', 'No health check')} %}
+{% block content %}
+<div class="obs-page" data-scope="{{ scope }}" data-range="{{ range_key }}">
+{{ page_header('Data Flows', 'End to end: client → listener → policy → pool → back-end, and the network path across the monitored devices' ~ (' · ' ~ scope if scope else ''), 'bezier') }}
+
+<div class="obs-toolbar">
+  <nav class="obs-seg" aria-label="View">
+    <a href="{{ url_for('explore.flows', source=scope or None) }}" class="{{ 'active' if view == 'apps' }}" {{ 'aria-current="true"'|safe if view == 'apps' }}><i class="bi bi-window-stack" aria-hidden="true"></i> Application flows</a>
+    <a href="{{ url_for('explore.flows', source=scope or None, view='firewall') }}" class="{{ 'active' if view == 'firewall' }}" {{ 'aria-current="true"'|safe if view == 'firewall' }}><i class="bi bi-bricks" aria-hidden="true"></i> Firewall flows <span class="obs-tab-count">{{ fw|length }}</span></a>
+  </nav>
+  {% if view == 'apps' %}
+  <nav class="obs-seg obs-seg-sm" aria-label="Network path">
+    <a href="{{ url_for('explore.flows', source=scope or None, health=health or None) }}" class="{{ 'active' if not path }}">Any path</a>
+    {% for k in ['reached','leaves','no_route','denied','loop'] %}{% if path_counts.get(k) %}<a href="{{ url_for('explore.flows', source=scope or None, health=health or None, path=k) }}" class="{{ 'active' if path == k }}" {{ 'aria-current="true"'|safe if path == k }}>{{ path_label[k] }} <span class="obs-tab-count">{{ path_counts[k] }}</span></a>{% endif %}{% endfor %}
+  </nav>
+  <nav class="obs-seg obs-seg-sm" aria-label="Health">
+    <a href="{{ url_for('explore.flows', source=scope or None, path=path or None) }}" class="{{ 'active' if not health }}">Any health</a>
+    {% for h in ['all_down','degraded','ok','unchecked'] %}<a href="{{ url_for('explore.flows', source=scope or None, path=path or None, health=h) }}" class="{{ 'active' if health == h }}" {{ 'aria-current="true"'|safe if health == h }}>{{ health_label[h] }}</a>{% endfor %}
+  </nav>
+  {{ filter_box('flows-list', 'Filter by service, VIP, back-end, device…') }}
+  {% else %}
+  {{ filter_box('fw-table', 'Filter by interface, address, name…') }}
+  {% endif %}
+</div>
+
+{% if view == 'apps' %}
+<div id="flows-list" class="obs-flow-list">
+{% for f in flows %}{% set st, icon = HS[f.health] %}
+  <section class="fw-card obs-flow" id="flow-{{ f.source_id }}-{{ f.name }}" data-filter-item aria-label="Flow of {{ f.name }}">
+    <div class="obs-flow-chain">
+      <div class="obs-fnode"><span class="obs-fnode-k">Clients</span><i class="bi bi-people" aria-hidden="true"></i>
+        {% if f.upstream %}<span class="small">via {% for u in f.upstream %}{{ u.source }}{{ ', ' if not loop.last }}{% endfor %}</span>{% else %}<span class="small text-muted">upstream not monitored</span>{% endif %}</div>
+      <span class="obs-farrow" aria-hidden="true"></span>
+      <div class="obs-fnode"><span class="obs-fnode-k">Listener</span><code>{{ f.listen or '—' }}</code><span class="small">{{ f.source }}{% if f.vip_interface %} {{ f.vip_interface }}{% endif %} · {{ f.protocol or '' }}</span></div>
+      <span class="obs-farrow" aria-hidden="true"></span>
+      <div class="obs-fnode obs-fnode-main st-{{ st }}"><span class="obs-fnode-k">Server policy</span><b>{{ f.name }}</b>
+        <span class="obs-chip st-{{ st }}"><i class="bi bi-{{ icon }}" aria-hidden="true"></i> {{ health_label[f.health] }}</span>
+        <span class="small">{% if f.wpp %}WPP {{ f.wpp }} · {% endif %}{{ f.sessions if f.sessions is not none else '—' }} sessions</span></div>
+      <span class="obs-farrow" aria-hidden="true"></span>
+      <div class="obs-fnode"><span class="obs-fnode-k">Pool</span>{{ f.server_pool or '—' }}<span class="small">{{ f.backend_rows|length }} back-end{{ 's' if f.backend_rows|length != 1 }}</span></div>
+      <span class="obs-farrow" aria-hidden="true"></span>
+      <div class="obs-fnode obs-fnode-bk"><span class="obs-fnode-k">Back-ends</span>
+        {% for b in f.backend_rows %}{% set bs, bi, bl = BH[b.health] %}
+        <span class="obs-chip st-{{ bs }}" title="{{ bl }}{{ ' · backup' if b.backup }}"><i class="bi bi-{{ bi }}" aria-hidden="true"></i> {{ b.address }}:{{ b.port }}</span>
+        {% else %}<span class="small text-muted">{{ 'not read (policy disabled)' if f.status != 'enable' else 'not read' }}</span>{% endfor %}</div>
+    </div>
+    {% if f.backend_rows %}
+    <details class="obs-flow-paths" {{ 'open' if f.path_issues or path }}>
+      <summary>Network path from {{ f.source }} to each back-end{% if f.path_issues %} · <span class="text-danger">{{ f.path_issues }} broken</span>{% endif %}</summary>
+      <table class="table table-sm obs-subtable mb-0"><tbody>
+        {% for b in f.backend_rows %}{% if not path or b.path.status == path %}
+        <tr><td class="text-nowrap"><code>{{ b.address }}:{{ b.port }}</code></td><td>{{ path_chain(b.path, path_label) }}</td></tr>
+        {% endif %}{% endfor %}
+      </tbody></table>
+    </details>
+    {% endif %}
+  </section>
+{% else %}
+{{ empty_state('bezier', 'No flows match', 'Change the filters, or collect a FortiWeb: its server policies are the application flows.') }}
+{% endfor %}
+</div>
+{% else %}
+<section class="fw-card"><div class="fw-card-body p-0 table-responsive">
+{% if fw %}
+<table class="table table-sm obs-table mb-0" id="fw-table">
+  <thead><tr><th scope="col">Device</th><th scope="col">#</th><th scope="col">From</th><th scope="col" aria-label="direction"></th><th scope="col">To</th><th scope="col">Service</th><th scope="col">Action</th><th scope="col" class="text-end">Hits</th><th scope="col" class="text-end">Bytes</th><th scope="col">Last used</th></tr></thead>
+  <tbody>{% for r in fw %}
+    <tr data-filter-item class="{{ 'obs-muted-row' if r.status not in ('enable', '') }}"><td>{{ r.source }}</td><td><b>#{{ r.id }}</b> {{ r.name }}</td>
+      <td>{% for i in r.srcintf %}<span class="obs-pillet"><i class="bi bi-ethernet" aria-hidden="true"></i> {{ i }}</span>{% endfor %}<div class="small text-muted">{{ r.srcaddr|join(', ') }}</div></td>
+      <td aria-hidden="true"><i class="bi bi-arrow-right"></i></td>
+      <td>{% for i in r.dstintf %}<span class="obs-pillet"><i class="bi bi-ethernet" aria-hidden="true"></i> {{ i }}</span>{% endfor %}<div class="small text-muted">{{ r.dstaddr|join(', ') }}</div></td>
+      <td class="small">{{ r.service|join(', ') or '—' }}</td>
+      <td>{% if r.action == 'accept' %}<span class="obs-chip st-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> Accept{{ ' · NAT' if r.nat == 'enable' }}</span>{% else %}<span class="obs-chip st-error"><i class="bi bi-slash-circle" aria-hidden="true"></i> {{ (r.action or 'deny')|capitalize }}</span>{% endif %}
+        {% if r.status and r.status != 'enable' %}<span class="obs-chip st-none">disabled</span>{% endif %}</td>
+      <td class="text-end">{{ r.hits if r.hits is not none else '—' }}</td>
+      <td class="text-end">{% if r.bytes is number %}{{ '%.1f MB'|format(r.bytes / 1e6) if r.bytes >= 1e6 else ('%.1f kB'|format(r.bytes / 1e3)) }}{% else %}—{% endif %}</td>
+      <td class="small">{{ r.last_used or 'never' }}</td></tr>
+  {% endfor %}</tbody>
+</table>
+{% else %}{{ empty_state('bricks', 'No firewall policies', 'Collect a FortiGate to see its policies as flows.') }}{% endif %}
+</div></section>
+<div class="obs-grid mt-3">
+  <section class="fw-card obs-span-8"><div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-bricks me-1" aria-hidden="true"></i>Firewall traffic</h2><span class="obs-card-hint">through FortiGate policies · selected range</span></div>
+    <div class="fw-card-body"><div class="obs-chart-host" data-series="fw_traffic" data-height="180"></div></div></section>
+  <section class="fw-card obs-span-4"><div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-bar-chart-line me-1" aria-hidden="true"></i>Most bytes in the range</h2></div>
+    <div class="fw-card-body"><div data-top="fw_bytes" data-unit="bytes"></div></div></section>
+</div>
+{% endif %}
+<p class="obs-footnote"><i class="bi bi-info-circle" aria-hidden="true"></i> Paths are computed from the routing tables, interface addresses and firewall policies the devices reported — not a live probe. A next hop that is not a monitored device ends the path ("leaves"). Firewall matches are by interface and address; address groups and service objects are not collected yet, so such a match is shown as unverified, never assumed.</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/charts.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='js/explore.js') }}?v={{ app_version }}"></script>
+{% endblock %}

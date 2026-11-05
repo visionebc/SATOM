@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
+{% from "_ui.html" import page_header, empty_state, ago %}
+{% block title %}Infrastructure{% endblock %}
+{% block content %}
+<div class="obs-page" data-scope="{{ scope }}" data-range="{{ range_key }}">
+{{ page_header('Infrastructure', 'Every monitored device: identity, licence, resources, objects and collection state' ~ (' · ' ~ scope if scope else ''), 'hdd-rack') }}
+
+{% if not cards %}{{ empty_state('hdd-rack', 'No devices', 'Devices come from SATOM › Devices; a FortiGate or FortiWeb appears here after its first collection.', url_for('sources.index'), 'Integrations') }}{% endif %}
+
+<div class="obs-dev-grid">
+{% for c in cards %}{% set s, d = c.s, c.d %}
+  <section class="fw-card obs-dev-card" id="src-{{ s.id }}" aria-labelledby="dev-{{ s.id }}">
+    <div class="fw-card-header">
+      <h2 class="fw-card-title" id="dev-{{ s.id }}"><i class="bi bi-{{ 'shield-shaded' if s.kind == 'fortigate' else 'shield-check' }} me-1" aria-hidden="true"></i>
+        <a href="{{ url_for('sources.detail', sid=s.id) }}">{{ s.name }}</a></h2>
+      <span class="ms-auto">{{ status_badge({'ok':'ok','error':'error','stale':'stale'}.get(d.state, 'never')) }}</span>
+    </div>
+    <div class="fw-card-body">
+      <dl class="obs-kv obs-kv-2">
+        <dt>Model</dt><dd>{{ d.model or s.kind }}</dd>
+        <dt>Firmware</dt><dd class="obs-clip" title="{{ d.firmware or s.build }}">{{ d.firmware or s.build or '—' }}</dd>
+        <dt>Serial</dt><dd><code>{{ d.serial or '—' }}</code></dd>
+        <dt>Address</dt><dd><code>{{ s.host }}</code></dd>
+        {% if d.mode %}<dt>Mode</dt><dd>{{ d.mode }}</dd>{% endif %}
+        {% if d.ha %}<dt>HA</dt><dd>{{ d.ha }}</dd>{% endif %}
+        <dt>Licence</dt><dd>
+          {% set lic_bad = d.licence_valid is sameas false or (d.vm_licence|string|lower) == 'invalid' %}
+          {% set lic_ok = d.licence_valid is sameas true or (d.vm_licence|string|lower) == 'valid' %}
+          {% if lic_bad %}<span class="obs-chip st-error"><i class="bi bi-x-octagon-fill" aria-hidden="true"></i> INVALID</span>
+          {% elif lic_ok %}<span class="obs-chip st-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> VALID</span>
+          {% else %}<span class="text-muted">not reported</span>{% endif %}
+          <span class="small text-muted">{{ d.licence_status or d.vm_licence or '' }}</span></dd>
+        <dt>Last read</dt><dd>{{ ago(s.last_run_at) }}</dd>
+      </dl>
+      <div class="obs-meters" role="list">
+        {% for key, label in [('cpu_pct','CPU'),('mem_pct','Memory'),('disk_pct','Disk')] %}
+        {% set v = d.get(key) %}
+        <div class="obs-meter" role="listitem">
+          <div class="obs-meter-k">{{ label }}</div>
+          {% if v is number %}
+          {% set st = 'error' if v >= 95 else ('stale' if v >= 80 else 'ok') %}
+          <svg class="obs-meter-track" viewBox="0 0 100 6" preserveAspectRatio="none" role="meter" aria-valuenow="{{ v }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ label }} {{ v }} %"><rect class="obs-meter-bg" width="100" height="6" rx="3"/><rect class="obs-meter-fill st-{{ st }}" width="{{ [[v, 0]|max, 100]|min }}" height="6" rx="3"/></svg>
+          <div class="obs-meter-v">{{ v }} %</div>
+          {% else %}<div class="obs-meter-na" title="The {{ s.kind }} connector does not read this yet">not collected</div>{% endif %}
+        </div>
+        {% endfor %}
+        <div class="obs-meter" role="listitem"><div class="obs-meter-k">Sessions</div><div class="obs-meter-v">{{ d.sessions if d.sessions is not none else '—' }}</div></div>
+      </div>
+      <div class="obs-dev-counts">
+        <a href="{{ url_for('explore.network', source=s.name) }}"><b>{{ c.if_up }}/{{ c.if_total }}</b> interfaces up{% if c.if_down %} · <span class="text-danger">{{ c.if_down }} down</span>{% endif %}</a>
+        {% if c.policies %}<a href="{{ url_for('explore.applications', source=s.name) }}"><b>{{ c.policies }}</b> server policies</a>{% endif %}
+        {% for k, label in [('pool','pools'),('vip','VIPs'),('fwpolicy','firewall policies'),('address','addresses'),('endpoint','detected devices')] %}
+          {% if c.counts.get(k) %}<span><b>{{ c.counts[k] }}</b> {{ label }}</span>{% endif %}
+        {% endfor %}
+        <a href="{{ url_for('sources.detail', sid=s.id) }}"><b>{{ c.reads_ok }}/{{ c.reads }}</b> reads OK</a>
+      </div>
+      {% if c.problems %}
+      <ul class="obs-att obs-att-compact">{% for p in c.problems[:4] %}
+        <li class="sev-{{ p.severity }}"><i class="bi bi-{{ 'x-octagon-fill' if p.severity == 'critical' else 'exclamation-triangle-fill' }}" aria-hidden="true"></i>
+          <span class="obs-att-sev">{{ p.severity|capitalize }}</span><span class="obs-att-t">{{ p.title }}</span></li>{% endfor %}
+        {% if c.problems|length > 4 %}<li class="text-muted small"><a href="{{ url_for('ops.events') }}">{{ c.problems|length - 4 }} more in Events &amp; Alerts</a></li>{% endif %}
+      </ul>
+      {% endif %}
+      {% if s.kind == 'fortigate' %}
+      <h3 class="obs-sub-title mt-3">CPU and memory · selected range</h3>
+      <div class="obs-chart-host" data-series="resources" data-series-source="{{ s.name }}" data-height="140"></div>
+      {% endif %}
+    </div>
+  </section>
+{% endfor %}
+</div>
+
+{% if planned and not scope %}
+<section class="fw-card mt-3" aria-labelledby="h-planned">
+  <div class="fw-card-header"><h2 class="fw-card-title" id="h-planned"><i class="bi bi-hourglass me-1" aria-hidden="true"></i>In SATOM, not read here yet</h2>
+    <span class="obs-card-hint">no connector for this product yet — shown, never estimated</span></div>
+  <div class="fw-card-body p-0"><table class="table table-sm obs-table mb-0">
+    <thead><tr><th scope="col">Device</th><th scope="col">Product</th><th scope="col">State here</th></tr></thead>
+    <tbody>{% for p in planned %}<tr><td>{{ p.name }}</td><td>{{ p.kind }}</td><td><span class="obs-chip st-none"><i class="bi bi-dash-circle" aria-hidden="true"></i> NOT COLLECTED</span></td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/charts.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='js/explore.js') }}?v={{ app_version }}"></script>
+{% endblock %}

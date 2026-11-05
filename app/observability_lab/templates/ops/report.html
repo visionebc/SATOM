@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, empty_state, tile %}
+{% from "_macros.html" import status_badge %}
+{% from "ops/_ops.html" import sev_chip, dur, inc_chip %}
+{% block title %}{{ meta[0] }} report{% endblock %}
+{% macro csv(table) -%}<a class="btn btn-sm btn-outline-secondary obs-noprint" href="{{ url_for('ops.report_csv', kind=kind, table=table, period=period) }}"><i class="bi bi-filetype-csv" aria-hidden="true"></i> CSV</a>{%- endmacro %}
+{% block content %}
+{% call page_header(meta[0] ~ ' report', ('Last ' ~ period ~ ' · ' if kind != 'inventory' else '') ~ 'generated ' ~ now.strftime('%Y-%m-%d %H:%M') ~ ' UTC by ' ~ current_user.username, meta[1]) %}
+  {% if kind != 'inventory' %}<div class="obs-seg obs-seg-sm obs-noprint" role="group" aria-label="Period">{% for p in periods %}<a href="{{ url_for('ops.report', kind=kind, period=p) }}" class="{{ 'active' if period == p }}" {{ 'aria-current="true"'|safe if period == p }}>{{ p }}</a>{% endfor %}</div>{% endif %}
+  <button class="btn btn-sm btn-primary obs-noprint" type="button" data-print><i class="bi bi-printer" aria-hidden="true"></i> Print / PDF</button>
+  <a class="btn btn-sm btn-outline-secondary obs-noprint" href="{{ url_for('ops.reports') }}">All reports</a>
+{% endcall %}
+
+{% if kind == 'health' %}
+<div class="obs-tiles" role="list">
+  {{ tile('Sources', d.rows|length, (d.rows|selectattr('state', 'equalto', 'ok')|list|length) ~ ' current', 'hdd-rack') }}
+  {{ tile('Service availability', (d.availability ~ ' %') if d.availability is not none else '—', 'policies with a back-end up, now', 'shield-check') }}
+  {{ tile('Incidents', d.incidents.total, d.incidents.resolved ~ ' resolved', 'fire') }}
+  {{ tile('MTTA / MTTR', dur(d.incidents.mtta_s) ~ ' / ' ~ dur(d.incidents.mttr_s), 'incidents opened in the period', 'stopwatch') }}
+</div>
+{% if d.metrics_error %}<div class="alert alert-danger py-2 small" role="alert"><i class="bi bi-x-octagon-fill" aria-hidden="true"></i> Metrics store: {{ d.metrics_error }} — read availability is not shown.</div>{% endif %}
+<section class="fw-card mb-3"><div class="fw-card-header"><h2 class="fw-card-title">Per source</h2><span class="ms-auto">{{ csv('sources') }}</span></div>
+  <div class="fw-card-body p-0 table-responsive"><table class="table table-sm obs-table mb-0">
+    <thead><tr><th scope="col">Source</th><th scope="col">State now</th><th scope="col" class="text-end">Collections</th><th scope="col" class="text-end">Succeeded</th><th scope="col" class="text-end">Read availability</th><th scope="col" class="text-end">Alerts</th><th scope="col" class="text-end">Critical</th><th scope="col" class="text-end">Still active</th></tr></thead>
+    <tbody>{% for r in d.rows %}<tr><td><b>{{ r.source }}</b><div class="small text-muted">{{ r.kind }} · {{ r.build }}</div></td>
+      <td>{{ status_badge({'ok':'ok','error':'error','stale':'stale'}.get(r.state, 'never')) }}</td>
+      <td class="text-end">{{ r.collections }}</td><td class="text-end">{{ (r.success ~ ' %') if r.success is not none else '—' }}</td>
+      <td class="text-end">{{ (r.read_availability ~ ' %') if r.read_availability is not none else '—' }}</td>
+      <td class="text-end">{{ r.alerts }}</td><td class="text-end">{{ r.critical }}</td><td class="text-end">{{ r.active }}</td></tr>{% endfor %}</tbody>
+  </table></div></section>
+<section class="fw-card"><div class="fw-card-header"><h2 class="fw-card-title">Services now</h2></div>
+  <div class="fw-card-body"><dl class="obs-kv obs-kv-2">{% for k, n in d.services.items() %}<dt>{{ health_label[k] }}</dt><dd>{{ n }}</dd>{% endfor %}</dl></div></section>
+
+{% elif kind == 'inventory' %}
+<div class="obs-tiles" role="list">
+  {{ tile('Devices', d.devices|length, (d.planned|length) ~ ' more in SATOM without a connector', 'hdd-rack') }}
+  {{ tile('Interfaces', d.interfaces|length, (d.interfaces|selectattr('state', 'equalto', 'ok')|list|length) ~ ' up', 'ethernet') }}
+  {{ tile('Server policies', d.policies|length, (d.policies|selectattr('status', 'equalto', 'enable')|list|length) ~ ' enabled', 'window-stack') }}
+  {{ tile('Firewall policies', d.fw|length, '', 'bricks') }}
+  {{ tile('Segments', d.segments|length, '', 'diagram-3') }}
+</div>
+<section class="fw-card mb-3"><div class="fw-card-header"><h2 class="fw-card-title">Devices</h2><span class="ms-auto">{{ csv('devices') }}</span></div>
+  <div class="fw-card-body p-0 table-responsive"><table class="table table-sm obs-table mb-0">
+    <thead><tr><th scope="col">Device</th><th scope="col">Model</th><th scope="col">Firmware</th><th scope="col">Licence</th><th scope="col" class="text-end">CPU</th><th scope="col" class="text-end">Memory</th></tr></thead>
+    <tbody>{% for x in d.devices %}<tr><td><b>{{ x.source }}</b> <span class="text-muted small">{{ x.kind }}</span></td><td>{{ x.model or '—' }}</td><td class="small">{{ x.firmware or '—' }}</td>
+      <td>{{ x.licence_status or x.vm_licence or '—' }}</td><td class="text-end">{{ (x.cpu_pct ~ ' %') if x.cpu_pct is not none else '—' }}</td><td class="text-end">{{ (x.mem_pct ~ ' %') if x.mem_pct is not none else '—' }}</td></tr>{% endfor %}
+      {% for p in d.planned %}<tr class="obs-muted-row"><td>{{ p.name }} <span class="text-muted small">{{ p.kind }}</span></td><td colspan="5" class="small">in SATOM, not collected here (no connector yet)</td></tr>{% endfor %}</tbody>
+  </table></div></section>
+<section class="fw-card mb-3"><div class="fw-card-header"><h2 class="fw-card-title">Interfaces</h2><span class="ms-auto">{{ csv('interfaces') }}</span></div>
+  <div class="fw-card-body p-0 table-responsive"><table class="table table-sm obs-table mb-0">
+    <thead><tr><th scope="col">Device</th><th scope="col">Interface</th><th scope="col">State</th><th scope="col">Address</th><th scope="col">Type</th></tr></thead>
+    <tbody>{% for x in d.interfaces %}<tr><td>{{ x.source }}</td><td>{{ x.name }}</td><td>{{ x.state }}</td><td><code>{{ x.address or '—' }}</code></td><td>{{ x.type or '—' }}</td></tr>{% endfor %}</tbody>
+  </table></div></section>
+<section class="fw-card mb-3"><div class="fw-card-header"><h2 class="fw-card-title">Server policies and back-ends</h2><span class="ms-auto">{{ csv('policies') }}</span></div>
+  <div class="fw-card-body p-0 table-responsive"><table class="table table-sm obs-table mb-0">
+    <thead><tr><th scope="col">Policy</th><th scope="col">Health</th><th scope="col">Listener</th><th scope="col">Pool</th><th scope="col">Back-ends</th></tr></thead>
+    <tbody>{% for f in d.policies %}<tr><td><b>{{ f.name }}</b> <span class="text-muted small">{{ f.source }}</span></td><td>{{ health_label[f.health] }}</td><td><code>{{ f.listen or '—' }}</code></td><td>{{ f.server_pool or '—' }}</td>
+      <td class="small">{% for b in f.backend_rows %}{{ b.address }}:{{ b.port }} ({{ b.health }}){{ ', ' if not loop.last }}{% else %}—{% endfor %}</td></tr>{% endfor %}</tbody>
+  </table></div></section>
+<section class="fw-card"><div class="fw-card-header"><h2 class="fw-card-title">Firewall policies</h2><span class="ms-auto">{{ csv('firewall') }}</span></div>
+  <div class="fw-card-body p-0 table-responsive"><table class="table table-sm obs-table mb-0">
+    <thead><tr><th scope="col">Device</th><th scope="col">#</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Service</th><th scope="col">Action</th><th scope="col" class="text-end">Hits</th></tr></thead>
+    <tbody>{% for r in d.fw %}<tr><td>{{ r.source }}</td><td>#{{ r.id }} {{ r.name }}</td><td class="small">{{ r.srcintf|join(', ') }} · {{ r.srcaddr|join(', ') }}</td><td class="small">{{ r.dstintf|join(', ') }} · {{ r.dstaddr|join(', ') }}</td><td class="small">{{ r.service|join(', ') }}</td><td>{{ r.action }}{{ ' + NAT' if r.nat == 'enable' }}</td><td class="text-end">{{ r.hits if r.hits is not none else '—' }}</td></tr>{% endfor %}</tbody>
+  </table></div></section>
+
+{% else %}
+<div class="obs-tiles" role="list">
+  {{ tile('Alerts', d.alerts|length, (d.alerts|selectattr('severity', 'equalto', 'critical')|list|length) ~ ' critical', 'bell') }}
+  {{ tile('Still active', d.alerts|selectattr('status', 'equalto', 'active')|list|length, '', 'bell-fill') }}
+  {{ tile('Incidents', d.incidents|length, d.stats.resolved ~ ' resolved', 'fire') }}
+  {{ tile('MTTA / MTTR', dur(d.stats.mtta_s) ~ ' / ' ~ dur(d.stats.mttr_s), '', 'stopwatch') }}
+</div>
+<section class="fw-card mb-3"><div class="fw-card-header"><h2 class="fw-card-title">Alerts</h2><span class="ms-auto">{{ csv('alerts') }}</span></div>
+  <div class="fw-card-body p-0 table-responsive">{% if d.alerts %}<table class="table table-sm obs-table mb-0">
+    <thead><tr><th scope="col">Severity</th><th scope="col">Alert</th><th scope="col">Source</th><th scope="col">Opened (UTC)</th><th scope="col">Cleared (UTC)</th><th scope="col" class="text-end">Duration</th><th scope="col">Incident</th></tr></thead>
+    <tbody>{% for a in d.alerts %}<tr><td>{{ sev_chip(a.severity) }}</td><td>{{ a.title }}</td><td>{{ names.get(a.source_id, '—') }}</td><td class="small">{{ a.first_seen.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td class="small">{{ a.resolved_at.strftime('%Y-%m-%d %H:%M') if a.resolved_at else 'active' }}</td><td class="text-end text-nowrap">{{ dur(duration(a, now)) }}</td><td>{{ ('#' ~ a.incident_id) if a.incident_id else '—' }}</td></tr>{% endfor %}</tbody>
+  </table>{% else %}{{ empty_state('check2-circle', 'No alerts in this period', '') }}{% endif %}</div></section>
+<section class="fw-card"><div class="fw-card-header"><h2 class="fw-card-title">Incidents</h2><span class="ms-auto">{{ csv('incidents') }}</span></div>
+  <div class="fw-card-body p-0 table-responsive">{% if d.incidents %}<table class="table table-sm obs-table mb-0">
+    <thead><tr><th scope="col">#</th><th scope="col">Incident</th><th scope="col">Severity</th><th scope="col">Status</th><th scope="col">Assignee</th><th scope="col">Opened (UTC)</th><th scope="col" class="text-end">To acknowledge</th><th scope="col" class="text-end">To resolve</th></tr></thead>
+    <tbody>{% for i in d.incidents %}<tr><td>#{{ i.id }}</td><td>{{ i.title }}</td><td>{{ sev_chip(i.severity) }}</td><td>{{ inc_chip(i.status) }}</td><td>{{ i.assignee or '—' }}</td><td class="small">{{ i.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td class="text-end">{{ dur(((i.acked_at - i.created_at).total_seconds())|int) if i.acked_at else '—' }}</td><td class="text-end">{{ dur(((i.resolved_at - i.created_at).total_seconds())|int) if i.resolved_at else '—' }}</td></tr>{% endfor %}</tbody>
+  </table>{% else %}{{ empty_state('fire', 'No incidents in this period', '') }}{% endif %}</div></section>
+{% endif %}
+<p class="obs-footnote"><i class="bi bi-info-circle" aria-hidden="true"></i> Every figure comes from stored collections, alerts and incidents; nothing is estimated. Times are UTC.</p>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/explore.js') }}?v={{ app_version }}"></script>{% endblock %}

@@ -160,3 +160,39 @@ def top_policies(metric: str, source_name: str | None, k: int = 10) -> list[dict
     except (KeyError, IndexError, TypeError) as exc:
         raise MetricsError("unexpected answer from the metrics store") from exc
     return sorted(rows, key=lambda r: -(r["value"] or 0))
+
+
+def _topk(expr: str, labels: tuple) -> list[dict]:
+    res = _get("/api/v1/query", {"query": expr}).get("result") or []
+    try:
+        rows = [dict({k: r["metric"].get(k, "") for k in labels}, value=_num(r["value"][1])) for r in res]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise MetricsError("unexpected answer from the metrics store") from exc
+    return sorted(rows, key=lambda r: -(r["value"] or 0))
+
+
+def top_interfaces(source_name: str | None, range_key: str, k: int = 10) -> list[dict]:
+    """Busiest interfaces now (bits/s, in + out)."""
+    _s, _e, step = plan(range_key)
+    sel, w = selector(source_name), window(step)
+    expr = ("topk(%d, (sum by (source, interface) (rate(obs_if_rx_bytes%s[%s])) + "
+            "sum by (source, interface) (rate(obs_if_tx_bytes%s[%s]))) * 8)" % (k, sel, w, sel, w))
+    return _topk(expr, ("source", "interface"))
+
+
+def top_fw_bytes(source_name: str | None, range_key: str, k: int = 10) -> list[dict]:
+    """Firewall policies by bytes moved over the whole range."""
+    span = RANGES.get(range_key, RANGES[DEFAULT_RANGE])
+    expr = "topk(%d, sum by (source, policy) (increase(obs_fwpolicy_bytes%s[%ds])))" % (
+        k, selector(source_name), span)
+    return _topk(expr, ("source", "policy"))
+
+
+def stats(points: list) -> dict:
+    """min / avg / max / p95 / last over the non-missing values of one series."""
+    vals = [v for _t, v in points if v is not None]
+    if not vals:
+        return {"n": 0, "min": None, "avg": None, "max": None, "p95": None, "last": None}
+    s = sorted(vals)
+    p95 = s[min(len(s) - 1, int(round(0.95 * (len(s) - 1))))]
+    return {"n": len(vals), "min": s[0], "avg": sum(vals) / len(vals), "max": s[-1], "p95": p95, "last": vals[-1]}

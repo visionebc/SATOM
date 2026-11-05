@@ -162,9 +162,14 @@ def _licence(alert, src):
                 "until a licence is loaded." % serial)
         how = "measured"
     elif refused:
-        text = ("The device answers every read with a licence refusal instead of data (%s). Nothing can be "
-                "read from it — not by Observability, not by SATOM — until it has a valid licence."
-                % refused[0].error[:120])
+        ok = [st.endpoint for st in EndpointStatus.query.filter_by(source_id=src.id, ok=True)
+              if not st.absent and st.endpoint.startswith("SATOM collector")]
+        text = ("The device answers its API reads with a licence refusal instead of data: \"%s\" (%d %s "
+                "refused: %s). What those reads carry stays unknown — for SATOM too — until the device has a "
+                "valid licence.%s" % (
+                    insights.device_words(refused[0].error), len(refused), "read" if len(refused) == 1 else "reads",
+                    ", ".join(st.endpoint for st in refused),
+                    (" Reads the licence does not block still arrive (%s)." % ", ".join(ok)) if ok else ""))
         how = "measured"
     else:
         text = "The device reports its licence as not valid."
@@ -174,8 +179,8 @@ def _licence(alert, src):
            "After the reboot the device applies, the alert clears on the next collection."]
     impact = ("FortiWeb without a licence: signatures and other FortiGuard features are inactive, and its "
               "REST API may lock reads (HTTP 423)." if src.kind == "fortiweb" else
-              "Every read is refused: configuration, virtual-server state and back-end health are unknown."
-              if refused else "Features that need a licence are inactive.")
+              "Configuration changes, virtual-server state and back-end health cannot be read: SATOM keeps "
+              "showing its last snapshot." if refused else "Features that need a licence are inactive.")
     return {"evidence": evidence, "cause": {"how": how, "text": text,
                                             "from": ["the device's own status / its answer to each read"]},
             "fix": fix, "impact": impact}
@@ -191,7 +196,7 @@ def _read_cause(err: str) -> str:
         return "The device rejects SATOM's credentials (wrong password, trusted hosts or a lockout)."
     if "timeout" in e or "timed out" in e:
         return "The device did not answer in time (overloaded, or a firewall drops the traffic)."
-    if "connect" in e or "unreachable" in e or "refused" in e:
+    if "connect" in e or "unreachable" in e or "connection refused" in e:
         return "The device cannot be reached on its management address/port."
     if "satom's collector" in e:
         return "SATOM's own collector for this device fails; the reason SATOM recorded is in the evidence."

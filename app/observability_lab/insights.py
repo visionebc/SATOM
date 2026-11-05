@@ -6,6 +6,7 @@ Every number here comes from a fact or an endpoint status; anything the
 connectors do not collect is reported as not collected, never estimated."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 
 from .extensions import db
@@ -133,6 +134,13 @@ def is_licence_error(text) -> bool:
     return "licen" in t and ("invalid" in t or "not valid" in t or "expired" in t)
 
 
+def device_words(err: str) -> str:
+    """The device's own sentence inside an error ("...: device refused:
+    Invalid VM License (SATOM, last run ...)" -> "Invalid VM License")."""
+    m = re.search(r"device refused: ([^()]+?)\s*(?:\(|—|$)", err or "")
+    return m.group(1).strip() if m else (err or "").strip()
+
+
 def problems(sources) -> list[dict]:
     """What needs attention, worst first. Feeds the bell, the health pill and
     the alerts (``key`` is stable while the condition holds, so a change of
@@ -173,8 +181,9 @@ def problems(sources) -> list[dict]:
             locked.setdefault(st.source_id, []).append(st)
     for sid, sts in locked.items():
         add("licence:%d" % sid, sid, "critical", "licence", "%s: licence not valid" % names[sid],
-            "the device refuses reads for its licence (%d %s): %s" % (
-                len(sts), "read" if len(sts) == 1 else "reads", sts[0].error[:160]),
+            "the device answers \"%s\" instead of data (%d %s refused: %s)" % (
+                device_words(sts[0].error)[:120], len(sts), "read" if len(sts) == 1 else "reads",
+                ", ".join(x.endpoint for x in sts)[:200]),
             "/sources/%d#device" % sid)
     for st in failing:
         if st.source_id in locked and is_licence_error(st.error):

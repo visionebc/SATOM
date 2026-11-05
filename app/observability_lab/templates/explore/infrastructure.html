@@ -50,7 +50,7 @@
         <div class="obs-meter" role="listitem"><div class="obs-meter-k">Sessions</div><div class="obs-meter-v">{{ d.sessions if d.sessions is not none else '—' }}</div></div>
       </div>
       <div class="obs-dev-counts">
-        <a href="{{ url_for('explore.network', source=s.name) }}"><b>{{ c.if_up }}/{{ c.if_total }}</b> interfaces up{% if c.if_down %} · <span class="text-danger">{{ c.if_down }} down</span>{% endif %}</a>
+        {% if d.read_mode %}<a href="{{ url_for('explore.network', source=s.name) }}" title="Read from SATOM's cache: no live link state"><b>{{ c.if_total }}</b> interfaces · no live state</a>{% else %}<a href="{{ url_for('explore.network', source=s.name) }}"><b>{{ c.if_up }}/{{ c.if_total }}</b> interfaces up{% if c.if_down %} · <span class="text-danger">{{ c.if_down }} down</span>{% endif %}</a>{% endif %}
         {% if c.policies %}<a href="{{ url_for('explore.applications', source=s.name) }}"><b>{{ c.policies }}</b> server policies</a>{% endif %}
         {% for k, label in [('pool','pools'),('vip','VIPs'),('fwpolicy','firewall policies'),('address','addresses'),('endpoint','detected devices')] %}
           {% if c.counts.get(k) %}<span><b>{{ c.counts[k] }}</b> {{ label }}</span>{% endif %}

@@ -79,7 +79,7 @@ def run_source(source: Source, user: str = "", transport=None) -> Job:
             st = EndpointStatus(source_id=source.id, endpoint=r.endpoint)
             db.session.add(st)
         st.layers, st.ok, st.absent = ",".join(r.layers), r.ok, r.absent
-        st.error, st.rows, st.read_at = (err if not r.ok else ""), r.rows, now
+        st.error, st.rows, st.read_at = (err if (not r.ok or r.absent) else ""), r.rows, now
         if not r.ok:
             failed += 1
         else:
@@ -96,6 +96,18 @@ def run_source(source: Source, user: str = "", transport=None) -> Job:
                                     layer=f.layer, key=f.key[:80], value=f.value,
                                     endpoint=r.endpoint, read_at=now))
         metrics.extend(r.metrics)
+    # A read this run no longer makes (the connector changed, the device lost
+    # a table): its old facts and status go, never shown as current.
+    if results:
+        current = {r.endpoint for r in results}
+        stale = [st for st in EndpointStatus.query.filter_by(source_id=source.id) if st.endpoint not in current]
+        for st in stale:
+            Fact.query.filter_by(source_id=source.id, endpoint=st.endpoint).delete()
+            db.session.delete(st)
+        Fact.query.filter(Fact.source_id == source.id, ~Fact.endpoint.in_(current)).delete(synchronize_session=False)
+        if stale:
+            job.steps.append(JobStep(name="drop facts of reads no longer made", ok=True,
+                                     detail=", ".join(sorted(st.endpoint for st in stale))[:500]))
     pushed = push_metrics(source, metrics)
     if pushed:
         job.steps.append(JobStep(name="metrics → VictoriaMetrics", ok=pushed[0], detail=pushed[1]))

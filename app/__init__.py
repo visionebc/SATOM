@@ -2756,6 +2756,16 @@ def create_app(config_override: object | None = None) -> Flask:
                     [s.get("appliance") for s in stale])
         except Exception:  # noqa: BLE001 — never block boot on housekeeping
             app.logger.exception("stale rediscovery reconcile failed")
+        # hostguard: a reboot empties /run and the kernel's nftables table
+        # with it. When the runner has not reported since boot, publish the
+        # managed servers once so satom-hostguard.path reloads the drop rules
+        # (services/hostguard.py). A no-op when it already ran.
+        try:
+            from .services import hostguard as _hg
+            with app.app_context():
+                _hg.boot_publish()
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("hostguard boot publish failed")
         # Backfill the per-BUILD snapshot archive. Until 2026-09-16 a sweep
         # wrote one file per appliance and overwrote it every run, so the first
         # sweep after a firmware upgrade DESTROYED the evidence backing the

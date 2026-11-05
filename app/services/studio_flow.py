@@ -350,6 +350,20 @@ def kinds(choices: dict | None = None) -> list[Kind]:
                          "At most 50 items; empty = one request."),
               _save_as("response")], writes=True,
              extra={"catalog": dict(ch.get("catalog") or {})}),
+        Kind("server_call", "Act on a server", "act",
+             "One satom-webctl operation on a server connection: list or edit nginx/Apache "
+             "virtual hosts, browse, read or change the files of a document root.",
+             [Param("connection", "Connection", "select", True, tuple(ch.get("server", ()))),
+              Param("operation", "Operation", "select", True, tuple(ch.get("server_ops", ())),
+                    default="vhosts.list",
+                    help="Reads: info, vhosts.list, vhost.get, files.list, files.read. "
+                         "Writes (need Allow writes on the connection): vhost.put, "
+                         "vhost.create, vhost.enable, vhost.disable, vhost.delete, "
+                         "files.write, files.mkdir, files.rename, files.delete."),
+              Param("args", "Arguments (JSON)", "json",
+                    help='e.g. {"server": "nginx", "name": "{{ form.vhost }}", '
+                         '"path": "{{ form.path }}"}'),
+              _save_as("server")], writes=True),
         Kind("script", "Run a script", "act", "The published version of a Script Library script.",
              [Param("script", "Script", "select", True, tuple(ch.get("scripts", ()))),
               Param("inputs", "Form values (JSON)", "json", help='{"field": "{{ form.x }}"}'),
@@ -412,6 +426,10 @@ def step_writes(node: dict) -> bool:
         return True
     if kind == "sql_query":
         return p.get("allow_writes") == "yes"
+    if kind == "server_call":
+        # An operation this list does not know counts as a write.
+        from . import studio_server as SV
+        return SV.OPERATIONS.get(str(p.get("operation") or ""), True)
     if kind == "api_call":
         if str(p.get("operation") or "").strip():
             return _operation_method(p) != "GET"
@@ -793,6 +811,18 @@ def _run_step(node: dict, ctx: Ctx):
             return _api_call_each(node, ctx, c, items)
         status, value, ms = _api_request(node, ctx, c)
         return "ok", value, "HTTP %d, %d ms" % (status, ms)
+    if kind == "server_call":
+        from . import studio_connections as SC
+        c = _connection(node, "server")
+        op = str(_p(node, "operation") or "")
+        args = _json(node, ctx, "args", "Arguments") or {}
+        if not isinstance(args, dict):
+            raise FlowError("the arguments are an object of name: value")
+        try:
+            res = SC.server_call(c, op, args)
+        except SC.ConnectionError_ as exc:
+            raise FlowError(str(exc)) from None
+        return "ok", res, "%s on %s" % (op, c.slug)
     if kind == "script":
         if not ctx.scripts:
             plan = {k: v for k, v in (node.get("params") or {}).items() if k != "save_as"}

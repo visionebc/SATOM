@@ -66,6 +66,9 @@ MAX_INT = 2 ** 62
 
 # C0 controls and DEL. Tab is a control too: no field here holds one.
 _CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
+# The same, minus tab, newline and carriage return: the controls a text FILE
+# (a virtual host configuration) legitimately holds.
+_CTRL_TEXT_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # Bidi embeddings/overrides/isolates (the "Trojan Source" set) and the
 # zero-width marks that make two identical-looking names different.
 _BIDI_RE = re.compile("[​-‏‪-‮⁦-⁩﻿]")
@@ -139,13 +142,16 @@ class Str:
     choices: "tuple | None" = None
     min_len: int = 0
     required: bool = True
+    #: A text file's content: tab, newline and carriage return are allowed;
+    #: every other control character and the bidi marks still are not.
+    multiline: bool = False
 
     def check(self, v, path, ctx):
         if not isinstance(v, str):
             raise Rejected(path, "expected a string")
         if len(v) > self.max_len or len(v) < self.min_len:
             raise Rejected(path, "length outside [%d, %d]" % (self.min_len, self.max_len))
-        if _CTRL_RE.search(v):
+        if (_CTRL_TEXT_RE if self.multiline else _CTRL_RE).search(v):
             raise Rejected(path, "control character")
         if _BIDI_RE.search(v):
             raise Rejected(path, "bidi or zero-width character")
@@ -364,3 +370,108 @@ SCHEMAS: "dict[str, Obj]" = {
     "processes": PROCESSES,
     "services": SERVICES,
 }
+
+
+# ── satom-webctl answers (Plugin Studio "server" connections) ────────────────
+# One schema per operation of hostctl/satom-webctl.py, wrapped in the envelope
+# {"ok", "result" | "error", "detail"}. satom-webctl leaves out of a listing
+# any name the gate would refuse (control or bidi characters), so one hostile
+# file name cannot make a folder impossible to browse.
+
+#: The biggest file satom-webctl sends (its max_file_bytes cap, 4 MiB by
+#: default) as base64, inside its envelope.
+WEBCTL_MAX_ANSWER = 8 * 1024 * 1024
+_HEX64 = Str(max_len=64, min_len=64, pattern=r"[0-9a-f]{64}")
+_ABS = Str(max_len=1024, min_len=1, pattern=r"/[^\x00]*")
+_REL = Str(max_len=1024, pattern=r"[^\x00]*")
+_WEBSERVER = Str(max_len=8, choices=("nginx", "apache"))
+_VHNAME = Str(max_len=100, min_len=1, pattern=r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
+_HOSTNAME = Str(max_len=255, min_len=1, pattern=r"(\*\.)?[A-Za-z0-9_][A-Za-z0-9_.-]{0,252}|_")
+_BACKUP = Str(max_len=120, pattern=r"([0-9T]{15,30}-[a-z-]{4,20}-[0-9a-f]{8}\.tar\.gz)?",
+              required=False)
+_OUTPUT = Str(max_len=4000, multiline=True, required=False)
+_OPT_BOOL = Bool(required=False)
+
+_SERVER_INFO = Obj({"layout": Str(max_len=8, choices=("debian", "confd")),
+                    "available": _ABS, "enabled": _REL}, required=False)
+WEBCTL_INFO = Obj({
+    "version": Str(max_len=32, min_len=1, pattern=r"[0-9][0-9.]{0,30}"),
+    "servers": Obj({"nginx": _SERVER_INFO, "apache": _SERVER_INFO}),
+    "roots": List(_ABS, max_items=32),
+    "read_only": Bool(),
+    "max_file_bytes": Int(0, 64 * 1024 * 1024),
+})
+WEBCTL_VHOST = Obj({
+    "server": _WEBSERVER, "name": _VHNAME, "enabled": Bool(),
+    "server_names": List(_HOSTNAME, max_items=50),
+    "docroots": List(_ABS, max_items=20),
+    "listen": List(Str(max_len=128), max_items=20),
+    "ssl": Bool(), "bytes": Int(0, MAX_INT), "mtime": Int(0, MAX_INT),
+    "managed_root": Bool(),
+})
+WEBCTL_VHOSTS = Obj({"vhosts": List(WEBCTL_VHOST, max_items=2000)})
+WEBCTL_VHOST_GET = Obj({
+    "server": _WEBSERVER, "name": _VHNAME, "enabled": Bool(),
+    "content": Str(max_len=4 * 1024 * 1024, multiline=True), "sha256": _HEX64,
+})
+#: Every configuration write answers with a subset of these.
+WEBCTL_APPLY = Obj({
+    "applied": _OPT_BOOL, "restored": _OPT_BOOL, "restored_config_valid": _OPT_BOOL,
+    "changed": _OPT_BOOL, "enabled": _OPT_BOOL, "deleted": _OPT_BOOL, "created": _OPT_BOOL,
+    "docroot_created": _OPT_BOOL, "test_output": _OUTPUT, "reload_output": _OUTPUT,
+    "backup": _BACKUP, "sha256": Str(max_len=64, pattern=r"[0-9a-f]{64}", required=False),
+    "name": Str(max_len=100, pattern=r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", required=False),
+    "docroot": Str(max_len=1024, pattern=r"/[^\x00]*", required=False),
+})
+WEBCTL_FILES = Obj({
+    "docroot": _ABS, "path": _REL,
+    "entries": List(Obj({"name": Str(max_len=255, min_len=1),
+                         "type": Str(max_len=4, choices=("file", "dir", "link")),
+                         "size": Int(0, MAX_INT), "mtime": Int(-2 ** 31, MAX_INT),
+                         "mode": Str(max_len=4, min_len=1, pattern=r"[0-7]{1,4}")}),
+                    max_items=5000),
+    "truncated": Bool(), "skipped": Int(0, 2 ** 31, required=False),
+})
+WEBCTL_FILE = Obj({
+    "path": _REL, "size": Int(0, 64 * 1024 * 1024), "sha256": _HEX64,
+    "content_b64": Str(max_len=6 * 1024 * 1024, pattern=r"[A-Za-z0-9+/]*={0,2}",
+                       required=False),
+    # files.read with "text": true -- the file as text when it is text.
+    "content": Str(max_len=4 * 1024 * 1024, multiline=True, required=False),
+    "binary": Bool(required=False),
+}, checks=(("a file answer carries content or content_b64, not both",
+            lambda d: ("content" in d) != ("content_b64" in d)),))
+WEBCTL_WRITTEN = Obj({"path": _REL, "size": Int(0, 64 * 1024 * 1024), "sha256": _HEX64,
+                      "backup": _BACKUP})
+WEBCTL_PATH = Obj({"path": _REL, "backup": _BACKUP})
+
+#: satom-webctl operation -> (writes, schema of its result).
+WEBCTL_OPS: "dict[str, tuple]" = {
+    "info": (False, WEBCTL_INFO),
+    "vhosts.list": (False, WEBCTL_VHOSTS),
+    "vhost.get": (False, WEBCTL_VHOST_GET),
+    "vhost.put": (True, WEBCTL_APPLY),
+    "vhost.create": (True, WEBCTL_APPLY),
+    "vhost.enable": (True, WEBCTL_APPLY),
+    "vhost.disable": (True, WEBCTL_APPLY),
+    "vhost.delete": (True, WEBCTL_APPLY),
+    "files.list": (False, WEBCTL_FILES),
+    "files.read": (False, WEBCTL_FILE),
+    "files.write": (True, WEBCTL_WRITTEN),
+    "files.mkdir": (True, WEBCTL_PATH),
+    "files.rename": (True, WEBCTL_PATH),
+    "files.delete": (True, WEBCTL_PATH),
+}
+
+
+def webctl_envelope(op: str) -> Obj:
+    """The whole answer of one satom-webctl call for ``op``."""
+    return Obj({"ok": Bool(),
+                "result": Obj(WEBCTL_OPS[op][1].fields, WEBCTL_OPS[op][1].checks,
+                              required=False),
+                "error": Str(max_len=32, pattern=r"[a-z_]{1,32}", required=False),
+                "detail": Str(max_len=600, required=False)},
+               checks=(("an answer is a result or an error",
+                        lambda d: ("result" in d) == bool(d["ok"])
+                        and (d["ok"] or "error" in d)),))
+

@@ -163,7 +163,8 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   files and settings (credential values are typed again). One transaction:
   a refused or failed clone leaves nothing behind. Audited as
   <code>studio.app.clone</code>.</li>
-<li><strong>Switch notification categories off for your own account.</strong> Operator
+<li>
+<p><strong>Switch notification categories off for your own account.</strong> Operator
   request: "in the user profile I want to be able to turn off certain
   notifications, for example config drift." <strong>Profile → Notifications</strong> has
   one switch per bell category (Configuration drift, Device health,
@@ -175,7 +176,31 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   audited and are still sent by the e-mail alert rules. Results of your own
   jobs, bug reports and Wiki notices are always delivered. The Notifications
   page has a <strong>Preferences</strong> button and says which categories you muted. The
-  change is audited as <code>profile.notifications</code>.</li>
+  change is audited as <code>profile.notifications</code>.</p>
+</li>
+<li>
+<p><strong>Plugin Studio: Server connections — manage nginx and Apache virtual hosts
+  and their files.</strong> Operator request: "a plugin to manage the vhosts of this
+  server and the files inside each one", with "the server must have no access
+  to SATOM". A new connection kind, <strong>Server</strong>, reaches a Linux web server over
+  SSH as the unprivileged account <code>satom-mon</code>, whose key is installed with
+  <code>restrict,command="satom-webctl"</code>: the key opens no shell and can only ask
+  for the operations of <code>satom-webctl</code> (<code>hostctl/</code>, Python standard library,
+  3.6+): list virtual hosts; read, change, create, enable, disable and delete
+  their configuration; list, read, write, rename, delete files and create
+  folders inside each document root. Every configuration change is backed up
+  and tested with the server's own test, restored when the test fails and
+  reloaded (never restarted) when it passes. SATOM generates the key (never
+  shown), the host key is pinned by an explicit <strong>Fetch and trust</strong>, writes
+  need <strong>Allow writes</strong>, and every answer passes the ingestion gate. The
+  installer (<code>install-satom-webctl.sh</code>, downloadable from the connection page)
+  supports Debian, RHEL and SUSE layouts, sets ACLs instead of changing owners,
+  and grants exactly two sudo commands per web server (config test, reload).
+  New flow step <strong>Act on a server</strong>; scripts call
+  <code>connection(...).server(op, **args)</code>. <strong>Plugin Studio → Examples → Web
+  hosts</strong> installs twelve chained apps (virtual hosts, configuration editor,
+  file browser and editor).</p>
+</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
@@ -249,6 +274,14 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="security">Security</h3>
 <ul>
+<li><strong>hostguard: a managed server can never open a connection to SATOM.</strong> Both
+  nodes drop every new connection that comes from a server managed through a
+  Server connection (nftables table <code>inet satom_hostguard</code>, loaded by the
+  privileged runner through the new <code>satom-hostguard.path</code>). Replies to the
+  sessions SATOM opens still pass. The list is re-checked as root: SATOM's own
+  nodes, the default gateway, the trusted proxies and the name servers are
+  never blocked. The standby applies the same list after the data sync, and
+  the list is loaded again after a reboot.</li>
 <li><strong>Servers ADOM, stage 0: the ingestion gate.</strong> Groundwork for monitoring
   Linux and Windows servers: every answer a monitored server gives passes one
   gate before SATOM uses it — a size cap before parsing, strict JSON (no

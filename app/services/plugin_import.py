@@ -118,7 +118,7 @@ def app_body(pk: P.Package) -> dict:
 
 def _needs_secret(c: dict) -> bool:
     # studio_connections.needs_secret, on the package's description
-    return c.get("kind") == "postgres" or (c.get("auth") or "none") != "none"
+    return c.get("kind") in ("postgres", "server") or (c.get("auth") or "none") != "none"
 
 
 def creating_connections(pk: P.Package) -> list[dict]:

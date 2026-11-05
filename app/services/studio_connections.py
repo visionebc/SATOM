@@ -1,6 +1,6 @@
 """Python Studio > Connections -- named external APIs and databases.
 
-Two kinds:
+Three kinds:
 
 * ``http`` -- a base URL plus an authentication. Every call stays under that
   base URL: a path is joined to it, an absolute URL in a path is refused, and
@@ -11,6 +11,12 @@ Two kinds:
   reporting database). Queries are parameterised (``%(name)s``); a step reads
   in a READ ONLY transaction unless the administrator ticked "allow writes"
   on it.
+* ``server`` -- a Linux web server prepared with ``hostctl/install-satom-webctl.sh``
+  (services/studio_server.py): SSH to an unprivileged account whose key can
+  run ``satom-webctl`` and nothing else. The secret is SATOM's SSH private
+  key (generated here, never typed, never shown); the host key is pinned by
+  an explicit "Fetch and trust"; writes need "allow writes". Both live in
+  ``app_settings`` ``studio.connection.server.<slug>`` (no schema change).
 
 The secret (password, token, API key, client secret) is never a column of
 ``studio_connections``: it is the ``app_settings`` row
@@ -33,6 +39,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from urllib.parse import urlsplit, urlunsplit
 
 from ..extensions import db
@@ -40,11 +47,13 @@ from ..models_studio import StudioConnection
 from . import prefixed_secret as PS
 from . import studio_http as H
 
-KINDS = ("http", "postgres")
+KINDS = ("http", "postgres", "server")
 #: ``session`` = log in with user + password at a path under the base URL
 #: and reuse the session cookie (the DDI API, FA-0007).
 HTTP_AUTH = ("none", "basic", "bearer", "api_key", "oauth2", "session")
 PG_AUTH = ("password",)
+SERVER_OPTS_PREFIX = "studio.connection.server."
+_USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 SECRET_PREFIX = "studio.connection.secret."
 VAULT_FIELD = "value"
@@ -111,8 +120,9 @@ def create(slug: str, name: str, kind: str, by: str) -> StudioConnection:
     if not name:
         raise ConnectionError_("a name is required")
     c = StudioConnection(slug=slug, name=name, kind=kind,
-                         auth="none" if kind == "http" else "password",
-                         port=5432 if kind == "postgres" else None,
+                         auth={"http": "none", "postgres": "password"}.get(kind, "key"),
+                         port={"postgres": 5432, "server": 22}.get(kind),
+                         username="satom-mon" if kind == "server" else "",
                          created_by=by, updated_by=by)
     db.session.add(c)
     db.session.commit()
@@ -131,6 +141,8 @@ def destination(c: StudioConnection) -> tuple:
         return ("http", (p.scheme or "").lower(), (p.netloc or "").lower(), c.auth or "none",
                 (c.header_name or "").lower(), c.token_url or "", c.username or "",
                 bool(c.verify_tls))
+    if c.kind == "server":
+        return ("server", (c.host or "").lower(), int(c.port or 22), c.username or "")
     return ("postgres", (c.host or "").lower(), int(c.port or 5432), c.database or "",
             c.username or "", bool(c.verify_tls))
 
@@ -139,11 +151,12 @@ def destination(c: StudioConnection) -> tuple:
 #: verify_tls/username -- the columns save() writes.
 _HTTP_KEYS = ("base_url", "auth", "header_name", "token_url", "scope")
 _PG_KEYS = ("host", "port", "database", "auth")
+_SERVER_KEYS = ("host", "port", "auth")
 
 
 def clean_definition(form: dict) -> dict:
     """The form of a connection, checked and normalised -- no database, no
-    secret. ``form["kind"]`` is ``http`` (default) or ``postgres``. Raises
+    secret. ``form["kind"]`` is ``http`` (default), ``postgres`` or ``server``. Raises
     ``ConnectionError_`` with what is wrong. ``save`` applies the result; the
     rules pack (``package_check``) checks the connections of an app package
     with it before anything is created."""
@@ -194,6 +207,22 @@ def clean_definition(form: dict) -> dict:
             out["token_url"], out["scope"] = "", ""
         if auth == "basic" and not user:
             raise ConnectionError_("basic authentication needs a user")
+    elif kind == "server":
+        host = (form.get("host") or "").strip()
+        if not host or _CTRL.search(host) or "/" in host or " " in host or len(host) > 255:
+            raise ConnectionError_("a host name or address is required")
+        out["host"] = host
+        try:
+            out["port"] = int(form.get("port") or 22)
+        except ValueError:
+            raise ConnectionError_("port must be a number") from None
+        if not 1 <= out["port"] <= 65535:
+            raise ConnectionError_("port must be 1-65535")
+        out["username"] = user or "satom-mon"
+        if not _USER_RE.match(out["username"]):
+            raise ConnectionError_("the user is a Linux account name (satom-mon by default)")
+        out["auth"] = "key"
+        out["allow_writes"] = str(form.get("allow_writes")).lower() in ("1", "true", "yes", "on")
     else:
         host = (form.get("host") or "").strip()
         if not host or _CTRL.search(host) or "/" in host or len(host) > 255:
@@ -220,7 +249,7 @@ def save(c: StudioConnection, form: dict, by: str) -> bool:
     c.name = d["name"] or c.name
     c.description = d["description"]
     c.timeout, c.verify_tls, c.username = d["timeout"], d["verify_tls"], d["username"]
-    for k in (_HTTP_KEYS if c.kind == "http" else _PG_KEYS):
+    for k in {"http": _HTTP_KEYS, "server": _SERVER_KEYS}.get(c.kind, _PG_KEYS):
         setattr(c, k, d[k])
     if c.kind == "http" and "api_version_id" in form:
         from . import studio_apis as SA
@@ -232,17 +261,127 @@ def save(c: StudioConnection, form: dict, by: str) -> bool:
     c.updated_by = by
     _forget_token(c.slug)
     dropped = False
-    if before is not None and destination(c) != before and has_secret(c.slug):
+    if c.kind == "server":
+        # SATOM's private key is not sent anywhere (SSH proves it with a
+        # signature), so it stays; the trusted host key belongs to the old
+        # destination and is forgotten -- the new one is trusted explicitly.
+        opts = server_opts(c.slug)
+        if before is not None and destination(c) != before:
+            opts["host_key"] = ""
+            dropped = bool(server_opts(c.slug).get("host_key"))
+        opts["allow_writes"] = bool(d["allow_writes"])
+        _set_server_opts(c.slug, opts)
+    elif before is not None and destination(c) != before and has_secret(c.slug):
         set_secret(c.slug, "")
         dropped = True
     db.session.commit()
+    if c.kind == "server":
+        _hostguard_changed()
     return dropped
 
 
 def delete(c: StudioConnection) -> None:
     set_secret(c.slug, "")
+    was_server = c.kind == "server"
+    if was_server:
+        from .settings_store import set_str
+        set_str(SERVER_OPTS_PREFIX + c.slug, "")
     db.session.delete(c)
     db.session.commit()
+    if was_server:
+        _hostguard_changed()
+
+
+# --------------------------------------------------------------------------- #
+#  server connections: options, SSH key, host key                              #
+# --------------------------------------------------------------------------- #
+def server_opts(slug: str) -> dict:
+    """``{"host_key": str, "allow_writes": bool}``. A row that cannot be read
+    counts as no trusted key and no writes -- a security decision never falls
+    back to "allowed"."""
+    from . import settings_store as ST
+    raw = ST.get_json_checked(SERVER_OPTS_PREFIX + slug, {}, dict)
+    if raw is ST.MALFORMED or not isinstance(raw, dict):
+        raw = {}
+    return {"host_key": str(raw.get("host_key") or ""),
+            "allow_writes": raw.get("allow_writes") is True}
+
+
+def _set_server_opts(slug: str, opts: dict) -> None:
+    from . import settings_store as ST
+    ST.set_json(SERVER_OPTS_PREFIX + slug, {"host_key": str(opts.get("host_key") or ""),
+                                            "allow_writes": bool(opts.get("allow_writes"))})
+
+
+def _server(c: StudioConnection) -> None:
+    if c.kind != "server":
+        raise ConnectionError_("%s is not a server connection" % c.slug)
+
+
+def generate_server_key(c: StudioConnection) -> str:
+    """A NEW key pair for this connection; the private key goes to the secret
+    store (vault or Fernet), the public line is returned for the installer.
+    The previous key stops working on every server that trusted it."""
+    from . import studio_server as SV
+    _server(c)
+    pem, pub = SV.generate_key("satom-%s" % c.slug)
+    set_secret(c.slug, pem)
+    return pub
+
+
+def server_public_key(c: StudioConnection) -> str:
+    from . import studio_server as SV
+    _server(c)
+    secret, _problem = secret_state(c.slug)
+    return SV.public_key(secret, "satom-%s" % c.slug)
+
+
+def trust_host_key(c: StudioConnection) -> str:
+    """Fetch the key the server presents NOW and pin it. Explicit, from the
+    connection page: no call ever trusts a key by itself."""
+    from . import studio_server as SV
+    _server(c)
+    if not c.host:
+        raise ConnectionError_("save a host first")
+    key = SV.clean_host_key(SV.fetch_host_key(c.host, int(c.port or 22),
+                                              timeout=min(int(c.timeout or 20), 30)))
+    opts = server_opts(c.slug)
+    opts["host_key"] = key
+    _set_server_opts(c.slug, opts)
+    db.session.commit()
+    return key
+
+
+def forget_host_key(c: StudioConnection) -> None:
+    _server(c)
+    opts = server_opts(c.slug)
+    opts["host_key"] = ""
+    _set_server_opts(c.slug, opts)
+    db.session.commit()
+
+
+def server_call(c: StudioConnection, op: str, args: dict | None = None) -> dict:
+    """One satom-webctl operation on a server connection: its ``result``."""
+    from . import studio_server as SV
+    _server(c)
+    secret, problem = secret_state(c.slug)
+    if not secret:
+        raise ConnectionError_(problem or "connection %s has no SSH key: generate one" % c.slug)
+    return SV.call(definition(c), secret, op, args or {}, timeout=c.timeout)
+
+
+def _hostguard_changed() -> None:
+    """The managed servers changed: tell hostguard (both nodes drop new
+    connections FROM a managed server). Never blocks a save."""
+    try:
+        from flask import current_app, has_app_context
+        if has_app_context() and current_app.config.get("TESTING") and \
+                not current_app.config.get("HOSTGUARD_PUBLISH"):
+            return          # a test that wants it says so; none writes data/ by accident
+        from . import hostguard
+        hostguard.publish()
+    except Exception:  # noqa: BLE001 -- reported by hostguard's own health check
+        pass
 
 
 # --------------------------------------------------------------------------- #
@@ -300,12 +439,15 @@ def definition(c: StudioConnection) -> dict:
     ``catalog`` (the pinned API Catalog version's endpoints, or None) is what
     the script broker checks every request against."""
     from . import studio_apis as SA
-    return {"slug": c.slug, "kind": c.kind, "base_url": c.base_url, "host": c.host,
-            "port": c.port, "database": c.database, "auth": c.auth,
-            "username": c.username, "header_name": c.header_name,
-            "token_url": c.token_url, "scope": c.scope,
-            "verify_tls": bool(c.verify_tls), "timeout": c.timeout,
-            "catalog": SA.catalog_of(c)}
+    out = {"slug": c.slug, "kind": c.kind, "base_url": c.base_url, "host": c.host,
+           "port": c.port, "database": c.database, "auth": c.auth,
+           "username": c.username, "header_name": c.header_name,
+           "token_url": c.token_url, "scope": c.scope,
+           "verify_tls": bool(c.verify_tls), "timeout": c.timeout,
+           "catalog": SA.catalog_of(c) if c.kind == "http" else None}
+    if c.kind == "server":
+        out.update(server_opts(c.slug))
+    return out
 
 
 def build_url(c: StudioConnection, path: str) -> str:
@@ -391,6 +533,13 @@ def test(c: StudioConnection, method: str = "GET", path: str = "", sql: str = ""
          extract: str = "") -> dict:
     """What the Test button shows. Never raises."""
     try:
+        if c.kind == "server":
+            t0 = time.monotonic()
+            info = server_call(c, "info")
+            vh = server_call(c, "vhosts.list")["vhosts"]
+            return {"ok": True, "status": "connected", "ms": int((time.monotonic() - t0) * 1000),
+                    "body": {"satom_webctl": info, "vhosts": len(vh),
+                             "names": [v["server"] + ":" + v["name"] for v in vh][:50]}}
         if c.kind == "http":
             r = http_call(c, method if method in ("GET", "HEAD") else "GET", path)
             body = r.get("json") if "json" in r else r.get("text", "")
@@ -409,7 +558,7 @@ def test(c: StudioConnection, method: str = "GET", path: str = "", sql: str = ""
 #  for the Script Library runner (studio_broker)                               #
 # --------------------------------------------------------------------------- #
 def needs_secret(c: StudioConnection) -> bool:
-    return c.kind == "postgres" or (c.auth or "none") != "none"
+    return c.kind in ("postgres", "server") or (c.auth or "none") != "none"
 
 
 def for_runner(slugs: list[str]) -> tuple[dict, list[str]]:

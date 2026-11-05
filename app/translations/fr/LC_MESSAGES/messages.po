@@ -29045,3 +29045,70 @@ msgstr "Avec Tout ou Structure seulement, la copie écrit dans ses propres magas
 
 msgid "For each (list)"
 msgstr "Pour chaque élément (liste)"
+
+msgid "Server (satom-webctl)"
+msgstr "Serveur (satom-webctl)"
+
+msgid "The unprivileged account the installer creates (satom-mon)."
+msgstr "Le compte non privilégié que crée l'installateur (satom-mon)."
+
+msgid "Allow writes (change virtual hosts and files)"
+msgstr "Autoriser les écritures (modifier les hôtes virtuels et les fichiers)"
+
+msgid "Unticked: apps and scripts can only read. The server can also refuse writes on its side (installer --read-only)."
+msgstr "Non coché : les apps et les scripts ne peuvent que lire. Le serveur peut aussi refuser les écritures de son côté (installateur --read-only)."
+
+msgid "SATOM connects to the server; the server never connects to SATOM. The key opens no shell: the server runs satom-webctl and nothing else, confined to the document roots it was given. SATOM also drops new connections coming from this server on both of its nodes."
+msgstr "SATOM se connecte au serveur ; le serveur ne se connecte jamais à SATOM. La clé n'ouvre aucun shell : le serveur exécute satom-webctl et rien d'autre, limité aux racines documentaires qui lui ont été données. SATOM rejette en outre, sur ses deux nœuds, les nouvelles connexions venant de ce serveur."
+
+msgid "SSH key"
+msgstr "Clé SSH"
+
+msgid "SATOM generates the key pair. The private key stays in the vault (or encrypted) and is never shown; the public key below goes to the server. Generating a new key stops the old one on every server that trusted it."
+msgstr "SATOM génère la paire de clés. La clé privée reste dans le coffre (ou chiffrée) et n'est jamais affichée ; la clé publique ci-dessous va sur le serveur. Générer une nouvelle clé désactive l'ancienne sur tous les serveurs qui lui faisaient confiance."
+
+msgid "Public key"
+msgstr "Clé publique"
+
+msgid "On the server, as root (once)"
+msgstr "Sur le serveur, en root (une fois)"
+
+#, python-format
+msgid "--from limits the key to the SATOM nodes: %(n)s."
+msgstr "--from limite la clé aux nœuds SATOM : %(n)s."
+
+msgid "Single node: add --from followed by the address of this node to limit the key to SATOM."
+msgstr "Nœud unique : ajoutez --from suivi de l'adresse de ce nœud pour limiter la clé à SATOM."
+
+msgid "Add --read-only to refuse every write on the server side."
+msgstr "Ajoutez --read-only pour refuser toute écriture côté serveur."
+
+msgid "Generate key"
+msgstr "Générer une clé"
+
+msgid "Download satom-webctl"
+msgstr "Télécharger satom-webctl"
+
+msgid "Host key"
+msgstr "Clé d'hôte"
+
+msgid "trusted"
+msgstr "approuvée"
+
+msgid "not trusted"
+msgstr "non approuvée"
+
+msgid "Every call checks that the server presents exactly this key, and is refused otherwise. Compare the fingerprint with the server (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub) before trusting it."
+msgstr "Chaque appel vérifie que le serveur présente exactement cette clé, et il est refusé sinon. Comparez l'empreinte avec le serveur (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub) avant de l'approuver."
+
+msgid "Fetch and trust"
+msgstr "Récupérer et approuver"
+
+msgid "Runs info and vhosts.list on the server: both read-only."
+msgstr "Exécute info et vhosts.list sur le serveur : toutes deux en lecture seule."
+
+msgid "Servers: Linux web servers prepared with satom-webctl, for their nginx/Apache virtual hosts and files."
+msgstr "Serveurs : serveurs web Linux préparés avec satom-webctl, pour leurs hôtes virtuels nginx/Apache et leurs fichiers."
+
+msgid "Server (nginx / Apache, satom-webctl)"
+msgstr "Serveur (nginx / Apache, satom-webctl)"

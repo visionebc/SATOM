@@ -123,6 +123,7 @@ RULES = (
     ("connection.secret", ALL, "A connection never carries a secret (non-empty password, "
      "secret, token, api_key or client_secret)."),
     ("connection.postgres", ALL, "A postgres connection never travels in an app package."),
+    ("connection.server", ALL, "A server connection never travels in an app package."),
     ("connection.definition", ALL, "A connection has a valid id, base URL and authentication."),
     ("connection.pin", ALL, "A connection is pinned to an API version that the package carries "
      "or that is published on this server."),
@@ -454,6 +455,11 @@ def _app_rules(body, files: dict, target: dict | None, r: _Report, summary: dict
             r.add("connection.postgres", where, "connection %s is a postgres connection: an app "
                   "package carries HTTP connections only (external databases are this "
                   "server's own connections)" % slug)
+            continue
+        if kind == "server":
+            r.add("connection.server", where, "connection %s is a server connection: an app "
+                  "package carries HTTP connections only (the servers SATOM manages, their "
+                  "SSH key and their pinned host key are this SATOM's own)" % slug)
             continue
         carried = [k for k in SECRET_KEYS if c.get(k) not in (None, "")]
         if carried:

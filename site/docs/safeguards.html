@@ -16673,6 +16673,65 @@ written; control characters kept; bidi check off; booleans accepted as
 integers; duplicate keys accepted; <code>json_island</code> back to <code>&lt;/</code>-only; size cap
 off; cross-field checks skipped; a bad list row skipped instead of rejecting
 the answer.</p>
+<h2 id="217--a-managed-server-cannot-reach-satom-and-satoms-key-reaches-only-satom-webctl-teststest_satom_webctlpy-teststest_studio_serverpy-teststest_hostguardpy-teststest_studio_web_hostspy-2026-11-05">§217 — a managed server cannot reach SATOM, and SATOM's key reaches only satom-webctl (<code>tests/test_satom_webctl.py</code>, <code>tests/test_studio_server.py</code>, <code>tests/test_hostguard.py</code>, <code>tests/test_studio_web_hosts.py</code>, 2026-11-05)</h2>
+<p><strong>What it guards.</strong> Plugin Studio Server connections manage nginx/Apache
+virtual hosts and files over SSH. Three boundaries, each enforced where an
+attacker cannot remove it:</p>
+<ul>
+<li><strong>On the server</strong> (<code>hostctl/satom-webctl.py</code>): the key is
+  <code>restrict,command=</code> — no shell, pty or forwarding (measured on {container}: a
+  shell command answers <code>bad_request</code>; <code>-L</code> forwarding answers <em>administratively
+  prohibited</em>; sftp gets nothing). Files resolve inside the vhost's document
+  root, itself inside a managed root; <code>..</code>, absolute paths and symlinks out are
+  refused, writes use <code>O_NOFOLLOW</code>/atomic replace and keep a backup.
+  Configuration changes are tested and restored on failure. Runs as
+  <code>satom-mon</code>; root only for the two sudoers commands. <code>read_only</code> on the host
+  wins over SATOM. A client that never closes stdin is cut after 30 s.</li>
+<li><strong>In SATOM</strong> (<code>studio_server.call</code>): pinned host key compared BEFORE
+  authenticating (a changed key sends neither signature nor request); writes
+  need <code>allow_writes</code>; answers capped while reading and checked by
+  <code>server_ingest.webctl_envelope</code> (one schema per operation, all or nothing);
+  the destination check of every connection (<code>studio_http.resolve</code>). The
+  private key is generated, stored as the connection secret, never typed
+  (<code>/secret</code> refuses a value for a server connection) and never rendered.</li>
+<li><strong>On both nodes</strong> (hostguard): the runner, as root, loads the managed
+  servers' addresses into <code>inet satom_hostguard</code> and drops their NEW
+  connections. The list comes from a file the service account writes, so it is
+  re-checked: ≤4096 unicast addresses, read with <code>O_NOFOLLOW</code>, size-capped,
+  never this node, the HA peer, the default gateway, the trusted proxies or
+  the name servers.</li>
+</ul>
+<p><strong>The traps.</strong></p>
+<ul>
+<li><em>Trust on first use inside a call is no pin at all.</em> A call never takes a
+  key; only the explicit Fetch and trust does, and changing host or port
+  forgets it.</li>
+<li><em>"Allow writes" was a step parameter for SQL.</em> For a server it is a
+  connection setting the administrator owns; a step cannot grant it.</li>
+<li><em>A runner reading the service account's file.</em> Anything in
+  <code>desired.json</code> is input from a less trusted user: symlink, size, type and
+  every address are checked, and blocking SATOM's own path out is impossible
+  by construction.</li>
+<li><em>Only the updater may be root.</em> A new root unit would be forced back to
+  <code>User=satom</code> by five mechanisms; hostguard is therefore a step of the
+  existing root runner, woken by a <code>.path</code> unit.</li>
+<li><em>Reboots empty the kernel table.</em> <code>/run/satom-hostguard.json</code> goes with it;
+  its absence at app start republishes the list.</li>
+<li><em>One hostile file name must not block a folder.</em> satom-webctl leaves names
+  with control/bidi characters out of a listing (<code>skipped</code>) instead of letting
+  the gate reject the whole answer.</li>
+<li><em>An unprivileged LXC without nesting</em> makes every SSH login wait 25 s
+  (pam_systemd → logind timeout). The panel's LXC job now sets <code>nesting=1</code>.</li>
+</ul>
+<p><strong>Mutations that must bite</strong> (all do, satom-audit #4232-#4247, 0 errors):
+webctl realpath check off; webctl rollback (undo) off; host read_only off;
+root_not_managed off; host-key comparison off; allow_writes gate off; ingestion
+gate bypassed; host key kept on a destination change; a typed secret accepted
+for a server; runner never-block list ignored; the established/related accept
+removed from the ruleset; O_NOFOLLOW dropped on desired.json; boot publish
+ignoring the runner's status; server_call writes counted as reads; the
+package rule for server connections off; multiline text accepting every
+control character.</p>
     </div>
   </div>
 </section>

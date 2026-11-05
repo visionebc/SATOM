@@ -148,6 +148,7 @@ def choices() -> dict:
     out = {"stores": [s["slug"] for s in SS.list_stores()],
            "http": [c.slug for c in SC.list_connections("http")],
            "pg": [c.slug for c in SC.list_connections("postgres")],
+           "server": [c.slug for c in SC.list_connections("server")],
            # script apps run from their script's page, not as "run another app"
            "scripts": [], "apps": [a.slug for a in StudioApp.query.order_by(StudioApp.slug).all()
                                    if a.kind != "script"],
@@ -156,6 +157,8 @@ def choices() -> dict:
         out["scripts"] = [s["slug"] for s in SL.list_scripts() if s.get("published")]
     except Exception:  # noqa: BLE001 -- a broken library dir must not break the editor
         pass
+    from . import studio_server as SV
+    out["server_ops"] = sorted(SV.OPERATIONS)
     from . import studio_apis as SAPI
     out["catalog"] = SAPI.choices()
     from . import studio_satom as S

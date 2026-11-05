@@ -1,0 +1,15 @@
+# hostguard: when the web app (unprivileged) rewrites the list of servers that
+# Plugin Studio manages, start the privileged runner so it loads the list into
+# its own nftables table "inet satom_hostguard": NEW connections from a
+# managed server to this node are dropped (services/hostguard.py,
+# deploy/self_update_runner.py [SATOM-HOSTGUARD]). On the standby the file
+# arrives with satom-ha-datasync and fires the same way.
+[Unit]
+Description=Watch the list of servers SATOM manages (hostguard)
+
+[Path]
+PathChanged=/opt/satom/data/hostguard/desired.json
+Unit=satom-updater.service
+
+[Install]
+WantedBy=multi-user.target

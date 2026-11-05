@@ -195,6 +195,24 @@ class ConnectionBroker:
             return {"error": "connection %r is not declared by this script (or does "
                              "not exist)" % key}
         definition, secret = self.connections[key]
+        if definition.get("kind") == "server":
+            # satom-webctl over SSH (services/studio_server.py): the private key
+            # stays here, outside the jail; the answer passes the ingestion gate.
+            op = str(req.get("server_op") or "")
+            args = req.get("args") if req.get("args") is not None else {}
+            if not op:
+                return {"error": "connection %s is a server: call .server(operation, **args)"
+                                 % key}
+            from . import studio_server as SV
+            try:
+                res = SV.call(definition, secret, op, args)
+            except (SV.ConnectionError_, ValueError) as exc:
+                self._note("connection %s server %s failed: %s" % (key, op, exc))
+                return {"error": str(exc)}
+            self._note("connection %s server %s → ok" % (key, op))
+            return {"result": res}
+        if "server_op" in req:
+            return {"error": "connection %s is not a server connection" % key}
         if "sql" in req:
             params = req.get("params")
             if params is not None and not isinstance(params, (dict, list)):

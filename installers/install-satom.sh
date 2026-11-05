@@ -1777,7 +1777,7 @@ say "Installing systemd services"
 # satom-git-publish was retired on 2026-08-05: the device SoT no longer lives
 # in git (services.sot_store versions it locally).
 for unit in satom.service satom-scheduler.service \
-            satom-updater.path satom-updater.service \
+            satom-updater.path satom-updater.service satom-hostguard.path \
             satom-cert-renew.service satom-cert-renew.timer \
             satom-reconciler.service \
             satom-alerts.service satom-alerts.timer \
@@ -1869,6 +1869,12 @@ install -d -o "$APP_USER" -g "$APP_USER" -m 0750 \
 # accepts enqueued work and never runs it (this happened to satom-updater.path
 # on 249 on 2026-07-12 and the queue sat there silently).
 systemctl enable --now satom-integrations.path >>"$INSTALL_LOG" 2>&1 || true
+# hostguard: servers managed through Plugin Studio may never open a connection
+# to this node. The app writes data/hostguard/desired.json; this .path unit
+# starts the privileged runner to load it (deploy/self_update_runner.py).
+# Both HA nodes, for the same reason as the line above.
+install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$APP_DIR/data/hostguard" >>"$INSTALL_LOG" 2>&1 || true
+systemctl enable --now satom-hostguard.path >>"$INSTALL_LOG" 2>&1 || true
 # Script Library queue: same single-parent rule as the hooks above. library/ is
 # read-only to satom-scripts.service, the rest is its working area.
 install -d -o "$APP_USER" -g "$APP_USER" -m 0750 \

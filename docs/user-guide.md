@@ -5435,6 +5435,7 @@ credential, for app steps to use.
 |---|---|---|
 | **HTTP API** | Base URL, TLS verification (against the trust store), timeout | none, basic (user + password), bearer token, API key in a named header, OAuth2 client credentials (client id + secret + token URL + scope), **session login** (user + password posted to a login path under the base URL; the session cookie is reused) |
 | **PostgreSQL** | Host, port, database, user, TLS verification, timeout | password |
+| **Server** | Host, SSH port, user (`satom-mon`), timeout, Allow writes | SATOM's generated SSH key; pinned host key (see *Server connections* below) |
 
 - **Every call stays under the base URL.** A step's path is joined to it; an
   absolute URL, `//`, `..` or a backslash in a path is refused, and redirects
@@ -5623,6 +5624,78 @@ endpoint the new version does not have, and saves only when you confirm;
 those apps then show the problem and cannot be published until it is fixed.
 A connection with no version keeps the old behaviour: any path under its base
 URL. An API with connections pinned to it cannot be deleted.
+
+#### Server connections (satom-webctl): nginx and Apache virtual hosts and their files
+
+A **Server** connection points Plugin Studio at a Linux web server prepared
+with **satom-webctl** (`hostctl/` in the repository; full reference in
+`hostctl/README.md`, downloadable from the connection page). Apps and scripts
+can list the server's nginx and Apache virtual hosts, read and change their
+configuration, and browse, read, create, rename and delete the files of each
+document root.
+
+| | |
+|---|---|
+| Settings | Host, SSH port (22), user (`satom-mon`), timeout, **Allow writes** (off by default) |
+| Secret | SATOM's own SSH key (Ed25519): **Generate key**, never typed, never shown |
+| Host key | **Fetch and trust** (compare the fingerprint first); **Forget** |
+| Test | `info` + `vhosts.list` (read-only) |
+
+**Setting one up.** New → Server, enter the host, **Generate key**,
+**Download satom-webctl**, copy it to the server and run, as root, the command
+the page shows (`install-satom-webctl.sh --pubkey '<key>' --from <SATOM
+nodes>`; options `--roots`, `--read-only`, `--uninstall [--purge]`). Then
+**Fetch and trust** the host key and **Test**.
+
+**What the installer changes on the server:** the unprivileged account
+`satom-mon` (password locked); `/usr/local/bin/satom-webctl` (root-owned);
+`/etc/satom-webctl.json`; `/etc/sudoers.d/satom-webctl` with exactly two
+commands per web server (the configuration test and `systemctl reload`); ACL
+entries `u:satom-mon:rwX` on the managed roots (default `/var/www`, `/srv/www`)
+and the configured site directories only; one `authorized_keys` line
+`restrict,command="/usr/local/bin/satom-webctl",from="<SATOM nodes>"`;
+backups in `/var/lib/satom-webctl/backups`, a log in `/var/log/satom-webctl`.
+
+**Guarantees.**
+- **SATOM connects; the server never does.** The key opens no shell, pty or
+  forwarding: sshd runs `satom-webctl` whatever the client asks. Nothing on the
+  server holds a credential for SATOM.
+- **hostguard:** both SATOM nodes drop every NEW connection that comes from a
+  managed server (nftables table `inet satom_hostguard`, loaded by the
+  privileged runner when `data/hostguard/desired.json` changes;
+  `satom-hostguard.path`). SATOM's own nodes, the default gateway, the trusted
+  proxies and the name servers are never blocked. What each node applied is
+  in `/run/satom-hostguard.json`.
+- **Pinned host key** on every call; a changed key is refused.
+- **Every answer passes the ingestion gate** (`server_ingest`): size before
+  parsing, strict JSON, one closed schema per operation, all or nothing.
+- **Configuration changes are tested and undone on failure:** backup → write →
+  `nginx -t` / `apachectl configtest` → restore if it fails (nothing reloaded),
+  reload if it passes. Never a restart.
+- **Files stay inside the document root** of the named virtual host, itself
+  inside a managed root; `..`, absolute paths and symlinks leading out are
+  refused. File names with control or bidi characters are left out of a
+  listing (counted in `skipped`).
+- **Writes are opt-in** (Allow writes); the server can refuse them on its
+  side (`--read-only`). A write based on an old read fails with `conflict`.
+- A server connection **never travels in an app package**.
+
+**In apps:** the step **Act on a server** (`server_call`) — connection,
+operation, arguments (JSON). The write operations count as writes (not run in
+a rehearsal). **Plugin Studio → Examples → Web hosts** installs twelve chained
+apps on the connection `ex-web-server` (list of virtual hosts with row
+buttons; configuration view/edit/create/enable/disable/delete; file browser,
+view, edit/create, rename, delete, new folder). They are installed
+unpublished: publish them once the connection works. Text files only in the
+editor (a binary file is sent as base64 and not shown).
+
+**In scripts:** `connection("web01").server("files.list", server="nginx",
+name="shop", path="")`; the runner keeps the key outside the sandbox.
+
+**Troubleshooting.** *no trusted host key* → Fetch and trust. *host key
+changed* → check the server, trust its new key. *refused SATOM's key* → run
+the installer with the current public key. *Every call takes ~25 s* → an
+unprivileged LXC with systemd 252+ needs `features: nesting=1`.
 
 ### 23.7 Apps
 

@@ -3926,6 +3926,194 @@ def clone_job(req_path):
         st.finish("failed", error=str(out.get("title") or "import failed"))
 
 
+
+# ── [SATOM-HOSTGUARD] a managed server never opens a connection TO SATOM ────
+# The app (services/hostguard.py) writes the addresses of the servers Plugin
+# Studio manages to data/hostguard/desired.json; satom-hostguard.path starts
+# this runner when the file changes. That file is written by the SERVICE
+# ACCOUNT, so everything in it is checked here: at most HOSTGUARD_MAX real
+# unicast addresses, and never this node, the HA peer, the default gateway,
+# the trusted proxies or the name servers -- blocking one of those would cut
+# SATOM off, not protect it. The rules live in their own table, replaced in
+# one nft transaction, and only drop NEW connections: replies to the SSH
+# sessions SATOM opens are established traffic and pass. What was applied is
+# reported in /run/satom-hostguard.json (/run is emptied by a reboot, exactly
+# when the kernel table goes too; the app publishes again then).
+HOSTGUARD_DESIRED = APP / "data" / "hostguard" / "desired.json"
+HOSTGUARD_STATUS = Path(os.environ.get("SATOM_HOSTGUARD_STATUS", "/run/satom-hostguard.json"))
+HOSTGUARD_TABLE = "satom_hostguard"
+HOSTGUARD_MAX = 4096
+HOSTGUARD_MAX_BYTES = 1024 * 1024
+
+
+def _hg_cmd(argv, timeout=15):
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _hg_plain(ip):
+    import ipaddress
+    try:
+        addr = ipaddress.ip_address(str(ip).split("%", 1)[0].strip())
+    except ValueError:
+        return None
+    mapped = getattr(addr, "ipv4_mapped", None)
+    return mapped or addr
+
+
+def _hg_never_block():
+    """{address: why} -- what a hostguard rule may never cover."""
+    out = {}
+    p = _hg_cmd(["ip", "-j", "addr"])
+    try:
+        for iface in json.loads(p.stdout) if p and p.returncode == 0 else []:
+            for a in iface.get("addr_info") or []:
+                ip = _hg_plain(a.get("local"))
+                if ip is not None:
+                    out[str(ip)] = "an address of this node"
+    except (ValueError, TypeError, AttributeError):
+        pass
+    for fam in ("-4", "-6"):
+        p = _hg_cmd(["ip", "-j", fam, "route", "show", "default"])
+        try:
+            for r in json.loads(p.stdout) if p and p.returncode == 0 else []:
+                ip = _hg_plain(r.get("gateway"))
+                if ip is not None:
+                    out.setdefault(str(ip), "the default gateway")
+        except (ValueError, TypeError, AttributeError):
+            pass
+    try:
+        nodes = json.loads((APP / "data" / "ha_nodes.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        nodes = []
+    for n in nodes if isinstance(nodes, list) else []:
+        host = str((n or {}).get("host") or "").strip() if isinstance(n, dict) else ""
+        try:
+            infos = socket.getaddrinfo(host, None) if host else []
+        except (OSError, UnicodeError):
+            infos = []
+        for info in infos:
+            ip = _hg_plain(info[4][0])
+            if ip is not None:
+                out.setdefault(str(ip), "a SATOM HA node")
+    try:
+        env = (APP / ".env").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        env = ""
+    for line in env.splitlines():
+        if line.strip().startswith("TRUSTED_PROXIES="):
+            for part in line.split("=", 1)[1].strip().strip("'\"").split(","):
+                ip = _hg_plain(part.split("/", 1)[0])
+                if ip is not None:
+                    out.setdefault(str(ip), "a trusted proxy (TRUSTED_PROXIES)")
+    try:
+        for line in Path("/etc/resolv.conf").read_text().splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] == "nameserver":
+                ip = _hg_plain(parts[1])
+                if ip is not None:
+                    out.setdefault(str(ip), "a name server of this node")
+    except OSError:
+        pass
+    return out
+
+
+def _hg_desired():
+    """The addresses asked for, read without following a link the service
+    account may have planted; [] when there is no file."""
+    try:
+        fd = os.open(str(HOSTGUARD_DESIRED), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return []
+    with os.fdopen(fd, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise ValueError("desired.json is not a regular file")
+        raw = fh.read(HOSTGUARD_MAX_BYTES + 1)
+    if len(raw) > HOSTGUARD_MAX_BYTES:
+        raise ValueError("desired.json is larger than 1 MiB")
+    body = json.loads(raw.decode("utf-8"))
+    addrs = body.get("addresses") if isinstance(body, dict) else None
+    if not isinstance(addrs, list):
+        raise ValueError("desired.json has no address list")
+    return addrs[:HOSTGUARD_MAX]
+
+
+def hostguard_plan(addresses, never):
+    """(v4, v6, excluded) -- pure, for the tests."""
+    v4, v6, excluded = [], [], []
+    for raw in addresses:
+        ip = _hg_plain(raw) if isinstance(raw, str) else None
+        if ip is None:
+            excluded.append({"ip": str(raw)[:64], "why": "not an IP address"})
+            continue
+        why = never.get(str(ip))
+        if not why:
+            if ip.is_loopback or ip.is_link_local or ip.is_multicast or \
+                    ip.is_unspecified or ip.is_reserved:
+                why = "not a unicast host address"
+        if why:
+            excluded.append({"ip": str(ip), "why": why})
+            continue
+        bucket = v4 if ip.version == 4 else v6
+        if str(ip) not in bucket:
+            bucket.append(str(ip))
+    return sorted(v4), sorted(v6), excluded
+
+
+def hostguard_ruleset(v4, v6):
+    """The nft script: drop the table if any, recreate it when there is
+    something to block. One transaction: never a moment without the rules."""
+    lines = ["table inet %s" % HOSTGUARD_TABLE, "delete table inet %s" % HOSTGUARD_TABLE]
+    if not v4 and not v6:
+        return "\n".join(lines) + "\n"
+    lines.append("table inet %s {" % HOSTGUARD_TABLE)
+    lines.append("  set managed4 { type ipv4_addr;%s }"
+                 % (" elements = { %s };" % ", ".join(v4) if v4 else ""))
+    lines.append("  set managed6 { type ipv6_addr;%s }"
+                 % (" elements = { %s };" % ", ".join(v6) if v6 else ""))
+    lines.append("  chain input {")
+    lines.append("    type filter hook input priority -5; policy accept;")
+    lines.append("    ct state established,related accept")
+    lines.append("    ip saddr @managed4 counter drop")
+    lines.append("    ip6 saddr @managed6 counter drop")
+    lines.append("  }")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def _hg_status(body):
+    try:
+        fd, tmp = tempfile.mkstemp(prefix=".satom-hostguard-", dir=str(HOSTGUARD_STATUS.parent))
+        with os.fdopen(fd, "w") as fh:
+            json.dump(body, fh, sort_keys=True)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, str(HOSTGUARD_STATUS))
+    except OSError as exc:
+        _log("hostguard: cannot write the status: %s" % exc)
+
+
+def hostguard_reconcile():
+    """Load data/hostguard/desired.json into the kernel. Never raises."""
+    at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    try:
+        wanted = _hg_desired()
+        v4, v6, excluded = hostguard_plan(wanted, _hg_never_block())
+        nft = shutil.which("nft") or "/usr/sbin/nft"
+        p = subprocess.run([nft, "-f", "-"], input=hostguard_ruleset(v4, v6),
+                           capture_output=True, text=True, timeout=30)
+        if p.returncode != 0:
+            raise RuntimeError("nft refused the ruleset: %s" % (p.stderr or "").strip()[-300:])
+        _hg_status({"ok": True, "applied": v4 + v6, "excluded": excluded, "at": at,
+                    "table": HOSTGUARD_TABLE, "detail": ""})
+        if wanted or excluded:
+            _log("hostguard: %d address(es) blocked, %d excluded" % (len(v4 + v6), len(excluded)))
+    except Exception as exc:  # noqa: BLE001 -- an update must still run
+        _hg_status({"ok": False, "applied": [], "excluded": [], "at": at,
+                    "table": HOSTGUARD_TABLE, "detail": str(exc)[:300]})
+        _log("hostguard: %s" % exc)
+
 _HANDLERS = {
     "": "process",
     "clone": "clone_job",
@@ -3940,6 +4128,9 @@ _HANDLERS = {
 
 
 def main():
+    # satom-hostguard.path starts this runner too (data/hostguard/desired.json
+    # changed); it is cheap and idempotent, so it runs on every activation.
+    hostguard_reconcile()
     for rp in sorted(glob.glob(str(REQ / "*.json"))):
         try:
             try:

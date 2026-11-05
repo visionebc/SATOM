@@ -32,6 +32,7 @@ What each bundle shows:
 """
 from __future__ import annotations
 
+import json
 import textwrap
 
 FGT_CONN = "ex-fortigate"
@@ -556,6 +557,308 @@ BUNDLES = [
                "To let other users run them, open each app > Settings and pick users or "
                "groups (Administrator > Access > Groups)."]},
 ]
+
+
+# --------------------------------------------------------------------------- #
+#  web hosts: nginx / Apache virtual hosts and their files (server connection) #
+# --------------------------------------------------------------------------- #
+WEB_CONN = "ex-web-server"
+WEB_CONNECTION = {
+    "slug": WEB_CONN, "name": "Web server (example)", "kind": "server",
+    "form": {"host": "web01.example.com", "port": 22, "username": "satom-mon",
+             "timeout": 20, "allow_writes": False,
+             "description": "Example. Replace the host with your web server, Generate key, "
+                            "run the installer shown on this page on the server (as root, "
+                            "once), Fetch and trust its host key, then Test. Tick Allow "
+                            "writes only when the apps may change the server."}}
+
+_WEB_SERVER_FIELD = {"name": "server", "label": "Web server", "type": "select",
+                     "options": ["nginx", "apache"], "default": "nginx", "required": True}
+_WEB_VHOST_FIELD = {"name": "vhost", "label": "Virtual host (file name)", "type": "text",
+                    "required": True}
+_WEB_PATH_FIELD = {"name": "path", "label": "Path in the document root", "type": "text"}
+
+
+def _web_call(op, args, *, outputs, x=80):
+    """start -> one satom-webctl call -> its outputs -> end (an error ends in
+    a Fail step with the server's message)."""
+    nodes = [_n("start", "start", "Start", x, 30),
+             _n("call", "server_call", "satom-webctl: %s" % op, x, 130, connection=WEB_CONN,
+                operation=op, args=args, save_as="res")]
+    edges = [_e("start", "call")]
+    prev, y = "call", 230
+    for i, out in enumerate(outputs):
+        key = "out%d" % i
+        nodes.append(_n(key, "output", out.get("label", "Show"), x, y, **out["params"]))
+        edges.append(_e(prev, key, "ok" if prev == "call" else "always"))
+        prev, y = key, y + 100
+    nodes.append(_n("end", "end", "End", x, y))
+    nodes.append(_n("failed", "fail", "Failed", x + 280, 130, message="{{ last_error.message }}"))
+    edges += [_e(prev, "end"), _e("call", "failed", "error")]
+    return {"nodes": nodes, "edges": edges}
+
+
+WEB_HOSTS_GRAPH = _web_call("vhosts.list", "{}", outputs=[{"label": "Virtual hosts", "params": {
+    "value": "{{ res.vhosts }}", "title": "Virtual hosts", "view": "table",
+    "row_actions": json.dumps([
+        {"label": "Files", "app": "ex-web-files", "when": "{{ row.managed_root }}",
+         "inputs": {"server": "{{ row.server }}", "vhost": "{{ row.name }}", "path": ""}},
+        {"label": "Configuration", "app": "ex-web-vhost",
+         "inputs": {"server": "{{ row.server }}", "vhost": "{{ row.name }}"}},
+        {"label": "Disable", "app": "ex-web-vhost-toggle", "when": "{{ row.enabled }}",
+         "inputs": {"server": "{{ row.server }}", "vhost": "{{ row.name }}", "action": "disable"}},
+        {"label": "Enable", "app": "ex-web-vhost-toggle", "when": "{{ not row.enabled }}",
+         "inputs": {"server": "{{ row.server }}", "vhost": "{{ row.name }}", "action": "enable"}},
+        {"label": "Delete", "app": "ex-web-vhost-delete",
+         "inputs": {"server": "{{ row.server }}", "vhost": "{{ row.name }}"}}])}}])
+
+WEB_VHOST_GRAPH = _web_call(
+    "vhost.get", '{"server": "{{ form.server }}", "name": "{{ form.vhost }}"}',
+    outputs=[{"label": "Configuration", "params": {"value": "{{ res.content }}",
+                                                   "title": "{{ res.name }}", "view": "text"}},
+             {"label": "Details", "params": {
+                 "value": "{{ {'server': res.server, 'vhost': res.name, 'enabled': res.enabled, "
+                          "'sha256': res.sha256} }}", "title": "Details", "view": "keyvalue"}}])
+
+WEB_VHOST_EDIT_GRAPH = _web_call(
+    "vhost.put", '{"server": "{{ form.server }}", "name": "{{ form.vhost }}", '
+                 '"content": "{{ form.content }}", "base_sha256": "{{ form.base }}"}',
+    outputs=[{"label": "Result", "params": {"value": "{{ res }}", "title": "{{ form.vhost }}",
+                                            "view": "keyvalue"}}])
+
+WEB_VHOST_TOGGLE_GRAPH = {
+    "nodes": [
+        _n("start", "start", "Start", 80, 30),
+        _n("which", "decision", "Enable?", 80, 130, left="{{ form.action == 'enable' }}", op="true"),
+        _n("on", "server_call", "satom-webctl: vhost.enable", 80, 230, connection=WEB_CONN,
+           operation="vhost.enable", args='{"server": "{{ form.server }}", "name": "{{ form.vhost }}"}',
+           save_as="res"),
+        _n("off", "server_call", "satom-webctl: vhost.disable", 360, 230, connection=WEB_CONN,
+           operation="vhost.disable", args='{"server": "{{ form.server }}", "name": "{{ form.vhost }}"}',
+           save_as="res"),
+        _n("show", "output", "Result", 220, 340, value="{{ res }}", title="{{ form.vhost }}",
+           view="keyvalue"),
+        _n("end", "end", "End", 220, 440),
+        _n("failed", "fail", "Failed", 600, 230, message="{{ last_error.message }}"),
+    ],
+    "edges": [_e("start", "which"), _e("which", "on", "yes"), _e("which", "off", "no"),
+              _e("on", "show", "ok"), _e("off", "show", "ok"), _e("on", "failed", "error"),
+              _e("off", "failed", "error"), _e("show", "end")],
+}
+
+WEB_VHOST_DELETE_GRAPH = _web_call(
+    "vhost.delete", '{"server": "{{ form.server }}", "name": "{{ form.vhost }}"}',
+    outputs=[{"label": "Result", "params": {"value": "{{ res }}", "title": "{{ form.vhost }}",
+                                            "view": "keyvalue"}}])
+
+WEB_VHOST_CREATE_GRAPH = _web_call(
+    "vhost.create",
+    '{"server": "{{ form.server }}", "name": "{{ form.name }}", "kind": "{{ form.kind }}", '
+    '"server_names": "{{ form.server_names.replace(\',\', \' \').split() }}", '
+    '"docroot": "{{ form.docroot }}", "https": "{{ form.https }}", "cert": "{{ form.cert }}", '
+    '"key": "{{ form.key }}", "php_socket": "{{ form.php_socket }}"}',
+    outputs=[{"label": "Result", "params": {"value": "{{ res }}", "title": "{{ form.name }}",
+                                            "view": "keyvalue"}}])
+
+WEB_FILES_GRAPH = _web_call(
+    "files.list", '{"server": "{{ form.server }}", "name": "{{ form.vhost }}", '
+                  '"path": "{{ form.path }}"}',
+    outputs=[
+        {"label": "Files", "params": {
+            "value": "{{ res.entries }}", "title": "{{ form.vhost }}: /{{ res.path }}",
+            "view": "table",
+            "row_actions": json.dumps([
+                {"label": "Open", "app": "ex-web-files", "when": "{{ row.type == 'dir' }}",
+                 "inputs": {"server": "{{ form.server }}", "vhost": "{{ form.vhost }}",
+                            "path": "{{ (res.path ~ '/' if res.path else '') ~ row.name }}"}},
+                {"label": "View", "app": "ex-web-file", "when": "{{ row.type == 'file' }}",
+                 "inputs": {"server": "{{ form.server }}", "vhost": "{{ form.vhost }}",
+                            "path": "{{ (res.path ~ '/' if res.path else '') ~ row.name }}"}},
+                {"label": "Rename", "app": "ex-web-file-rename",
+                 "inputs": {"server": "{{ form.server }}", "vhost": "{{ form.vhost }}",
+                            "path": "{{ (res.path ~ '/' if res.path else '') ~ row.name }}",
+                            "to": "{{ (res.path ~ '/' if res.path else '') ~ row.name }}"}},
+                {"label": "Delete", "app": "ex-web-file-delete",
+                 "inputs": {"server": "{{ form.server }}", "vhost": "{{ form.vhost }}",
+                            "path": "{{ (res.path ~ '/' if res.path else '') ~ row.name }}"}}])}},
+        {"label": "Folder", "params": {
+            "value": "{{ {'server': form.server, 'vhost': form.vhost, 'path': res.path, "
+                     "'parent': (res.path.rsplit('/', 1)[0] if '/' in res.path else ''), "
+                     "'docroot': res.docroot, 'truncated': res.truncated, "
+                     "'skipped': res.skipped} }}",
+            "title": "Folder", "view": "keyvalue"}}])
+
+WEB_FILE_GRAPH = _web_call(
+    "files.read", '{"server": "{{ form.server }}", "name": "{{ form.vhost }}", '
+                  '"path": "{{ form.path }}", "text": true}',
+    outputs=[{"label": "Content", "params": {
+                 "value": "{{ res.content if not res.binary else 'Binary file (' ~ res.size ~ "
+                          "' bytes): not shown.' }}",
+                 "title": "{{ form.path }}", "view": "text"}},
+             {"label": "Details", "params": {
+                 "value": "{{ {'server': form.server, 'vhost': form.vhost, 'path': form.path, "
+                          "'size': res.size, 'sha256': res.sha256, 'binary': res.binary} }}",
+                 "title": "Details", "view": "keyvalue"}}])
+
+WEB_FILE_EDIT_GRAPH = _web_call(
+    "files.write", '{"server": "{{ form.server }}", "name": "{{ form.vhost }}", '
+                   '"path": "{{ form.path }}", "content": "{{ form.content }}", '
+                   '"base_sha256": "{{ form.base }}", "create_dirs": true}',
+    outputs=[{"label": "Result", "params": {"value": "{{ res }}", "title": "{{ form.path }}",
+                                            "view": "keyvalue"}}])
+
+WEB_FILE_RENAME_GRAPH = _web_call(
+    "files.rename", '{"server": "{{ form.server }}", "name": "{{ form.vhost }}", '
+                    '"path": "{{ form.path }}", "to": "{{ form.to }}"}',
+    outputs=[{"label": "Result", "params": {"value": "{{ res }}", "title": "{{ form.to }}",
+                                            "view": "keyvalue"}}])
+
+WEB_FILE_DELETE_GRAPH = _web_call(
+    "files.delete", '{"server": "{{ form.server }}", "name": "{{ form.vhost }}", '
+                    '"path": "{{ form.path }}", "recursive": "{{ form.recursive }}"}',
+    outputs=[{"label": "Result", "params": {"value": "{{ res }}", "title": "{{ form.path }}",
+                                            "view": "keyvalue"}}])
+
+WEB_MKDIR_GRAPH = _web_call(
+    "files.mkdir", '{"server": "{{ form.server }}", "name": "{{ form.vhost }}", '
+                   '"path": "{{ form.path }}"}',
+    outputs=[{"label": "Result", "params": {"value": "{{ res }}", "title": "{{ form.path }}",
+                                            "view": "keyvalue"}}])
+
+_WEB_EDIT_VHOST_ACTION = {
+    "key": "edit", "label": "Edit", "kind": "open_app",
+    "params": {"app": "ex-web-vhost-edit",
+               "inputs": json.dumps({"server": "{{ outputs[1].value.server }}",
+                                     "vhost": "{{ outputs[1].value.vhost }}",
+                                     "content": "{{ outputs[0].value }}",
+                                     "base": "{{ outputs[1].value.sha256 }}"})}}
+_WEB_EDIT_FILE_ACTION = {
+    "key": "edit", "label": "Edit", "kind": "open_app",
+    "params": {"app": "ex-web-file-edit",
+               "inputs": json.dumps({"server": "{{ outputs[1].value.server }}",
+                                     "vhost": "{{ outputs[1].value.vhost }}",
+                                     "path": "{{ outputs[1].value.path }}",
+                                     "content": "{{ outputs[0].value }}",
+                                     "base": "{{ outputs[1].value.sha256 }}"})}}
+_WEB_FOLDER = "{{ outputs[1].value.path ~ '/' if outputs[1].value.path else '' }}"
+_WEB_FILES_ACTIONS = [
+    {"key": "up", "label": "Up one folder", "kind": "open_app",
+     "params": {"app": "ex-web-files",
+                "inputs": json.dumps({"server": "{{ outputs[1].value.server }}",
+                                      "vhost": "{{ outputs[1].value.vhost }}",
+                                      "path": "{{ outputs[1].value.parent }}"})}},
+    {"key": "new_file", "label": "New file", "kind": "open_app",
+     "params": {"app": "ex-web-file-edit",
+                "inputs": json.dumps({"server": "{{ outputs[1].value.server }}",
+                                      "vhost": "{{ outputs[1].value.vhost }}",
+                                      "path": _WEB_FOLDER + "new.html", "content": "",
+                                      "base": ""})}},
+    {"key": "new_folder", "label": "New folder", "kind": "open_app",
+     "params": {"app": "ex-web-mkdir",
+                "inputs": json.dumps({"server": "{{ outputs[1].value.server }}",
+                                      "vhost": "{{ outputs[1].value.vhost }}",
+                                      "path": _WEB_FOLDER + "new-folder"})}},
+]
+
+
+def _web_app(slug, name, icon, fields, graph, description, actions=None):
+    return {"slug": slug, "name": name, "icon": icon, "fields": fields, "graph": graph,
+            # Not published at install: publishing needs the connection's key,
+            # which only exists once the setup below is done.
+            "actions": actions or [], "publish": False, "description": description}
+
+
+WEB_APPS = [
+    _web_app("ex-web-hosts", "Web hosts (example)", "bi-hdd-network", [], WEB_HOSTS_GRAPH,
+             "The nginx and Apache virtual hosts of the server, with buttons to open their "
+             "files and configuration, enable, disable or delete them.",
+             [{"key": "new", "label": "New virtual host", "kind": "open_app",
+               "params": {"app": "ex-web-vhost-create", "inputs": "{}"}}]),
+    _web_app("ex-web-vhost", "Virtual host configuration (example)", "bi-file-earmark-code",
+             [_WEB_SERVER_FIELD, _WEB_VHOST_FIELD], WEB_VHOST_GRAPH,
+             "The configuration file of one virtual host.", [_WEB_EDIT_VHOST_ACTION]),
+    _web_app("ex-web-vhost-edit", "Edit virtual host (example)", "bi-pencil-square",
+             [_WEB_SERVER_FIELD, _WEB_VHOST_FIELD,
+              {"name": "content", "label": "Configuration", "type": "textarea", "required": True},
+              {"name": "base", "label": "Read as (sha256; empty = do not check)", "type": "text"}],
+             WEB_VHOST_EDIT_GRAPH,
+             "Saves a virtual host file: backup, then the server's own configuration test; a "
+             "failing test restores the previous file and nothing is reloaded."),
+    _web_app("ex-web-vhost-toggle", "Enable or disable a virtual host (example)", "bi-toggle-on",
+             [_WEB_SERVER_FIELD, _WEB_VHOST_FIELD,
+              {"name": "action", "label": "Action", "type": "select",
+               "options": ["enable", "disable"], "default": "enable", "required": True}],
+             WEB_VHOST_TOGGLE_GRAPH, "Enables or disables a virtual host, tested and reloaded."),
+    _web_app("ex-web-vhost-delete", "Delete a virtual host (example)", "bi-trash",
+             [_WEB_SERVER_FIELD, _WEB_VHOST_FIELD], WEB_VHOST_DELETE_GRAPH,
+             "Deletes a virtual host file (a backup is kept on the server); its document root "
+             "is not touched."),
+    _web_app("ex-web-vhost-create", "New virtual host (example)", "bi-plus-square",
+             [_WEB_SERVER_FIELD,
+              {"name": "name", "label": "File name", "type": "text", "required": True},
+              {"name": "kind", "label": "Kind", "type": "select", "options": ["static", "php"],
+               "default": "static", "required": True},
+              {"name": "server_names", "label": "Host names (comma separated)", "type": "text",
+               "required": True},
+              {"name": "docroot", "label": "Document root", "type": "text",
+               "default": "/var/www/", "required": True},
+              {"name": "https", "label": "HTTPS (HTTP redirects to it)", "type": "checkbox"},
+              {"name": "cert", "label": "Certificate file (HTTPS)", "type": "text"},
+              {"name": "key", "label": "Key file (HTTPS)", "type": "text"},
+              {"name": "php_socket", "label": "PHP-FPM socket (PHP)", "type": "text",
+               "default": "/run/php/php-fpm.sock"}],
+             WEB_VHOST_CREATE_GRAPH,
+             "Creates a virtual host from a template inside the managed roots, enables it, "
+             "tests and reloads -- or removes it again when the test fails."),
+    _web_app("ex-web-files", "Files of a virtual host (example)", "bi-folder2-open",
+             [_WEB_SERVER_FIELD, _WEB_VHOST_FIELD, _WEB_PATH_FIELD], WEB_FILES_GRAPH,
+             "Browse the document root of a virtual host.", _WEB_FILES_ACTIONS),
+    _web_app("ex-web-file", "View a file (example)", "bi-file-earmark-text",
+             [_WEB_SERVER_FIELD, _WEB_VHOST_FIELD, dict(_WEB_PATH_FIELD, required=True)],
+             WEB_FILE_GRAPH, "One file of a document root, as text.",
+             [_WEB_EDIT_FILE_ACTION,
+              {"key": "copy", "label": "Copy", "kind": "copy",
+               "params": {"format": "text", "value": "{{ outputs[0].value }}"}}]),
+    _web_app("ex-web-file-edit", "Edit or create a file (example)", "bi-pencil",
+             [_WEB_SERVER_FIELD, _WEB_VHOST_FIELD, dict(_WEB_PATH_FIELD, required=True),
+              {"name": "content", "label": "Content", "type": "textarea"},
+              {"name": "base", "label": "Read as (sha256; empty = new file or do not check)",
+               "type": "text"}],
+             WEB_FILE_EDIT_GRAPH,
+             "Saves a text file in the document root (the previous version is backed up on "
+             "the server). A file changed by someone else since it was read is refused."),
+    _web_app("ex-web-file-rename", "Rename or move a file (example)", "bi-input-cursor-text",
+             [_WEB_SERVER_FIELD, _WEB_VHOST_FIELD, dict(_WEB_PATH_FIELD, required=True),
+              {"name": "to", "label": "New path", "type": "text", "required": True}],
+             WEB_FILE_RENAME_GRAPH, "Renames or moves a file or folder inside the document root."),
+    _web_app("ex-web-file-delete", "Delete a file or folder (example)", "bi-trash3",
+             [_WEB_SERVER_FIELD, _WEB_VHOST_FIELD, dict(_WEB_PATH_FIELD, required=True),
+              {"name": "recursive", "label": "A folder with everything in it", "type": "checkbox"}],
+             WEB_FILE_DELETE_GRAPH,
+             "Deletes a file or folder of the document root; a backup is kept on the server."),
+    _web_app("ex-web-mkdir", "New folder (example)", "bi-folder-plus",
+             [_WEB_SERVER_FIELD, _WEB_VHOST_FIELD, dict(_WEB_PATH_FIELD, required=True)],
+             WEB_MKDIR_GRAPH, "Creates a folder in the document root."),
+]
+
+WEB_BUNDLE = {
+    "key": "web-hosts",
+    "title": "Web hosts: nginx / Apache virtual hosts and their files",
+    "summary": "A server connection to a Linux web server prepared with satom-webctl, and "
+               "twelve apps that chain into each other: the list of virtual hosts, their "
+               "configuration (view, edit, enable, disable, create, delete) and the files of "
+               "each document root (browse, view, edit, create, rename, delete). The key "
+               "opens no shell on the server; writes need Allow writes on the connection.",
+    "connections": [WEB_CONNECTION], "stores": [], "scripts": [], "apps": WEB_APPS,
+    "setup": ["Open the connection ex-web-server: enter your server, Generate key, download "
+              "satom-webctl and run the installer it shows on the server (as root, once).",
+              "Fetch and trust the host key (compare its fingerprint with the server), then "
+              "Test. Tick Allow writes when the apps may change the server.",
+              "Publish the twelve apps (each app > Publish): a row button only opens an app "
+              "that is published. Then open Operations > Plugins > Web hosts (example). To "
+              "let other users run them, open each app > Settings and pick users or groups."]}
+
+BUNDLES.append(WEB_BUNDLE)
 BUNDLE_KEYS = tuple(b["key"] for b in BUNDLES)
 
 

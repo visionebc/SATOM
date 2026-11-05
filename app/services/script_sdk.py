@@ -166,7 +166,7 @@ def _broker(req: dict) -> dict:
 
 class Connection:
     """A declared Connection. HTTP: ``get/post/put/patch/delete/request``.
-    PostgreSQL: ``query``."""
+    PostgreSQL: ``query``. Server (satom-webctl): ``server``."""
 
     def __init__(self, key: str):
         self.key = key
@@ -215,6 +215,14 @@ class Connection:
               max_rows: int = 1000) -> dict:
         return _broker({"connection": self.key, "sql": sql, "params": params,
                         "write": bool(write), "max_rows": max_rows})
+
+    def server(self, operation: str, **args) -> dict:
+        """One satom-webctl operation on a server connection:
+        ``server("files.list", server="nginx", name="shop", path="img")``.
+        Returns the operation's result; raises ConnectionError when the
+        server refused it or writes are off for the connection."""
+        return _broker({"connection": self.key, "server_op": str(operation),
+                        "args": args}).get("result")
 
     def __repr__(self) -> str:
         return "<Connection %s>" % self.key

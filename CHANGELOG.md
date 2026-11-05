@@ -69,6 +69,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   page has a **Preferences** button and says which categories you muted. The
   change is audited as `profile.notifications`.
 
+- **Plugin Studio: Server connections — manage nginx and Apache virtual hosts
+  and their files.** Operator request: "a plugin to manage the vhosts of this
+  server and the files inside each one", with "the server must have no access
+  to SATOM". A new connection kind, **Server**, reaches a Linux web server over
+  SSH as the unprivileged account `satom-mon`, whose key is installed with
+  `restrict,command="satom-webctl"`: the key opens no shell and can only ask
+  for the operations of `satom-webctl` (`hostctl/`, Python standard library,
+  3.6+): list virtual hosts; read, change, create, enable, disable and delete
+  their configuration; list, read, write, rename, delete files and create
+  folders inside each document root. Every configuration change is backed up
+  and tested with the server's own test, restored when the test fails and
+  reloaded (never restarted) when it passes. SATOM generates the key (never
+  shown), the host key is pinned by an explicit **Fetch and trust**, writes
+  need **Allow writes**, and every answer passes the ingestion gate. The
+  installer (`install-satom-webctl.sh`, downloadable from the connection page)
+  supports Debian, RHEL and SUSE layouts, sets ACLs instead of changing owners,
+  and grants exactly two sudo commands per web server (config test, reload).
+  New flow step **Act on a server**; scripts call
+  `connection(...).server(op, **args)`. **Plugin Studio → Examples → Web
+  hosts** installs twelve chained apps (virtual hosts, configuration editor,
+  file browser and editor).
+
 ### Fixed
 - **A label value over 4 KB no longer makes a metric vanish silently.** The
   metrics store (VictoriaMetrics) drops a whole series when one label value is
@@ -139,6 +161,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   like an unattended run's.
 
 ### Security
+- **hostguard: a managed server can never open a connection to SATOM.** Both
+  nodes drop every new connection that comes from a server managed through a
+  Server connection (nftables table `inet satom_hostguard`, loaded by the
+  privileged runner through the new `satom-hostguard.path`). Replies to the
+  sessions SATOM opens still pass. The list is re-checked as root: SATOM's own
+  nodes, the default gateway, the trusted proxies and the name servers are
+  never blocked. The standby applies the same list after the data sync, and
+  the list is loaded again after a reboot.
 - **Servers ADOM, stage 0: the ingestion gate.** Groundwork for monitoring
   Linux and Windows servers: every answer a monitored server gives passes one
   gate before SATOM uses it — a size cap before parsing, strict JSON (no

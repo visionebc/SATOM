@@ -17231,3 +17231,64 @@ written; control characters kept; bidi check off; booleans accepted as
 integers; duplicate keys accepted; `json_island` back to `</`-only; size cap
 off; cross-field checks skipped; a bad list row skipped instead of rejecting
 the answer.
+
+## §217 — a managed server cannot reach SATOM, and SATOM's key reaches only satom-webctl (`tests/test_satom_webctl.py`, `tests/test_studio_server.py`, `tests/test_hostguard.py`, `tests/test_studio_web_hosts.py`, 2026-11-05)
+
+**What it guards.** Plugin Studio Server connections manage nginx/Apache
+virtual hosts and files over SSH. Three boundaries, each enforced where an
+attacker cannot remove it:
+
+- **On the server** (`hostctl/satom-webctl.py`): the key is
+  `restrict,command=` — no shell, pty or forwarding (measured on CT 442: a
+  shell command answers `bad_request`; `-L` forwarding answers *administratively
+  prohibited*; sftp gets nothing). Files resolve inside the vhost's document
+  root, itself inside a managed root; `..`, absolute paths and symlinks out are
+  refused, writes use `O_NOFOLLOW`/atomic replace and keep a backup.
+  Configuration changes are tested and restored on failure. Runs as
+  `satom-mon`; root only for the two sudoers commands. `read_only` on the host
+  wins over SATOM. A client that never closes stdin is cut after 30 s.
+- **In SATOM** (`studio_server.call`): pinned host key compared BEFORE
+  authenticating (a changed key sends neither signature nor request); writes
+  need `allow_writes`; answers capped while reading and checked by
+  `server_ingest.webctl_envelope` (one schema per operation, all or nothing);
+  the destination check of every connection (`studio_http.resolve`). The
+  private key is generated, stored as the connection secret, never typed
+  (`/secret` refuses a value for a server connection) and never rendered.
+- **On both nodes** (hostguard): the runner, as root, loads the managed
+  servers' addresses into `inet satom_hostguard` and drops their NEW
+  connections. The list comes from a file the service account writes, so it is
+  re-checked: ≤4096 unicast addresses, read with `O_NOFOLLOW`, size-capped,
+  never this node, the HA peer, the default gateway, the trusted proxies or
+  the name servers.
+
+**The traps.**
+
+* *Trust on first use inside a call is no pin at all.* A call never takes a
+  key; only the explicit Fetch and trust does, and changing host or port
+  forgets it.
+* *"Allow writes" was a step parameter for SQL.* For a server it is a
+  connection setting the administrator owns; a step cannot grant it.
+* *A runner reading the service account's file.* Anything in
+  `desired.json` is input from a less trusted user: symlink, size, type and
+  every address are checked, and blocking SATOM's own path out is impossible
+  by construction.
+* *Only the updater may be root.* A new root unit would be forced back to
+  `User=satom` by five mechanisms; hostguard is therefore a step of the
+  existing root runner, woken by a `.path` unit.
+* *Reboots empty the kernel table.* `/run/satom-hostguard.json` goes with it;
+  its absence at app start republishes the list.
+* *One hostile file name must not block a folder.* satom-webctl leaves names
+  with control/bidi characters out of a listing (`skipped`) instead of letting
+  the gate reject the whole answer.
+* *An unprivileged LXC without nesting* makes every SSH login wait 25 s
+  (pam_systemd → logind timeout). The panel's LXC job now sets `nesting=1`.
+
+**Mutations that must bite** (all do, satom-audit #4232-#4247, 0 errors):
+webctl realpath check off; webctl rollback (undo) off; host read_only off;
+root_not_managed off; host-key comparison off; allow_writes gate off; ingestion
+gate bypassed; host key kept on a destination change; a typed secret accepted
+for a server; runner never-block list ignored; the established/related accept
+removed from the ruleset; O_NOFOLLOW dropped on desired.json; boot publish
+ignoring the runner's status; server_call writes counted as reads; the
+package rule for server connections off; multiline text accepting every
+control character.

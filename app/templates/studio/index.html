@@ -269,7 +269,7 @@
       <div class="tab-pane fade {{ 'show active' if pane == 'connections' }}" id="studio-pane-connections" role="tabpanel">
         <div class="fw-card sl-how"><div class="fw-card-body py-2 d-flex gap-2" style="font-size:12px;">
           <i class="bi bi-plug text-accent" style="font-size:18px;"></i>
-          <span>{{ _('External APIs and PostgreSQL databases, with their credential kept in the vault or encrypted, never shown again. App steps call them; every call stays under the base URL of the connection and redirects are not followed.') }}</span>
+          <span>{{ _('External APIs and PostgreSQL databases, with their credential kept in the vault or encrypted, never shown again. App steps call them; every call stays under the base URL of the connection and redirects are not followed.') }} {{ _('Servers: Linux web servers prepared with satom-webctl, for their nginx/Apache virtual hosts and files.') }}</span>
         </div></div>
         <div class="d-flex mb-2"><button type="button" class="btn btn-fw-primary btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#cnNewModal"><i class="bi bi-plus-lg me-1"></i>{{ _('New connection') }}</button></div>
         <div class="fw-table-wrapper">
@@ -280,8 +280,8 @@
               <tr>
                 <td><a href="{{ url_for('studio.connection', slug=c.slug) }}"><strong>{{ c.name }}</strong></a>
                   <div class="text-muted" style="font-size:11px;"><code>{{ c.slug }}</code></div></td>
-                <td>{{ 'HTTP API' if c.kind == 'http' else 'PostgreSQL' }}</td>
-                <td><code style="font-size:12px;">{{ c.base_url if c.kind == 'http' else (c.host ~ ':' ~ (c.port or 5432) ~ '/' ~ c.database) }}</code>
+                <td>{{ {'http': 'HTTP API', 'postgres': 'PostgreSQL', 'server': _('Server')}[c.kind] }}</td>
+                <td><code style="font-size:12px;">{{ c.base_url if c.kind == 'http' else ((c.username ~ '@' ~ c.host ~ ':' ~ (c.port or 22)) if c.kind == 'server' else (c.host ~ ':' ~ (c.port or 5432) ~ '/' ~ c.database)) }}</code>
                   {% if c.api_version %}<div><a class="fw-badge fw-badge-info text-decoration-none" href="{{ url_for('studio.api_version', slug=c.api_version.api.slug, version=c.api_version.version) }}">{{ c.api_version.label }}</a></div>{% endif %}</td>
                 <td>{{ c.auth }}</td>
                 <td style="font-size:13px;"><span class="text-nowrap">{{ c.updated_at.strftime('%Y-%m-%d %H:%M') if c.updated_at else '' }}</span> <span class="text-muted text-nowrap">· {{ c.updated_by }}</span></td>
@@ -412,6 +412,7 @@
         <select class="form-select" id="{{ mid }}-kind" name="kind">
           <option value="http">{{ _('HTTP API') }}</option>
           <option value="postgres">PostgreSQL</option>
+          <option value="server">{{ _('Server (nginx / Apache, satom-webctl)') }}</option>
         </select>
         {% elif extra == 'appkind' %}
         <div class="fw-form-label mt-3">{{ _('Type') }}</div>

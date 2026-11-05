@@ -6060,6 +6060,11 @@ credential, for app steps to use.</p>
 <td>Host, port, database, user, TLS verification, timeout</td>
 <td>password</td>
 </tr>
+<tr>
+<td><strong>Server</strong></td>
+<td>Host, SSH port, user (<code>satom-mon</code>), timeout, Allow writes</td>
+<td>SATOM's generated SSH key; pinned host key (see <em>Server connections</em> below)</td>
+</tr>
 </tbody>
 </table>
 <ul>
@@ -6273,6 +6278,89 @@ endpoint the new version does not have, and saves only when you confirm;
 those apps then show the problem and cannot be published until it is fixed.
 A connection with no version keeps the old behaviour: any path under its base
 URL. An API with connections pinned to it cannot be deleted.</p>
+<h4 id="server-connections-satom-webctl-nginx-and-apache-virtual-hosts-and-their-files">Server connections (satom-webctl): nginx and Apache virtual hosts and their files</h4>
+<p>A <strong>Server</strong> connection points Plugin Studio at a Linux web server prepared
+with <strong>satom-webctl</strong> (<code>hostctl/</code> in the repository; full reference in
+<code>hostctl/README.md</code>, downloadable from the connection page). Apps and scripts
+can list the server's nginx and Apache virtual hosts, read and change their
+configuration, and browse, read, create, rename and delete the files of each
+document root.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Settings</td>
+<td>Host, SSH port (22), user (<code>satom-mon</code>), timeout, <strong>Allow writes</strong> (off by default)</td>
+</tr>
+<tr>
+<td>Secret</td>
+<td>SATOM's own SSH key (Ed25519): <strong>Generate key</strong>, never typed, never shown</td>
+</tr>
+<tr>
+<td>Host key</td>
+<td><strong>Fetch and trust</strong> (compare the fingerprint first); <strong>Forget</strong></td>
+</tr>
+<tr>
+<td>Test</td>
+<td><code>info</code> + <code>vhosts.list</code> (read-only)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Setting one up.</strong> New → Server, enter the host, <strong>Generate key</strong>,
+<strong>Download satom-webctl</strong>, copy it to the server and run, as root, the command
+the page shows (<code>install-satom-webctl.sh --pubkey '&lt;key&gt;' --from &lt;SATOM
+nodes&gt;</code>; options <code>--roots</code>, <code>--read-only</code>, <code>--uninstall [--purge]</code>). Then
+<strong>Fetch and trust</strong> the host key and <strong>Test</strong>.</p>
+<p><strong>What the installer changes on the server:</strong> the unprivileged account
+<code>satom-mon</code> (password locked); <code>/usr/local/bin/satom-webctl</code> (root-owned);
+<code>/etc/satom-webctl.json</code>; <code>/etc/sudoers.d/satom-webctl</code> with exactly two
+commands per web server (the configuration test and <code>systemctl reload</code>); ACL
+entries <code>u:satom-mon:rwX</code> on the managed roots (default <code>/var/www</code>, <code>/srv/www</code>)
+and the configured site directories only; one <code>authorized_keys</code> line
+<code>restrict,command="/usr/local/bin/satom-webctl",from="&lt;SATOM nodes&gt;"</code>;
+backups in <code>/var/lib/satom-webctl/backups</code>, a log in <code>/var/log/satom-webctl</code>.</p>
+<p><strong>Guarantees.</strong>
+- <strong>SATOM connects; the server never does.</strong> The key opens no shell, pty or
+  forwarding: sshd runs <code>satom-webctl</code> whatever the client asks. Nothing on the
+  server holds a credential for SATOM.
+- <strong>hostguard:</strong> both SATOM nodes drop every NEW connection that comes from a
+  managed server (nftables table <code>inet satom_hostguard</code>, loaded by the
+  privileged runner when <code>data/hostguard/desired.json</code> changes;
+  <code>satom-hostguard.path</code>). SATOM's own nodes, the default gateway, the trusted
+  proxies and the name servers are never blocked. What each node applied is
+  in <code>/run/satom-hostguard.json</code>.
+- <strong>Pinned host key</strong> on every call; a changed key is refused.
+- <strong>Every answer passes the ingestion gate</strong> (<code>server_ingest</code>): size before
+  parsing, strict JSON, one closed schema per operation, all or nothing.
+- <strong>Configuration changes are tested and undone on failure:</strong> backup → write →
+  <code>nginx -t</code> / <code>apachectl configtest</code> → restore if it fails (nothing reloaded),
+  reload if it passes. Never a restart.
+- <strong>Files stay inside the document root</strong> of the named virtual host, itself
+  inside a managed root; <code>..</code>, absolute paths and symlinks leading out are
+  refused. File names with control or bidi characters are left out of a
+  listing (counted in <code>skipped</code>).
+- <strong>Writes are opt-in</strong> (Allow writes); the server can refuse them on its
+  side (<code>--read-only</code>). A write based on an old read fails with <code>conflict</code>.
+- A server connection <strong>never travels in an app package</strong>.</p>
+<p><strong>In apps:</strong> the step <strong>Act on a server</strong> (<code>server_call</code>) — connection,
+operation, arguments (JSON). The write operations count as writes (not run in
+a rehearsal). <strong>Plugin Studio → Examples → Web hosts</strong> installs twelve chained
+apps on the connection <code>ex-web-server</code> (list of virtual hosts with row
+buttons; configuration view/edit/create/enable/disable/delete; file browser,
+view, edit/create, rename, delete, new folder). They are installed
+unpublished: publish them once the connection works. Text files only in the
+editor (a binary file is sent as base64 and not shown).</p>
+<p><strong>In scripts:</strong> <code>connection("web01").server("files.list", server="nginx",
+name="shop", path="")</code>; the runner keeps the key outside the sandbox.</p>
+<p><strong>Troubleshooting.</strong> <em>no trusted host key</em> → Fetch and trust. <em>host key
+changed</em> → check the server, trust its new key. <em>refused SATOM's key</em> → run
+the installer with the current public key. <em>Every call takes ~25 s</em> → an
+unprivileged LXC with systemd 252+ needs <code>features: nesting=1</code>.</p>
 <h3 id="237-apps">23.7 Apps</h3>
 <p><strong>Plugin Studio → Apps</strong> builds a small application — a <strong>form</strong>, a
 <strong>diagram</strong> of steps and an <strong>output</strong> with <strong>actions</strong> — and publishes it as

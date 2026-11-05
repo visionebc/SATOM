@@ -51,14 +51,18 @@
   $('cn-save').addEventListener('click', function () {
     var body = {};
     ['name', 'description', 'base_url', 'auth', 'username', 'header_name', 'token_url', 'login_path', 'scope',
-     'verify_tls', 'host', 'port', 'database', 'timeout'].forEach(function (k) {
+     'verify_tls', 'host', 'port', 'database', 'timeout', 'allow_writes'].forEach(function (k) {
       var v = val(k); if (v !== undefined) body[k] = v;
     });
     if (body.verify_tls === undefined) body.verify_tls = true;
     if ($('cn-api_version_id')) body.api_version_id = $('cn-api_version_id').value;
     function send(b) {
       return post(U.save, b).then(function (d) {
-        if (d && d.secret_dropped) {
+        if (d && d.secret_dropped && CFG.kind === 'server') {
+          $('cn-hostkey-state').innerHTML = '<span class="fw-badge fw-badge-warning">not trusted</span>';
+          $('cn-fingerprint').textContent = '—';
+          msg('Saved. The host or port changed, so the trusted host key was forgotten: fetch and trust the new one.', true);
+        } else if (d && d.secret_dropped) {
           $('cn-secret-state').innerHTML = '<span class="fw-badge fw-badge-secondary">not set</span>';
           msg('Saved. The destination changed, so the stored secret was cleared: enter it again.', true);
         } else { msg('Saved.' + (d.impact && d.impact.length ? ' ' + d.impact.length + ' app step(s) now need a fix before their app can be published again.' : '')); }
@@ -87,12 +91,36 @@
       msg(v ? 'Secret replaced.' : 'Secret cleared.');
     }).catch(function (e) { msg(e.message, true); });
   }
-  $('cn-secret-set').addEventListener('click', function () {
+  // Absent for a server connection: its secret is a generated SSH key.
+  if ($('cn-secret-set')) $('cn-secret-set').addEventListener('click', function () {
     if (!$('cn-secret').value) { msg('Type the new value first.', true); return; }
     setSecret($('cn-secret').value);
   });
-  $('cn-secret-clear').addEventListener('click', function () {
+  if ($('cn-secret-clear')) $('cn-secret-clear').addEventListener('click', function () {
     if (window.confirm('Clear the stored secret?')) setSecret('');
+  });
+  if ($('cn-keygen')) $('cn-keygen').addEventListener('click', function () {
+    if ($('cn-pubkey').value && !window.confirm('Generate a NEW key? Servers that trust the current key will refuse SATOM until the installer runs again with the new one.')) return;
+    post(U.keygen).then(function (d) {
+      $('cn-pubkey').value = d.public_key || '';
+      $('cn-install').value = d.install_command || '';
+      $('cn-secret-state').innerHTML = '<span class="fw-badge fw-badge-success">stored</span>';
+      msg('New key generated. Run the installer on the server with this public key.');
+    }).catch(function (e) { msg(e.message, true); });
+  });
+  function hostkey(action) {
+    return post(U.hostkey, { action: action }).then(function (d) {
+      $('cn-fingerprint').textContent = d.fingerprint || '—';
+      $('cn-hostkey-state').innerHTML = d.host_key ? '<span class="fw-badge fw-badge-success">trusted</span>'
+        : '<span class="fw-badge fw-badge-warning">not trusted</span>';
+      msg(d.host_key ? 'Host key trusted: ' + d.fingerprint : 'Host key forgotten: every call is refused until a key is trusted.');
+    }).catch(function (e) { msg(e.message, true); });
+  }
+  if ($('cn-hostkey-trust')) $('cn-hostkey-trust').addEventListener('click', function () {
+    if (window.confirm('Fetch the key the server presents now and trust it? Compare its fingerprint with the server first.')) hostkey('trust');
+  });
+  if ($('cn-hostkey-forget')) $('cn-hostkey-forget').addEventListener('click', function () {
+    if (window.confirm('Forget the trusted host key?')) hostkey('forget');
   });
   // Absent for a template (Examples): templates are never deleted.
   if ($('cn-delete')) $('cn-delete').addEventListener('click', function () {

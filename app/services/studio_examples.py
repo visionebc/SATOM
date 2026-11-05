@@ -120,7 +120,19 @@ NETBOX_SCRIPT = textwrap.dedent('''\
     Connection ex-netbox: https://<netbox>/api, authentication "API key",
     header Authorization, secret "Token <key>" (a NetBox v1 token) -- or
     authentication Bearer with a v2 token (NetBox 4.5+).
+
+    The SATOM block below is the script's form and settings: SATOM reads it
+    when the script is saved (it never runs it).
     """
+    SATOM = {
+        "name": "NetBox IP owner (example)",
+        "description": "The NetBox record and the prefixes of one IP address.",
+        "inputs": {"ip": {"label": "IP address", "type": "text", "required": True}},
+        "connections": ["ex-netbox"],
+        "network": "none",
+        "timeout": 60,
+    }
+
     import ipaddress
 
     from satom_script import connection, inputs, log, result
@@ -859,6 +871,42 @@ WEB_BUNDLE = {
               "let other users run them, open each app > Settings and pick users or groups."]}
 
 BUNDLES.append(WEB_BUNDLE)
+
+
+def _lb_members_code() -> str:
+    """The developer kit's example, as a template of this server."""
+    from .script_library import KIT_EXAMPLE
+    return (KIT_EXAMPLE.replace('"lb-members-owner"', '"ex-lb-members-owner"')
+            .replace('"cmdb"', '"%s"' % CMDB_CONN)
+            .replace('"LB members and their owner"', '"LB members and their owner (example)"'))
+
+
+CMDB_CONN = "ex-cmdb"
+CMDB_CONNECTION = {
+    "slug": CMDB_CONN, "name": "CMDB REST API (example)", "kind": "http",
+    "form": {"base_url": "https://cmdb.example.com/api", "auth": "none", "timeout": 15,
+             "verify_tls": True,
+             "description": "Example, a placeholder. Point it at your CMDB (any API that "
+                            "answers GET /hosts/<host name> with {\"owner\": ...}) and set "
+                            "its authentication; the script holds no credential."}}
+BUNDLES.append(
+    {"key": "lb-members",
+     "title": "Code-first script: LB members and their owner",
+     "summary": "One file says everything: the SATOM block in main.py is the form, the "
+                "connection and the SATOM data (satom.lb_lookup, satom.dns_lookup) -- "
+                "saving the code sets them. It reads SATOM's LB cache for a name, lists the "
+                "pool members, names them (PTR) and can ask a CMDB about each. The same file "
+                "is the developer kit's example (Plugin Studio > Apps > Developer kit).",
+     "connections": [CMDB_CONNECTION], "stores": [],
+     "scripts": [{"slug": "ex-lb-members-owner", "name": "LB members and their owner (example)",
+                  "description": "LB cache -> pool members -> PTR names -> CMDB owner.",
+                  "fields": [], "connections": [CMDB_CONN], "network": "none",
+                  "timeout": 120, "code": _lb_members_code()}],
+     "apps": [],
+     "setup": ["Run it as it is: the LB cache and SATOM's DNS resolvers answer at once "
+               "(the person who runs it needs the network.view permission).",
+               "To ask a CMDB too: open the connection ex-cmdb, set its base URL and "
+               "authentication, then tick \"Ask the CMDB about each member\"."]})
 BUNDLE_KEYS = tuple(b["key"] for b in BUNDLES)
 
 

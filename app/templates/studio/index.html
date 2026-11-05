@@ -201,6 +201,13 @@
             <a class="btn btn-outline-secondary btn-sm text-nowrap" href="{{ url_for('plugins.publishers') }}" title="{{ _('Public keys whose signature an import trusts, besides the Vision EBC key. Register the publisher key of your SATOM Builder here.') }}"><i class="bi bi-patch-check me-1"></i>{{ _('Trusted publishers') }}</a>
           </form>
           {% endif %}
+          {% if current_user.can('studio.script_library') %}
+          <form method="post" action="{{ url_for('script_library.import_script') }}" enctype="multipart/form-data" class="d-flex gap-2 align-items-center{% if not current_user.can('studio.plugin_studio') %} ms-auto{% endif %}" style="font-size:12px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="btn btn-outline-primary btn-sm text-nowrap mb-0" title="{{ _('A .py (or a .zip with main.py) whose SATOM = {...} block says its id, name, form, connections and SATOM data: the app is created with it') }}"><i class="bi bi-filetype-py me-1"></i>{{ _('Import a script') }}<input type="file" name="file" accept=".py,.zip" class="d-none" data-ap-import required></label>
+            <a class="btn btn-outline-secondary btn-sm text-nowrap" id="ps-kit" href="{{ url_for('script_library.kit') }}" title="{{ _('The SDK, a complete example and canned answers: write and run a script on your own computer, then import it') }}"><i class="bi bi-box-seam me-1"></i>{{ _('Developer kit') }}</a>
+          </form>
+          {% endif %}
         </div>
         <div id="apMsg" class="small mb-2" role="status"></div>
         <div class="fw-table-wrapper">

@@ -153,7 +153,8 @@ def _resolve(req: dict) -> tuple[dict[str, str], dict]:
                    "network": settings.get("network") or "none",
                    "timeout": int(settings.get("timeout") or SL.TIMEOUT_DEFAULT),
                    "credentials": [c.get("name") for c in settings.get("credentials") or []],
-                   "connections": list(settings.get("connections") or [])}
+                   "connections": list(settings.get("connections") or []),
+                   "satom": list(settings.get("satom") or [])}
 
 
 def run_request(req: dict) -> dict:
@@ -210,9 +211,16 @@ def run_request(req: dict) -> dict:
                     error="the secret of connection %s could not be unwrapped (%s): "
                           "already used or expired" % (key, exc))
         conns[key] = (entry.get("def") or {}, secret)
+    # SATOM data: only what THIS version declares, whatever the request says.
+    data = req.get("satom_data") if isinstance(req.get("satom_data"), dict) else None
+    if data is not None:
+        ops = [o for o in data.get("ops") or [] if o in settings["satom"]]
+        data = dict(data, ops=ops) if ops else None
     secrets = SL.secret_inputs(settings["fields"], inputs)
     secrets.update(_credential_secrets(creds))
     secrets.update({"connection %s" % k: v for k, (_d, v) in conns.items() if v})
+    if data is not None and data.get("token"):
+        secrets["satom data grant"] = str(data["token"])
     network = settings["network"] if settings["network"] in SL.NETWORK_MODES else "none"
     timeout = max(SL.TIMEOUT_MIN, min(SL.TIMEOUT_MAX, settings["timeout"]))
 
@@ -233,10 +241,10 @@ def run_request(req: dict) -> dict:
         stdin = json.dumps({"inputs": inputs, "secrets": creds,
                             "script": req.get("slug"), "version": req.get("version")})
         broker = None
-        if conns:
+        if conns or data:
             broker = studio_broker.ConnectionBroker(
                 os.path.join(workdir, studio_broker.SOCK_NAME), conns,
-                verify=_ca_bundle(req)).start()
+                verify=_ca_bundle(req), satom=data).start()
         try:
             out = sandbox.execute(str(PYTHON), SL.ENTRY, workdir, env=env,
                                   timeout=timeout, network=network,

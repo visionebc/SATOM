@@ -626,9 +626,90 @@
       network: $('sl-net-egress').checked ? 'egress' : 'none',
       fields: fields,
       credentials: creds,
-      connections: conns
+      connections: conns,
+      satom: satomOps
     };
   }
+
+  // ================================================================ SATOM data
+  // satom_script.satom.<op>(): services/script_data.py answers for these.
+  var satomOps = (CFG.satom || []).slice();
+  function renderSatom() {
+    var box = $('sl-satom');
+    if (!box) return;
+    var help = { devices: 'satom.devices() — managed devices', lb_lookup: 'satom.lb_lookup() — LB cache: virtual servers, pools, members',
+                 dns_lookup: 'satom.dns_lookup() — SATOM\'s DNS resolvers, PTR names' };
+    box.innerHTML = (CFG.satomOps || []).map(function (op) {
+      return '<label class="small"><input type="checkbox" class="sl-sop" value="' + esc(op) + '"' + (satomOps.indexOf(op) >= 0 ? ' checked' : '') +
+        '> <code>' + esc(op) + '</code> <span class="text-muted">' + esc(help[op] || '') + '</span></label>';
+    }).join('');
+    box.querySelectorAll('.sl-sop').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        satomOps = Array.prototype.filter.call(box.querySelectorAll('.sl-sop'), function (x) { return x.checked; }).map(function (x) { return x.value; });
+        setDirty(true);
+      });
+    });
+  }
+  renderSatom();
+
+  // ================================================================ the SATOM block (code-first)
+  // With SATOM = {...} in main.py the code is where the form and settings
+  // live (services/script_manifest.py); the tabs show them read-only.
+  var manifest = !!CFG.manifest;
+  function applyManifest() {
+    document.querySelectorAll('.sl-manifest-note').forEach(function (n) { n.style.display = manifest ? '' : 'none'; });
+    var scopes = ['#sl-fields', '#sl-conns', '#sl-satom', '#sl-creds'];
+    scopes.forEach(function (sel) {
+      document.querySelectorAll(sel + ' input, ' + sel + ' select, ' + sel + ' textarea, ' + sel + ' button').forEach(function (el) { el.disabled = manifest; });
+    });
+    ['sl-set-name', 'sl-set-desc', 'sl-set-timeout', 'sl-net-none', 'sl-net-egress', 'sl-add-field', 'sl-add-cred'].forEach(function (id) {
+      if ($(id)) $(id).disabled = manifest || (id === 'sl-add-cred' && !CFG.vaultOk);
+    });
+    if ($('sl-to-code')) $('sl-to-code').style.display = manifest ? 'none' : '';
+  }
+  function pyLit(v, ind) {
+    ind = ind || '';
+    if (v === null || v === undefined) return 'None';
+    if (v === true) return 'True';
+    if (v === false) return 'False';
+    if (typeof v === 'number') return String(v);
+    if (typeof v === 'string') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(function (x) { return pyLit(x, ind); }).join(', ') + ']';
+    return '{' + Object.keys(v).map(function (k) { return JSON.stringify(k) + ': ' + pyLit(v[k], ind); }).join(', ') + '}';
+  }
+  function blockFromForm() {
+    var st = readSettings();
+    var lines = ['SATOM = {', '    "name": ' + pyLit(st.name) + ','];
+    if (st.description) lines.push('    "description": ' + pyLit(st.description) + ',');
+    lines.push('    "inputs": {');
+    fields.forEach(function (f) {
+      var spec = { label: f.label || f.name, type: f.type || 'text' };
+      ['required', 'help', 'options', 'default', 'query', 'value_col', 'label_col'].forEach(function (k) {
+        var v = f[k];
+        if (v !== undefined && v !== null && v !== '' && v !== false && !(Array.isArray(v) && !v.length)) spec[k] = v;
+      });
+      lines.push('        ' + JSON.stringify(f.name) + ': ' + pyLit(spec) + ',');
+    });
+    lines.push('    },');
+    lines.push('    "connections": ' + pyLit(conns) + ',');
+    if (satomOps.length) lines.push('    "satom": ' + pyLit(satomOps) + ',');
+    if (creds.length) lines.push('    "credentials": ' + pyLit(creds.map(function (c) { return { name: c.name, kind: c.kind || 'userpass', label: c.label || c.name }; })) + ',');
+    lines.push('    "network": ' + pyLit(st.network) + ',');
+    lines.push('    "timeout": ' + st.timeout + ',');
+    lines.push('}');
+    return lines.join('\n') + '\n';
+  }
+  if ($('sl-to-code')) $('sl-to-code').addEventListener('click', function () {
+    if (!window.confirm('Write the form and the settings into main.py as a SATOM = {...} block?\nFrom then on they are changed in the code, not on these tabs.')) return;
+    files[current] = code.value;
+    var src = files['main.py'] || '';
+    var block = blockFromForm();
+    // After a leading docstring when there is one, else at the top.
+    var m = src.match(/^(\s*(?:'{3}|"{3})[\s\S]*?(?:'{3}|"{3})\s*\n)/);
+    files['main.py'] = m ? m[1] + '\n' + block + '\n' + src.slice(m[1].length) : block + '\n' + src;
+    if (current === 'main.py') { code.value = files['main.py']; shown = 'main.py'; renderGutter(); }
+    save('save', '').then(function () { openFile('main.py'); }).catch(function () {});
+  });
 
   // ================================================================ connections
   // Studio connections the script declares: services/studio_broker.py answers
@@ -755,7 +836,18 @@
     var sent = changes;
     var p = postJSON(URLS.save, { files: files, settings: readSettings(), kind: kind || 'save', note: note || '' }).then(function (d) {
       problems = d.problems || [];
+      if (d.settings) {
+        // What the server kept: from the SATOM block of main.py when there is one.
+        manifest = !!d.manifest;
+        fields = (d.settings.fields || []).map(function (f) { return Object.assign({}, f); });
+        creds = (d.settings.credentials || []).map(function (c) { return Object.assign({}, c); });
+        conns = (d.settings.connections || []).slice();
+        satomOps = (d.settings.satom || []).slice();
+        ['name', 'description', 'timeout', 'network', 'audience'].forEach(function (k) { settings[k] = d.settings[k]; });
+        if (manifest) { loadSettings(); renderFields(); renderPreview(); renderConns(); renderSatom(); }
+      }
       if (d.cred_status) { credStatus = d.cred_status; renderCreds(); }
+      applyManifest();
       if (d.revisions) { CFG.revisions = d.revisions; renderRevisions(); }
       // Typing while the request was in flight is NOT saved: stay dirty.
       if (changes === sent) setDirty(false); else setDirty(true);
@@ -990,6 +1082,7 @@
   renderCreds();
   renderFields();
   renderPreview();
+  applyManifest();
   renderRevisions();
   openFile(current);
   setDirty(false);

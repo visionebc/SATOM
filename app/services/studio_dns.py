@@ -181,12 +181,20 @@ def as_operator(ctx):
     if ctx.user_obj is None:
         raise F.FlowError("this step answers for the person who runs the app; a run "
                           "without a user (a schedule or an event) cannot use it")
+    with as_user(ctx.user_obj, run_product(ctx)):
+        yield
+
+
+@contextlib.contextmanager
+def as_user(user, product: str):
+    """Run the body as *user* in ADOM *product* ('' = their Global console):
+    what the pages show that person there. Also used by a script's
+    ``satom.<op>()`` (``script_data``)."""
     from flask import current_app, g
-    product = run_product(ctx)
     with current_app.test_request_context("/"):
         saved = {k: g.pop(k, _MISSING) for k in _G_KEYS}
         g.product = product
-        g._login_user = ctx.user_obj
+        g._login_user = user
         try:
             yield
         finally:

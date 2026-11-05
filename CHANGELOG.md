@@ -18,6 +18,40 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   is gone. Branding — Top-bar Banner spans the full width.
 
 ### Added
+- **Code-first scripts: the form in the code, SATOM data, Import a script and
+  a developer kit.** Operator request: "show how the script is so users can
+  see it and adapt it — this way it is very hard to make plugins; the solution
+  must be for everything and easy for developers, e.g. a script getting the
+  values of the text fields". Four parts, for every Script Library script:
+  - **`SATOM = {...}` in `main.py`** is the script's form, connections, SATOM
+    data, network, timeout, credentials, name and description. SATOM reads it
+    (literals only, never executed); saving the script takes them from the
+    code and the Form and Settings tabs show them read-only. A block that
+    cannot be used is a problem with its line (blocks test runs and
+    publishing) and the last good form stays. *Form → Move the form into the
+    code* writes an existing script's form into a block.
+  - **`satom.devices()`, `satom.lb_lookup()`, `satom.dns_lookup()`** in
+    `satom_script`: SATOM's own data, read-only, declared under `satom`, for
+    the person who runs the script and in the ADOM they started it from, with
+    the permission of the matching Plugin Studio step. The queued run carries
+    a short-lived signed grant; the runner's broker spends it on the web
+    process over the loopback (`/studio/scripts/_data/<op>`, refused when it
+    arrives through nginx); the script never holds it, and a run without a
+    person cannot read SATOM data. The runner still has no database.
+  - **Plugin Studio → Apps → Import a script**: a `.py` (or a `.zip`) becomes
+    a script app in one step, its id and form from the block.
+  - **Developer kit**: the SDK, the block reader, a README and a complete
+    example; `python3 satom_script.py run main.py --input k=v --mocks m.json`
+    runs a script on your own computer with canned answers and refuses what
+    `main.py` does not declare, as SATOM does.
+  New example **Code-first script: LB members and their owner**
+  (`ex-lb-members-owner`, the kit's example); the NetBox example script now
+  carries its block.
+  App packages judge a packaged script by its **effective** settings — the
+  package's settings with its `SATOM` block applied, since that is what an
+  import installs: a block asking for network or credentials is refused like
+  the same settings would be. A script's declared SATOM data travels in the
+  package and comes back on install.
 - **Plugin Studio: ask an API about each LB pool member (SOC Search).**
   Operator request: "in the SOC Search diagram, a way to ask an API about the
   host that appears in the members of the search result" — the API wants a

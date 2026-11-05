@@ -29112,3 +29112,34 @@ msgstr "Serveurs : serveurs web Linux préparés avec satom-webctl, pour leurs h
 
 msgid "Server (nginx / Apache, satom-webctl)"
 msgstr "Serveur (nginx / Apache, satom-webctl)"
+
+
+msgid "Move the form into the code"
+msgstr "Déplacer le formulaire dans le code"
+
+msgid "This form is written in main.py, in its SATOM = {...} block: change it there. Saving the code updates this tab."
+msgstr "Ce formulaire est écrit dans main.py, dans son bloc SATOM = {...} : modifiez-le là. L'enregistrement du code met à jour cet onglet."
+
+msgid "Write this form, the connections and the settings into main.py as a SATOM = {...} block; from then on the code is where they are changed"
+msgstr "Écrit ce formulaire, les connexions et les paramètres dans main.py sous forme de bloc SATOM = {...} ; ils se modifient ensuite dans le code"
+
+msgid "Name, description, timeout, network, credentials, connections and SATOM data are written in main.py (SATOM = {...}). Who can run it stays here."
+msgstr "Le nom, la description, le délai, le réseau, les identifiants, les connexions et les données SATOM sont écrits dans main.py (SATOM = {...}). Qui peut l'exécuter reste ici."
+
+msgid "SATOM data"
+msgstr "Données SATOM"
+
+msgid "Read-only data of this SATOM the script may read with satom_script.satom: for the person who runs it, in the ADOM they start it from, with the same permission as the matching Plugin Studio step. Nothing reaches a device and nothing writes."
+msgstr "Données en lecture seule de ce SATOM que le script peut lire avec satom_script.satom : pour la personne qui l'exécute, dans l'ADOM depuis lequel elle le lance, avec la même permission que l'étape Plugin Studio correspondante. Rien n'atteint un équipement et rien n'écrit."
+
+msgid "A .py (or a .zip with main.py) whose SATOM = {...} block says its id, name, form, connections and SATOM data: the app is created with it"
+msgstr "Un .py (ou un .zip avec main.py) dont le bloc SATOM = {...} indique son identifiant, son nom, son formulaire, ses connexions et ses données SATOM : l'app est créée avec"
+
+msgid "Import a script"
+msgstr "Importer un script"
+
+msgid "The SDK, a complete example and canned answers: write and run a script on your own computer, then import it"
+msgstr "Le SDK, un exemple complet et des réponses simulées : écrivez et exécutez un script sur votre propre ordinateur, puis importez-le"
+
+msgid "Developer kit"
+msgstr "Kit de développement"

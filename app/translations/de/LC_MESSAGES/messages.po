@@ -29110,3 +29110,34 @@ msgstr "Server: Linux-Webserver, mit satom-webctl vorbereitet, für ihre virtuel
 
 msgid "Server (nginx / Apache, satom-webctl)"
 msgstr "Server (nginx / Apache, satom-webctl)"
+
+
+msgid "Move the form into the code"
+msgstr "Formular in den Code übernehmen"
+
+msgid "This form is written in main.py, in its SATOM = {...} block: change it there. Saving the code updates this tab."
+msgstr "Dieses Formular steht in main.py, in seinem Block SATOM = {...}: Ändern Sie es dort. Beim Speichern des Codes wird diese Registerkarte aktualisiert."
+
+msgid "Write this form, the connections and the settings into main.py as a SATOM = {...} block; from then on the code is where they are changed"
+msgstr "Schreibt dieses Formular, die Verbindungen und die Einstellungen als Block SATOM = {...} in main.py; danach werden sie im Code geändert"
+
+msgid "Name, description, timeout, network, credentials, connections and SATOM data are written in main.py (SATOM = {...}). Who can run it stays here."
+msgstr "Name, Beschreibung, Zeitlimit, Netzwerk, Anmeldedaten, Verbindungen und SATOM-Daten stehen in main.py (SATOM = {...}). Wer es ausführen darf, bleibt hier."
+
+msgid "SATOM data"
+msgstr "SATOM-Daten"
+
+msgid "Read-only data of this SATOM the script may read with satom_script.satom: for the person who runs it, in the ADOM they start it from, with the same permission as the matching Plugin Studio step. Nothing reaches a device and nothing writes."
+msgstr "Schreibgeschützte Daten dieses SATOM, die das Skript mit satom_script.satom lesen darf: für die Person, die es ausführt, in der ADOM, aus der sie es startet, mit derselben Berechtigung wie der entsprechende Plugin-Studio-Schritt. Nichts erreicht ein Gerät und nichts schreibt."
+
+msgid "A .py (or a .zip with main.py) whose SATOM = {...} block says its id, name, form, connections and SATOM data: the app is created with it"
+msgstr "Eine .py-Datei (oder ein .zip mit main.py), deren Block SATOM = {...} ID, Name, Formular, Verbindungen und SATOM-Daten angibt: Die App wird damit erstellt"
+
+msgid "Import a script"
+msgstr "Skript importieren"
+
+msgid "The SDK, a complete example and canned answers: write and run a script on your own computer, then import it"
+msgstr "Das SDK, ein vollständiges Beispiel und vorbereitete Antworten: Schreiben und starten Sie ein Skript auf Ihrem eigenen Computer und importieren Sie es dann"
+
+msgid "Developer kit"
+msgstr "Entwickler-Kit"

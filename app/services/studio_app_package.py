@@ -124,6 +124,8 @@ def _scripts(slugs) -> list[dict]:
                     "audience": meta.get("audience") or "admins",
                     "connections": list(v.get("connections") or []),
                     "entry": v.get("entry") or SL.ENTRY}
+        if v.get("satom"):
+            settings["satom"] = list(v["satom"])
         if (v.get("network") or "none") != "none":
             settings["network"] = v["network"]
         if v.get("credentials"):
@@ -373,6 +375,7 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
                            "description": sc.get("description") or "",
                            "fields": st.get("fields") or [], "timeout": st.get("timeout"),
                            "connections": st.get("connections") or [], "network": "none",
+                           "satom": st.get("satom") or [],
                            "audience": "admins", "credentials": []}, by, note=note)
             n = SL.publish(sslug, note, by).get("published")
             created.append("script %s v%s (published, for admins)" % (sslug, n))

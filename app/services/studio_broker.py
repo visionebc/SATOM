@@ -23,6 +23,12 @@ So:
   (``connection("inv").op("getHost", path_params={...})``) or as a method and
   path the version lists. Anything else is refused before the network.
 
+SATOM DATA (``satom.<op>()``, ``script_data``): a request ``{"satom": op,
+"args": {...}}`` is answered by the web side, over the loopback, with the
+run's grant (``satom=`` here: ``{"url", "token", "ops"}`` from the queued
+request). The grant stays in this process; an operation the script does not
+declare is refused here, before anything is asked.
+
 DATABASE-FREE, like the runner that imports it.
 """
 from __future__ import annotations
@@ -37,6 +43,11 @@ from . import studio_api_spec as SP
 from . import studio_http as H
 
 SOCK_NAME = ".satom-conn.sock"
+#: Header the grant travels in (``script_data.HEADER``; not imported: that
+#: module is the web side's).
+GRANT_HEADER = "X-Satom-Script-Grant"
+#: Largest SATOM data answer read back.
+MAX_DATA_ANSWER = 8 * 1024 * 1024
 MAX_REQUEST = 3 * 1024 * 1024
 MAX_CALLS = 500
 #: Calls served at the same time. The broker runs in the runner process,
@@ -55,8 +66,10 @@ def _bind_unix(srv: socket.socket, path: str) -> None:
 
 class ConnectionBroker:
     def __init__(self, sock_path: str, connections: dict[str, tuple[dict, str]], *,
-                 verify=True, transport=None):
+                 verify=True, transport=None, satom: dict | None = None):
         self.sock_path = sock_path
+        #: ``{"url", "token", "ops"}``: the run's SATOM data grant, or None.
+        self.satom = satom if isinstance(satom, dict) else None
         #: Test seam (an httpx.MockTransport); None = the network, checked.
         self.transport = transport
         self.connections = connections
@@ -176,6 +189,22 @@ class ConnectionBroker:
             except OSError:
                 pass
 
+    def _satom(self, req: dict) -> dict:
+        op = str(req.get("satom") or "")
+        ops = (self.satom or {}).get("ops") or []
+        if op not in ops:
+            self._note("satom.%s refused: not declared by this script" % op[:40])
+            return {"error": "SATOM data %r is not declared by this script (SATOM['satom'] "
+                             "in main.py, or the script's settings)" % op}
+        args = req.get("args") if isinstance(req.get("args"), dict) else {}
+        try:
+            data, summary = satom_call(self.satom, op, args)
+        except ValueError as exc:
+            self._note("satom.%s failed: %s" % (op, str(exc)[:200]))
+            return {"error": str(exc)}
+        self._note("satom.%s → %s" % (op, summary))
+        return {"data": data}
+
     @staticmethod
     def _reply(client, obj) -> None:
         client.sendall(json.dumps(obj, default=str).encode("utf-8") + b"\n")
@@ -190,6 +219,8 @@ class ConnectionBroker:
             over = self.calls > MAX_CALLS
         if over:
             return {"error": "more than %d connection calls in one run" % MAX_CALLS}
+        if "satom" in req:
+            return self._satom(req)
         if key not in self.connections:
             self._note("connection %s refused: not declared by this script" % key)
             return {"error": "connection %r is not declared by this script (or does "
@@ -278,3 +309,40 @@ class ConnectionBroker:
             text = json.dumps(res.get("json")) if res.get("json") is not None else ""
         return {"status": res["status"], "headers": {"content-type": res.get("content_type", "")},
                 "text": text, "elapsed_ms": res.get("ms")}
+
+
+def satom_call(grant: dict, op: str, args: dict) -> tuple:
+    """``(data, one-line summary)`` of one SATOM data call, asked to the web
+    side (``/studio/scripts/_data/<op>``) with the run's grant. Raises
+    ValueError with what to tell the script. A seam: the SATOM Builder answers
+    from its test data instead."""
+    import urllib.error
+    import urllib.request
+    url = str(grant.get("url") or "").rstrip("/")
+    if not url.startswith(("http://127.", "http://[::1]", "http://localhost")):
+        # The grant goes only to this node's own web process.
+        raise ValueError("SATOM data: the run's grant names no loopback address")
+    req = urllib.request.Request(url + "/studio/scripts/_data/" + op, method="POST",
+                                 data=json.dumps(args).encode("utf-8"))
+    req.add_header("Content-Type", "application/json")
+    req.add_header(GRANT_HEADER, str(grant.get("token") or ""))
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(req, timeout=60) as resp:
+            raw = resp.read(MAX_DATA_ANSWER + 1)
+    except urllib.error.HTTPError as exc:
+        try:
+            msg = json.loads(exc.read(65536) or b"{}").get("error")
+        except ValueError:
+            msg = None
+        raise ValueError(msg or "SATOM data: HTTP %s" % exc.code) from None
+    except (OSError, urllib.error.URLError) as exc:
+        raise ValueError("SATOM data: the web side did not answer (%s)" % exc) from None
+    if len(raw) > MAX_DATA_ANSWER:
+        raise ValueError("SATOM data: the answer is larger than %d MiB; narrow the call"
+                         % (MAX_DATA_ANSWER // (1024 * 1024)))
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        raise ValueError("SATOM data: the web side answered no JSON") from None
+    return body.get("data"), str(body.get("summary") or "ok")[:200]

@@ -32,6 +32,20 @@ WHAT A SCRIPT RECEIVES
     fd      a result channel: ``satom_script.result(data)`` writes one JSON
             document the run record shows as structured output.
     stdout  the log, captured, redacted and capped.
+
+THE MANIFEST (``script_manifest``)
+    ``main.py`` may describe its own form, connections, SATOM data, network
+    and timeout in a ``SATOM = {...}`` block. When it does, saving the draft
+    takes those settings FROM THE CODE (``save_draft``) and ``meta.json``
+    records ``"manifest": true``; the editor shows them read-only. A block
+    that cannot be used is an editor problem, which blocks a run and
+    publishing like a syntax error.
+
+SATOM DATA (``satom`` in the settings)
+    Read-only SATOM data a script declares (``script_manifest.SATOM_OPS``).
+    The queued request carries a short-lived grant for the person who runs it
+    (``enqueue_run``, ``script_data.grant``); the runner's broker spends it on
+    the web side, outside the jail. The script never holds it.
 """
 from __future__ import annotations
 
@@ -50,6 +64,8 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from . import script_manifest as MF
 
 APP_DIR = Path(os.environ.get("FM_APP_DIR", "/opt/satom"))
 ROOT = APP_DIR / "data" / "scripts"
@@ -167,7 +183,8 @@ def validate_files(files: Any) -> dict[str, str]:
 
 
 def syntax_problems(files: dict[str, str]) -> list[dict]:
-    """Every .py that does not compile, with file/line/message."""
+    """Every .py that does not compile, with file/line/message -- and a
+    ``SATOM = {...}`` block in the entry file that cannot be used."""
     probs = []
     for path, src in sorted(files.items()):
         if not path.endswith(".py"):
@@ -179,7 +196,47 @@ def syntax_problems(files: dict[str, str]) -> list[dict]:
                           "col": exc.offset or 0, "message": exc.msg})
         except ValueError as exc:  # null bytes
             probs.append({"file": path, "line": 0, "col": 0, "message": str(exc)})
+    if not probs:
+        probs.extend(dict(p, col=0) for p in manifest_problems(files))
     return probs
+
+
+def manifest_of(files: dict[str, str]) -> dict | None:
+    """The entry file's ``SATOM = {...}`` block as settings, checked with this
+    module's own rules; None when there is none. Raises ScriptError."""
+    try:
+        man = MF.parse((files or {}).get(ENTRY) or "")
+    except MF.ManifestError as exc:
+        raise ScriptError("%s line %s: %s" % (ENTRY, exc.line or 1, exc)) from None
+    if man is None:
+        return None
+    out = MF.settings(man)
+    try:
+        # The same rules as the editor's form: a manifest is not a way around them.
+        out["fields"] = clean_fields(out["fields"])
+        out["connections"] = clean_connections(out["connections"])
+        out["satom"] = clean_satom(out["satom"])
+        out["credentials"] = clean_credentials(out["credentials"])
+        if "network" in out and out["network"] not in NETWORK_MODES:
+            raise ScriptError("network must be one of %s" % ", ".join(NETWORK_MODES))
+        if "timeout" in out and not TIMEOUT_MIN <= out["timeout"] <= TIMEOUT_MAX:
+            raise ScriptError("timeout must be %d to %d seconds" % (TIMEOUT_MIN, TIMEOUT_MAX))
+    except ScriptError as exc:
+        line = getattr(MF.find((files or {}).get(ENTRY) or ""), "lineno", 1)
+        raise ScriptError("%s line %s: SATOM block: %s" % (ENTRY, line, exc)) from None
+    if man.get("id"):
+        out["id"] = man["id"]
+    return out
+
+
+def manifest_problems(files: dict[str, str]) -> list[dict]:
+    try:
+        manifest_of(files)
+    except ScriptError as exc:
+        m = re.match(r"^%s line (\d+): (.*)$" % re.escape(ENTRY), str(exc), re.S)
+        return [{"file": ENTRY, "line": int(m.group(1)) if m else 1,
+                 "message": m.group(2) if m else str(exc)}]
+    return []
 
 
 def clean_fields(fields: Any) -> list[dict]:
@@ -380,7 +437,29 @@ def clean_settings(meta: dict) -> dict:
             "network": network, "audience": audience, "timeout": timeout,
             "fields": clean_fields(meta.get("fields")),
             "credentials": clean_credentials(meta.get("credentials")),
-            "connections": clean_connections(meta.get("connections"))}
+            "connections": clean_connections(meta.get("connections")),
+            "satom": clean_satom(meta.get("satom"))}
+
+
+def clean_satom(raw: Any) -> list[str]:
+    """The read-only SATOM data a script declares (``satom.<op>()``)."""
+    if raw in (None, ""):
+        return []
+    if isinstance(raw, str):
+        raw = [x.strip() for x in raw.replace(",", "\n").splitlines()]
+    if not isinstance(raw, list):
+        raise ScriptError("satom must be a list of %s" % ", ".join(MF.SATOM_OPS))
+    out: list[str] = []
+    for k in raw:
+        k = str(k or "").strip()
+        if not k:
+            continue
+        if k not in MF.SATOM_OPS:
+            raise ScriptError("unknown SATOM data %r (one of: %s)"
+                              % (k, ", ".join(MF.SATOM_OPS)))
+        if k not in out:
+            out.append(k)
+    return out
 
 
 def clean_connections(raw: Any) -> list[str]:
@@ -498,6 +577,8 @@ def _snapshot_hash(files: dict[str, str], meta: dict) -> str:
     # some: an empty list must not make every older script look changed.
     if meta.get("connections"):
         snap["connections"] = meta["connections"]
+    if meta.get("satom"):
+        snap["satom"] = meta["satom"]
     blob = json.dumps(snap, sort_keys=True, default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -534,6 +615,8 @@ def _record_revision(d: Path, meta: dict, files: dict[str, str], by: str,
     rdir = d / "revisions" / str(n)
     _write_tree(rdir / "files", files)
     frozen = {k: meta.get(k) for k in _SNAPSHOT_KEYS}
+    frozen["connections"] = meta.get("connections") or []
+    frozen["satom"] = meta.get("satom") or []
     frozen.update({"n": n, "at": now, "by": by, "kind": kind,
                    "note": str(note or "").strip()[:200], "entry": ENTRY})
     _write_json(rdir / "meta.json", frozen)
@@ -573,7 +656,8 @@ def restore_revision(slug: str, n: int, by: str) -> dict:
     if r is None:
         raise ScriptError("no revision %s" % n)
     meta = _read_json(_dir(slug) / "meta.json")
-    return save_draft(slug, r["files"], {**meta, **{k: r.get(k) for k in _SNAPSHOT_KEYS}},
+    keys = _SNAPSHOT_KEYS + tuple(k for k in ("connections", "satom") if k in r)
+    return save_draft(slug, r["files"], {**meta, **{k: r.get(k) for k in keys}},
                       by, kind="restore", note="from r%d" % int(n))
 
 
@@ -704,7 +788,18 @@ def save_draft(slug: str, files: Any, settings: dict, by: str,
         if not meta:
             raise ScriptError("no script %r" % slug)
         files = validate_files(files)
-        clean = clean_settings({**meta, **(settings or {})})
+        settings = dict(settings or {})
+        try:
+            man = manifest_of(files)
+        except ScriptError:
+            man = None                    # shown as a problem; the draft still saves
+            settings.pop("manifest", None)
+        if man is not None:
+            # The code says it: what the editor's form sent for these keys is
+            # replaced (the editor shows them read-only), never merged.
+            man.pop("id", None)
+            settings.update(man)
+        clean = clean_settings({**meta, **settings})
         if "revisions" not in meta:
             # A script from before the history existed: keep what it held
             # as the first version before overwriting it.
@@ -712,6 +807,10 @@ def save_draft(slug: str, files: Any, settings: dict, by: str,
                              meta.get("updated_by") or meta.get("created_by") or "?", "created")
         _write_tree(d / "draft", files)
         meta.update(clean)
+        if man is not None:
+            meta["manifest"] = True
+        elif not manifest_problems(files):
+            meta.pop("manifest", None)    # the block was removed: the form is the UI's again
         meta.update({"updated_by": by, "updated_at": _utcnow(), "draft_changed": True})
         _record_revision(d, meta, files, by, kind, note)
         _write_json(d / "meta.json", meta)
@@ -747,6 +846,7 @@ def _publish(d: Path, slug: str, note: str, by: str) -> dict:
     frozen = {k: meta.get(k) for k in ("name", "fields", "network", "timeout", "entry")}
     frozen["credentials"] = meta.get("credentials") or []
     frozen["connections"] = meta.get("connections") or []
+    frozen["satom"] = meta.get("satom") or []
     frozen.update({"n": n, "published_by": by, "published_at": _utcnow(),
                    "note": str(note or "").strip()[:500]})
     _write_json(vdir / "meta.json", frozen)
@@ -887,6 +987,176 @@ def zip_bytes(files: dict[str, str]) -> bytes:
 # ---------------------------------------------------------------------------
 #  runs
 # ---------------------------------------------------------------------------
+def _slug_from(filename: str) -> str:
+    stem = os.path.basename(str(filename or "")).rsplit(".", 1)[0].lower()
+    stem = re.sub(r"[^a-z0-9_-]+", "-", stem).strip("-_")
+    return stem[:48]
+
+
+def import_new(filename: str, data: bytes, by: str, *, taken=None) -> tuple[str, str]:
+    """A new script from an uploaded ``.py`` / ``.zip`` (``(slug, name)``).
+    The SATOM block gives the id (``"id"``), the name and the settings;
+    without a block the file name gives the id. ``taken(slug)`` says whether
+    an app already uses the id (the caller's check: this module has no
+    database)."""
+    if str(filename or "").lower().endswith(".py"):
+        # One file is main.py whatever it was called on the author's disk.
+        files = files_from_upload(ENTRY, data)
+    else:
+        files = files_from_upload(filename, data)
+    if ENTRY not in files:
+        raise ScriptError("the upload has no %s" % ENTRY)
+    man = manifest_of(files)          # a block that cannot be used refuses the import
+    slug = (man or {}).get("id") or _slug_from(filename)
+    try:
+        slug = validate_slug(slug)
+    except ScriptError:
+        raise ScriptError("no usable id: put \"id\": \"my-script\" in SATOM = {...} "
+                          "or name the file my-script.py") from None
+    if exists(slug) or (taken is not None and taken(slug)):
+        raise ScriptError("the id %r is already used: change \"id\" in SATOM = {...} "
+                          "(or rename the file)" % slug)
+    name = (man or {}).get("name") or slug
+    create(slug, name, by)
+    save_draft(slug, files, {}, by, kind="upload",
+               note="imported from %s" % os.path.basename(str(filename))[:120])
+    return slug, name
+
+
+KIT_EXAMPLE = '''"""LB members and their owner.
+
+For each name or address: which FortiWeb / FortiADC virtual servers answer for
+it (SATOM's LB cache), their pool members, the members' host names (PTR), and
+-- when the "cmdb" connection is declared -- what the CMDB says about each.
+"""
+SATOM = {
+    "id": "lb-members-owner",
+    "name": "LB members and their owner",
+    "inputs": {
+        "query": {"label": "Name or address", "type": "text", "required": True,
+                  "help": "A host name, a virtual server address or a member address"},
+        "ask_cmdb": {"label": "Ask the CMDB about each member", "type": "checkbox"},
+    },
+    "satom": ["lb_lookup", "dns_lookup"],
+    "connections": ["cmdb"],
+    "network": "none",
+    "timeout": 120,
+}
+
+from satom_script import ConnectionError, connection, inputs, log, result, satom
+
+lb = satom.lb_lookup(inputs["query"])
+log("%d virtual server(s), %d member(s)" % (len(lb["rows"]), len(lb["members"])))
+
+names = satom.dns_lookup(lb["members"]) if lb["members"] else {"ptr": [], "unresolved": []}
+owners = []
+if inputs.get("ask_cmdb"):
+    cmdb = connection("cmdb")
+    for m in names["ptr"]:
+        try:
+            r = cmdb.get("/hosts/" + m["hostname"])
+            owners.append({**m, "status": r.status, "owner": (r.json() or {}).get("owner")
+                           if r.ok else None})
+        except ConnectionError as exc:
+            owners.append({**m, "status": "error", "owner": None, "error": str(exc)})
+
+result({
+    "virtual_servers": [{k: v for k, v in row.items() if not k.startswith("_")}
+                        for row in lb["rows"]],
+    "members": [{"ip": ip, "hostname": next((p["hostname"] for p in names["ptr"]
+                                             if p["ip"] == ip), "")}
+                for ip in lb["members"]],
+    "owners": owners,
+    "not_found": lb["unmatched"],
+})
+'''
+
+KIT_MOCKS = {
+    "satom": {
+        "lb_lookup": {"rows": [{"Entry": "www.example.com", "Policy": "web-www",
+                                "Pool": "pool-www", "Path": "web-www > pool-www > ...",
+                                "_members": [{"ip": "192.0.2.21", "port": "443", "status": "up"},
+                                             {"ip": "192.0.2.22", "port": "443",
+                                              "status": "up"}]}],
+                      "members": ["192.0.2.21", "192.0.2.22"], "unmatched": [],
+                      "gateways": [], "not_found": []},
+        "dns_lookup": {"rows": [], "unresolved": ["192.0.2.22"],
+                       "ptr": [{"ip": "192.0.2.21", "hostname": "web01.example.com"}]},
+        "devices": {"rows": [{"id": 1, "name": "fwb-lab", "kind": "fortiweb",
+                              "version": "7.6.4", "host": "192.0.2.10", "ip": "192.0.2.10"}]},
+    },
+    "connections": {
+        "cmdb": {"GET /hosts/web01.example.com": {"status": 200,
+                                                   "json": {"owner": "Web team"}},
+                 "GET *": {"status": 404, "json": {"error": "not found"}}},
+    },
+}
+
+KIT_README = '''# SATOM script developer kit (SATOM %(version)s)
+
+Write and try a SATOM script on your own computer, then upload it.
+
+    satom_script.py      the SDK a script imports (the same file SATOM runs)
+    script_manifest.py   reads the SATOM = {...} block (never runs it)
+    example/main.py      a complete script
+    example/mocks.json   canned answers for it
+
+## Try the example
+
+    python3 satom_script.py form example/main.py
+    python3 satom_script.py run example/main.py --input query=www.example.com \\
+        --input ask_cmdb=yes --mocks example/mocks.json
+
+## One file says everything
+
+`main.py` starts with a `SATOM = {...}` block: the form (`inputs`), the
+connections it calls, the SATOM data it reads (`satom`), the network mode and
+the timeout. SATOM reads it (it never runs it); uploading the file
+(Plugin Studio > Apps > Import a script) creates the app with that form.
+
+    from satom_script import inputs, connection, satom, log, result
+
+    inputs["query"]                      # a form field, typed
+    satom.devices(product="fortiweb")    # SATOM's devices you may see
+    satom.lb_lookup("www.example.com")   # LB cache: virtual servers, pools, members
+    satom.dns_lookup(["192.0.2.21"])     # SATOM's resolvers, with PTR names
+    connection("cmdb").get("/hosts/x")   # a connection (SATOM holds the secret)
+    log("text"); result({...})           # the run's log and its output
+
+## mocks.json
+
+    {"satom": {"lb_lookup": {...}, "dns_lookup": {...}, "devices": {"rows": [...]}},
+     "connections": {"cmdb": {"GET /hosts/web01": {"status": 200, "json": {...}},
+                              "GET *": {"status": 404, "json": {}},
+                              "sql": {"columns": [...], "rows": [...]}}}}
+
+A connection answer is looked up as "METHOD path", then "METHOD *", then "*";
+a server connection's `.server("files.list", ...)` answers from
+`"server": {"files.list": {...}}`.
+A call to a connection or SATOM data that main.py does not declare is
+refused, as SATOM refuses it.
+
+In SATOM the script runs in a jail with no network (unless it asks for it),
+and `satom.*` answers for the person who runs it, in the ADOM they started it
+from.
+'''
+
+
+def developer_kit() -> tuple[str, bytes]:
+    """``(file name, zip bytes)`` of the developer kit."""
+    here = Path(__file__).resolve().parent
+    try:
+        ver = (APP_DIR / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        ver = "dev"
+    files = {"satom_script.py": (here / "script_sdk.py").read_text(encoding="utf-8"),
+             "script_manifest.py": (here / "script_manifest.py").read_text(encoding="utf-8"),
+             "README.md": KIT_README % {"version": ver},
+             "example/main.py": KIT_EXAMPLE,
+             "example/mocks.json": json.dumps(KIT_MOCKS, indent=2) + "\n"}
+    return "satom-script-kit-%s.zip" % ver, zip_bytes(files)
+
+
 _RID_RE = re.compile(r"^[0-9]{8}-[0-9]{6}-[a-z0-9_-]{1,48}-[0-9a-f]{6}$")
 
 
@@ -900,7 +1170,8 @@ _NO_USER = object()
 
 def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
                 trigger: str = "test", node: str = "", wrap=None,
-                sealed: dict | None = None, user=_NO_USER, connect=None) -> dict:
+                sealed: dict | None = None, user=_NO_USER, connect=None,
+                grant_data=None, product: str | None = None) -> dict:
     """Validate the inputs against the form OF THAT VERSION and queue a run.
 
     ``version_ref``: ``"draft"`` (administrators' test runs) or a published
@@ -920,7 +1191,14 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
     connections the script declares (``studio_connections.for_runner``, the
     default): definitions plus single-use wrapped vault tokens for their
     secrets, which the runner unwraps OUTSIDE the jail (``studio_broker``).
-    No secret of a connection is ever written into the request."""
+    No secret of a connection is ever written into the request.
+
+    ``grant_data(user, ops, product, ttl) -> {"url", "token"}`` hands over the
+    SATOM data the script declares (``satom``; ``script_data.grant``, the
+    default): a signed, short-lived, read-only grant for ``user`` in ADOM
+    ``product`` (the caller's ADOM when not given). The runner's broker spends
+    it; the script never sees it. A run without a person (``user`` None)
+    cannot read SATOM data: there is nobody whose ADOMs would bound it."""
     slug = validate_slug(slug)
     _queue_has_room()
     if version_ref == "draft":
@@ -936,6 +1214,7 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
         fields, network, timeout = meta["fields"], meta["network"], meta["timeout"]
         creds = meta.get("credentials") or []
         conns = meta.get("connections") or []
+        ops = meta.get("satom") or []
     else:
         frozen = version(slug, int(version_ref))
         if frozen is None:
@@ -943,6 +1222,7 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
         fields, network, timeout = frozen["fields"], frozen["network"], frozen["timeout"]
         creds = frozen.get("credentials") or []
         conns = frozen.get("connections") or []
+        ops = frozen.get("satom") or []
         version_ref = int(version_ref)
     sealed_fields = set((sealed or {}).get("fields") or [])
     pw_names = {f["name"] for f in fields if f["type"] == "password"}
@@ -979,6 +1259,20 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
         if conn_missing:
             raise ScriptError("this script declares connections that do not exist: %s"
                               % ", ".join(conn_missing))
+    data_req: dict[str, Any] = {}
+    if ops:
+        if user is _NO_USER or user is None:
+            raise ScriptError("this script reads SATOM data (%s), which is read for the "
+                              "person who runs it; this run has no person (a schedule "
+                              "without an owner?)" % ", ".join(ops))
+        if grant_data is None:
+            # Web side only, like db_lookup: the runner never queues runs.
+            from .script_data import grant as grant_data
+        try:
+            data_req = dict(grant_data(user, list(ops), product, timeout + QUEUE_WAIT_S))
+        except ValueError as exc:
+            raise ScriptError(str(exc))
+        data_req["ops"] = list(ops)
     tokens, missing, vault_info = {}, [], {}
     sealed_req = None
     if sealed_fields:
@@ -1006,16 +1300,21 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
                             if isinstance(v, dict) and "rows" in v},
                          **{n: "********" for n in sealed_fields}}, "node": node,
               "credentials": [c["name"] for c in creds], "credentials_missing": missing,
-              "connections": list(conns)}
+              "connections": list(conns), "satom": list(ops)}
     _write_json(STATUS_DIR / (rid + ".json"), status)
     req = {"request_id": rid, "slug": slug, "version": version_ref,
            "inputs": {**inputs, **db_payload}, "requested_by": by, "trigger": trigger,
            "queued_at": now, "credentials": tokens, "vault": vault_info,
            "sealed_inputs": sealed_req, "connections": conn_req,
+           "satom_data": data_req or None,
            "ca_bundle": _trust_bundle() if conn_req else ""}
     _write_json(REQ_DIR / (rid + ".json"), req, mode=0o600)
     return status
 
+
+#: How long a queued run may wait before the runner takes it, for the lifetime
+#: of its SATOM data grant (a run waits behind at most MAX_QUEUED others).
+QUEUE_WAIT_S = 900
 
 #: Runs waiting at most. The runner works MAX_PARALLEL at a time; a queue
 #: that anyone allowed to run scripts can grow without end is a way to keep

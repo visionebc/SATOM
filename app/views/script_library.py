@@ -17,6 +17,7 @@ from flask import (Blueprint, Response, abort, jsonify, redirect,
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
+from ..extensions import csrf
 from ..services import script_library as SL
 from ..services import script_vault as SV
 from ..services.audit import log_action
@@ -170,6 +171,7 @@ def edit(slug):
                                    "timeout_max": SL.TIMEOUT_MAX,
                                    "suffixes": list(SL.TEXT_SUFFIXES)},
                            field_types=SL.FIELD_TYPES, sandbox_ok=sandbox.available(),
+                           satom_ops=list(SL.MF.SATOM_OPS),
                            studio_connections=_studio_connections())
 
 
@@ -214,7 +216,79 @@ def save(slug):
                       "kind": kind, "revision": revs[-1]["n"] if revs else None})
     return jsonify({"ok": True, "problems": script["problems"],
                     "updated_at": script["updated_at"], "revisions": revs,
-                    "cred_status": SV.status(slug, script.get("credentials") or [])})
+                    "cred_status": SV.status(slug, script.get("credentials") or []),
+                    # The form and settings as saved: from the SATOM block of
+                    # main.py when it has one, which the editor then shows.
+                    "manifest": bool(script.get("manifest")),
+                    "settings": _settings_of(script)})
+
+
+def _settings_of(script: dict) -> dict:
+    return {k: script.get(k) for k in ("name", "description", "network", "audience",
+                                       "timeout", "fields", "credentials", "connections",
+                                       "satom")}
+
+
+# ---------------------------------------------------------------------------
+#  SATOM data for scripts (services.script_data) -- the runner's broker only
+# ---------------------------------------------------------------------------
+@bp.route("/_data/<op>", methods=["POST"])
+@csrf.exempt
+def satom_data(op):
+    """One ``satom.<op>()`` call of a running script, from the runner's broker
+    on the loopback. No session: the signed grant in the header is the whole
+    authorisation (``script_data.answer``). nginx always sets X-Real-IP, so a
+    request carrying it came from outside and never reaches the data."""
+    from ..services import script_data as SD
+    if request.headers.get("X-Real-IP") or request.headers.get("X-Forwarded-For"):
+        abort(404)
+    try:
+        res = SD.answer(request.headers.get(SD.HEADER) or "", op,
+                        request.get_json(silent=True))
+    except SD.DataError as exc:
+        return jsonify({"error": str(exc)}), exc.status
+    return jsonify({"ok": True, "data": res, "summary": SD.summary(op, res)})
+
+
+# ---------------------------------------------------------------------------
+#  a .py with its SATOM block -> a new app in one step
+# ---------------------------------------------------------------------------
+@bp.route("/import", methods=["POST"])
+@login_required
+@require_permission(PERM)
+def import_script():
+    """Upload a ``.py`` (or a ``.zip`` with ``main.py``): a script app is
+    created with it. Its ``SATOM = {...}`` block gives the id, name, form,
+    connections and SATOM data; without one the file name gives the id."""
+    from flask import flash
+    from ..services import studio_apps as SA
+    f = request.files.get("file")
+    back = redirect(url_for("studio.index", pane="apps"))
+    if f is None or not f.filename:
+        flash("Choose a .py or .zip file.", "danger")
+        return back
+    try:
+        slug, name = SL.import_new(f.filename, f.read(SL.MAX_UPLOAD_BYTES + 1), _who(),
+                                   taken=lambda s: SA.get(s) is not None)
+        SA.ensure_script_app(slug, _who())
+    except SL.ScriptError as exc:
+        flash("Import refused: %s" % exc, "danger")
+        return back
+    log_action("script_library.import", target=slug, extra={"filename": f.filename[:200]})
+    flash("Script app %s created from %s." % (name, f.filename), "success")
+    return redirect(url_for("script_library.edit", slug=slug))
+
+
+@bp.route("/kit.zip")
+@login_required
+@require_permission(PERM)
+def kit():
+    """The developer kit: write and run a script on your own computer
+    (``python3 satom_script.py run main.py --input ip=192.0.2.10``)."""
+    name, data = SL.developer_kit()
+    log_action("script_library.kit")
+    return Response(data, mimetype="application/zip",
+                    headers={"Content-Disposition": "attachment; filename=%s" % name})
 
 
 @bp.route("/<slug>/check", methods=["POST"])

@@ -5396,6 +5396,85 @@ A site that needs more raises the limits in a systemd drop-in
 (`systemctl edit satom-scripts.service`). The integration-hooks runner
 (`satom-integrations.service`) has the same limits.
 
+#### Code-first scripts: one file says everything
+
+A script can carry its own form and settings in `main.py`, in a
+`SATOM = {...}` block. SATOM **reads** the block (it never runs it: literals
+only — strings, numbers, `True`/`False`/`None`, lists and dicts), and saving
+the script takes the form, the connections, the SATOM data, the network, the
+timeout, the credentials, the name and the description **from the code**.
+The **Form** and **Settings** tabs then show them read-only, with a note that
+they live in `main.py`; **who can run it** stays a setting here (it is not the
+author's to grant).
+
+```python
+SATOM = {
+    "name": "LB members and their owner",
+    "inputs": {
+        "query": {"label": "Name or address", "required": True},
+        "ask_cmdb": {"label": "Ask the CMDB about each member", "type": "checkbox"},
+    },
+    "connections": ["cmdb"],
+    "satom": ["lb_lookup", "dns_lookup"],
+    "network": "none",
+    "timeout": 120,
+}
+
+from satom_script import inputs, connection, satom, log, result
+```
+
+An input is `{"label", "type", "required", "default", "help", "options"}` (the
+types of the Form tab; a database field adds `query`, `value_col`,
+`label_col`), or just its label for a text field. The same rules as the Form
+tab apply. A block that cannot be used is shown as a problem with its line —
+like a syntax error it blocks test runs and publishing — and the last good form
+is kept. Remove the block and the form is edited on the Form tab again.
+**Form → Move the form into the code** writes the current form and settings
+into `main.py` as a block, for an existing script.
+
+#### SATOM data in a script: `satom.*`
+
+A script can read SATOM's own data, read-only, declared under `satom` (in the
+block, or on **Settings → SATOM data**):
+
+| Call | Answers | Permission |
+|---|---|---|
+| `satom.devices(product="", zone="", line="", department="", maintenance="include")` | the managed devices: `id`, `name`, `kind`, `version`, `host`, `ip`, `zone`, `line`, `department`, `maintenance` | — |
+| `satom.lb_lookup(entries, exact=False)` | the LB cache (as *DNS & LB Lookup*): `rows` (each with `_members` = `[{ip, port, status}]`), `members` (every member address once), `unmatched`, `gateways` | `network.view` |
+| `satom.dns_lookup(entries, ttl=False)` | SATOM's DNS resolvers: `rows`, `answers`, `unresolved`, `ptr` (`[{ip, hostname}]`) | `network.view` |
+
+They answer **for the person who runs the script, in the ADOM they started it
+from** — what the pages show that person there, with the permission of the
+matching Plugin Studio step. Nothing goes to a device and nothing writes. How:
+when the run is queued, SATOM signs a short-lived grant for that person and
+those operations and puts it in the queued request; the runner's broker,
+outside the jail, asks the web process on the loopback with it. The script
+never holds the grant (it is redacted from the output), an operation the
+version does not declare is refused, and a run with no person behind it (a
+schedule without an owner) cannot use `satom.*`. Each call is one line of the
+run's connection log (`satom.lb_lookup → 2 match(es), 4 member(s)`).
+
+#### Import a script and the developer kit
+
+**Plugin Studio → Apps → Import a script** takes a `.py` (or a `.zip` with
+`main.py`) and creates the script app in one step: the block's `"id"` is the
+app id (else the file name), its `"name"` the name, and the form and settings
+come from the block. An id already in use is refused — nothing is overwritten.
+
+**Developer kit** (next to it) downloads `satom_script.py` (the same SDK the
+jail runs), `script_manifest.py`, a README, and a complete example with canned
+answers. On your own computer, with no SATOM and no network:
+
+```bash
+python3 satom_script.py form example/main.py
+python3 satom_script.py run example/main.py --input query=www.example.com \
+    --input ask_cmdb=yes --mocks example/mocks.json
+```
+
+`--mocks` answers `connection()` (keys `"GET /path"`, `"GET *"`, `"*"`,
+`"sql"`) and `satom.*` from a JSON file, and refuses a connection or SATOM data
+that `main.py` does not declare — as SATOM would. Then import the file.
+
 ### 23.5 Data stores
 
 **Plugin Studio → Data stores** holds tables you define in the UI. A data
@@ -6246,6 +6325,7 @@ until you open the connection, set the address and paste the token.
 | **FortiGate: which rule lets this traffic through?** | An app built only from the diagram, three API calls and two decisions; actions on the output: save to a data store, download CSV, ask for the access as a change request. The same lookup as a script. | connection `ex-fortigate`, data store `ex-policy-lookups`, script `ex-fortigate-policy-lookup`, app `ex-policy-finder` |
 | **NetBox: who owns this IP address?** | A script that calls a connection, and an app whose diagram **runs that script**. | connection `ex-netbox`, script `ex-netbox-ip-owner`, app `ex-ip-owner` |
 | **Explain a flow (FortiGate + NetBox)** | One script, **two connections**: who owns both ends and which rule decides the flow. Keeps working when NetBox is down. | script and app `ex-traffic-explainer` (+ the two connections) |
+| **Code-first script: LB members and their owner** | One file says everything: the `SATOM = {...}` block is the form, the connection and the SATOM data (`satom.lb_lookup`, `satom.dns_lookup`). Works at once on the LB cache; the CMDB part needs the connection set up. The developer kit's example. | connection `ex-cmdb`, script `ex-lb-members-owner` |
 | **Data stores: site contacts** | No external system: a list field fed by a data store, a query, an upsert. Published at once (every ADOM, Studio authors), so it appears under **Operations → Plugins**. | data store `ex-site-contacts` (3 sample rows), apps `ex-site-contact`, `ex-site-contact-edit` |
 
 The **Console** pane has two examples in its *Studio* group: the fleet

@@ -29147,3 +29147,34 @@ msgstr "Server: server web Linux preparati con satom-webctl, per i loro host vir
 
 msgid "Server (nginx / Apache, satom-webctl)"
 msgstr "Server (nginx / Apache, satom-webctl)"
+
+
+msgid "Move the form into the code"
+msgstr "Spostare il modulo nel codice"
+
+msgid "This form is written in main.py, in its SATOM = {...} block: change it there. Saving the code updates this tab."
+msgstr "Questo modulo è scritto in main.py, nel suo blocco SATOM = {...}: modificalo lì. Salvando il codice questa scheda si aggiorna."
+
+msgid "Write this form, the connections and the settings into main.py as a SATOM = {...} block; from then on the code is where they are changed"
+msgstr "Scrive questo modulo, le connessioni e le impostazioni in main.py come blocco SATOM = {...}; da allora in poi si modificano nel codice"
+
+msgid "Name, description, timeout, network, credentials, connections and SATOM data are written in main.py (SATOM = {...}). Who can run it stays here."
+msgstr "Nome, descrizione, timeout, rete, credenziali, connessioni e dati SATOM sono scritti in main.py (SATOM = {...}). Chi può eseguirlo resta qui."
+
+msgid "SATOM data"
+msgstr "Dati SATOM"
+
+msgid "Read-only data of this SATOM the script may read with satom_script.satom: for the person who runs it, in the ADOM they start it from, with the same permission as the matching Plugin Studio step. Nothing reaches a device and nothing writes."
+msgstr "Dati in sola lettura di questo SATOM che lo script può leggere con satom_script.satom: per la persona che lo esegue, nell'ADOM da cui lo avvia, con lo stesso permesso del passo corrispondente di Plugin Studio. Nulla raggiunge un dispositivo e nulla scrive."
+
+msgid "A .py (or a .zip with main.py) whose SATOM = {...} block says its id, name, form, connections and SATOM data: the app is created with it"
+msgstr "Un .py (o un .zip con main.py) il cui blocco SATOM = {...} indica id, nome, modulo, connessioni e dati SATOM: l'app viene creata con questi"
+
+msgid "Import a script"
+msgstr "Importa uno script"
+
+msgid "The SDK, a complete example and canned answers: write and run a script on your own computer, then import it"
+msgstr "L'SDK, un esempio completo e risposte simulate: scrivi ed esegui uno script sul tuo computer, poi importalo"
+
+msgid "Developer kit"
+msgstr "Kit per sviluppatori"

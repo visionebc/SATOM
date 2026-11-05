@@ -56,7 +56,7 @@ SDK_MODULES = ("satom_script", "satom_sdk")
 #: Device-object dataset keys start with their product (services.plugin_datasets).
 _OBJECT_PRODUCTS = ("fortiweb", "fortigate", "fortiadc", "fortianalyzer", "fortiauthenticator")
 
-SCRIPT_SDK = ("inputs", "result", "log", "connection")
+SCRIPT_SDK = ("inputs", "result", "log", "connection", "satom")
 #: The kinds a package may hold, and what of an app package travels.
 OBJECT_KINDS = ("app", "store", "connection", "script")
 
@@ -710,6 +710,17 @@ def _script_rules(sc: dict, r: _Report, target, ex_conns: dict, pkg_conn_kind: d
         r.add("script.definition", where, str(exc))
         return False
     settings = sc.get("settings") if isinstance(sc.get("settings"), dict) else {}
+    # A SATOM = {...} block in main.py decides the settings when the script is
+    # saved (script_library.save_draft): the rules judge what WILL be in force,
+    # never only what the package's settings claim -- else a block asking for
+    # network or credentials would walk past the two rules below.
+    try:
+        man = SL.manifest_of(files)
+    except SL.ScriptError as exc:
+        r.add("script.definition", where, str(exc))
+        return False
+    if man is not None:
+        settings = dict(settings, **{k: v for k, v in man.items() if k != "id"})
     ok = True
     if str(settings.get("network") or "none") != "none":
         r.add("script.network", where, "script %s asks for network %r: a packaged script runs "
@@ -736,6 +747,7 @@ def _script_rules(sc: dict, r: _Report, target, ex_conns: dict, pkg_conn_kind: d
                                        "description": sc.get("description") or "",
                                        "fields": fields, "timeout": settings.get("timeout"),
                                        "connections": settings.get("connections"),
+                                       "satom": settings.get("satom"),
                                        "network": "none", "audience": "admins"})
         except SL.ScriptError as exc:
             r.add("script.definition", where, str(exc))
@@ -1173,9 +1185,12 @@ def author_guide(target: dict) -> str:
     w("### Scripts")
     w("")
     w("`{slug, name, description, files: {\"main.py\": ...}, settings: {fields, timeout, "
-      "audience, connections, entry}}`. Field types: %s. The SDK: `from satom_script import "
-      "%s`. No `secret`, no `tcp`, no `write=True`, no network, no credentials; timeout at "
-      "most %d s." % (", ".join("`%s`" % t for t in sc["script"]["field_types"]),
+      "audience, connections, satom, entry}}`. Field types: %s. The SDK: `from satom_script "
+      "import %s`. No `secret`, no `tcp`, no `write=True`, no network, no credentials; timeout "
+      "at most %d s. `main.py` may instead start with a `SATOM = {...}` block (literals only: "
+      "`inputs` = {name: {label, type, required, default, help, options}}, `connections`, "
+      "`satom` = read-only SATOM data: `devices`, `lb_lookup`, `dns_lookup`, `timeout`, "
+      "`name`, `description`): it IS the form and settings, and the rules judge it." % (", ".join("`%s`" % t for t in sc["script"]["field_types"]),
                       ", ".join(SCRIPT_SDK), sc["script"]["max_timeout"]))
     w("")
     w("## On this server")

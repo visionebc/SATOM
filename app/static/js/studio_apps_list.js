@@ -187,9 +187,11 @@
   if (gFilter) gFilter.addEventListener('change', filterRows);
   // Import app package: the button is the label of a hidden file input;
   // choosing a file submits the form (layout sweep 2026-10-24).
-  var imp = document.querySelector('input[data-ap-import]');
-  if (imp) imp.addEventListener('change', function () {
-    if (!imp.files || !imp.files.length || !imp.form) return;
-    if (imp.form.requestSubmit) imp.form.requestSubmit(); else imp.form.submit();
+  // Also Import a script (a .py with its SATOM block, views/script_library.py).
+  document.querySelectorAll('input[data-ap-import]').forEach(function (imp) {
+    imp.addEventListener('change', function () {
+      if (!imp.files || !imp.files.length || !imp.form) return;
+      if (imp.form.requestSubmit) imp.form.requestSubmit(); else imp.form.submit();
+    });
   });
 })();

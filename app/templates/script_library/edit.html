@@ -98,8 +98,10 @@
             <button type="button" class="btn btn-primary btn-sm" id="sl-add-field"><i class="bi bi-plus-lg me-1"></i>{{ _('Add field') }}</button>
           </div>
           <div class="fw-card-body">
+            <div class="alert alert-info py-2 small sl-manifest-note" style="display:none;"><i class="bi bi-file-earmark-code me-1"></i>{{ _('This form is written in main.py, in its SATOM = {...} block: change it there. Saving the code updates this tab.') }}</div>
             <p class="text-muted" style="font-size:12px;">{{ _('Each field arrives in the script as inputs["name"]. Password fields are never stored by a test run and are masked in every run record; they cannot have a default.') }}</p>
             <div id="sl-fields"></div>
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="sl-to-code" title="{{ _('Write this form, the connections and the settings into main.py as a SATOM = {...} block; from then on the code is where they are changed') }}"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Move the form into the code') }}</button>
           </div>
         </div>
       </div>
@@ -114,6 +116,7 @@
 
   {# ------------------------------------------------------------ settings #}
   <div class="tab-pane fade" id="sl-tab-settings">
+    <div class="alert alert-info py-2 small sl-manifest-note" style="display:none;"><i class="bi bi-file-earmark-code me-1"></i>{{ _('Name, description, timeout, network, credentials, connections and SATOM data are written in main.py (SATOM = {...}). Who can run it stays here.') }}</div>
     <div class="fw-card">
       <div class="fw-card-body row g-3" style="font-size:13px;">
         <div class="col-md-6">
@@ -167,6 +170,13 @@
         <p class="text-muted" style="font-size:12px;">{{ _('Studio connections this script may call with satom_script.connection("id"). The runner makes the call with the connection\'s credential, which the script never sees; only declared connections are reachable, whatever the network setting. A connection with a secret needs the vault.') }}</p>
         <div id="sl-conns" class="d-flex flex-wrap gap-3"></div>
         <div id="sl-conn-catalog" class="mt-2"></div>
+      </div>
+    </div>
+    <div class="fw-card mt-3">
+      <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-database me-2 text-accent"></i>{{ _('SATOM data') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <p class="text-muted" style="font-size:12px;">{{ _('Read-only data of this SATOM the script may read with satom_script.satom: for the person who runs it, in the ADOM they start it from, with the same permission as the matching Plugin Studio step. Nothing reaches a device and nothing writes.') }}</p>
+        <div id="sl-satom" class="d-flex flex-wrap gap-3"></div>
       </div>
     </div>
   </div>
@@ -288,6 +298,9 @@
   'fieldTypes': field_types,
   'studioConnections': studio_connections,
   'connections': script.connections or [],
+  'satom': script.satom or [],
+  'satomOps': satom_ops,
+  'manifest': script.manifest or False,
   'versions': script.versions,
   'revisions': script.revisions or [],
   'published': script.published,

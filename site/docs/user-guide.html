@@ -6010,6 +6010,91 @@ file in the queue that is not a run request is moved to <code>data/scripts/rejec
 A site that needs more raises the limits in a systemd drop-in
 (<code>systemctl edit satom-scripts.service</code>). The integration-hooks runner
 (<code>satom-integrations.service</code>) has the same limits.</p>
+<h4 id="code-first-scripts-one-file-says-everything">Code-first scripts: one file says everything</h4>
+<p>A script can carry its own form and settings in <code>main.py</code>, in a
+<code>SATOM = {...}</code> block. SATOM <strong>reads</strong> the block (it never runs it: literals
+only — strings, numbers, <code>True</code>/<code>False</code>/<code>None</code>, lists and dicts), and saving
+the script takes the form, the connections, the SATOM data, the network, the
+timeout, the credentials, the name and the description <strong>from the code</strong>.
+The <strong>Form</strong> and <strong>Settings</strong> tabs then show them read-only, with a note that
+they live in <code>main.py</code>; <strong>who can run it</strong> stays a setting here (it is not the
+author's to grant).</p>
+<pre><code class="language-python">SATOM = {
+    &quot;name&quot;: &quot;LB members and their owner&quot;,
+    &quot;inputs&quot;: {
+        &quot;query&quot;: {&quot;label&quot;: &quot;Name or address&quot;, &quot;required&quot;: True},
+        &quot;ask_cmdb&quot;: {&quot;label&quot;: &quot;Ask the CMDB about each member&quot;, &quot;type&quot;: &quot;checkbox&quot;},
+    },
+    &quot;connections&quot;: [&quot;cmdb&quot;],
+    &quot;satom&quot;: [&quot;lb_lookup&quot;, &quot;dns_lookup&quot;],
+    &quot;network&quot;: &quot;none&quot;,
+    &quot;timeout&quot;: 120,
+}
+
+from satom_script import inputs, connection, satom, log, result
+</code></pre>
+<p>An input is <code>{"label", "type", "required", "default", "help", "options"}</code> (the
+types of the Form tab; a database field adds <code>query</code>, <code>value_col</code>,
+<code>label_col</code>), or just its label for a text field. The same rules as the Form
+tab apply. A block that cannot be used is shown as a problem with its line —
+like a syntax error it blocks test runs and publishing — and the last good form
+is kept. Remove the block and the form is edited on the Form tab again.
+<strong>Form → Move the form into the code</strong> writes the current form and settings
+into <code>main.py</code> as a block, for an existing script.</p>
+<h4 id="satom-data-in-a-script-satom">SATOM data in a script: <code>satom.*</code></h4>
+<p>A script can read SATOM's own data, read-only, declared under <code>satom</code> (in the
+block, or on <strong>Settings → SATOM data</strong>):</p>
+<table>
+<thead>
+<tr>
+<th>Call</th>
+<th>Answers</th>
+<th>Permission</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>satom.devices(product="", zone="", line="", department="", maintenance="include")</code></td>
+<td>the managed devices: <code>id</code>, <code>name</code>, <code>kind</code>, <code>version</code>, <code>host</code>, <code>ip</code>, <code>zone</code>, <code>line</code>, <code>department</code>, <code>maintenance</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>satom.lb_lookup(entries, exact=False)</code></td>
+<td>the LB cache (as <em>DNS &amp; LB Lookup</em>): <code>rows</code> (each with <code>_members</code> = <code>[{ip, port, status}]</code>), <code>members</code> (every member address once), <code>unmatched</code>, <code>gateways</code></td>
+<td><code>network.view</code></td>
+</tr>
+<tr>
+<td><code>satom.dns_lookup(entries, ttl=False)</code></td>
+<td>SATOM's DNS resolvers: <code>rows</code>, <code>answers</code>, <code>unresolved</code>, <code>ptr</code> (<code>[{ip, hostname}]</code>)</td>
+<td><code>network.view</code></td>
+</tr>
+</tbody>
+</table>
+<p>They answer <strong>for the person who runs the script, in the ADOM they started it
+from</strong> — what the pages show that person there, with the permission of the
+matching Plugin Studio step. Nothing goes to a device and nothing writes. How:
+when the run is queued, SATOM signs a short-lived grant for that person and
+those operations and puts it in the queued request; the runner's broker,
+outside the jail, asks the web process on the loopback with it. The script
+never holds the grant (it is redacted from the output), an operation the
+version does not declare is refused, and a run with no person behind it (a
+schedule without an owner) cannot use <code>satom.*</code>. Each call is one line of the
+run's connection log (<code>satom.lb_lookup → 2 match(es), 4 member(s)</code>).</p>
+<h4 id="import-a-script-and-the-developer-kit">Import a script and the developer kit</h4>
+<p><strong>Plugin Studio → Apps → Import a script</strong> takes a <code>.py</code> (or a <code>.zip</code> with
+<code>main.py</code>) and creates the script app in one step: the block's <code>"id"</code> is the
+app id (else the file name), its <code>"name"</code> the name, and the form and settings
+come from the block. An id already in use is refused — nothing is overwritten.</p>
+<p><strong>Developer kit</strong> (next to it) downloads <code>satom_script.py</code> (the same SDK the
+jail runs), <code>script_manifest.py</code>, a README, and a complete example with canned
+answers. On your own computer, with no SATOM and no network:</p>
+<pre><code class="language-bash">python3 satom_script.py form example/main.py
+python3 satom_script.py run example/main.py --input query=www.example.com \
+    --input ask_cmdb=yes --mocks example/mocks.json
+</code></pre>
+<p><code>--mocks</code> answers <code>connection()</code> (keys <code>"GET /path"</code>, <code>"GET *"</code>, <code>"*"</code>,
+<code>"sql"</code>) and <code>satom.*</code> from a JSON file, and refuses a connection or SATOM data
+that <code>main.py</code> does not declare — as SATOM would. Then import the file.</p>
 <h3 id="235-data-stores">23.5 Data stores</h3>
 <p><strong>Plugin Studio → Data stores</strong> holds tables you define in the UI. A data
 store is a column list — name, label, type (<code>text</code>, <code>number</code>, <code>boolean</code>,
@@ -6999,6 +7084,11 @@ until you open the connection, set the address and paste the token.</p>
 <td><strong>Explain a flow (FortiGate + NetBox)</strong></td>
 <td>One script, <strong>two connections</strong>: who owns both ends and which rule decides the flow. Keeps working when NetBox is down.</td>
 <td>script and app <code>ex-traffic-explainer</code> (+ the two connections)</td>
+</tr>
+<tr>
+<td><strong>Code-first script: LB members and their owner</strong></td>
+<td>One file says everything: the <code>SATOM = {...}</code> block is the form, the connection and the SATOM data (<code>satom.lb_lookup</code>, <code>satom.dns_lookup</code>). Works at once on the LB cache; the CMDB part needs the connection set up. The developer kit's example.</td>
+<td>connection <code>ex-cmdb</code>, script <code>ex-lb-members-owner</code></td>
 </tr>
 <tr>
 <td><strong>Data stores: site contacts</strong></td>

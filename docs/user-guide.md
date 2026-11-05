@@ -5450,7 +5450,10 @@ when the run is queued, SATOM signs a short-lived grant for that person and
 those operations and puts it in the queued request; the runner's broker,
 outside the jail, asks the web process on the loopback with it. The script
 never holds the grant (it is redacted from the output), an operation the
-version does not declare is refused, and a run with no person behind it (a
+version does not declare is refused, a call takes at most 50 different names
+(more is refused, never cut — `satom_script` splits a longer list into calls
+and joins the answers, so `satom.dns_lookup(lb["members"])` works for any
+number of members), and a run with no person behind it (a
 schedule without an owner) cannot use `satom.*`. Each call is one line of the
 run's connection log (`satom.lb_lookup → 2 match(es), 4 member(s)`).
 

@@ -33,7 +33,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   - **`satom.devices()`, `satom.lb_lookup()`, `satom.dns_lookup()`** in
     `satom_script`: SATOM's own data, read-only, declared under `satom`, for
     the person who runs the script and in the ADOM they started it from, with
-    the permission of the matching Plugin Studio step. The queued run carries
+    the permission of the matching Plugin Studio step. A call takes at most
+    50 names (refused beyond, never cut); the SDK splits a longer list and
+    joins the answers. The queued run carries
     a short-lived signed grant; the runner's broker spends it on the web
     process over the loopback (`/studio/scripts/_data/<op>`, refused when it
     arrives through nginx); the script never holds it, and a run without a

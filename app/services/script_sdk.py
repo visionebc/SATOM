@@ -274,6 +274,45 @@ def connection(key: str) -> Connection:
     return Connection(str(key))
 
 
+#: Names per SATOM data call (SATOM refuses more, never cuts): a longer list
+#: is asked in several calls and the answers are joined (``_join``).
+SATOM_BATCH = 50
+
+
+def _entries(entries) -> list:
+    if isinstance(entries, str):
+        entries = [entries]
+    out = []
+    for e in entries or []:
+        e = str(e).strip()
+        if e and e not in out:
+            out.append(e)
+    return out
+
+
+def _join(parts: list) -> dict:
+    """One answer from the answers of several batches: lists joined (an
+    address list without repeats), dicts merged, the copy text joined."""
+    if len(parts) == 1:
+        return parts[0]
+    out: dict = {}
+    for p in parts:
+        for k, v in (p or {}).items():
+            if isinstance(v, list):
+                cur = out.setdefault(k, [])
+                cur.extend(x for x in v if not (k == "members" and x in cur))
+            elif isinstance(v, dict):
+                out.setdefault(k, {}).update(v)
+            elif k == "tsv" and isinstance(v, str):
+                lines = v.split("\n")
+                out[k] = (out[k] + "\n" + "\n".join(lines[1:])) if k in out else v
+            elif isinstance(v, int) and not isinstance(v, bool):
+                out[k] = max(out.get(k, v), v)
+            else:
+                out.setdefault(k, v)
+    return out
+
+
 class _Satom:
     """Read-only SATOM data (module docstring). Each call is one line in the
     run record; a call the script does not declare is refused."""
@@ -281,6 +320,13 @@ class _Satom:
     @staticmethod
     def _call(op: str, args: dict):
         return _broker({"satom": op, "args": args}).get("data")
+
+    def _batched(self, op: str, entries, **args) -> dict:
+        names = _entries(entries)
+        if not names:
+            raise ConnectionError("satom.%s: give at least one name or address" % op)
+        return _join([self._call(op, dict(args, entries=names[i:i + SATOM_BATCH])) or {}
+                      for i in range(0, len(names), SATOM_BATCH)])
 
     def devices(self, product: str = "", *, zone: str = "", line: str = "",
                 department: str = "", maintenance: str = "include",
@@ -298,13 +344,13 @@ class _Satom:
         """Which FortiWeb / FortiADC virtual servers and pools answer for each
         name or address (SATOM's LB cache): ``rows`` (one per match, with
         ``_members``), ``members`` (every member IP once), ``unmatched``."""
-        return self._call("lb_lookup", {"entries": entries, "exact": bool(exact)}) or {}
+        return self._batched("lb_lookup", entries, exact=bool(exact))
 
     def dns_lookup(self, entries, *, ttl: bool = False) -> dict:
         """Each name or address through SATOM's DNS resolvers: ``rows``,
         ``answers``, ``unresolved``, ``ptr`` (``[{ip, hostname}]`` for the
         addresses that have a PTR)."""
-        return self._call("dns_lookup", {"entries": entries, "ttl": bool(ttl)}) or {}
+        return self._batched("dns_lookup", entries, ttl=bool(ttl))
 
     def __repr__(self) -> str:
         return "<satom data>"

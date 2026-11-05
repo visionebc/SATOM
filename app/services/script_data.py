@@ -40,8 +40,9 @@ HEADER = "X-Satom-Script-Grant"
 PERMISSION = {"devices": None, "lb_lookup": "network.view", "dns_lookup": "network.view"}
 #: Longest grant. A run is at most TIMEOUT_MAX + its queue wait.
 MAX_TTL = 3600
-#: Bounds of the arguments.
-MAX_ENTRIES = 200
+#: Names per call: the DNS & LB Lookup page's own limit (dns_tool.MAX_ENTRIES).
+#: More is refused, never cut; the SDK splits a longer list into calls.
+MAX_ENTRIES = 50
 
 
 class DataError(ValueError):
@@ -112,9 +113,13 @@ def _entries(args: dict) -> list[str]:
         raw = [raw]
     if not isinstance(raw, (list, tuple)) or not raw:
         raise DataError("entries: a name, an address, or a list of them")
-    if len(raw) > MAX_ENTRIES:
-        raise DataError("at most %d entries per call" % MAX_ENTRIES)
-    entries, _dropped = DNS.clean_entries([str(x) for x in raw])
+    from . import dns_tool
+    limit = min(MAX_ENTRIES, dns_tool.MAX_ENTRIES)
+    entries, dropped = DNS.clean_entries([str(x) for x in raw])
+    if dropped:
+        raise DataError("at most %d different names per call (%d given): satom_script splits "
+                        "a longer list by itself; a direct call must too"
+                        % (limit, len(entries) + dropped))
     if not entries:
         raise DataError("no valid name or address in entries")
     return entries

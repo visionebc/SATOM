@@ -241,3 +241,68 @@ def top(what):
         return jsonify(rows=fn(scope or None, _range()))
     except metrics.MetricsError as exc:
         return jsonify(rows=[], error=str(exc)), 502
+
+
+# ── path analysis by phases ──────────────────────────────────────────────────
+
+def _device_data(m, sid):
+    """Phase 1: what the model holds for one device, per VDOM."""
+    objs = m.objs.get(sid, {})
+    src = m.sources[sid]
+    per_vdom = []
+    for v in m.vdoms(sid):
+        ifs = [n for (s, n), vd in m.ifvdom.items() if s == sid and vd == v]
+        per_vdom.append({"vdom": v, "interfaces": len(ifs),
+                         "addressed": sum(1 for ifo, s, n in m.addrs if s == sid and m.ifvdom.get((s, n)) == v),
+                         "down": sorted("%s (%s)" % (n, m.ifdown[(sid, n)]) for n in ifs if (sid, n) in m.ifdown),
+                         "connected": sum(1 for r in m.routes.get(sid, []) if r.vdom == v and r.gateway is None),
+                         "static": sum(1 for r in m.routes.get(sid, []) if r.vdom == v and r.gateway),
+                         "policies": len(topology._policies(m, sid, v)) if m.kind(sid) == "fortigate" else None})
+    dev = objs.get("device", {})
+    return {"sid": sid, "name": src.name, "kind": src.kind, "state": insights.source_state(src),
+            "last_run": src.last_run_at, "mode": dev.get("read_mode") or "SATOM cache + device",
+            "snapshot": dev.get("config_snapshot_at"), "vdoms": per_vdom, "notes": m.notes.get(sid, []),
+            "failed": [st for st in EndpointStatus.query.filter_by(source_id=sid, ok=False)]}
+
+
+@bp.route("/flows/analyze")
+@login_required
+def analyze():
+    from .. import satom_bridge
+    m = topology.build()
+    sources = sorted(m.sources.values(), key=lambda s: s.name)
+    try:
+        sid = int(request.args.get("from") or 0)
+    except ValueError:
+        sid = 0
+    ip = (request.args.get("ip") or "").strip()
+    src_ip = (request.args.get("src") or "").strip()
+    port = (request.args.get("port") or "").strip()
+    vdom = (request.args.get("vdom") or "").strip() or None
+    result, error = None, ""
+    if sid and ip:
+        if sid not in m.sources:
+            error = "that source does not exist"
+        elif vdom and vdom not in m.vdoms(sid):
+            error = "%s has no VDOM %s (known: %s)" % (m.name(sid), vdom, ", ".join(m.vdoms(sid)))
+        else:
+            result = topology.trace(m, sid, ip, src_ip or None, vdom)
+            if result["status"] == "invalid":
+                error, result = "%r is not an IP address" % ip, None
+    involved = []
+    if result:
+        for h in result["hops"]:
+            if h["source_id"] not in involved:
+                involved.append(h["source_id"])
+    examples = []
+    for f in topology.app_flows(m)[:200]:
+        for b in f["backend_rows"]:
+            if len(examples) < 8 and b["path"]["status"] not in [e["status"] for e in examples]:
+                examples.append({"from": f["source_id"], "source": f["source"], "ip": b["address"],
+                                 "port": b["port"], "status": b["path"]["status"], "policy": f["name"]})
+    return render_template("explore/analyze.html", sources=sources, sid=sid, ip=ip, src_ip=src_ip, port=port,
+                           vdom=vdom or "", result=result, error=error, examples=examples,
+                           coverage=satom_bridge.inventory_coverage(),
+                           data=[_device_data(m, s) for s in (involved or [x.id for x in sources])],
+                           vdoms={s.id: m.vdoms(s.id) for s in sources}, path_label=PATH_LABEL,
+                           health_label=HEALTH_LABEL, scope="", range_key=_range())

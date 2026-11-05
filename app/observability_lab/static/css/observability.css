@@ -475,3 +475,22 @@ i.st-off { color: var(--obs-text-3); }
   .obs-chip { border: 1px solid #888; color: #000 !important; background: #fff !important; }
   a { color: #000 !important; text-decoration: none; }
 }
+
+/* Path analysis by phases */
+.obs-an-form { display: grid; grid-template-columns: minmax(180px, 1.4fr) minmax(90px, .6fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(70px, .4fr) auto; gap: 8px 10px; }
+@media (max-width: 991px) { .obs-an-form { grid-template-columns: 1fr 1fr; } }
+.obs-phases { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.obs-phase > details { border: 1px solid var(--obs-border); border-radius: var(--obs-radius); background: var(--obs-surface); }
+.obs-phase summary { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; list-style: none; }
+.obs-phase summary::-webkit-details-marker { display: none; }
+.obs-phase-n { flex: 0 0 auto; min-width: 34px; height: 24px; padding: 0 6px; border-radius: 12px; background: var(--obs-accent-soft); color: var(--obs-accent-strong); font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.obs-phase-t { font-weight: 600; }
+.obs-phase-s { margin-left: auto; color: var(--obs-text-2); font-size: 12.5px; text-align: right; }
+.obs-phase-body { padding: 4px 14px 12px; border-top: 1px solid var(--obs-border-light); }
+.obs-phase-dev { padding: 8px 0; border-bottom: 1px dashed var(--obs-border-light); }
+.obs-phase-dev:last-child { border-bottom: 0; }
+.obs-phase-dev-h { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 4px; }
+.obs-row-chosen td { background: rgba(52, 211, 153, .08) !important; }
+.obs-crit-why { font-size: 10.5px; color: var(--obs-text-3); max-width: 220px; white-space: normal; }
+.obs-warn-line { color: var(--obs-stale); }
+.obs-hop-warn { border-style: dashed; }

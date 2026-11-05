@@ -3,10 +3,12 @@
 {% from "explore/_hops.html" import path_chain %}
 {% block title %}Data Flows{% endblock %}
 {% set HS = {'all_down': ('error', 'x-octagon-fill'), 'degraded': ('stale', 'exclamation-triangle-fill'), 'no_data': ('none', 'dash-circle'), 'unchecked': ('none', 'question-circle'), 'ok': ('ok', 'check-circle-fill'), 'disabled': ('none', 'pause-circle')} %}
-{% set BH = {'up': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'unchecked': ('none', 'question-circle', 'No health check')} %}
+{% set BH = {'up': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'unchecked': ('none', 'question-circle', 'No health check'), 'unread': ('none', 'eye-slash', 'Not read')} %}
 {% block content %}
 <div class="obs-page" data-scope="{{ scope }}" data-range="{{ range_key }}">
-{{ page_header('Data Flows', 'End to end: client → listener → policy → pool → back-end, and the network path across the monitored devices' ~ (' · ' ~ scope if scope else ''), 'bezier') }}
+{% call page_header('Data Flows', 'End to end: client → listener → policy → pool → back-end, and the network path across the monitored devices' ~ (' · ' ~ scope if scope else ''), 'bezier') %}
+  <a class="btn btn-sm btn-primary" href="{{ url_for('explore.analyze') }}"><i class="bi bi-search" aria-hidden="true"></i> Path analysis</a>
+{% endcall %}
 
 <div class="obs-toolbar">
   <nav class="obs-seg" aria-label="View">
@@ -54,7 +56,8 @@
       <summary>Network path from {{ f.source }} to each back-end{% if f.path_issues %} · <span class="text-danger">{{ f.path_issues }} broken</span>{% endif %}</summary>
       <table class="table table-sm obs-subtable mb-0"><tbody>
         {% for b in f.backend_rows %}{% if not path or b.path.status == path %}
-        <tr><td class="text-nowrap"><code>{{ b.address }}:{{ b.port }}</code></td><td>{{ path_chain(b.path, path_label) }}</td></tr>
+        <tr><td class="text-nowrap"><code>{{ b.address }}:{{ b.port }}</code></td><td>{{ path_chain(b.path, path_label) }}</td>
+          <td class="text-end"><a class="btn btn-sm btn-outline-secondary obs-noprint" href="{{ url_for('explore.analyze', **{'from': f.source_id, 'ip': b.address, 'port': b.port}) }}" title="Every phase of this path, decision by decision"><i class="bi bi-search" aria-hidden="true"></i> Analyze</a></td></tr>
         {% endif %}{% endfor %}
       </tbody></table>
     </details>

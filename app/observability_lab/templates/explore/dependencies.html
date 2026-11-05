@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_ui.html" import page_header, empty_state, filter_box, tile %}
 {% block title %}Dependencies{% endblock %}
-{% set BH = {'up': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'unchecked': ('none', 'question-circle', 'No health check')} %}
+{% set BH = {'up': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'unchecked': ('none', 'question-circle', 'No health check'), 'unread': ('none', 'eye-slash', 'Not read')} %}
 {% block content %}
 <div class="obs-page" data-scope="{{ scope }}" data-range="{{ range_key }}">
 {{ page_header('Dependencies', 'What rides on what: if this fails, these are affected' ~ (' · ' ~ scope if scope else ''), 'share') }}

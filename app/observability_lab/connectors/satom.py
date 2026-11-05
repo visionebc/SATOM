@@ -37,7 +37,8 @@ class _FromSatom:
 
     def _read(self, client, endpoint, path, layers, parse):
         key = path.split("?")[0]
-        if key in self.CACHE:
+        # SATOM caches ONE VDOM per appliance: a per-VDOM read goes to the device.
+        if key in self.CACHE and "vdom=" not in path:
             logical, layer = self.CACHE[key]
             started = time.monotonic()
             rows, at = satom_bridge.cache_rows(self.appliance_id, logical, layer)
@@ -45,7 +46,8 @@ class _FromSatom:
                 res = EndpointResult(endpoint=endpoint, path="SATOM cache · %s" % logical, layers=layers)
                 res.rows = len(rows)
                 try:
-                    parse({"results": rows, "status": "success"} if self.BODY else rows, res)
+                    parse({"results": rows, "status": "success",
+                           "vdom": (self.source.config or {}).get("vdom") or "root"} if self.BODY else rows, res)
                 except Exception as exc:  # noqa: BLE001 — unexpected shape = error, not empty
                     res.ok, res.error = False, "unexpected cached shape: %s" % exc
                     res.facts, res.metrics = [], []
@@ -77,9 +79,13 @@ class SatomFortiGate(_FromSatom, FortiGateConnector):
         "/api/v2/cmdb/system/interface": ("system_interface", "config"),
         "/api/v2/cmdb/firewall/address": ("firewall_address", "config"),
         "/api/v2/cmdb/firewall/policy": ("firewall_policy", "config"),
+        "/api/v2/cmdb/system/sdwan": ("system_sdwan", "config"),
     }
 
 
 #: Source.kind stays the product (fortiweb/fortigate: what the overview,
 #: insights and graph key on); the class is chosen by ``fortinet_source``.
-BY_PRODUCT = {"fortiweb": SatomFortiWeb, "fortigate": SatomFortiGate}
+from .satom_cache import SatomFortiADC, SatomFortiAnalyzer, SatomFortiAuthenticator  # noqa: E402
+
+BY_PRODUCT = {"fortiweb": SatomFortiWeb, "fortigate": SatomFortiGate, "fortiadc": SatomFortiADC,
+              "fortiauthenticator": SatomFortiAuthenticator, "fortianalyzer": SatomFortiAnalyzer}

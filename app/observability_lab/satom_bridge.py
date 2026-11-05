@@ -1,7 +1,8 @@
 """Everything Observability reads from SATOM goes through here.
 
 * :func:`sync_sources` — the sources ARE SATOM's appliances (FortiWeb and
-  FortiGate today; other products are listed as planned). No secret is copied:
+  FortiGate read live + cache; FortiADC, FortiAuthenticator, FortiAnalyzer
+  from SATOM's cache only). No secret is copied:
   :func:`credentials` reads it from SATOM when a connector opens.
 * :func:`cache_rows` — SATOM's device cache (``device_objects``) in the shape
   the device's REST API answers, children folded back into their parent.
@@ -24,7 +25,7 @@ from .extensions import db
 log = logging.getLogger(__name__)
 
 #: SATOM appliance kinds with a connector here; the rest are "planned".
-SUPPORTED = ("fortiweb", "fortigate")
+SUPPORTED = ("fortiweb", "fortigate", "fortiadc", "fortiauthenticator", "fortianalyzer")
 LOCK_KEY = 7312051105  # pg advisory lock: one collector across workers
 TICK_S = 60
 
@@ -237,3 +238,27 @@ def tick() -> int:
                 conn.execute(text("select pg_advisory_unlock(:k)"), {"k": LOCK_KEY})
             finally:
                 conn.close()
+
+
+def inventory_coverage() -> list:
+    """Every SATOM appliance and what Observability does with it (phase 0 of
+    the path analysis): read live + cache, cache only, or why it is left out."""
+    from ..models import Appliance
+    from .connectors.satom import BY_PRODUCT
+    out = []
+    with _satom().app_context():
+        for a in Appliance.query.order_by(Appliance.name).all():
+            if a.is_cluster:
+                why, mode = "cluster container (its members are the devices)", ""
+            elif a.maintenance:
+                why, mode = "in maintenance in SATOM", ""
+            elif a.kind not in SUPPORTED:
+                why, mode = "no connector for %s" % a.kind, ""
+            else:
+                why = ""
+                mode = ("SATOM cache only" if a.kind in ("fortiadc", "fortiauthenticator", "fortianalyzer")
+                        else "SATOM cache (configuration) + device (live state)")
+            out.append({"appliance_id": a.id, "name": a.name, "kind": a.kind, "host": a.host,
+                        "vdom": a.vdom or "", "included": not why and a.kind in BY_PRODUCT,
+                        "mode": mode, "why": why, "satom_status": a.last_status or ""})
+    return out

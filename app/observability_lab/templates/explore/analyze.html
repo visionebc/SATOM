@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
+{% from "_ui.html" import page_header, empty_state, ago %}
+{% from "explore/_hops.html" import path_chain %}
+{% block title %}Path analysis{% endblock %}
+{% macro okcell(v) -%}
+{%- if v is sameas true -%}<span class="obs-chip st-ok"><i class="bi bi-check-lg" aria-hidden="true"></i> yes</span>
+{%- elif v is sameas false -%}<span class="obs-chip st-error"><i class="bi bi-x-lg" aria-hidden="true"></i> no</span>
+{%- else -%}<span class="obs-chip st-stale"><i class="bi bi-question-lg" aria-hidden="true"></i> unknown</span>{%- endif -%}
+{%- endmacro %}
+{% block content %}
+{% call page_header('Path analysis', 'How a path is worked out, phase by phase: which devices exist, what data each one gives, and every decision taken at every hop', 'search') %}
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('explore.flows') }}"><i class="bi bi-bezier" aria-hidden="true"></i> Data Flows</a>
+{% endcall %}
+
+<section class="fw-card mb-3" aria-labelledby="h-q">
+  <div class="fw-card-body">
+    <form method="get" action="{{ url_for('explore.analyze') }}" class="obs-an-form" id="h-q">
+      <div><label class="form-label small" for="a-from">From device</label>
+        <select class="form-select form-select-sm" id="a-from" name="from">
+          {% for s in sources %}<option value="{{ s.id }}" {{ 'selected' if s.id == sid }}>{{ s.name }} ({{ s.kind }})</option>{% endfor %}
+        </select></div>
+      <div><label class="form-label small" for="a-vdom">VDOM</label>
+        <input class="form-control form-control-sm" id="a-vdom" name="vdom" value="{{ vdom }}" placeholder="default" list="a-vdoms">
+        <datalist id="a-vdoms">{% for sid_, vs in vdoms.items() %}{% for v in vs %}<option value="{{ v }}">{% endfor %}{% endfor %}</datalist></div>
+      <div><label class="form-label small" for="a-ip">Destination IP</label>
+        <input class="form-control form-control-sm" id="a-ip" name="ip" value="{{ ip }}" required placeholder="192.0.2.12"></div>
+      <div><label class="form-label small" for="a-src">Source IP <span class="text-muted">(optional)</span></label>
+        <input class="form-control form-control-sm" id="a-src" name="src" value="{{ src_ip }}" placeholder="egress interface"></div>
+      <div><label class="form-label small" for="a-port">Port <span class="text-muted">(info)</span></label>
+        <input class="form-control form-control-sm" id="a-port" name="port" value="{{ port }}" inputmode="numeric"></div>
+      <div class="align-self-end"><button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-search" aria-hidden="true"></i> Analyze</button></div>
+    </form>
+    {% if examples %}<div class="small mt-2 text-muted">Try a real back-end:
+      {% for e in examples %}<a class="obs-pillet" href="{{ url_for('explore.analyze', **{'from': e['from'], 'ip': e.ip, 'port': e.port}) }}">{{ e.source }} → {{ e.ip }}:{{ e.port }} · {{ path_label.get(e.status, e.status) }}</a>{% endfor %}</div>{% endif %}
+    {% if error %}<div class="alert alert-danger py-2 small mt-2 mb-0" role="alert"><i class="bi bi-x-octagon-fill" aria-hidden="true"></i> {{ error }}</div>{% endif %}
+  </div>
+</section>
+
+{% if result %}
+<section class="fw-card mb-3 obs-phase-result" aria-label="Result">
+  <div class="fw-card-body">{{ path_chain(result, path_label) }}</div>
+</section>
+{% endif %}
+
+<ol class="obs-phases">
+  {# ── Phase 0 ── #}
+  <li class="obs-phase">
+    <details {{ 'open' if not result }}>
+      <summary><span class="obs-phase-n">0</span><span class="obs-phase-t">Inventory — which SATOM devices take part</span>
+        <span class="obs-phase-s">{{ coverage|selectattr('included')|list|length }} of {{ coverage|length }} included</span></summary>
+      <div class="obs-phase-body table-responsive">
+        <table class="table table-sm obs-table mb-0">
+          <thead><tr><th scope="col">SATOM device</th><th scope="col">Product</th><th scope="col">VDOM in SATOM</th><th scope="col">Here</th><th scope="col">Read as</th></tr></thead>
+          <tbody>{% for c in coverage %}<tr><td><b>{{ c.name }}</b> <span class="text-muted small">{{ c.host }}</span></td><td>{{ c.kind }}</td><td>{{ c.vdom or 'default' }}</td>
+            <td>{% if c.included %}<span class="obs-chip st-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> included</span>{% else %}<span class="obs-chip st-none"><i class="bi bi-dash-circle" aria-hidden="true"></i> left out</span>{% endif %}</td>
+            <td class="small">{{ c.mode or c.why }}</td></tr>{% endfor %}</tbody>
+        </table>
+        <p class="small text-muted mb-0 mt-2">SATOM holds ONE VDOM per FortiGate appliance (its <code>vdom</code> field). The other VDOMs of a multi-VDOM box are read from the device per VDOM — not verified on a multi-VDOM build (no such box in the lab).</p>
+      </div>
+    </details>
+  </li>
+
+  {# ── Phase 1 ── #}
+  <li class="obs-phase">
+    <details {{ 'open' if not result }}>
+      <summary><span class="obs-phase-n">1</span><span class="obs-phase-t">Data — what each {{ 'device on the path' if result else 'device' }} gives the model</span>
+        <span class="obs-phase-s">{{ data|length }} device{{ 's' if data|length != 1 }}</span></summary>
+      <div class="obs-phase-body">
+        {% for d in data %}
+        <div class="obs-phase-dev">
+          <div class="obs-phase-dev-h"><b>{{ d.name }}</b> <span class="text-muted small">{{ d.kind }}</span> {{ status_badge({'ok':'ok','error':'error','stale':'stale'}.get(d.state, 'never')) }}
+            <span class="small">{{ d.mode }}{% if d.snapshot %} · snapshot {{ d.snapshot }} UTC{% endif %} · last collection {{ ago(d.last_run) }}</span></div>
+          <table class="table table-sm obs-subtable mb-1">
+            <thead><tr><th scope="col">VDOM</th><th scope="col" class="text-end">Interfaces</th><th scope="col" class="text-end">With address</th><th scope="col" class="text-end">Connected routes</th><th scope="col" class="text-end">Static / learned routes</th><th scope="col" class="text-end">Firewall policies</th><th scope="col">Down (routes via them discarded)</th></tr></thead>
+            <tbody>{% for v in d.vdoms %}<tr><td>{{ v.vdom }}</td><td class="text-end">{{ v.interfaces }}</td><td class="text-end">{{ v.addressed }}</td><td class="text-end">{{ v.connected }}</td><td class="text-end">{{ v.static }}</td>
+              <td class="text-end">{{ v.policies if v.policies is not none else '—' }}</td><td class="small">{{ v.down|join(', ') or '—' }}</td></tr>{% endfor %}</tbody>
+          </table>
+          {% for n in d.notes %}<div class="small obs-warn-line"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> {{ n }}</div>{% endfor %}
+          {% for st in d.failed %}<div class="small text-danger"><i class="bi bi-x-octagon-fill" aria-hidden="true"></i> read failed: {{ st.endpoint }} — {{ st.error }}</div>{% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+  </li>
+
+  {% if result %}
+  {# ── Phase 2 ── #}
+  <li class="obs-phase">
+    <details open>
+      <summary><span class="obs-phase-n">2</span><span class="obs-phase-t">Start — routing domain and source address</span>
+        <span class="obs-phase-s">{{ result.hops[0].label if result.hops else '—' }} → {{ result.dst }}{% if port %}:{{ port }}{% endif %}</span></summary>
+      <div class="obs-phase-body small">
+        <dl class="obs-kv obs-kv-2">
+          <dt>Starts in</dt><dd>{{ result.hops[0].label if result.hops else '—' }} (VDOM {{ result.hops[0].vdom if result.hops else '—' }})</dd>
+          <dt>Destination</dt><dd><code>{{ result.dst }}</code>{% if port %} port {{ port }} <span class="text-muted">(not used: service objects are not collected)</span>{% endif %}</dd>
+          <dt>Source address</dt><dd><code>{{ result.hops[0].src_ip if result.hops and result.hops[0].src_ip else (src_ip or 'unknown') }}</code> — {{ 'given' if src_ip else 'address of the egress interface of the first hop (the device opens the connection to the back-end)' }}</dd>
+        </dl>
+      </div>
+    </details>
+  </li>
+
+  {# ── Phase 3: one block per hop ── #}
+  {% for h in result.hops %}
+  <li class="obs-phase">
+    <details open>
+      <summary><span class="obs-phase-n">3.{{ loop.index }}</span><span class="obs-phase-t">Hop {{ loop.index }} — {{ h.label }}</span>
+        <span class="obs-phase-s">{% if h['in'] %}in {{ h['in'] }} · {% endif %}out {{ h.out or '—' }}{% if h.fw %} · firewall {{ h.fw.verdict }}{% endif %}</span></summary>
+      <div class="obs-phase-body">
+        <h3 class="obs-sub-title">a · Route lookup for {{ result.dst }} in VDOM {{ h.vdom }}</h3>
+        {% if h.decision.candidates %}
+        <table class="table table-sm obs-subtable mb-2">
+          <thead><tr><th scope="col">Destination</th><th scope="col">Via</th><th scope="col">Interface</th><th scope="col">Type</th><th scope="col" class="text-end">Prefix</th><th scope="col" class="text-end">Distance</th><th scope="col">Outcome</th></tr></thead>
+          <tbody>{% for c in h.decision.candidates %}<tr class="{{ 'obs-row-chosen' if c.outcome == 'chosen' }}">
+            <td><code>{{ c.dst }}</code></td><td><code>{{ c.via }}</code></td><td>{{ c.iface or '—' }}</td><td>{{ c.type }}</td><td class="text-end">/{{ c.prefixlen }}</td><td class="text-end">{{ c.distance }}</td>
+            <td>{% if c.outcome == 'chosen' %}<span class="obs-chip st-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> chosen</span>{% elif c.outcome == 'discarded' %}<span class="obs-chip st-error"><i class="bi bi-slash-circle" aria-hidden="true"></i> discarded</span> <span class="small">{{ c.why }}</span>{% else %}<span class="small text-muted">{{ c.outcome }}</span>{% endif %}</td></tr>{% endfor %}</tbody>
+        </table>
+        {% if h.decision.ecmp %}<div class="small obs-warn-line"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> Several equal routes (ECMP): the device spreads traffic; the first is followed here.</div>{% endif %}
+        {% else %}<p class="small text-danger">No route of this VDOM contains {{ result.dst }} — not even a default route.</p>{% endif %}
+
+        {% if h.nexthop %}<h3 class="obs-sub-title mt-2">b · Next hop</h3><p class="small mb-2">{{ h.nexthop }}</p>{% endif %}
+
+        {% if h.fw %}
+        <h3 class="obs-sub-title mt-2">c · Firewall policies of VDOM {{ h.fw.vdom }} ({{ h['in'] }} → {{ h.out }}), in sequence order</h3>
+        {% set fv = h.fw.verdict %}
+        <p class="small mb-1"><span class="obs-chip st-{{ {'allowed':'ok','denied':'error','unverified':'stale'}[fv] }}"><i class="bi bi-bricks" aria-hidden="true"></i> {{ fv|upper }}</span>
+          {% if h.fw.decided %}decided by #{{ h.fw.decided.id }} {{ h.fw.decided.name }}{% elif h.fw.implicit_deny %}no policy matches: implicit deny{% endif %}
+          {% if h.fw.uncertain_before %} · {{ h.fw.uncertain_before|length }} earlier polic{{ 'ies' if h.fw.uncertain_before|length != 1 else 'y' }} could match first — cannot be decided with the collected data{% endif %}</p>
+        <table class="table table-sm obs-subtable mb-1">
+          <thead><tr><th scope="col">Seq</th><th scope="col">Policy</th>{% for n in ['from interface','to interface','source address','destination address','service'] %}<th scope="col">{{ n }}</th>{% endfor %}<th scope="col">Outcome</th></tr></thead>
+          <tbody>{% for r in h.fw.rows %}<tr class="{{ 'obs-row-chosen' if r.outcome.startswith('MATCH') }}">
+            <td>{{ r.seq if r.seq is not none else '?' }}</td><td><b>#{{ r.id }}</b> {{ r.name }} <span class="text-muted small">{{ r.action }}{{ ' · NAT' if r.nat == 'enable' }}</span></td>
+            {% if r.crit %}{% for c in r.crit %}<td title="{{ c.why }}">{{ okcell(c.ok) }}<div class="obs-crit-why">{{ c.why }}</div></td>{% endfor %}{% else %}<td colspan="5" class="text-muted small">—</td>{% endif %}
+            <td class="small">{{ r.outcome }}</td></tr>{% else %}<tr><td colspan="8" class="text-muted small">This VDOM has no firewall policy collected.</td></tr>{% endfor %}</tbody>
+        </table>
+        {% if h.fw.rows and h.fw.rows[0].seq is none %}<div class="small obs-warn-line"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> Sequence order not collected yet for this device (next collection adds it): policies walked by id.</div>{% endif %}
+        {% endif %}
+        {% if h.nat %}<h3 class="obs-sub-title mt-2">d · NAT</h3><p class="small mb-1">{{ h.nat }} — the next hops see the new source address.</p>{% endif %}
+        {% for n in h.notes %}<div class="small obs-warn-line"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> Not evaluated: {{ n }}</div>{% endfor %}
+      </div>
+    </details>
+  </li>
+  {% endfor %}
+
+  {# ── Phase 4 ── #}
+  <li class="obs-phase">
+    <details open>
+      <summary><span class="obs-phase-n">4</span><span class="obs-phase-t">Result</span>
+        <span class="obs-phase-s">{{ path_label.get(result.status, result.status) }}</span></summary>
+      <div class="obs-phase-body small">
+        <p class="mb-1"><b>{{ path_label.get(result.status, result.status) }}</b> — {{ result.end }}</p>
+        <p class="mb-0 text-muted">Computed from stored routing tables, interface addresses and firewall policies — not a live probe. Use the phases above to see which input or decision gives this result; a wrong input is a wrong read (phase 1), a wrong decision is a wrong rule (phase 3).</p>
+      </div>
+    </details>
+  </li>
+  {% endif %}
+</ol>
+{% endblock %}

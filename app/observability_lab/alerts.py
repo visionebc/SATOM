@@ -30,6 +30,8 @@ RULES = [
     ("policy", "warning / critical", "A server policy has back-ends down (warning) or every back-end down "
                                      "(critical), by the device's health check."),
     ("interface", "critical", "An interface is administratively up without link."),
+    ("snapshot", "warning", "A product read from SATOM's cache only (FortiADC, FortiAuthenticator, "
+                            "FortiAnalyzer) has a configuration snapshot older than %d h." % insights.SNAPSHOT_STALE_H),
 ]
 
 

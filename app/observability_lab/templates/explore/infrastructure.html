@@ -12,7 +12,7 @@
 {% for c in cards %}{% set s, d = c.s, c.d %}
   <section class="fw-card obs-dev-card" id="src-{{ s.id }}" aria-labelledby="dev-{{ s.id }}">
     <div class="fw-card-header">
-      <h2 class="fw-card-title" id="dev-{{ s.id }}"><i class="bi bi-{{ 'shield-shaded' if s.kind == 'fortigate' else 'shield-check' }} me-1" aria-hidden="true"></i>
+      <h2 class="fw-card-title" id="dev-{{ s.id }}"><i class="bi bi-{{ {'fortigate':'shield-shaded','fortiweb':'shield-check','fortiadc':'distribute-horizontal','fortiauthenticator':'key','fortianalyzer':'graph-up'}.get(s.kind, 'hdd-network') }} me-1" aria-hidden="true"></i>
         <a href="{{ url_for('sources.detail', sid=s.id) }}">{{ s.name }}</a></h2>
       <span class="ms-auto">{{ status_badge({'ok':'ok','error':'error','stale':'stale'}.get(d.state, 'never')) }}</span>
     </div>
@@ -32,6 +32,8 @@
           {% else %}<span class="text-muted">not reported</span>{% endif %}
           <span class="small text-muted">{{ d.licence_status or d.vm_licence or '' }}</span></dd>
         <dt>Last read</dt><dd>{{ ago(s.last_run_at) }}</dd>
+        {% if d.read_mode %}<dt>Read as</dt><dd><span class="obs-chip st-none"><i class="bi bi-database" aria-hidden="true"></i> {{ d.read_mode }}</span>{% if d.config_snapshot_at %} <span class="small text-muted">snapshot {{ d.config_snapshot_at }} UTC</span>{% endif %}</dd>{% endif %}
+        {% if d.vdom_names and d.vdom_names|length > 1 %}<dt>VDOMs</dt><dd>{{ d.vdom_names|join(', ') }} <span class="small text-muted">(multi-VDOM reading unverified)</span></dd>{% endif %}
       </dl>
       <div class="obs-meters" role="list">
         {% for key, label in [('cpu_pct','CPU'),('mem_pct','Memory'),('disk_pct','Disk')] %}
@@ -42,7 +44,7 @@
           {% set st = 'error' if v >= 95 else ('stale' if v >= 80 else 'ok') %}
           <svg class="obs-meter-track" viewBox="0 0 100 6" preserveAspectRatio="none" role="meter" aria-valuenow="{{ v }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ label }} {{ v }} %"><rect class="obs-meter-bg" width="100" height="6" rx="3"/><rect class="obs-meter-fill st-{{ st }}" width="{{ [[v, 0]|max, 100]|min }}" height="6" rx="3"/></svg>
           <div class="obs-meter-v">{{ v }} %</div>
-          {% else %}<div class="obs-meter-na" title="The {{ s.kind }} connector does not read this yet">not collected</div>{% endif %}
+          {% else %}<div class="obs-meter-na" title="{{ 'Read from SATOM\'s cache only: no live values' if d.read_mode else 'The ' ~ s.kind ~ ' connector does not read this yet' }}">not collected</div>{% endif %}
         </div>
         {% endfor %}
         <div class="obs-meter" role="listitem"><div class="obs-meter-k">Sessions</div><div class="obs-meter-v">{{ d.sessions if d.sessions is not none else '—' }}</div></div>

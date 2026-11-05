@@ -6,16 +6,18 @@ Every number here comes from a fact or an endpoint status; anything the
 connectors do not collect is reported as not collected, never estimated."""
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from .extensions import db
 from .models import Diagram, EndpointStatus, Fact, Source, utcnow
 
 #: Backend health as stored by the connectors -> one of up / down / unchecked.
-_HEALTH = {"up": "up", "down": "down"}
+_HEALTH = {"up": "up", "down": "down", "not read": "unread"}
 
 
 def backend_health(value) -> str:
+    """up / down / unread (the connector cannot read health: cache-only
+    products) / unchecked (the device has no health check for it)."""
     return _HEALTH.get(str(value or "").strip().lower(), "unchecked")
 
 
@@ -47,7 +49,7 @@ def policies(sources) -> list[dict]:
     rows: dict = {}
     for f in _facts(sources, keys=("status", "listen", "protocol", "sessions", "conn_per_s",
                                    "client_rtt", "server_rtt", "app_response_time",
-                                   "server_pool", "vserver", "wpp", "backends")):
+                                   "server_pool", "vserver", "wpp", "backends", "object_kind")):
         if not f.object_ref.startswith("policy:"):
             continue
         r = rows.setdefault((f.source_id, f.object_ref), {
@@ -61,11 +63,12 @@ def policies(sources) -> list[dict]:
             states = [backend_health(b.get("health")) for b in bks if isinstance(b, dict)]
             r["backends_up"], r["backends_down"] = states.count("up"), states.count("down")
             r["backends_unchecked"], r["backends_total"] = states.count("unchecked"), len(states)
+            r["backends_unread"] = states.count("unread")
         else:
             r["backends_total"] = None
         if r.get("status") != "enable":
             h = "disabled"
-        elif r["backends_total"] is None:
+        elif r["backends_total"] is None or (r["backends_total"] and r["backends_unread"] == r["backends_total"]):
             h = "no_data"
         elif r["backends_total"] and r["backends_down"] == r["backends_total"]:
             h = "all_down"
@@ -116,6 +119,8 @@ def devices(sources) -> list[dict]:
 #: Device resource thresholds (percent): (warning, critical). Built-in rules,
 #: listed on Events & Alerts; a device that does not report a value is not
 #: judged (FortiWeb's connector does not read CPU/memory yet).
+#: A cache-only source whose SATOM snapshot is older than this is reported.
+SNAPSHOT_STALE_H = 48
 RESOURCE_RULES = {"cpu_pct": ("CPU", 80, 95), "mem_pct": ("memory", 85, 95), "disk_pct": ("disk", 85, 95)}
 
 
@@ -153,6 +158,20 @@ def problems(sources) -> list[dict]:
             add("licence:%d" % f.source_id, f.source_id, "critical", "licence",
                 "%s: licence not valid" % names[f.source_id],
                 "features that need a licence are inactive (%s = %s)" % (f.key, f.value),
+                "/sources/%d#device" % f.source_id)
+    # Cache-only products (FortiADC/FAC/FAZ): their snapshot IS the data.
+    for f in Fact.query.filter(Fact.source_id.in_(names.keys()), Fact.object_ref == "device",
+                               Fact.key == "config_snapshot_at"):
+        try:
+            at = datetime.strptime(str(f.value), "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+        age_h = (utcnow() - at).total_seconds() / 3600
+        if age_h > SNAPSHOT_STALE_H:
+            add("snapshot:%d" % f.source_id, f.source_id, "warning", "snapshot",
+                "%s: configuration is %d days old" % (names[f.source_id], age_h // 24),
+                "read from SATOM's cache only; SATOM's last snapshot is %s UTC — SATOM cannot read the "
+                "device since (check its licence / reachability in SATOM)" % at.strftime("%Y-%m-%d %H:%M"),
                 "/sources/%d#device" % f.source_id)
     for d in devices(sources):
         for key, (label, warn, crit) in RESOURCE_RULES.items():

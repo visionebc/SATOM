@@ -2,10 +2,10 @@
 {% from "_ui.html" import page_header, empty_state, filter_box, tile %}
 {% block title %}Applications{% endblock %}
 {% set HS = {'all_down': ('error', 'x-octagon-fill'), 'degraded': ('stale', 'exclamation-triangle-fill'), 'no_data': ('none', 'dash-circle'), 'unchecked': ('none', 'question-circle'), 'ok': ('ok', 'check-circle-fill'), 'disabled': ('none', 'pause-circle')} %}
-{% set BH = {'up': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'unchecked': ('none', 'question-circle', 'No health check')} %}
+{% set BH = {'up': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'unchecked': ('none', 'question-circle', 'No health check'), 'unread': ('none', 'eye-slash', 'Not read')} %}
 {% block content %}
 <div class="obs-page" data-scope="{{ scope }}" data-range="{{ range_key }}">
-{{ page_header('Applications', 'Published services (FortiWeb server policies): listener, pool, back-ends, traffic and health' ~ (' · ' ~ scope if scope else ''), 'window-stack') }}
+{{ page_header('Applications', 'Published services (FortiWeb server policies, FortiADC virtual servers): listener, pool, back-ends, traffic and health' ~ (' · ' ~ scope if scope else ''), 'window-stack') }}
 
 <div class="obs-tiles" role="list">
   {{ tile('Services', total, counts.disabled ~ ' disabled', 'window-stack') }}
@@ -38,12 +38,12 @@
     <tbody data-filter-item>
       <tr>
         <td><button class="obs-row-toggle" type="button" aria-expanded="false" data-toggle-next aria-label="Details of {{ p.name }}"><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
-          <b>{{ p.name }}</b><span class="text-muted small d-block obs-indent">{{ p.source }}{% if p.wpp %} · WPP {{ p.wpp }}{% endif %}</span></td>
+          <b>{{ p.name }}</b><span class="text-muted small d-block obs-indent">{{ p.source }}{% if p.object_kind %} · {{ p.object_kind }}{% endif %}{% if p.wpp %} · WPP {{ p.wpp }}{% endif %}</span></td>
         <td><span class="obs-chip st-{{ st }}"><i class="bi bi-{{ icon }}" aria-hidden="true"></i> {{ health_label[p.health] }}</span></td>
         <td><code>{{ p.listen or '—' }}</code><span class="text-muted small d-block">{{ p.protocol or '' }}{% if p.detail.ssl == 'enable' %} · SSL{% endif %}{% if p.vserver %} · {{ p.vserver }}{% endif %}</span></td>
         <td>{{ p.server_pool or '—' }}{% if p.pool_kv %}<span class="text-muted small d-block">{{ p.pool_kv.lb_algo or '' }}{% if p.pool_kv.health_check %} · {{ p.pool_kv.health_check }}{% endif %}</span>{% endif %}</td>
         <td class="text-center">{% if p.backends_total is none %}<span class="text-muted" title="back-end health not read">—</span>{% else %}
-          <span class="obs-bk"><span class="text-success" title="up">{{ p.backends_up }}↑</span> <span class="{{ 'text-danger fw-semibold' if p.backends_down }}" title="down">{{ p.backends_down }}↓</span> <span class="text-muted" title="no health check">{{ p.backends_unchecked }}?</span></span>{% endif %}</td>
+          <span class="obs-bk"><span class="text-success" title="up">{{ p.backends_up }}↑</span> <span class="{{ 'text-danger fw-semibold' if p.backends_down }}" title="down">{{ p.backends_down }}↓</span> <span class="text-muted" title="no health check">{{ p.backends_unchecked }}?</span>{% if p.backends_unread %} <span class="text-muted" title="health not read (product read from SATOM's cache only)">{{ p.backends_unread }}<i class="bi bi-eye-slash" aria-hidden="true"></i></span>{% endif %}</span>{% endif %}</td>
         <td class="text-end">{{ p.sessions if p.sessions is not none else '—' }}</td>
         <td class="text-end">{{ p.conn_per_s if p.conn_per_s is not none else '—' }}</td>
         <td class="text-end">{{ (p.app_response_time ~ ' ms') if p.app_response_time is not none else '—' }}</td>
@@ -57,7 +57,7 @@
           </dl>
           {% set bks = p.detail.backends or [] %}
           {% if bks %}<table class="table table-sm obs-subtable mb-0"><thead><tr><th scope="col">Back-end</th><th scope="col">Health</th><th scope="col">Sessions</th><th scope="col">Backup</th></tr></thead>
-            <tbody>{% for b in bks %}{% set h = 'up' if (b.health|string|lower) == 'up' else ('down' if (b.health|string|lower) == 'down' else 'unchecked') %}{% set bs, bi, bl = BH[h] %}
+            <tbody>{% for b in bks %}{% set h = {'up': 'up', 'down': 'down', 'not read': 'unread'}.get(b.health|string|lower, 'unchecked') %}{% set bs, bi, bl = BH[h] %}
               <tr><td><code>{{ b.address }}:{{ b.port }}</code></td><td><span class="obs-chip st-{{ bs }}"><i class="bi bi-{{ bi }}" aria-hidden="true"></i> {{ bl }}</span></td><td>{{ b.sessions }}</td><td>{{ 'yes' if b.backup else 'no' }}</td></tr>{% endfor %}</tbody></table>
           {% else %}<p class="text-muted small mb-0">Back-end health not read for this policy{{ ' (disabled)' if p.status != 'enable' }}.</p>{% endif %}
           <a class="small" href="{{ url_for('explore.flows', source=scope or None) }}#flow-{{ p.source_id }}-{{ p.name }}"><i class="bi bi-bezier" aria-hidden="true"></i> Network path to the back-ends</a>

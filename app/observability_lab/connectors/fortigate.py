@@ -45,6 +45,18 @@ def device_error(status: int, body) -> tuple[str, bool]:
     return "", False
 
 
+def _vdom(body) -> str:
+    """VDOM a REST answer belongs to (FortiOS echoes it at the top level)."""
+    return str((body or {}).get("vdom") or "root")
+
+
+def _q(ref: str, vdom: str) -> str:
+    """Object ref, qualified with the VDOM when it is not the default one:
+    ``fwpolicy:2`` (root) / ``fwpolicy:2@dmz``. Interfaces are global names on
+    FortiOS and stay unqualified (their VDOM is a fact)."""
+    return ref if vdom in ("", "root") else "%s@%s" % (ref, vdom)
+
+
 def _cidr(ip_mask: str) -> str:
     """'192.0.2.14 255.255.255.0' -> '192.0.2.14/24'; '' for 0.0.0.0."""
     parts = (ip_mask or "").split()
@@ -68,7 +80,7 @@ class FortiGateConnector(Connector):
     secret_help = ("Key of a REST API administrator (System › Administrators › REST API Admin) with a "
                    "read-only profile and this server as its only trusted host.")
     uses_username = False
-    uses_vdom = False  # VDOMs are off on fgt02; multi-VDOM is unmeasured
+    uses_vdom = False  # VDOMs are off on fgt02; multi-VDOM reading below is unmeasured
 
     def _client(self):
         cfg = self.source.config or {}
@@ -122,7 +134,13 @@ class FortiGateConnector(Connector):
         ("detected devices", "/api/v2/monitor/user/device/query", ("L2", "L3"), "_p_devices"),
         ("firewall policies", "/api/v2/cmdb/firewall/policy", ("L4",), "_p_polcfg"),
         ("policy counters", "/api/v2/monitor/firewall/policy", ("L4",), "_p_polmon"),
+        ("policy routes", "/api/v2/cmdb/router/policy", ("L3",), "_p_polroutes"),
+        ("sd-wan", "/api/v2/cmdb/system/sdwan", ("L3",), "_p_sdwan"),
+        ("vdoms", "/api/v2/cmdb/system/vdom", ("device",), "_p_vdoms"),
     ]
+    #: Re-read per extra VDOM of a multi-VDOM box (``?vdom=<name>``).
+    # TODO verify: FortiGate multi-VDOM (no multi-VDOM box in the lab; fgt02 8.0.2 has VDOMs off).
+    PER_VDOM = ("routing table", "addresses", "firewall policies", "policy counters", "policy routes")
 
     def test(self) -> dict:
         with self._client() as c:
@@ -149,6 +167,16 @@ class FortiGateConnector(Connector):
         with self._client() as c:
             out = [self._read(c, name, path, layers, getattr(self, parser))
                    for name, path, layers, parser in self.PLAN]
+            vd = next((r for r in out if r.endpoint == "vdoms"), None)
+            names = [f.value for f in (vd.facts if vd and vd.ok else []) if f.key == "vdom_names"]
+            extra = [v for v in (names[0] if names else []) if v != "root"]
+            for v in extra:
+                for name, path, layers, parser in self.PLAN:
+                    if name in self.PER_VDOM:
+                        sep = "&" if "?" in path else "?"
+                        r = self._read(c, "%s · vdom %s" % (name, v), "%s%svdom=%s" % (path, sep, v),
+                                       layers, getattr(self, parser))
+                        out.append(r)
         lbl = {"source": self.source.name}
         for r in out:
             r.metrics.append(("obs_endpoint_up", dict(lbl, endpoint=r.endpoint), 1 if r.ok else 0))
@@ -210,7 +238,8 @@ class FortiGateConnector(Connector):
         for i in body.get("results") or []:
             ref = "if:%s" % i.get("name")
             res.facts += [FactRow(ref, "L2", "type", i.get("type", "")),
-                          FactRow(ref, "L2", "admin_status", i.get("status", ""))]
+                          FactRow(ref, "L2", "admin_status", i.get("status", "")),
+                          FactRow(ref, "L2", "vdom", i.get("vdom") or "root")]
             for k in ("role", "alias"):
                 if i.get(k) and i.get(k) != "undefined":
                     res.facts.append(FactRow(ref, "L2", k, i[k]))
@@ -226,9 +255,11 @@ class FortiGateConnector(Connector):
 
     @staticmethod
     def _p_routes(body, res):
+        vdom = _vdom(body)
         routes = [{"dst": r.get("ip_mask"), "gateway": r.get("gateway"), "device": r.get("interface"),
-                   "type": r.get("type"), "distance": r.get("distance")} for r in body.get("results") or []]
-        res.facts.append(FactRow("device", "L3", "routes", routes))
+                   "type": r.get("type"), "distance": r.get("distance"), "vdom": r.get("vdom") or vdom}
+                  for r in body.get("results") or []]
+        res.facts.append(FactRow(_q("device", vdom) if vdom != "root" else "device", "L3", "routes", routes))
         for r in routes:
             if r["device"]:
                 res.facts.append(FactRow("if:%s" % r["device"], "L3", "route:%s" % r["dst"],
@@ -236,8 +267,9 @@ class FortiGateConnector(Connector):
 
     @staticmethod
     def _p_address(body, res):
+        vdom = _vdom(body)
         for a in body.get("results") or []:
-            ref = "address:%s" % a.get("name")
+            ref = _q("address:%s" % a.get("name"), vdom)
             sub = _cidr(a.get("subnet", ""))
             value = sub or a.get("fqdn") or ("%s-%s" % (a["start-ip"], a["end-ip"]) if a.get("start-ip") else "")
             if value:
@@ -261,20 +293,31 @@ class FortiGateConnector(Connector):
 
     @staticmethod
     def _p_polcfg(body, res):
-        for p in body.get("results") or []:
-            ref = "fwpolicy:%s" % p.get("policyid")
+        # The list comes in SEQUENCE order (the order FortiOS evaluates), not id
+        # order: "seq" keeps it, the path analysis walks policies by it.
+        vdom = _vdom(body)
+        for n, p in enumerate(body.get("results") or []):
+            ref = _q("fwpolicy:%s" % p.get("policyid"), vdom)
             res.facts += [FactRow(ref, "L4", "name", p.get("name", "")),
                           FactRow(ref, "L4", "status", p.get("status", "")),
                           FactRow(ref, "L4", "action", p.get("action", "")),
-                          FactRow(ref, "L4", "nat", p.get("nat", ""))]
+                          FactRow(ref, "L4", "nat", p.get("nat", "")),
+                          FactRow(ref, "L4", "seq", n),
+                          FactRow(ref, "L4", "vdom", vdom)]
+            for k in ("srcaddr-negate", "dstaddr-negate", "service-negate", "ippool"):
+                if p.get(k):
+                    res.facts.append(FactRow(ref, "L4", k.replace("-", "_"), p[k]))
+            if p.get("poolname"):
+                res.facts.append(FactRow(ref, "L4", "poolname", _names(p.get("poolname"))))
             for k in ("srcintf", "dstintf", "srcaddr", "dstaddr", "service"):
                 res.facts.append(FactRow(ref, "L4", k, _names(p.get(k))))
 
     @staticmethod
     def _p_polmon(body, res):
+        vdom = _vdom(body)
         for p in body.get("results") or []:
             pid = p.get("policyid")
-            ref = "fwpolicy:%s" % pid
+            ref = _q("fwpolicy:%s" % pid, vdom)
             for k in ("hit_count", "bytes", "packets", "active_sessions"):
                 if isinstance(p.get(k), (int, float)):
                     res.facts.append(FactRow(ref, "L4", k, p[k]))
@@ -282,3 +325,27 @@ class FortiGateConnector(Connector):
             if p.get("last_used"):
                 res.facts.append(FactRow(ref, "L4", "last_used",
                                          time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(p["last_used"]))))
+
+    @staticmethod
+    def _p_polroutes(body, res):
+        """Policy routes are evaluated BEFORE the routing table; the path
+        analysis does not evaluate them (fields unmeasured) — it reports that
+        they exist, so a path through this box is marked unverified."""
+        vdom = _vdom(body)
+        rows = [{"seq": r.get("seq-num"), "status": r.get("status"), "input": _names(r.get("input-device")),
+                 "src": _names(r.get("src")), "dst": _names(r.get("dst")), "gateway": r.get("gateway"),
+                 "output": r.get("output-device"), "action": r.get("action")}
+                for r in body.get("results") or []]
+        res.facts.append(FactRow(_q("device", vdom) if vdom != "root" else "device", "L3", "policy_routes", rows))
+
+    @staticmethod
+    def _p_sdwan(body, res):
+        r = body.get("results") or {}
+        if isinstance(r, list):
+            r = r[0] if r else {}
+        res.facts.append(FactRow("device", "L3", "sdwan", r.get("status") or "disable"))
+
+    @staticmethod
+    def _p_vdoms(body, res):
+        names = [v.get("name") for v in body.get("results") or [] if isinstance(v, dict) and v.get("name")]
+        res.facts.append(FactRow("device", "device", "vdom_names", names or ["root"]))

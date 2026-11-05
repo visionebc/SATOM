@@ -5,7 +5,7 @@
 <ol class="obs-path" aria-label="Network path">
   {% for h in t.hops %}
   <li class="obs-hop">
-    <span class="obs-hop-dev"><i class="bi bi-{{ 'shield-shaded' if h.kind == 'fortigate' else 'shield-check' }}" aria-hidden="true"></i> {{ h.source }}</span>
+    <span class="obs-hop-dev"><i class="bi bi-{{ 'shield-shaded' if h.kind == 'fortigate' else 'shield-check' }}" aria-hidden="true"></i> {{ h.label or h.source }}</span>
     <span class="obs-hop-if">{% if h['in'] %}{{ h['in'] }} → {% endif %}{{ h.out or '—' }}{% if h.via and h.via != 'connected' %} · via <code>{{ h.via }}</code>{% elif h.via %} · connected{% endif %}</span>
     {% if h.fw %}{% set fv = h.fw.verdict %}
     <span class="obs-chip st-{{ {'allowed':'ok','denied':'error','unverified':'stale'}[fv] }}" title="{% for c in h.fw.candidates %}#{{ c.id }} {{ c.name }} ({{ c.action }}{% if not c.certain %}, {{ c.why }}{% endif %}); {% else %}no policy matches: implicit deny{% endfor %}"><i class="bi bi-bricks" aria-hidden="true"></i>
@@ -13,6 +13,7 @@
     {% endif %}
   </li>
   {% endfor %}
+  {% if t.hops and t.hops|selectattr('notes')|list %}<li class="obs-hop obs-hop-warn" title="{% for h in t.hops %}{% for n in h.notes %}{{ h.source }}: {{ n }}&#10;{% endfor %}{% endfor %}"><span class="obs-chip st-stale"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> not everything evaluated</span></li>{% endif %}
   <li class="obs-hop obs-hop-end st-{{ pst }}"><span class="obs-chip st-{{ pst }}"><i class="bi bi-{{ picon }}" aria-hidden="true"></i> {{ path_label.get(t.status, t.status) }}</span> <span class="small">{{ t.end }}</span></li>
 </ol>
 {%- endmacro %}

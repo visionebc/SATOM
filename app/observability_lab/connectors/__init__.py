@@ -75,9 +75,6 @@ def register(cls: type[Connector]) -> type[Connector]:
 
 #: Kinds in the design that are not built yet — listed in the UI, never faked.
 PLANNED = {
-    "fortiadc": "FortiADC (from SATOM)",
-    "fortiauthenticator": "FortiAuthenticator (from SATOM)",
-    "fortianalyzer": "FortiAnalyzer (from SATOM)",
     "efficientip": "EfficientIP SOLIDserver (DDI)",
     "netbox": "NetBox",
     "api": "Internal API (generic REST)",
@@ -85,7 +82,7 @@ PLANNED = {
 
 
 def _load() -> None:
-    from . import fortigate, fortiweb  # noqa: F401 — each registers itself
+    from . import fortigate, fortiweb, satom_cache  # noqa: F401 — each registers itself
 
 
 def get(kind: str) -> type[Connector]:

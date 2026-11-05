@@ -38,6 +38,9 @@ def _iface(text):
         return None
 
 
+DEFAULT_VDOM = "root"
+
+
 @dataclass
 class Route:
     net: object
@@ -45,6 +48,7 @@ class Route:
     gateway: str | None  # None = connected
     kind: str
     distance: int = 0
+    vdom: str = DEFAULT_VDOM
 
 
 @dataclass
@@ -52,8 +56,11 @@ class Model:
     sources: dict = field(default_factory=dict)        # sid -> Source
     objs: dict = field(default_factory=dict)           # sid -> ref -> {key: value}
     addrs: list = field(default_factory=list)          # (iface_obj, sid, ifname)
-    routes: dict = field(default_factory=dict)         # sid -> [Route]
+    routes: dict = field(default_factory=dict)         # sid -> [Route] (every VDOM)
     endpoints: list = field(default_factory=list)      # (ip, sid, mac, ifname)
+    ifvdom: dict = field(default_factory=dict)         # (sid, ifname) -> vdom
+    ifdown: dict = field(default_factory=dict)         # (sid, ifname) -> why it is down
+    notes: dict = field(default_factory=dict)          # sid -> [what the path analysis cannot evaluate]
 
     def name(self, sid):
         s = self.sources.get(sid)
@@ -66,6 +73,21 @@ class Model:
     def of(self, sid, prefix):
         return {r.split(":", 1)[1]: kv for r, kv in self.objs.get(sid, {}).items() if r.startswith(prefix + ":")}
 
+    def vdoms(self, sid):
+        return sorted({v for (s, _n), v in self.ifvdom.items() if s == sid} |
+                      {r.vdom for r in self.routes.get(sid, [])} or {DEFAULT_VDOM})
+
+    def label(self, dom):
+        sid, vdom = dom
+        multi = len(self.vdoms(sid)) > 1
+        return "%s%s" % (self.name(sid), (" [%s]" % vdom) if multi or vdom != DEFAULT_VDOM else "")
+
+
+def _split_vdom(key):
+    """'2@dmz' -> ('2', 'dmz'); '2' -> ('2', 'root')."""
+    base, _, vdom = str(key).partition("@")
+    return base, (vdom or DEFAULT_VDOM)
+
 
 def build(sources=None) -> Model:
     sources = Source.query.order_by(Source.name).all() if sources is None else sources
@@ -75,26 +97,48 @@ def build(sources=None) -> Model:
     for f in Fact.query.filter(Fact.source_id.in_(list(m.sources))):
         m.objs.setdefault(f.source_id, {}).setdefault(f.object_ref, {})[f.key] = f.value
     for sid in m.sources:
-        rts = []
+        rts, notes = [], []
         for name, kv in m.of(sid, "if").items():
+            vdom = kv.get("vdom") or DEFAULT_VDOM
+            m.ifvdom[(sid, name)] = vdom
+            admin = str(kv.get("admin_status") or "").strip().lower()
+            link = str(kv.get("link") or "").strip().lower()
+            if admin == "down":
+                m.ifdown[(sid, name)] = "administratively down"
+            elif link == "down":
+                m.ifdown[(sid, name)] = "link down"
             ifo = _iface(kv.get("address") or kv.get("configured_address") or "")
             if ifo is None or ifo.ip.is_unspecified:
                 continue
             m.addrs.append((ifo, sid, name))
-            rts.append(Route(ifo.network, name, None, "connected"))
-        for r in (m.objs.get(sid, {}).get("device", {}).get("routes") or []):
-            if not isinstance(r, dict):
-                continue
-            net, gw = _net(r.get("dst")), str(r.get("gateway") or "")
-            if net is None:
-                continue
-            if r.get("type") == "connect" or gw in ("", "0.0.0.0"):
-                if not any(x.net == net and x.gateway is None for x in rts):
-                    rts.append(Route(net, str(r.get("device") or ""), None, "connected"))
-                continue
-            rts.append(Route(net, str(r.get("device") or ""), gw, str(r.get("type") or "static"),
-                             int(r.get("distance") or 0) if str(r.get("distance") or "0").isdigit() else 0))
+            rts.append(Route(ifo.network, name, None, "connected", 0, vdom))
+        objs = m.objs.get(sid, {})
+        for ref in [r for r in objs if r == "device" or r.startswith("device@")]:
+            ref_vdom = _split_vdom(ref)[1] if "@" in ref else DEFAULT_VDOM
+            for r in objs[ref].get("routes") or []:
+                if not isinstance(r, dict):
+                    continue
+                net, gw = _net(r.get("dst")), str(r.get("gateway") or "")
+                if net is None:
+                    continue
+                vdom = r.get("vdom") or ref_vdom
+                dist = int(r["distance"]) if str(r.get("distance") or "").isdigit() else 0
+                if r.get("type") == "connect" or gw in ("", "0.0.0.0"):
+                    if not any(x.net == net and x.gateway is None and x.vdom == vdom for x in rts):
+                        rts.append(Route(net, str(r.get("device") or ""), None, "connected", 0, vdom))
+                    continue
+                rts.append(Route(net, str(r.get("device") or ""), gw, str(r.get("type") or "static"), dist, vdom))
+            pr = [x for x in (objs[ref].get("policy_routes") or []) if not isinstance(x, dict) or x.get("status") != "disable"]
+            if pr:
+                notes.append("%d policy route(s)%s are evaluated before the routing table and are NOT evaluated "
+                             "here" % (len(pr), "" if ref == "device" else " in vdom " + ref_vdom))
+        if str(objs.get("device", {}).get("sdwan") or "").lower() == "enable":
+            notes.append("SD-WAN is enabled: its rules can override the routing table and are NOT evaluated here")
+        if objs.get("device", {}).get("read_mode") == "SATOM cache only":
+            notes.append("configuration from SATOM's snapshot of %s UTC; routes are the configured static ones "
+                         "(no live routing table, no dynamic routes)" % objs["device"].get("config_snapshot_at", "?"))
         m.routes[sid] = rts
+        m.notes[sid] = notes
         for mac, kv in m.of(sid, "endpoint").items():
             ip = _ip(kv.get("address") or "")
             if ip:
@@ -104,23 +148,50 @@ def build(sources=None) -> Model:
 
 # ── lookups ──────────────────────────────────────────────────────────────────
 
-def lookup(m: Model, sid: int, ip) -> Route | None:
-    """Longest prefix; on a tie connected first, then the lower distance."""
-    best = None
+def route_decision(m: Model, dom, ip) -> dict:
+    """Every route of the routing domain that contains ``ip``, how it ranks,
+    which are discarded (interface down) and the one chosen: longest prefix,
+    then connected before static, then the lower distance; equal best = ECMP."""
+    sid, vdom = dom
+    cands = []
     for r in m.routes.get(sid, []):
-        if r.net.version != ip.version or ip not in r.net:
+        if r.vdom != vdom or r.net.version != ip.version or ip not in r.net:
             continue
-        rank = (r.net.prefixlen, r.gateway is None, -r.distance)
-        if best is None or rank > best[0]:
-            best = (rank, r)
-    return best[1] if best else None
+        down = m.ifdown.get((sid, r.iface)) if r.iface else None
+        cands.append({"route": r, "dst": str(r.net), "prefixlen": r.net.prefixlen,
+                      "via": r.gateway or "connected", "iface": r.iface, "type": r.kind, "distance": r.distance,
+                      "usable": not down, "why": ("interface %s %s" % (r.iface, down)) if down else ""})
+    usable = [c for c in cands if c["usable"]]
+    rank = lambda c: (c["prefixlen"], c["route"].gateway is None, -c["distance"])  # noqa: E731
+    best = max((rank(c) for c in usable), default=None)
+    chosen = [c for c in usable if rank(c) == best] if best else []
+    for c in cands:
+        if c in chosen:
+            c["outcome"] = "chosen" if c is chosen[0] else "equal cost (ECMP)"
+        elif not c["usable"]:
+            c["outcome"] = "discarded"
+        else:
+            b = chosen[0]
+            c["outcome"] = ("shorter prefix" if c["prefixlen"] < b["prefixlen"] else
+                            "static loses to connected" if c["route"].gateway and b["route"].gateway is None else
+                            "higher distance")
+    cands.sort(key=lambda c: (-c["prefixlen"], c["distance"]))
+    return {"route": chosen[0]["route"] if chosen else None, "candidates": cands, "ecmp": len(chosen) > 1}
 
 
-def owner(m: Model, ip, exclude_sid=None):
-    """(sid, ifname) of the monitored interface holding exactly this IP."""
+def lookup(m: Model, sid: int, ip, vdom: str = DEFAULT_VDOM) -> Route | None:
+    return route_decision(m, (sid, vdom), ip)["route"]
+
+
+def owner(m: Model, ip, exclude_sid=None, exclude_dom=None):
+    """(sid, ifname) of the monitored interface holding exactly this IP. An
+    inter-VDOM link resolves to the SAME device in another VDOM."""
     for ifo, sid, name in m.addrs:
-        if ifo.ip == ip and sid != exclude_sid:
-            return sid, name
+        if ifo.ip != ip or sid == exclude_sid:
+            continue
+        if exclude_dom and (sid, m.ifvdom.get((sid, name), DEFAULT_VDOM)) == exclude_dom:
+            continue
+        return sid, name
     return None
 
 
@@ -138,119 +209,194 @@ def iface_ip(m: Model, sid, ifname):
     return None
 
 
-# ── firewall policy match (FortiGate) ────────────────────────────────────────
+# ── firewall policy evaluation (FortiGate) ───────────────────────────────────
 
-def _addr_match(m: Model, sid, names, ip):
-    """True / False / None (unknown: a group, an FQDN or an object not collected)."""
+def _addresses(m: Model, sid, vdom):
+    out = {}
+    for key, kv in m.of(sid, "address").items():
+        name, v = _split_vdom(key)
+        if v == vdom:
+            out[name] = kv
+    return out
+
+
+def _addr_match(m: Model, sid, names, ip, vdom=DEFAULT_VDOM):
+    """(True / False / None, why). None = unknown: a group, a VIP, an FQDN or an
+    object that is not collected."""
     if ip is None:
-        return None
-    addrs = m.of(sid, "address")
-    unknown = False
+        return None, "address unknown (translated by an IP pool upstream)"
+    addrs = _addresses(m, sid, vdom)
+    unknown = []
     for n in names or []:
         if n == "all":
-            return True
+            return True, "all"
         sub = (addrs.get(n) or {}).get("subnet")
         if sub is None:
-            unknown = True  # address group or object not collected
+            unknown.append("%s (group / VIP / not collected)" % n)
             continue
         sub = str(sub)
         if "-" in sub:
             a, _, b = sub.partition("-")
             lo, hi = _ip(a), _ip(b)
             if lo and hi and lo.version == ip.version and lo <= ip <= hi:
-                return True
+                return True, "%s = %s" % (n, sub)
             if not (lo and hi):
-                unknown = True
+                unknown.append("%s (%s)" % (n, sub))
             continue
         net = _net(sub)
         if net is None:
-            unknown = True  # FQDN / wildcard
+            unknown.append("%s (FQDN %s)" % (n, sub))
         elif net.version == ip.version and ip in net:
-            return True
-    return None if unknown else False
+            return True, "%s = %s" % (n, sub)
+    if unknown:
+        return None, "cannot resolve " + ", ".join(unknown)
+    return False, "%s not in %s" % (ip, ", ".join(names or ["(none)"]))
 
 
-def fw_match(m: Model, sid, in_if, out_if, src_ip, dst_ip) -> dict:
-    """Candidate firewall policies of a FortiGate for one hop, by id (the
-    sequence order is not collected). ``verdict``: allowed / denied / unverified."""
-    cands = []
-    for pid, kv in sorted(m.of(sid, "fwpolicy").items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0):
-        if pid == "0" or kv.get("status") not in (None, "enable"):
+def _neg(result, negate):
+    ok, why = result
+    if str(negate or "").lower() != "enable" or ok is None:
+        return ok, why
+    return (not ok), "negated: " + why
+
+
+def _policies(m: Model, sid, vdom):
+    rows = []
+    for key, kv in m.of(sid, "fwpolicy").items():
+        pid, v = _split_vdom(key)
+        if pid == "0" or (kv.get("vdom") or v) != vdom:
             continue
-        si, di = kv.get("srcintf") or [], kv.get("dstintf") or []
-        if not ((in_if in si or "any" in si) and (out_if in di or "any" in di)):
+        rows.append((pid, kv))
+    # Sequence order (as the device lists them); id order only when not collected.
+    rows.sort(key=lambda x: (x[1].get("seq") if isinstance(x[1].get("seq"), int) else 10 ** 6,
+                             int(x[0]) if x[0].isdigit() else 0))
+    return rows
+
+
+def fw_eval(m: Model, sid, vdom, in_if, out_if, src_ip, dst_ip) -> dict:
+    """Walk the VDOM's policies in sequence order, criterion by criterion.
+    First certain match decides; an uncertain one before it makes the verdict
+    ``unverified``; nothing matching = implicit deny."""
+    rows, decided, uncertain = [], None, []
+    ordered = _policies(m, sid, vdom)
+    for pid, kv in ordered:
+        row = {"id": pid, "name": kv.get("name") or "", "action": kv.get("action") or "", "nat": kv.get("nat") or "",
+               "seq": kv.get("seq"), "hits": kv.get("hit_count"), "bytes": kv.get("bytes"), "crit": []}
+        rows.append(row)
+        if kv.get("status") not in (None, "enable"):
+            row["outcome"] = "disabled"
             continue
-        s_ok, d_ok = _addr_match(m, sid, kv.get("srcaddr"), src_ip), _addr_match(m, sid, kv.get("dstaddr"), dst_ip)
-        if s_ok is False or d_ok is False:
-            continue
-        svc = kv.get("service") or []
-        certain = s_ok is True and d_ok is True and ("ALL" in svc)
-        cands.append({"id": pid, "name": kv.get("name") or "", "action": kv.get("action") or "",
-                      "nat": kv.get("nat") or "", "certain": certain,
-                      "why": "" if certain else "; ".join(x for x in (
-                          "source address not resolvable" if s_ok is None else "",
-                          "destination address not resolvable" if d_ok is None else "",
-                          "service %s not checked" % ",".join(svc) if "ALL" not in svc else "") if x),
-                      "hits": kv.get("hit_count"), "bytes": kv.get("bytes")})
-    first = next((c for c in cands if c["certain"]), None)
-    if first:
-        verdict = "allowed" if first["action"] == "accept" else "denied"
-    elif cands:
+        si, di, svc = kv.get("srcintf") or [], kv.get("dstintf") or [], kv.get("service") or []
+        crit = [("from interface", (in_if in si or "any" in si), "%s in %s" % (in_if, ", ".join(si) or "—")),
+                ("to interface", (out_if in di or "any" in di), "%s in %s" % (out_if, ", ".join(di) or "—"))]
+        crit.append(("source address",) + _neg(_addr_match(m, sid, kv.get("srcaddr"), src_ip, vdom), kv.get("srcaddr_negate")))
+        crit.append(("destination address",) + _neg(_addr_match(m, sid, kv.get("dstaddr"), dst_ip, vdom), kv.get("dstaddr_negate")))
+        svc_ok = True if ("ALL" in svc and str(kv.get("service_negate") or "") != "enable") else None
+        crit.append(("service", svc_ok, "ALL" if svc_ok else "%s — service objects not collected" % (", ".join(svc) or "—")))
+        row["crit"] = [{"name": c[0], "ok": c[1], "why": c[2]} for c in crit]
+        vals = [c[1] for c in crit]
+        if False in vals:
+            row["outcome"] = "no match"
+        elif None in vals:
+            row["outcome"] = "possible match (unverified)"
+            uncertain.append(row)
+        else:
+            row["outcome"] = "MATCH — decides"
+            decided = row
+            break
+    if decided:
+        verdict = "unverified" if uncertain else ("allowed" if decided["action"] == "accept" else "denied")
+    elif uncertain:
         verdict = "unverified"
     else:
-        verdict = "denied"  # nothing matches: implicit deny (policy 0)
-    return {"verdict": verdict, "candidates": cands}
+        verdict = "denied"
+    nat = None
+    if decided and decided["nat"] == "enable":
+        kv = dict(ordered)[decided["id"]]
+        nat = ("source translated to an IP pool (%s) — not resolved" % ", ".join(kv.get("poolname") or [])
+               if str(kv.get("ippool") or "") == "enable" else "source translated to the egress interface address")
+    return {"verdict": verdict, "decided": decided, "uncertain_before": uncertain, "rows": rows,
+            "candidates": [dict(r, certain=(r is decided)) for r in uncertain + ([decided] if decided else [])],
+            "implicit_deny": not decided and not uncertain, "nat": nat, "vdom": vdom}
+
+
+def fw_match(m: Model, sid, in_if, out_if, src_ip, dst_ip, vdom=DEFAULT_VDOM) -> dict:
+    """Back-compatible summary of :func:`fw_eval`."""
+    return fw_eval(m, sid, vdom, in_if, out_if, src_ip, dst_ip)
 
 
 # ── trace ────────────────────────────────────────────────────────────────────
 
-def trace(m: Model, sid: int, dst, src_ip=None) -> dict:
-    """Hop-by-hop path from a monitored device to an IP, across monitored
-    devices. ``status``: reached (the IP is on a segment a device sits on),
-    leaves (next hop is not monitored), no_route, denied (a FortiGate on the
-    way has no policy allowing it), loop."""
+def trace(m: Model, sid: int, dst, src_ip=None, vdom: str | None = None) -> dict:
+    """Hop-by-hop path from a monitored device (routing domain = device +
+    VDOM) to an IP, across monitored devices and VDOMs. Every hop keeps the
+    full decision (routes considered, next-hop resolution, firewall policies
+    walked, NAT) for the phased analysis. ``status``: reached, leaves,
+    no_route, denied, loop, invalid."""
     dst = _ip(dst) if not hasattr(dst, "version") else dst
     if dst is None:
-        return {"status": "invalid", "hops": [], "end": "not an IP address"}
-    hops, seen, cur, ingress = [], set(), sid, None
+        return {"status": "invalid", "hops": [], "end": "not an IP address", "src_ip": ""}
+    dom = (sid, vdom or (m.vdoms(sid)[0] if DEFAULT_VDOM not in m.vdoms(sid) else DEFAULT_VDOM))
+    hops, seen, ingress = [], set(), None
+    src = _ip(src_ip) if src_ip else None
+    src_why = "given" if src else ""
     status, end = "no_route", ""
     for _ in range(MAX_HOPS):
-        if cur in seen:
-            status, end = "loop", "routing loop back to %s" % m.name(cur)
+        if dom in seen:
+            status, end = "loop", "routing loop back to %s" % m.label(dom)
             break
-        seen.add(cur)
-        r = lookup(m, cur, dst)
-        hop = {"source_id": cur, "source": m.name(cur), "kind": m.kind(cur), "in": ingress,
-               "out": r.iface if r else None,
-               "via": (r.gateway or "connected") if r else None,
-               "route": str(r.net) if r else None}
-        if src_ip is None and r is not None:
-            src_ip = iface_ip(m, cur, r.iface)
+        seen.add(dom)
+        cur = dom[0]
+        dec = route_decision(m, dom, dst)
+        r = dec["route"]
+        hop = {"source_id": cur, "source": m.name(cur), "label": m.label(dom), "vdom": dom[1], "kind": m.kind(cur),
+               "in": ingress, "out": r.iface if r else None, "via": (r.gateway or "connected") if r else None,
+               "route": str(r.net) if r else None, "decision": dec, "notes": list(m.notes.get(cur, [])),
+               "src_ip": str(src) if src else ""}
+        if src is None and r is not None and not hops:
+            src = iface_ip(m, cur, r.iface)
+            src_why = "address of the egress interface %s %s (the device opens the connection)" % (m.name(cur), r.iface)
+            hop["src_ip"] = str(src) if src else ""
         if r is None:
             hops.append(hop)
-            status, end = "no_route", "%s has no route to %s" % (m.name(cur), dst)
+            status, end = "no_route", "%s has no usable route to %s" % (m.label(dom), dst)
             break
         if m.kind(cur) == "fortigate" and ingress:
-            hop["fw"] = fw_match(m, cur, ingress, r.iface, src_ip, dst)
+            fw = fw_eval(m, cur, dom[1], ingress, r.iface, src, dst)
+            hop["fw"] = fw
+            if fw["nat"]:
+                hop["nat"] = fw["nat"]
+                src = None if "IP pool" in fw["nat"] else iface_ip(m, cur, r.iface)
+                src_why = fw["nat"]
         hops.append(hop)
         if hop.get("fw") and hop["fw"]["verdict"] == "denied":
-            status, end = "denied", "%s: no firewall policy allows %s → %s" % (m.name(cur), ingress, r.iface)
+            status = "denied"
+            end = ("%s: no firewall policy matches %s → %s (implicit deny)" if hop["fw"]["implicit_deny"] else
+                   "%s: policy denies %s → %s") % (m.label(dom), ingress, r.iface)
             break
         if r.gateway is None:
             dev = owner(m, dst)
             ep = endpoint_at(m, dst)
             status = "reached"
+            hop["nexthop"] = "destination is on the connected subnet %s" % r.net
             end = ("%s %s" % (m.name(dev[0]), dev[1]) if dev else
                    "detected device %s on %s %s" % (ep["mac"], ep["source"], ep["interface"]) if ep else
                    "on %s (host not seen by any monitored device)" % r.net)
             break
         gw = _ip(r.gateway)
-        nxt = owner(m, gw, exclude_sid=cur) if gw else None
+        nxt = owner(m, gw, exclude_dom=dom) if gw else None
         if nxt is None:
+            hop["nexthop"] = "gateway %s is not an address of any monitored device" % r.gateway
             status, end = "leaves", "via %s (not a monitored device)" % r.gateway
             break
-        cur, ingress = nxt
-    return {"status": status, "hops": hops, "end": end, "src_ip": str(src_ip) if src_ip else ""}
+        nvdom = m.ifvdom.get(nxt, DEFAULT_VDOM)
+        hop["nexthop"] = "gateway %s = %s %s%s" % (r.gateway, m.name(nxt[0]), nxt[1],
+                                                    (" (vdom %s)" % nvdom) if len(m.vdoms(nxt[0])) > 1 else "")
+        if nxt[0] == cur:
+            hop["nexthop"] += " — inter-VDOM link"
+        dom, ingress = (nxt[0], nvdom), nxt[1]
+    return {"status": status, "hops": hops, "end": end, "src_ip": str(src) if src else "", "src_why": src_why,
+            "dst": str(dst)}
 
 
 # ── views ────────────────────────────────────────────────────────────────────
@@ -279,8 +425,8 @@ def route_rows(m: Model) -> list[dict]:
     for sid, rts in m.routes.items():
         for r in rts:
             gw = _ip(r.gateway) if r.gateway else None
-            nxt = owner(m, gw, exclude_sid=sid) if gw else None
-            rows.append({"source_id": sid, "source": m.name(sid), "dst": str(r.net), "interface": r.iface,
+            nxt = owner(m, gw, exclude_dom=(sid, r.vdom)) if gw else None
+            rows.append({"source_id": sid, "source": m.label((sid, r.vdom)), "vdom": r.vdom, "dst": str(r.net), "interface": r.iface,
                          "gateway": r.gateway or "", "type": r.kind, "distance": r.distance,
                          "next_device": "%s %s" % (m.name(nxt[0]), nxt[1]) if nxt else ""})
     rows.sort(key=lambda r: (r["source"], -ipaddress.ip_network(r["dst"]).prefixlen, r["dst"]))
@@ -337,8 +483,9 @@ def fw_flows(m: Model) -> list[dict]:
     for sid in m.sources:
         if m.kind(sid) != "fortigate":
             continue
-        for pid, kv in m.of(sid, "fwpolicy").items():
-            rows.append({"source_id": sid, "source": m.name(sid), "id": pid,
+        for key, kv in m.of(sid, "fwpolicy").items():
+            pid, vdom = _split_vdom(key)
+            rows.append({"source_id": sid, "source": m.name(sid), "id": pid, "vdom": kv.get("vdom") or vdom, "seq": kv.get("seq"),
                          "name": kv.get("name") or ("implicit deny" if pid == "0" else ""),
                          "srcintf": kv.get("srcintf") or [], "dstintf": kv.get("dstintf") or [],
                          "srcaddr": kv.get("srcaddr") or [], "dstaddr": kv.get("dstaddr") or [],
@@ -346,7 +493,8 @@ def fw_flows(m: Model) -> list[dict]:
                          "nat": kv.get("nat") or "", "status": kv.get("status") or ("enable" if pid == "0" else ""),
                          "hits": kv.get("hit_count"), "bytes": kv.get("bytes"),
                          "sessions": kv.get("active_sessions"), "last_used": kv.get("last_used") or ""})
-    rows.sort(key=lambda r: (r["source"], int(r["id"]) if str(r["id"]).isdigit() else 0))
+    rows.sort(key=lambda r: (r["source"], r["vdom"], r["seq"] if isinstance(r["seq"], int) else 10 ** 6,
+                             int(r["id"]) if str(r["id"]).isdigit() else 0))
     return rows
 
 

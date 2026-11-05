@@ -2766,6 +2766,16 @@ def create_app(config_override: object | None = None) -> Flask:
                 _hg.boot_publish()
         except Exception:  # noqa: BLE001 — never block boot on housekeeping
             app.logger.exception("hostguard boot publish failed")
+        # Web hosts: a node whose server connections were trusted before the
+        # certificate expiry check existed gets it now; ensure_scheduled never
+        # touches a row that exists (an administrator's edits stay).
+        try:
+            from .services import webhost_certs as _whc
+            with app.app_context():
+                if _whc.connections():
+                    _whc.ensure_scheduled()
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("web host certificate check seed failed")
         # Backfill the per-BUILD snapshot archive. Until 2026-09-16 a sweep
         # wrote one file per appliance and overwrote it every run, so the first
         # sweep after a firmware upgrade DESTROYED the evidence backing the

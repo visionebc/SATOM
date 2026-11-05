@@ -174,9 +174,9 @@ def _licence(alert, src):
     else:
         text = "The device reports its licence as not valid."
         how = "measured"
-    fix = ["Load a valid VM licence (or a new evaluation) on %s: GUI System › FortiGuard / License, "
-           "or upload the .lic file from the Fortinet support portal." % src.name,
-           "After the reboot the device applies, the alert clears on the next collection."]
+    fix = ["Load a valid VM licence (or a new evaluation) on %s: the .lic file from the Fortinet support "
+           "portal, on the device's licence page (menu path unverified on this build)." % src.name,
+           "Once the device has applied it (VMs usually reboot), the alert clears on the next collection."]
     impact = ("FortiWeb without a licence: signatures and other FortiGuard features are inactive, and its "
               "REST API may lock reads (HTTP 423)." if src.kind == "fortiweb" else
               "Configuration changes, virtual-server state and back-end health cannot be read: SATOM keeps "

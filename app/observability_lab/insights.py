@@ -68,7 +68,9 @@ def policies(sources) -> list[dict]:
             r["backends_total"] = None
         if r.get("status") != "enable":
             h = "disabled"
-        elif r["backends_total"] is None or (r["backends_total"] and r["backends_unread"] == r["backends_total"]):
+        elif r["backends_total"] == 0:
+            h = "empty"  # nothing behind it: never "healthy"
+        elif r["backends_total"] is None or r["backends_unread"] == r["backends_total"]:
             h = "no_data"
         elif r["backends_total"] and r["backends_down"] == r["backends_total"]:
             h = "all_down"
@@ -80,7 +82,7 @@ def policies(sources) -> list[dict]:
             h = "ok"
         r["health"] = h
         out.append(r)
-    order = {"all_down": 0, "degraded": 1, "no_data": 2, "unchecked": 3, "ok": 4, "disabled": 5}
+    order = {"all_down": 0, "degraded": 1, "empty": 2, "no_data": 3, "unchecked": 4, "ok": 5, "disabled": 6}
     out.sort(key=lambda r: (order[r["health"]], r["source"], r["name"]))
     return out
 

@@ -13,8 +13,8 @@ from ..models import EndpointStatus, Source
 
 bp = Blueprint("explore", __name__)
 
-HEALTH = ("all_down", "degraded", "no_data", "unchecked", "ok", "disabled")
-HEALTH_LABEL = {"all_down": "All back-ends down", "degraded": "Back-ends down", "no_data": "Not read",
+HEALTH = ("all_down", "degraded", "empty", "no_data", "unchecked", "ok", "disabled")
+HEALTH_LABEL = {"all_down": "All back-ends down", "degraded": "Back-ends down", "empty": "No back-ends", "no_data": "Not read",
                 "unchecked": "No health check", "ok": "Healthy", "disabled": "Disabled"}
 PATH_LABEL = {"reached": "Reached", "leaves": "Leaves monitored network", "no_route": "No route",
               "denied": "Blocked by firewall", "loop": "Routing loop", "invalid": "Invalid address"}

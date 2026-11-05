@@ -2,7 +2,7 @@
 {% from "_ui.html" import page_header, empty_state, filter_box, tile %}
 {% from "explore/_hops.html" import path_chain %}
 {% block title %}Data Flows{% endblock %}
-{% set HS = {'all_down': ('error', 'x-octagon-fill'), 'degraded': ('stale', 'exclamation-triangle-fill'), 'no_data': ('none', 'dash-circle'), 'unchecked': ('none', 'question-circle'), 'ok': ('ok', 'check-circle-fill'), 'disabled': ('none', 'pause-circle')} %}
+{% set HS = {'all_down': ('error', 'x-octagon-fill'), 'degraded': ('stale', 'exclamation-triangle-fill'), 'no_data': ('none', 'dash-circle'), 'empty': ('stale', 'inbox'), 'unchecked': ('none', 'question-circle'), 'ok': ('ok', 'check-circle-fill'), 'disabled': ('none', 'pause-circle')} %}
 {% set BH = {'up': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'unchecked': ('none', 'question-circle', 'No health check'), 'unread': ('none', 'eye-slash', 'Not read')} %}
 {% block content %}
 <div class="obs-page" data-scope="{{ scope }}" data-range="{{ range_key }}">
@@ -42,7 +42,7 @@
       <span class="obs-farrow" aria-hidden="true"></span>
       <div class="obs-fnode obs-fnode-main st-{{ st }}"><span class="obs-fnode-k">Server policy</span><b>{{ f.name }}</b>
         <span class="obs-chip st-{{ st }}"><i class="bi bi-{{ icon }}" aria-hidden="true"></i> {{ health_label[f.health] }}</span>
-        <span class="small">{% if f.wpp %}WPP {{ f.wpp }} · {% endif %}{{ f.sessions if f.sessions is not none else '—' }} sessions</span></div>
+        <span class="small">{% if f.wpp %}WPP {{ f.wpp }} · {% endif %}{{ f.get('sessions') if f.get('sessions') is not none else '—' }} sessions</span></div>
       <span class="obs-farrow" aria-hidden="true"></span>
       <div class="obs-fnode"><span class="obs-fnode-k">Pool</span>{{ f.server_pool or '—' }}<span class="small">{{ f.backend_rows|length }} back-end{{ 's' if f.backend_rows|length != 1 }}</span></div>
       <span class="obs-farrow" aria-hidden="true"></span>

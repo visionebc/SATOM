@@ -199,7 +199,7 @@ def _health_report(period):
                      "alerts": len(al), "critical": sum(1 for a in al if a.severity == "critical"),
                      "active": sum(1 for a in al if a.status == "active")})
     pols = insights.policies(sources)
-    buckets = {h: sum(1 for p in pols if p["health"] == h) for h in ("ok", "degraded", "all_down", "unchecked", "no_data", "disabled")}
+    buckets = {h: sum(1 for p in pols if p["health"] == h) for h in ("ok", "degraded", "all_down", "empty", "unchecked", "no_data", "disabled")}
     known = buckets["ok"] + buckets["degraded"] + buckets["all_down"]
     incs = Incident.query.filter(Incident.created_at >= since).all()
     return {"rows": rows, "metrics_error": err, "services": buckets,
@@ -240,7 +240,7 @@ def report(kind):
     return render_template("ops/report.html", kind=kind, meta=REPORTS[kind], period=period, periods=PERIODS,
                            d=data, names=_names(), now=utcnow(), duration=alerts_mod.duration_s,
                            health_label={"ok": "Healthy", "degraded": "Back-ends down", "all_down": "All back-ends down",
-                                         "unchecked": "No health check", "no_data": "Not read", "disabled": "Disabled"})
+                                         "unchecked": "No health check", "no_data": "Not read", "empty": "No back-ends", "disabled": "Disabled"})
 
 
 def _csv(name, header, rows):

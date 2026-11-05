@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_ui.html" import page_header, empty_state, filter_box, tile %}
 {% block title %}Applications{% endblock %}
-{% set HS = {'all_down': ('error', 'x-octagon-fill'), 'degraded': ('stale', 'exclamation-triangle-fill'), 'no_data': ('none', 'dash-circle'), 'unchecked': ('none', 'question-circle'), 'ok': ('ok', 'check-circle-fill'), 'disabled': ('none', 'pause-circle')} %}
+{% set HS = {'all_down': ('error', 'x-octagon-fill'), 'degraded': ('stale', 'exclamation-triangle-fill'), 'no_data': ('none', 'dash-circle'), 'empty': ('stale', 'inbox'), 'unchecked': ('none', 'question-circle'), 'ok': ('ok', 'check-circle-fill'), 'disabled': ('none', 'pause-circle')} %}
 {% set BH = {'up': ('ok', 'check-circle-fill', 'Up'), 'down': ('error', 'x-octagon-fill', 'Down'), 'unchecked': ('none', 'question-circle', 'No health check'), 'unread': ('none', 'eye-slash', 'Not read')} %}
 {% block content %}
 <div class="obs-page" data-scope="{{ scope }}" data-range="{{ range_key }}">
@@ -26,7 +26,7 @@
   <div class="fw-card-header flex-wrap gap-2"><h2 class="fw-card-title" id="h-apps"><i class="bi bi-window-stack me-1" aria-hidden="true"></i>Services</h2>
     <nav class="obs-seg obs-seg-sm ms-auto" aria-label="Health">
       <a href="{{ url_for('explore.applications', source=scope or None) }}" class="{{ 'active' if not health }}" {{ 'aria-current="true"'|safe if not health }}>All <span class="obs-tab-count">{{ total }}</span></a>
-      {% for h in ['all_down','degraded','unchecked','ok','no_data','disabled'] %}{% if counts[h] %}<a href="{{ url_for('explore.applications', source=scope or None, health=h) }}" class="{{ 'active' if health == h }}" {{ 'aria-current="true"'|safe if health == h }}>{{ health_label[h] }} <span class="obs-tab-count">{{ counts[h] }}</span></a>{% endif %}{% endfor %}
+      {% for h in ['all_down','degraded','empty','unchecked','ok','no_data','disabled'] %}{% if counts[h] %}<a href="{{ url_for('explore.applications', source=scope or None, health=h) }}" class="{{ 'active' if health == h }}" {{ 'aria-current="true"'|safe if health == h }}>{{ health_label[h] }} <span class="obs-tab-count">{{ counts[h] }}</span></a>{% endif %}{% endfor %}
     </nav>
     {{ filter_box('tbl-apps', 'Filter by name, VIP, pool, back-end…') }}
   </div>
@@ -44,16 +44,16 @@
         <td>{{ p.server_pool or '—' }}{% if p.pool_kv %}<span class="text-muted small d-block">{{ p.pool_kv.lb_algo or '' }}{% if p.pool_kv.health_check %} · {{ p.pool_kv.health_check }}{% endif %}</span>{% endif %}</td>
         <td class="text-center">{% if p.backends_total is none %}<span class="text-muted" title="back-end health not read">—</span>{% else %}
           <span class="obs-bk"><span class="text-success" title="up">{{ p.backends_up }}↑</span> <span class="{{ 'text-danger fw-semibold' if p.backends_down }}" title="down">{{ p.backends_down }}↓</span> <span class="text-muted" title="no health check">{{ p.backends_unchecked }}?</span>{% if p.backends_unread %} <span class="text-muted" title="health not read (product read from SATOM's cache only)">{{ p.backends_unread }}<i class="bi bi-eye-slash" aria-hidden="true"></i></span>{% endif %}</span>{% endif %}</td>
-        <td class="text-end">{{ p.sessions if p.sessions is not none else '—' }}</td>
-        <td class="text-end">{{ p.conn_per_s if p.conn_per_s is not none else '—' }}</td>
-        <td class="text-end">{{ (p.app_response_time ~ ' ms') if p.app_response_time is not none else '—' }}</td>
+        <td class="text-end">{{ p.get('sessions') if p.get('sessions') is not none else '—' }}</td>
+        <td class="text-end">{{ p.get('conn_per_s') if p.get('conn_per_s') is not none else '—' }}</td>
+        <td class="text-end">{{ (p.get('app_response_time') ~ ' ms') if p.get('app_response_time') is not none else '—' }}</td>
       </tr>
       <tr class="obs-app-more" hidden><td colspan="8">
         <div class="obs-app-detail">
           <dl class="obs-kv obs-kv-2">
             <dt>Status</dt><dd>{{ p.status or '—' }}</dd><dt>Mode</dt><dd>{{ p.detail.deployment_mode or '—' }}</dd>
             <dt>Service</dt><dd>{{ p.detail.service or '—' }}{% if p.detail.https_service %} / {{ p.detail.https_service }}{% endif %}</dd>
-            <dt>Client RTT</dt><dd>{{ p.client_rtt if p.client_rtt is not none else '—' }}</dd><dt>Server RTT</dt><dd>{{ p.server_rtt if p.server_rtt is not none else '—' }}</dd>
+            <dt>Client RTT</dt><dd>{{ p.get('client_rtt') if p.get('client_rtt') is not none else '—' }}</dd><dt>Server RTT</dt><dd>{{ p.get('server_rtt') if p.get('server_rtt') is not none else '—' }}</dd>
           </dl>
           {% set bks = p.detail.backends or [] %}
           {% if bks %}<table class="table table-sm obs-subtable mb-0"><thead><tr><th scope="col">Back-end</th><th scope="col">Health</th><th scope="col">Sessions</th><th scope="col">Backup</th></tr></thead>

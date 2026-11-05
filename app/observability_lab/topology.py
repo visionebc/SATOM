@@ -134,9 +134,9 @@ def build(sources=None) -> Model:
                              "here" % (len(pr), "" if ref == "device" else " in vdom " + ref_vdom))
         if str(objs.get("device", {}).get("sdwan") or "").lower() == "enable":
             notes.append("SD-WAN is enabled: its rules can override the routing table and are NOT evaluated here")
-        if objs.get("device", {}).get("read_mode") == "SATOM cache only":
-            notes.append("configuration from SATOM's snapshot of %s UTC; routes are the configured static ones "
-                         "(no live routing table, no dynamic routes)" % objs["device"].get("config_snapshot_at", "?"))
+        if objs.get("device", {}).get("routes_source"):
+            notes.append("routes: %s of %s UTC — SATOM holds no live routing table, so dynamic routes are not "
+                         "known" % (objs["device"]["routes_source"], objs["device"].get("config_snapshot_at", "?")))
         # A static route without an interface (FortiADC): the egress is the
         # connected subnet of the same VDOM that holds the gateway.
         for r in rts:

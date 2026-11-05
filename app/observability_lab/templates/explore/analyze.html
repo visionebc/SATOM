@@ -58,7 +58,7 @@
             <td>{% if c.included %}<span class="obs-chip st-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> included</span>{% else %}<span class="obs-chip st-none"><i class="bi bi-dash-circle" aria-hidden="true"></i> left out</span>{% endif %}</td>
             <td class="small">{{ c.mode or c.why }}</td></tr>{% endfor %}</tbody>
         </table>
-        <p class="small text-muted mb-0 mt-2">SATOM holds ONE VDOM per FortiGate appliance (its <code>vdom</code> field). The other VDOMs of a multi-VDOM box are read from the device per VDOM — not verified on a multi-VDOM build (no such box in the lab).</p>
+        <p class="small text-muted mb-0 mt-2">Every figure comes from SATOM — its configuration cache, its nightly deep snapshot and the series its own collectors write. Observability never connects to a device. SATOM holds ONE VDOM per FortiGate appliance (its <code>vdom</code> field): the other VDOMs of a multi-VDOM box are only known once SATOM collects them.</p>
       </div>
     </details>
   </li>
@@ -78,6 +78,7 @@
             <tbody>{% for v in d.vdoms %}<tr><td>{{ v.vdom }}</td><td class="text-end">{{ v.interfaces }}</td><td class="text-end">{{ v.addressed }}</td><td class="text-end">{{ v.connected }}</td><td class="text-end">{{ v.static }}</td>
               <td class="text-end">{{ v.policies if v.policies is not none else '—' }}</td><td class="small">{{ v.down|join(', ') or '—' }}</td></tr>{% endfor %}</tbody>
           </table>
+          {% if d.missing %}<div class="small text-muted"><i class="bi bi-eye-slash" aria-hidden="true"></i> Not collected by SATOM (so not known here): {{ d.missing|join('; ') }}</div>{% endif %}
           {% for n in d.notes %}<div class="small obs-warn-line"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> {{ n }}</div>{% endfor %}
           {% for st in d.failed %}<div class="small text-danger"><i class="bi bi-x-octagon-fill" aria-hidden="true"></i> read failed: {{ st.endpoint }} — {{ st.error }}</div>{% endfor %}
         </div>

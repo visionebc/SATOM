@@ -73,6 +73,10 @@ def infrastructure():
                       "reads_ok": sum(1 for st in mine_st if st.ok), "reads": len(mine_st),
                       "failed": [st for st in mine_st if not st.ok],
                       "policies": sum(1 for p in pols if p["source_id"] == s.id),
+                      "if_live": sum(1 for i in mine_if if i.get("link")),
+                      "missing": [st.error.split(": ", 1)[-1] for st in mine_st
+                                  if st.absent and st.error.startswith("not collected by SATOM")],
+                      "satom_failing": [st.endpoint for st in mine_st if not st.ok and st.endpoint.startswith("SATOM collector")],
                       "problems": [p for p in insights.problems([s])]})
     return _render("explore/infrastructure.html", _scope=(sources, scope), cards=cards,
                    planned=satom_bridge.planned_devices())
@@ -260,9 +264,11 @@ def _device_data(m, sid):
                          "policies": len(topology._policies(m, sid, v)) if m.kind(sid) == "fortigate" else None})
     dev = objs.get("device", {})
     return {"sid": sid, "name": src.name, "kind": src.kind, "state": insights.source_state(src),
-            "last_run": src.last_run_at, "mode": dev.get("read_mode") or "SATOM cache + device",
+            "last_run": src.last_run_at, "mode": dev.get("read_mode") or "from SATOM",
             "snapshot": dev.get("config_snapshot_at"), "vdoms": per_vdom, "notes": m.notes.get(sid, []),
-            "failed": [st for st in EndpointStatus.query.filter_by(source_id=sid, ok=False)]}
+            "failed": [st for st in EndpointStatus.query.filter_by(source_id=sid, ok=False)],
+            "missing": [st.error.split(": ", 1)[-1] for st in EndpointStatus.query.filter_by(source_id=sid, absent=True)
+                        if st.error.startswith("not collected by SATOM")]}
 
 
 @bp.route("/flows/analyze")

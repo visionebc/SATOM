@@ -17,7 +17,8 @@ def _state(src: Source, statuses, layer: str, has_facts: bool) -> tuple[str, str
     if bad:
         return "error", "; ".join("%s: %s" % (s.endpoint, s.error) for s in bad)[:600]
     if not has_facts:
-        return "none", "absent on this build" if feeding and all(s.absent for s in feeding) else ""
+        return "none", ("; ".join(sorted({s.error or "absent on this build" for s in feeding}))
+                        if feeding and all(s.absent for s in feeding) else "")
     if src.last_run_at and src.last_run_at < utcnow() - timedelta(seconds=3 * max(60, src.interval_s)):
         return "stale", "last read %s UTC" % src.last_run_at.strftime("%Y-%m-%d %H:%M")
     return "ok", ""

@@ -127,16 +127,6 @@ def planned_devices() -> list:
         return [{"name": a.name, "kind": a.kind} for a in _appliances() if a.kind not in SUPPORTED]
 
 
-def credentials(appliance_id: int) -> tuple[str, str]:
-    """(username, secret) of a SATOM appliance, decrypted by SATOM, in memory only."""
-    from ..models import Appliance
-    with _satom().app_context():
-        a = db_satom_get(Appliance, appliance_id)
-        if a is None:
-            raise RuntimeError("SATOM appliance %s no longer exists" % appliance_id)
-        return a.username or "", a.password or ""
-
-
 def db_satom_get(model, ident):
     from ..extensions import db as satom_db
     return satom_db.session.get(model, int(ident))
@@ -258,7 +248,91 @@ def inventory_coverage() -> list:
                 why = ""
                 mode = ("SATOM cache only" if a.kind in ("fortiadc", "fortiauthenticator", "fortianalyzer")
                         else "SATOM cache (configuration) + device (live state)")
+            if mode:
+                mode = "from SATOM (configuration cache + SATOM's own live collectors); never the device"
             out.append({"appliance_id": a.id, "name": a.name, "kind": a.kind, "host": a.host,
                         "vdom": a.vdom or "", "included": not why and a.kind in BY_PRODUCT,
                         "mode": mode, "why": why, "satom_status": a.last_status or ""})
     return out
+
+
+def cache_tree(appliance_id: int, logical: str, layer: str = "deep") -> tuple[list, object]:
+    """Like :func:`cache_rows` but every level of children nested
+    (``server_policy`` → ``server_pool`` → ``pserver-list``), for SATOM's
+    ``deep`` snapshot."""
+    from ..models_cache import DeviceObject, DeviceSnapshot
+    from ..extensions import db as satom_db
+    with _satom().app_context():
+        at = (satom_db.session.query(satom_db.func.max(DeviceSnapshot.generated_at))
+              .filter(DeviceSnapshot.appliance_id == appliance_id, DeviceSnapshot.layer == layer).scalar())
+        objs = (DeviceObject.query.filter(DeviceObject.appliance_id == appliance_id, DeviceObject.layer == layer,
+                                          (DeviceObject.logical_name == logical) |
+                                          DeviceObject.logical_name.like(logical + "/%"))
+                .order_by(DeviceObject.idx, DeviceObject.id).all())
+        nodes = {o.id: (o, dict(o.payload) if isinstance(o.payload, dict) else {}) for o in objs}
+        tops = []
+        for o, row in nodes.values():
+            if o.logical_name == logical and (o.parent_id is None or o.parent_id not in nodes):
+                tops.append(row)
+                continue
+            parent = nodes.get(o.parent_id)
+            if parent is None:
+                continue
+            sub = o.logical_name.rsplit("/", 1)[-1]
+            lst = parent[1].get(sub)
+            if not isinstance(lst, list):
+                lst = parent[1][sub] = []
+            lst.append(row)
+        return tops, at
+
+
+def appliance_identity(appliance_id: int) -> dict:
+    """What SATOM knows about the appliance itself (no device call)."""
+    from ..models import Appliance
+    with _satom().app_context():
+        a = db_satom_get(Appliance, appliance_id)
+        if a is None:
+            return {}
+        return {"hostname": a.device_hostname or a.name, "firmware": a.firmware or "", "serial": a.serial or "",
+                "model": a.model or "", "ha": a.ha_mode or ""}
+
+
+class SatomLiveError(Exception):
+    pass
+
+
+#: Window for "current": SATOM scrapes every few minutes.
+LIVE_WINDOW = "15m"
+
+
+def satom_live(device: str) -> dict:
+    """The last value of every ``satom_*`` series SATOM's collectors wrote for
+    this device, plus the state of each collector (``satom_scrape_up``)."""
+    import httpx
+    from flask import current_app
+    url = current_app.config.get("METRICS_URL", "")
+    if not url:
+        raise SatomLiveError("not configured")
+    sel = 'device="%s"' % device.replace("\\", "\\\\").replace('"', '\\"')
+    try:
+        r = httpx.get(url.rstrip("/") + "/api/v1/query", timeout=10, params={
+            "query": 'last_over_time({__name__=~"satom_(box|iface|policy|scrape)_.+", %s}[%s])' % (sel, LIVE_WINDOW)})
+        body = r.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise SatomLiveError("unreachable: %s" % type(exc).__name__) from exc
+    if r.status_code >= 400 or body.get("status") != "success":
+        raise SatomLiveError("query failed: %s" % (body.get("error") or r.status_code))
+    series, collectors = [], {}
+    for row in (body.get("data") or {}).get("result") or []:
+        m = dict(row.get("metric") or {})
+        name = m.pop("__name__", "")
+        try:
+            value = float(row["value"][1])
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+        value = int(value) if value.is_integer() else value
+        if name == "satom_scrape_up":
+            collectors[m.get("collector", "?")] = value
+        else:
+            series.append((name, m, value))
+    return {"series": series, "collectors": collectors, "window": LIVE_WINDOW}

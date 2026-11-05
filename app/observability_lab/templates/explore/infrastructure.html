@@ -44,19 +44,21 @@
           {% set st = 'error' if v >= 95 else ('stale' if v >= 80 else 'ok') %}
           <svg class="obs-meter-track" viewBox="0 0 100 6" preserveAspectRatio="none" role="meter" aria-valuenow="{{ v }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ label }} {{ v }} %"><rect class="obs-meter-bg" width="100" height="6" rx="3"/><rect class="obs-meter-fill st-{{ st }}" width="{{ [[v, 0]|max, 100]|min }}" height="6" rx="3"/></svg>
           <div class="obs-meter-v">{{ v }} %</div>
-          {% else %}<div class="obs-meter-na" title="{{ 'Read from SATOM\'s cache only: no live values' if d.read_mode else 'The ' ~ s.kind ~ ' connector does not read this yet' }}">not collected</div>{% endif %}
+          {% else %}<div class="obs-meter-na" title="SATOM's collectors do not report this for {{ s.kind }}">not collected by SATOM</div>{% endif %}
         </div>
         {% endfor %}
         <div class="obs-meter" role="listitem"><div class="obs-meter-k">Sessions</div><div class="obs-meter-v">{{ d.sessions if d.sessions is not none else '—' }}</div></div>
       </div>
       <div class="obs-dev-counts">
-        {% if d.read_mode %}<a href="{{ url_for('explore.network', source=s.name) }}" title="Read from SATOM's cache: no live link state"><b>{{ c.if_total }}</b> interfaces · no live state</a>{% else %}<a href="{{ url_for('explore.network', source=s.name) }}"><b>{{ c.if_up }}/{{ c.if_total }}</b> interfaces up{% if c.if_down %} · <span class="text-danger">{{ c.if_down }} down</span>{% endif %}</a>{% endif %}
+        {% if not c.if_live %}<a href="{{ url_for('explore.network', source=s.name) }}" title="SATOM collects no link state for this device"><b>{{ c.if_total }}</b> interfaces · no live state from SATOM</a>{% else %}<a href="{{ url_for('explore.network', source=s.name) }}"><b>{{ c.if_up }}/{{ c.if_total }}</b> interfaces up{% if c.if_down %} · <span class="text-danger">{{ c.if_down }} down</span>{% endif %}</a>{% endif %}
         {% if c.policies %}<a href="{{ url_for('explore.applications', source=s.name) }}"><b>{{ c.policies }}</b> server policies</a>{% endif %}
         {% for k, label in [('pool','pools'),('vip','VIPs'),('fwpolicy','firewall policies'),('address','addresses'),('endpoint','detected devices')] %}
           {% if c.counts.get(k) %}<span><b>{{ c.counts[k] }}</b> {{ label }}</span>{% endif %}
         {% endfor %}
         <a href="{{ url_for('sources.detail', sid=s.id) }}"><b>{{ c.reads_ok }}/{{ c.reads }}</b> reads OK</a>
       </div>
+      {% if c.missing %}<details class="obs-missing mt-2"><summary class="small"><i class="bi bi-eye-slash" aria-hidden="true"></i> {{ c.missing|length }} thing{{ 's' if c.missing|length != 1 }} SATOM does not collect for this device</summary>
+        <ul class="small mb-0">{% for m in c.missing %}<li>{{ m }}</li>{% endfor %}</ul></details>{% endif %}
       {% if c.problems %}
       <ul class="obs-att obs-att-compact">{% for p in c.problems[:4] %}
         <li class="sev-{{ p.severity }}"><i class="bi bi-{{ 'x-octagon-fill' if p.severity == 'critical' else 'exclamation-triangle-fill' }}" aria-hidden="true"></i>

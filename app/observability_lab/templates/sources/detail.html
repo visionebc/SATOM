@@ -65,7 +65,7 @@
   </div>
   <div class="col-xl-4">
     {% macro read_row(st) %}<tr><td class="small">{{ st.endpoint }}<div class="text-muted">{{ st.layers }}</div></td>
-      <td class="text-end">{% if st.absent %}{{ status_badge('none') }}<div class="small text-muted">absent on this build</div>{% elif st.ok %}{{ status_badge('ok') }} <span class="small">{{ st.rows }} rows</span>{% else %}{{ status_badge('error') }}<div class="small text-danger">{{ st.error }}</div>{% endif %}</td></tr>{% endmacro %}
+      <td class="text-end">{% if st.absent %}{{ status_badge('none') }}<div class="small text-muted">{{ st.error or 'absent on this build' }}</div>{% elif st.ok %}{{ status_badge('ok') }} <span class="small">{{ st.rows }} rows</span>{% else %}{{ status_badge('error') }}<div class="small text-danger">{{ st.error }}</div>{% endif %}</td></tr>{% endmacro %}
     {% set failed, health, other = reads.failed, reads.health, reads.other %}
     <section class="fw-card mb-3" aria-labelledby="h-reads"><div class="fw-card-header"><h2 class="fw-card-title h6 mb-0" id="h-reads">Reads (last run)</h2>
       <span class="ms-auto small">{{ statuses|length - failed|length }}/{{ statuses|length }} OK</span></div>

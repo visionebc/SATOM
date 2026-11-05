@@ -66,9 +66,12 @@ def run_source(source: Source, user: str = "", transport=None) -> Job:
     metrics, failed = [], 0
     for r in results:
         err = _redact(r.error, conn.secret)
-        detail = ("absent on this build" if r.absent else
+        detail = ((err or "absent on this build") if r.absent else
                   (err if not r.ok else "%d rows%s" % (r.rows, (" · " + err) if err else "")))
-        step = r.path if (r.path or "").startswith("SATOM cache") else "GET %s" % (r.path or r.endpoint)
+        # Reads from SATOM (cache, snapshots, its collectors) are named as such;
+        # "GET" only for a request that really went to a device (direct sources).
+        step = (r.path if (r.path or "").startswith(("SATOM", "not collected"))
+                else "GET %s" % (r.path or r.endpoint))
         job.steps.append(JobStep(name=step, ok=r.ok, detail=detail,
                                  elapsed_ms=r.elapsed_ms))
         st = EndpointStatus.query.filter_by(source_id=source.id, endpoint=r.endpoint).first()

@@ -80,7 +80,8 @@ def sync_sources() -> dict:
     with _satom().app_context():
         rows = [{"id": a.id, "name": a.name, "kind": a.kind, "host": a.host,
                  "port": a.port or 443, "username": a.username or "",
-                 "verify": bool(a.verify_ssl), "vdom": a.vdom or ""}
+                 "verify": bool(a.verify_ssl), "vdom": a.vdom or "",
+                 "build": (a.firmware or "")[:160]}
                 for a in _appliances() if a.kind in SUPPORTED]
     by_aid = {}
     for s in Source.query.all():
@@ -105,6 +106,8 @@ def sync_sources() -> dict:
         before = (s.name, s.kind, s.host, s.port, s.username, s.tls_verify, s.config)
         s.name, s.kind, s.host, s.port = r["name"][:80], r["kind"], r["host"], r["port"]
         s.username, s.tls_verify, s.config, s.secret_enc = r["username"], r["verify"], cfg, ""
+        if r["build"] and not s.build:
+            s.build = r["build"]  # SATOM's last-known firmware until a test reads it live
         if before != (s.name, s.kind, s.host, s.port, s.username, s.tls_verify, s.config) and s.id:
             changed += 1
     removed = 0

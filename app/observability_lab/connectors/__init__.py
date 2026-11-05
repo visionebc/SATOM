@@ -75,9 +75,9 @@ def register(cls: type[Connector]) -> type[Connector]:
 
 #: Kinds in the design that are not built yet — listed in the UI, never faked.
 PLANNED = {
-    "fortiadc": "FortiADC (direct)",
-    "fortiauthenticator": "FortiAuthenticator (direct)",
-    "fortianalyzer": "FortiAnalyzer (direct)",
+    "fortiadc": "FortiADC (from SATOM)",
+    "fortiauthenticator": "FortiAuthenticator (from SATOM)",
+    "fortianalyzer": "FortiAnalyzer (from SATOM)",
     "efficientip": "EfficientIP SOLIDserver (DDI)",
     "netbox": "NetBox",
     "api": "Internal API (generic REST)",
@@ -95,4 +95,5 @@ def get(kind: str) -> type[Connector]:
 
 def kinds() -> dict:
     _load()
-    return {k: c.label for k, c in REGISTRY.items()}
+    # Inside SATOM every source is read through SATOM (connectors/satom.py).
+    return {k: c.label.replace("(direct)", "(from SATOM)") for k, c in REGISTRY.items()}

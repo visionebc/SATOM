@@ -883,7 +883,10 @@ def schema(target: dict) -> dict:
         "datasets": list(ch.get("datasets") or []),
         "param_types": list(PS._PARAM_TYPES),
         "script": {"field_types": [t for t in SL.FIELD_TYPES if t not in SL.DB_FIELD_TYPES],
-                   "sdk": list(SCRIPT_SDK), "max_timeout": SL.TIMEOUT_MAX},
+                   "sdk": list(SCRIPT_SDK), "max_timeout": SL.TIMEOUT_MAX,
+                   # read-only SATOM data a script may declare (satom.<op>(),
+                   # contract section 22); the Builder offers exactly these
+                   "satom_ops": list(SL.MF.SATOM_OPS)},
         "limits": limits(),
         # the editors' input checks, read from the same constants the rules use
         "methods": list(_api_spec().METHODS), "param_in": list(_api_spec().PARAM_IN),

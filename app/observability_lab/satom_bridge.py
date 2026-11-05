@@ -139,6 +139,18 @@ def credentials(appliance_id: int) -> tuple[str, str]:
         return a.username or "", a.password or ""
 
 
+def collector_status(appliance_id: int) -> dict:
+    """``{collector: {"status", "detail", "at"}}``: SATOM's own record of its
+    last scrape of this appliance (Monitoring › Collection). The metric only
+    says up/down; the reason (``last_detail``) lives here."""
+    from ..models_metrics import ScrapeTarget
+    if not appliance_id:
+        return {}
+    with _satom().app_context():
+        return {t.collector: {"status": t.last_status or "", "detail": t.last_detail or "", "at": t.last_run_at}
+                for t in ScrapeTarget.query.filter_by(appliance_id=int(appliance_id))}
+
+
 def db_satom_get(model, ident):
     from ..extensions import db as satom_db
     return satom_db.session.get(model, int(ident))

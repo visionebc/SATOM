@@ -198,6 +198,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   file browser and editor).
 
 ### Fixed
+- **A licence-locked FortiADC no longer reads as "no payload" or as healthy.**
+  The FortiADC VMs fortiadc10 and fortiadc11 answer every read with
+  `{"payload": "Invalid VM License"}`. The runtime reads behind SATOM's
+  Monitoring collectors swallowed that answer, so the `vservers` collector
+  failed with "vs_status returned no payload" and the `interfaces` collector
+  reported OK with no series. These reads now fail with the device's own
+  words ("device refused: Invalid VM License"), which Monitoring > Collection
+  shows as the reason.
+- **Observability (lab): every alert says why.** Operator request: "why is
+  there critical? solve it and make it possible to see why the error is".
+  Each alert now has its own page (Events & Alerts > the alert, and the bell)
+  with the stored evidence (the value, where it was read and when), the
+  cause, marked *measured* or *inferred*, the impact and how to fix it. For a
+  server policy with failing back-ends it lists every back-end with the
+  device's own health word, the pool's health check and the path from the
+  device's routing table, with a link to the phased path analysis. A read the
+  device refuses for its licence is one licence alert instead of a read alert
+  per refused read plus a source alert, and a failing SATOM collector carries
+  the reason SATOM recorded. The bell, overview and search links stayed off
+  the `/observability/` prefix and opened SATOM's own pages; they now open
+  the alert's page.
 - **Plugin Studio list fields from the Examples refused every value.** A
   select's options given as a list were saved as ONE option, the text
   `"['nginx', 'apache']"`, so the form answered "'nginx' is not one of the

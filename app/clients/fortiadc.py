@@ -243,10 +243,17 @@ class FortiADCClient(BaseClient):
     #   ``get system performance`` over the read-only CLI.
 
     def _runtime(self, path: str, **params):
-        """GET a runtime endpoint, returning its ``payload`` (or None)."""
+        """GET a runtime endpoint, returning its ``payload`` (or None when the
+        body carries none). A device refusal RAISES with the device's words:
+        swallowed into None it read as "no payload" / an empty interface list,
+        so a licence-locked VM looked like a box with nothing to report
+        (fortiadc10/11, 2026-11-05: ``{"payload": "Invalid VM License"}``)."""
         resp = self._api('GET', path, params=params or None)
-        if self._device_error(resp) or resp.status_code != 200:
-            return None
+        err = self._device_error(resp)
+        if err:
+            raise FortiADCError(err)
+        if resp.status_code != 200:
+            raise FortiADCError(f"HTTP {resp.status_code}")
         try:
             body = resp.json()
         except ValueError:
@@ -285,7 +292,10 @@ class FortiADCClient(BaseClient):
 
     def ha_peer_status(self, vdom: str = 'root'):
         """``system_ha/peerstatus`` — mode, local_state, peers. {} on failure."""
-        data = self._runtime('/api/system_ha/peerstatus', vdom=vdom)
+        try:
+            data = self._runtime('/api/system_ha/peerstatus', vdom=vdom)
+        except FortiADCError:
+            return {}
         return data if isinstance(data, dict) else {}
 
     def api_call(self, method: str, path: str, data=None):

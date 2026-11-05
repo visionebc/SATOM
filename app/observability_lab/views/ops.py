@@ -14,7 +14,7 @@ from flask import Blueprint, Response, abort, flash, redirect, render_template, 
 from flask_login import current_user, login_required
 
 from .. import alerts as alerts_mod
-from .. import insights, metrics, satom_bridge, topology
+from .. import diagnose, insights, metrics, satom_bridge, topology
 from ..extensions import db
 from ..models import Alert, Event, Incident, IncidentNote, Job, Source, audit, utcnow
 from . import admin_required
@@ -68,6 +68,18 @@ def events():
                                    "linked": sum(1 for a in all_active if a.incident_id)},
                            now=utcnow(), duration=alerts_mod.duration_s,
                            resolved_n=Alert.query.filter(Alert.status == "resolved", Alert.resolved_at >= since).count())
+
+
+@bp.route("/events/alerts/<int:aid>")
+@login_required
+def alert(aid):
+    """One alert: what raised it (the stored evidence), why, and what fixes it."""
+    a = db.session.get(Alert, aid)
+    if a is None:
+        abort(404)
+    evs = Event.query.filter_by(alert_id=a.id).order_by(Event.id.desc()).limit(100).all()
+    return render_template("ops/alert.html", a=a, x=diagnose.explain(a), events=evs, names=_names(),
+                           now=utcnow(), duration=alerts_mod.duration_s)
 
 
 # ── Incidents ────────────────────────────────────────────────────────────────

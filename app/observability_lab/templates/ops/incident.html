@@ -16,7 +16,7 @@
       {% if inc.alerts %}<table class="table table-sm obs-table mb-0">
         <thead><tr><th scope="col">Severity</th><th scope="col">Alert</th><th scope="col">State</th><th scope="col" class="text-end">Duration</th></tr></thead>
         <tbody>{% for a in inc.alerts %}<tr><td>{{ sev_chip(a.severity) }}</td>
-          <td><a href="{{ request.script_root }}{{ a.url }}">{{ a.title }}</a><div class="small text-muted">{{ names.get(a.source_id, '') }} · {{ a.detail }}</div></td>
+          <td><a href="{{ url_for('ops.alert', aid=a.id) }}">{{ a.title }}</a><div class="small text-muted">{{ names.get(a.source_id, '') }} · {{ a.detail }}</div></td>
           <td>{% if a.status == 'active' %}<span class="obs-chip st-error"><i class="bi bi-bell-fill" aria-hidden="true"></i> Active</span>{% else %}<span class="obs-chip st-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> Cleared</span>{% endif %}</td>
           <td class="text-end text-nowrap">{{ dur(duration(a, now)) }}</td></tr>{% endfor %}</tbody>
       </table>{% else %}{{ empty_state('bell', 'No alerts linked', 'Link the alerts this incident covers below.') }}{% endif %}

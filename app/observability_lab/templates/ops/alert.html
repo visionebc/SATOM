@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, ago %}
+{% from "ops/_ops.html" import sev_chip, dur %}
+{% block title %}{{ a.title }}{% endblock %}
+{% set HS = {'up': ('ok', 'Up'), 'down': ('error', 'Failing'), 'unread': ('stale', 'Not read'), 'unchecked': ('none', 'No check')} %}
+{% set PS = {'reached': ('ok', 'Reached'), 'leaves': ('stale', 'Leaves monitored network'), 'denied': ('error', 'Blocked'), 'no_route': ('error', 'No route'), 'loop': ('error', 'Loop'), 'invalid': ('none', 'Not traced')} %}
+{% block content %}
+{% call page_header(a.title, 'Why this alert is ' ~ ('open' if a.status == 'active' else 'closed') ~ ' — the evidence, the cause and the fix', 'bell') %}
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('ops.events') }}"><i class="bi bi-arrow-left" aria-hidden="true"></i> Events & Alerts</a>
+  {% if a.url %}<a class="btn btn-sm btn-outline-primary" href="{{ request.script_root }}{{ a.url }}"><i class="bi bi-hdd-network" aria-hidden="true"></i> Source data</a>{% endif %}
+{% endcall %}
+
+<section class="fw-card mb-3" aria-labelledby="h-sum">
+  <div class="fw-card-header"><h2 class="fw-card-title" id="h-sum">{{ sev_chip(a.severity) }} <span class="ms-1">{{ names.get(a.source_id, '—') }} · {{ a.kind }}</span></h2>
+    <span class="obs-card-hint">{% if a.status == 'active' %}active for {{ dur(duration(a, now)) }}{% else %}resolved {{ ago(a.resolved_at) }}{% endif %}</span></div>
+  <div class="fw-card-body">
+    <dl class="obs-kv">
+      <dt>Condition</dt><dd>{{ a.detail }}</dd>
+      <dt>First seen</dt><dd>{{ ago(a.first_seen) }}</dd>
+      <dt>Last checked</dt><dd>{{ ago(a.last_seen) }}</dd>
+      {% if a.incident_id %}<dt>Incident</dt><dd><a href="{{ url_for('ops.incident', iid=a.incident_id) }}">#{{ a.incident_id }}</a></dd>{% endif %}
+    </dl>
+    {% if a.status != 'active' %}<p class="obs-footnote mt-2"><i class="bi bi-info-circle" aria-hidden="true"></i> The condition is gone; the evidence below is what the devices report now.</p>{% endif %}
+  </div>
+</section>
+
+<div class="obs-grid">
+  <section class="fw-card obs-span-8" aria-labelledby="h-why">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-why"><i class="bi bi-question-circle me-1" aria-hidden="true"></i>Why</h2>
+      <span class="obs-chip st-{{ 'ok' if x.cause.how == 'measured' else 'stale' }}" title="{{ 'Reported by the device or SATOM' if x.cause.how == 'measured' else 'Concluded from the measured values listed below' }}">{{ x.cause.how|capitalize }}</span></div>
+    <div class="fw-card-body">
+      <p class="mb-2" id="alert-cause">{{ x.cause.text }}</p>
+      {% if x.cause['from'] %}<div class="small text-muted">Based on: {{ x.cause['from']|join(' · ') }}</div>{% endif %}
+      {% if x.impact %}<p class="mt-2 mb-0"><b>Impact:</b> {{ x.impact }}</p>{% endif %}
+    </div>
+  </section>
+  <section class="fw-card obs-span-4" aria-labelledby="h-fix">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-fix"><i class="bi bi-wrench-adjustable me-1" aria-hidden="true"></i>How to fix it</h2></div>
+    <div class="fw-card-body">
+      {% if x.fix %}<ol class="mb-0 ps-3 small">{% for f in x.fix %}<li class="mb-1">{{ f }}</li>{% endfor %}</ol>{% else %}<p class="text-muted small mb-0">No fix needed: the condition is informational.</p>{% endif %}
+    </div>
+  </section>
+</div>
+
+{% if x.rows %}
+<section class="fw-card mb-3" aria-labelledby="h-bk">
+  <div class="fw-card-header"><h2 class="fw-card-title" id="h-bk"><i class="bi bi-diagram-3 me-1" aria-hidden="true"></i>Back-ends</h2>
+    <span class="obs-card-hint">health as the device reports it · path from {{ names.get(a.source_id, '') }}'s own routing table</span></div>
+  <div class="fw-card-body p-0 table-responsive">
+  <table class="table table-sm obs-table mb-0" id="tbl-backends">
+    <thead><tr><th scope="col">Back-end</th><th scope="col">Pool</th><th scope="col">Health</th><th scope="col">Device says</th><th scope="col">Path</th><th scope="col">Seen on a monitored network</th><th scope="col" class="text-end"></th></tr></thead>
+    <tbody>{% for r in x.rows %}{% set hs = HS.get(r.health, ('none', r.health)) %}{% set ps = PS.get(r.path_status, ('none', r.path_status)) %}
+      <tr><td class="text-nowrap"><b>{{ r.address }}</b>{% if r.port %}:{{ r.port }}{% endif %}</td>
+        <td>{{ r.pool }}</td>
+        <td><span class="obs-chip st-{{ hs[0] }}">{{ hs[1] }}</span></td>
+        <td><code>{{ r.raw }}</code></td>
+        <td><span class="obs-chip st-{{ ps[0] }}">{{ ps[1] }}</span><div class="small text-muted">{{ r.path }}</div></td>
+        <td>{{ 'yes' if r.seen else 'no' }}</td>
+        <td class="text-end">{% if r.analyze %}<a class="btn btn-sm btn-outline-secondary obs-noprint" href="{{ url_for('explore.analyze', **r.analyze) }}" title="Every phase of this path"><i class="bi bi-search" aria-hidden="true"></i> Analyze</a>{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="fw-card mb-3" aria-labelledby="h-ev">
+  <div class="fw-card-header"><h2 class="fw-card-title" id="h-ev"><i class="bi bi-clipboard-data me-1" aria-hidden="true"></i>Evidence</h2>
+    <span class="obs-card-hint">stored values, with where and when they were read</span></div>
+  <div class="fw-card-body p-0 table-responsive">
+  {% if x.evidence %}
+  <table class="table table-sm obs-table mb-0" id="tbl-evidence">
+    <thead><tr><th scope="col">What</th><th scope="col">Value</th><th scope="col">Read from</th><th scope="col">When</th></tr></thead>
+    <tbody>{% for e in x.evidence %}
+      <tr><td>{{ e.what }}</td><td class="text-break"><b>{{ e.value }}</b></td><td class="small text-muted">{{ e.where or '—' }}</td><td class="text-nowrap">{{ ago(e.at) if e.at else '—' }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% else %}<p class="text-muted small p-3 mb-0">No stored values for this condition.</p>{% endif %}
+  </div>
+</section>
+
+<section class="fw-card" aria-labelledby="h-hist">
+  <div class="fw-card-header"><h2 class="fw-card-title" id="h-hist"><i class="bi bi-clock-history me-1" aria-hidden="true"></i>History of this alert</h2></div>
+  <div class="fw-card-body">
+    <ol class="obs-timeline">{% for e in events %}
+      <li><span class="obs-tl-dot" aria-hidden="true"></span><span><b>{{ e.kind|capitalize }}</b> {{ sev_chip(e.severity) }}</span>
+        <time datetime="{{ e.at.isoformat() }}Z">{{ e.at.strftime('%Y-%m-%d %H:%M') }} UTC</time>
+        <span class="obs-tl-s">{{ e.detail }}</span></li>
+    {% endfor %}</ol>
+  </div>
+</section>
+{% endblock %}

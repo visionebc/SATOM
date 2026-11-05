@@ -335,5 +335,7 @@ class FortiWebConnector(Connector):
                              "port": b.get("port"),
                              # fortiweb19 7.6.8 answers "N/A" live; the capture had "N-A".
                              "health": {"enable": "up", "disable": "down"}.get(hc, "no health check" if hc in ("N-A", "N/A", "") else hc),
+                             # the device's own word, kept as evidence ("disable" = check failing)
+                             "health_raw": hc,
                              "sessions": b.get("sessionCount"), "backup": bool(b.get("backupServer"))})
         res.facts.append(FactRow("policy:%s" % pname, "L7", "backends", backends))

@@ -1,12 +1,21 @@
-from flask import Blueprint, abort, jsonify, request
+from flask import Blueprint, abort, jsonify, request, url_for
 from flask_login import login_required
 from sqlalchemy import text
 
 from .. import VERSION, insights, metrics
 from ..extensions import db
-from ..models import EndpointStatus, Fact, Job, Source
+from ..models import Alert, EndpointStatus, Fact, Job, Source
 
 bp = Blueprint("api", __name__)
+
+
+def _linked(probs):
+    """Problem links for the browser: the open alert's page (why, evidence,
+    fix) when there is one, else the stored path under this app's prefix —
+    the bare "/sources/N" left the prefix and landed on SATOM's own pages."""
+    ids = {a.key: a.id for a in Alert.query.filter_by(status="active")}
+    return [dict(p, url=url_for("ops.alert", aid=ids[p["key"]]) if p["key"] in ids
+                 else request.script_root + p["url"]) for p in probs]
 
 
 @bp.route("/healthz")
@@ -80,14 +89,15 @@ def shell():
     live = ("none" if last is None else "error" if "error" in states else
             "stale" if "stale" in states else "ok")
     return jsonify(health=health, live=live, last_read=_iso(last),
-                   problems=probs[:50], problem_count=len(probs),
+                   problems=_linked(probs[:50]), problem_count=len(probs),
                    sources=[{"id": s.id, "name": s.name} for s in Source.query.order_by(Source.name)])
 
 
 @bp.route("/api/v1/search")
 @login_required
 def search():
-    return jsonify(results=insights.search(request.args.get("q", "")))
+    return jsonify(results=[dict(r, url=request.script_root + r["url"])
+                            for r in insights.search(request.args.get("q", ""))])
 
 
 @bp.route("/api/v1/overview")
@@ -150,7 +160,7 @@ def overview():
                   "availability": _availability(buckets)},
         backends=backends, now=now, top=top, top_error=top_error,
         devices=insights.devices(sources),
-        problems=probs[:20], problem_count=len(probs),
+        problems=_linked(probs[:20]), problem_count=len(probs),
         critical=sum(1 for p in probs if p["severity"] == "critical"),
         activity=[{"id": j.id, "kind": j.kind, "status": j.status, "summary": j.summary,
                    "source_id": j.source_id, "at": _iso(j.started_at),

@@ -126,32 +126,62 @@ SNAPSHOT_STALE_H = 48
 RESOURCE_RULES = {"cpu_pct": ("CPU", 80, 95), "mem_pct": ("memory", 85, 95), "disk_pct": ("disk", 85, 95)}
 
 
+def is_licence_error(text) -> bool:
+    """A read refused because of the device's licence (FortiADC "Invalid VM
+    License", FortiWeb HTTP 423 "license of peer VM ... is not valid")."""
+    t = str(text or "").lower()
+    return "licen" in t and ("invalid" in t or "not valid" in t or "expired" in t)
+
+
 def problems(sources) -> list[dict]:
     """What needs attention, worst first. Feeds the bell, the health pill and
     the alerts (``key`` is stable while the condition holds, so a change of
     severity of the same condition is one alert, not two)."""
     out = []
     names = {s.id: s.name for s in sources}
+    keys = set()
 
     def add(key, sid, severity, kind, title, detail, url):
+        if key in keys:  # one condition, one alert
+            return
+        keys.add(key)
         out.append({"key": key, "source_id": sid, "severity": severity, "kind": kind,
                     "title": title, "detail": detail, "url": url})
 
+    failing = EndpointStatus.query.filter(EndpointStatus.source_id.in_(names.keys()),
+                                          EndpointStatus.ok.is_(False)).all()
+    with_failed_reads = {st.source_id for st in failing}
     for s in sources:
         st = source_state(s)
+        # A partial collection IS its failed reads: each one is its own alert
+        # with its own cause, so the source does not repeat them as a second.
+        if st == "error" and s.last_status == "partial" and s.id in with_failed_reads:
+            continue
         if st in ("error", "stale"):
             add("source:%d" % s.id, s.id, "critical" if st == "error" else "warning", "source",
                 "%s: %s" % (s.name, "collection failing" if st == "error" else "data is stale"),
                 s.last_error or ("last read %s UTC" % s.last_run_at.strftime("%Y-%m-%d %H:%M")
                                  if s.last_run_at else ""),
                 "/sources/%d" % s.id)
-    for st in EndpointStatus.query.filter(EndpointStatus.source_id.in_(names.keys()),
-                                          EndpointStatus.ok.is_(False)):
+    # Licence: an invalid licence silently disables features (FortiWeb
+    # signatures, FortiGate updates), so it is critical, not informational.
+    # A read the device REFUSED for its licence is the same condition (the
+    # FortiADC VMs answer every read {"payload": "Invalid VM License"}).
+    locked = {}
+    for st in failing:
+        if is_licence_error(st.error):
+            locked.setdefault(st.source_id, []).append(st)
+    for sid, sts in locked.items():
+        add("licence:%d" % sid, sid, "critical", "licence", "%s: licence not valid" % names[sid],
+            "the device refuses reads for its licence (%d %s): %s" % (
+                len(sts), "read" if len(sts) == 1 else "reads", sts[0].error[:160]),
+            "/sources/%d#device" % sid)
+    for st in failing:
+        if st.source_id in locked and is_licence_error(st.error):
+            continue
         add("read:%d:%s" % (st.source_id, st.endpoint), st.source_id, "critical", "read",
             "%s: read failed — %s" % (names[st.source_id], st.endpoint), st.error[:200],
             "/sources/%d" % st.source_id)
-    # Licence: an invalid licence silently disables features (FortiWeb
-    # signatures, FortiGate updates), so it is critical, not informational.
     for f in Fact.query.filter(Fact.source_id.in_(names.keys()), Fact.object_ref == "device",
                                Fact.key.in_(("licence_valid", "vm_licence"))):
         bad = (f.key == "licence_valid" and f.value is False) or \

@@ -182,11 +182,15 @@ class SatomCacheConnector(Connector):
             res.ok, res.error = False, "SATOM metrics store: %s" % exc
             return [res]
         steps = []
+        why = satom_bridge.collector_status(self.appliance_id) if any(v != 1 for v in live["collectors"].values()) else {}
         for coll, v in sorted(live["collectors"].items()):
+            st = why.get(coll) or {}
+            reason = ("%s (SATOM, last run %s UTC)" % (st["detail"], st["at"].strftime("%Y-%m-%d %H:%M"))
+                      if st.get("detail") and st.get("at") else st.get("detail") or "no reason recorded by SATOM")
             steps.append(EndpointResult(endpoint="SATOM collector · %s" % coll, path="SATOM collector · %s" % coll,
                                         layers=("device",), ok=v == 1,
-                                        error="" if v == 1 else "SATOM's collector %s is failing for this device "
-                                                                "(satom_scrape_up = 0) — see SATOM › Monitoring › Collection" % coll))
+                                        error="" if v == 1 else "SATOM's collector %s is failing for this device: %s "
+                                                                "— see SATOM › Monitoring › Collection" % (coll, reason)))
         for name, labels, value in live["series"]:
             if name in self.BOX:
                 res.facts.append(FactRow("device", "device", self.BOX[name], value))

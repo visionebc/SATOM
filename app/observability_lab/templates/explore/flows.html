@@ -94,7 +94,7 @@
     <div class="fw-card-body"><div data-top="fw_bytes" data-unit="bytes"></div></div></section>
 </div>
 {% endif %}
-<p class="obs-footnote"><i class="bi bi-info-circle" aria-hidden="true"></i> Paths are computed from the routing tables, interface addresses and firewall policies the devices reported — not a live probe. A next hop that is not a monitored device ends the path ("leaves"). Firewall matches are by interface and address; address groups and service objects are not collected yet, so such a match is shown as unverified, never assumed.</p>
+<p class="obs-footnote"><i class="bi bi-info-circle" aria-hidden="true"></i> Paths are computed from the routing tables, interface addresses and firewall policies the devices reported — not a live probe. A next hop that is not a monitored device ends the path ("leaves"). Firewall policies are walked in sequence order per VDOM, with address groups and service objects resolved (the back-end port is the destination port); a VIP, an FQDN, a group with exclusions or an unknown protocol makes a match "unverified", never assumed. Policy routes and SD-WAN rules are reported, not evaluated. <a href="{{ url_for('explore.analyze') }}">Path analysis</a> shows every decision.</p>
 </div>
 {% endblock %}
 {% block scripts %}

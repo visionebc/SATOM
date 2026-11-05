@@ -279,6 +279,7 @@ def analyze():
     src_ip = (request.args.get("src") or "").strip()
     port = (request.args.get("port") or "").strip()
     vdom = (request.args.get("vdom") or "").strip() or None
+    proto = request.args.get("proto") if request.args.get("proto") in ("tcp", "udp") else ""
     result, error = None, ""
     if sid and ip:
         if sid not in m.sources:
@@ -286,7 +287,8 @@ def analyze():
         elif vdom and vdom not in m.vdoms(sid):
             error = "%s has no VDOM %s (known: %s)" % (m.name(sid), vdom, ", ".join(m.vdoms(sid)))
         else:
-            result = topology.trace(m, sid, ip, src_ip or None, vdom)
+            result = topology.trace(m, sid, ip, src_ip or None, vdom,
+                                    port=int(port) if port.isdigit() else None, proto=proto or None)
             if result["status"] == "invalid":
                 error, result = "%r is not an IP address" % ip, None
     involved = []
@@ -301,7 +303,7 @@ def analyze():
                 examples.append({"from": f["source_id"], "source": f["source"], "ip": b["address"],
                                  "port": b["port"], "status": b["path"]["status"], "policy": f["name"]})
     return render_template("explore/analyze.html", sources=sources, sid=sid, ip=ip, src_ip=src_ip, port=port,
-                           vdom=vdom or "", result=result, error=error, examples=examples,
+                           vdom=vdom or "", proto=proto, result=result, error=error, examples=examples,
                            coverage=satom_bridge.inventory_coverage(),
                            data=[_device_data(m, s) for s in (involved or [x.id for x in sources])],
                            vdoms={s.id: m.vdoms(s.id) for s in sources}, path_label=PATH_LABEL,

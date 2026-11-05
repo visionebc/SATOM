@@ -137,6 +137,16 @@ def build(sources=None) -> Model:
         if objs.get("device", {}).get("read_mode") == "SATOM cache only":
             notes.append("configuration from SATOM's snapshot of %s UTC; routes are the configured static ones "
                          "(no live routing table, no dynamic routes)" % objs["device"].get("config_snapshot_at", "?"))
+        # A static route without an interface (FortiADC): the egress is the
+        # connected subnet of the same VDOM that holds the gateway.
+        for r in rts:
+            gw = _ip(r.gateway) if (r.gateway and not r.iface) else None
+            if gw is None:
+                continue
+            conn = [c for c in rts if c.gateway is None and c.vdom == r.vdom and c.net.version == gw.version and gw in c.net]
+            if conn:
+                r.iface = max(conn, key=lambda c: c.net.prefixlen).iface
+                r.kind += " (interface from gateway)"
         m.routes[sid] = rts
         m.notes[sid] = notes
         for mac, kv in m.of(sid, "endpoint").items():
@@ -220,19 +230,41 @@ def _addresses(m: Model, sid, vdom):
     return out
 
 
-def _addr_match(m: Model, sid, names, ip, vdom=DEFAULT_VDOM):
-    """(True / False / None, why). None = unknown: a group, a VIP, an FQDN or an
-    object that is not collected."""
+def _named(m: Model, sid, prefix, vdom):
+    out = {}
+    for key, kv in m.of(sid, prefix).items():
+        name, v = _split_vdom(key)
+        if v == vdom:
+            out[name] = kv
+    return out
+
+
+def _addr_match(m: Model, sid, names, ip, vdom=DEFAULT_VDOM, _depth=0):
+    """(True / False / None, why). Groups are resolved through their members;
+    None = unknown: a VIP, an FQDN, a group with exclusions or an object that
+    is not collected."""
     if ip is None:
         return None, "address unknown (translated by an IP pool upstream)"
     addrs = _addresses(m, sid, vdom)
+    groups = _named(m, sid, "addrgrp", vdom)
     unknown = []
     for n in names or []:
         if n == "all":
             return True, "all"
+        if n not in addrs and n in groups and _depth < 5:
+            g = groups[n]
+            if str(g.get("exclude") or "") == "enable":
+                unknown.append("%s (group with exclusions)" % n)
+                continue
+            ok, why = _addr_match(m, sid, g.get("members") or [], ip, vdom, _depth + 1)
+            if ok:
+                return True, "%s ∋ %s" % (n, why)
+            if ok is None:
+                unknown.append("%s → %s" % (n, why))
+            continue
         sub = (addrs.get(n) or {}).get("subnet")
         if sub is None:
-            unknown.append("%s (group / VIP / not collected)" % n)
+            unknown.append("%s (VIP / not collected)" % n)
             continue
         sub = str(sub)
         if "-" in sub:
@@ -251,6 +283,50 @@ def _addr_match(m: Model, sid, names, ip, vdom=DEFAULT_VDOM):
     if unknown:
         return None, "cannot resolve " + ", ".join(unknown)
     return False, "%s not in %s" % (ip, ", ".join(names or ["(none)"]))
+
+
+def _ranges(text):
+    """'80', '1812 1813', '1-65535', '80:1024-65535' (dst:src) -> [(lo, hi)] of dst ports."""
+    out = []
+    for part in str(text or "").split():
+        dst = part.split(":", 1)[0]
+        lo, _, hi = dst.partition("-")
+        if lo.isdigit():
+            out.append((int(lo), int(hi) if hi.isdigit() else int(lo)))
+    return out
+
+
+def _svc_match(m: Model, sid, names, port, proto, vdom=DEFAULT_VDOM, _depth=0):
+    """(True / False / None, why) for a destination port (+ tcp/udp if known)."""
+    svcs = _named(m, sid, "service", vdom)
+    groups = _named(m, sid, "svcgrp", vdom)
+    unknown = []
+    for n in names or []:
+        if n == "ALL":
+            return True, "ALL"
+        if n in groups and n not in svcs and _depth < 5:
+            ok, why = _svc_match(m, sid, groups[n].get("members") or [], port, proto, vdom, _depth + 1)
+            if ok:
+                return True, "%s ∋ %s" % (n, why)
+            if ok is None:
+                unknown.append(why)
+            continue
+        sv = svcs.get(n)
+        if sv is None:
+            unknown.append("%s (not collected)" % n)
+            continue
+        if str(sv.get("protocol")) == "IP" and str(sv.get("protocol_number", "0")) in ("0", ""):
+            return True, "%s (any IP)" % n
+        if port is None:
+            unknown.append("%s (port of the flow not known)" % n)
+            continue
+        protos = [proto] if proto in ("tcp", "udp", "sctp") else ["tcp", "udp"]
+        for pr in protos:
+            if any(lo <= int(port) <= hi for lo, hi in _ranges(sv.get(pr + "_portrange"))):
+                return True, "%s = %s/%s%s" % (n, pr, port, "" if proto else " (protocol of the flow not known)")
+    if unknown:
+        return None, "cannot resolve " + ", ".join(unknown)
+    return False, "port %s%s not in %s" % (port, "/" + proto if proto else "", ", ".join(names or ["(none)"]))
 
 
 def _neg(result, negate):
@@ -273,7 +349,7 @@ def _policies(m: Model, sid, vdom):
     return rows
 
 
-def fw_eval(m: Model, sid, vdom, in_if, out_if, src_ip, dst_ip) -> dict:
+def fw_eval(m: Model, sid, vdom, in_if, out_if, src_ip, dst_ip, port=None, proto=None) -> dict:
     """Walk the VDOM's policies in sequence order, criterion by criterion.
     First certain match decides; an uncertain one before it makes the verdict
     ``unverified``; nothing matching = implicit deny."""
@@ -291,8 +367,7 @@ def fw_eval(m: Model, sid, vdom, in_if, out_if, src_ip, dst_ip) -> dict:
                 ("to interface", (out_if in di or "any" in di), "%s in %s" % (out_if, ", ".join(di) or "—"))]
         crit.append(("source address",) + _neg(_addr_match(m, sid, kv.get("srcaddr"), src_ip, vdom), kv.get("srcaddr_negate")))
         crit.append(("destination address",) + _neg(_addr_match(m, sid, kv.get("dstaddr"), dst_ip, vdom), kv.get("dstaddr_negate")))
-        svc_ok = True if ("ALL" in svc and str(kv.get("service_negate") or "") != "enable") else None
-        crit.append(("service", svc_ok, "ALL" if svc_ok else "%s — service objects not collected" % (", ".join(svc) or "—")))
+        crit.append(("service",) + _neg(_svc_match(m, sid, svc, port, proto, vdom), kv.get("service_negate")))
         row["crit"] = [{"name": c[0], "ok": c[1], "why": c[2]} for c in crit]
         vals = [c[1] for c in crit]
         if False in vals:
@@ -320,14 +395,14 @@ def fw_eval(m: Model, sid, vdom, in_if, out_if, src_ip, dst_ip) -> dict:
             "implicit_deny": not decided and not uncertain, "nat": nat, "vdom": vdom}
 
 
-def fw_match(m: Model, sid, in_if, out_if, src_ip, dst_ip, vdom=DEFAULT_VDOM) -> dict:
+def fw_match(m: Model, sid, in_if, out_if, src_ip, dst_ip, vdom=DEFAULT_VDOM, port=None, proto=None) -> dict:
     """Back-compatible summary of :func:`fw_eval`."""
-    return fw_eval(m, sid, vdom, in_if, out_if, src_ip, dst_ip)
+    return fw_eval(m, sid, vdom, in_if, out_if, src_ip, dst_ip, port, proto)
 
 
 # ── trace ────────────────────────────────────────────────────────────────────
 
-def trace(m: Model, sid: int, dst, src_ip=None, vdom: str | None = None) -> dict:
+def trace(m: Model, sid: int, dst, src_ip=None, vdom: str | None = None, port=None, proto=None) -> dict:
     """Hop-by-hop path from a monitored device (routing domain = device +
     VDOM) to an IP, across monitored devices and VDOMs. Every hop keeps the
     full decision (routes considered, next-hop resolution, firewall policies
@@ -362,7 +437,7 @@ def trace(m: Model, sid: int, dst, src_ip=None, vdom: str | None = None) -> dict
             status, end = "no_route", "%s has no usable route to %s" % (m.label(dom), dst)
             break
         if m.kind(cur) == "fortigate" and ingress:
-            fw = fw_eval(m, cur, dom[1], ingress, r.iface, src, dst)
+            fw = fw_eval(m, cur, dom[1], ingress, r.iface, src, dst, port, proto)
             hop["fw"] = fw
             if fw["nat"]:
                 hop["nat"] = fw["nat"]
@@ -396,7 +471,7 @@ def trace(m: Model, sid: int, dst, src_ip=None, vdom: str | None = None) -> dict
             hop["nexthop"] += " — inter-VDOM link"
         dom, ingress = (nxt[0], nvdom), nxt[1]
     return {"status": status, "hops": hops, "end": end, "src_ip": str(src) if src else "", "src_why": src_why,
-            "dst": str(dst)}
+            "dst": str(dst), "port": port, "proto": proto or ""}
 
 
 # ── views ────────────────────────────────────────────────────────────────────
@@ -457,9 +532,10 @@ def app_flows(m: Model, pols=None) -> list[dict]:
         for b in pkv.get("backends") or []:
             if not isinstance(b, dict):
                 continue
-            key = (sid, str(b.get("address")))
+            port = int(b["port"]) if str(b.get("port", "")).isdigit() else None
+            key = (sid, str(b.get("address")), port)
             if key not in cache:
-                cache[key] = trace(m, sid, b.get("address"))
+                cache[key] = trace(m, sid, b.get("address"), port=port)
             t = cache[key]
             backends.append({"address": b.get("address"), "port": b.get("port"), "pool": b.get("pool"),
                              "health": insights.backend_health(b.get("health")), "raw_health": b.get("health"),

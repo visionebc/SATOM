@@ -27,8 +27,10 @@
         <input class="form-control form-control-sm" id="a-ip" name="ip" value="{{ ip }}" required placeholder="192.0.2.12"></div>
       <div><label class="form-label small" for="a-src">Source IP <span class="text-muted">(optional)</span></label>
         <input class="form-control form-control-sm" id="a-src" name="src" value="{{ src_ip }}" placeholder="egress interface"></div>
-      <div><label class="form-label small" for="a-port">Port <span class="text-muted">(info)</span></label>
+      <div><label class="form-label small" for="a-port">Port</label>
         <input class="form-control form-control-sm" id="a-port" name="port" value="{{ port }}" inputmode="numeric"></div>
+      <div><label class="form-label small" for="a-proto">Protocol</label>
+        <select class="form-select form-select-sm" id="a-proto" name="proto">{% for v, l in [('', 'tcp or udp'), ('tcp', 'tcp'), ('udp', 'udp')] %}<option value="{{ v }}" {{ 'selected' if proto == v }}>{{ l }}</option>{% endfor %}</select></div>
       <div class="align-self-end"><button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-search" aria-hidden="true"></i> Analyze</button></div>
     </form>
     {% if examples %}<div class="small mt-2 text-muted">Try a real back-end:
@@ -93,7 +95,7 @@
       <div class="obs-phase-body small">
         <dl class="obs-kv obs-kv-2">
           <dt>Starts in</dt><dd>{{ result.hops[0].label if result.hops else '—' }} (VDOM {{ result.hops[0].vdom if result.hops else '—' }})</dd>
-          <dt>Destination</dt><dd><code>{{ result.dst }}</code>{% if port %} port {{ port }} <span class="text-muted">(not used: service objects are not collected)</span>{% endif %}</dd>
+          <dt>Destination</dt><dd><code>{{ result.dst }}</code>{% if port %} port {{ port }}{% endif %} {{ proto or '(tcp or udp — the service match accepts either)' }}{% if not port %} <span class="text-muted">— without a port, a policy that names services cannot be decided</span>{% endif %}</dd>
           <dt>Source address</dt><dd><code>{{ result.hops[0].src_ip if result.hops and result.hops[0].src_ip else (src_ip or 'unknown') }}</code> — {{ 'given' if src_ip else 'address of the egress interface of the first hop (the device opens the connection to the back-end)' }}</dd>
         </dl>
       </div>

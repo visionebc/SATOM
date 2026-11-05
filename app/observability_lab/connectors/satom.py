@@ -80,6 +80,9 @@ class SatomFortiGate(_FromSatom, FortiGateConnector):
         "/api/v2/cmdb/firewall/address": ("firewall_address", "config"),
         "/api/v2/cmdb/firewall/policy": ("firewall_policy", "config"),
         "/api/v2/cmdb/system/sdwan": ("system_sdwan", "config"),
+        "/api/v2/cmdb/firewall/addrgrp": ("firewall_addrgrp", "config"),
+        "/api/v2/cmdb/firewall.service/custom": ("firewall_service_custom", "config"),
+        "/api/v2/cmdb/firewall.service/group": ("firewall_service_group", "config"),
     }
 
 

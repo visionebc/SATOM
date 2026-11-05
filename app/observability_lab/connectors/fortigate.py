@@ -134,13 +134,17 @@ class FortiGateConnector(Connector):
         ("detected devices", "/api/v2/monitor/user/device/query", ("L2", "L3"), "_p_devices"),
         ("firewall policies", "/api/v2/cmdb/firewall/policy", ("L4",), "_p_polcfg"),
         ("policy counters", "/api/v2/monitor/firewall/policy", ("L4",), "_p_polmon"),
+        ("address groups", "/api/v2/cmdb/firewall/addrgrp", ("L3",), "_p_addrgrp"),
+        ("services", "/api/v2/cmdb/firewall.service/custom", ("L4",), "_p_service"),
+        ("service groups", "/api/v2/cmdb/firewall.service/group", ("L4",), "_p_svcgrp"),
         ("policy routes", "/api/v2/cmdb/router/policy", ("L3",), "_p_polroutes"),
         ("sd-wan", "/api/v2/cmdb/system/sdwan", ("L3",), "_p_sdwan"),
         ("vdoms", "/api/v2/cmdb/system/vdom", ("device",), "_p_vdoms"),
     ]
     #: Re-read per extra VDOM of a multi-VDOM box (``?vdom=<name>``).
     # TODO verify: FortiGate multi-VDOM (no multi-VDOM box in the lab; fgt02 8.0.2 has VDOMs off).
-    PER_VDOM = ("routing table", "addresses", "firewall policies", "policy counters", "policy routes")
+    PER_VDOM = ("routing table", "addresses", "address groups", "services", "service groups",
+                "firewall policies", "policy counters", "policy routes")
 
     def test(self) -> dict:
         with self._client() as c:
@@ -349,3 +353,29 @@ class FortiGateConnector(Connector):
     def _p_vdoms(body, res):
         names = [v.get("name") for v in body.get("results") or [] if isinstance(v, dict) and v.get("name")]
         res.facts.append(FactRow("device", "device", "vdom_names", names or ["root"]))
+
+    @staticmethod
+    def _p_addrgrp(body, res):
+        vdom = _vdom(body)
+        for g in body.get("results") or []:
+            ref = _q("addrgrp:%s" % g.get("name"), vdom)
+            res.facts += [FactRow(ref, "L3", "members", _names(g.get("member"))),
+                          FactRow(ref, "L3", "exclude", g.get("exclude") or "disable")]
+            if g.get("exclude-member"):
+                res.facts.append(FactRow(ref, "L3", "exclude_member", _names(g.get("exclude-member"))))
+
+    @staticmethod
+    def _p_service(body, res):
+        vdom = _vdom(body)
+        for v in body.get("results") or []:
+            ref = _q("service:%s" % v.get("name"), vdom)
+            res.facts.append(FactRow(ref, "L4", "protocol", v.get("protocol") or ""))
+            for k in ("tcp-portrange", "udp-portrange", "sctp-portrange", "protocol-number"):
+                if v.get(k) not in (None, ""):
+                    res.facts.append(FactRow(ref, "L4", k.replace("-", "_"), v[k]))
+
+    @staticmethod
+    def _p_svcgrp(body, res):
+        vdom = _vdom(body)
+        for g in body.get("results") or []:
+            res.facts.append(FactRow(_q("svcgrp:%s" % g.get("name"), vdom), "L4", "members", _names(g.get("member"))))

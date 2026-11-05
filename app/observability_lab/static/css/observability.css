@@ -477,7 +477,7 @@ i.st-off { color: var(--obs-text-3); }
 }
 
 /* Path analysis by phases */
-.obs-an-form { display: grid; grid-template-columns: minmax(180px, 1.4fr) minmax(90px, .6fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(70px, .4fr) auto; gap: 8px 10px; }
+.obs-an-form { display: grid; grid-template-columns: minmax(180px, 1.4fr) minmax(90px, .6fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(70px, .4fr) minmax(100px, .5fr) auto; gap: 8px 10px; }
 @media (max-width: 991px) { .obs-an-form { grid-template-columns: 1fr 1fr; } }
 .obs-phases { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .obs-phase > details { border: 1px solid var(--obs-border); border-radius: var(--obs-radius); background: var(--obs-surface); }

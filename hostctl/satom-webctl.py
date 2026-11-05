@@ -41,18 +41,21 @@ import base64
 import datetime
 import hashlib
 import io
+import ipaddress
 import json
 import os
 import re
 import select
+import ssl
 import shutil
 import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 CONF_PATH = os.environ.get("SATOM_WEBCTL_CONF", "/etc/satom-webctl.json")
 MAX_REQUEST_BYTES = 16 * 1024 * 1024
 READ_TIMEOUT = 30
@@ -75,10 +78,13 @@ DEFAULTS = {
     "keep_backups": 200,
     "read_only": False,
     "command_timeout": 60,
+    "cert_dir": "/etc/satom-webctl/certs",
+    "openssl": "",
+    "expiring_days": 30,
 }
 WRITE_OPS = ("vhost.put", "vhost.create", "vhost.enable", "vhost.disable",
              "vhost.delete", "files.write", "files.mkdir", "files.rename",
-             "files.delete")
+             "files.delete", "cert.csr", "cert.install", "cert.assign", "cert.delete")
 
 
 class Refused(Exception):
@@ -241,8 +247,9 @@ def vhost_state(spec, name):
     raise Refused("not_found", "no virtual host %r" % name)
 
 
-def list_vhosts(conf):
-    out = []
+def iter_vhost_files(conf):
+    """(server, name, path, enabled, stat, text) of every virtual host file
+    of the configured servers, text cut at 512 KiB."""
     for server in sorted(conf["servers"]):
         spec = conf["servers"][server]
         avail = spec["available"]
@@ -275,24 +282,30 @@ def list_vhosts(conf):
                     text = fh.read(512 * 1024)
             except OSError:
                 continue
-            blocks = parse_vhost(server, text)
-            if not blocks:
-                continue          # a conf.d snippet, not a virtual host
-            names_ = []
-            roots, listens = [], []
-            for b in blocks:
-                names_.extend(n for n in b["server_names"]
-                              if n not in names_ and SERVER_NAME_RE.match(n))
-                roots.extend(r for r in b["docroots"] if r not in roots
-                             and r.startswith("/") and not UNSAFE_TEXT_RE.search(r)
-                             and len(r) <= 1024)
-                listens.extend(l[:128] for l in b["listen"] if l not in listens
-                               and not UNSAFE_TEXT_RE.search(l))
-            out.append({"server": server, "name": name, "enabled": enabled,
-                        "server_names": names_[:50], "docroots": roots[:20],
-                        "listen": listens[:20], "ssl": any(b["ssl"] for b in blocks),
-                        "bytes": st.st_size, "mtime": int(st.st_mtime),
-                        "managed_root": all(_inside_roots(conf, r) for r in roots) and bool(roots)})
+            yield server, name, path, enabled, st, text
+
+
+def list_vhosts(conf):
+    out = []
+    for server, name, path, enabled, st, text in iter_vhost_files(conf):
+        blocks = parse_vhost(server, text)
+        if not blocks:
+            continue          # a conf.d snippet, not a virtual host
+        names_ = []
+        roots, listens = [], []
+        for b in blocks:
+            names_.extend(n for n in b["server_names"]
+                          if n not in names_ and SERVER_NAME_RE.match(n))
+            roots.extend(r for r in b["docroots"] if r not in roots
+                         and r.startswith("/") and not UNSAFE_TEXT_RE.search(r)
+                         and len(r) <= 1024)
+            listens.extend(l[:128] for l in b["listen"] if l not in listens
+                           and not UNSAFE_TEXT_RE.search(l))
+        out.append({"server": server, "name": name, "enabled": enabled,
+                    "server_names": names_[:50], "docroots": roots[:20],
+                    "listen": listens[:20], "ssl": any(b["ssl"] for b in blocks),
+                    "bytes": st.st_size, "mtime": int(st.st_mtime),
+                    "managed_root": all(_inside_roots(conf, r) for r in roots) and bool(roots)})
     return out
 
 
@@ -442,9 +455,23 @@ def op_info(conf, args):
     for key, spec in conf["servers"].items():
         servers[key] = {"layout": spec["layout"], "available": spec["available"],
                         "enabled": spec.get("enabled") or ""}
+    try:
+        cert_dir = _cert_dir(conf)
+    except Refused:
+        cert_dir = ""
+    try:
+        exe = _openssl(conf)
+        p = subprocess.run([exe, "version"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                           universal_newlines=True, timeout=10)
+        openssl = _safe_text(p.stdout.strip(), 120) if p.returncode == 0 else ""
+    except (Refused, OSError, subprocess.TimeoutExpired):
+        openssl = ""
     return {"version": VERSION, "servers": servers, "roots": conf["roots"],
             "read_only": bool(conf["read_only"]),
-            "max_file_bytes": int(conf["max_file_bytes"])}
+            "max_file_bytes": int(conf["max_file_bytes"]),
+            "cert_dir": cert_dir, "certs_ready": bool(openssl and cert_dir
+                                                      and os.path.isdir(cert_dir)),
+            "openssl": openssl}
 
 
 def op_vhosts_list(conf, args):
@@ -825,6 +852,516 @@ def op_files_delete(conf, args):
     return {"path": _rel(root, target), "backup": bk}
 
 
+# ── certificates ────────────────────────────────────────────────────────────
+#
+# Managed certificates live in ``cert_dir`` (default /etc/satom-webctl/certs),
+# one folder per certificate, owned by satom-mon, mode 0700:
+#
+#     <name>/privkey.pem    the private key. cert.csr generates it HERE (mode
+#                           0600) and it never leaves this server: no
+#                           operation returns it, none accepts one.
+#     <name>/fullchain.pem  the certificate and its chain (public).
+#     <name>/request.csr    the request the certificate was issued for.
+#     <name>/pending/       a renewal: the new key and request, moved into
+#                           place when a certificate for that key is installed.
+#
+# nginx and Apache read the key as root, so 0600 for satom-mon is enough. A
+# key and certificate an administrator copies here by hand (privkey.pem and
+# fullchain.pem in a new folder) are ADOPTED: listed, renewed and assigned
+# like any other. Certificates that virtual hosts use from elsewhere are
+# listed read-only, with the hosts that use them.
+
+CERT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+KEY_TYPES = {
+    "ec256": ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256"],
+    "ec384": ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-384"],
+    "rsa2048": ["-newkey", "rsa:2048"],
+    "rsa4096": ["-newkey", "rsa:4096"],
+}
+MAX_CHAIN_BYTES = 64 * 1024
+MAX_CHAIN_CERTS = 8
+PEM_CERT_RE = re.compile(r"-----BEGIN CERTIFICATE-----([A-Za-z0-9+/=\s]+?)-----END CERTIFICATE-----")
+SAN_RE = re.compile(r"^(\*\.)?[A-Za-z0-9_]([A-Za-z0-9_.-]{0,252})$|^[0-9a-fA-F.:]{2,45}$")
+NGINX_TLS_RE = re.compile(r"(?m)^(\s*)(ssl_certificate|ssl_certificate_key)(\s+)([^;\s]+)(\s*;)")
+APACHE_TLS_RE = re.compile(r"(?im)^(\s*)(SSLCertificateFile|SSLCertificateKeyFile)(\s+)(\S+)(\s*)$")
+APACHE_CHAIN_RE = re.compile(r"(?im)^(\s*)(SSLCertificateChainFile\s+\S+\s*)$")
+
+
+def _cert_dir(conf):
+    d = conf.get("cert_dir") or DEFAULTS["cert_dir"]
+    if not isinstance(d, str) or not d.startswith("/") or d == "/":
+        raise Refused("config", "cert_dir must be an absolute path")
+    return d
+
+
+def _openssl(conf):
+    exe = conf.get("openssl") or shutil.which("openssl") or ""
+    if not exe or not os.path.isfile(exe):
+        raise Refused("no_openssl", "openssl is not installed on this server")
+    return exe
+
+
+def _check_cert_name(name):
+    if not isinstance(name, str) or not CERT_NAME_RE.match(name) or ".." in name:
+        raise Refused("bad_cert_name",
+                      "a certificate name is lowercase letters, digits, '.', '_' or '-'")
+    return name
+
+
+def _safe_text(value, limit=200):
+    return TEXT_UNSAFE_RE.sub("", str(value or ""))[:limit]
+
+
+def _pem_blocks(text):
+    return ["".join(b.split()) for b in PEM_CERT_RE.findall(text)]
+
+
+def _cert_info(path):
+    """What the first certificate of ``path`` says (the stdlib decoder; no
+    third-party module), or None when there is no readable certificate."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read(MAX_CHAIN_BYTES + 1)
+    except OSError:
+        return None
+    if len(data) > MAX_CHAIN_BYTES:
+        return None
+    blocks = _pem_blocks(data.decode("ascii", "replace"))
+    if not blocks:
+        return None
+    try:
+        der = base64.b64decode(blocks[0])
+        d = ssl._ssl._test_decode_cert(path)
+    except Exception:  # noqa: BLE001 -- any undecodable file is "no certificate"
+        return None
+
+    def first(rdns, key):
+        for rdn in rdns or ():
+            for k, v in rdn:
+                if k == key:
+                    return _safe_text(v)
+        return ""
+    try:
+        not_after = int(ssl.cert_time_to_seconds(d["notAfter"]))
+        not_before = int(ssl.cert_time_to_seconds(d["notBefore"]))
+    except (KeyError, ValueError):
+        return None
+    sans = []
+    for kind, value in d.get("subjectAltName") or ():
+        value = _safe_text(value, 253)
+        if kind in ("DNS", "IP Address") and SAN_RE.match(value) and value not in sans:
+            sans.append(value)
+    left = int((not_after - time.time()) // 86400)
+    return {"subject": first(d.get("subject"), "commonName"),
+            "issuer": first(d.get("issuer"), "commonName") or first(d.get("issuer"),
+                                                                     "organizationName"),
+            "sans": sans[:100], "not_before": not_before, "not_after": not_after,
+            "days_left": left, "serial": _safe_text(d.get("serialNumber"), 64).lower(),
+            "sha256": hashlib.sha256(der).hexdigest(),
+            "self_signed": d.get("subject") == d.get("issuer"),
+            "chain_length": len(blocks)}
+
+
+def _status(info, expiring_days):
+    if info is None:
+        return "unreadable"
+    if info["days_left"] < 0:
+        return "expired"
+    if info["days_left"] < expiring_days:
+        return "expiring"
+    return "valid"
+
+
+def _pubkey(conf, path, is_key):
+    """The public key of a certificate or private key file as PEM text, or ""
+    when it cannot be read (an unmanaged key only root can read)."""
+    argv = ([_openssl(conf), "pkey", "-pubout", "-in", path] if is_key
+            else [_openssl(conf), "x509", "-noout", "-pubkey", "-in", path])
+    try:
+        p = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                           universal_newlines=True, timeout=conf["command_timeout"])
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return "".join(p.stdout.split()) if p.returncode == 0 else ""
+
+
+def _tls_refs(server, text):
+    """(cert path, key path) pairs a virtual host file names, in order."""
+    text = _strip_comments(text)
+    if server == "nginx":
+        found = [(m.group(2), _unquote(m.group(4))) for m in NGINX_TLS_RE.finditer(text)]
+        certs = [v for k, v in found if k == "ssl_certificate" and "$" not in v]
+        keys = [v for k, v in found if k == "ssl_certificate_key" and "$" not in v]
+    else:
+        found = [(m.group(2).lower(), _unquote(m.group(4))) for m in APACHE_TLS_RE.finditer(text)]
+        certs = [v for k, v in found if k == "sslcertificatefile"]
+        keys = [v for k, v in found if k == "sslcertificatekeyfile"]
+    out = []
+    for i, c in enumerate(certs):
+        pair = (c, keys[i] if i < len(keys) else "")
+        if pair not in out:
+            out.append(pair)
+    return out
+
+
+def _usage(conf):
+    """real cert path -> [{"server", "vhost", "enabled", "key"}] over every
+    virtual host file, enabled or not."""
+    used = {}
+    for server, name, _path, enabled, _st, text in iter_vhost_files(conf):
+        for cert, key in _tls_refs(server, text):
+            if not cert.startswith("/"):
+                continue
+            used.setdefault(os.path.realpath(cert), []).append(
+                {"server": server, "vhost": name, "enabled": enabled, "key": key})
+    return used
+
+
+def _managed_paths(conf, name):
+    base = os.path.join(_cert_dir(conf), name)
+    return {"dir": base, "key": os.path.join(base, "privkey.pem"),
+            "cert": os.path.join(base, "fullchain.pem"),
+            "csr": os.path.join(base, "request.csr"),
+            "pending": os.path.join(base, "pending"),
+            "pending_key": os.path.join(base, "pending", "privkey.pem"),
+            "pending_csr": os.path.join(base, "pending", "request.csr")}
+
+
+def _entry(conf, path, *, name="", key_path="", used=None, expiring=30):
+    info = _cert_info(path) if os.path.isfile(path) else None
+    e = {"name": name, "managed": bool(name), "path": path, "key_path": key_path,
+         "used_by": [{"server": u["server"], "vhost": u["vhost"], "enabled": u["enabled"]}
+                     for u in (used or [])][:100]}
+    if not os.path.exists(path):
+        e["status"] = "requested" if name else "missing"
+    else:
+        e["status"] = _status(info, expiring)
+    e.update(info or {"subject": "", "issuer": "", "sans": [], "not_before": 0,
+                      "not_after": 0, "days_left": 0, "serial": "", "sha256": "",
+                      "self_signed": False, "chain_length": 0})
+    km = None
+    if info is not None and key_path and os.path.exists(key_path):
+        kp, cp = _pubkey(conf, key_path, True), _pubkey(conf, path, False)
+        km = (kp == cp) if (kp and cp) else None
+    e["key_matches"] = km
+    return e
+
+
+def op_certs_list(conf, args):
+    used = _usage(conf)
+    expiring = int(conf.get("expiring_days") or 30)
+    out, seen = [], set()
+    base = _cert_dir(conf)
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        names = []
+    for name in names:
+        if not CERT_NAME_RE.match(name) or not os.path.isdir(os.path.join(base, name)):
+            continue
+        mp = _managed_paths(conf, name)
+        e = _entry(conf, mp["cert"], name=name, key_path=mp["key"],
+                   used=used.get(os.path.realpath(mp["cert"])), expiring=expiring)
+        e["pending"] = os.path.isfile(mp["pending_csr"]) or (
+            not os.path.exists(mp["cert"]) and os.path.isfile(mp["csr"]))
+        out.append(e)
+        seen.add(os.path.realpath(mp["cert"]))
+    for real, users in sorted(used.items()):
+        if real in seen or UNSAFE_TEXT_RE.search(real) or len(real) > 1024:
+            continue
+        e = _entry(conf, real, key_path=users[0]["key"], used=users, expiring=expiring)
+        e["pending"] = False
+        out.append(e)
+    return {"cert_dir": base, "expiring_days": expiring, "certs": out[:500]}
+
+
+def op_cert_get(conf, args):
+    """One certificate: what certs.list says about it, the certificate and
+    chain as PEM (public), and the request waiting for a certificate."""
+    used = _usage(conf)
+    if args.get("name"):
+        name = _check_cert_name(args.get("name"))
+        mp = _managed_paths(conf, name)
+        if not os.path.isdir(mp["dir"]):
+            raise Refused("not_found", "no certificate %r" % name)
+        e = _entry(conf, mp["cert"], name=name, key_path=mp["key"],
+                   used=used.get(os.path.realpath(mp["cert"])),
+                   expiring=int(conf.get("expiring_days") or 30))
+        csr_path = mp["pending_csr"] if os.path.isfile(mp["pending_csr"]) else mp["csr"]
+        cert_path = mp["cert"]
+    else:
+        path = args.get("path")
+        if not isinstance(path, str) or os.path.realpath(path) not in used:
+            raise Refused("not_found", "not a certificate a virtual host of this server uses")
+        cert_path = os.path.realpath(path)
+        users = used[cert_path]
+        e = _entry(conf, cert_path, key_path=users[0]["key"], used=users,
+                   expiring=int(conf.get("expiring_days") or 30))
+        csr_path = ""
+    e["pending"] = bool(csr_path) and os.path.isfile(csr_path) and (
+        csr_path.endswith("/pending/request.csr") or not os.path.exists(cert_path))
+    e["certificate"] = ""
+    if os.path.isfile(cert_path):
+        with open(cert_path, "r", errors="replace") as fh:
+            blocks = _pem_blocks(fh.read(MAX_CHAIN_BYTES))
+        e["certificate"] = "\n".join(_pem_text(b) for b in blocks[:MAX_CHAIN_CERTS])
+    e["csr"] = ""
+    if e["pending"]:
+        with open(csr_path, "r", errors="replace") as fh:
+            e["csr"] = fh.read(16 * 1024)
+    return e
+
+
+def _pem_text(b64):
+    lines = [b64[i:i + 64] for i in range(0, len(b64), 64)]
+    return "-----BEGIN CERTIFICATE-----\n%s\n-----END CERTIFICATE-----\n" % "\n".join(lines)
+
+
+def op_cert_csr(conf, args):
+    """A new private key and its request, made on this server. On a
+    certificate that already has one, the pair waits in ``pending/`` until
+    the renewed certificate is installed, so the running sites keep working."""
+    name = _check_cert_name(args.get("name"))
+    cn = args.get("common_name")
+    if not isinstance(cn, str) or not SERVER_NAME_RE.match(cn) or cn == "_":
+        raise Refused("bad_common_name", "the common name is a host name")
+    sans = args.get("sans") or []
+    if isinstance(sans, str):
+        sans = sans.replace(",", " ").split()
+    if (not isinstance(sans, list) or len(sans) > 50
+            or not all(isinstance(s, str) and SAN_RE.match(s) for s in sans)):
+        raise Refused("bad_sans", "up to 50 host names or addresses")
+    names = [cn] + [s for s in sans if s != cn]
+    key_type = args.get("key_type") or "ec256"
+    if key_type not in KEY_TYPES:
+        raise Refused("bad_key_type", "key type: " + ", ".join(sorted(KEY_TYPES)))
+    exe = _openssl(conf)
+    mp = _managed_paths(conf, name)
+    renewal = os.path.isfile(mp["cert"])
+    target_dir = mp["pending"] if renewal else mp["dir"]
+    base = _cert_dir(conf)
+    if not os.path.isdir(base):
+        raise Refused("no_cert_dir", "%s does not exist: run the installer again" % base)
+    old = [p for p in (mp["pending"] if renewal else mp["dir"],) if os.path.exists(p)]
+    bk = backup(conf, "cert.csr", old) if old else ""
+    work = tempfile.mkdtemp(prefix=".satom-webctl-", dir=base)
+    try:
+        os.chmod(work, 0o700)
+        cfg = os.path.join(work, "req.cnf")
+        alt = ",".join(("IP:" if _is_ip(n) else "DNS:") + n for n in names)
+        with open(cfg, "w") as fh:
+            fh.write("[req]\ndistinguished_name = dn\nreq_extensions = ext\nprompt = no\n"
+                     "[dn]\nCN = %s\n[ext]\nsubjectAltName = %s\n" % (cn, alt))
+        key, csr = os.path.join(work, "privkey.pem"), os.path.join(work, "request.csr")
+        old_umask = os.umask(0o077)
+        try:
+            p = subprocess.run([exe, "req", "-new", "-nodes", "-config", cfg, "-keyout", key,
+                                "-out", csr] + KEY_TYPES[key_type],
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               universal_newlines=True, timeout=conf["command_timeout"])
+        finally:
+            os.umask(old_umask)
+        if p.returncode != 0 or not os.path.isfile(key) or not os.path.isfile(csr):
+            raise Refused("csr_failed", _safe_text(p.stdout, 400))
+        os.chmod(key, 0o600)
+        os.chmod(csr, 0o644)
+        os.unlink(cfg)
+        if renewal:
+            if os.path.exists(mp["pending"]):
+                shutil.rmtree(mp["pending"])
+            os.rename(work, mp["pending"])
+        else:
+            if os.path.exists(mp["dir"]):
+                shutil.rmtree(mp["dir"])
+            os.rename(work, mp["dir"])
+        work = ""
+    finally:
+        if work and os.path.exists(work):
+            shutil.rmtree(work, ignore_errors=True)
+    with open(mp["pending_csr"] if renewal else mp["csr"], "r") as fh:
+        text = fh.read()
+    return {"name": name, "csr": text, "common_name": cn, "sans": names, "key_type": key_type,
+            "renewal": renewal, "backup": bk}
+
+
+def _is_ip(value):
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _servers_using(conf, real_cert):
+    """Servers with an ENABLED virtual host that uses this certificate."""
+    return sorted({u["server"] for u in _usage(conf).get(real_cert, []) if u["enabled"]})
+
+
+def _test_reload(conf, servers, undo):
+    """Test every server; if one fails run ``undo`` and test again; if all
+    pass reload each. Returns the result dict."""
+    outs = []
+    for s in servers:
+        rc, out = _run(conf, conf["servers"][s].get("test"))
+        outs.append(out)
+        if rc != 0:
+            undo()
+            valid = all(_run(conf, conf["servers"][x].get("test"))[0] == 0 for x in servers)
+            return {"applied": False, "restored": True, "restored_config_valid": valid,
+                    "test_output": "\n".join(outs)[-4000:], "reloaded": []}
+    reloaded, routs = [], []
+    for s in servers:
+        rrc, rout = _run(conf, conf["servers"][s].get("reload"))
+        if rrc == 0:
+            reloaded.append(s)
+        else:
+            routs.append(rout)
+    return {"applied": len(reloaded) == len(servers), "restored": False,
+            "test_output": "\n".join(outs)[-4000:], "reload_output": "\n".join(routs)[-4000:],
+            "reloaded": reloaded}
+
+
+def op_cert_install(conf, args):
+    """Install the certificate (and chain) issued for this server's key. It
+    must be for the pending key (a renewal) or the current one; a private key
+    is never accepted. The sites using it are tested and reloaded; a failed
+    test puts the previous files back."""
+    name = _check_cert_name(args.get("name"))
+    text = args.get("certificate")
+    if not isinstance(text, str) or not text.strip():
+        raise Refused("bad_certificate", "paste the certificate (PEM)")
+    if len(text.encode("utf-8")) > MAX_CHAIN_BYTES:
+        raise Refused("too_large", "a certificate chain is at most %d bytes" % MAX_CHAIN_BYTES)
+    if "PRIVATE KEY" in text:
+        raise Refused("private_key_sent",
+                      "never send a private key: the key is made on this server (cert.csr)")
+    blocks = _pem_blocks(text)
+    if not blocks or len(blocks) > MAX_CHAIN_CERTS:
+        raise Refused("bad_certificate", "1 to %d PEM certificates" % MAX_CHAIN_CERTS)
+    mp = _managed_paths(conf, name)
+    if not os.path.isdir(mp["dir"]):
+        raise Refused("not_found", "no certificate %r: make a request first (cert.csr)" % name)
+    data = "".join(_pem_text(b) for b in blocks).encode("ascii")
+    fd, tmp = tempfile.mkstemp(prefix=".satom-webctl-", dir=mp["dir"])
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        os.chmod(tmp, 0o644)
+        info = _cert_info(tmp)
+        if info is None:
+            raise Refused("bad_certificate", "the certificate cannot be decoded")
+        if info["days_left"] < 0:
+            raise Refused("expired", "the certificate has already expired")
+        pub = _pubkey(conf, tmp, False)
+        if not pub:
+            raise Refused("bad_certificate", "openssl cannot read the certificate")
+        renewal = os.path.isfile(mp["pending_key"]) and _pubkey(conf, mp["pending_key"], True) == pub
+        if not renewal and not (os.path.isfile(mp["key"]) and _pubkey(conf, mp["key"], True) == pub):
+            raise Refused("key_mismatch",
+                          "the certificate is not for this server's key: issue it for the "
+                          "request (cert.csr) of %s" % name)
+        old = {}
+        for k in ("cert", "key", "csr"):
+            if os.path.isfile(mp[k]):
+                with open(mp[k], "rb") as fh:
+                    old[k] = fh.read()
+        bk = backup(conf, "cert.install", [mp["dir"]])
+        os.replace(tmp, mp["cert"])
+        tmp = ""
+        if renewal:
+            os.replace(mp["pending_key"], mp["key"])
+            if os.path.isfile(mp["pending_csr"]):
+                os.replace(mp["pending_csr"], mp["csr"])
+            shutil.rmtree(mp["pending"], ignore_errors=True)
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
+    def undo():
+        for k, mode in (("cert", 0o644), ("key", 0o600), ("csr", 0o644)):
+            if k in old:
+                _write_atomic(mp[k], old[k], mode)
+            elif k == "cert" and os.path.exists(mp[k]):
+                os.unlink(mp[k])
+
+    servers = _servers_using(conf, os.path.realpath(mp["cert"]))
+    res = _test_reload(conf, servers, undo) if servers else {
+        "applied": True, "restored": False, "test_output": "", "reloaded": []}
+    res.update({"name": name, "installed": not res.get("restored"), "renewal": renewal,
+                "not_after": info["not_after"], "days_left": info["days_left"],
+                "subject": info["subject"], "backup": bk})
+    return res
+
+
+def op_cert_assign(conf, args):
+    """Point a virtual host's TLS lines at a managed certificate: backup,
+    rewrite, test, reload -- or restore."""
+    spec = server_spec(conf, args.get("server"))
+    vname = _check_name(spec, args.get("name"))
+    cname = _check_cert_name(args.get("cert"))
+    mp = _managed_paths(conf, cname)
+    if not (os.path.isfile(mp["cert"]) and os.path.isfile(mp["key"])):
+        raise Refused("not_ready", "certificate %r has no installed certificate yet" % cname)
+    if _pubkey(conf, mp["cert"], False) != _pubkey(conf, mp["key"], True):
+        raise Refused("key_mismatch", "certificate %r does not match its key" % cname)
+    path, enabled = vhost_state(spec, vname)
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    text = raw.decode("utf-8", "replace")
+    base = args.get("base_sha256")
+    if base and base != _sha(raw):
+        raise Refused("conflict", "the file changed since it was read")
+    files = {"ssl_certificate": mp["cert"], "ssl_certificate_key": mp["key"],
+             "sslcertificatefile": mp["cert"], "sslcertificatekeyfile": mp["key"]}
+    count = [0]
+
+    def repl(m):
+        count[0] += 1
+        return "%s%s%s%s%s" % (m.group(1), m.group(2), m.group(3),
+                               files[m.group(2).lower()], m.group(5))
+    if args.get("server") == "nginx":
+        new = NGINX_TLS_RE.sub(repl, text)
+    else:
+        new = APACHE_TLS_RE.sub(repl, text)
+        new = APACHE_CHAIN_RE.sub(lambda m: "%s# satom-webctl: the chain is in fullchain.pem -- %s"
+                                  % (m.group(1), m.group(2)), new)
+    if not count[0]:
+        raise Refused("no_tls", "the virtual host has no HTTPS certificate lines: create it "
+                                "with HTTPS, or add its HTTPS block first")
+    data = new.encode("utf-8")
+    if data == raw:
+        return {"changed": False, "applied": True, "restored": False, "cert": cname,
+                "sha256": _sha(raw), "name": vname}
+    mode = stat.S_IMODE(os.stat(path).st_mode)
+    bk = backup(conf, "cert.assign", [path])
+    _write_atomic(path, data, mode)
+
+    def undo():
+        _write_atomic(path, raw, mode)
+
+    res = _apply(conf, spec, undo) if enabled else {"applied": True, "test_output": "",
+                                                       "restored": False}
+    res.update({"changed": not res.get("restored"), "backup": bk, "cert": cname, "name": vname,
+                "sha256": _sha(raw if res.get("restored") else data)})
+    return res
+
+
+def op_cert_delete(conf, args):
+    name = _check_cert_name(args.get("name"))
+    mp = _managed_paths(conf, name)
+    if not os.path.isdir(mp["dir"]):
+        raise Refused("not_found", "no certificate %r" % name)
+    mine = {os.path.realpath(mp["cert"]), os.path.realpath(mp["key"])}
+    users = [u for real, us in _usage(conf).items() for u in us
+             if real in mine or (u["key"] and os.path.realpath(u["key"]) in mine)]
+    if users:
+        raise Refused("in_use", "used by %s" % ", ".join(sorted(
+            {"%s/%s" % (u["server"], u["vhost"]) for u in users})))
+    bk = backup(conf, "cert.delete", [mp["dir"]])
+    shutil.rmtree(mp["dir"])
+    return {"name": name, "deleted": True, "backup": bk}
+
+
 OPERATIONS = {
     "info": op_info,
     "vhosts.list": op_vhosts_list,
@@ -840,6 +1377,12 @@ OPERATIONS = {
     "files.mkdir": op_files_mkdir,
     "files.rename": op_files_rename,
     "files.delete": op_files_delete,
+    "certs.list": op_certs_list,
+    "cert.get": op_cert_get,
+    "cert.csr": op_cert_csr,
+    "cert.install": op_cert_install,
+    "cert.assign": op_cert_assign,
+    "cert.delete": op_cert_delete,
 }
 
 
@@ -876,7 +1419,7 @@ def handle(raw, conf=None):
         if op in WRITE_OPS and conf["read_only"]:
             raise Refused("read_only", "this host is read-only for SATOM")
         args = req.get("args") or {}
-        for k in ("server", "name", "path", "to"):
+        for k in ("server", "name", "path", "to", "cert"):
             if k in args and isinstance(args[k], str):
                 entry[k] = args[k][:200]
         result = fn(conf, args)

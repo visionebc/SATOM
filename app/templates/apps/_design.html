@@ -88,7 +88,7 @@ class="sapp-blk sapp-{{ b.type }} {{ cls }}" style="{{ C.D.css(b.style) }}"{% if
 </div>
 {% elif b.type == 'run_button' %}
 <div {{ attrs(b, C) }}>
-  <button type="button" class="btn btn-fw-primary btn-sm{{ ' w-100' if p.full }}"{% if not C.editing %} id="app-run"{% endif %}>{{ icon(p.icon or 'bi-play-fill', 'me-1') }}{{ p.label or _('Run') }}</button>
+  <button type="button" class="btn btn-fw-primary btn-sm{{ ' w-100' if p.full }}"{% if not C.editing %} id="app-run"{% if p.auto and C.autorun %} data-autorun="1"{% endif %}{% endif %}>{{ icon(p.icon or 'bi-play-fill', 'me-1') }}{{ p.label or _('Run') }}</button>
 </div>
 {% elif b.type == 'result' %}
 <div {{ attrs(b, C, 'text-muted') }}{% if not C.editing %} id="app-out"{% endif %}>{{ p.placeholder or _('Fill in the form and press Run. The result appears here.') }}</div>

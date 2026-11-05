@@ -27,6 +27,49 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   is gone. Branding — Top-bar Banner spans the full width.
 
 ### Added
+- **Web hosting panel and certificates for managed web servers.** Operator
+  request: "a separate, complete one with everything we agreed, something like
+  a simple cPanel, where I can also manage the certificate", then "do A, B and
+  C". Three parts:
+  - **Certificates on the server (satom-webctl 1.1.0).** New operations
+    `certs.list`, `cert.get`, `cert.csr`, `cert.install`, `cert.assign` and
+    `cert.delete`. The private key is generated **on the server** (`cert.csr`,
+    mode 0600 in `/etc/satom-webctl/certs/<name>/`) and never leaves it: no
+    operation returns one and `cert.install` refuses one. A certificate is
+    installed only for the pending or the current key, never expired; the
+    sites that use it are tested and reloaded, and a failed test puts the
+    previous files back. A renewal waits in `pending/` until its certificate
+    is installed, so the sites keep working. `cert.assign` rewrites a site's
+    certificate lines (nginx, Apache) with backup, test and restore.
+    `certs.list` also lists the certificates sites use from elsewhere,
+    read-only, with expiry, issuer, names and the sites that use them. A key
+    and certificate copied by hand into the folder are adopted. The installer
+    creates the folder and installs `openssl`; `--uninstall` keeps the
+    certificates, and `--purge` keeps them while a site still uses them.
+  - **The Web hosting panel.** Plugin Studio > Examples > Web hosts now
+    installs eighteen apps: the new **Web hosting panel** (one page, opened
+    with the data already loaded: sites, certificates that need attention,
+    every certificate, the server, in tabs, with a button per row that opens
+    the app doing the change) and five certificate apps (view; request or
+    renew, signed and installed in one run; install; use on a site; delete).
+  - **Signing and expiry.** The new step **Sign a certificate request**
+    (`cert_sign`) has the request signed by a Certificate Manager provider,
+    so the internal CA or ACME (DNS-01). The same call the Certificate
+    Manager makes. It needs `user_manage`, like the Certificate Manager,
+    checks the request's signature and that the certificate is for the
+    request's key, and leaves an audit line `webhost.cert.sign`. The new
+    scheduled action **Web hosts — certificate expiry check**
+    (`webhost_cert_expiry`, daily, created with the first trusted server
+    connection) notifies the administrators once per certificate and stage:
+    30, 14 and 7 days left, and expired. It only does this for certificates
+    an enabled site serves. A server that cannot be read is a failed run,
+    never "no certificates".
+- **Output columns.** An Output step's table can name its columns (`key` or
+  `key=Label`, `a.b` for a field of each item of a list; lists shown joined).
+  Row buttons still see every column.
+- **Run when the page opens.** The Run button of a designed app page can run
+  the app as the page opens. This only happens for an app with no form field
+  and no step that writes; the server decides, whatever the design says.
 - **Code-first scripts: the form in the code, SATOM data, Import a script and
   a developer kit.** Operator request: "show how the script is so users can
   see it and adapt it — this way it is very hard to make plugins; the solution

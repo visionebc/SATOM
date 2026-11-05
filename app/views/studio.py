@@ -492,6 +492,10 @@ def connection_hostkey(slug):
     try:
         if action == "trust":
             key = SC.trust_host_key(c)
+            # the first usable server arms the daily certificate expiry check
+            # (here, not in studio_connections: the Builder packs that module)
+            from ..services import webhost_certs
+            webhost_certs.ensure_scheduled()
         elif action == "forget":
             SC.forget_host_key(c)
             key = ""

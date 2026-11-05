@@ -47,7 +47,7 @@ size, strict JSON, closed schema per operation
 | Web servers | nginx and/or Apache (httpd / apache2) |
 | Python | `python3` 3.6 or newer (standard library only) |
 | SSH | `sshd` reachable from the SATOM nodes (port 22 by default) |
-| Installed by the installer if missing | `sudo`, `acl` (`setfacl`) |
+| Installed by the installer if missing | `sudo`, `acl` (`setfacl`), `openssl` (certificates) |
 | Containers (LXC) | an unprivileged container with systemd 252+ needs `features: nesting=1`, or every SSH login waits 25 s for systemd-logind |
 
 ### Site directories per distribution
@@ -101,6 +101,7 @@ sudoers file and the key line, and re-applies the ACLs.
 | `~satom-mon/.ssh/authorized_keys` | One line: `restrict,command="/usr/local/bin/satom-webctl"[,from="..."] <SATOM's key>`. |
 | `/var/lib/satom-webctl/backups` | `0700`, backups taken before every change. |
 | `/var/log/satom-webctl/webctl.log` | One JSON line per operation. |
+| `/etc/satom-webctl/certs` | `satom-mon 0700`. The certificates SATOM manages, one folder each (section 5, *Certificates*). Their private keys are created here and never leave the server. |
 
 The sudoers file, for nginx on Debian, is exactly:
 
@@ -123,11 +124,13 @@ within 30 s). Answer: `{"ok": true, "result": {...}}` or
 
 | Operation | Arguments | Result |
 |---|---|---|
-| `info` | — | version, servers and layouts, roots, `read_only`, `max_file_bytes` |
+| `info` | — | version, servers and layouts, roots, `read_only`, `max_file_bytes`, `cert_dir`, `certs_ready`, `openssl` |
 | `vhosts.list` | — | every virtual host: server, name, enabled, server names, document roots, listen, ssl, size, mtime, `managed_root` |
 | `vhost.get` | `server`, `name` | the file's `content` and `sha256` |
 | `files.list` | `server`, `name`, `path`, [`docroot`] | entries (name, type, size, mtime, mode), `truncated`, `skipped` |
 | `files.read` | `server`, `name`, `path`, [`docroot`] | `content_b64`, `size`, `sha256` |
+| `certs.list` | — | every managed certificate and every certificate a virtual host uses from elsewhere: name, `managed`, path, status (`valid`, `expiring`, `expired`, `requested`, `missing`, `unreadable`), subject, issuer, names, dates, `days_left`, SHA-256, `key_matches`, `pending` (a renewal request waits) and the hosts that use it |
+| `cert.get` | `name` or `path` | the same, plus the certificate and chain (PEM, public) and the waiting request. `path` must be a certificate a virtual host names: no other file is read |
 
 ### Write (refused when SATOM's connection has *Allow writes* off, or the server is `--read-only`)
 
@@ -141,6 +144,10 @@ within 30 s). Answer: `{"ok": true, "result": {...}}` or
 | `files.mkdir` | `server`, `name`, `path` | new folder |
 | `files.rename` | `server`, `name`, `path`, `to` | rename or move inside the document root |
 | `files.delete` | `server`, `name`, `path`, [`recursive`] | backup (tar.gz), then delete |
+| `cert.csr` | `name`, `common_name`, [`sans`, `key_type`] | a new private key (`ec256` by default; `ec384`, `rsa2048`, `rsa4096`) and its request, made **on the server**; returns the request (CSR). On an installed certificate the pair waits in `pending/` and the running sites keep their files |
+| `cert.install` | `name`, `certificate` | the certificate (and chain) issued for that request. It must fit the pending or the current key; a private key, a certificate for another key and an expired one are refused. The servers whose enabled hosts use it are tested and reloaded; a failed test puts the previous files back |
+| `cert.assign` | `server`, `name` (virtual host), `cert`, [`base_sha256`] | rewrites the host's certificate and key lines to the managed files (the Apache chain line is commented out: the chain is in `fullchain.pem`), backup → test → reload or restore. A host without TLS lines is refused (`no_tls`) |
+| `cert.delete` | `name` | backup, then delete — refused while a virtual host uses it (`in_use`) |
 
 `base_sha256` makes a write fail with `conflict` when the file changed since
 it was read, so two people never overwrite each other silently.
@@ -151,8 +158,26 @@ it was read, so two people never overwrite each other silently.
 `unknown_server`, `bad_name`, `not_found`, `exists`, `conflict`, `bad_path`,
 `outside_docroot`, `root_not_managed`, `no_docroot`, `bad_docroot`,
 `not_a_file`, `not_a_directory`, `not_empty`, `bad_content`,
-`bad_server_names`, `bad_kind`, `bad_cert`, `bad_socket`, `os_error`,
-`internal`. An error never contains the content of a file.
+`bad_server_names`, `bad_kind`, `bad_cert`, `bad_socket`, `bad_cert_name`,
+`bad_common_name`, `bad_sans`, `bad_key_type`, `bad_certificate`,
+`private_key_sent`, `key_mismatch`, `expired`, `not_ready`, `no_tls`,
+`in_use`, `no_cert_dir`, `no_openssl`, `csr_failed`, `os_error`, `internal`.
+An error never contains the content of a file.
+
+### Certificates
+
+`/etc/satom-webctl/certs/<name>/` holds `privkey.pem` (0600), `fullchain.pem`,
+`request.csr` and, during a renewal, `pending/`. The flow is: `cert.csr` on
+the server → the request is signed (in SATOM: the internal CA or ACME through
+the Certificate Manager's providers, or any CA by hand) → `cert.install` →
+`cert.assign` to the virtual hosts. A renewal is the same `cert.csr` +
+`cert.install`: the paths do not change, so the hosts need no edit.
+
+**Adopting a certificate you already have** (for example a wildcard): copy its
+key and chain by hand to `/etc/satom-webctl/certs/<name>/privkey.pem` (mode
+0600, owner `satom-mon`) and `fullchain.pem`. SATOM then lists, assigns and
+renews it like the others. SATOM never takes a private key over the wire.
+
 
 ## 6. Guarantees on the server
 
@@ -168,6 +193,10 @@ it was read, so two people never overwrite each other silently.
   Unicode bidi characters is left out of a listing and counted in `skipped`.
 * **Limits.** Files up to `max_file_bytes` (4 MiB by default), listings up to
   `max_list` entries (5,000), 200 backups kept.
+* **Private keys stay here.** Keys are generated on the server by `cert.csr`;
+  no operation returns one and `cert.install` refuses one. A backup taken
+  before a certificate change keeps the old key inside the 0700 backup
+  directory, on the server.
 
 ## 7. Guarantees on SATOM's side
 
@@ -204,9 +233,12 @@ it was read, so two people never overwrite each other silently.
 ## 9. Uninstalling
 
 ```bash
-sudo bash install-satom-webctl.sh --uninstall          # keeps backups and log
+sudo bash install-satom-webctl.sh --uninstall          # keeps backups, log and certificates
 sudo bash install-satom-webctl.sh --uninstall --purge  # removes them too
 ```
+
+`--purge` keeps `/etc/satom-webctl/certs` while a virtual host still names a
+file in it, and says so: removing it would leave that site unable to start.
 
 It removes the ACL entries, the sudoers file, the program, its configuration
 and the `satom-mon` account. Delete the connection in SATOM as well: hostguard

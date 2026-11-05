@@ -312,7 +312,12 @@ def kinds(choices: dict | None = None) -> list[Kind]:
                          '"{{ row.name }}"}}, {"label": "Open", "url": "{{ row._url }}"}] -- '
                          'an app opens its form in a window over this page, filled in; a '
                          'url is a SATOM path. "when": "{{ row.x }}" shows a button only '
-                         'where it is true. Columns starting with _ are not shown.')]),
+                         'where it is true. Columns starting with _ are not shown.'),
+              Param("columns", "Columns",
+                    help="For a table: the columns to show, in order, comma separated -- "
+                         "key, or key=Label; a.b takes b from each item of the list a. A "
+                         "list is shown joined by commas. Row buttons see every column. "
+                         "Empty = every column.")]),
         Kind("store_query", "Read a data store", "data", "Rows of a data store that match a filter.",
              [Param("store", "Data store", "select", True, tuple(ch.get("stores", ()))),
               Param("filter", "Filter (JSON)", "json",
@@ -352,14 +357,17 @@ def kinds(choices: dict | None = None) -> list[Kind]:
              extra={"catalog": dict(ch.get("catalog") or {})}),
         Kind("server_call", "Act on a server", "act",
              "One satom-webctl operation on a server connection: list or edit nginx/Apache "
-             "virtual hosts, browse, read or change the files of a document root.",
+             "virtual hosts, browse, read or change the files of a document root, manage "
+             "the server's certificates (the private key is made on the server and never "
+             "leaves it).",
              [Param("connection", "Connection", "select", True, tuple(ch.get("server", ()))),
               Param("operation", "Operation", "select", True, tuple(ch.get("server_ops", ())),
                     default="vhosts.list",
-                    help="Reads: info, vhosts.list, vhost.get, files.list, files.read. "
-                         "Writes (need Allow writes on the connection): vhost.put, "
-                         "vhost.create, vhost.enable, vhost.disable, vhost.delete, "
-                         "files.write, files.mkdir, files.rename, files.delete."),
+                    help="Reads: info, vhosts.list, vhost.get, files.list, files.read, "
+                         "certs.list, cert.get. Writes (need Allow writes on the "
+                         "connection): vhost.put, vhost.create, vhost.enable, vhost.disable, "
+                         "vhost.delete, files.write, files.mkdir, files.rename, "
+                         "files.delete, cert.csr, cert.install, cert.assign, cert.delete."),
               Param("args", "Arguments (JSON)", "json",
                     help='e.g. {"server": "nginx", "name": "{{ form.vhost }}", '
                          '"path": "{{ form.path }}"}'),
@@ -677,6 +685,48 @@ def row_actions(raw, value, scope: dict, ctx) -> list:
     return out
 
 
+MAX_COLUMNS = 40
+
+
+def _column_value(row: dict, key: str):
+    head, _, rest = key.partition(".")
+    v = row.get(head)
+    if rest and isinstance(v, list):
+        v = [x.get(rest) for x in v if isinstance(x, dict)]
+    elif rest and isinstance(v, dict):
+        v = v.get(rest)
+    if isinstance(v, list) and all(not isinstance(x, (dict, list)) for x in v):
+        v = ", ".join("" if x is None else str(x) for x in v)
+    return v
+
+
+def project_columns(raw, value) -> list:
+    """An Output's ``columns``: a table keeps only these columns, in this
+    order, renamed when written ``key=Label``; ``a.b`` takes ``b`` from each
+    item of the list ``a``; a list of plain values is joined by commas. The
+    row buttons (``_actions``, computed before) are kept."""
+    spec = [c.strip() for c in str(raw or "").split(",") if c.strip()]
+    if not spec:
+        return value
+    if len(spec) > MAX_COLUMNS:
+        raise FlowError("at most %d columns" % MAX_COLUMNS)
+    if not isinstance(value, list) or not all(isinstance(r, dict) for r in value):
+        raise FlowError("columns need a table: a list of objects")
+    pairs = []
+    for c in spec:
+        key, _, label = c.partition("=")
+        key, label = key.strip(), label.strip()
+        if not key:
+            raise FlowError("column %r has no key" % c)
+        pairs.append((key, label or key))
+    out = []
+    for r in value:
+        row = {label: _column_value(r, key) for key, label in pairs}
+        row.update({k: v for k, v in r.items() if str(k).startswith("_")})
+        out.append(row)
+    return out
+
+
 def _compare(left, op, right) -> bool:
     if op == "empty":
         return left in (None, "", [], {})
@@ -742,6 +792,8 @@ def _run_step(node: dict, ctx: Ctx):
         value = render(_p(node, "value"), scope)
         if str(_p(node, "row_actions", "") or "").strip():
             value = row_actions(_p(node, "row_actions"), value, scope, ctx)
+        if str(_p(node, "columns", "") or "").strip():
+            value = project_columns(_p(node, "columns"), value)
         _size_ok(value)
         ctx.outputs.append({"key": node.get("key") or "",
                             "title": str(render(_p(node, "title"), scope) or ""),

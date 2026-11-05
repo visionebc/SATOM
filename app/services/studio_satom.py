@@ -45,6 +45,7 @@ import re
 
 from . import studio_dns as DNS
 from . import studio_troubleshoot as TS
+from . import studio_webcert as WC
 from . import studio_flow as F
 
 GROUP = "satom"
@@ -52,7 +53,8 @@ GROUP = "satom"
 #: Steps that change something outside the run (rehearsal describes them).
 #: The DNS & LB Lookup steps live in their own module (``studio_dns``).
 WRITE_KINDS = ("ddi_reserve", "ddi_reserve_set", "ddi_release", "certificate",
-               "fortiweb_spo", "fortiweb_spo_remove") + DNS.WRITE_KINDS + TS.WRITE_KINDS
+               "fortiweb_spo", "fortiweb_spo_remove") + DNS.WRITE_KINDS + TS.WRITE_KINDS \
+    + WC.WRITE_KINDS
 #: Of those, the ones that write to an appliance (need config_write).
 DEVICE_KINDS = ("certificate", "fortiweb_spo", "fortiweb_spo_remove") + DNS.DEVICE_KINDS \
     + TS.DEVICE_KINDS
@@ -78,11 +80,11 @@ SOURCES = (
 SOURCE_KEYS = tuple(k for k, _ in SOURCES)
 KIND_KEYS = ("satom_appliances", "render_names", "ddi_reserve", "ddi_reserve_set",
              "ddi_release", "fortiweb_pick", "certificate", "fortiweb_spo",
-             "fortiweb_spo_remove") + DNS.KIND_KEYS + TS.KIND_KEYS
+             "fortiweb_spo_remove") + DNS.KIND_KEYS + TS.KIND_KEYS + WC.KIND_KEYS
 #: The variable a SATOM step saves its result under when the draft names
 #: none (a step later steps read by that name: ``{{ appliances }}``).
 DEFAULT_SAVE_AS = {"satom_appliances": "appliances", **DNS.DEFAULT_SAVE_AS,
-                   **TS.DEFAULT_SAVE_AS}
+                   **TS.DEFAULT_SAVE_AS, **WC.DEFAULT_SAVE_AS}
 #: The products ``satom_appliances`` filters on ('' = every product).
 APPLIANCE_KINDS = ("fortiweb", "fortigate", "fortiadc", "fortianalyzer", "fortiauthenticator")
 #: What each appliance of ``satom_appliances`` carries: the columns of the
@@ -268,7 +270,7 @@ def kinds(ch: dict | None = None) -> list:
           "For the error branch of a diagram.",
           [P("spo", "Created policy", required=True, help="e.g. {{ spo_internal }}"),
            F._save_as("removed")], writes=True),
-    ] + DNS.kinds() + TS.kinds()
+    ] + DNS.kinds() + TS.kinds() + WC.kinds()
 
 
 def choices() -> dict:
@@ -1095,6 +1097,8 @@ def rehearse(node: dict, ctx) -> tuple:
     kind = node.get("kind")
     if kind in DNS.KIND_KEYS:
         return DNS.rehearse(node, ctx)
+    if kind in WC.KIND_KEYS:
+        return WC.rehearse(node, ctx)
     if kind == "ddi_reserve":
         ip = _s(node, ctx, "ip") or PENDING_IP
         v = {"unit": _s(node, ctx, "unit"), "name": _s(node, ctx, "name"), "ip": ip,
@@ -1202,6 +1206,8 @@ def run(node: dict, ctx) -> tuple:
         return DNS.run(node, ctx)
     if kind in TS.KIND_KEYS:
         return TS.run(node, ctx)
+    if kind in WC.KIND_KEYS:
+        return WC.run(node, ctx)
     if kind == "satom_appliances":
         rows = select_appliances(
             _fleet_rows(), product=F._p(node, "product", ""), zone=_s(node, ctx, "zone"),

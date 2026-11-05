@@ -485,6 +485,9 @@
         o.out.innerHTML = '<div class="alert alert-danger py-2" style="font-size:13px;">' + esc(err.message) + '</div>';
       });
     });
+    /* "Run when the page opens": the server marks the button only for an
+       app with no form and no writing step (views.apps.autorun). */
+    if (o.runBtn.getAttribute('data-autorun') === '1') window.setTimeout(function () { o.runBtn.click(); }, 0);
   }
   /* A list field with "search" (_field.html): the box narrows the choices of
    * its <select>. Every word must appear in the label or the value. The

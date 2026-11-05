@@ -400,6 +400,10 @@ WEBCTL_INFO = Obj({
     "roots": List(_ABS, max_items=32),
     "read_only": Bool(),
     "max_file_bytes": Int(0, 64 * 1024 * 1024),
+    # satom-webctl 1.1.0+: where certificates live and whether they can be managed
+    "cert_dir": Str(max_len=1024, pattern=r"(/[^\x00]*)?", required=False),
+    "certs_ready": Bool(required=False),
+    "openssl": Str(max_len=120, required=False),
 })
 WEBCTL_VHOST = Obj({
     "server": _WEBSERVER, "name": _VHNAME, "enabled": Bool(),
@@ -445,6 +449,53 @@ WEBCTL_WRITTEN = Obj({"path": _REL, "size": Int(0, 64 * 1024 * 1024), "sha256": 
                       "backup": _BACKUP})
 WEBCTL_PATH = Obj({"path": _REL, "backup": _BACKUP})
 
+# ── certificates (satom-webctl 1.1.0+). A private key never appears in any of
+# these: the PEM fields admit certificates and requests, nothing else. ──
+_CERTNAME = Str(max_len=64, min_len=1, pattern=r"[a-z0-9][a-z0-9._-]{0,63}")
+_SAN = Str(max_len=253, min_len=1,
+           pattern=r"(\*\.)?[A-Za-z0-9_][A-Za-z0-9_.-]{0,252}|[0-9a-fA-F.:]{2,45}")
+_CERT_TEXT = Str(max_len=200)
+_PEM_CERTS = Str(max_len=96 * 1024, multiline=True,
+                 pattern=r"(-----BEGIN CERTIFICATE-----\n[A-Za-z0-9+/=\n]+"
+                         r"-----END CERTIFICATE-----\n?)*")
+_PEM_CSR = Str(max_len=16 * 1024, multiline=True,
+               pattern=r"(-----BEGIN CERTIFICATE REQUEST-----\n[A-Za-z0-9+/=\n]+"
+                       r"-----END CERTIFICATE REQUEST-----\n?)?")
+CERT_STATUSES = ("valid", "expiring", "expired", "requested", "missing", "unreadable")
+_CERT_FIELDS = {
+    "name": Str(max_len=64, pattern=r"([a-z0-9][a-z0-9._-]{0,63})?"),  # "" = not managed
+    "managed": Bool(), "path": _ABS, "key_path": _REL,
+    "status": Str(max_len=12, choices=CERT_STATUSES),
+    "subject": _CERT_TEXT, "issuer": _CERT_TEXT, "sans": List(_SAN, max_items=100),
+    "not_before": Int(0, MAX_INT), "not_after": Int(0, MAX_INT),
+    "days_left": Int(-10 ** 6, 10 ** 6),
+    "serial": Str(max_len=64, pattern=r"[0-9a-f]*"),
+    "sha256": Str(max_len=64, pattern=r"([0-9a-f]{64})?"),
+    "self_signed": Bool(), "chain_length": Int(0, 64),
+    "key_matches": Bool(required=False), "pending": Bool(),
+    "used_by": List(Obj({"server": _WEBSERVER, "vhost": _VHNAME, "enabled": Bool()}),
+                    max_items=100),
+}
+WEBCTL_CERT = Obj(_CERT_FIELDS)
+WEBCTL_CERTS = Obj({"cert_dir": _ABS, "expiring_days": Int(0, 3650),
+                    "certs": List(WEBCTL_CERT, max_items=500)})
+WEBCTL_CERT_GET = Obj(dict(_CERT_FIELDS, certificate=_PEM_CERTS, csr=_PEM_CSR))
+WEBCTL_CERT_CSR = Obj({
+    "name": _CERTNAME, "csr": Str(max_len=16 * 1024, min_len=1, multiline=True,
+                                  pattern=_PEM_CSR.pattern),
+    "common_name": _HOSTNAME, "sans": List(_SAN, max_items=51),
+    "key_type": Str(max_len=8, choices=("ec256", "ec384", "rsa2048", "rsa4096")),
+    "renewal": Bool(), "backup": _BACKUP})
+WEBCTL_CERT_INSTALL = Obj({
+    "applied": _OPT_BOOL, "restored": _OPT_BOOL, "restored_config_valid": _OPT_BOOL,
+    "test_output": _OUTPUT, "reload_output": _OUTPUT,
+    "reloaded": List(_WEBSERVER, max_items=2), "name": _CERTNAME, "installed": Bool(),
+    "renewal": Bool(), "not_after": Int(0, MAX_INT), "days_left": Int(-10 ** 6, 10 ** 6),
+    "subject": _CERT_TEXT, "backup": _BACKUP})
+WEBCTL_CERT_ASSIGN = Obj(dict(WEBCTL_APPLY.fields, cert=Str(
+    max_len=64, pattern=r"[a-z0-9][a-z0-9._-]{0,63}", required=False)))
+WEBCTL_CERT_DELETE = Obj({"name": _CERTNAME, "deleted": Bool(), "backup": _BACKUP})
+
 #: satom-webctl operation -> (writes, schema of its result).
 WEBCTL_OPS: "dict[str, tuple]" = {
     "info": (False, WEBCTL_INFO),
@@ -461,6 +512,12 @@ WEBCTL_OPS: "dict[str, tuple]" = {
     "files.mkdir": (True, WEBCTL_PATH),
     "files.rename": (True, WEBCTL_PATH),
     "files.delete": (True, WEBCTL_PATH),
+    "certs.list": (False, WEBCTL_CERTS),
+    "cert.get": (False, WEBCTL_CERT_GET),
+    "cert.csr": (True, WEBCTL_CERT_CSR),
+    "cert.install": (True, WEBCTL_CERT_INSTALL),
+    "cert.assign": (True, WEBCTL_CERT_ASSIGN),
+    "cert.delete": (True, WEBCTL_CERT_DELETE),
 }
 
 

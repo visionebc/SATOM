@@ -853,14 +853,261 @@ WEB_APPS = [
              WEB_MKDIR_GRAPH, "Creates a folder in the document root."),
 ]
 
+# --------------------------------------------------------------------------- #
+#  web hosts: certificates and the one-page panel (operator, 2026-11-05:       #
+#  "a simple cPanel ... where I can also manage the certificate")              #
+# --------------------------------------------------------------------------- #
+_WEB_CERT_NAME = {"name": "name", "label": "Certificate name", "type": "text", "required": True,
+                  "help": "A folder name on the server: lowercase letters, digits, . _ -"}
+_WEB_PROVIDER = {"name": "provider", "label": "Signed by (Certificate Manager provider)",
+                 "type": "satom_select", "source": "cert_providers"}
+_WEB_HOW = {"name": "how", "label": "Then", "type": "select", "required": True,
+            "options": ["sign and install", "only make the request"],
+            "default": "sign and install"}
+_WEB_KEY_TYPE = {"name": "key_type", "label": "Key type", "type": "select", "required": True,
+                 "options": ["ec256", "ec384", "rsa2048", "rsa4096"], "default": "ec256"}
+
+_WEB_SITE_ACTIONS = [
+    {"label": "Files", "app": "ex-web-files", "when": "{{ row.managed_root }}",
+     "inputs": {"server": "{{ row.server }}", "vhost": "{{ row.name }}", "path": ""}},
+    {"label": "Configuration", "app": "ex-web-vhost",
+     "inputs": {"server": "{{ row.server }}", "vhost": "{{ row.name }}"}},
+    {"label": "Certificate", "app": "ex-web-cert-assign", "when": "{{ row.ssl }}",
+     "inputs": {"server": "{{ row.server }}", "vhost": "{{ row.name }}", "cert": ""}},
+    {"label": "Disable", "app": "ex-web-vhost-toggle", "when": "{{ row.enabled }}",
+     "inputs": {"server": "{{ row.server }}", "vhost": "{{ row.name }}", "action": "disable"}},
+    {"label": "Enable", "app": "ex-web-vhost-toggle", "when": "{{ not row.enabled }}",
+     "inputs": {"server": "{{ row.server }}", "vhost": "{{ row.name }}", "action": "enable"}},
+    {"label": "Delete", "app": "ex-web-vhost-delete",
+     "inputs": {"server": "{{ row.server }}", "vhost": "{{ row.name }}"}}]
+_WEB_CERT_ACTIONS = [
+    {"label": "View", "app": "ex-web-cert",
+     "inputs": {"name": "{{ row.name }}", "path": "{{ '' if row.managed else row.path }}"}},
+    {"label": "Install", "app": "ex-web-cert-install", "when": "{{ row.managed and row.pending }}",
+     "inputs": {"name": "{{ row.name }}", "certificate": ""}},
+    {"label": "Renew", "app": "ex-web-cert-request",
+     "when": "{{ row.managed and row.status in ('valid', 'expiring', 'expired') }}",
+     "inputs": {"name": "{{ row.name }}", "common_name": "{{ row.subject }}",
+                "sans": "{{ row.sans | join(', ') }}"}},
+    {"label": "Use on a site", "app": "ex-web-cert-assign",
+     "when": "{{ row.managed and row.status in ('valid', 'expiring') }}",
+     "inputs": {"server": "nginx", "vhost": "", "cert": "{{ row.name }}"}},
+    {"label": "Delete", "app": "ex-web-cert-delete",
+     "when": "{{ row.managed and not row.used_by }}", "inputs": {"name": "{{ row.name }}"}}]
+_WEB_CERT_COLUMNS = ("name=Name, subject=Common name, sans=Names, issuer=Issuer, "
+                     "days_left=Days left, status=Status, used_by.vhost=Used by, "
+                     "managed=Managed by SATOM, path=File")
+
+
+def _web_fail_edges(keys):
+    return [_e(k, "failed", "error") for k in keys]
+
+
+WEB_PANEL_GRAPH = {
+    "nodes": [
+        _n("start", "start", "Start", 80, 30),
+        _n("info", "server_call", "satom-webctl: info", 80, 120, connection=WEB_CONN,
+           operation="info", args="{}", save_as="info"),
+        _n("vh", "server_call", "satom-webctl: vhosts.list", 80, 210, connection=WEB_CONN,
+           operation="vhosts.list", args="{}", save_as="vh"),
+        _n("ct", "server_call", "satom-webctl: certs.list", 80, 300, connection=WEB_CONN,
+           operation="certs.list", args="{}", save_as="ct"),
+        _n("sites", "output", "Sites", 80, 390, value="{{ vh.vhosts }}", title="Sites",
+           view="table", row_actions=json.dumps(_WEB_SITE_ACTIONS),
+           columns="name=Site, server=Server, server_names=Host names, enabled=Enabled, "
+                   "ssl=HTTPS, docroots=Document root"),
+        _n("due", "output", "Needs attention", 80, 480,
+           value="{{ ct.certs | selectattr('status', 'in', ['expiring', 'expired']) "
+                 "| selectattr('used_by') | list }}",
+           title="Certificates that expire within {{ ct.expiring_days }} days", view="table",
+           row_actions=json.dumps(_WEB_CERT_ACTIONS), columns=_WEB_CERT_COLUMNS),
+        _n("certs", "output", "Certificates", 80, 570, value="{{ ct.certs }}",
+           title="Certificates", view="table", row_actions=json.dumps(_WEB_CERT_ACTIONS),
+           columns=_WEB_CERT_COLUMNS),
+        _n("server", "output", "Server", 80, 660,
+           value="{{ {'satom-webctl': info.version, 'web servers': info.servers.keys() "
+                 "| join(', '), 'managed roots': info.roots | join(', '), "
+                 "'read-only': info.read_only, 'certificates folder': "
+                 "info.cert_dir | default(''), 'certificates ready': "
+                 "info.certs_ready | default(false), 'openssl': info.openssl | default('')} }}",
+           title="Server", view="keyvalue"),
+        _n("end", "end", "End", 80, 750),
+        _n("failed", "fail", "Failed", 360, 210, message="{{ last_error.message }}"),
+    ],
+    "edges": [_e("start", "info"), _e("info", "vh", "ok"), _e("vh", "ct", "ok"),
+              _e("ct", "sites", "ok"), _e("sites", "due"), _e("due", "certs"),
+              _e("certs", "server"), _e("server", "end")] + _web_fail_edges(("info", "vh", "ct")),
+}
+
+
+def _block(typ, **props):
+    return {"type": typ, "props": props}
+
+
+WEB_PANEL_DESIGN = {
+    "theme": {},
+    "page": [_block("description"),
+             _block("run_button", label="Refresh", icon="bi-arrow-clockwise", auto=True),
+             _block("result", placeholder="Reading the server…")],
+    "result": [
+        _block("status"),
+        {"type": "row", "props": {"gap": "md"}, "columns": [
+            {"w": 4, "children": [_block("stat", key="sites", label="Sites", icon="bi-globe2")]},
+            {"w": 4, "children": [_block("stat", key="certs", label="Certificates",
+                                         icon="bi-shield-lock")]},
+            {"w": 4, "children": [_block("stat", key="due", label="Need attention",
+                                         icon="bi-exclamation-triangle")]}]},
+        _block("actions"),
+        {"type": "tabs", "props": {}, "tabs": [
+            {"label": "Sites", "children": [_block("output", key="sites", bare=True)]},
+            {"label": "Certificates", "children": [_block("output", key="due"),
+                                                   _block("output", key="certs")]},
+            {"label": "Server", "children": [_block("output", key="server")]}]},
+        _block("outputs"),
+        _block("steps")],
+}
+
+WEB_CERT_GRAPH = _web_call(
+    "cert.get", '{"name": "{{ form.name }}", "path": "{{ form.path }}"}',
+    outputs=[
+        {"label": "Details", "params": {
+            "value": "{{ {'name': res.name or '(not managed by SATOM)', 'status': res.status, "
+                     "'common name': res.subject, 'names': res.sans | join(', '), "
+                     "'issuer': res.issuer, 'days left': res.days_left, "
+                     "'self-signed': res.self_signed, 'key matches': "
+                     "res.key_matches | default('unknown'), 'chain': res.chain_length, "
+                     "'SHA-256': res.sha256, 'file': res.path, 'used by': "
+                     "res.used_by | map(attribute='vhost') | join(', '), "
+                     "'request waiting': res.pending} }}",
+            "title": "{{ res.name or res.path }}", "view": "keyvalue"}},
+        {"label": "Certificate", "params": {
+            "value": "{{ res.certificate or '(no certificate installed yet)' }}",
+            "title": "Certificate and chain (public)", "view": "text"}},
+        {"label": "Request", "params": {
+            "value": "{{ res.csr or '(no request waiting)' }}",
+            "title": "Request waiting for a certificate (CSR)", "view": "text"}}])
+
+WEB_CERT_REQUEST_GRAPH = {
+    "nodes": [
+        _n("start", "start", "Start", 80, 30),
+        _n("csr", "server_call", "satom-webctl: cert.csr (the key is made on the server)", 80, 120,
+           connection=WEB_CONN, operation="cert.csr",
+           args='{"name": "{{ form.name }}", "common_name": "{{ form.common_name }}", '
+                '"sans": "{{ form.sans.replace(\',\', \' \').split() }}", '
+                '"key_type": "{{ form.key_type }}"}', save_as="req"),
+        _n("which", "decision", "Sign it now?", 80, 210, left="{{ form.how }}", op="equals",
+           right="sign and install"),
+        _n("sign", "cert_sign", "Sign with the provider", 80, 300, csr="{{ req.csr }}",
+           provider="{{ form.provider }}", cert_class="server", save_as="signed"),
+        _n("inst", "server_call", "satom-webctl: cert.install", 80, 390, connection=WEB_CONN,
+           operation="cert.install",
+           args='{"name": "{{ form.name }}", "certificate": "{{ signed.certificate }}"}',
+           save_as="inst"),
+        _n("done", "output", "Installed", 80, 480,
+           value="{{ {'certificate': inst.name, 'renewal': inst.renewal, 'installed': "
+                 "inst.installed, 'common name': inst.subject, 'issuer': signed.issuer, "
+                 "'provider': signed.provider, 'days left': inst.days_left, "
+                 "'sites reloaded': inst.reloaded | join(', ') or 'none (assign it to a site)', "
+                 "'restored': inst.restored | default(false), 'test output': "
+                 "inst.test_output | default('')} }}",
+           title="{{ form.name }}", view="keyvalue"),
+        _n("manual", "output", "Request", 360, 300, value="{{ req.csr }}",
+           title="Have this request signed, then Install the certificate", view="text"),
+        _n("end", "end", "End", 220, 570),
+        _n("failed", "fail", "Failed", 600, 300, message="{{ last_error.message }}"),
+    ],
+    "edges": [_e("start", "csr"), _e("csr", "which", "ok"), _e("which", "sign", "yes"),
+              _e("which", "manual", "no"), _e("sign", "inst", "ok"), _e("inst", "done", "ok"),
+              _e("done", "end"), _e("manual", "end")] + _web_fail_edges(("csr", "sign", "inst")),
+}
+
+WEB_CERT_INSTALL_GRAPH = _web_call(
+    "cert.install", '{"name": "{{ form.name }}", "certificate": "{{ form.certificate }}"}',
+    outputs=[{"label": "Result", "params": {"value": "{{ res }}", "title": "{{ form.name }}",
+                                            "view": "keyvalue"}}])
+
+WEB_CERT_ASSIGN_GRAPH = _web_call(
+    "cert.assign", '{"server": "{{ form.server }}", "name": "{{ form.vhost }}", '
+                   '"cert": "{{ form.cert }}"}',
+    outputs=[{"label": "Result", "params": {"value": "{{ res }}",
+                                            "title": "{{ form.vhost }} uses {{ form.cert }}",
+                                            "view": "keyvalue"}}])
+
+WEB_CERT_DELETE_GRAPH = _web_call(
+    "cert.delete", '{"name": "{{ form.name }}"}',
+    outputs=[{"label": "Result", "params": {"value": "{{ res }}", "title": "{{ form.name }}",
+                                            "view": "keyvalue"}}])
+
+_WEB_OPEN = lambda app, inputs: {"kind": "open_app", "params": {  # noqa: E731
+    "app": app, "inputs": json.dumps(inputs)}}
+
+WEB_APPS += [
+    dict(_web_app("ex-web-panel", "Web hosting panel (example)", "bi-speedometer2", [],
+                  WEB_PANEL_GRAPH,
+                  "The whole server on one page: its sites (files, configuration, certificate, "
+                  "enable, disable, delete), its certificates (view, renew, install, use on a "
+                  "site, delete -- the ones about to expire first) and what satom-webctl "
+                  "reports. It only reads; every button opens the app that does the change.",
+                  [dict(_WEB_OPEN("ex-web-vhost-create", {}), key="new_site",
+                        label="New site"),
+                   dict(_WEB_OPEN("ex-web-cert-request", {}), key="new_cert",
+                        label="New certificate")]),
+         design=WEB_PANEL_DESIGN),
+    _web_app("ex-web-cert", "Certificate (example)", "bi-shield-check",
+             [dict(_WEB_CERT_NAME, required=False),
+              {"name": "path", "label": "Or the file a site uses", "type": "text"}],
+             WEB_CERT_GRAPH,
+             "One certificate of the server: what it says, the certificate and chain, and the "
+             "request waiting for a certificate. Never its private key.",
+             [dict(_WEB_OPEN("ex-web-cert-install", {
+                 "name": "{{ outputs[0].value.name }}", "certificate": ""}),
+                 key="install", label="Install a certificate"),
+              dict(_WEB_OPEN("ex-web-cert-request", {"name": "{{ outputs[0].value.name }}"}),
+                   key="renew", label="Renew")]),
+    _web_app("ex-web-cert-request", "Request or renew a certificate (example)",
+             "bi-shield-plus",
+             [_WEB_CERT_NAME,
+              {"name": "common_name", "label": "Common name", "type": "text", "required": True,
+               "help": "e.g. shop.example.com"},
+              {"name": "sans", "label": "More names (comma separated)", "type": "text"},
+              _WEB_KEY_TYPE, _WEB_HOW, _WEB_PROVIDER],
+             WEB_CERT_REQUEST_GRAPH,
+             "The server makes a new private key and its request (the key never leaves it); "
+             "a Certificate Manager provider (the internal CA or ACME) signs the request and "
+             "the certificate is installed, the sites that use it reloaded. On a certificate "
+             "that already exists this is the renewal: the sites keep the old one until the "
+             "new one is installed. 'Only make the request' shows it, to sign elsewhere."),
+    _web_app("ex-web-cert-install", "Install a certificate (example)", "bi-shield-check",
+             [_WEB_CERT_NAME,
+              {"name": "certificate", "label": "Certificate and chain (PEM)", "type": "textarea",
+               "required": True}],
+             WEB_CERT_INSTALL_GRAPH,
+             "Install the certificate issued for the server's request. A private key is "
+             "refused, and so is a certificate for another key or an expired one; the sites "
+             "that use it are tested and reloaded, or left as they were."),
+    _web_app("ex-web-cert-assign", "Use a certificate on a site (example)", "bi-link-45deg",
+             [_WEB_SERVER_FIELD, _WEB_VHOST_FIELD,
+              {"name": "cert", "label": "Certificate name", "type": "text", "required": True}],
+             WEB_CERT_ASSIGN_GRAPH,
+             "Point a site's certificate and key lines at a certificate SATOM manages: "
+             "backup, test, reload -- or the old file back."),
+    _web_app("ex-web-cert-delete", "Delete a certificate (example)", "bi-shield-x",
+             [_WEB_CERT_NAME], WEB_CERT_DELETE_GRAPH,
+             "Delete a certificate no site uses (a backup is kept on the server)."),
+]
+
+
 WEB_BUNDLE = {
     "key": "web-hosts",
     "title": "Web hosts: nginx / Apache virtual hosts and their files",
     "summary": "A server connection to a Linux web server prepared with satom-webctl, and "
-               "twelve apps that chain into each other: the list of virtual hosts, their "
-               "configuration (view, edit, enable, disable, create, delete) and the files of "
-               "each document root (browse, view, edit, create, rename, delete). The key "
-               "opens no shell on the server; writes need Allow writes on the connection.",
+               "eighteen apps that chain into each other: a one-page panel of the whole "
+               "server, the virtual hosts and their configuration (view, edit, enable, "
+               "disable, create, delete), the files of each document root (browse, view, "
+               "edit, create, rename, delete) and the server's certificates (request, sign "
+               "with a Certificate Manager provider, install, renew, use on a site, delete -- "
+               "the private key is made on the server and never leaves it). The key opens no "
+               "shell on the server; writes need Allow writes on the connection.",
     "connections": [WEB_CONNECTION], "stores": [], "scripts": [], "apps": WEB_APPS,
     # Filed under one menu group, in the Linux ADOM when this console has one
     # (operator, 2026-11-05); every ADOM otherwise.
@@ -869,8 +1116,8 @@ WEB_BUNDLE = {
               "satom-webctl and run the installer it shows on the server (as root, once).",
               "Fetch and trust the host key (compare its fingerprint with the server), then "
               "Test. Tick Allow writes when the apps may change the server.",
-              "Publish the twelve apps (each app > Publish): a row button only opens an app "
-              "that is published. Then open Plugins > Web hosts > Web hosts (example) in the "
+              "Publish the eighteen apps (each app > Publish): a row button only opens an app "
+              "that is published. Then open Plugins > Web hosts > Web hosting panel (example) in the "
               "Linux ADOM (in every ADOM when there is no Linux ADOM). To "
               "let other users run them, open each app > Settings and pick users or groups."]}
 
@@ -1030,7 +1277,8 @@ def install(key: str, by: str) -> dict:
     adoms = [k for k in b.get("adoms") or () if k in PRODUCTS] or ["*"]
     for a, app in new:
         actions = _fgt_actions(_cr_key()) if a["actions"] == "fortigate" else a["actions"]
-        probs = SA.save_draft(app, fields=a["fields"], graph=a["graph"], actions=actions, by=by)
+        probs = SA.save_draft(app, fields=a["fields"], graph=a["graph"], actions=actions,
+                              design=a.get("design"), by=by)
         if probs:
             db.session.rollback()
             raise ExampleError("example app %s does not validate: %s"

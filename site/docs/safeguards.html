@@ -16740,6 +16740,49 @@ ignoring the runner's status; server_call writes counted as reads; the
 package rule for server connections off; multiline text accepting every
 control character; the HTTP gate letting everything through (#4272) and the HTTP gate
 registered last instead of first (#4271).</p>
+<h2 id="218--a-web-servers-private-key-never-leaves-it-teststest_satom_webctl_certspy-teststest_studio_web_certspy-2026-11-05">§218 — a web server's private key never leaves it (<code>tests/test_satom_webctl_certs.py</code>, <code>tests/test_studio_web_certs.py</code>, 2026-11-05)</h2>
+<p><strong>What it guards.</strong> The Web hosting panel manages TLS certificates on managed
+web servers. The only secret involved, the private key, is made on the
+server and stays there; everything that travels is public.</p>
+<ul>
+<li><strong>On the server</strong> (<code>satom-webctl</code> 1.1.0): <code>cert.csr</code> runs <code>openssl req</code>
+  with umask 077 into a 0700 work folder and moves it into
+  <code>/etc/satom-webctl/certs/&lt;name&gt;/</code> (renewal: <code>pending/</code>). No operation
+  returns a key file. <code>cert.install</code> refuses text that contains <code>PRIVATE
+  KEY</code>, a certificate whose public key is neither the pending nor the current
+  key's, and an expired one. It tests the servers whose enabled sites use the
+  certificate and puts the old files back if a test fails. <code>cert.get</code> reads
+  only a managed certificate or a file a virtual host names, never an
+  arbitrary path. <code>cert.delete</code> refuses a certificate in use.</li>
+<li><strong>In SATOM:</strong> the ingestion gate's PEM fields admit <code>CERTIFICATE</code> and
+  <code>CERTIFICATE REQUEST</code> blocks only, so an answer carrying a key is rejected
+  whole. The <code>cert_sign</code> step requires <code>user_manage</code> (the Certificate
+  Manager's permission) and a user, checks the request's signature, refuses
+  a key, takes only a known provider, and returns only a certificate for the
+  request's key. Every signature is audited (<code>webhost.cert.sign</code>).</li>
+<li><strong>Expiry is watched, and silence is not health:</strong> an unreadable server
+  fails the daily check by name.</li>
+</ul>
+<p><strong>The traps.</strong></p>
+<ul>
+<li><em>"Upload certificate and key" is the cPanel way, and it leaks the key.</em>
+  Plugin Studio inputs are kept in the run history; a key typed into a form
+  would stay there. The flow is CSR-first instead, and adopting an existing
+  key is a copy made on the server by its administrator.</li>
+<li><em>A renewal must not break the running site.</em> The new key waits in
+  <code>pending/</code>; the live key is replaced only by the install of a certificate
+  for it, and a failed server test restores both.</li>
+<li><em>The Builder packs the step modules.</em> Arming the expiry check from
+  <code>studio_connections</code> pulled the scheduler into the rules pack; it lives in
+  the trust view instead (<code>tests/test_builder_runtime.py</code> caught it).</li>
+</ul>
+<p><strong>Mutations that must bite</strong> (all do, satom-audit MUTATION_RUNS): install
+accepting any key; <code>cert.get</code> reading any path; no undo after a failed test;
+renewal written in place; a private key accepted by install; <code>cert_sign</code>
+without the permission; any returned certificate taken as the leaf; Run when
+the page opens on a writing app; the expiry notice sent every run; unused
+certificates notified; the PEM gate accepting anything; Output columns
+dropping the row buttons.</p>
     </div>
   </div>
 </section>

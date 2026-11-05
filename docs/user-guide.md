@@ -5770,14 +5770,78 @@ backups in `/var/lib/satom-webctl/backups`, a log in `/var/log/satom-webctl`.
   side (`--read-only`). A write based on an old read fails with `conflict`.
 - A server connection **never travels in an app package**.
 
+**Certificates (satom-webctl 1.1.0).** Each certificate SATOM manages is a
+folder on the server, `/etc/satom-webctl/certs/<name>/` (`satom-mon`, 0700):
+`privkey.pem` (0600), `fullchain.pem`, `request.csr`, and `pending/` during a
+renewal.
+- **The private key never leaves the server.** `cert.csr` makes the key and
+  the request there. The request is signed elsewhere (the step *Sign a
+  certificate request*, or any CA), and `cert.install` takes back only the
+  certificate. No operation returns a key; `cert.install` refuses one. The
+  ingestion gate lets only certificates and requests through.
+- **Install** accepts a certificate only for the pending key (a renewal) or
+  the current one, never an expired one. The servers whose enabled sites use
+  it are tested and reloaded; a failed test restores the previous files.
+- **Renew** = a new `cert.csr` on an installed certificate. The new key waits
+  in `pending/` and the sites keep the old certificate until the new one is
+  installed. The paths do not change, so no site needs an edit.
+- **Use on a site** (`cert.assign`) rewrites the site's `ssl_certificate` /
+  `ssl_certificate_key` (nginx) or `SSLCertificateFile` /
+  `SSLCertificateKeyFile` (Apache; `SSLCertificateChainFile` is commented
+  out, the chain is in `fullchain.pem`). Backup → test → reload or restore.
+  A site without those lines is refused (`no_tls`).
+- **Delete** is refused while a site uses the certificate.
+- `certs.list` also shows the certificates sites use from elsewhere
+  (read-only): status (`valid`, `expiring` under 30 days, `expired`,
+  `requested`, `missing`, `unreadable`), names, issuer, days left, whether
+  the key matches, and the sites that use it.
+- **A certificate you already have** (e.g. a wildcard): copy its key and
+  chain by hand to `/etc/satom-webctl/certs/<name>/privkey.pem` (0600, owner
+  `satom-mon`) and `fullchain.pem`. SATOM then lists, assigns and renews it.
+  SATOM never takes a private key over the wire.
+
+**Signing: the step *Sign a certificate request* (`cert_sign`).** It sends
+the request to a **Certificate Manager provider** (Certificate Manager >
+Providers), so the internal CA or ACME (lego, DNS-01 through the DNS
+provider configured there). It is the same call the Certificate Manager's
+own issuance makes. The person who runs the app needs `user_manage` (the
+Certificate Manager's permission); a run without a user (a schedule) is
+refused. The step checks the request's signature and names, and that the
+certificate returned is for the request's key. Every signature leaves an
+audit line `webhost.cert.sign`.
+
+**Expiry.** The scheduled action **Web hosts — certificate expiry check**
+(`webhost_cert_expiry`, daily at 06:40) is created by itself the first time
+a server's host key is trusted. It asks every server connection for
+`certs.list` (a read) and sends the administrators **one bell notification
+per certificate and stage**: 30, 14 and 7 days left, and expired. It only
+does this for certificates an **enabled** site serves; a renewed certificate
+starts over. A server that cannot be read makes the run fail with its name:
+its certificates are not being watched.
+
 **In apps:** the step **Act on a server** (`server_call`) — connection,
 operation, arguments (JSON). The write operations count as writes (not run in
-a rehearsal). **Plugin Studio → Examples → Web hosts** installs twelve chained
-apps on the connection `ex-web-server` (list of virtual hosts with row
-buttons; configuration view/edit/create/enable/disable/delete; file browser,
-view, edit/create, rename, delete, new folder). They are installed
-unpublished: publish them once the connection works. Text files only in the
-editor (a binary file is sent as base64 and not shown).
+a rehearsal). **Plugin Studio → Examples → Web hosts** installs eighteen
+chained apps on the connection `ex-web-server`, filed under the menu group
+*Web hosts* in the Linux ADOM:
+- **Web hosting panel**: the whole server on one page, opened with the data
+  already loaded. Tiles count sites, certificates and certificates needing
+  attention. The tabs are **Sites** (Files, Configuration, Certificate,
+  Enable/Disable, Delete per row), **Certificates** (the ones expiring first;
+  View, Install, Renew, Use on a site, Delete per row, each only where it
+  applies) and **Server** (satom-webctl version, web servers, roots,
+  read-only, certificate folder, openssl). Buttons: *New site*, *New
+  certificate*.
+- **Certificate**, **Request or renew a certificate** (the key is made on
+  the server, a provider signs, the certificate is installed and the sites
+  reloaded; or *only make the request* to sign elsewhere), **Install a
+  certificate**, **Use a certificate on a site**, **Delete a certificate**.
+- The twelve earlier ones: list of virtual hosts with row buttons;
+  configuration view/edit/create/enable/disable/delete; file browser, view,
+  edit/create, rename, delete, new folder.
+
+They are installed unpublished: publish them once the connection works. Text
+files only in the editor (a binary file is sent as base64 and not shown).
 
 **In scripts:** `connection("web01").server("files.list", server="nginx",
 name="shop", path="")`; the runner keeps the key outside the sandbox.
@@ -5920,6 +5984,12 @@ The editor has seven tabs:
   Copy and Open happen in the browser: SATOM renders the text and the values
   from the run when it draws the page, with the same checks as any action.
 
+**Columns** (*Output* → *Columns*, 2026-11-05). For a table: the columns to
+show, in order, comma separated. Write `key`, or `key=Label` to rename it.
+`a.b` takes `b` from each item of the list `a` (e.g. `used_by.vhost=Used
+by`), and a list of plain values is shown joined by commas. Row buttons are
+computed first, so they still see every column. Empty = every column.
+
 **Row buttons** (*Output* → *Row buttons (JSON)*, 2026-10-30). One button per
 row of a table, `{{ row }}` being that row:
 
@@ -5981,6 +6051,11 @@ What the designer guarantees:
   text, `javascript:` links are dropped), a colour is a hex value and every
   other style is one of the presets — so an app cannot run code or read what
   a user types.
+- **Run when the page opens** (the Run button's option, 2026-11-05). This
+  is for a dashboard: the app runs as soon as its page opens, and the button
+  becomes *Refresh*. It applies only to an app with **no form field and no
+  step that writes**. The server checks this when it draws the page, so a
+  design cannot make opening a page change anything.
 - **Nothing is lost.** A field the page does not place is added before the
   Run button; a page without a Run button or a result area gets them at the
   end; a result without the status, *Other outputs*, the actions or the steps

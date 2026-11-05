@@ -89,8 +89,20 @@ def page(slug):
     runs = SA.recent_runs(a, current_user, limit=15)
     return render_template("apps/page.html", a=a, unpublished=False, fields=fields,
                            runs=runs[:10], tree=D.page_tree(design, fields), D=D,
+                           autorun=autorun(pub),
                            theme=design.get("theme") or {},
                            fields_by_name={f["name"]: f for f in fields}, all_runs=runs)
+
+
+def autorun(pub: dict) -> bool:
+    """Whether a Run button marked "run when the page opens" may do so: only
+    an app with no form field and no step that writes (a dashboard). Opening
+    a page must never change anything, whatever the design says."""
+    from ..services import studio_flow as F
+    if pub.get("fields"):
+        return False
+    nodes = (pub.get("graph") or {}).get("nodes") or []
+    return bool(nodes) and not any(F.step_writes(n) for n in nodes)
 
 
 @bp.route("/<slug>/form.json")

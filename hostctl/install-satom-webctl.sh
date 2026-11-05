@@ -18,6 +18,11 @@
 #   * ACL entries u:satom-mon:rwX (and the default ACL) on the managed roots
 #     and on the web server's site directories -- owners and modes untouched
 #   * /var/lib/satom-webctl (backups), /var/log/satom-webctl (operation log)
+#   * /etc/satom-webctl/certs                satom-mon 0700: the certificates
+#                                            SATOM manages; their private keys
+#                                            are made here and never leave
+#                                            (--uninstall keeps it: sites may
+#                                            use it; --purge removes it)
 # Nothing on this server is given any way to reach SATOM.
 #
 # Usage:
@@ -31,6 +36,8 @@ HOME_DIR="/var/lib/satom-webctl"
 LOG_DIR="/var/log/satom-webctl"
 BIN="/usr/local/bin/satom-webctl"
 CONF="/etc/satom-webctl.json"
+CERT_BASE="/etc/satom-webctl"
+CERT_DIR="$CERT_BASE/certs"
 SUDOERS="/etc/sudoers.d/satom-webctl"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PUBKEY="" FROM="" ROOTS="/var/www,/srv/www" READ_ONLY="false" MODE="install" PURGE="no"
@@ -100,9 +107,17 @@ if [ "$MODE" = "uninstall" ]; then
         say "user $USER_NAME removed"
     fi
     if [ "$PURGE" = "yes" ]; then
-        rm -rf "$HOME_DIR" "$LOG_DIR" && say "backups and log removed (--purge)"
+        if [ -d "$CERT_DIR" ] && grep -rqsF "$CERT_DIR/" /etc/nginx /etc/apache2 /etc/httpd 2>/dev/null; then
+            echo "  ! a virtual host still uses a certificate in $CERT_DIR: kept it" \
+                 "(point the site elsewhere, then --purge again)"
+            rm -rf "$HOME_DIR" "$LOG_DIR" && say "backups and log removed (--purge)"
+        else
+            rm -rf "$HOME_DIR" "$LOG_DIR" "$CERT_BASE" \
+                && say "backups, log and certificates removed (--purge)"
+        fi
     else
-        say "kept $HOME_DIR (backups) and $LOG_DIR (log); --purge removes them"
+        say "kept $HOME_DIR (backups), $LOG_DIR (log) and $CERT_DIR (certificates" \
+            "sites may use); --purge removes them"
     fi
     exit 0
 fi
@@ -123,6 +138,7 @@ command -v sshd >/dev/null || [ -x /usr/sbin/sshd ] || die "an SSH server (sshd)
 echo "Installing satom-webctl on a $FAMILY system:"
 command -v sudo >/dev/null || { pkg_install sudo; say "installed sudo"; }
 command -v setfacl >/dev/null || { pkg_install acl; say "installed acl"; }
+command -v openssl >/dev/null || { pkg_install openssl; say "installed openssl"; }
 SUDO_BIN="$(command -v sudo)"
 SYSTEMCTL="$(command -v systemctl)"
 
@@ -180,6 +196,8 @@ usermod -L "$USER_NAME" 2>/dev/null || passwd -l "$USER_NAME" >/dev/null 2>&1 ||
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0750 "$HOME_DIR"
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0700 "$HOME_DIR/backups"
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0750 "$LOG_DIR"
+install -d -o root -g root -m 0755 "$CERT_BASE"
+install -d -o "$USER_NAME" -g "$USER_NAME" -m 0700 "$CERT_DIR"
 install -o root -g root -m 0755 "$HERE/satom-webctl.py" "$BIN"
 say "installed $BIN ($("$BIN" --version))"
 
@@ -190,6 +208,8 @@ cat > "$CONF.tmp" <<EOF
   "roots": $ROOTS_JSON,
   "backup_dir": "$HOME_DIR/backups",
   "log": "$LOG_DIR/webctl.log",
+  "cert_dir": "$CERT_DIR",
+  "openssl": "$(command -v openssl)",
   "read_only": $READ_ONLY
 }
 EOF

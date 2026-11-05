@@ -446,6 +446,17 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "at its own operator-set interval. Read-only against the box.",
     ),
     ActionSpec(
+        "webhost_cert_expiry", "Web hosts — certificate expiry check", "admin",
+        needs_targets=False,
+        summary="Ask every Plugin Studio server connection (servers prepared with "
+                "satom-webctl) for its certificates (certs.list, a read) and raise ONE "
+                "bell notification to the administrators per certificate and stage -- "
+                "30, 14 and 7 days left, expired -- for each certificate an enabled "
+                "virtual host serves (services.webhost_certs). A server that cannot be "
+                "read is a named failure, never 'no certificates'. Created by itself "
+                "with the first server connection. Daily is plenty.",
+    ),
+    ActionSpec(
         "sentinel_sweep", "Sentinel — correlate and score", "admin",
         needs_targets=False,
         summary="The Sentinel hot path: read new attack-log entries from every "
@@ -874,6 +885,22 @@ def _do_schema_harvest(appliance, params: dict, dry_run: bool = False) -> dict:
                                indent=1, default=str)[:_LOG_MAX]}
 
 
+def _do_webhost_cert_expiry(dry_run: bool = False) -> dict:
+    """Web host certificates about to expire: notify each stage once. ``ok`` is
+    False when a server could not be read (its certificates are unwatched)."""
+    from . import webhost_certs
+    r = webhost_certs.scan(notify=not dry_run)
+    lines = ["%s %s: %d day(s) left (%s), served by %s" % (
+        d["connection"], d["cert"], d["days_left"], d["stage"], ", ".join(d["hosts"][:5]))
+        for d in r["due"]] + ["ERROR %s" % e for e in r["errors"]]
+    return {"ok": not r["errors"],
+            "summary": ("%s%d server(s), %d certificate(s), %d due, %d newly notified%s"
+                        % ("[dry-run] " if dry_run else "", r["connections"], r["certs"],
+                           len(r["due"]), r["notified"],
+                           ", %d error(s)" % len(r["errors"]) if r["errors"] else "")),
+            "log": "\n".join(lines)[:_LOG_MAX]}
+
+
 def _do_schema_watch(dry_run: bool = False) -> dict:
     """Builds with no harvested schema: notify once each (``ok`` = the round ran)."""
     from . import schema_watch
@@ -1194,6 +1221,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_schema_harvest(appliance, params, dry_run)
         if key == "schema_watch":
             return _do_schema_watch(dry_run)
+        if key == "webhost_cert_expiry":
+            return _do_webhost_cert_expiry(dry_run)
         if key == "artifact_refs":
             return _do_artifact_refs(params, dry_run)
         if key == "netbox_reconcile":

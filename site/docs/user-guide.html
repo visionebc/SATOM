@@ -6443,14 +6443,74 @@ backups in <code>/var/lib/satom-webctl/backups</code>, a log in <code>/var/log/s
 - <strong>Writes are opt-in</strong> (Allow writes); the server can refuse them on its
   side (<code>--read-only</code>). A write based on an old read fails with <code>conflict</code>.
 - A server connection <strong>never travels in an app package</strong>.</p>
+<p><strong>Certificates (satom-webctl 1.1.0).</strong> Each certificate SATOM manages is a
+folder on the server, <code>/etc/satom-webctl/certs/&lt;name&gt;/</code> (<code>satom-mon</code>, 0700):
+<code>privkey.pem</code> (0600), <code>fullchain.pem</code>, <code>request.csr</code>, and <code>pending/</code> during a
+renewal.
+- <strong>The private key never leaves the server.</strong> <code>cert.csr</code> makes the key and
+  the request there. The request is signed elsewhere (the step <em>Sign a
+  certificate request</em>, or any CA), and <code>cert.install</code> takes back only the
+  certificate. No operation returns a key; <code>cert.install</code> refuses one. The
+  ingestion gate lets only certificates and requests through.
+- <strong>Install</strong> accepts a certificate only for the pending key (a renewal) or
+  the current one, never an expired one. The servers whose enabled sites use
+  it are tested and reloaded; a failed test restores the previous files.
+- <strong>Renew</strong> = a new <code>cert.csr</code> on an installed certificate. The new key waits
+  in <code>pending/</code> and the sites keep the old certificate until the new one is
+  installed. The paths do not change, so no site needs an edit.
+- <strong>Use on a site</strong> (<code>cert.assign</code>) rewrites the site's <code>ssl_certificate</code> /
+  <code>ssl_certificate_key</code> (nginx) or <code>SSLCertificateFile</code> /
+  <code>SSLCertificateKeyFile</code> (Apache; <code>SSLCertificateChainFile</code> is commented
+  out, the chain is in <code>fullchain.pem</code>). Backup → test → reload or restore.
+  A site without those lines is refused (<code>no_tls</code>).
+- <strong>Delete</strong> is refused while a site uses the certificate.
+- <code>certs.list</code> also shows the certificates sites use from elsewhere
+  (read-only): status (<code>valid</code>, <code>expiring</code> under 30 days, <code>expired</code>,
+  <code>requested</code>, <code>missing</code>, <code>unreadable</code>), names, issuer, days left, whether
+  the key matches, and the sites that use it.
+- <strong>A certificate you already have</strong> (e.g. a wildcard): copy its key and
+  chain by hand to <code>/etc/satom-webctl/certs/&lt;name&gt;/privkey.pem</code> (0600, owner
+  <code>satom-mon</code>) and <code>fullchain.pem</code>. SATOM then lists, assigns and renews it.
+  SATOM never takes a private key over the wire.</p>
+<p><strong>Signing: the step <em>Sign a certificate request</em> (<code>cert_sign</code>).</strong> It sends
+the request to a <strong>Certificate Manager provider</strong> (Certificate Manager &gt;
+Providers), so the internal CA or ACME (lego, DNS-01 through the DNS
+provider configured there). It is the same call the Certificate Manager's
+own issuance makes. The person who runs the app needs <code>user_manage</code> (the
+Certificate Manager's permission); a run without a user (a schedule) is
+refused. The step checks the request's signature and names, and that the
+certificate returned is for the request's key. Every signature leaves an
+audit line <code>webhost.cert.sign</code>.</p>
+<p><strong>Expiry.</strong> The scheduled action <strong>Web hosts — certificate expiry check</strong>
+(<code>webhost_cert_expiry</code>, daily at 06:40) is created by itself the first time
+a server's host key is trusted. It asks every server connection for
+<code>certs.list</code> (a read) and sends the administrators <strong>one bell notification
+per certificate and stage</strong>: 30, 14 and 7 days left, and expired. It only
+does this for certificates an <strong>enabled</strong> site serves; a renewed certificate
+starts over. A server that cannot be read makes the run fail with its name:
+its certificates are not being watched.</p>
 <p><strong>In apps:</strong> the step <strong>Act on a server</strong> (<code>server_call</code>) — connection,
 operation, arguments (JSON). The write operations count as writes (not run in
-a rehearsal). <strong>Plugin Studio → Examples → Web hosts</strong> installs twelve chained
-apps on the connection <code>ex-web-server</code> (list of virtual hosts with row
-buttons; configuration view/edit/create/enable/disable/delete; file browser,
-view, edit/create, rename, delete, new folder). They are installed
-unpublished: publish them once the connection works. Text files only in the
-editor (a binary file is sent as base64 and not shown).</p>
+a rehearsal). <strong>Plugin Studio → Examples → Web hosts</strong> installs eighteen
+chained apps on the connection <code>ex-web-server</code>, filed under the menu group
+<em>Web hosts</em> in the Linux ADOM:
+- <strong>Web hosting panel</strong>: the whole server on one page, opened with the data
+  already loaded. Tiles count sites, certificates and certificates needing
+  attention. The tabs are <strong>Sites</strong> (Files, Configuration, Certificate,
+  Enable/Disable, Delete per row), <strong>Certificates</strong> (the ones expiring first;
+  View, Install, Renew, Use on a site, Delete per row, each only where it
+  applies) and <strong>Server</strong> (satom-webctl version, web servers, roots,
+  read-only, certificate folder, openssl). Buttons: <em>New site</em>, <em>New
+  certificate</em>.
+- <strong>Certificate</strong>, <strong>Request or renew a certificate</strong> (the key is made on
+  the server, a provider signs, the certificate is installed and the sites
+  reloaded; or <em>only make the request</em> to sign elsewhere), <strong>Install a
+  certificate</strong>, <strong>Use a certificate on a site</strong>, <strong>Delete a certificate</strong>.
+- The twelve earlier ones: list of virtual hosts with row buttons;
+  configuration view/edit/create/enable/disable/delete; file browser, view,
+  edit/create, rename, delete, new folder.</p>
+<p>They are installed unpublished: publish them once the connection works. Text
+files only in the editor (a binary file is sent as base64 and not shown).</p>
 <p><strong>In scripts:</strong> <code>connection("web01").server("files.list", server="nginx",
 name="shop", path="")</code>; the runner keeps the key outside the sandbox.</p>
 <p><strong>Troubleshooting.</strong> <em>no trusted host key</em> → Fetch and trust. <em>host key
@@ -6614,6 +6674,11 @@ nothing.</p>
   Copy and Open happen in the browser: SATOM renders the text and the values
   from the run when it draws the page, with the same checks as any action.</li>
 </ul>
+<p><strong>Columns</strong> (<em>Output</em> → <em>Columns</em>, 2026-11-05). For a table: the columns to
+show, in order, comma separated. Write <code>key</code>, or <code>key=Label</code> to rename it.
+<code>a.b</code> takes <code>b</code> from each item of the list <code>a</code> (e.g. <code>used_by.vhost=Used
+by</code>), and a list of plain values is shown joined by commas. Row buttons are
+computed first, so they still see every column. Empty = every column.</p>
 <p><strong>Row buttons</strong> (<em>Output</em> → <em>Row buttons (JSON)</em>, 2026-10-30). One button per
 row of a table, <code>{{ row }}</code> being that row:</p>
 <pre><code class="language-json">[{&quot;label&quot;: &quot;Edit&quot;, &quot;app&quot;: &quot;dns-records&quot;,
@@ -6670,6 +6735,11 @@ blocks to edit; <strong>Clear</strong> goes back to it.</p>
   text, <code>javascript:</code> links are dropped), a colour is a hex value and every
   other style is one of the presets — so an app cannot run code or read what
   a user types.</li>
+<li><strong>Run when the page opens</strong> (the Run button's option, 2026-11-05). This
+  is for a dashboard: the app runs as soon as its page opens, and the button
+  becomes <em>Refresh</em>. It applies only to an app with <strong>no form field and no
+  step that writes</strong>. The server checks this when it draws the page, so a
+  design cannot make opening a page change anything.</li>
 <li><strong>Nothing is lost.</strong> A field the page does not place is added before the
   Run button; a page without a Run button or a result area gets them at the
   end; a result without the status, <em>Other outputs</em>, the actions or the steps

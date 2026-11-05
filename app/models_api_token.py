@@ -274,6 +274,7 @@ ACTION_CAPABILITY = {
     "deep_monitor": "monitoring",
     "metrics_scrape": "monitoring",
     "observatory_scan": "monitoring",
+    "webhost_cert_expiry": "monitoring",
     "monitor_report": "monitoring",
     "sentinel_sweep": "sentinel",
     "sentinel_baseline": "sentinel",

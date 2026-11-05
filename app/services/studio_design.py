@@ -153,7 +153,12 @@ BLOCKS: dict[str, dict] = {
     "run_button": {"label": "Run button", "group": "Page", "surfaces": ("page",),
                    "props": [_p("label", "Label", max=60, default="Run"),
                              _p("icon", "Icon", "icon", default="bi-play-fill"),
-                             _p("full", "Full width", "bool")]},
+                             _p("full", "Full width", "bool"),
+                             # honoured only for an app with no form field and no
+                             # step that writes (views.apps.autorun): opening the
+                             # page must never change anything
+                             _p("auto", "Run when the page opens (no form, reads only)",
+                                "bool")]},
     "result": {"label": "Result area", "group": "Page", "surfaces": ("page",),
                "props": [_p("placeholder", "Text before the first run", max=300)]},
     "recent_runs": {"label": "Recent runs", "group": "Page", "surfaces": ("page",),

@@ -10,7 +10,7 @@
   {{ tile('Back-ends', dep.backends|length, multi|length ~ ' shared by several services', 'server') }}
   {{ tile('Pools', dep.pools|length, 'used by server policies', 'collection') }}
   {{ tile('Interfaces carrying traffic', dep.interfaces|selectattr('dependents')|list|length, 'of ' ~ dep.interfaces|length, 'ethernet') }}
-  {{ tile('Gateways', dep.gateways|length, (dep.gateways|selectattr('device')|list|length) ~ ' are monitored devices', 'signpost-split') }}
+  {{ tile('Gateways', dep.gateways|length, (dep.gateways|selectattr('device')|list|length) ~ ' of them a monitored device', 'signpost-split') }}
   {{ tile('Shared segments', segments|length, 'links between devices', 'link-45deg') }}
 </div>
 

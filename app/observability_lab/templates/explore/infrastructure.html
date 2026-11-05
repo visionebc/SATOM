@@ -59,8 +59,8 @@
       <ul class="obs-att obs-att-compact">{% for p in c.problems[:4] %}
         <li class="sev-{{ p.severity }}"><i class="bi bi-{{ 'x-octagon-fill' if p.severity == 'critical' else 'exclamation-triangle-fill' }}" aria-hidden="true"></i>
           <span class="obs-att-sev">{{ p.severity|capitalize }}</span><span class="obs-att-t">{{ p.title }}</span></li>{% endfor %}
-        {% if c.problems|length > 4 %}<li class="text-muted small"><a href="{{ url_for('ops.events') }}">{{ c.problems|length - 4 }} more in Events &amp; Alerts</a></li>{% endif %}
       </ul>
+      {% if c.problems|length > 4 %}<a class="small d-inline-block mt-1" href="{{ url_for('ops.events') }}">{{ c.problems|length - 4 }} more in Events &amp; Alerts</a>{% endif %}
       {% endif %}
       {% if s.kind == 'fortigate' %}
       <h3 class="obs-sub-title mt-3">CPU and memory · selected range</h3>

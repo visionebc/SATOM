@@ -34,7 +34,7 @@
   <section class="fw-card obs-flow" id="flow-{{ f.source_id }}-{{ f.name }}" data-filter-item aria-label="Flow of {{ f.name }}">
     <div class="obs-flow-chain">
       <div class="obs-fnode"><span class="obs-fnode-k">Clients</span><i class="bi bi-people" aria-hidden="true"></i>
-        {% if f.upstream %}<span class="small">via {% for u in f.upstream %}{{ u.source }}{{ ', ' if not loop.last }}{% endfor %}</span>{% else %}<span class="small text-muted">upstream not monitored</span>{% endif %}</div>
+        {% if f.upstream %}<span class="small" title="These monitored devices have a route to the listener; whether clients actually pass through them is not measured">routable from {% for u in f.upstream %}{{ u.source }}{{ ', ' if not loop.last }}{% endfor %}</span>{% else %}<span class="small text-muted">no monitored device routes here</span>{% endif %}</div>
       <span class="obs-farrow" aria-hidden="true"></span>
       <div class="obs-fnode"><span class="obs-fnode-k">Listener</span><code>{{ f.listen or '—' }}</code><span class="small">{{ f.source }}{% if f.vip_interface %} {{ f.vip_interface }}{% endif %} · {{ f.protocol or '' }}</span></div>
       <span class="obs-farrow" aria-hidden="true"></span>

@@ -180,6 +180,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   file browser and editor).
 
 ### Fixed
+- **Plugin Studio list fields from the Examples refused every value.** A
+  select's options given as a list were saved as ONE option, the text
+  `"['nginx', 'apache']"`, so the form answered "'nginx' is not one of the
+  choices" (Web hosts, the FortiGate policy finder's protocol, NetBox). A
+  list is now taken as the options; migration `selopts01` repairs what was
+  saved, in the draft and the published version. Found while testing the
+  Web hosting panel from the browser path; the diagram tests had walked the
+  graph without the form.
 - **A label value over 4 KB no longer makes a metric vanish silently.** The
   metrics store (VictoriaMetrics) drops a whole series when one label value is
   longer than 4096 bytes, and still answers the write with success, so a

@@ -199,7 +199,12 @@ def clean_fields(fields, ch: dict | None = None) -> list[dict]:
              "help": str(f.get("help") or "").strip()[:500],
              "default": "" if typ == "password" else str(f.get("default") or "")[:2000]}
         if typ == "select":
-            opts = [o.strip() for o in str(f.get("options") or "").splitlines() if o.strip()]
+            raw = f.get("options")
+            if isinstance(raw, (list, tuple)):
+                # a list is the options, never their text (it was saved as the ONE
+                # option "['a', 'b']" until 2026-11-05: migration selopts01)
+                raw = "\n".join("" if o is None else str(o) for o in raw)
+            opts = [o.strip() for o in str(raw or "").splitlines() if o.strip()]
             if not opts:
                 raise AppError('field %s: a select needs "options", a text with one option per '
                                'line%s' % (name, ' (not "choices")' if "choices" in f else ""))

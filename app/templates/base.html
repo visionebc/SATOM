@@ -470,7 +470,11 @@
 
 
       {% elif product.placeholder %}
-      <!-- ===== Placeholder ADOM (a future ADOM added in Settings → ADOMs; FortiAnalyzer, FortiAuthenticator and FortiGate have their own menus above) ===== -->
+      <!-- ===== Placeholder ADOM (a future ADOM added in Settings → ADOMs; FortiAnalyzer, FortiAuthenticator and FortiGate have their own menus above).
+           Since 2026-11-06 (operator: "every ADOM added was to have the common
+           menu; adding Linux does not show it") it draws the same shared groups
+           as a device ADOM: Operations, Plugin Studio, Administrator. Only the
+           entries that need a device of the ADOM's own kind are left out. ===== -->
       <div class="fw-nav-context" data-nav-context="ADOM">
         <div class="fw-nav-group-body">
           {% if may_open('product.enter') %}
@@ -486,11 +490,12 @@
           <a class="fw-nav-item {{ 'active' if request.endpoint == 'product.placeholder_home' else '' }}" href="{{ url_for('product.placeholder_home') }}">
             <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Dashboard') }}</span></a>
           {% endif %}
-          {% include 'partials/nav_placeholder_apps.html' %}
         </div>
       </div>
 
-      {% include 'partials/nav_automation.html' %}
+      {# OPERATIONS — the same group as a device ADOM (Scout, Wiki, the Fleet
+         entries, Automation, Plugins with this ADOM's apps, Jobs). #}
+      {% include 'partials/nav_operations.html' %}
 
       {% else %}
       <!-- ===== FortiWeb ===== -->
@@ -566,9 +571,9 @@
 
       {# ADMINISTRATOR — the last group of the main menu, in every ADOM, below
          the spacer so it sits at the foot of the sidebar, just above the
-         Settings block but not inside it (operator, 2026-10-14). The
-         placeholder ADOM never had it. #}
-      {% if not product.placeholder %}
+         Settings block but not inside it (operator, 2026-10-14). Placeholder
+         ADOMs draw it too since 2026-11-06 (operator); nav_admin.html leaves
+         out the entries that need a device of the ADOM's kind. #}
       {# PLUGIN STUDIO — a first-level entry of its own, in every ADOM, just
          above Administrator (operator, 2026-10-23: "take Plugin Studio out of
          Studio, put it on the first level and remove Studio"). Report Studio
@@ -576,7 +581,6 @@
          ADOM, partials/nav_global_studios.html in Global). #}
       {% include 'partials/nav_plugin_studio.html' %}
       {% include 'partials/nav_admin.html' %}
-      {% endif %}
 
       <!-- PROJECT SETTINGS — pinned to the bottom of the sidebar -->
       <div class="fw-nav-bottom">

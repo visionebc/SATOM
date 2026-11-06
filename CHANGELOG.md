@@ -6,6 +6,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **An ADOM added in Settings > ADOMs draws the menu every ADOM shares.** A
+  placeholder ADOM (one with no product backend yet, such as *Linux*) drew
+  only `‹ Global`, its Dashboard, its apps and a standalone Automation group:
+  no Operations, no Plugin Studio and no Administrator, against the rule that
+  an entry which does not depend on the product is in every ADOM, in the same
+  place. It now draws Operations (Scout, Wiki, Calendar, Architecture, Service
+  Diagram, Monitoring, Search, DNS Lookup, Automation, Plugins with the ADOM's
+  apps, Jobs), Plugin Studio and Administrator in the same order as a device
+  ADOM. Entries that need a device of the ADOM's own kind (Device Backups,
+  Import Backup, Template Library, Report and Lua Studio, Upgrade Flow,
+  Capacity Limits, Firmware and the like) are still left out there. Every
+  link of that sidebar is checked to open in the placeholder ADOM.
+
 ## [4.11.3] - 2026-11-06
 
 ### Fixed

@@ -4945,9 +4945,9 @@ group, and an empty field takes it out. In the sidebar every group is a
 collapsible submenu of **Plugins** (open when you are on one of its apps),
 followed by the apps without a group. A placeholder ADOM (added in Settings >
 ADOMs with no backend yet, such as *Linux*) is an ADOM like any other here:
-the Settings tab offers it, and its sidebar draws **Plugins** below Dashboard
-with the apps shown there (no Plugins group when there are none; Report Studio
-and Lua Studio stay in device ADOMs). The Web hosts example installs its apps
+the Settings tab offers it, and its sidebar draws **Plugins** inside
+Operations with the apps shown there (no Plugins group when there are none;
+Report Studio and Lua Studio stay in device ADOMs). The Web hosts example installs its apps
 under the group **Web hosts**, in the Linux ADOM when there is one. The Apps list has a *Menu group*
 column and a filter next to the search box. A group is up to 48 letters,
 digits, spaces and `. & ( ) + , ' -`. It is not a user group: who may use
@@ -8121,7 +8121,9 @@ Create, edit, deactivate and delete ADOMs. This is why §3's six workspaces are 
 Each row carries a key (lowercase, the URL-scoping identifier), a display name,
 title, tagline, description, sort order, an uploaded logo, a default banner, an
 **active** flag, a **placeholder** flag (a workspace that is listed but has no
-product pages behind it yet), and five **capability** switches — banner, API
+product pages behind it yet; its sidebar still draws the menu every ADOM
+shares — Operations, Plugin Studio, Administrator — without the entries that
+need a device of its own kind), and five **capability** switches — banner, API
 tokens, firmware, naming and regex — which decide which shared features that
 workspace offers.
 

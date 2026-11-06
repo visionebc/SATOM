@@ -93,9 +93,9 @@
    below WAF from 2026-10-14 to 2026-10-23 and is now drawn by
    partials/nav_operations.html right above Plugins (operator). Global draws
    it here, as a subgroup above Jobs, with Global › Plugins right below it
-   (partials/nav_global_apps.html; the same order as a device ADOM). Only
-   placeholder ADOMs keep a standalone group. config_write-gated inside the
-   partial. #}
+   (partials/nav_global_apps.html; the same order as a device ADOM).
+   Placeholder ADOMs draw it in Operations like a device ADOM (2026-11-06).
+   config_write-gated inside the partial. #}
 {% if _pk == 'global' %}
 {% include 'partials/nav_automation.html' %}
 {% include 'partials/nav_global_apps.html' %}

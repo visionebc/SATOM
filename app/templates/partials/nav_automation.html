@@ -41,9 +41,8 @@
    with the reason elsewhere (services/adom_menu.py). Global is unchanged. #}
 {% set _dev = product.key != 'global' and not product.placeholder %}
 {# Drawn as a subgroup wherever it sits inside the ADOM's first block: Operations
-   in a device ADOM, the Global block in Global (operator, 2026-10-14, "as in
-   the other ADOMs"). Placeholder ADOMs keep the standalone group. #}
-{% set _nested = not product.placeholder %}
+   in a device ADOM and (since 2026-11-06) in a placeholder ADOM, the Global
+   block in Global (operator, 2026-10-14, "as in the other ADOMs"). #}
 {% if current_user and current_user.can('config_write') %}
 {% if _dev %}
 {% set _m_uf = adom_menu('upgrade_flow', product) %}
@@ -57,8 +56,9 @@
 {% set _auto_bps = ['upgrade_flow','migration_report','automations','event_automations','change_requests','cert_manager','mass_deploy'] + ([] if current_user.can('user_manage') else ['device_provision','provisioning']) %}
 {# Device ADOMs: a subgroup of Operations since 2026-10-14 (operator), included
    by partials/nav_operations.html — base.html no longer draws it as a group
-   there. Global and placeholder ADOMs have no Operations group and keep the
-   standalone group. Same entries, same gates, either way.
+   there. Global has no Operations group and draws it in its Global block
+   (partials/nav_fleet.html); placeholder ADOMs draw Operations too since
+   2026-11-06. Same entries, same gates, either way.
 
    ORDER (operator, 2026-10-23): the entries are ALPHABETICAL in the console's
    language, sorted from their rendered labels by nav_sorted()
@@ -167,15 +167,9 @@
    here since (operator). registry.view still gates it (partials/_nav_api.html).
    Passed to nav_sorted() as ONE block, sorted under its "API" label. #}
 {% set _a_api %}{{ api_menu(true) }}{% endset %}
-{% if _nested %}
 <div class="fw-nav-subgroup{{ ' open' if request.blueprint in _auto_bps }}" data-nav-subgroup="Automation">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-gear-wide-connected fw-nav-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
-{% else %}
-<div class="fw-nav-group{{ ' open' if request.blueprint in _auto_bps }}" data-nav-group="Automation">
-  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-gear-wide-connected fw-nav-section-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-  <div class="fw-nav-group-body">
-{% endif %}
     {{ nav_sorted(_a_items, _a_api) }}
   </div>
 </div>

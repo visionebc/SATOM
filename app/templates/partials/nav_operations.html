@@ -39,9 +39,17 @@
 
    2026-10-16 (operator): Wiki (partials/nav_wiki.html) is the first entry,
    here and at the top of the Global block in base.html.
+
+   2026-11-06 (operator: "every ADOM added was to have the common menu"):
+   placeholder ADOMs (Settings > ADOMs, e.g. Linux) draw this group too. The
+   entries that read records of the ADOM's own kind of device (Device
+   Backups, Import Backup, Template Library; Report/Lua Studio in Plugins)
+   are left out there, as nav_admin.html and nav_automation.html already do
+   with ``_dev``; Plugins draws the ADOM's apps (nav_placeholder_apps.html).
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
-{% if product.key != 'global' and not product.placeholder %}
+{% if product.key != 'global' %}
+{% set _dev = not product.placeholder %}
 {% set _g_ops = request.blueprint in ['backups','import_backup','plugins','lua_studio','wiki','apps','sentinel'] %}
 {% set _m_bak = adom_menu('backups', product) %}
 {% set _m_imp = adom_menu('import_backup', product) %}
@@ -54,13 +62,13 @@
     {# Wiki leads the group (operator, 2026-10-16), above the Fleet entries. #}
     {% include 'partials/nav_wiki.html' %}
     {% include 'partials/nav_fleet.html' %}
-    {% if current_user.can('backups.view') and may_open('backups.index') %}
+    {% if _dev and current_user.can('backups.view') and may_open('backups.index') %}
     {% if _m_bak.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'backups' else '' }}" href="{{ url_for('backups.index') }}">
       <i class="bi bi-cloud-arrow-down fw-nav-icon"></i><span>{{ _('Device Backups') }}</span></a>
     {% else %}{{ nav_off('bi-cloud-arrow-down', _('Device Backups'), _m_bak.reason, ep='backups.index') }}{% endif %}
     {% endif %}
-    {% if current_user.can('backups.restore') and may_open('import_backup.index') %}
+    {% if _dev and current_user.can('backups.restore') and may_open('import_backup.index') %}
     {% if _m_imp.on %}
     <a class="fw-nav-item" href="{{ url_for('import_backup.index') }}">
       <i class="bi bi-file-earmark-arrow-up fw-nav-icon"></i><span>{{ _('Import Backup') }}</span></a>
@@ -68,7 +76,7 @@
     {% endif %}
     {# Template Library needs only operations.view; administrators reach it
        under Administrator, everyone else who may open it finds it here. #}
-    {% if current_user and current_user.can('operations.view') and not current_user.can('user_manage') and may_open('templates.index') %}
+    {% if _dev and current_user and current_user.can('operations.view') and not current_user.can('user_manage') and may_open('templates.index') %}
     {% if _m_tpl.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}" href="{{ url_for('templates.index') }}">
       <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
@@ -79,6 +87,8 @@
     {% include 'partials/nav_automation.html' %}
     {# Plugins ▸ — the last subgroup since 2026-10-14 (operator). #}
     {% include 'partials/nav_plugins.html' %}
+    {# A placeholder ADOM's Plugins: its Plugin Studio apps only. #}
+    {% include 'partials/nav_placeholder_apps.html' %}
     {# Jobs — the last entry of Operations (operator, 2026-10-14). #}
     {% if may_open('jobs.manager') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">

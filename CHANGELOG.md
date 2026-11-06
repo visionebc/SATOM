@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.4] - 2026-11-06
+
 ### Added
 - **Much smaller update packages: delta packages and format /2.** Asked for
   smaller updates: the 4.11.3 package was 38.7 MB to ship two changed files.

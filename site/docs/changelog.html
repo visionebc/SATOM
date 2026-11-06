@@ -136,6 +136,14 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>The offline-package preflight on a standby gave the wrong order.</strong> It said
+  <em>Apply here first — that is the staged order</em>. A standby updated first runs
+  the new code against a read-only replica that does not have the new schema
+  yet; the primary is the only node that can migrate it. The row now says to
+  apply on the primary first, then on the standby, as
+  <code>docs/offline-update-packages.md</code> §8 already did. The Docs Center articles
+  <em>Offline updates</em> and <em>Software update</em> said "standby first" for packages
+  too and are corrected.</li>
 <li><strong>A scheduled action that runs on the SATOM server says so, and the run log
   reads clearly (SA-0020).</strong> The alert for the weekly HSTS preload refresh
   ended with <code>(failed: (no device))</code> and read as a lost appliance. That action

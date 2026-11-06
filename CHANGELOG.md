@@ -28,6 +28,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `docs/offline-update-packages.md` §3.1.
 
 ### Fixed
+- **The offline-package preflight on a standby gave the wrong order.** It said
+  *Apply here first — that is the staged order*. A standby updated first runs
+  the new code against a read-only replica that does not have the new schema
+  yet; the primary is the only node that can migrate it. The row now says to
+  apply on the primary first, then on the standby, as
+  `docs/offline-update-packages.md` §8 already did. The Docs Center articles
+  *Offline updates* and *Software update* said "standby first" for packages
+  too and are corrected.
 - **A scheduled action that runs on the SATOM server says so, and the run log
   reads clearly (SA-0020).** The alert for the weekly HSTS preload refresh
   ended with `(failed: (no device))` and read as a lost appliance. That action

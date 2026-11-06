@@ -521,8 +521,10 @@ def _preflight_in(pkg_path: Path, tmp: Path, result: dict) -> dict:
     if role == "standby":
         checks.append(_check(
             "node", "This node", "warn",
-            "STANDBY. Apply here first — that is the staged order — but stage "
-            "the upload on the PRIMARY: data/ is replicated to this node with "
+            "STANDBY. Apply the package on the PRIMARY first, then here: only "
+            "the primary can apply a schema migration, and this node's database "
+            "is a read-only replica that receives the new schema from it. Stage "
+            "the upload on the PRIMARY too: data/ is replicated to this node with "
             "rsync --delete, so a file uploaded here is removed on the next "
             "sync."))
     else:

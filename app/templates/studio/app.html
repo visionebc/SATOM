@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "studio/_folder_select.html" import folder_select %}
 {% block title %}{{ a.name }} — App{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ asset('css/app_design.css') }}">
 <link rel="stylesheet" href="{{ asset('css/icon_picker.css') }}">
@@ -37,10 +38,12 @@
       <div class="col-xl-6"><div class="fw-card"><div class="fw-card-body row g-2" style="font-size:13px;">
         <div class="col-md-8"><label class="form-label small" for="ap-name">{{ _('Name (the menu entry)') }}</label><input class="form-control form-control-sm" id="ap-name" value="{{ a.name }}" maxlength="120"></div>
         <div class="col-md-4"><label class="form-label small" for="ap-icon">{{ _('Icon') }}</label><input class="form-control form-control-sm" id="ap-icon" value="{{ a.icon }}" maxlength="31" placeholder="bi-app-indicator" data-icon-picker="{{ url_for('studio.icons') }}"></div>
-        <div class="col-12"><label class="form-label small" for="ap-menu-group">{{ _('Menu group') }}</label>
-          <input class="form-control form-control-sm" id="ap-menu-group" value="{{ a.menu_group }}" maxlength="48" list="ap-menu-groups" placeholder="{{ _('none') }}" autocomplete="off">
-          <datalist id="ap-menu-groups">{% for g in app_groups %}<option value="{{ g }}">{% endfor %}</datalist>
-          <div class="form-text">{{ _('A submenu of Plugins that holds the apps of the same group; empty = a plain entry of Plugins. Plugin Studio filters its app list by it.') }}</div></div>
+        <div class="col-12"><label class="form-label small" for="ap-menu-group">{{ _('Folder') }}</label>
+          {{ folder_select('ap-menu-group', '', a.menu_group, app_groups) }}
+          <div class="form-text">{{ _('The submenu of Plugins it is drawn in; no folder = a plain entry of Plugins. Pick + New folder to make one now (it is made when you save).') }}
+            {% set _fa = studio_folder_adoms(a) %}{% set _fg = studio_folder_groups(a) %}
+            {% if _fa or _fg %}<span class="d-block mt-1" id="ap-folder-grants"><i class="bi bi-folder2 me-1"></i>{{ _('Its folder also gives it') }}: {% if _fa %}{{ _('ADOMs') }} {{ _('every ADOM') if '*' in _fa else (_fa|sort|join(', ')) }}{% endif %}{% if _fa and _fg %}; {% endif %}{% if _fg %}{{ _fg|length }} {{ _('user group(s)') }}{% endif %}.</span>{% endif %}
+            <a href="{{ url_for('studio.index', pane='folders') }}">{{ _('Manage folders') }}</a></div></div>
         <div class="col-12"><label class="form-label small" for="ap-desc">{{ _('Description (shown to users)') }}</label><textarea class="form-control form-control-sm" id="ap-desc" rows="3" maxlength="2000">{{ a.description }}</textarea></div>
         <div class="col-12"><label class="form-label small d-block">{{ _('Where it appears (Operations > Plugins of these ADOMs)') }}</label>
           <div class="form-check form-check-inline"><input class="form-check-input ap-adom" type="checkbox" id="ap-adom-all" value="*" {{ 'checked' if '*' in a.adoms }}><label class="form-check-label" for="ap-adom-all"><strong>{{ _('Every ADOM') }}</strong></label></div>
@@ -277,6 +280,7 @@
 }|tojson }}</script>
 <script src="{{ url_for('static', filename='js/process_editor.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/apps_run.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/studio_folder_select.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/studio_app.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/studio_design.js') }}" nonce="{{ csp_nonce }}"></script>
 {% endblock %}

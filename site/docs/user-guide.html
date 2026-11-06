@@ -5592,23 +5592,60 @@ pages united neither the keys nor the sandboxes: the page opens for a holder of
 editor's Console tab and the console's run endpoint still ask for their own
 key. The old addresses (<code>/database/py-console</code>, <code>/database/scripts/…</code>)
 redirect to the new ones.</p>
-<p><strong>Menu groups.</strong> An app can be filed under a menu group: the <em>Menu group</em>
-field of a flow app's <strong>Settings</strong> tab, or <strong>Set menu group</strong> in the row menu
-of Apps (flow and script apps alike). Both suggest the groups that exist;
-typing a name that differs only in case files the app under the existing
-group, and an empty field takes it out. In the sidebar every group is a
-collapsible submenu of <strong>Plugins</strong> (open when you are on one of its apps),
-followed by the apps without a group. A placeholder ADOM (added in Settings &gt;
-ADOMs with no backend yet, such as <em>Linux</em>) is an ADOM like any other here:
-the Settings tab offers it, and its sidebar draws <strong>Plugins</strong> inside
-Operations with the apps shown there (no Plugins group when there are none;
-Report Studio and Lua Studio stay in device ADOMs). The Web hosts example installs its apps
-under the group <strong>Web hosts</strong>, in the Linux ADOM when there is one. The Apps list has a <em>Menu group</em>
-column and a filter next to the search box. A group is up to 48 letters,
-digits, spaces and <code>. &amp; ( ) + , ' -</code>. It is not a user group: who may use
-the app is still <em>Who may use it</em>. An exported app package carries the
-group; importing it sets the group only on an app the import creates — an
-app that exists here keeps the group it has.</p>
+<p><strong>Folders.</strong> An app can be filed under a <strong>folder</strong> (until 4.11.4 called a
+<em>menu group</em>): pick it from the list in the <em>Folder</em> field of a flow app's
+<strong>Settings</strong> tab, in <strong>New app</strong>, or with <strong>Set folder</strong> in the row menu of
+Apps (flow and script apps alike). The list ends with <strong>+ New folder…</strong>: type
+the name and the folder is made when you save, so a cancelled form leaves no
+empty folder; a name that differs only in case picks the existing folder. No
+folder takes the app out. In the sidebar every folder is a collapsible
+submenu of <strong>Plugins</strong> (open when you are on one of its apps), followed by
+the apps without one. A placeholder ADOM (added in Settings &gt; ADOMs with no
+backend yet, such as <em>Linux</em>) is an ADOM like any other here: the Settings
+tab offers it, and its sidebar draws <strong>Plugins</strong> inside Operations with the
+apps shown there (no Plugins group when there are none; Report Studio and Lua
+Studio stay in device ADOMs). The Web hosts example installs its apps under
+the folder <strong>Web hosts</strong>, in the Linux ADOM when there is one. The Apps list
+has a <em>Folder</em> column and a filter next to the search box. A folder name is
+up to 48 letters, digits, spaces and <code>. &amp; ( ) + , ' -</code>.</p>
+<p>The <strong>Folders</strong> pane of the Explorer manages them: <strong>New folder</strong>, <strong>Edit</strong>
+(name, description, ADOMs, user groups), <strong>Download as bundle</strong> and
+<strong>Delete</strong>. A folder can hand <strong>every app inside</strong> to ADOMs and user groups:
+an app in the folder is drawn in the folder's ADOMs and may be used by the
+folder's user groups, <em>on top of</em> its own ADOMs and <em>Who may use it</em>. A
+folder never takes anything away, and an app that leaves the folder loses
+only what the folder gave it. The app still has to be published and enabled
+to appear, and Plugin Studio authors always see every app. The Apps list and
+the app's Settings tab show what the folder adds (<em>+ fortiweb</em>, <em>+ 1
+group(s)</em>). Script apps run in the Global ADOM and, for console accounts,
+keep their script's audience; the folder's user groups do apply to them for
+Apps-only accounts. Renaming a folder moves its apps with it; deleting it
+keeps the apps, with no folder. A user group that a folder hands out cannot
+be deleted (Access &gt; Groups names the folder) until it is taken off the
+folder. Folders and their grants belong to this server: an exported app
+package carries only the folder's <strong>name</strong>. Importing it files the app there
+only when the import creates the app; an app that exists here keeps its
+folder. A folder the package names that does not exist here is made empty,
+with no ADOMs and no user groups.</p>
+<p><strong>Plugin bundles.</strong> <strong>Import package or bundle</strong> (Apps) also takes a
+<strong>bundle</strong>: a <code>.satombundle</code> (zip format <code>satom.plugin-bundle/1</code>), or a
+plain <code>.zip</code> of <code>.satomplugin</code> files, up to 50 packages and 64 MB. The
+preview checks every package as if it were imported alone, with its own
+signature, rules and <em>Creates / Keeps</em>, and asks once for the secret of each
+connection the bundle creates. You also pick the folder for the apps the
+import creates: the bundle's folder, any folder, <strong>+ New folder…</strong>, no
+folder, or <em>the folder each package names</em>. <strong>Install</strong> installs the packages
+one by one. A refused package is skipped and named; the others go in. A
+package that needs another one from the same bundle (an action that opens
+that app) is tried again after the rest. The bundle itself is not signed and
+grants nothing: its <code>bundle.json</code> (<code>name</code>, <code>description</code>, <code>folder</code>,
+<code>plugins</code> = install order) only proposes a name and a folder, which you
+confirm. A file in it that is not a <code>.satomplugin</code> refuses the whole bundle.
+<strong>Download as bundle</strong> in Folders writes the folder's flow apps as one
+bundle, each package as <em>Export app package</em> writes it (script apps are not
+in it: their code downloads from their own row). The audit has
+<code>plugin.bundle.import</code>, <code>studio.folder.create|save|delete|bundle</code> and, per
+package, the same lines as a single import.</p>
 <h3 id="231-report-studio-and-custom-views">23.1 Report Studio and Custom Views</h3>
 <p>A plugin is a Jinja body plus optional CSS and JS, bound to a list of
 <strong>datasets</strong>. You pick datasets in the editor (grouped, with a search box);

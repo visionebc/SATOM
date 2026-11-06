@@ -6,6 +6,35 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Plugin Studio folders, given whole to ADOMs and user groups.** Asked for:
+  "assign a whole folder to a user group or an ADOM, so all the plugins we are
+  going to have are easier to manage, with a section to manage the folders,
+  and when creating a plugin pick the folder from a list instead of typing it,
+  or create it on the spot". The menu groups are now **folders**, objects of
+  their own (`studio_folders`; the migration makes one for every group in use,
+  with no grants). The new **Folders** pane creates, renames (its apps move
+  with it), describes and deletes them (its apps stay, with no folder). It
+  sets the **ADOMs** and **user groups** a folder hands every app inside, on
+  top of the app's own ADOMs and access list (`studio_apps.shown_in` /
+  `can_use`, so the sidebar, the run page, the API and Apps-only accounts all
+  follow). The app's Settings, **New app** and **Set folder** pick the folder
+  from a list ending in **+ New folder…**. The folder is made when the form
+  is saved, so a cancelled form leaves none behind. A user group a folder
+  hands out cannot be deleted from under it. Packages still carry only the
+  folder's name, never its grants.
+- **Plugin bundles.** **Import package or bundle** takes several plugins in
+  one file: a `.satombundle` (`satom.plugin-bundle/1`: the packages plus an
+  optional `bundle.json` with name, description, folder and install order),
+  or a plain `.zip` of `.satomplugin` files. Limits: 50 packages, 64 MB. The
+  preview checks every package exactly as a single import does, with its own
+  signature and rules; the bundle itself is unsigned and grants nothing. It
+  asks once per new connection secret and lets you pick the folder for the
+  apps it creates. The install runs the packages one by one. A refused
+  package is skipped and named, and one that needs another package from the
+  bundle is retried after it. **Download as bundle** (Folders) writes a
+  folder's flow apps as one bundle.
+
 ## [4.11.4] - 2026-11-06
 
 ### Added

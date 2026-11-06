@@ -299,13 +299,18 @@ def _import_back():
 def import_package():
     from ..services import plugin_import as PI
 
+    from ..services import plugin_bundle as PB
+
     up = request.files.get("package")
     if up is None or not up.filename:
-        flash(_("Choose a .satomplugin file to import."), "error")
+        flash(_("Choose a .satomplugin or .satombundle file to import."), "error")
         return redirect(_import_back())
-    data = up.read(pkgfmt.MAX_PACKAGE + 1)
+    data = up.read(PB.MAX_BUNDLE + 1)
     try:
-        PI.read(data, stamp())
+        if PB.is_bundle(data):          # several packages: one preview, one confirm
+            PI.read_bundle(data, up.filename)
+        else:
+            PI.read(data, stamp())
     except PI.ImportRefused as exc:
         flash(_("Import refused: %(why)s", why=str(exc)), "error")
         return redirect(_import_back())
@@ -332,7 +337,15 @@ def import_preview(token):
     if got is None:
         return redirect(url_for("plugins.index"))
     data, meta = got
+    from ..services import plugin_bundle as PB
     try:
+        if PB.is_bundle(data):
+            from ..services import studio_apps as SA
+            info = PI.inspect_bundle(data, user=current_user,
+                                     product=meta.get("product") or "", via="ui",
+                                     filename=meta.get("filename") or "")
+            return render_template("plugins/import_bundle_preview.html", info=info,
+                                   token=token, meta=meta, folders=SA.groups())
         info = PI.inspect(data, user=current_user, product=meta.get("product") or "",
                           via="ui")
     except PI.ImportRefused as exc:
@@ -355,6 +368,9 @@ def import_confirm(token):
     PI.discard(token)  # one confirmation per upload, whatever its outcome
     secrets = {k[len("secret_"):]: v for k, v in request.form.items()
                if k.startswith("secret_") and v}
+    from ..services import plugin_bundle as PB
+    if PB.is_bundle(data):
+        return _confirm_bundle(data, meta, secrets)
     try:
         rep = PI.import_package(
             data, user=current_user, product=meta.get("product") or "", via="ui",
@@ -386,6 +402,39 @@ def import_confirm(token):
             version=rep["version"], signed=signed, status=rep["lands_in"])
           + (" " + note if note else ""), "warning" if note else "success")
     return redirect(url_for("plugins.edit", pid=rep["plugin_id"]))
+
+
+#: The folder choice of the bundle preview that keeps each package's own.
+FOLDER_AS_PACKAGED = "__package__"
+
+
+def _confirm_bundle(data: bytes, meta: dict, secrets: dict):
+    from ..services import plugin_import as PI
+    pick = request.form.get("folder", FOLDER_AS_PACKAGED)
+    try:
+        rep = PI.import_bundle(
+            data, user=current_user, product=meta.get("product") or "", via="ui",
+            allow_downgrade=bool(meta.get("allow_downgrade"))
+            or request.form.get("allow_downgrade") == "1",
+            secrets=secrets, folder=None if pick == FOLDER_AS_PACKAGED else pick,
+            filename=meta.get("filename") or "")
+    except PI.ImportRefused as exc:
+        flash(_("Import refused: %(why)s", why=str(exc)), "error")
+        return redirect(url_for("studio.index", pane="apps"))
+    names = ", ".join("%s %s" % (r["name"], r["version"]) for r in rep["installed"])
+    flash(_("Bundle “%(name)s”: %(n)d plugin(s) installed%(list)s.", name=rep["name"],
+            n=len(rep["installed"]), list=(": " + names) if names else ""),
+          "success" if rep["installed"] else "warning")
+    if rep["filed"]:
+        flash(_("Filed under folder %(folder)s: %(apps)s.", folder=rep["folder"] or _("none"),
+                apps=", ".join(rep["filed"])), "success")
+    todo = ["%s: %s" % (r["slug"], t) for r in rep["installed"] for t in r.get("todo") or []]
+    if todo:
+        flash(_("To do: %(todo)s.", todo="; ".join(todo[:12])), "warning")
+    for r in rep["refused"]:
+        flash(_("Not installed: %(file)s — %(why)s", file=r["file"],
+                why="; ".join(p["message"] for p in r["problems"][:4])), "error")
+    return redirect(url_for("studio.index", pane="apps"))
 
 
 @bp.route("/import/<token>/cancel", methods=["POST"])

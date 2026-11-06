@@ -14,6 +14,8 @@ author declared. Uniting the pages unites neither the keys nor the jails.
 """
 from __future__ import annotations
 
+import re
+
 from flask import (Blueprint, Response, abort, flash, jsonify, redirect,
                    render_template, request, url_for)
 from flask_login import current_user, login_required
@@ -39,7 +41,8 @@ LIBRARY = "studio.script_library"
 USER_MANAGE = "user_manage"   # models.Permission.USER_MANAGE: Access > Directory connections
 #: "scripts" is gone (2026-10-23: every script is an app); an old link to it
 #: lands on Apps.
-PANES = ("apps", "console", "stores", "connections", "directories", "apis", "examples")
+PANES = ("apps", "folders", "console", "stores", "connections", "directories", "apis",
+         "examples")
 
 
 def _who() -> str:
@@ -94,12 +97,20 @@ def index():
         apis=apis, library_offer=library_offer,
         apps=SA.list_rows() if can_library else [],
         app_groups=SA.groups() if can_library else [],
+        folders=SA.folder_rows() if can_library else [],
+        adom_choices=_adom_choices() if can_library else [],
+        user_groups=_user_groups() if can_library else [],
         runs=SL.recent_runs(limit=15) if can_library else [],
         datasets=PD.picker() if can_console else [],
         examples=py_examples.all_examples() if can_console else [],
         bundles=_bundles() if can_library else [],
         sandbox_ok=sandbox.available(), can_directories=can_directories,
         **(_directories() if can_directories else {"conns": [], "kinds": []}))
+
+
+def _user_groups() -> list:
+    from ..models_studio import UserGroup
+    return UserGroup.query.order_by(UserGroup.name).all()
 
 
 def _directories() -> dict:
@@ -855,18 +866,22 @@ def app_create():
     from ..services import studio_apps as SA
     slug = (request.form.get("slug") or "").strip()
     kind = request.form.get("kind") or "flow"
+    group = request.form.get("group") or ""
     try:
+        SA._folder_name(group)          # a bad folder name refuses before anything is made
         if kind == "script":
             if SA.get(slug) is not None:
                 raise SA.AppError("an app with id %s already exists" % slug)
             SL.create(slug, request.form.get("name") or "", _who())
-            SA.ensure_script_app(slug, _who())
+            SA.set_group(SA.ensure_script_app(slug, _who()), group, _who())
         else:
-            SA.create(slug, request.form.get("name") or "", _who())
+            SA.create(slug, request.form.get("name") or "", _who(), group=group)
     except (SA.AppError, SL.ScriptError) as exc:
+        from ..extensions import db
+        db.session.rollback()
         flash(str(exc), "danger")
         return redirect(url_for("studio.index", pane="apps"))
-    log_action("studio.app.create", target=slug, extra={"kind": kind})
+    log_action("studio.app.create", target=slug, extra={"kind": kind, "group": group})
     if kind == "script":
         return redirect(url_for("script_library.edit", slug=slug))
     return redirect(url_for("studio.app_edit", slug=slug))
@@ -1213,6 +1228,104 @@ def app_group(slug):
         return _err(exc)
     log_action("studio.app.group", target=slug, extra={"from": before, "to": group})
     return jsonify({"ok": True, "group": group})
+
+
+# --------------------------------------------------------------------------- #
+#  folders (2026-11-06): the menu groups as objects, with the ADOMs and user   #
+#  groups they hand to every app inside (studio_apps.save_folder)              #
+# --------------------------------------------------------------------------- #
+def _folder_or_404(fid: int):
+    from ..extensions import db
+    from ..models_studio import StudioFolder
+    f = db.session.get(StudioFolder, fid)
+    if f is None:
+        abort(404)
+    return f
+
+
+@bp.route("/folders/create", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def folder_create():
+    from ..extensions import db
+    from ..services import studio_apps as SA
+    body = request.get_json(silent=True) or request.form
+    try:
+        f = SA.create_folder(body.get("name"), _who(), body.get("description") or "")
+    except SA.AppError as exc:
+        db.session.rollback()
+        if request.is_json:
+            return _err(exc)
+        flash(str(exc), "danger")
+        return redirect(url_for("studio.index", pane="folders"))
+    log_action("studio.folder.create", target=f.name)
+    if request.is_json:
+        return jsonify({"ok": True, "id": f.id, "name": f.name})
+    flash("Folder %s created. Give it ADOMs and user groups with Edit." % f.name, "success")
+    return redirect(url_for("studio.index", pane="folders"))
+
+
+@bp.route("/folders/<int:fid>/save", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def folder_save(fid):
+    from ..extensions import db
+    from ..services import studio_apps as SA
+    f = _folder_or_404(fid)
+    before = {"name": f.name, "adoms": f.adoms, "groups": f.group_ids}
+    try:
+        SA.save_folder(f, request.get_json(silent=True) or {},
+                       [k for k, _ in _adom_choices()], _who())
+    except SA.AppError as exc:
+        db.session.rollback()
+        return _err(exc)
+    log_action("studio.folder.save", target=f.name,
+               extra={"before": before, "adoms": f.adoms, "groups": f.group_ids})
+    return jsonify({"ok": True, "name": f.name})
+
+
+@bp.route("/folders/<int:fid>/delete", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def folder_delete(fid):
+    from ..services import studio_apps as SA
+    f = _folder_or_404(fid)
+    name = f.name
+    apps = SA.delete_folder(f)
+    log_action("studio.folder.delete", target=name, extra={"apps": apps})
+    return jsonify({"ok": True, "apps": apps})
+
+
+@bp.route("/folders/<int:fid>/bundle")
+@login_required
+@require_permission(LIBRARY)
+def folder_bundle(fid):
+    """The folder's flow apps as ONE plugin bundle (services.plugin_bundle),
+    each an app package as Export app package writes it. Script apps are
+    not in it: their code downloads from their own row."""
+    from ..services import plugin_bundle as PB
+    from ..services import studio_app_package as SAP
+    from ..services import studio_apps as SA
+    from ..version import app_version
+    f = _folder_or_404(fid)
+    members = []
+    for a in SA.folder_apps(f):
+        if a.kind != "flow":
+            continue
+        fname, blob = SAP.export_app(a, app_version())
+        members.append((fname, blob))
+    if not members:
+        flash("Folder %s has no flow app to put in a bundle." % f.name, "warning")
+        return redirect(url_for("studio.index", pane="folders"))
+    try:
+        data = PB.write_bundle(f.name, members, description=f.description, folder=f.name)
+    except PB.BundleError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("studio.index", pane="folders"))
+    log_action("studio.folder.bundle", target=f.name, extra={"apps": [m[0] for m in members]})
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", f.name).strip("-").lower() or "folder"
+    return Response(data, mimetype="application/zip", headers={
+        "Content-Disposition": 'attachment; filename="%s%s"' % (safe, PB.EXT)})
 
 
 @bp.route("/apps/<slug>/reset", methods=["POST"])

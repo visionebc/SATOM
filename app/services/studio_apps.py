@@ -49,7 +49,7 @@ from datetime import datetime, timedelta
 from urllib.parse import quote, quote_plus
 
 from ..extensions import db
-from ..models_studio import StudioApp, StudioAppRun, UserGroup, user_group_members
+from ..models_studio import StudioApp, StudioAppRun, StudioFolder, UserGroup, user_group_members
 from . import studio_flow as F
 
 AUTHOR = "studio.script_library"
@@ -457,7 +457,7 @@ def get(slug: str) -> StudioApp | None:
     return StudioApp.query.filter_by(slug=slug).first()
 
 
-def create(slug: str, name: str, by: str) -> StudioApp:
+def create(slug: str, name: str, by: str, group: str = "") -> StudioApp:
     slug = (slug or "").strip()
     if not _SLUG_RE.match(slug):
         raise AppError("Id: lowercase letters, digits, - and _, 2 to 48 characters.")
@@ -470,6 +470,7 @@ def create(slug: str, name: str, by: str) -> StudioApp:
                   fields_json=json.dumps([{"name": "name", "label": "Name", "type": "text",
                                            "required": True, "help": "", "default": ""}]),
                   graph_json=json.dumps(STARTER_GRAPH))
+    file_under(a, group, by)
     db.session.add(a)
     db.session.commit()
     return a
@@ -493,7 +494,7 @@ def save_settings(a: StudioApp, form: dict, adom_keys, by: str) -> None:
     a.adoms_json = json.dumps(["*"] if "*" in adoms else sorted(set(adoms)))
     set_access(a, form.get("access") or {})
     if "group" in form:                 # absent (Examples, older callers): the group stays
-        a.menu_group = clean_group(form.get("group"), a)
+        file_under(a, form.get("group"), by)
     a.updated_by = by
     db.session.commit()
 
@@ -503,29 +504,191 @@ def clean_group(value, a: StudioApp | None = None) -> str:
     :data:`_GROUP_RE`, "" for none. A name that differs from an existing
     group only in case takes that group's spelling, so "netops" typed by one
     author files the app under the "NetOps" another one made."""
-    g = " ".join(str(value or "").split())
+    g = _folder_name(value)
     if not g:
         return ""
-    if not _GROUP_RE.match(g):
-        raise AppError("menu group: up to 48 letters, digits, spaces and . & ( ) + , ' - "
-                       "(it starts with a letter or a digit)")
     for other in groups(exclude=a):
         if other.lower() == g.lower():
             return other
     return g
 
 
+def file_under(a: StudioApp, value, by: str = "") -> str:
+    """File *a* under the folder *value* ("" = none), making the folder when
+    no folder has that name yet (no grants), so an import or an older caller
+    that names a new group still files the app. Not committed: the caller's
+    commit stores both (2026-11-06)."""
+    g = clean_group(value, a)
+    if g:
+        f = folder(g)
+        if f is None:
+            db.session.add(StudioFolder(name=g, created_by=by, updated_by=by))
+            _forget_folders()
+        elif f.name != g:
+            # only reachable when groups() left it out: *a* is its one app and
+            # it grants nothing, so the folder takes the new spelling with it
+            f.name = g
+            _forget_folders()
+    a.menu_group = g
+    return g
+
+
+def _folder_name(value) -> str:
+    g = " ".join(str(value or "").split())
+    if g and not _GROUP_RE.match(g):
+        raise AppError("folder: up to 48 letters, digits, spaces and . & ( ) + , ' - "
+                       "(it starts with a letter or a digit)")
+    return g
+
+
 def groups(exclude: StudioApp | None = None) -> list[str]:
-    """Every menu group some app is filed under, sorted as people read them."""
+    """Every folder (Plugin Studio > Folders, empty ones included) and every
+    menu group some app is filed under, sorted as people read them. With
+    *exclude*, a folder only that app is in and that has no grants is left
+    out, so its one app may rename it in another case."""
     q = db.session.query(StudioApp.menu_group).filter(StudioApp.menu_group != "")
     if exclude is not None and exclude.id is not None:
         q = q.filter(StudioApp.id != exclude.id)
-    return sorted({g for (g,) in q.distinct().all()}, key=str.lower)
+    names = {g for (g,) in q.distinct().all()}
+    mine = (exclude.menu_group or "") if exclude is not None else ""
+    for f in StudioFolder.query.all():
+        if f.name == mine and f.name not in names and not (f.adoms or f.group_ids):
+            continue
+        names.add(f.name)
+    return sorted(names, key=str.lower)
+
+
+# --------------------------------------------------------------------------- #
+#  folders (2026-11-06)                                                        #
+# --------------------------------------------------------------------------- #
+#: The key of the folder grants cached on ``flask.g`` for one request.
+_FOLDER_CACHE = "_studio_folder_grants"
+
+
+def folder(name: str) -> StudioFolder | None:
+    """The folder named *name*, in any case; ``None`` for "" or none."""
+    name = " ".join(str(name or "").split())
+    if not name:
+        return None
+    return StudioFolder.query.filter(db.func.lower(StudioFolder.name) == name.lower()).first()
+
+
+def folders() -> list[StudioFolder]:
+    return sorted(StudioFolder.query.all(), key=lambda f: f.name.lower())
+
+
+def folder_rows() -> list[dict]:
+    """Plugin Studio > Folders: every folder with its apps (flow and script)."""
+    apps = {}
+    for a in StudioApp.query.filter(StudioApp.menu_group != "").order_by(StudioApp.name).all():
+        apps.setdefault(a.menu_group, []).append(a)
+    return [{"f": f, "apps": apps.get(f.name, [])} for f in folders()]
+
+
+def folder_apps(f: StudioFolder) -> list[StudioApp]:
+    return StudioApp.query.filter(StudioApp.menu_group == f.name).order_by(StudioApp.name).all()
+
+
+def _forget_folders() -> None:
+    try:
+        from flask import g
+        g.pop(_FOLDER_CACHE, None)
+    except RuntimeError:          # no application context: nothing is cached
+        pass
+
+
+def _folder_grants() -> dict:
+    """``{folder name: (adoms, group ids)}`` of the folders that grant
+    anything, read once per request (the sidebar asks for every app)."""
+    try:
+        from flask import g
+        got = g.get(_FOLDER_CACHE)
+    except RuntimeError:
+        g, got = None, None
+    if got is None:
+        got = {f.name: (set(f.adoms), set(f.group_ids)) for f in StudioFolder.query.all()
+               if f.adoms or f.group_ids}
+        if g is not None:
+            setattr(g, _FOLDER_CACHE, got)
+    return got
+
+
+def folder_adoms(a: StudioApp) -> set:
+    return set(_folder_grants().get(a.menu_group or "", (set(), set()))[0])
+
+
+def folder_groups(a: StudioApp) -> set:
+    return set(_folder_grants().get(a.menu_group or "", (set(), set()))[1])
+
+
+def effective_adoms(a: StudioApp) -> list[str]:
+    """The ADOMs the app is drawn in: its own plus its folder's."""
+    own = a.adoms
+    extra = [x for x in sorted(folder_adoms(a)) if x not in own]
+    return own + extra
+
+
+def create_folder(name, by: str, description: str = "") -> StudioFolder:
+    g = _folder_name(name)
+    if not g:
+        raise AppError("a folder needs a name")
+    if folder(g) is not None:
+        raise AppError("a folder named %s already exists" % folder(g).name)
+    f = StudioFolder(name=g, description=(description or "").strip()[:2000],
+                     created_by=by, updated_by=by)
+    db.session.add(f)
+    db.session.commit()
+    _forget_folders()
+    return f
+
+
+def save_folder(f: StudioFolder, form: dict, adom_keys, by: str) -> StudioFolder:
+    """Rename *f* (its apps follow), and set its description, the ADOMs and
+    the user groups it hands to every app inside."""
+    name = _folder_name(form.get("name", f.name))
+    if not name:
+        raise AppError("a folder needs a name")
+    other = folder(name)
+    if other is not None and other.id != f.id:
+        raise AppError("a folder named %s already exists" % other.name)
+    adoms = [str(x) for x in form.get("adoms") or []]
+    allowed = set(adom_keys) | {"*", "global"}
+    bad = [x for x in adoms if x not in allowed]
+    if bad:
+        raise AppError("unknown ADOM(s): %s" % ", ".join(bad))
+    gids = sorted({int(x) for x in form.get("groups") or [] if str(x).isdigit()})
+    if gids and UserGroup.query.filter(UserGroup.id.in_(gids)).count() != len(gids):
+        raise AppError("a user group in the list does not exist")
+    if name != f.name:
+        StudioApp.query.filter(StudioApp.menu_group == f.name).update(
+            {StudioApp.menu_group: name}, synchronize_session=False)
+        f.name = name
+    if "description" in form:
+        f.description = str(form.get("description") or "").strip()[:2000]
+    f.adoms_json = json.dumps(["*"] if "*" in adoms else sorted(set(adoms)))
+    f.groups_json = json.dumps(gids)
+    f.updated_by = by
+    db.session.commit()
+    _forget_folders()
+    db.session.expire_all()       # the apps renamed in SQL are read again
+    return f
+
+
+def delete_folder(f: StudioFolder) -> list[str]:
+    """Delete *f*; its apps stay, with no folder. Returns their ids."""
+    slugs = [a.slug for a in StudioApp.query.filter(StudioApp.menu_group == f.name).all()]
+    StudioApp.query.filter(StudioApp.menu_group == f.name).update(
+        {StudioApp.menu_group: ""}, synchronize_session=False)
+    db.session.delete(f)
+    db.session.commit()
+    _forget_folders()
+    db.session.expire_all()
+    return slugs
 
 
 def set_group(a: StudioApp, value, by: str) -> str:
     """File *a* (a flow or a script app) under a menu group; "" takes it out."""
-    a.menu_group = clean_group(value, a)
+    file_under(a, value, by)
     a.updated_by = by
     db.session.commit()
     return a.menu_group
@@ -1163,7 +1326,10 @@ def can_use(user, a: StudioApp) -> bool:
     acc = a.access
     if user.id in acc["users"]:
         return True
-    if group_ids_of(user) & set(acc["groups"]):
+    mine = group_ids_of(user)
+    if mine & set(acc["groups"]):
+        return True
+    if mine & folder_groups(a):         # given with its whole folder
         return True
     # An account an app's sign-in made: this session signed in through *a*
     # and its grant stands (services.app_signin).
@@ -1172,8 +1338,12 @@ def can_use(user, a: StudioApp) -> bool:
 
 
 def shown_in(a: StudioApp, product_key: str) -> bool:
-    adoms = a.adoms
-    return "*" in adoms or (product_key or "global") in adoms
+    """Drawn in this ADOM by its own ADOMs or by its folder's."""
+    key = product_key or "global"
+    for adoms in (a.adoms, folder_adoms(a)):
+        if "*" in adoms or key in adoms:
+            return True
+    return False
 
 
 def menu(user, product_key: str) -> list[dict]:
@@ -1261,7 +1431,7 @@ def run_product(a: StudioApp, session_product: str) -> str:
     to pick one with)."""
     if shown_in(a, session_product):
         return session_product or "global"
-    return next((x for x in a.adoms if x not in ("*",)), "global")
+    return next((x for x in effective_adoms(a) if x not in ("*",)), "global")
 
 
 # --------------------------------------------------------------------------- #
@@ -1925,4 +2095,7 @@ def save_group(group: UserGroup | None, name: str, description: str, member_ids)
 
 
 def apps_using_group(gid: int) -> list[str]:
-    return [a.slug for a in StudioApp.query.order_by(StudioApp.slug).all() if gid in a.access["groups"]]
+    """The apps that share with user group *gid*, and the folders that hand
+    it their apps (as "folder <name>")."""
+    out = [a.slug for a in StudioApp.query.order_by(StudioApp.slug).all() if gid in a.access["groups"]]
+    return out + ["folder %s" % f.name for f in folders() if gid in f.group_ids]

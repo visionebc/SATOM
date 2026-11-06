@@ -341,6 +341,35 @@ class StudioApp(db.Model):
         return d if isinstance(d, dict) else {}
 
 
+class StudioFolder(db.Model):
+    """A Plugin Studio folder (2026-11-06): the menu group apps are filed
+    under (``StudioApp.menu_group`` holds its name) and what it hands to every
+    app inside -- ADOMs to be drawn in and user groups that may use it. Those
+    grants ADD to an app's own ADOMs and access list; they never take one
+    away. Install-specific like ``access_json``: a package carries only the
+    folder's name (``app.group``), never its grants."""
+    __tablename__ = "studio_folders"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(48), unique=True, nullable=False)
+    description = db.Column(db.Text, nullable=False, default="", server_default="")
+    adoms_json = db.Column(db.Text, nullable=False, default="[]", server_default="[]")
+    groups_json = db.Column(db.Text, nullable=False, default="[]", server_default="[]")
+    created_by = db.Column(db.String(64), nullable=False, default="", server_default="")
+    updated_by = db.Column(db.String(64), nullable=False, default="", server_default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+
+    @property
+    def adoms(self) -> list:
+        return [str(x) for x in _loads(self.adoms_json, [])]
+
+    @property
+    def group_ids(self) -> list:
+        return [int(x) for x in _loads(self.groups_json, []) if str(x).isdigit()]
+
+
 class StudioAppAsset(db.Model):
     """An image uploaded to an app's design (services.studio_design): kept in
     the database so it replicates with the app and travels in its package.

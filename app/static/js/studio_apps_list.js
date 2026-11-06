@@ -1,5 +1,5 @@
 /* Plugin Studio > Apps (studio/index.html): the Actions column -- enable /
- * disable, menu group, clone, reset, delete -- the search box and the menu-group
+ * disable, folder, clone, reset, delete -- the search box and the folder
  * filter. Server side: app/views/studio.py (app_enable, app_group,
  * app_clone, app_reset, app_delete) and app/services/studio_apps.py
  * (set_enabled, set_group, clone, reset, remove). Reset and Delete
@@ -74,8 +74,8 @@
       })
       .catch(function (e) { b.disabled = false; msg(e.message, true); });
   });
-  // Menu group: a modal with the groups that exist as suggestions; "" takes
-  // the app out of its group.
+  // Folder: a modal with a picker of the folders that exist (and + New
+  // folder, js/studio_folder_select.js); "" takes the app out of its folder.
   var gModal = document.getElementById('apGroupModal');
   var gSlug = null;
   function askGroup(slug, current) {
@@ -85,7 +85,7 @@
     var inp = document.getElementById('apGroupInput');
     inp.value = current;
     window.bootstrap.Modal.getOrCreateInstance(gModal).show();
-    window.setTimeout(function () { inp.focus(); inp.select(); }, 200);
+    window.setTimeout(function () { inp.focus(); }, 200);
   }
   var gSave = document.getElementById('apGroupSave');
   if (gSave) gSave.addEventListener('click', function () {
@@ -95,7 +95,7 @@
          { group: document.getElementById('apGroupInput').value })
       .then(function (d) {
         window.bootstrap.Modal.getOrCreateInstance(gModal).hide();
-        msg(d.group ? gSlug + ' is in menu group ' + d.group + '.' : gSlug + ' has no menu group now.');
+        msg(d.group ? gSlug + ' is in folder ' + d.group + '.' : gSlug + ' has no folder now.');
         window.setTimeout(function () { window.location = CFG.back; }, 900);
       })
       .catch(function (e) { gSave.disabled = false; msg(e.message, true); });
@@ -171,7 +171,7 @@
       window.setTimeout(function () { window.location = d.edit; }, 1200);
     }).catch(function (e) { cGo.disabled = false; msg(e.message, true); });
   });
-  // Search and menu-group filter: a row shows when it matches both.
+  // Search and folder filter: a row shows when it matches both.
   var search = document.getElementById('apSearch');
   var gFilter = document.getElementById('apGroupFilter');
   function filterRows() {

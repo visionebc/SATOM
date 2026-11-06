@@ -344,6 +344,106 @@ def import_package(data: bytes, *, user, product: str, via: str = "ui",
     return out
 
 
+# --------------------------------------------------------------------------- #
+#  bundles: several packages in one upload (services.plugin_bundle)            #
+# --------------------------------------------------------------------------- #
+def read_bundle(data: bytes, filename: str = ""):
+    from . import plugin_bundle as PB
+    stem = (filename or "").rsplit("/", 1)[-1]
+    for ext in (PB.EXT, ".zip"):
+        if stem.lower().endswith(ext):
+            stem = stem[:-len(ext)]
+    try:
+        return PB.read_bundle(data, stem)
+    except PB.BundleError as exc:
+        raise ImportRefused(str(exc)) from None
+
+
+def inspect_bundle(data: bytes, *, user, product: str, via: str = "ui",
+                   filename: str = "") -> dict:
+    """The preview of a bundle: :func:`inspect` of every member (a member
+    that cannot be read is shown refused, not hidden), and the secrets the
+    whole bundle asks for -- one per connection, whichever member creates
+    it. Writes nothing."""
+    b = read_bundle(data, filename)
+    items, conns = [], {}
+    for fname, blob in b.members:
+        try:
+            info = inspect(blob, user=user, product=product, via=via)
+        except ImportRefused as exc:
+            info = {"kind": "?", "slug": "", "version": "", "name": fname, "ok": False,
+                    "problems": exc.problems, "warnings": [], "signed_by": "", "signer_label": "",
+                    "policy": "", "creates": [], "keeps": [], "connections": []}
+        info["file"] = fname
+        items.append(info)
+        for c in info.get("connections") or []:
+            conns.setdefault(c["slug"], c)
+    return {"bundle": True, "name": b.name, "description": b.description, "folder": b.folder,
+            "items": items, "connections": list(conns.values()),
+            "ok": sum(1 for i in items if i["ok"]), "refused": sum(1 for i in items if not i["ok"])}
+
+
+def import_bundle(data: bytes, *, user, product: str, via: str = "ui",
+                  allow_downgrade: bool = False, secrets=None, folder: str | None = None,
+                  filename: str = "") -> dict:
+    """Install every member of a bundle with :func:`import_package`, each on
+    its own: one refused member does not stop the others. A member refused
+    because it needs another one (an action that opens an app the bundle
+    also brings) is tried again after the rest, until a round installs
+    nothing more. *folder* files the apps this import CREATES (an existing
+    app keeps its folder, as with one package); ``None`` = the folder the
+    packages name. Each connection secret goes to the member that creates
+    that connection."""
+    from . import studio_apps as SA
+    from .audit import log_action
+    from ..extensions import db
+    b = read_bundle(data, filename)
+    if folder is not None:
+        try:
+            SA._folder_name(folder)     # refused before anything is installed
+        except SA.AppError as exc:
+            raise ImportRefused(str(exc)) from None
+    wanted = clean_secrets(secrets)
+    pending = list(b.members)
+    done, refused = [], {}
+    while pending:
+        left = []
+        for fname, blob in pending:
+            try:
+                creating = {c["slug"] for c in creating_connections(read(blob, product))}
+            except ImportRefused:
+                creating = set()
+            try:
+                rep = import_package(blob, user=user, product=product, via=via,
+                                     allow_downgrade=allow_downgrade,
+                                     secrets={k: v for k, v in wanted.items() if k in creating},
+                                     audit={"bundle": b.name})
+            except ImportRefused as exc:
+                refused[fname] = exc.problems
+                left.append((fname, blob))
+                continue
+            refused.pop(fname, None)
+            rep["file"] = fname
+            done.append(rep)
+        if len(left) == len(pending):
+            break
+        pending = left
+    filed = []
+    if folder is not None:
+        for rep in done:
+            if rep["kind"] == "app" and ("app %s (draft)" % rep["app_slug"]) in rep["created"]:
+                a = SA.get(rep["app_slug"])
+                SA.file_under(a, folder, getattr(user, "username", "") or "")
+                filed.append(a.slug)
+        db.session.commit()
+    out = {"name": b.name, "installed": done, "filed": filed, "folder": folder,
+           "refused": [{"file": f, "problems": p} for f, p in refused.items()]}
+    log_action("plugin.bundle.import", target=b.name,
+               extra={"installed": ["%s %s" % (r["slug"], r["version"]) for r in done],
+                      "refused": sorted(refused), "folder": folder, "filed": filed, "via": via})
+    return out
+
+
 def _store_secrets(wanted: dict, creating: set, out: dict) -> list[str]:
     """Store the secrets of the connections this import created. Returns the
     slugs stored; the rest is reported in ``kept`` / ``todo``."""

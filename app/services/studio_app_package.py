@@ -22,7 +22,9 @@ INSTALL RULES -- what an import may and may not overwrite
   publishing is the administrator's act, on this server. Its menu group
   (``app.group``, optional, 2026-10-30) is applied only when the import
   CREATES the app; an app that exists keeps the group this server filed it
-  under. A group this server refuses is left out with a warning.
+  under. A group this server refuses is left out with a warning. A group
+  no folder here has yet makes the folder (Plugin Studio › Folders), with
+  no ADOMs and no user groups: a package never grants anything.
 * **Data stores** are created with their columns and seed rows when missing.
   An existing store keeps its rows (they are this server's data -- the
   variables an administrator already set); columns the package adds are
@@ -385,7 +387,7 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
             created.append("app %s (draft)" % slug)
             if spec.get("group"):
                 try:
-                    a.menu_group = SA.clean_group(spec.get("group"), a)
+                    SA.file_under(a, spec.get("group"), by)
                 except SA.AppError as exc:
                     warnings.append("app %s: %s; it has no menu group here" % (slug, exc))
         else:

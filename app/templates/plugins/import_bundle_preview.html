@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Import plugin bundle') }}{% endblock %}
+{% block content %}
+{# A bundle (services.plugin_bundle): several .satomplugin packages, each
+   checked here as on its own; the confirm installs them one by one
+   (plugin_import.import_bundle). The bundle carries no signature of its own. #}
+{% set kind_label = {'view': _('View'), 'widget': _('Widget'), 'app': _('App'), 'code': _('Code plugin')} %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-boxes me-2 text-accent"></i>{{ _('Import plugin bundle') }}</h1>
+    <p class="fw-page-sub">{{ _('Check what each package of this bundle does before it is installed. Nothing has been written yet.') }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-outline" href="{{ url_for('plugins.publishers') }}"><i class="bi bi-patch-check me-1"></i>{{ _('Trusted publishers') }}</a>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ info.name }} <span class="text-secondary fw-normal">{{ info['items']|length }} {{ _('plugin(s)') }}</span></h2>
+    <div class="d-flex gap-2">
+      <span class="fw-badge fw-badge-success">{{ info.ok }} {{ _('ready') }}</span>
+      {% if info.refused %}<span class="fw-badge fw-badge-danger">{{ info.refused }} {{ _('refused') }}</span>{% endif %}
+    </div></div>
+  <div class="fw-card-body" style="font-size:13px">
+    {% if info.description %}<p class="mb-2">{{ info.description }}</p>{% endif %}
+    <p class="text-secondary mb-0" style="font-size:12px">{{ _('The bundle itself is not signed: each package keeps its own signature and goes through the same rules as when it is imported alone. A refused package is skipped; the others are installed.') }}{% if meta.filename %} {{ _('File') }}: {{ meta.filename }}{% endif %}</p>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr><th class="fw-col-name">{{ _('Package') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Signed by') }}</th><th>{{ _('Lands in') }}</th><th>{{ _('Creates') }}</th><th>{{ _('Keeps') }}</th><th>{{ _('Check') }}</th></tr></thead>
+      <tbody>
+      {% for i in info['items'] %}
+        <tr data-bundle-item="{{ i.file }}">
+          <td><strong>{{ i.name }}</strong> <span class="text-secondary">{{ i.slug }} {{ i.version }}</span>
+            <div class="text-muted" style="font-size:11px;"><code>{{ i.file }}</code></div></td>
+          <td><span class="fw-badge fw-badge-secondary">{{ kind_label.get(i.kind, i.kind) }}</span></td>
+          <td>{% if i.signed_by == 'vision-ebc' %}<span class="fw-badge fw-badge-success" title="{{ i.signer }}">{{ _('Vision EBC') }}</span>
+            {% elif i.signed_by == 'publisher' %}<span class="fw-badge fw-badge-info" title="{{ i.signer }}">{{ i.signer_label }}</span>
+            {% elif i.ok or i.policy %}<span class="fw-badge fw-badge-secondary">{{ _('unsigned') }}</span>{% else %}—{% endif %}</td>
+          <td>{% if i.lands_in %}<span class="fw-badge fw-badge-{{ 'warning' if i.lands_in == 'testing' else 'secondary' }}">{{ i.lands_in }}</span>{% endif %}</td>
+          <td style="font-size:12px;">{{ i.creates|join(', ') or '—' }}</td>
+          <td style="font-size:12px;">{{ i.keeps|join(', ') or '—' }}</td>
+          <td style="font-size:12px;">{% if i.ok %}<span class="fw-badge fw-badge-success">{{ _('ok') }}</span>{% else %}<span class="fw-badge fw-badge-danger">{{ _('refused') }}</span>
+            <ul class="mb-0 ps-3">{% for p in i.problems[:6] %}<li><code>{{ p.where }}</code> — {{ p.message }}</li>{% endfor %}</ul>{% endif %}
+            {% if i.warnings %}<ul class="mb-0 ps-3 text-warning">{% for p in i.warnings[:4] %}<li>{{ p.message }}</li>{% endfor %}</ul>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('plugins.import_confirm', token=token) }}" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="fw-card">
+    <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-folder2 me-1 text-accent"></i>{{ _('Folder') }}</h2></div>
+    <div class="fw-card-body row g-2 align-items-center" style="font-size:13px">
+      <label class="col-md-4 col-form-label" for="bundle-folder">{{ _('File the apps this import creates under') }}</label>
+      <div class="col-md-5">
+        <select class="form-select form-select-sm" id="bundle-folder" name="folder" data-folder-select>
+          <option value="__package__"{% if not info.folder %} selected{% endif %}>{{ _('The folder each package names') }}</option>
+          <option value="">{{ _('No folder') }}</option>
+          {% set ns = namespace(found=false) %}
+          {% for f in folders %}<option value="{{ f }}"{% if info.folder and f|lower == info.folder|lower %}{% set ns.found = true %} selected{% endif %}>{{ f }}</option>{% endfor %}
+          {% if info.folder and not ns.found %}<option value="{{ info.folder }}" selected>{{ info.folder }} ({{ _('new') }})</option>{% endif %}
+          <option value="__new__">{{ _('+ New folder…') }}</option>
+        </select>
+      </div>
+      <div class="col-12 form-text">{{ _('An app that already exists here keeps its folder. The folder decides the Plugins submenu and can hand its apps to ADOMs and user groups (Plugin Studio › Folders).') }}</div>
+    </div>
+  </div>
+  {% set asks = info.connections|selectattr('needs_secret')|list %}
+  {% if asks %}
+  <div class="fw-card">
+    <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-key me-1 text-accent"></i>{{ _('Secrets for the new connections') }}</h2></div>
+    <div class="fw-card-body">
+      <p class="text-secondary" style="font-size:13px">{{ _('A package never carries secrets. Type the password or token of each connection this import creates; it is stored on this server only (vault, or encrypted in the database). Leave a box empty to set it later in Plugin Studio › Connections.') }}</p>
+      {% for c in asks %}
+      <div class="row g-2 align-items-center mb-2" style="font-size:13px">
+        <label class="col-md-4 col-form-label" for="secret-{{ c.slug }}"><strong>{{ c.name }}</strong> <code>{{ c.slug }}</code> <span class="text-secondary">({{ c.kind }}, {{ c.auth }})</span></label>
+        <div class="col-md-6"><input class="form-control" type="password" id="secret-{{ c.slug }}" name="secret_{{ c.slug }}" autocomplete="new-password" maxlength="8192"></div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  <div class="fw-card">
+    <div class="fw-card-body d-flex align-items-center gap-3 flex-wrap">
+      <label class="d-flex align-items-center gap-1" style="font-size:13px"><input type="checkbox" name="allow_downgrade" value="1"{% if meta.allow_downgrade %} checked{% endif %}> {{ _('Allow downgrade') }}</label>
+      <button class="btn btn-fw-primary" type="submit"{% if not info.ok %} disabled{% endif %}><i class="bi bi-check2 me-1"></i>{{ _('Install %(n)d plugin(s)', n=info.ok) }}</button>
+      <button class="btn btn-fw-outline" type="submit" formaction="{{ url_for('plugins.import_cancel', token=token) }}" formnovalidate>{{ _('Cancel') }}</button>
+      <span class="text-secondary" style="font-size:12px">{{ _('The upload waits here for one hour, then it is deleted.') }}</span>
+    </div>
+  </div>
+</form>
+<script src="{{ asset('js/studio_folder_select.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

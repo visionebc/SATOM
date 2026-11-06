@@ -4961,23 +4961,62 @@ editor's Console tab and the console's run endpoint still ask for their own
 key. The old addresses (`/database/py-console`, `/database/scripts/…`)
 redirect to the new ones.
 
-**Menu groups.** An app can be filed under a menu group: the *Menu group*
-field of a flow app's **Settings** tab, or **Set menu group** in the row menu
-of Apps (flow and script apps alike). Both suggest the groups that exist;
-typing a name that differs only in case files the app under the existing
-group, and an empty field takes it out. In the sidebar every group is a
-collapsible submenu of **Plugins** (open when you are on one of its apps),
-followed by the apps without a group. A placeholder ADOM (added in Settings >
-ADOMs with no backend yet, such as *Linux*) is an ADOM like any other here:
-the Settings tab offers it, and its sidebar draws **Plugins** inside
-Operations with the apps shown there (no Plugins group when there are none;
-Report Studio and Lua Studio stay in device ADOMs). The Web hosts example installs its apps
-under the group **Web hosts**, in the Linux ADOM when there is one. The Apps list has a *Menu group*
-column and a filter next to the search box. A group is up to 48 letters,
-digits, spaces and `. & ( ) + , ' -`. It is not a user group: who may use
-the app is still *Who may use it*. An exported app package carries the
-group; importing it sets the group only on an app the import creates — an
-app that exists here keeps the group it has.
+**Folders.** An app can be filed under a **folder** (until 4.11.4 called a
+*menu group*): pick it from the list in the *Folder* field of a flow app's
+**Settings** tab, in **New app**, or with **Set folder** in the row menu of
+Apps (flow and script apps alike). The list ends with **+ New folder…**: type
+the name and the folder is made when you save, so a cancelled form leaves no
+empty folder; a name that differs only in case picks the existing folder. No
+folder takes the app out. In the sidebar every folder is a collapsible
+submenu of **Plugins** (open when you are on one of its apps), followed by
+the apps without one. A placeholder ADOM (added in Settings > ADOMs with no
+backend yet, such as *Linux*) is an ADOM like any other here: the Settings
+tab offers it, and its sidebar draws **Plugins** inside Operations with the
+apps shown there (no Plugins group when there are none; Report Studio and Lua
+Studio stay in device ADOMs). The Web hosts example installs its apps under
+the folder **Web hosts**, in the Linux ADOM when there is one. The Apps list
+has a *Folder* column and a filter next to the search box. A folder name is
+up to 48 letters, digits, spaces and `. & ( ) + , ' -`.
+
+The **Folders** pane of the Explorer manages them: **New folder**, **Edit**
+(name, description, ADOMs, user groups), **Download as bundle** and
+**Delete**. A folder can hand **every app inside** to ADOMs and user groups:
+an app in the folder is drawn in the folder's ADOMs and may be used by the
+folder's user groups, *on top of* its own ADOMs and *Who may use it*. A
+folder never takes anything away, and an app that leaves the folder loses
+only what the folder gave it. The app still has to be published and enabled
+to appear, and Plugin Studio authors always see every app. The Apps list and
+the app's Settings tab show what the folder adds (*+ fortiweb*, *+ 1
+group(s)*). Script apps run in the Global ADOM and, for console accounts,
+keep their script's audience; the folder's user groups do apply to them for
+Apps-only accounts. Renaming a folder moves its apps with it; deleting it
+keeps the apps, with no folder. A user group that a folder hands out cannot
+be deleted (Access > Groups names the folder) until it is taken off the
+folder. Folders and their grants belong to this server: an exported app
+package carries only the folder's **name**. Importing it files the app there
+only when the import creates the app; an app that exists here keeps its
+folder. A folder the package names that does not exist here is made empty,
+with no ADOMs and no user groups.
+
+**Plugin bundles.** **Import package or bundle** (Apps) also takes a
+**bundle**: a `.satombundle` (zip format `satom.plugin-bundle/1`), or a
+plain `.zip` of `.satomplugin` files, up to 50 packages and 64 MB. The
+preview checks every package as if it were imported alone, with its own
+signature, rules and *Creates / Keeps*, and asks once for the secret of each
+connection the bundle creates. You also pick the folder for the apps the
+import creates: the bundle's folder, any folder, **+ New folder…**, no
+folder, or *the folder each package names*. **Install** installs the packages
+one by one. A refused package is skipped and named; the others go in. A
+package that needs another one from the same bundle (an action that opens
+that app) is tried again after the rest. The bundle itself is not signed and
+grants nothing: its `bundle.json` (`name`, `description`, `folder`,
+`plugins` = install order) only proposes a name and a folder, which you
+confirm. A file in it that is not a `.satomplugin` refuses the whole bundle.
+**Download as bundle** in Folders writes the folder's flow apps as one
+bundle, each package as *Export app package* writes it (script apps are not
+in it: their code downloads from their own row). The audit has
+`plugin.bundle.import`, `studio.folder.create|save|delete|bundle` and, per
+package, the same lines as a single import.
 
 ### 23.1 Report Studio and Custom Views
 

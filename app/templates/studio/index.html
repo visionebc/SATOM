@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "studio/_folder_select.html" import folder_select %}
 {% block title %}Plugin Studio{% endblock %}
 {% block content %}
 {# Plugin Studio (views.studio): apps and the Python console in one page.
@@ -106,6 +107,7 @@
           {% else %}<div class="ex-empty">{{ _('No apps yet.') }}</div>
           {% endfor %}
         {% endcall %}
+        {{ _ex('folders', 'bi-folder2', _('Folders'), folders|length) }}
         {% endif %}
         {% if can_console %}
         {{ _ex('console', 'bi-terminal', _('Console')) }}
@@ -136,6 +138,54 @@
   <div class="col-12 col-xxl-10">
     <div class="tab-content">
       {% if can_library %}
+      <div class="tab-pane fade {{ 'show active' if pane == 'folders' }}" id="studio-pane-folders" role="tabpanel">
+        {# Folders (2026-11-06, operator): the menu groups as objects. A folder
+           hands every app inside the ADOMs and user groups ticked here, on top
+           of the app's own (studio_apps.shown_in / can_use); it never takes
+           one away. Deleting a folder keeps its apps, with no folder. #}
+        <div class="fw-card sl-how"><div class="fw-card-body py-2 row g-2" style="font-size:12px;">
+          <div class="col-md-4 d-flex gap-2"><i class="bi bi-folder2 text-accent" style="font-size:18px;"></i>
+            <span>{{ _('A folder is a submenu of Plugins. Put an app in one from its Settings, from Set folder in Apps, when you create it, or when you import a bundle.') }}</span></div>
+          <div class="col-md-4 d-flex gap-2"><i class="bi bi-people text-accent" style="font-size:18px;"></i>
+            <span>{{ _('Give a whole folder to ADOMs and user groups: every app in it is drawn in those ADOMs and usable by those groups, on top of what each app grants itself. Script apps keep their audience for console accounts; the groups apply to Apps-only accounts.') }}</span></div>
+          <div class="col-md-4 d-flex gap-2"><i class="bi bi-boxes text-accent" style="font-size:18px;"></i>
+            <span>{{ _('Download a folder as a bundle: its flow apps in one .satombundle that another SATOM installs in one go (Apps > Import package or bundle).') }}</span></div>
+        </div></div>
+        <form method="post" action="{{ url_for('studio.folder_create') }}" class="d-flex mb-2 gap-2 align-items-center" style="font-size:12px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input class="form-control form-control-sm w-auto" name="name" maxlength="48" required placeholder="{{ _('New folder name') }}" aria-label="{{ _('New folder name') }}" title="{{ _('Up to 48 letters, digits, spaces and . & ( ) + , \' - (it starts with a letter or a digit)') }}">
+          <button class="btn btn-fw-primary btn-sm text-nowrap" type="submit"><i class="bi bi-folder-plus me-1"></i>{{ _('New folder') }}</button>
+        </form>
+        <div id="foMsg" class="small mb-2" role="status"></div>
+        {% set _gname = {} %}{% for g in user_groups %}{% set _x = _gname.update({g.id: g.name}) %}{% endfor %}
+        {% set _aname = {} %}{% for k, label in adom_choices %}{% set _x = _aname.update({k: label}) %}{% endfor %}
+        <div class="fw-table-wrapper">
+          <table class="fw-table" id="foTable">
+            <thead><tr><th class="fw-col-name">{{ _('Folder') }}</th><th>{{ _('Apps') }}</th><th>{{ _('ADOMs it gives') }}</th><th>{{ _('User groups it gives') }}</th><th>{{ _('Last change') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
+            <tbody>
+            {% for row in folders %}{% set f = row.f %}
+              <tr data-folder-id="{{ f.id }}" data-folder='{{ {"id": f.id, "name": f.name, "description": f.description, "adoms": f.adoms, "groups": f.group_ids}|tojson }}'>
+                <td><i class="bi bi-folder2 me-1 text-muted"></i><strong>{{ f.name }}</strong>
+                  {% if f.description %}<div class="text-muted" style="font-size:11px;">{{ f.description|truncate(100) }}</div>{% endif %}</td>
+                <td style="font-size:12px;">{% if row.apps %}<span class="fw-badge fw-badge-secondary">{{ row.apps|length }}</span>
+                  <span class="text-muted">{% for a in row.apps[:6] %}<a href="{{ url_for('studio.app_edit', slug=a.slug) }}">{{ a.name }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if row.apps|length > 6 %} …{% endif %}</span>{% else %}<span class="text-muted">{{ _('empty') }}</span>{% endif %}</td>
+                <td style="font-size:12px;">{% if '*' in f.adoms %}{{ _('every ADOM') }}{% else %}{% for k in f.adoms %}{{ _aname.get(k, k) }}{{ ', ' if not loop.last }}{% else %}<span class="text-muted">—</span>{% endfor %}{% endif %}</td>
+                <td style="font-size:12px;">{% for gid in f.group_ids %}{{ _gname.get(gid, '#%d' % gid) }}{{ ', ' if not loop.last }}{% else %}<span class="text-muted">—</span>{% endfor %}</td>
+                <td style="font-size:13px;"><span class="text-nowrap">{{ f.updated_at.strftime('%Y-%m-%d %H:%M') if f.updated_at else '' }}</span>{% if f.updated_by %} <span class="text-muted text-nowrap">· {{ f.updated_by }}</span>{% endif %}</td>
+                <td class="actions-col"><div class="fw-row-actions">
+                  <button type="button" class="btn btn-sm btn-outline-secondary btn-sm-icon" data-folder-act="edit" title="{{ _('Edit: name, ADOMs and user groups') }}"><i class="bi bi-pencil"></i></button>
+                  <a class="btn btn-sm btn-outline-secondary btn-sm-icon" href="{{ url_for('studio.folder_bundle', fid=f.id) }}" title="{{ _('Download its flow apps as one bundle (.satombundle)') }}"><i class="bi bi-boxes"></i></a>
+                  <button type="button" class="btn btn-sm btn-outline-danger btn-sm-icon" data-folder-act="delete" title="{{ _('Delete the folder: its apps stay, with no folder') }}"><i class="bi bi-trash"></i></button>
+                </div></td>
+              </tr>
+            {% else %}
+              <tr><td colspan="6" class="text-muted p-3">{{ _('No folders yet. Make one here, or pick + New folder where an app asks for its folder.') }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="tab-pane fade {{ 'show active' if pane == 'stores' }}" id="studio-pane-stores" role="tabpanel">
         <div class="fw-card sl-how"><div class="fw-card-body py-2 d-flex gap-2" style="font-size:12px;">
           <i class="bi bi-table text-accent" style="font-size:18px;"></i>
@@ -188,16 +238,16 @@
             <i class="bi bi-search search-icon"></i>
             <input type="text" id="apSearch" placeholder="{{ _('Search apps…') }}">
           </div>
-          <select class="form-select form-select-sm w-auto" id="apGroupFilter" aria-label="{{ _('Menu group') }}" title="{{ _('Show the apps of one menu group') }}">
-            <option value="*">{{ _('Every menu group') }}</option>
+          <select class="form-select form-select-sm w-auto" id="apGroupFilter" aria-label="{{ _('Folder') }}" title="{{ _('Show the apps of one folder') }}">
+            <option value="*">{{ _('Every folder') }}</option>
             {% for g in app_groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
-            <option value="">{{ _('No menu group') }}</option>
+            <option value="">{{ _('No folder') }}</option>
           </select>
           {% if current_user.can('studio.plugin_studio') %}
           <form method="post" action="{{ url_for('plugins.import_package') }}" enctype="multipart/form-data" class="d-flex gap-2 align-items-center ms-auto" style="font-size:12px;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <label class="form-check-label text-nowrap"><input class="form-check-input me-1" type="checkbox" name="allow_downgrade" value="1">{{ _('Allow downgrade') }}</label>
-            <label class="btn btn-outline-primary btn-sm text-nowrap mb-0" title="{{ _('An app package: the app, its data stores, its connections (without secrets) and its API versions') }}"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import app package') }}<input type="file" name="package" accept=".satomplugin,.zip" class="d-none" data-ap-import required></label>
+            <label class="btn btn-outline-primary btn-sm text-nowrap mb-0" title="{{ _('An app package (the app, its data stores, its connections without secrets and its API versions), or a bundle of several packages (.satombundle, or a .zip of .satomplugin files): each one is checked and shown before anything is installed') }}"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import package or bundle') }}<input type="file" name="package" accept=".satomplugin,.satombundle,.zip" class="d-none" data-ap-import required></label>
             <a class="btn btn-outline-secondary btn-sm text-nowrap" href="{{ url_for('plugins.publishers') }}" title="{{ _('Public keys whose signature an import trusts, besides the Vision EBC key. Register the publisher key of your SATOM Builder here.') }}"><i class="bi bi-patch-check me-1"></i>{{ _('Trusted publishers') }}</a>
           </form>
           {% endif %}
@@ -212,7 +262,7 @@
         <div id="apMsg" class="small mb-2" role="status"></div>
         <div class="fw-table-wrapper">
           <table class="fw-table" id="apTable">
-            <thead><tr><th class="fw-col-name">{{ _('Name') }}</th><th>{{ _('Type') }}</th><th>{{ _('Menu group') }}</th><th>{{ _('Status') }}</th><th>{{ _('Published') }}</th><th>{{ _('ADOMs') }}</th><th>{{ _('Shared with') }}</th><th>{{ _('Last change') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
+            <thead><tr><th class="fw-col-name">{{ _('Name') }}</th><th>{{ _('Type') }}</th><th>{{ _('Folder') }}</th><th>{{ _('Status') }}</th><th>{{ _('Published') }}</th><th>{{ _('ADOMs') }}</th><th>{{ _('Shared with') }}</th><th>{{ _('Last change') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
             <tbody>
             {% for r in apps %}{% set a = r.a %}
               <tr data-app="{{ a.slug }}" data-group="{{ r.group }}">
@@ -227,8 +277,9 @@
                 <td style="font-size:12px;">Global</td>
                 <td style="font-size:12px;">{{ _('Operators') if r.audience == 'operators' else _('Administrators') }}</td>
                 {% else %}
-                <td style="font-size:12px;">{{ _('every ADOM') if '*' in a.adoms else (a.adoms|join(', ') or '—') }}</td>
-                <td style="font-size:12px;">{{ a.access.groups|length }} {{ _('group(s)') }}, {{ a.access.users|length }} {{ _('person(s)') }}</td>
+                {% set _fa = studio_folder_adoms(a) %}{% set _fg = studio_folder_groups(a) %}
+                <td style="font-size:12px;">{{ _('every ADOM') if '*' in a.adoms else (a.adoms|join(', ') or '—') }}{% if _fa %}<div class="text-muted" title="{{ _('Given by its folder') }}"><i class="bi bi-folder2 me-1"></i>+ {{ _('every ADOM') if '*' in _fa else (_fa|sort|join(', ')) }}</div>{% endif %}</td>
+                <td style="font-size:12px;">{{ a.access.groups|length }} {{ _('group(s)') }}, {{ a.access.users|length }} {{ _('person(s)') }}{% if _fg %}<div class="text-muted" title="{{ _('Given by its folder') }}"><i class="bi bi-folder2 me-1"></i>+ {{ _fg|length }} {{ _('group(s)') }}</div>{% endif %}</td>
                 {% endif %}
                 <td style="font-size:13px;"><span class="text-nowrap">{{ a.updated_at.strftime('%Y-%m-%d %H:%M') if a.updated_at else '' }}</span> <span class="text-muted text-nowrap">· {{ a.updated_by }}</span></td>
                 <td class="actions-col"><div class="fw-row-actions">
@@ -243,7 +294,7 @@
                             data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false"
                             title="{{ _('More actions') }}" aria-label="{{ _('More actions') }}"><i class="bi bi-three-dots"></i></button>
                     <ul class="dropdown-menu dropdown-menu-end">
-                      <li><button type="button" class="dropdown-item" data-app-act="group" data-group="{{ r.group }}" title="{{ _('The submenu of Plugins the app is drawn in') }}"><i class="bi bi-folder2"></i>{{ _('Set menu group') }}</button></li>
+                      <li><button type="button" class="dropdown-item" data-app-act="group" data-group="{{ r.group }}" title="{{ _('The folder: the submenu of Plugins the app is drawn in, and the ADOMs and user groups the folder hands to its apps') }}"><i class="bi bi-folder2"></i>{{ _('Set folder') }}</button></li>
                       {% if not r.missing %}<li><button type="button" class="dropdown-item" data-app-act="clone" title="{{ _('A new draft app from this one: with its data or only its structure') }}"><i class="bi bi-copy"></i>{{ _('Clone') }}</button></li>{% endif %}
                       <li><a class="dropdown-item" href="{{ url_for('studio.app_data', slug=a.slug) }}" title="{{ _('Download data: runs and data stores (zip)') }}"><i class="bi bi-database-down"></i>{{ _('Download data') }}</a></li>
                       {% if r.kind == 'script' %}
@@ -429,6 +480,9 @@
         <div class="form-check">
           <input class="form-check-input" type="radio" name="kind" id="{{ mid }}-script" value="script">
           <label class="form-check-label" for="{{ mid }}-script"><strong>{{ _('Script') }}</strong> — {{ _('Python code with a form, run in the sandbox') }}</label></div>
+        <label class="fw-form-label mt-3" for="{{ mid }}-group">{{ _('Folder') }}</label>
+        {{ folder_select(mid ~ '-group', 'group', '', app_groups) }}
+        <div class="form-text">{{ _('The Plugins submenu it goes in; the folder\'s ADOMs and user groups apply to it once it is published.') }}</div>
         <div class="fw-alert fw-alert-info mt-3 mb-0" id="{{ mid }}-kind-note" style="font-size:12.5px;">
           {{ plugin_kind_guide['app']['what'] }}
           {{ _('To show or search what SATOM already knows (which rules use an IP, a report), build a view in Report Studio instead.') }}
@@ -448,13 +502,12 @@
 {% if can_library %}
 <div class="modal fade fw-modal" id="apGroupModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog"><div class="modal-content">
-    <div class="modal-header"><h5 class="modal-title"><i class="bi bi-folder2 me-2"></i>{{ _('Set menu group') }} <code class="ms-1" id="apGroupSlug"></code></h5>
+    <div class="modal-header"><h5 class="modal-title"><i class="bi bi-folder2 me-2"></i>{{ _('Set folder') }} <code class="ms-1" id="apGroupSlug"></code></h5>
       <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button></div>
     <div class="modal-body" style="font-size:13px;">
-      <label class="form-label small" for="apGroupInput">{{ _('Menu group') }}</label>
-      <input class="form-control form-control-sm" id="apGroupInput" maxlength="48" list="apGroupList" autocomplete="off" placeholder="{{ _('none') }}">
-      <datalist id="apGroupList">{% for g in app_groups %}<option value="{{ g }}">{% endfor %}</datalist>
-      <div class="form-text">{{ _('Pick a group or type a new one. Apps of the same group are a submenu of Plugins; empty = a plain entry of Plugins.') }}</div>
+      <label class="form-label small" for="apGroupInput">{{ _('Folder') }}</label>
+      {{ folder_select('apGroupInput', '', '', app_groups) }}
+      <div class="form-text">{{ _('Pick a folder or make a new one. The apps of a folder are a submenu of Plugins and get the ADOMs and user groups the folder hands out (Folders); no folder = a plain entry of Plugins.') }}</div>
     </div>
     <div class="modal-footer">
       <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
@@ -464,6 +517,31 @@
 </div>
 {% endif %}
 {% if can_library %}
+<div class="modal fade fw-modal" id="foModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title"><i class="bi bi-folder2 me-2"></i>{{ _('Folder') }} <code class="ms-1" id="foTitle"></code></h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button></div>
+    <div class="modal-body row g-3" style="font-size:13px;">
+      <div class="col-md-5"><label class="form-label small" for="foName">{{ _('Name') }}</label>
+        <input class="form-control form-control-sm" id="foName" maxlength="48" autocomplete="off">
+        <div class="form-text">{{ _('Renaming moves its apps with it.') }}</div></div>
+      <div class="col-md-7"><label class="form-label small" for="foDesc">{{ _('Description') }}</label>
+        <input class="form-control form-control-sm" id="foDesc" maxlength="2000" autocomplete="off"></div>
+      <div class="col-12"><label class="form-label small d-block">{{ _('ADOMs every app of the folder is drawn in (on top of its own)') }}</label>
+        <div class="form-check form-check-inline"><input class="form-check-input fo-adom" type="checkbox" id="fo-adom-all" value="*"><label class="form-check-label" for="fo-adom-all"><strong>{{ _('Every ADOM') }}</strong></label></div>
+        {% for k, label in adom_choices %}<div class="form-check form-check-inline"><input class="form-check-input fo-adom" type="checkbox" id="fo-adom-{{ k }}" value="{{ k }}"><label class="form-check-label" for="fo-adom-{{ k }}">{{ label }}</label></div>{% endfor %}</div>
+      <div class="col-12"><label class="form-label small d-block">{{ _('User groups that may use every app of the folder (on top of its own access list)') }}</label>
+        <div class="row" style="max-height:220px;overflow:auto;">
+        {% for g in user_groups %}<div class="col-md-4"><div class="form-check"><input class="form-check-input fo-group" type="checkbox" id="fo-g-{{ g.id }}" value="{{ g.id }}"><label class="form-check-label" for="fo-g-{{ g.id }}">{{ g.name }} <span class="text-muted">({{ g.members|length }})</span></label></div></div>
+        {% else %}<div class="col-12 text-muted small">{{ _('No user groups yet.') }}{% if current_user.can('user_manage') %} <a href="{{ url_for('user_groups.index') }}">{{ _('Manage groups') }}</a>{% endif %}</div>{% endfor %}</div>
+        <div class="form-text">{{ _('An app still needs to be published and enabled to appear. Plugin Studio authors always see every app.') }}</div></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+      <button type="button" class="btn btn-fw-primary" id="foSave"><i class="bi bi-check-lg me-1"></i>{{ _('Save') }}</button>
+    </div>
+  </div></div>
+</div>
 <div class="modal fade fw-modal" id="apCloneModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog"><div class="modal-content">
     <div class="modal-header"><h5 class="modal-title"><i class="bi bi-copy me-2"></i>{{ _('Clone') }} <code class="ms-1" id="apCloneSrc"></code></h5>
@@ -525,7 +603,10 @@
 </div>
 <script type="application/json" id="ex-config">{{ {'install': url_for('studio.example_install', key='KEY'), 'back': url_for('studio.index', pane='examples')}|tojson }}</script>
 <script type="application/json" id="ap-config">{{ {'enable': url_for('studio.app_enable', slug='SLUG'), 'group': url_for('studio.app_group', slug='SLUG'), 'reset': url_for('studio.app_reset', slug='SLUG'), 'delete': url_for('studio.app_delete', slug='SLUG'), 'clone': url_for('studio.app_clone', slug='SLUG'), 'clone_plan': url_for('studio.app_clone_plan', slug='SLUG'), 'back': url_for('studio.index', pane='apps')}|tojson }}</script>
+<script src="{{ asset('js/studio_folder_select.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/studio_apps_list.js') }}" nonce="{{ csp_nonce }}"></script>
+<script type="application/json" id="fo-config">{{ {'save': url_for('studio.folder_save', fid=0), 'delete': url_for('studio.folder_delete', fid=0), 'back': url_for('studio.index', pane='folders')}|tojson }}</script>
+<script src="{{ asset('js/studio_folders.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/studio_explorer.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/studio_examples.js') }}" nonce="{{ csp_nonce }}"></script>
 <script type="application/json" id="sl-config">{{ {'urls': {'run': url_for('script_library.run_status', rid='RID')}}|tojson }}</script>

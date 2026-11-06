@@ -1,0 +1,16 @@
+{# A Plugin Studio folder picker (2026-11-06): the folders that exist, "No
+   folder" and "+ New folder…" (js/studio_folder_select.js adds the new one;
+   the server makes it when the form is saved). *current* is selected; a
+   current name no folder has (an older group) is kept as an option. #}
+{% macro folder_select(id, name, current, folders) -%}
+<select class="form-select form-select-sm" id="{{ id }}"{% if name %} name="{{ name }}"{% endif %} data-folder-select>
+  <option value=""{{ ' selected' if not current }}>{{ _('No folder') }}</option>
+  {%- for f in folders %}
+  <option value="{{ f }}"{{ ' selected' if f == current }}>{{ f }}</option>
+  {%- endfor %}
+  {%- if current and current not in folders %}
+  <option value="{{ current }}" selected>{{ current }}</option>
+  {%- endif %}
+  <option value="__new__">{{ _('+ New folder…') }}</option>
+</select>
+{%- endmacro %}

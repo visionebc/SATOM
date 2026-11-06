@@ -807,6 +807,18 @@ def create_app(config_override: object | None = None) -> Flask:
         return grouped(items or [])
 
     @app.template_global()
+    def studio_folder_adoms(a):
+        """The ADOMs an app's folder hands it (Plugin Studio > Apps)."""
+        from .services.studio_apps import folder_adoms
+        return folder_adoms(a)
+
+    @app.template_global()
+    def studio_folder_groups(a):
+        """The user group ids an app's folder hands it (Plugin Studio > Apps)."""
+        from .services.studio_apps import folder_groups
+        return folder_groups(a)
+
+    @app.template_global()
     def global_all_plugins_entry(product_key):
         """Whether Global > Plugins (partials/nav_global_apps.html) draws the
         "All plugins" entry for this user: the gate it had inside Automation

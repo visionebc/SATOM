@@ -490,7 +490,10 @@ its own copy. Stage the upload on the **primary** — `data/` replicates to the
 standby with `rsync --delete`, so a file uploaded on the standby is removed on
 the next sync.
 
-Apply to the standby first, as with any other update, then the primary.
+Apply to the **primary first**, then the standby. The primary is the only node
+that can apply a schema migration (the standby's database is a read-only
+replica and receives the new schema from it); a standby updated first would
+run code that expects columns its database does not have yet.
 
 ---
 

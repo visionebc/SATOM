@@ -532,3 +532,78 @@ def webctl_envelope(op: str) -> Obj:
                         lambda d: ("result" in d) == bool(d["ok"])
                         and (d["ok"] or "error" in d)),))
 
+
+
+# ── Web Server Manager (satom-wsm, the session helper) ───────────────────────
+# The helper answers ~80 operations; the ones it shares with satom-webctl keep
+# their closed schemas above, the rest pass a strict GENERIC shape: objects
+# with plain keys, lists, bounded text without control characters (tab,
+# newline and carriage return allowed: logs and files are text) or bidi marks,
+# bounded integers, finite numbers, booleans. Nothing a server sends becomes a
+# type, and every value is printed through autoescape like any other.
+
+_TREE_KEY_RE = re.compile(r"[A-Za-z0-9_.:@/+-]{1,80}")
+
+
+@dataclass(frozen=True)
+class Tree:
+    max_str: int = 8 * 1024 * 1024
+    max_items: int = 50000
+    max_keys: int = 2000
+    required: bool = True
+
+    def check(self, v, path, ctx):
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, int):
+            if abs(v) > MAX_INT:
+                raise Rejected(path, "integer out of range")
+            return v
+        if isinstance(v, float):
+            if not math.isfinite(v):
+                raise Rejected(path, "not a finite number")
+            return v
+        if isinstance(v, str):
+            if len(v) > self.max_str:
+                raise Rejected(path, "text longer than %d" % self.max_str)
+            if _CTRL_TEXT_RE.search(v):
+                raise Rejected(path, "control character")
+            if _BIDI_RE.search(v):
+                raise Rejected(path, "bidi or zero-width character")
+            return v
+        if isinstance(v, list):
+            if len(v) > self.max_items:
+                raise Rejected(path, "more than %d items" % self.max_items)
+            return [self.check(x, "%s[%d]" % (path, i), ctx) for i, x in enumerate(v)]
+        if isinstance(v, dict):
+            if len(v) > self.max_keys:
+                raise Rejected(path, "more than %d keys" % self.max_keys)
+            out = {}
+            for k, x in v.items():
+                if not isinstance(k, str) or not _TREE_KEY_RE.fullmatch(k):
+                    raise Rejected(path, "a key outside the allowed set")
+                out[k] = self.check(x, "%s.%s" % (path, k) if path else k, ctx)
+            return out
+        raise Rejected(path, "unexpected type")
+
+
+WSM_WHO = Obj({"user": Str(max_len=64), "uid": Int(0, 2 ** 32)}, required=False)
+#: satom-webctl operations whose session answers have the agent's shape.
+WSM_CLOSED = {op for op in WEBCTL_OPS if op not in ("vhost.create", "files.list", "files.read")}
+
+
+def wsm_envelope(op: str) -> Obj:
+    """The whole answer of one satom-wsm call for ``op``."""
+    if op in WSM_CLOSED:
+        result = Obj(WEBCTL_OPS[op][1].fields, WEBCTL_OPS[op][1].checks, required=False)
+    else:
+        result = Tree(required=False)
+    return Obj({"ok": Bool(), "result": result,
+                "error": Str(max_len=32, pattern=r"[a-z_]{1,32}", required=False),
+                "detail": Str(max_len=600, multiline=True, required=False),
+                "who": WSM_WHO},
+               checks=(("an answer is a result or an error",
+                        lambda d: ("result" in d) == bool(d["ok"])
+                        and (d["ok"] or "error" in d)),))

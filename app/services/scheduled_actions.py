@@ -446,6 +446,16 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "at its own operator-set interval. Read-only against the box.",
     ),
     ActionSpec(
+        "wsm_schedules", "Web Server Manager — scheduled scripts", "admin",
+        needs_targets=False,
+        summary="Run the scripts the Web Server Manager schedules on managed Linux servers "
+                "(services.wsm.run_due): each due schedule signs in with its stored service "
+                "credential and runs its library script. A revoked, disabled or expired "
+                "credential parks the schedule as pending authentication and notifies the "
+                "administrators once. Created by itself with the first schedule; runs every "
+                "minute, cron expressions are evaluated in UTC.",
+    ),
+    ActionSpec(
         "webhost_cert_expiry", "Web hosts — certificate expiry check", "admin",
         needs_targets=False,
         summary="Ask every Plugin Studio server connection (servers prepared with "
@@ -901,6 +911,18 @@ def _do_webhost_cert_expiry(dry_run: bool = False) -> dict:
             "log": "\n".join(lines)[:_LOG_MAX]}
 
 
+def _do_wsm_schedules(dry_run: bool = False) -> dict:
+    """Web Server Manager schedules due this minute. ``ok`` is False when one
+    failed or waits for authentication (it is named in the log)."""
+    from . import wsm
+    r = wsm.run_due(dry_run=dry_run)
+    return {"ok": not (r["failed"] or r["pending"]),
+            "summary": ("%s%d due, %d ran, %d failed, %d waiting for authentication"
+                        % ("[dry-run] " if dry_run else "", r["due"], r["ran"], r["failed"],
+                           r["pending"])),
+            "log": "\n".join(r["lines"])[:_LOG_MAX]}
+
+
 def _do_schema_watch(dry_run: bool = False) -> dict:
     """Builds with no harvested schema: notify once each (``ok`` = the round ran)."""
     from . import schema_watch
@@ -1223,6 +1245,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_schema_watch(dry_run)
         if key == "webhost_cert_expiry":
             return _do_webhost_cert_expiry(dry_run)
+        if key == "wsm_schedules":
+            return _do_wsm_schedules(dry_run)
         if key == "artifact_refs":
             return _do_artifact_refs(params, dry_run)
         if key == "netbox_reconcile":

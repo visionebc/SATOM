@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{# Web Server Manager (Linux ADOM): the managed servers. A server is a
+   Plugin Studio "server" connection; who signs in to it is a credential
+   (Servers > <server> > Credentials). #}
+{% block title %}{{ _('Web Server Manager') }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ asset('css/wsm.css') }}" data-turbo-track="reload">{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-hdd-network me-2 text-accent"></i>{{ _('Web Server Manager') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Manage Linux web servers over SSH with your own account: files, websites, certificates, security, scripts, scheduled tasks, packages, services, logs, users and SSH. When your account is not allowed to do something, SATOM uses sudo the way you set it on your credential.') }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('wsm.audit') }}"><i class="bi bi-journal-check me-1"></i>{{ _('Operations log') }}</a>
+    {% if can_add %}<button type="button" class="btn btn-fw-primary" data-bs-toggle="collapse" data-bs-target="#wsm-add"><i class="bi bi-plus-lg me-1"></i>{{ _('Add server') }}</button>{% endif %}
+  </div>
+</div>
+{% if can_add %}
+<form class="collapse fw-card p-3 mb-3 {{ 'show' if not servers }}" id="wsm-add" method="post" action="{{ url_for('wsm.server_create') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="_adom" value="linux">
+  <div class="wsm-card-title"><i class="bi bi-plus-circle"></i> {{ _('Add a server') }}</div>
+  <div class="row g-2">
+    <div class="col-md-3"><label class="fw-form-label" for="add-name">{{ _('Name') }}</label><input class="form-control" id="add-name" name="name" required maxlength="120" placeholder="webserver01"></div>
+    <div class="col-md-4"><label class="fw-form-label" for="add-host">{{ _('Host name or address') }}</label><input class="form-control" id="add-host" name="host" required maxlength="255" placeholder="192.0.2.108"></div>
+    <div class="col-md-2"><label class="fw-form-label" for="add-port">{{ _('SSH port') }}</label><input class="form-control" id="add-port" name="port" type="number" min="1" max="65535" value="22"></div>
+    <div class="col-md-3 d-flex align-items-end"><div class="form-check"><input class="form-check-input" type="checkbox" name="allow_writes" value="1" id="add-writes" checked><label class="form-check-label" for="add-writes">{{ _('Allow changes') }}</label></div></div>
+  </div>
+  <p class="text-muted mt-2 mb-2" style="font-size:12px;">{{ _('SATOM never connects to itself or to its HA peer, and a server added here can never open a connection to SATOM (hostguard).') }}</p>
+  <button class="btn btn-fw-primary btn-sm" type="submit">{{ _('Add') }}</button>
+</form>
+{% endif %}
+<div class="wsm-grid">
+  {% for s in servers %}
+  <a class="fw-card wsm-server" href="{{ url_for('wsm.server_home', slug=s.c.slug) }}">
+    <div class="wsm-server-name"><i class="bi bi-hdd-network"></i> {{ s.c.name }}</div>
+    <div class="text-muted wsm-mono" style="font-size:12px;">{{ s.c.host }}:{{ s.c.port or 22 }}</div>
+    <div class="mt-2">
+      {% if s.state.host_key %}<span class="wsm-badge wsm-ok"><i class="bi bi-patch-check"></i> {{ _('trusted') }}</span>{% else %}<span class="wsm-badge wsm-bad">{{ _('host key not trusted') }}</span>{% endif %}
+      {% if s.state.allow_writes %}<span class="wsm-badge wsm-info">{{ _('changes allowed') }}</span>{% else %}<span class="wsm-badge wsm-muted">{{ _('read-only') }}</span>{% endif %}
+      <span class="wsm-badge wsm-muted">{{ _('%(n)d credential(s)', n=s.creds) }}</span>
+    </div>
+  </a>
+  {% else %}
+  <div class="text-muted p-3">{{ _('No server yet. Add one, trust its host key, then add your SSH account.') }}</div>
+  {% endfor %}
+</div>
+<h2 class="wsm-h2 mt-4">{{ _('What you can manage') }}</h2>
+<div class="wsm-tiles">
+  {% for key, m in modules.items() %}
+  <div class="fw-card wsm-tile static"><i class="bi {{ m[1] }}"></i><div><strong>{{ m[0] }}</strong><div class="text-muted">{{ m[2] }}</div></div></div>
+  {% endfor %}
+</div>
+{% endblock %}

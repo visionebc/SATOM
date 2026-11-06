@@ -382,6 +382,11 @@ def create_app(config_override: object | None = None) -> Flask:
         if bp_name in ('fgt', 'fgt_api'):
             # And for FortiGate.
             eff = 'fortigate'
+        if bp_name == 'wsm' and 'linux' in valid:
+            # The Web Server Manager is the Linux ADOM's (operator, 2026-11-06:
+            # "publish it in the Linux ADOM"): opening it is an ADOM jump,
+            # like the FAZ / FAC / FGT areas, so its menu is Linux's.
+            eff = 'linux'
         _gx_kind = _gui_engine_kind(ep)
         if _gx_kind:
             # The measured-GUI pages (workspace.fwgui_*) of a FortiGate, a
@@ -828,6 +833,12 @@ def create_app(config_override: object | None = None) -> Flask:
         from flask_login import current_user
         return bool(product_key == "global" and current_user and current_user.is_authenticated
                     and current_user.can("config_write") and may_open("scripts.index"))
+
+    @app.template_global()
+    def wsm_modules():
+        """The Web Server Manager's modules, for the Linux ADOM menu."""
+        from .services.wsm import MODULES
+        return MODULES
 
     @app.template_global()
     def may_open(endpoint):
@@ -2555,6 +2566,9 @@ def create_app(config_override: object | None = None) -> Flask:
             # or IPAM operation refuses on a table the model says exists.
             from . import models_dnsbackend  # noqa: F401
             from . import models_advisor  # noqa: F401
+            # Web Server Manager (credentials, audit, scripts, schedules):
+            # without this import create_all() never makes the wsm_* tables.
+            from . import models_wsm  # noqa: F401
             # Path Diagnostics saved reports: without this import
             # create_all() never makes ``path_diag_reports``.
             from . import models_pathdiag  # noqa: F401
@@ -2982,6 +2996,8 @@ def _register_blueprints(app: Flask) -> None:
         # SATOM's own data at /observability/. Read-only, no menu entry, no
         # schema -- removing the trial is this line plus its own files.
         ("app.views.observability_lab", "bp"),
+        # Web Server Manager (Linux ADOM): /webserver/
+        ("app.views.wsm", "bp"),
     ]
 
     # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).

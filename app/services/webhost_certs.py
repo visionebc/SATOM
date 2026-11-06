@@ -56,20 +56,22 @@ def _save_notified(seen: dict) -> None:
     db.session.commit()
 
 
-def _link() -> str:
-    try:
-        from flask import url_for
-        return url_for("apps.page", slug=PANEL_SLUG)
-    except Exception:  # noqa: BLE001 -- no request context (scheduler)
-        return "/apps/%s" % PANEL_SLUG
+def _link(slug: str = "") -> str:
+    """The Web Server Manager's certificates page of the server (2026-11-06:
+    the manager replaced the Web hosts apps)."""
+    return "/webserver/%s/certs" % slug if slug else "/webserver/"
 
 
 def connections() -> list:
-    """The server connections that can be asked: a key and a trusted host key."""
+    """The server connections that can be asked unattended: a trusted host key
+    and either the satom-webctl agent key or a shared service credential of
+    the Web Server Manager that keeps its secret."""
     from . import studio_connections as SC
+    from . import wsm
     out = []
     for c in SC.list_connections("server"):
-        if SC.server_opts(c.slug).get("host_key") and SC.has_secret(c.slug):
+        if SC.server_opts(c.slug).get("host_key") and (
+                SC.has_secret(c.slug) or wsm.service_credential(c.slug) is not None):
             out.append(c)
     return out
 
@@ -83,6 +85,7 @@ def serving(cert: dict) -> list[str]:
 def scan(*, notify: bool = True) -> dict:
     """Ask every server connection; notify each new stage once. NEVER raises."""
     from . import studio_connections as SC
+    from . import wsm
     out = {"connections": 0, "certs": 0, "due": [], "errors": [], "notified": 0}
     try:
         conns = connections()
@@ -94,7 +97,10 @@ def scan(*, notify: bool = True) -> dict:
     for c in conns:
         out["connections"] += 1
         try:
-            res = SC.server_call(c, "certs.list")
+            if not SC.has_secret(c.slug) and wsm.service_credential(c.slug) is not None:
+                res = wsm.read_as_service(c, "certs.list")     # no agent: the manager's
+            else:                                              # service credential reads
+                res = SC.server_call(c, "certs.list")
         except Exception as exc:  # noqa: BLE001 -- one server must not stop the others
             out["errors"].append("%s: %s" % (c.slug, str(exc)[:300]))
             continue
@@ -128,15 +134,15 @@ def scan(*, notify: bool = True) -> dict:
                 title = ("Certificate %s on %s %s" % (
                     it["cert"], it["connection"],
                     "has expired" if expired else "expires in %d day(s)" % it["days_left"]))
-                body = ("%s (%s) is served by %s. Renew it in Web hosts > Certificates: "
-                        "Renew makes a new request on the server, the provider signs it and "
-                        "the sites reload with the new certificate." % (
+                body = ("%s (%s) is served by %s. Renew it in Web Server Manager > SSL "
+                        "Certificates: Renew makes a new request on the server, the provider "
+                        "signs it and the sites reload with the new certificate." % (
                             it["cert"], it["subject"] or "no common name",
                             ", ".join(it["hosts"][:10])))
                 out["notified"] += notify_svc.push_many(
                     admins, title, kind=(Notification.KIND_ERROR if expired
                                          else Notification.KIND_WARNING),
-                    body=body, link=_link(), product=adom)
+                    body=body, link=_link(it["connection"]), product=adom)
                 seen[tag] = datetime.utcnow().isoformat(timespec="seconds")
             _save_notified(seen)
         except Exception as exc:  # noqa: BLE001 -- a bell must not fail the check

@@ -1,0 +1,59 @@
+{% extends "wsm/_layout.html" %}
+{# Web Server Manager > <server>: the module tiles, who you are on the
+   server, your credentials, and the server's own settings. #}
+{% block wsm_body %}
+<div class="wsm-tiles mb-3">
+  {% for key, m in modules.items() %}
+  <a class="fw-card wsm-tile" href="{{ url_for('wsm.module', slug=server.slug, page=key) }}"><i class="bi {{ m[1] }}"></i><div><strong>{{ m[0] }}</strong><div class="text-muted">{{ m[2] }}</div></div></a>
+  {% endfor %}
+</div>
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="fw-card p-3 mb-3">
+      <div class="wsm-card-title d-flex justify-content-between"><span><i class="bi bi-person-badge"></i> {{ _('Who am I on this server?') }}</span>
+        <button class="btn btn-sm btn-outline-secondary" id="wsm-check" type="button"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Check access') }}</button></div>
+      <div id="wsm-identity" class="wsm-identity text-muted">{{ _('Pick a credential above and press Check access: SATOM signs in, tells you who you are, and tries sudo when your credential uses it.') }}</div>
+    </div>
+    <div class="fw-card p-3">
+      <div class="wsm-card-title d-flex justify-content-between"><span><i class="bi bi-key"></i> {{ _('Credentials') }}</span>
+        <button class="btn btn-sm btn-fw-primary" id="wsm-cred-new" type="button"><i class="bi bi-plus-lg me-1"></i>{{ _('Add credential') }}</button></div>
+      <p class="text-muted" style="font-size:12px;">{{ _('Each credential is an SSH account on this server. Yours are private; a shared one is a service credential others may use. SATOM keeps the password or key encrypted (vault or Fernet) and never shows it again, or asks for it at every operation if you prefer.') }}</p>
+      <div id="wsm-creds"></div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    {% if perms.system %}
+    <form class="fw-card p-3 mb-3" method="post" action="{{ url_for('wsm.server_settings', slug=server.slug) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="_adom" value="linux">
+      <div class="wsm-card-title"><i class="bi bi-sliders"></i> {{ _('Server') }}</div>
+      <label class="fw-form-label" for="s-name">{{ _('Name') }}</label><input class="form-control form-control-sm mb-2" id="s-name" name="name" value="{{ server.name }}">
+      <div class="row g-2"><div class="col-8"><label class="fw-form-label" for="s-host">{{ _('Host') }}</label><input class="form-control form-control-sm" id="s-host" name="host" value="{{ server.host }}"></div>
+        <div class="col-4"><label class="fw-form-label" for="s-port">{{ _('Port') }}</label><input class="form-control form-control-sm" id="s-port" name="port" type="number" value="{{ server.port or 22 }}"></div></div>
+      <label class="fw-form-label mt-2" for="s-timeout">{{ _('Time limit per operation (seconds)') }}</label><input class="form-control form-control-sm mb-2" id="s-timeout" name="timeout" type="number" min="5" max="300" value="{{ server.timeout or 30 }}">
+      <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="s-writes" name="allow_writes" value="1" {{ 'checked' if state.allow_writes }}><label class="form-check-label" for="s-writes">{{ _('Allow changes (off = SATOM only reads this server)') }}</label></div>
+      <button class="btn btn-sm btn-fw-primary" type="submit">{{ _('Save') }}</button>
+    </form>
+    <div class="fw-card p-3 mb-3">
+      <div class="wsm-card-title"><i class="bi bi-fingerprint"></i> {{ _('Host key') }}</div>
+      {% if state.host_key %}
+      <div class="wsm-mono" style="font-size:12px;word-break:break-all;">{{ state.fingerprint }}</div>
+      <p class="text-muted mt-1 mb-2" style="font-size:12px;">{{ _('Every connection compares the key the server presents with this one before sending any password or key. A different key is refused.') }}</p>
+      <form method="post" action="{{ url_for('wsm.server_hostkey', slug=server.slug) }}" class="d-inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="_adom" value="linux"><input type="hidden" name="forget" value="1"><button class="btn btn-sm btn-outline-danger" type="submit">{{ _('Forget') }}</button></form>
+      {% else %}
+      <p style="font-size:12px;">{{ _('SATOM has not trusted this server yet: nothing is sent to it until you do. Compare the fingerprint with the server (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub) after trusting it.') }}</p>
+      <form method="post" action="{{ url_for('wsm.server_hostkey', slug=server.slug) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="_adom" value="linux"><button class="btn btn-sm btn-fw-primary" type="submit"><i class="bi bi-patch-check me-1"></i>{{ _('Fetch and trust') }}</button></form>
+      {% endif %}
+    </div>
+    {% endif %}
+    <div class="fw-card p-3">
+      <div class="wsm-card-title"><i class="bi bi-info-circle"></i> {{ _('How privileges work') }}</div>
+      <ul class="wsm-help">
+        <li>{{ _('Every operation runs as the SSH account of the credential you pick.') }}</li>
+        <li>{{ _('Automatic: if the server says “permission denied”, SATOM repeats it with sudo — with your account password, a separate sudo password, or a NOPASSWD rule, as set on the credential.') }}</li>
+        <li>{{ _('SATOM never edits /etc/sudoers and never stores a root password. Running as root needs the “Run as root” permission in your SATOM profile.') }}</li>
+        <li>{{ _('Every operation is logged with your SATOM user, the SSH user, the Linux user that ran it and whether sudo was used.') }} <a href="{{ url_for('wsm.audit', slug=server.slug) }}">{{ _('Operations log') }}</a></li>
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

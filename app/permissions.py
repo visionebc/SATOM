@@ -43,6 +43,9 @@ AREAS: list[dict] = [
      "desc": "Chat assistant for WAF/Lua help and report search; provider/API-key configuration"},
     {"key": "wiki", "label": "Wiki", "icon": "bi-journal-richtext",
      "desc": "Operations › Wiki: articles users write for each other, by ADOM, profile and group"},
+    {"key": "webserver", "label": "Web Server Manager", "icon": "bi-hdd-network",
+     "desc": "Linux ADOM: manage web servers over SSH with your own account (files, sites, "
+             "certificates, packages, services, cron, users, SSH)"},
 ]
 
 _AREA_LABELS = {a["key"]: a["label"] for a in AREAS}
@@ -137,6 +140,23 @@ GRANULAR_PERMISSIONS: list[dict] = [
     _p("wiki.write", "Write Wiki articles",
        "Create articles and edit your own; choose their topic, tags, ADOMs, "
        "profiles and groups"),
+    _p("webserver.view", "Open the Web Server Manager",
+       "Linux ADOM: see the managed servers and READ them (files, sites, certificates, "
+       "packages, services, logs, users) with an SSH credential you may use"),
+    _p("webserver.files", "Change files",
+       "Write, upload, move, delete, chmod/chown, compress and extract files on a server"),
+    _p("webserver.sites", "Change sites and certificates",
+       "Create, edit, enable and delete virtual hosts, .htaccess rules and TLS certificates"),
+    _p("webserver.system", "Administer servers",
+       "Packages, services, cron jobs, scripts, firewall and fail2ban, accounts and the SSH "
+       "server; add servers and keep scripts in the library"),
+    _p("webserver.root", "Run as root (sudo)",
+       "Let the Web Server Manager use sudo through a credential that allows it. Without "
+       "this, every operation runs as the SSH account only"),
+    _p("webserver.credentials", "Manage shared server credentials",
+       "See every credential of every server, share service credentials with other "
+       "operators, and manage or revoke anyone's", admin_only=True),
+
     _p("wiki.moderate", "Moderate the Wiki",
        "Read and edit every article whatever its audience, and manage the "
        "topic tree", admin_only=True),
@@ -216,6 +236,7 @@ _READ_KEYS = {
 }
 
 _OPERATOR_EXTRA = {
+    "webserver.view", "webserver.files", "webserver.sites",
     "advisor.use",
     "wiki.write",
     "operations.scripts_run",

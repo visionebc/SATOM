@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{# Web Server Manager > Operations log: one row per operation with the three
+   identities (SATOM user, SSH user, effective Linux user) and sudo. #}
+{% block title %}{{ _('Operations log') }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ asset('css/wsm.css') }}" data-turbo-track="reload">{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <div class="wsm-crumbs"><a href="{{ url_for('wsm.index') }}">{{ _('Web Server Manager') }}</a> › {{ _('Operations log') }}</div>
+    <h1 class="fw-page-title"><i class="bi bi-journal-check me-2 text-accent"></i>{{ _('Operations log') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Every operation the Web Server Manager ran, allowed or refused.') }}{% if mine_only %} {{ _('You see your own operations (reading everyone\'s needs View audit log).') }}{% endif %}</p>
+  </div>
+  <div><a class="btn btn-outline-secondary" href="{{ url_for('wsm.audit', format='csv', days=days, **f) }}"><i class="bi bi-download me-1"></i>{{ _('Export CSV') }}</a></div>
+</div>
+<form class="fw-card p-2 mb-2 d-flex flex-wrap gap-2 align-items-end" method="get">
+  <div><label class="fw-form-label" for="f-slug">{{ _('Server') }}</label><select class="form-select form-select-sm" id="f-slug" name="slug"><option value="">{{ _('All') }}</option>{% for c in servers %}<option value="{{ c.slug }}" {{ 'selected' if f.slug == c.slug }}>{{ c.name }}</option>{% endfor %}</select></div>
+  {% if not mine_only %}<div><label class="fw-form-label" for="f-user">{{ _('User (SATOM, SSH or Linux)') }}</label><input class="form-control form-control-sm" id="f-user" name="user" value="{{ f.user }}"></div>{% endif %}
+  <div><label class="fw-form-label" for="f-op">{{ _('Operation starts with') }}</label><input class="form-control form-control-sm" id="f-op" name="op" value="{{ f.op }}" placeholder="pkg."></div>
+  <div><label class="fw-form-label" for="f-ok">{{ _('Result') }}</label><select class="form-select form-select-sm" id="f-ok" name="ok"><option value="">{{ _('All') }}</option><option value="1" {{ 'selected' if f.ok == '1' }}>{{ _('OK') }}</option><option value="0" {{ 'selected' if f.ok == '0' }}>{{ _('Failed') }}</option></select></div>
+  <div><label class="fw-form-label" for="f-days">{{ _('Days') }}</label><input class="form-control form-control-sm" id="f-days" name="days" type="number" min="1" max="3650" value="{{ days }}" style="width:90px;"></div>
+  <button class="btn btn-sm btn-fw-primary" type="submit">{{ _('Filter') }}</button>
+</form>
+<div class="fw-table-wrapper">
+<table class="fw-table wsm-table">
+  <thead><tr><th>{{ _('When (UTC)') }}</th><th>{{ _('SATOM user') }}</th><th>{{ _('SSH user') }}</th><th>{{ _('Ran as') }}</th><th>{{ _('Server') }}</th><th>{{ _('Operation') }}</th><th>{{ _('Target') }}</th><th>{{ _('Result') }}</th><th>{{ _('Credential') }}</th><th>{{ _('Session') }}</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td class="wsm-mono">{{ r.at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+    <td>{{ r.app_user }}</td><td>{{ r.ssh_user }}</td>
+    <td>{{ r.effective_user or '—' }}{% if r.sudo %} <span class="wsm-badge wsm-warn">sudo</span>{% endif %}</td>
+    <td>{{ r.connection_slug }}</td><td class="wsm-mono">{{ r.op }}</td>
+    <td class="wsm-mono wsm-wrap">{{ r.target }}</td>
+    <td>{% if r.ok %}<span class="wsm-badge wsm-ok">{{ _('OK') }}</span>{% else %}<span class="wsm-badge wsm-bad" title="{{ r.detail }}">{{ r.error or _('failed') }}</span>{% endif %}{% if r.exit_code is not none %} <span class="text-muted">exit {{ r.exit_code }}</span>{% endif %}</td>
+    <td>{{ r.credential_name }} <span class="text-muted">({{ r.auth_mode }})</span></td>
+    <td class="wsm-mono text-muted">{{ r.session_id }}</td>
+  </tr>
+  {% else %}<tr><td colspan="10" class="text-muted p-3">{{ _('No operations in this window.') }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

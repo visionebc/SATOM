@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.2] - 2026-11-06
+
 ### Added
 - **Test Connection picks the method: API, TCP port, Ping or Traceroute
   (SA-0017).** The appliance page has a method next to the button. **TCP port**

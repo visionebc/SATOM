@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.3] - 2026-11-06
+
 ### Fixed
 - **An update no longer rolls back because a scheduled action held a table
   the migration changes (SA-0019).** Reported from an update to 4.11.2:

@@ -818,12 +818,23 @@ def _confluence_path(name: str) -> str:
     return "wiki/confluence/%s" % name
 
 
+_WSM_PREFIX = "wsm.cred."
+
+
+def _wsm_path(name: str) -> str:
+    """``<credential id>.<field>`` -> its own vault path (services.wsm._vpath)."""
+    cid, _, field = name.partition(".")
+    return "wsm/credentials/%s/%s" % (cid, field)
+
+
 #: Secrets kept one ``app_settings`` row per name: (kind, key prefix, vault
 #: path of a name). ONE list for migrate and scrub, like SETTING_SECRETS.
 _PREFIXED_SECRETS = (
     ("hook-secret", _HOOK_PREFIX, _hook_path),
     ("connection-secret", _CONNECTION_PREFIX, _connection_path),
     ("confluence-secret", _CONFLUENCE_PREFIX, _confluence_path),
+    # Web Server Manager credentials (password, key, passphrase, sudo password)
+    ("wsm-credential-secret", _WSM_PREFIX, _wsm_path),
 )
 
 

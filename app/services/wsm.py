@@ -223,16 +223,22 @@ def update_server(c, form: dict, by: str) -> bool:
 # --------------------------------------------------------------------------- #
 #  credentials                                                                 #
 # --------------------------------------------------------------------------- #
+SECRET_PREFIX = "wsm.cred."      # secret_backend._PREFIXED_SECRETS migrates and scrubs it
+
+
 def _skey(cid: int, field: str) -> str:
-    return "wsm.cred.%d.%s" % (cid, field)
+    return "%s%d.%s" % (SECRET_PREFIX, cid, field)
 
 
-def _vpath(cid: int) -> str:
-    return "wsm/credentials/%d" % cid
+def _vpath(cid: int, field: str) -> str:
+    """One vault path PER FIELD: storing an empty field deletes its path
+    (prefixed_secret.store), and a shared path took the SSH secret with it
+    when a credential cleared its passphrase or sudo password."""
+    return "wsm/credentials/%d/%s" % (cid, field)
 
 
 def secret(cred: WsmCredential, field: str) -> str:
-    val, _problem = PS.state(_skey(cred.id, field), _vpath(cred.id), field)
+    val, _problem = PS.state(_skey(cred.id, field), _vpath(cred.id, field), "value")
     return val or ""
 
 
@@ -241,7 +247,7 @@ def has(cred: WsmCredential, field: str) -> bool:
 
 
 def set_secret(cred: WsmCredential, field: str, value: str) -> None:
-    PS.store(_skey(cred.id, field), _vpath(cred.id), value or "", field)
+    PS.store(_skey(cred.id, field), _vpath(cred.id, field), value or "", "value")
 
 
 def drop_secrets(cred: WsmCredential) -> None:
@@ -253,7 +259,7 @@ def drop_secrets(cred: WsmCredential) -> None:
 
 
 USER_RE = re.compile(r"^[a-z_][a-z0-9_.-]{0,31}$")
-NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,63}$")
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._@()-]{0,63}$")
 
 
 def visible_credentials(slug: str, user) -> list[WsmCredential]:
@@ -279,7 +285,7 @@ def save_credential(cred: WsmCredential | None, slug: str, form: dict, user) -> 
     me = getattr(user, "username", "")
     name = (form.get("name") or "").strip()
     if not NAME_RE.match(name):
-        raise WsmDenied("a name of letters, digits, spaces, '.', '_', '@' or '-'")
+        raise WsmDenied("a name of letters, digits, spaces and . _ @ ( ) -")
     auth = form.get("auth_type") or "password"
     if auth not in WsmCredential.AUTH_TYPES:
         raise WsmDenied("unknown authentication")
@@ -622,10 +628,12 @@ def start_job(app, slug: str, cred_id, op: str, args: dict, *, user, run_as: str
         _sudo_password(cred, _account(cred, provided), provided)
     uid = user.id
     uname = user.username
+    # plain values only: the worker runs in another thread with its own session
+    host, ssh_user, cred_id = c.host, cred.ssh_user, cred.id
     run_id = None
     if run_kind:
         run = WsmRun(kind=run_kind, title=title[:300], connection_slug=slug,
-                     credential_id=cred.id, by=uname, ssh_user=cred.ssh_user,
+                     credential_id=cred_id, by=uname, ssh_user=ssh_user,
                      script_id=script_id, meta_json=json.dumps(run_meta or {}))
         db.session.add(run)
         db.session.commit()
@@ -640,9 +648,9 @@ def start_job(app, slug: str, cred_id, op: str, args: dict, *, user, run_as: str
         from ..models import User
         with app_.app_context():
             u = db.session.get(User, uid)
-            jobs.set_progress(job_id, 10, "Connecting to %s as %s" % (c.host, cred.ssh_user))
+            jobs.set_progress(job_id, 10, "Connecting to %s as %s" % (host, ssh_user))
             try:
-                out = execute(slug, cred.id, op, args, user=u, run_as=run_as,
+                out = execute(slug, cred_id, op, args, user=u, run_as=run_as,
                               provided=provided, timeout=3700)
             except Exception as exc:  # noqa: BLE001
                 if run_id:

@@ -4791,6 +4791,19 @@ applied until you press **Apply**. From a shell:
 uploads the file. Details:
 [offline-update-packages.md §1.1](offline-update-packages.md).
 
+**Delta packages: a few MB instead of the whole release.** When the feed has a
+delta built from exactly the version this node runs
+(`satom-update-<new>-from-<this>.tar.gz`), *Check* offers it and shows the
+size of both; **Download & stage** takes the delta, **Full package instead**
+the full one. A delta builds on this node's own files, so its preflight row
+**Delta package** reads every file it does not carry and compares it with the
+signed tree. If one differs (a file patched by hand, a missing one), the row
+fails, names the file and the full package to use, and **Apply** stays
+disabled; nothing on the node has changed. Uploading a delta by hand works the
+same way. From a shell, `satom execute update fetch` picks the delta too, and
+`--full` the full package. Details:
+[offline-update-packages.md §3.1](offline-update-packages.md).
+
 The feed is the public repository unless **Settings → General → Update
 sources** names another one (§26.1), for example an internal pipeline that
 republishes the signed packages. The message after *Check* names the source it

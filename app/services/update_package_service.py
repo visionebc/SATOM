@@ -212,30 +212,37 @@ def check_feed(url: str = "", timeout: float = 8) -> dict:
     except FeedError as exc:
         return {"reachable": False, "error": str(exc), "feed_url": url,
                 "custom": custom, "current_version": cur}
-    pkg = doc["package"]
+    # The delta built from exactly this node's version when the feed has one
+    # (a few MB), else the full package. The full one stays offered: it is the
+    # way back when a delta is refused because this node's tree differs.
+    pkg = feed.pick_package(doc, cur)
     staged = (upload_dir() / pkg["name"]).is_file()
     return {"reachable": True, "error": "", "feed_url": doc["_feed_url"],
             "custom": custom, "authenticated": bool(auth),
             "current_version": cur, "version": doc["version"],
             "released": doc.get("released") or "", "package": pkg,
+            "full_package": dict(doc["package"], kind="full"),
             "release_url": doc.get("release_url") or "",
             "signing_key": doc.get("signing_key") or {},
             "newer": up.compare_versions(doc["version"], cur) > 0,
             "staged": staged}
 
 
-def download_from_feed(url: str = "", progress=None) -> dict:
+def download_from_feed(url: str = "", progress=None, full: bool = False) -> dict:
     """Fetch the feed's package into the staging area (sha256-checked), then
-    prune old uploads. Applying is still the operator's decision."""
+    prune old uploads. Applying is still the operator's decision. The delta
+    for this node's version when there is one, unless ``full``."""
     url, auth, problem, _custom = _feed_target(url)
     if problem:
         raise FeedError("the update feed in Settings → General → Update sources "
                         "cannot be used: %s" % problem)
     doc = feed.fetch_feed(url, auth=auth)
-    path = feed.download_package(doc, upload_dir(), progress=progress, auth=auth)
+    entry = feed.pick_package(doc, _current_version(), full=full)
+    path = feed.download_package(doc, upload_dir(), progress=progress, auth=auth,
+                                 entry=entry)
     _prune_uploads(keep=KEEP_UPLOADS, protect=path.name)
-    return {"name": path.name, "size": path.stat().st_size,
-            "version": doc["version"], "sha256": doc["package"]["sha256"]}
+    return {"name": path.name, "size": path.stat().st_size, "kind": entry["kind"],
+            "version": doc["version"], "sha256": entry["sha256"]}
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +428,34 @@ def _preflight_in(pkg_path: Path, tmp: Path, result: dict) -> dict:
         checks.append(_check("min_from", "Upgrade path", "ok",
                              "applies from %s" % (min_from or "any version")))
 
+    # --- format /2: payload readable, and a delta builds on THIS tree ----------
+    lz = up.lzma_problem(manifest)
+    if lz:
+        checks.append(_check("format", "Package format", "fail", lz))
+    if up.package_kind(manifest) == "delta":
+        frm = str(manifest.get("from_version") or "")
+        full = up.full_package_name(new)
+        if up.compare_versions(cur, frm) != 0:
+            checks.append(_check(
+                "delta", "Delta package", "fail",
+                "this delta applies to %s only; this node runs %s. Use the full "
+                "package %s" % (frm, cur, full)))
+        else:
+            bad = up.delta_tree_problems(APP_DIR, manifest, limit=6)
+            if bad:
+                checks.append(_check(
+                    "delta", "Delta package", "fail",
+                    "this node's application tree is not the one %s shipped (%s%s). "
+                    "Use the full package %s"
+                    % (frm, ", ".join(bad[:5]), ", ..." if len(bad) > 5 else "", full)))
+            else:
+                tree = manifest.get("app_tree") or {}
+                carried = len(manifest.get("app_delta_files") or [])
+                checks.append(_check(
+                    "delta", "Delta package", "ok",
+                    "builds on this node's %s tree: %d file(s) in the package, %d "
+                    "verified in place" % (frm, carried, len(tree) - carried)))
+
     # --- python ------------------------------------------------------------
     tags = list(manifest.get("python_tags") or [])
     mine = _venv_python_tag()
@@ -465,7 +500,10 @@ def _preflight_in(pkg_path: Path, tmp: Path, result: dict) -> dict:
     # --- disk --------------------------------------------------------------
     size = pkg_path.stat().st_size
     free = shutil.disk_usage(str(APP_DIR)).free
-    need = size * 3
+    # A /2 package is assembled into a plain tarball of the whole tree first.
+    tree_bytes = sum(int(v[2]) for v in (manifest.get("app_tree") or {}).values()
+                     if isinstance(v, list) and len(v) == 3 and isinstance(v[2], int))
+    need = size * 3 + tree_bytes
     if free < need:
         checks.append(_check("disk", "Disk space", "fail",
                              "%s free, apply needs about %s (package, extraction "

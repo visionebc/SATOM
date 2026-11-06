@@ -4,6 +4,7 @@
     gen_upgrade_feed.py <version> <sha256> <size> [--released YYYY-MM-DD]
                         [--repo visionebc/SATOM] [--dir satom-system-upgrades]
                         [--api-pack-sha256 SHA] [--knowledge-feed URL]
+                        [--delta FROM SHA256 SIZE ...]
 
 Writes ``satom-update-<version>.json`` (that release's entry), rewrites
 ``latest.json`` from the highest version present, and regenerates the version
@@ -43,7 +44,7 @@ def _vkey(v: str):
 
 
 def entry(version, sha256, size, released, repo, api_pack=True, api_pack_sha256=None,
-          knowledge_feed=None) -> dict:
+          knowledge_feed=None, deltas=None) -> dict:
     base = "https://github.com/%s/releases/download/v%s/" % (repo, version)
     name = "satom-update-%s.tar.gz" % version
     doc = {
@@ -66,6 +67,14 @@ def entry(version, sha256, size, released, repo, api_pack=True, api_pack_sha256=
     # 3.0.0: where the rolling knowledge lane is published (its own latest.json).
     if knowledge_feed:
         doc["knowledge_feed"] = knowledge_feed
+    # Format /2: smaller packages that apply to exactly one earlier release.
+    # A node on that release downloads the delta (upgrade_feed.pick_package).
+    if deltas:
+        doc["deltas"] = []
+        for frm, dsha, dsize in deltas:
+            dname = "satom-update-%s-from-%s.tar.gz" % (version, frm)
+            doc["deltas"].append({"from": frm, "name": dname, "url": base + dname,
+                                  "sha256": dsha.lower(), "size": int(dsize)})
     # The reader's own validation, so the pipeline can never publish a feed
     # the nodes would refuse.
     upgrade_feed.parse_feed(json.dumps(doc).encode())
@@ -80,7 +89,7 @@ def entry(version, sha256, size, released, repo, api_pack=True, api_pack_sha256=
 # for them. Keys not listed here follow, sorted.
 _ORDER = {
     None: ("schema", "product", "version", "released", "release_url", "package",
-           "signing_key", "api_pack", "knowledge_feed"),
+           "signing_key", "api_pack", "knowledge_feed", "deltas"),
     "package": ("name", "url", "sha256", "size"),
     "signing_key": ("name", "fingerprint", "url"),
     "api_pack": ("name", "url", "sha256"),
@@ -130,6 +139,10 @@ def write(out: Path, doc: dict) -> list:
             rows.append("| %s | %s | [%s](%s) | `%s` | %.1f MB |" % (
                 d["version"], d.get("released") or "", p["name"], p["url"],
                 p["sha256"], p["size"] / 1048576.0))
+            for x in d.get("deltas") or []:
+                rows.append("| %s | (delta, only from %s) | [%s](%s) | `%s` | %.1f MB |" % (
+                    d["version"], x["from"], x["name"], x["url"], x["sha256"],
+                    x["size"] / 1048576.0))
         head, rest = text.split(START, 1)
         tail = rest.split(END, 1)[1]
         new = head + START + "\n" + "\n".join(rows) + "\n" + END + tail
@@ -152,14 +165,18 @@ def main(argv=None) -> int:
                     help="sha256 of the release's api_pack asset (3.0.0+)")
     ap.add_argument("--knowledge-feed", default=None,
                     help="https URL of the knowledge lane's latest.json (3.0.0+)")
+    ap.add_argument("--delta", nargs=3, action="append", default=[],
+                    metavar=("FROM", "SHA256", "SIZE"),
+                    help="a delta package of this release that applies to FROM "
+                         "(format /2); repeatable")
     ap.add_argument("--dir", default=str(Path(__file__).resolve().parents[1]
                                          / "satom-system-upgrades"))
     a = ap.parse_args(argv)
     try:
         doc = entry(a.version, a.sha256.lower(), a.size, a.released, a.repo,
                     api_pack=not a.no_api_pack, api_pack_sha256=a.api_pack_sha256,
-                    knowledge_feed=a.knowledge_feed)
-    except upgrade_feed.FeedError as exc:
+                    knowledge_feed=a.knowledge_feed, deltas=a.delta)
+    except (upgrade_feed.FeedError, ValueError) as exc:
         print("gen_upgrade_feed: refusing: %s" % exc, file=sys.stderr)
         return 2
     changed = write(Path(a.dir), doc)

@@ -6,6 +6,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Much smaller update packages: delta packages and format /2.** Asked for
+  smaller updates: the 4.11.3 package was 38.7 MB to ship two changed files.
+  A release now also publishes **delta packages**,
+  `satom-update-<version>-from-<old>.tar.gz`, with only the files that changed
+  since `<old>`: 2.1 MB for 4.11.2 → 4.11.3, measured on the real payloads. A
+  delta applies to a node on exactly `<old>`: the runner reads every file it
+  does not carry from the node's own tree and checks it against the signed
+  per-file tree, so a hand-patched node is refused *before* anything changes
+  and told which full package to use. The preflight (web and CLI) runs the
+  same check read-only. The API library pack, whose 980 files differ only in
+  its manifest and signature between releases, travels as a recipe: two
+  members plus the sha256 of the rest, rebuilt from the copy the node holds.
+  The full package can also be built in format /2 (`app.tar.xz`, about 27 MB
+  instead of 38.7). The update feed lists the deltas, and **Check for a newer
+  package online** and `satom execute update fetch` download the one that fits
+  this node, with **Full package instead** / `--full` as the way back. A node
+  applies a package with the runner it already has, so the release that brings
+  this runner ships no delta; the next one does. See
+  `docs/offline-update-packages.md` §3.1.
+
 ### Fixed
 - **A scheduled action that runs on the SATOM server says so, and the run log
   reads clearly (SA-0020).** The alert for the weekly HSTS preload refresh

@@ -33,19 +33,43 @@ Package layout (a gzip tarball with exactly one top-level directory)::
 The signature covers the manifest's exact bytes (no canonicalisation, so there
 is no re-serialisation ambiguity to exploit) and the manifest carries a sha256
 for every other file, so signing one small document covers the whole package.
+
+Format /2 (``SCHEMA_V2``) adds two smaller shapes. The outer file stays a gzip
+tarball named ``satom-update-*.tar.gz``; what changes is the application
+payload, named by the manifest's ``app_archive``:
+
+* **full /2**: ``app.tar.xz``, the complete tree, xz-compressed.
+* **delta /2**: ``app-delta.tar.xz``, only the files that differ from ONE
+  earlier release (``from_version``). Every other file is read from the node's
+  own tree and must hash to the value the signed manifest names
+  (``app_tree``), so a delta can only produce the exact tree the full package
+  would have. A node whose tree differs is refused before anything changes.
+  Tarballs inside the tree whose members barely change (the API library pack)
+  travel as a recipe (``app_rebuild``): the members that changed, plus the
+  sha256 of every member taken from the copy the node already holds.
+
+A runner that only speaks /1 refuses a /2 package at the schema check, before
+anything is touched. See :func:`materialize_app`.
 """
 from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import os
 import re
 import stat
+import sys
 import tarfile
 from pathlib import Path, PurePosixPath
 
 SCHEMA = "satom.update-package/1"
+SCHEMA_V2 = "satom.update-package/2"
+#: Every schema this verifier applies. The release builder reads this tuple out
+#: of an older release's payload to decide whether that release can take a /2
+#: package -- keep the literal on one line.
+SCHEMAS = ("satom.update-package/1", "satom.update-package/2")
 PRODUCT = "satom"
 KEY_TYPE = "satom-ed25519"
 DEFAULT_TRUST_DIR = "/etc/satom/update-keys"
@@ -353,7 +377,7 @@ def _safe_members(tf: tarfile.TarFile, root: str):
 
 def archive_root(path) -> str:
     """The single top-level directory of the package tarball."""
-    with tarfile.open(path, "r:gz") as tf:
+    with tarfile.open(path, "r:*") as tf:
         roots = {Path(m.name).parts[0] for m in tf.getmembers() if m.name.strip()}
     if len(roots) != 1:
         raise PackageError("package must contain exactly one top-level "
@@ -518,7 +542,7 @@ def extract_package(path, dest) -> Path:
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
     root = archive_root(path)
-    with tarfile.open(path, "r:gz") as tf:
+    with tarfile.open(path, "r:*") as tf:
         members = list(_safe_members(tf, root))
         _check_unpacked_size(members, "package")
         _refuse_links_on_disk(dest, members)
@@ -541,7 +565,7 @@ def extract_app_tree(app_tar, dest) -> list:
     reusing ``_safe_members``.
     """
     dest = Path(dest)
-    with tarfile.open(app_tar, "r:gz") as tf:
+    with tarfile.open(app_tar, "r:*") as tf:
         members, written = _app_tree_members(tf)
         _refuse_links_on_disk(dest, members)
         _extractall(tf, dest, members)
@@ -574,7 +598,7 @@ def app_tree_files(app_tar) -> list:
     """Validate ``app.tar.gz`` exactly as :func:`extract_app_tree` does and
     return the FILE paths it holds, without extracting anything. The runner
     uses it when the tree is written by the service account, not by root."""
-    with tarfile.open(app_tar, "r:gz") as tf:
+    with tarfile.open(app_tar, "r:*") as tf:
         return _app_tree_members(tf)[1]
 
 
@@ -694,9 +718,9 @@ def verify_package(pkg_dir, trust_dir=DEFAULT_TRUST_DIR) -> dict:
         raise PackageError("trust store is not safe to use: %s" % problem)
     key = verify_signature(pkg_dir, trust_dir)
     manifest = read_manifest(pkg_dir)
-    if manifest.get("schema") != SCHEMA:
+    if manifest.get("schema") not in SCHEMAS:
         raise PackageError("unsupported package schema %r (this node speaks %s)"
-                           % (manifest.get("schema"), SCHEMA))
+                           % (manifest.get("schema"), ", ".join(SCHEMAS)))
     if manifest.get("product") != PRODUCT:
         raise PackageError("package is for product %r, not %s"
                            % (manifest.get("product"), PRODUCT))
@@ -704,7 +728,456 @@ def verify_package(pkg_dir, trust_dir=DEFAULT_TRUST_DIR) -> dict:
     if problems:
         raise PackageError("package contents do not match the signed "
                            "manifest: %s" % "; ".join(problems[:5]))
+    if manifest.get("schema") == SCHEMA_V2:
+        check_v2_manifest(manifest)
     return {"manifest": manifest, "key": key}
+
+
+# ---------------------------------------------------------------------------
+# Format /2: xz payload, per-file tree map, delta packages
+# ---------------------------------------------------------------------------
+FULL_ARCHIVES = ("app.tar.gz", "app.tar.xz")
+DELTA_ARCHIVE = "app-delta.tar.xz"
+KIND_FULL, KIND_DELTA = "full", "delta"
+#: Inside a delta archive, the changed members of a rebuilt tarball live under
+#: ``REBUILD_PREFIX + <tree path> + "/" + <member name>``.
+REBUILD_PREFIX = ".satom-rebuild/"
+_SHA_HEX = re.compile(r"^[0-9a-f]{64}$")
+#: One tree file read back from the node: nothing in a SATOM tree is near this.
+MAX_TREE_FILE_BYTES = 512 * 1024 ** 2
+DELTA_MISMATCH = ("this node's application tree is not the one %s shipped: "
+                  "%d file(s) differ or are missing (%s). Nothing was changed. "
+                  "Apply the full package %s instead")
+
+
+def _safe_rel(rel) -> bool:
+    if not isinstance(rel, str) or not rel or rel.startswith("/") or "\\" in rel:
+        return False
+    parts = PurePosixPath(rel).parts
+    return bool(parts) and ".." not in parts and "." not in parts \
+        and str(PurePosixPath(rel)) == rel
+
+
+def full_package_name(version) -> str:
+    return "satom-update-%s.tar.gz" % version
+
+
+def delta_package_name(version, from_version) -> str:
+    return "satom-update-%s-from-%s.tar.gz" % (version, from_version)
+
+
+def package_kind(manifest) -> str:
+    """``full`` or ``delta``. Every /1 package is full."""
+    if manifest.get("schema") == SCHEMA_V2 and manifest.get("package_kind") == KIND_DELTA:
+        return KIND_DELTA
+    return KIND_FULL
+
+
+def tree_map(manifest) -> dict:
+    """``app_tree`` validated: {path: (sha256, mode, size)}."""
+    raw = manifest.get("app_tree")
+    if not isinstance(raw, dict) or not raw:
+        raise PackageError("a /2 manifest must list the complete application tree")
+    out = {}
+    for rel, meta in raw.items():
+        if not _safe_rel(rel):
+            raise PackageError("app_tree names an unsafe path: %r" % (rel,))
+        if not (isinstance(meta, list) and len(meta) == 3
+                and isinstance(meta[0], str) and _SHA_HEX.match(meta[0])
+                and isinstance(meta[1], int) and 0 <= meta[1] <= 0o7777
+                and isinstance(meta[2], int) and 0 <= meta[2] <= MAX_TREE_FILE_BYTES):
+            raise PackageError("app_tree entry for %s is malformed" % rel)
+        out[rel] = (meta[0], meta[1], meta[2])
+    return out
+
+
+def _rebuild_map(manifest, tree) -> dict:
+    raw = manifest.get("app_rebuild") or {}
+    if not isinstance(raw, dict):
+        raise PackageError("app_rebuild must be an object")
+    out = {}
+    for rel, rec in raw.items():
+        if rel not in tree:
+            raise PackageError("app_rebuild names %s, which is not in the tree" % rel)
+        if not isinstance(rec, dict) or not _safe_rel(rec.get("base")):
+            raise PackageError("app_rebuild entry for %s has no safe base" % rel)
+        members = rec.get("members")
+        if not isinstance(members, list) or not members:
+            raise PackageError("app_rebuild entry for %s lists no members" % rel)
+        seen = set()
+        for m in members:
+            if not (isinstance(m, list) and len(m) == 5 and _safe_rel(m[0])
+                    and (m[1] is None or (isinstance(m[1], str) and _SHA_HEX.match(m[1])))
+                    and isinstance(m[2], int) and 0 <= m[2] <= MAX_TREE_FILE_BYTES
+                    and isinstance(m[3], int) and 0 <= m[3] <= 0o7777
+                    and isinstance(m[4], int) and m[4] >= 0):
+                raise PackageError("app_rebuild member of %s is malformed" % rel)
+            if m[0] in seen:
+                raise PackageError("app_rebuild lists %s twice in %s" % (m[0], rel))
+            seen.add(m[0])
+        shipped = rec.get("shipped") or []
+        if not isinstance(shipped, list) or not set(shipped) <= seen:
+            raise PackageError("app_rebuild entry for %s ships members it does not list"
+                               % rel)
+        roots = rec.get("roots") or ["", ""]
+        if not (isinstance(roots, list) and len(roots) == 2
+                and all(r == "" or _safe_rel(r) for r in roots)):
+            raise PackageError("app_rebuild entry for %s has malformed roots" % rel)
+        out[rel] = {"base": rec["base"], "members": members, "shipped": list(shipped),
+                    "roots": roots}
+    return out
+
+
+def check_v2_manifest(manifest) -> None:
+    """Structural rules of a /2 manifest, checked right after the signature."""
+    kind = manifest.get("package_kind")
+    archive = manifest.get("app_archive")
+    files = manifest.get("files") or {}
+    if kind == KIND_FULL:
+        if archive not in FULL_ARCHIVES:
+            raise PackageError("a full /2 package names no usable app archive")
+    elif kind == KIND_DELTA:
+        if archive != DELTA_ARCHIVE:
+            raise PackageError("a delta package must carry %s" % DELTA_ARCHIVE)
+        if not VERSION_RE.match(str(manifest.get("from_version") or "")):
+            raise PackageError("a delta package must name the version it applies to")
+        shipped = manifest.get("app_delta_files")
+        if not isinstance(shipped, list) or not all(_safe_rel(p) for p in shipped):
+            raise PackageError("a delta package must list the files it carries")
+    else:
+        raise PackageError("unknown package kind %r" % (kind,))
+    if archive not in files:
+        raise PackageError("%s is not among the package's signed files" % archive)
+    tree = tree_map(manifest)
+    if kind == KIND_DELTA:
+        rebuild = _rebuild_map(manifest, tree)
+        for p in manifest["app_delta_files"]:
+            if p not in tree or p in rebuild:
+                raise PackageError("delta file %s is not a plain file of the tree" % p)
+
+
+def needs_lzma(manifest) -> bool:
+    return str(manifest.get("app_archive") or "").endswith(".xz")
+
+
+def lzma_problem(manifest):
+    """Why this Python cannot read the package's payload, or None."""
+    if not needs_lzma(manifest):
+        return None
+    try:
+        import lzma  # noqa: F401  -- optional in a CPython build
+    except ImportError:
+        return ("this node's Python (%s) was built without the lzma module, so it "
+                "cannot read %s; apply the full .tar.gz package of an earlier "
+                "release, or install the distribution's lzma support"
+                % (sys.version.split()[0], manifest.get("app_archive")))
+    return None
+
+
+def _open_dir_ro(base, parts) -> int:
+    """O_DIRECTORY fd of ``base/<parts>``, every component below ``base`` opened
+    O_NOFOLLOW. Unlike :func:`open_dir_nofollow` it never creates anything."""
+    fd = os.open(str(base), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in parts:
+            if part in ("", ".", "..") or "/" in part:
+                raise PackageError("refusing the path component %r" % (part,))
+            nfd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nfd
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def read_tree_file(app_dir, rel, limit=MAX_TREE_FILE_BYTES):
+    """Bytes of the regular file ``app_dir/rel``, reached without following any
+    link and never through a FIFO or device, or None. Root reads the service
+    account's tree with this; whatever it returns is only used after its
+    sha256 matched the signed manifest."""
+    if not _safe_rel(rel):
+        return None
+    parts = PurePosixPath(rel).parts
+    try:
+        dfd = _open_dir_ro(app_dir, parts[:-1])
+    except (OSError, PackageError):
+        return None
+    try:
+        with open_file_nofollow(dfd, parts[-1]) as fh:
+            data = fh.read(limit + 1)
+    except (OSError, PackageError):
+        return None
+    finally:
+        os.close(dfd)
+    return data if len(data) <= limit else None
+
+
+def _sha(data) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _plain_info(name, mode, size, mtime=0, isdir=False):
+    ti = tarfile.TarInfo(name)
+    ti.type = tarfile.DIRTYPE if isdir else tarfile.REGTYPE
+    ti.mode = mode
+    ti.size = 0 if isdir else size
+    ti.mtime = mtime
+    ti.uid = ti.gid = 0
+    ti.uname = ti.gname = "root"
+    return ti
+
+
+def base_member_name(recipe, name) -> str:
+    """The name ``name`` has in the BASE tarball: a pack's top directory carries
+    its version (``satom-apipack-4.11.2/`` -> ``satom-apipack-4.11.3/``), so
+    ``roots`` = [base root, target root] maps one onto the other."""
+    broot, troot = (recipe.get("roots") or ["", ""])
+    if troot and (name == troot or name.startswith(troot + "/")):
+        return broot + name[len(troot):]
+    return name
+
+
+def rebuild_tarball(recipe, base_bytes, extra) -> bytes:
+    """A .tar.gz whose members are ``recipe["members"]``, in that order.
+
+    A member's bytes come from ``extra`` (the delta's copy) when present, else
+    from the tarball ``base_bytes`` the node already holds; either way they
+    must hash to the recipe's sha256. The rebuilt file's own bytes are not
+    pinned (gzip output differs between zlib builds): its integrity is that of
+    every member, and the API pack verifies its own signature on import."""
+    have = {}
+    if base_bytes is not None:
+        try:
+            with tarfile.open(fileobj=io.BytesIO(base_bytes), mode="r:*") as bt:
+                for m in bt.getmembers():
+                    if m.isfile():
+                        have[str(PurePosixPath(m.name))] = m
+                out = io.BytesIO()
+                _write_rebuilt(out, recipe, extra,
+                               lambda n: _member_bytes(bt, have, base_member_name(recipe, n)))
+                return out.getvalue()
+        except tarfile.TarError as exc:
+            raise PackageError("cannot read %s: %s" % (recipe["base"], exc))
+    out = io.BytesIO()
+    _write_rebuilt(out, recipe, extra, lambda n: None)
+    return out.getvalue()
+
+
+def _member_bytes(bt, have, name):
+    m = have.get(name)
+    if m is None or m.size > MAX_TREE_FILE_BYTES:
+        return None
+    fh = bt.extractfile(m)
+    return fh.read() if fh is not None else None
+
+
+def _write_rebuilt(out, recipe, extra, from_base):
+    with tarfile.open(fileobj=out, mode="w:gz", compresslevel=9,
+                      format=tarfile.PAX_FORMAT) as dst:
+        for name, sha, size, mode, mtime in recipe["members"]:
+            if sha is None:
+                dst.addfile(_plain_info(name, mode, 0, mtime, isdir=True))
+                continue
+            data = extra.get(name)
+            if data is None:
+                data = from_base(name)
+            if data is None or len(data) != size or _sha(data) != sha:
+                raise PackageError("member %s of %s does not match the signed recipe"
+                                   % (name, recipe["base"]))
+            dst.addfile(_plain_info(name, mode, size, mtime), io.BytesIO(data))
+
+
+def delta_tree_problems(app_dir, manifest, limit=None) -> list:
+    """Paths of the node's tree that a delta cannot build on, without writing
+    anything: every file the delta does NOT carry must already be there with
+    the sha256 the signed manifest names; every rebuilt tarball's base must
+    hold the members the recipe takes from it. Read-only -- the web preflight
+    and the runner share it."""
+    tree = tree_map(manifest)
+    rebuild = _rebuild_map(manifest, tree)
+    shipped = set(manifest.get("app_delta_files") or [])
+    bad = []
+    for rel in sorted(tree):
+        if rel in shipped or rel in rebuild:
+            continue
+        sha, _mode, size = tree[rel]
+        data = read_tree_file(app_dir, rel, size)
+        if data is None or len(data) != size or _sha(data) != sha:
+            bad.append(rel)
+            if limit and len(bad) >= limit:
+                return bad
+    for rel, rec in sorted(rebuild.items()):
+        need = [m for m in rec["members"] if m[1] is not None]
+        if not need:
+            continue
+        base = read_tree_file(app_dir, rec["base"])
+        try:
+            names = _base_members(base)
+        except PackageError:
+            names = None
+        if names is None:
+            bad.append(rec["base"])
+            continue
+        # Members the delta carries are not needed from the base.
+        carried = set(rec["shipped"])
+        for name, sha, size, _mode, _mt in need:
+            if name in carried:
+                continue
+            if names.get(base_member_name(rec, name)) != (sha, size):
+                bad.append("%s (%s)" % (rec["base"], name))
+                break
+        if limit and len(bad) >= limit:
+            return bad
+    return bad
+
+
+def _base_members(base_bytes):
+    """{member name: (sha256, size)} of a tarball's regular files, or None."""
+    if base_bytes is None:
+        return None
+    out = {}
+    try:
+        with tarfile.open(fileobj=io.BytesIO(base_bytes), mode="r:*") as bt:
+            for m in bt.getmembers():
+                if m.isfile() and m.size <= MAX_TREE_FILE_BYTES:
+                    out[str(PurePosixPath(m.name))] = (_sha(bt.extractfile(m).read()), m.size)
+    except tarfile.TarError:
+        raise PackageError("unreadable tarball")
+    return out
+
+
+def _check_tree_size(tree):
+    total = sum(meta[2] for meta in tree.values())
+    if total > MAX_UNPACKED_BYTES:
+        raise PackageError("the application tree is %d bytes, over the %d-byte limit"
+                           % (total, MAX_UNPACKED_BYTES))
+
+
+def materialize_app(pkg_dir, manifest, out_dir, app_dir=None, current_version=""):
+    """Path of a tarball holding the COMPLETE application tree of this package.
+
+    /1: the package's own ``app.tar.gz``, untouched. /2: a plain ``app.tar``
+    written to ``out_dir`` (root-only staging) in which every file hashes to
+    ``app_tree``. For a delta, files it does not carry are read from
+    ``app_dir`` and must already match; a mismatch refuses the whole package
+    (:data:`DELTA_MISMATCH`) before the caller changes anything.
+
+    The result has the shape every later step already handles -- the member
+    list is the complete target tree, so removing files the new revision
+    dropped keeps working exactly as for a full package."""
+    pkg_dir, out_dir = Path(pkg_dir), Path(out_dir)
+    if manifest.get("schema") != SCHEMA_V2:
+        app_tar = pkg_dir / "app.tar.gz"
+        if not app_tar.is_file():
+            raise PackageError("package has no app.tar.gz")
+        return app_tar
+    check_v2_manifest(manifest)
+    problem = lzma_problem(manifest)
+    if problem:
+        raise PackageError(problem)
+    tree = tree_map(manifest)
+    _check_tree_size(tree)
+    kind = manifest["package_kind"]
+    src = pkg_dir / manifest["app_archive"]
+    out = out_dir / "app.tar"
+    if kind == KIND_FULL:
+        _materialize_full(src, tree, out)
+        return out
+    from_v = str(manifest["from_version"])
+    if compare_versions(current_version or "", from_v) != 0:
+        raise PackageError(
+            "this delta package applies to %s only; this node runs %s. Apply the "
+            "full package %s instead"
+            % (from_v, current_version or "an unknown version",
+               full_package_name(manifest.get("version"))))
+    if app_dir is None:
+        raise PackageError("a delta package needs the application tree to build on")
+    _materialize_delta(src, manifest, tree, Path(app_dir), out)
+    return out
+
+
+def _materialize_full(src, tree, out):
+    seen = set()
+    with tarfile.open(src, "r:*") as tf, tarfile.open(out, "w",
+                                                       format=tarfile.PAX_FORMAT) as dst:
+        members, _written = _app_tree_members(tf)
+        for m in members:
+            if not m.isfile():
+                continue
+            rel = str(PurePosixPath(m.name))
+            meta = tree.get(rel)
+            data = tf.extractfile(m).read()
+            if meta is None or _sha(data) != meta[0] or len(data) != meta[2]:
+                raise PackageError("%s in the app archive does not match the signed "
+                                   "tree" % rel)
+            seen.add(rel)
+            dst.addfile(_plain_info(rel, meta[1], meta[2]), io.BytesIO(data))
+    missing = sorted(set(tree) - seen)
+    if missing:
+        out.unlink()
+        raise PackageError("the app archive lacks %d file(s) of the signed tree: %s"
+                           % (len(missing), ", ".join(missing[:5])))
+
+
+def _materialize_delta(src, manifest, tree, app_dir, out):
+    rebuild = _rebuild_map(manifest, tree)
+    listed = set(manifest["app_delta_files"])
+    bad = []
+    with tarfile.open(src, "r:*") as tf:
+        members, _written = _app_tree_members(tf)
+        carried, extra = {}, {}
+        for m in members:
+            if not m.isfile():
+                continue
+            rel = str(PurePosixPath(m.name))
+            if rel.startswith(REBUILD_PREFIX):
+                rest = rel[len(REBUILD_PREFIX):]
+                owner = next((r for r in rebuild if rest.startswith(r + "/")), None)
+                if owner is None:
+                    raise PackageError("delta carries %s for no rebuilt file" % rel)
+                extra.setdefault(owner, {})[rest[len(owner) + 1:]] = tf.extractfile(m).read()
+            elif rel in listed:
+                carried[rel] = m
+            else:
+                raise PackageError("delta carries %s, which its manifest does not list"
+                                   % rel)
+        for rel, rec in rebuild.items():
+            if set(extra.get(rel, {})) != set(rec["shipped"]):
+                raise PackageError("delta does not carry exactly the members it lists "
+                                   "for %s" % rel)
+        if set(carried) != listed:
+            raise PackageError("delta lacks %d listed file(s): %s" % (
+                len(listed - set(carried)), ", ".join(sorted(listed - set(carried))[:5])))
+        with tarfile.open(out, "w", format=tarfile.PAX_FORMAT) as dst:
+            for rel in sorted(tree):
+                sha, mode, size = tree[rel]
+                if rel in rebuild:
+                    rec = rebuild[rel]
+                    try:
+                        data = rebuild_tarball(rec, read_tree_file(app_dir, rec["base"]),
+                                               extra.get(rel, {}))
+                    except PackageError:
+                        bad.append(rec["base"])
+                        continue
+                    dst.addfile(_plain_info(rel, mode, len(data)), io.BytesIO(data))
+                    continue
+                if rel in carried:
+                    data = tf.extractfile(carried[rel]).read()
+                    if len(data) != size or _sha(data) != sha:
+                        raise PackageError("%s in the delta does not match the signed "
+                                           "tree" % rel)
+                else:
+                    data = read_tree_file(app_dir, rel, size)
+                    if data is None or len(data) != size or _sha(data) != sha:
+                        bad.append(rel)
+                        continue
+                dst.addfile(_plain_info(rel, mode, size), io.BytesIO(data))
+    if bad:
+        out.unlink()
+        raise PackageError(DELTA_MISMATCH % (
+            manifest["from_version"], len(bad), ", ".join(bad[:5]),
+            full_package_name(manifest.get("version"))))
 
 
 # ---------------------------------------------------------------------------
@@ -733,12 +1206,18 @@ def compare_versions(a: str, b: str) -> int:
 
 def build_manifest(*, version, commit, built_at, python_tags, requirements,
                    files, min_from_version="", notes="", wheelset=None,
-                   wheels_mode="", wheels_baseline=None) -> dict:
+                   wheels_mode="", wheels_baseline=None, schema=SCHEMA,
+                   payload=None) -> dict:
     """Assemble a manifest. Deliberately carries NO hostname, path or operator
     identity: the package is published, and a published artifact must not
-    describe the estate that built it."""
+    describe the estate that built it. ``payload`` holds the /2 keys
+    (:func:`plan_full_payload` / :func:`plan_delta`)."""
+    if schema not in SCHEMAS:
+        raise PackageError("unknown package schema %r" % (schema,))
+    if (schema == SCHEMA_V2) != bool(payload):
+        raise PackageError("a /2 manifest needs its payload keys, and only a /2 one")
     m = {
-        "schema": SCHEMA,
+        "schema": schema,
         "product": PRODUCT,
         "version": str(version),
         "commit": str(commit),
@@ -756,7 +1235,178 @@ def build_manifest(*, version, commit, built_at, python_tags, requirements,
         m["wheels_mode"] = str(wheels_mode)
     if wheels_baseline is not None:
         m["wheels_baseline"] = sorted(wheels_baseline, key=version_tuple)
+    for k, v in (payload or {}).items():
+        if k in m:
+            raise PackageError("payload key %s collides with the manifest" % k)
+        m[k] = v
+    if schema == SCHEMA_V2:
+        check_v2_manifest(m)
     return m
+
+
+# ---------------------------------------------------------------------------
+# Build side of format /2 (the release builder; never runs on a node)
+# ---------------------------------------------------------------------------
+#: Tarballs in the tree that travel as a recipe when most members are unchanged.
+REBUILDABLE = re.compile(r"^api-packs/[^/]+\.tar\.gz$")
+#: A recipe is used only when what it still has to ship is at most this share
+#: of the file: below that the plain file is simpler and about as small.
+REBUILD_MAX_SHARE = 0.5
+
+
+def read_tree_tar(path) -> dict:
+    """{path: (bytes, mode, mtime)} of every regular file of an app tarball,
+    validated with the same rules as an install (:func:`_app_tree_members`)."""
+    out = {}
+    with tarfile.open(path, "r:*") as tf:
+        members, _w = _app_tree_members(tf)
+        for m in members:
+            if m.isfile():
+                rel = str(PurePosixPath(m.name))
+                out[rel] = (tf.extractfile(m).read(), m.mode & 0o7777, int(m.mtime))
+    return out
+
+
+def tree_of(files) -> dict:
+    """``app_tree`` for :func:`read_tree_tar` output."""
+    return {rel: [_sha(data), mode, len(data)] for rel, (data, mode, _mt)
+            in sorted(files.items())}
+
+
+def plan_full_payload(files, archive="app.tar.xz") -> dict:
+    return {"package_kind": KIND_FULL, "app_archive": archive, "app_tree": tree_of(files)}
+
+
+def _tar_members(data):
+    """[(name, sha|None, size, mode, mtime, bytes|None)] in archive order."""
+    out = []
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as t:
+        for m in t.getmembers():
+            name = str(PurePosixPath(m.name))
+            if m.isdir():
+                out.append((name, None, 0, m.mode & 0o7777, int(m.mtime), None))
+            elif m.isfile():
+                b = t.extractfile(m).read()
+                out.append((name, _sha(b), len(b), m.mode & 0o7777, int(m.mtime), b))
+            else:
+                raise PackageError("%s holds a member that is neither file nor dir" % name)
+    return out
+
+
+def _recipe(rel, data, base_rel, base_data):
+    """(recipe, {member: bytes} to ship) or None when a recipe does not pay."""
+    try:
+        target = _tar_members(data)
+        based = _tar_members(base_data)
+    except (tarfile.TarError, PackageError):
+        return None
+    roots = [_single_root(based), _single_root(target)]
+    if not (roots[0] and roots[1]):
+        roots = ["", ""]
+    rec = {"roots": roots}
+    have = {(n, s) for n, s, _sz, _md, _mt, _b in based if s is not None}
+    ship = {n: b for n, s, _sz, _md, _mt, b in target
+            if s is not None and (base_member_name(rec, n), s) not in have}
+    if not all(_safe_rel(n) for n, *_r in target):
+        return None
+    if sum(len(b) for b in ship.values()) > REBUILD_MAX_SHARE * len(data):
+        return None
+    recipe = {"base": base_rel, "shipped": sorted(ship), "roots": roots,
+              "members": [[n, s, sz, md, mt] for n, s, sz, md, mt, _b in target]}
+    return recipe, ship
+
+
+def _single_root(members) -> str:
+    roots = {PurePosixPath(m[0]).parts[0] for m in members if m[0]}
+    return roots.pop() if len(roots) == 1 else ""
+
+
+def plan_delta(from_files, to_files, from_version, from_commit=""):
+    """(payload keys, {archive path: bytes}) of a delta from ``from_files`` to
+    ``to_files`` (both :func:`read_tree_tar` output, the REDACTED payloads the
+    two releases shipped -- a node holds exactly those bytes)."""
+    rebuild, archive = {}, {}
+    for rel, (data, _mode, _mt) in sorted(to_files.items()):
+        old = from_files.get(rel)
+        if REBUILDABLE.match(rel):
+            bases = ([rel] if old else []) + sorted(
+                p for p in from_files if p != rel and REBUILDABLE.match(p)
+                and PurePosixPath(p).parent == PurePosixPath(rel).parent)
+            for b in bases:
+                got = _recipe(rel, data, b, from_files[b][0])
+                if got:
+                    rebuild[rel] = got[0]
+                    for name, b_ in got[1].items():
+                        archive[REBUILD_PREFIX + rel + "/" + name] = b_
+                    break
+            if rel in rebuild:
+                continue
+            # No recipe: ship it whole even when unchanged -- a node that got
+            # it by recipe holds other bytes, and the byte check would refuse.
+            archive[rel] = data
+            continue
+        if old is None or old[0] != data:
+            archive[rel] = data
+    shipped = sorted(p for p in archive if not p.startswith(REBUILD_PREFIX))
+    payload = {"package_kind": KIND_DELTA, "app_archive": DELTA_ARCHIVE,
+               "from_version": str(from_version), "from_commit": str(from_commit or ""),
+               "app_tree": tree_of(to_files), "app_delta_files": shipped,
+               "app_rebuild": rebuild}
+    return payload, archive
+
+
+def write_payload_tar(path, entries, modes=None, compression="xz"):
+    """Write ``entries`` ({path: bytes}) as a tarball, sorted, root-owned,
+    mtime 0 -- deterministic input to the compressor."""
+    mode = {"xz": "w:xz", "gz": "w:gz", "": "w"}[compression]
+    kw = {"preset": 9} if compression == "xz" else (
+        {"compresslevel": 9} if compression == "gz" else {})
+    with tarfile.open(path, mode, format=tarfile.PAX_FORMAT, **kw) as t:
+        for rel in sorted(entries):
+            data = entries[rel]
+            t.addfile(_plain_info(rel, (modes or {}).get(rel, 0o644), len(data)),
+                      io.BytesIO(data))
+
+
+def verify_delta_against(from_files, manifest, delta_archive_path, work_dir) -> list:
+    """Builder self-check: apply the delta to a tree holding ``from_files`` (a
+    stand-in for a node on ``from_version``) and compare the result with the
+    signed tree. Returns problems; empty means the delta reproduces it."""
+    work = Path(work_dir)
+    node, pkg, out = work / "node", work / "pkg", work / "out"
+    for d in (node, pkg, out):
+        d.mkdir(parents=True, exist_ok=True)
+    for rel, (data, mode, _mt) in from_files.items():
+        p = node / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
+        os.chmod(p, mode or 0o644)
+    import shutil
+    shutil.copyfile(str(delta_archive_path), str(pkg / DELTA_ARCHIVE))
+    try:
+        built = materialize_app(pkg, manifest, out, app_dir=node,
+                                current_version=manifest["from_version"])
+    except PackageError as exc:
+        return [str(exc)]
+    got = read_tree_tar(built)
+    tree = tree_map(manifest)
+    problems = []
+    rebuild = manifest.get("app_rebuild") or {}
+    if set(got) != set(tree):
+        problems.append("file set differs: +%s -%s" % (
+            sorted(set(got) - set(tree))[:3], sorted(set(tree) - set(got))[:3]))
+    for rel, (sha, mode, size) in tree.items():
+        if rel not in got:
+            continue
+        data, gmode, _mt = got[rel]
+        if rel in rebuild:
+            want = [(m[0], m[1]) for m in rebuild[rel]["members"]]
+            have = [(n, s) for n, s, *_r in _tar_members(data)]
+            if want != have:
+                problems.append("rebuilt %s differs from its recipe" % rel)
+        elif _sha(data) != sha or gmode != mode:
+            problems.append("%s differs" % rel)
+    return problems
 
 
 # ---------------------------------------------------------------------------
@@ -831,7 +1481,7 @@ def read_package_wheelset(path):
     None means the package predates ``wheelset`` and cannot serve as a
     baseline. Reads one member; never extracts anything."""
     root = archive_root(path)
-    with tarfile.open(path, "r:gz") as tf:
+    with tarfile.open(path, "r:*") as tf:
         try:
             mem = tf.getmember(root + "/manifest.json")
         except KeyError:

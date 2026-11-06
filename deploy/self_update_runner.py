@@ -1910,8 +1910,11 @@ def install_tree(up, app_tar):
     if not _as_app():
         return up.extract_app_tree(app_tar, APP)
     written = up.app_tree_files(app_tar)
-    r = _run_bytes(["tar", "-xzf", "-", "-C", str(APP), "--no-same-owner"],
-                   Path(app_tar).read_bytes())
+    data = Path(app_tar).read_bytes()
+    # /1 hands over the package's app.tar.gz; /2 an uncompressed app.tar that
+    # root assembled and verified (up.materialize_app).
+    flag = "-xzf" if data[:2] == b"\x1f\x8b" else "-xf"
+    r = _run_bytes(["tar", flag, "-", "-C", str(APP), "--no-same-owner"], data)
     if r.returncode != 0:
         raise RuntimeError("extracting the application tree as %s failed: %s"
                            % (APP_USER, (r.stderr or b"").decode("utf-8", "replace")[-300:]))
@@ -1938,7 +1941,7 @@ def remove_in_tree(rels):
             pass
 
 
-def _make_wheelhouse(pkg_dir, up):
+def _make_wheelhouse(pkg_dir, up, app_tar=None):
     """Root-owned, world-READABLE copy of the package's wheels plus the NEW
     requirements.txt (read straight out of the verified app.tar.gz).
 
@@ -1961,7 +1964,7 @@ def _make_wheelhouse(pkg_dir, up):
         shutil.copyfile(w, wdir / w.name)
         os.chmod(wdir / w.name, 0o644)
     req = None
-    with tarfile.open(Path(pkg_dir) / "app.tar.gz", "r:gz") as tf:
+    with tarfile.open(app_tar or (Path(pkg_dir) / "app.tar.gz"), "r:*") as tf:
         for name in _REQ_MEMBERS:
             try:
                 m = tf.getmember(name)
@@ -1971,7 +1974,7 @@ def _make_wheelhouse(pkg_dir, up):
                 req = tf.extractfile(m).read()
             break
     if req is None:
-        raise up.PackageError("app.tar.gz has no requirements.txt")
+        raise up.PackageError("the application tree has no requirements.txt")
     (house / "requirements.txt").write_bytes(req)
     os.chmod(house / "requirements.txt", 0o644)
     return house
@@ -2139,15 +2142,33 @@ def package_change(req_path):
         if tags and "*" not in tags and mine and mine not in tags:
             raise RuntimeError("package carries wheels for %s; this venv is %s"
                                % (", ".join(tags), mine))
-        st.step("version rules", True, "%s -> %s%s"
-                % (cur, new, " (DOWNGRADE, explicitly allowed)" if cmp_ < 0 else ""))
+        kind = up.package_kind(manifest)
+        st.d["package_kind"] = kind
+        st.step("version rules", True, "%s -> %s%s%s"
+                % (cur, new, " (DOWNGRADE, explicitly allowed)" if cmp_ < 0 else "",
+                   " (delta from %s)" % manifest.get("from_version")
+                   if kind == "delta" else ""))
+
+        # -- 4a. the complete application tree, assembled and verified ONCE.
+        # /1: the package's app.tar.gz. /2: a plain app.tar in root-only
+        # staging, every file hashed against the signed app_tree; a delta
+        # reads the files it does not carry from this tree and refuses the
+        # package when any of them differs -- before anything is touched.
+        st.begin("assemble application tree")
+        app_tar = up.materialize_app(pkg_dir, manifest, stage, app_dir=APP,
+                                     current_version=cur)
+        st.step("assemble application tree", True,
+                "%s package, %s" % (kind, "app.tar.gz as shipped"
+                                    if app_tar.name == "app.tar.gz" else
+                                    "%d file(s) verified against the signed tree"
+                                    % len(manifest.get("app_tree") or {})))
 
         # -- 4b. can the dependencies be met? Decided BEFORE anything changes.
         # A package may ship only the wheels a supported node could be missing
         # (select_wheels in update_package.py), so "is every requirement either
         # installed or shipped?" is now a real question. Asked after step 6 it
         # used to cost a replaced tree and a rollback.
-        wheelhouse = _make_wheelhouse(pkg_dir, up)
+        wheelhouse = _make_wheelhouse(pkg_dir, up, app_tar)
         dependency_preflight(st, wheelhouse, manifest, cur)
 
         # -- 5. backup BEFORE anything is replaced ---------------------------
@@ -2188,9 +2209,6 @@ def package_change(req_path):
             raise RuntimeError("refusing to replace the tree: local commits "
                                "could not be preserved")
 
-        app_tar = pkg_dir / "app.tar.gz"
-        if not app_tar.is_file():
-            raise RuntimeError("package has no app.tar.gz")
         # [SATOM-PKG-DELETIONS]
         tracked_now = {ln.strip() for ln in
                           (git("ls-files", timeout=120).stdout or "").splitlines()
@@ -2203,8 +2221,8 @@ def package_change(req_path):
         # Laying a tarball over a checkout adds and overwrites; it never
         # deletes. Without this, a module removed in the new revision stays on
         # disk and keeps importing -- an update that silently half-applies.
-        # app.tar.gz comes from `git archive`, so its member list IS the
-        # complete tracked set of the target revision; anything tracked here
+        # app_tar comes from `git archive` (or holds exactly its files, /2),
+        # so its member list IS the complete tracked set of the target revision; anything tracked here
         # and absent there was deleted upstream. Only TRACKED paths are
         # considered, so data/, pki/ and .env cannot be caught by this.
         stale = sorted(tracked_now - set(written))

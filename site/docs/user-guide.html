@@ -5383,6 +5383,18 @@ applied until you press <strong>Apply</strong>. From a shell:
 <code>sudo satom execute update fetch --yes</code>. A node with no internet still
 uploads the file. Details:
 <a href="offline-update-packages.html">offline-update-packages.md §1.1</a>.</p>
+<p><strong>Delta packages: a few MB instead of the whole release.</strong> When the feed has a
+delta built from exactly the version this node runs
+(<code>satom-update-&lt;new&gt;-from-&lt;this&gt;.tar.gz</code>), <em>Check</em> offers it and shows the
+size of both; <strong>Download &amp; stage</strong> takes the delta, <strong>Full package instead</strong>
+the full one. A delta builds on this node's own files, so its preflight row
+<strong>Delta package</strong> reads every file it does not carry and compares it with the
+signed tree. If one differs (a file patched by hand, a missing one), the row
+fails, names the file and the full package to use, and <strong>Apply</strong> stays
+disabled; nothing on the node has changed. Uploading a delta by hand works the
+same way. From a shell, <code>satom execute update fetch</code> picks the delta too, and
+<code>--full</code> the full package. Details:
+<a href="offline-update-packages.html">offline-update-packages.md §3.1</a>.</p>
 <p>The feed is the public repository unless <strong>Settings → General → Update
 sources</strong> names another one (§26.1), for example an internal pipeline that
 republishes the signed packages. The message after <em>Check</em> names the source it

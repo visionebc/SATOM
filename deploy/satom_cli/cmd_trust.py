@@ -167,6 +167,7 @@ def show_package(ctx, args):
             ("built at", str(manifest.get("built_at"))),
             ("python", ", ".join(manifest.get("python_tags") or [])),
             ("applies from", str(manifest.get("min_from_version") or "any")),
+            ("kind", _kind_label(up, manifest)),
             ("files", str(len(manifest.get("files") or {}))),
         ])
         try:
@@ -364,6 +365,34 @@ def reinstall_runner(ctx, args):
     return r
 
 
+def _kind_label(up, manifest):
+    """``full`` / ``delta from 4.11.4`` (and the payload format for /2)."""
+    kind = up.package_kind(manifest) if hasattr(up, "package_kind") else "full"
+    label = ("delta from %s" % manifest.get("from_version")) if kind == "delta" else "full"
+    if manifest.get("app_archive"):
+        label += " (%s)" % manifest["app_archive"]
+    return label
+
+
+def _delta_rows(ctx, up, manifest, cur):
+    """(rows, refusal) for a delta: it applies to one version and must build on
+    this node's tree -- checked here, read-only, before anything is enqueued."""
+    if not hasattr(up, "package_kind") or up.package_kind(manifest) != "delta":
+        return [], ""
+    frm = str(manifest.get("from_version") or "")
+    full = up.full_package_name(manifest.get("version"))
+    if up.compare_versions(cur, frm) != 0:
+        return [("delta", "applies to %s only" % frm)], (
+            "this delta applies to %s only; this node runs %s. Use the full package %s"
+            % (frm, cur, full))
+    bad = up.delta_tree_problems(ctx.app_dir, manifest, limit=6)
+    if bad:
+        return [("delta", "tree differs")], (
+            "this node's application tree is not the one %s shipped (%s). Use the "
+            "full package %s" % (frm, ", ".join(bad[:5]), full))
+    return [("delta", "builds on this node's %s tree" % frm)], ""
+
+
 def update_package(ctx, args):
     """Apply a signed offline update package from the console.
 
@@ -404,15 +433,19 @@ def update_package(ctx, args):
     new = str(manifest.get("version") or "")
     cur = ctx.version if isinstance(getattr(ctx, "version", None), str) else _version(ctx)
     is_downgrade = up.compare_versions(new, cur) < 0
+    drows, refusal = _delta_rows(ctx, up, manifest, cur)
+    if refusal:
+        return Result("bad", "update package").lines("", ["refusing: %s" % refusal])
 
     if "--yes" not in args:
         r = Result("warn", "update package (dry run)")
         r.rows("would apply", [
             ("package", src.name),
             ("version", "%s -> %s%s" % (cur, new, "  DOWNGRADE" if is_downgrade else "")),
+            ("kind", _kind_label(up, manifest)),
             ("signed by", verified["key"]["fingerprint"]),
             ("this node", "%s (%s)" % (ctx.host, ctx.role)),
-        ])
+        ] + drows)
         r.note("Re-run with --yes to apply. The service restarts; a failed "
                "health check rolls this node back automatically.")
         if is_downgrade:
@@ -453,8 +486,8 @@ def update_package(ctx, args):
 
 
 #: ``--user`` takes the token from $SATOM_FEED_TOKEN, never from argv.
-FETCH_USAGE = ("execute update fetch [--yes] [--download-only] [--feed <https-url>] "
-               "[--user <name>]")
+FETCH_USAGE = ("execute update fetch [--yes] [--download-only] [--full] "
+               "[--feed <https-url>] [--user <name>]")
 
 
 def _feed_module():
@@ -513,14 +546,21 @@ def update_fetch(ctx, args):
             "release (satom-system-upgrades/ in the repository lists them) and run",
             "  satom execute update package <file> --yes"])
 
-    pkg = doc["package"]
     new = doc["version"]
     cur = _version(ctx)
     up = _up(ctx)
+    # The delta built from exactly this version when the feed has one; --full
+    # takes the full package (the way back when a delta is refused).
+    if hasattr(fd, "pick_package"):
+        pkg = fd.pick_package(doc, cur, full="--full" in args)
+    else:
+        pkg = dict(doc["package"], kind="full")
     newer = up.compare_versions(new, cur) > 0 if up else True
     rows = [("feed", doc["_feed_url"]), ("installed", cur),
             ("offered", "%s (%s)" % (new, doc.get("released") or "?")),
-            ("package", "%s  %.1f MB" % (pkg["name"], pkg["size"] / 1048576.0)),
+            ("package", "%s  %.1f MB%s" % (pkg["name"], pkg["size"] / 1048576.0,
+                                           "  (delta from %s)" % pkg.get("from")
+                                           if pkg.get("kind") == "delta" else "")),
             ("sha256", pkg["sha256"])]
     if doc.get("_mirror"):
         rows.insert(1, ("mirror", doc["_mirror"]))
@@ -550,7 +590,10 @@ def update_fetch(ctx, args):
 
     try:
         try:
-            got = fd.download_package(doc, private, progress=progress, **kw)
+            if hasattr(fd, "pick_package"):
+                got = fd.download_package(doc, private, progress=progress, entry=pkg, **kw)
+            else:
+                got = fd.download_package(doc, private, progress=progress, **kw)
         except fd.FeedError as exc:
             return Result("bad", "update fetch").lines("", ["download refused: %s" % exc])
         path = uploads / Path(got).name

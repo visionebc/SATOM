@@ -233,7 +233,48 @@ def parse_feed(raw: bytes) -> dict:
     kf = doc.get("knowledge_feed")
     if kf is not None and not str(kf).lower().startswith("https://"):
         raise FeedError("the knowledge_feed URL must be https:// (got %r)" % kf)
+    # Optional (format /2): smaller packages that apply to ONE earlier version.
+    deltas = doc.get("deltas")
+    if deltas is not None:
+        if not isinstance(deltas, list):
+            raise FeedError("the feed's deltas entry is not a list")
+        for d in deltas:
+            _check_delta(d, ver)
     return doc
+
+
+_FROM_RE = re.compile(r"^[0-9][A-Za-z0-9._-]{0,40}$")
+
+
+def _check_delta(d, ver):
+    if not isinstance(d, dict):
+        raise FeedError("a delta in the feed is not an object")
+    frm, name = str(d.get("from") or ""), d.get("name") or ""
+    url, sha, size = d.get("url") or "", d.get("sha256") or "", d.get("size")
+    if not _FROM_RE.match(frm):
+        raise FeedError("a delta in the feed names no valid from-version")
+    if name != "satom-update-%s-from-%s.tar.gz" % (ver, frm) or not PKG_RE.match(name):
+        raise FeedError("the feed's delta %r does not match version %s from %s"
+                        % (name, ver, frm))
+    if not url.lower().startswith("https://") or not url.endswith("/" + name):
+        raise FeedError("the delta URL must be https:// and end in /%s" % name)
+    if not _SHA_RE.match(sha):
+        raise FeedError("the feed carries no valid sha256 for %s" % name)
+    if not isinstance(size, int) or not 0 < size <= MAX_PACKAGE_BYTES:
+        raise FeedError("the feed declares an implausible size for %s: %r" % (name, size))
+
+
+def pick_package(doc: dict, current_version: str = "", full: bool = False) -> dict:
+    """The package this node should download: the delta built from exactly
+    ``current_version`` when the feed has one (a few MB instead of the full
+    package), else the full package. ``full=True`` forces the full package --
+    the way back when a delta is refused because this node's tree differs.
+    The result carries ``kind`` (``full``/``delta``) and, for a delta, ``from``."""
+    if not full and current_version:
+        for d in doc.get("deltas") or []:
+            if str(d.get("from")) == str(current_version):
+                return dict(d, kind="delta")
+    return dict(doc["package"], kind="full")
 
 
 def fetch_small(url: str, timeout: float = 10, max_bytes: int = MAX_FEED_BYTES,
@@ -293,6 +334,8 @@ def _through_mirror(doc: dict, prefix: str) -> None:
     for key in ("package", "signing_key", "api_pack"):
         if isinstance(doc.get(key), dict) and "url" in doc[key]:
             doc[key]["url"] = moved(doc[key]["url"])
+    for d in doc.get("deltas") or []:
+        d["url"] = moved(d["url"])
     if "knowledge_feed" in doc:
         doc["knowledge_feed"] = moved(doc["knowledge_feed"])
     doc["_mirror"] = prefix
@@ -312,15 +355,16 @@ def fetch_feed(url: str = "", timeout: float = 10, auth=None) -> dict:
 
 
 def download_package(feed: dict, dest_dir, progress=None, timeout: float = 60,
-                     auth=None) -> Path:
-    """Download the package the feed names into ``dest_dir``.
+                     auth=None, entry=None) -> Path:
+    """Download the package the feed names into ``dest_dir`` -- or ``entry``,
+    one of :func:`pick_package`'s answers.
 
     Streams to a hidden ``.part`` file and only renames it once the byte count
     and the sha256 match the feed; a mismatch deletes it. ``progress(done,
     total)`` is called every few MB. Returns the final path. ``auth`` reaches
     the package only when it is on the same host as the feed (see ``_request``).
     """
-    pkg = feed["package"]
+    pkg = entry or feed["package"]
     return download_file(pkg["url"], pkg["name"], pkg["sha256"], pkg["size"], dest_dir,
                          progress=progress, timeout=timeout, auth=auth)
 
@@ -380,4 +424,5 @@ def download_file(url: str, name: str, want_sha: str, size: int, dest_dir,
 
 __all__ = ["FEED_SCHEMA", "DEFAULT_FEED_URL", "FeedError", "feed_url", "url_host", "parse_feed",
            "fetch_feed", "fetch_small", "download_package", "download_file", "PKG_RE",
+           "pick_package",
            "LATEST_ASSET", "mirror_prefix"]

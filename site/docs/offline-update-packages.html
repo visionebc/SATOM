@@ -105,6 +105,11 @@ before it accepts the package: see §4.1.</p>
 <p><strong>A node that reaches GitHub does not need the download either</strong> (2.7.0 on):
 <code>sudo satom execute update fetch --yes</code>, or <em>Software Update → Check for a
 newer package online → Download &amp; stage</em>. See §1.1.</p>
+<p><strong>Smaller packages.</strong> A release whose previous release can apply them also
+publishes <strong>delta packages</strong>, <code>satom-update-&lt;version&gt;-from-&lt;old&gt;.tar.gz</code>: only
+the files that changed since <code>&lt;old&gt;</code>, a few MB instead of the full package, for
+a node on exactly <code>&lt;old&gt;</code>. Measured on 4.11.2 → 4.11.3: the full package is
+38.7 MB, the delta 2.1 MB. See §3.1.</p>
 <h3 id="11-the-system-upgrade-feed-satom-system-upgrades">1.1 The system-upgrade feed (<code>satom-system-upgrades/</code>)</h3>
 <p>Every release writes <code>satom-system-upgrades/latest.json</code> in the public
 repository: the newest package's version, its release-asset URL, its size and
@@ -136,12 +141,25 @@ for ever, and GitHub refuses files over 100 MB.</p>
 <td>Software Update → <em>Check for a newer package online</em></td>
 <td>Same check; <em>Download &amp; stage</em> runs the download as a job and opens the preflight. Applying is still the <strong>Apply</strong> button.</td>
 </tr>
+<tr>
+<td><code>… fetch --full</code>, <em>Full package instead</em></td>
+<td>The full package even when the feed offers a delta for this node (§3.1).</td>
+</tr>
 </tbody>
 </table>
 <ul>
-<li>The feed is an <strong>address book, not a trust decision</strong>. A download that does
+<li>
+<p><strong>Deltas in the feed.</strong> A release that has delta packages lists them under
+  <code>deltas</code> (one entry per older release: <code>from</code>, name, URL, size, sha256). A
+  node on exactly that <code>from</code> version is offered the delta; every other node
+  the full package. A node whose preflight refuses the delta (its tree
+  differs) takes the full package with <code>--full</code> or <em>Full package instead</em>.</p>
+</li>
+<li>
+<p>The feed is an <strong>address book, not a trust decision</strong>. A download that does
   not match the feed's size and sha256 is deleted before it gets a real name;
-  one that matches is still refused unless a trusted key signed it.</li>
+  one that matches is still refused unless a trusted key signed it.</p>
+</li>
 <li>HTTPS only, redirects included. <strong>Settings → General → Update sources</strong>
   points the console at another <code>latest.json</code> (an internal pipeline or
   mirror), public or with a user and token. The token goes only to that host
@@ -257,6 +275,76 @@ those releases (3.3.3, the first one that recorded it). A node below that is
 refused at <strong>Upgrade path</strong> with nothing changed. Coming from 3.3.2 or older
 you apply <code>satom-update-3.3.3.tar.gz</code> first — it carries every wheel — and
 then the newer package.</p>
+<h3 id="31-smaller-packages-format-2-and-delta-packages">3.1 Smaller packages: format /2 and delta packages</h3>
+<p>A package used to carry the whole application tree (<code>app.tar.gz</code>, about 28 MB)
+even when a release changed two files. Format <code>satom.update-package/2</code> adds two
+shapes; the outer file is still a gzip tarball named <code>satom-update-*.tar.gz</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Shape</th>
+<th>Payload</th>
+<th>Applies to</th>
+<th>Size (4.11.3)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>full /1</td>
+<td><code>app.tar.gz</code></td>
+<td>any node at or above <code>min_from_version</code></td>
+<td>38.7 MB</td>
+</tr>
+<tr>
+<td>full /2</td>
+<td><code>app.tar.xz</code> + per-file tree map</td>
+<td>any node at or above <code>min_from_version</code>, <strong>if that node's runner speaks /2</strong></td>
+<td>about 27 MB</td>
+</tr>
+<tr>
+<td>delta /2</td>
+<td><code>app-delta.tar.xz</code>: only changed files</td>
+<td>a node on exactly <code>from_version</code></td>
+<td>2.1 MB</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>The signed tree.</strong> A /2 manifest lists every file of the target tree with
+  its sha256, mode and size (<code>app_tree</code>). The runner builds the complete tree
+  as a plain tarball in its root-only staging directory and checks every file
+  against that list <strong>before</strong> the database backup and before anything is
+  replaced; from there the apply is the same as for a full package (dropped
+  files are removed, the tree is committed).</li>
+<li><strong>A delta only builds on the tree it was made from.</strong> Every file the delta
+  does not carry is read from the node's own tree and must hash to the signed
+  value. One file edited by hand, or missing, and the package is refused with
+  <em>this node's application tree is not the one <version> shipped … Apply the
+  full package satom-update-<version>.tar.gz instead</em>. Nothing has changed at
+  that point. The preflight (web and <code>satom execute update package</code> without
+  <code>--yes</code>) runs the same check read-only, so the refusal appears before
+  <strong>Apply</strong>. Root reads the tree without following any link: a link where a
+  file should be counts as a difference.</li>
+<li><strong>The API library pack travels as a recipe.</strong> Between two releases 978 of
+  its 980 files are identical; only its manifest and signature change. The
+  delta carries those two members and the sha256 of every other one, and the
+  runner rebuilds the pack from the copy the node already holds. The rebuilt
+  file's own bytes are not pinned (gzip output differs between zlib builds);
+  its integrity is that of every member, and the pack checks its own lane
+  signature when it is imported.</li>
+<li><strong>Wheels.</strong> A delta ships only the wheels the from-release's venv lacks (its
+  recorded <code>wheelset</code>).</li>
+<li><strong>Which nodes can take /2.</strong> A node applies a package with the runner it
+  already has. A runner that predates /2 refuses a /2 package at the signature
+  step (<em>unsupported package schema</em>), with nothing changed. So the release
+  pipeline publishes a delta only from releases whose runner speaks /2, and
+  keeps the full package at /1 until the oldest release it accepts speaks /2
+  too. <strong>The first release that carries this runner therefore ships no delta;
+  the one after it does.</strong></li>
+<li><strong>Python without lzma.</strong> A /2 payload is xz-compressed. A node whose Python
+  was built without the <code>lzma</code> module is told so at preflight and takes a /1
+  package.</li>
+</ul>
 <p>One exception: the <strong>4.0.0</strong> package needs <strong>3.4.7 or newer</strong> (it was built
 against only the packages still on the build host). 4.0.1 and later accept
 3.3.3 or newer again, so a node on 3.3.3–3.4.6 skips 4.0.0.</p>
@@ -619,6 +707,13 @@ Set <code>MIN_FROM_VERSION</code> to raise the minimum version a node may apply 
 <p>The release pipeline instead passes <code>APP_TARBALL=&lt;payload&gt;</code> and <code>COMMIT=&lt;sha&gt;</code>:
 the package then carries the same redacted payload as the offline bundles and
 the container image, byte for byte, and verification refuses it otherwise.</p>
+<p><code>PACKAGE_FORMAT=2</code> builds the full package in format /2 (§3.1).
+<code>DELTAS=&lt;json&gt;</code> also builds one delta per entry, <code>[{"version", "commit",
+"app_tarball", "wheelset"}]</code>, where <code>app_tarball</code> is the payload that older
+release <strong>published</strong> (the bytes its nodes hold, not a fresh <code>git archive</code>).
+Before a delta is packed, the builder applies it to a copy of that tree and
+compares the result with the signed tree; a delta that does not reproduce it
+stops the build. Each delta is signed like the full package.</p>
 <p>Wheels are resolved for the nodes, not for the build host: CPython 3.11 on
 <code>manylinux_2_28</code> or older (<code>WHEEL_PYTHON_VERSION</code>, <code>WHEEL_PLATFORMS</code>). All three
 supported families run 3.11, and RHEL 9's glibc (2.34) is the oldest of them. A
@@ -648,6 +743,8 @@ broken.</p>
 <li><strong>The package cannot change OS packages.</strong> Same scope as every other update
   path here: application code and Python dependencies only.</li>
 <li><strong>A downgrade does not reverse migrations</strong> (section 7).</li>
+<li><strong>A delta needs the exact tree of its from-release.</strong> A node patched by hand
+  takes the full package (§3.1).</li>
 <li><strong><code>git archive</code> cannot carry untracked files.</strong> Anything not committed is not
   in the package — which is the intent, but it means a node repaired this way
   matches the commit, not somebody's working tree.</li>

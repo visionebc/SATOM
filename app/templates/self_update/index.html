@@ -322,6 +322,9 @@
             <span id="feed-offer-text"></span>
             <button type="button" class="btn btn-fw-primary btn-sm ms-2" id="feed-dl-btn">
               <i class="bi bi-download me-1"></i>{{ _('Download & stage') }}</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm ms-1 d-none" id="feed-dl-full-btn"
+                    title="{{ _('The full package applies to any supported version. Use it when the preflight refuses the delta.') }}">
+              {{ _('Full package instead') }}</button>
           </div>
           <div class="d-none mt-2" id="feed-progress" role="status" aria-live="polite">
             <div class="progress mb-1" style="height:6px;"><div class="progress-bar" id="feed-bar" style="width:0%"></div></div>
@@ -1156,24 +1159,34 @@
           return;
         }
         feedSay('');
+        // A delta is built from exactly this node's version: a few MB, and the
+        // preflight proves it builds on this tree. The full package stays one
+        // click away for a node whose tree differs.
+        var full = d.full_package || {};
+        var isDelta = pkg.kind === 'delta';
         document.getElementById('feed-offer-text').innerHTML =
           '<strong>' + escapeHtml(d.version) + '</strong> is available (this node runs ' +
           escapeHtml(d.current_version) + '): <code>' + escapeHtml(pkg.name) + '</code>, ' + mb +
-          ' MB' + (d.staged ? ' — <em>already staged below</em>' : '') + '.' + src;
+          ' MB' + (isDelta ? ' (delta from ' + escapeHtml(pkg.from) + '; the full package is ' +
+          ((full.size || 0) / 1048576).toFixed(1) + ' MB)' : '') +
+          (d.staged ? ' — <em>already staged below</em>' : '') + '.' + src;
+        document.getElementById('feed-dl-full-btn').classList.toggle('d-none', !isDelta);
         document.getElementById('feed-offer').classList.remove('d-none');
       })
       .catch(function (e) { feedBtn.removeAttribute('disabled');
         feedSay('<span class="text-danger">Check failed: ' + escapeHtml(e) + '</span>'); });
   });
   var feedDl = document.getElementById('feed-dl-btn');
-  if (feedDl) feedDl.addEventListener('click', function () {
+  var feedDlFull = document.getElementById('feed-dl-full-btn');
+  function feedDownload(full) {
     feedDl.setAttribute('disabled', 'disabled');
+    if (feedDlFull) feedDlFull.setAttribute('disabled', 'disabled');
     var wrap = document.getElementById('feed-progress');
     var bar = document.getElementById('feed-bar');
     var msg = document.getElementById('feed-progress-msg');
     wrap.classList.remove('d-none');
     msg.textContent = 'Starting the download…';
-    jpost(FEED_FETCH_URL).then(function (r) { return r.json(); }).then(function (d) {
+    jpost(FEED_FETCH_URL + (full ? '?full=1' : '')).then(function (r) { return r.json(); }).then(function (d) {
       if (!d.job_id) { msg.textContent = d.error || 'The download was not started.'; return; }
       (function poll() {
         fetch('/jobs/' + encodeURIComponent(d.job_id), {credentials: 'same-origin',
@@ -1192,6 +1205,7 @@
               bar.classList.add('bg-danger');
               msg.textContent = j.error || j.status;
               feedDl.removeAttribute('disabled');
+              if (feedDlFull) feedDlFull.removeAttribute('disabled');
               return;
             }
             setTimeout(poll, 1000);
@@ -1199,8 +1213,11 @@
           .catch(function () { setTimeout(poll, 3000); });
       })();
     }).catch(function (e) { msg.textContent = 'Download request failed: ' + e;
-      feedDl.removeAttribute('disabled'); });
-  });
+      feedDl.removeAttribute('disabled');
+      if (feedDlFull) feedDlFull.removeAttribute('disabled'); });
+  }
+  if (feedDl) feedDl.addEventListener('click', function () { feedDownload(false); });
+  if (feedDlFull) feedDlFull.addEventListener('click', function () { feedDownload(true); });
 
   // --- knowledge packs: check the feed, download, import ---
   var KN_CHECK_URL = '{{ url_for("self_update.knowledge_check") }}';

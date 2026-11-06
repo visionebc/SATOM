@@ -9,6 +9,18 @@
 # deploy/update_package.py). The full resolved set is always recorded in the
 # manifest as `wheelset`.
 #
+# PACKAGE_FORMAT=2 builds the full package in format /2 (app.tar.xz plus the
+# per-file tree map; about 40 % smaller). Only for releases whose every
+# supported node runs a /2-capable runner -- the release pipeline decides.
+#
+# DELTAS=<json file> also builds one DELTA package per entry,
+# [{"version": "4.12.0", "commit": "<sha>", "app_tarball": "<path>",
+#   "wheelset": ["name==ver", ...]}, ...] -- the REDACTED app payload that older
+# release shipped (the bytes its nodes hold). Each delta carries only the files
+# that differ, applies to exactly that version, and is applied here to a copy
+# of that tree before it is packed: a delta that does not reproduce the signed
+# tree stops the build. Output: satom-update-<v>-from-<old>.tar.gz.
+#
 # This is NOT the offline install bundle. The install bundle carries OS packages
 # (.deb/.rpm) and stands up a node from nothing; this carries only what an
 # update needs, so it is a quarter of the size and applies from the web console
@@ -37,6 +49,12 @@ APP_TARBALL="${APP_TARBALL:-}"
 # run CPython 3.11; manylinux_2_28 is the newest glibc baseline every one of
 # them satisfies (RHEL 9 ships glibc 2.34, Debian 12 2.36, Leap 15.6 2.38).
 # A wheel resolved for the build host's own glibc can be one RHEL 9 cannot load.
+PACKAGE_FORMAT="${PACKAGE_FORMAT:-1}"
+DELTAS="${DELTAS:-}"
+case "$PACKAGE_FORMAT" in 1|2) ;; *) echo "PACKAGE_FORMAT must be 1 or 2" >&2; exit 1;; esac
+if [ -n "$DELTAS" ] && [ ! -f "$DELTAS" ]; then
+  echo "!!! DELTAS $DELTAS does not exist" >&2; exit 1
+fi
 WHEEL_PY="${WHEEL_PYTHON_VERSION:-3.11}"
 WHEEL_PLATFORMS="${WHEEL_PLATFORMS:-manylinux_2_28_x86_64 manylinux2014_x86_64}"
 
@@ -108,8 +126,9 @@ echo "--> wheel selection + manifest.json"
 MIN_FROM="$MIN_FROM" PKG_DIR="$PKG" APP_DIR="$APP" WHEEL_PY="$WHEEL_PY" \
 VERSION="$VERSION" COMMIT="$COMMIT" BUILT_AT="$BUILT_AT" \
 ALL_WHEELS="$ALL_WHEELS" WHEEL_BASELINE="$WHEEL_BASELINE" \
+PACKAGE_FORMAT="$PACKAGE_FORMAT" DELTAS="$DELTAS" STAGE="$STAGE" \
 "$PY" - <<'PYEOF'
-import json, os, re, shutil, sys, sysconfig
+import json, os, re, shutil, sys, sysconfig, tempfile
 from pathlib import Path
 
 app = Path(os.environ["APP_DIR"])
@@ -128,6 +147,22 @@ sel = up.select_wheels(all_names, baseline, os.environ.get("MIN_FROM", ""),
                        os.environ["VERSION"])
 for n in sel["keep"]:
     shutil.copy2(all_dir / n, pkg / "wheels" / n)
+
+# The application tree of this release, read ONCE: format /2 and every delta
+# are built from these exact bytes (the payload the bundles also ship).
+fmt = os.environ.get("PACKAGE_FORMAT", "1")
+deltas = json.loads(Path(os.environ["DELTAS"]).read_text()) if os.environ.get("DELTAS") else []
+to_files = None
+if fmt == "2" or deltas:
+    to_files = up.read_tree_tar(pkg / "app.tar.gz")
+payload = None
+if fmt == "2":
+    modes = {r: v[1] for r, v in to_files.items()}
+    up.write_payload_tar(pkg / "app.tar.xz", {r: v[0] for r, v in to_files.items()}, modes)
+    (pkg / "app.tar.gz").unlink()
+    payload = up.plan_full_payload(to_files)
+    print("    format /2: app.tar.xz %.1f MB, %d file(s) in the signed tree"
+          % ((pkg / "app.tar.xz").stat().st_size / 1048576.0, len(to_files)))
 min_from = sel["min_from_version"]
 if sel["mode"] == "delta":
     print("    delta against %s: shipping %d of %d wheel(s); min_from_version %s"
@@ -179,10 +214,61 @@ manifest = up.build_manifest(
     wheelset=[up.wheel_key(n) for n in all_names],
     wheels_mode=sel["mode"],
     wheels_baseline=sel["baseline"],
+    schema=up.SCHEMA_V2 if payload else up.SCHEMA,
+    payload=payload,
 )
 (pkg / "manifest.json").write_bytes(up.dump_manifest(manifest))
 print("    version %s, %d file(s), python tags %s"
       % (manifest["version"], len(files), ",".join(tags)))
+
+# ------------------------------------------------------------------ deltas
+stage = Path(os.environ["STAGE"])
+built = []
+for d in deltas:
+    frm, fcommit = str(d["version"]), str(d.get("commit") or "")
+    if not up.VERSION_RE.match(frm) or up.compare_versions(frm, os.environ["VERSION"]) >= 0:
+        sys.exit("!!! delta base %r is not an older release" % frm)
+    name = up.delta_package_name(os.environ["VERSION"], frm)[:-len(".tar.gz")]
+    ddir = stage / name
+    (ddir / "wheels").mkdir(parents=True)
+    from_files = up.read_tree_tar(d["app_tarball"])
+    dpayload, archive = up.plan_delta(from_files, to_files, frm, fcommit)
+    up.write_payload_tar(ddir / up.DELTA_ARCHIVE, archive,
+                         {r: to_files[r][1] for r in archive if r in to_files})
+    # Wheels: what a node on exactly `frm` lacks. Its venv is the wheelset its
+    # package recorded; without one, every wheel ships.
+    ws = d.get("wheelset") or []
+    dsel = up.select_wheels(all_names, {frm: ws} if ws else {}, frm, os.environ["VERSION"])
+    for n in dsel["keep"]:
+        shutil.copy2(all_dir / n, ddir / "wheels" / n)
+    dfiles = {}
+    for p in sorted(ddir.rglob("*")):
+        if p.is_file():
+            dfiles[str(p.relative_to(ddir))] = {"sha256": up.sha256_file(p),
+                                                "size": p.stat().st_size}
+    dman = up.build_manifest(
+        version=os.environ["VERSION"], commit=os.environ["COMMIT"],
+        built_at=os.environ["BUILT_AT"], python_tags=tags, requirements=reqs,
+        files=dfiles, min_from_version=frm,
+        notes=("Delta update package: applies ONLY to a node on %s whose application "
+               "tree is the one %s shipped (the preflight checks every file). Any "
+               "other node takes the full package %s. Apply from Settings -> Software "
+               "Update, or with 'satom execute update package'."
+               % (frm, frm, up.full_package_name(os.environ["VERSION"]))),
+        wheelset=[up.wheel_key(n) for n in all_names], wheels_mode="delta",
+        wheels_baseline=[frm] if ws else [], schema=up.SCHEMA_V2, payload=dpayload)
+    with tempfile.TemporaryDirectory(prefix="satom-delta-check-") as work:
+        problems = up.verify_delta_against(from_files, dman, ddir / up.DELTA_ARCHIVE, work)
+    if problems:
+        sys.exit("!!! the delta from %s does not reproduce the signed tree: %s"
+                 % (frm, "; ".join(problems[:5])))
+    (ddir / "manifest.json").write_bytes(up.dump_manifest(dman))
+    built.append(name)
+    print("    delta from %s: %d file(s) + %d rebuilt, %d wheel(s), %.1f MB payload; "
+          "reproduces the signed tree" % (frm, len(dpayload["app_delta_files"]),
+                                          len(dpayload["app_rebuild"]), len(dsel["keep"]),
+                                          (ddir / up.DELTA_ARCHIVE).stat().st_size / 1048576.0))
+(stage / "deltas.txt").write_text("".join(n + "\n" for n in built))
 PYEOF
 
 # ------------------------------------------------------------------ pack
@@ -195,6 +281,14 @@ SIZE=$(du -h "$TARBALL" | cut -f1)
 echo
 echo "==> $TARBALL ($SIZE)"
 echo "    $(cut -d' ' -f1 < "$TARBALL.sha256")"
+while read -r DNAME; do
+  [ -n "$DNAME" ] || continue
+  DT="$OUT/$DNAME.tar.gz"
+  rm -f "$DT" "$DT.sha256"
+  tar -C "$STAGE" -czf "$DT" "$DNAME"
+  ( cd "$OUT" && sha256sum "$DNAME.tar.gz" > "$DNAME.tar.gz.sha256" )
+  echo "==> $DT ($(du -h "$DT" | cut -f1))"
+done < "$STAGE/deltas.txt"
 echo
-echo "UNSIGNED. Every node refuses an unsigned package. Sign it where the key lives:"
+echo "UNSIGNED. Every node refuses an unsigned package. Sign each one where the key lives:"
 echo "    python3 deploy/sign_update_package.py sign $TARBALL --key <release.key>"

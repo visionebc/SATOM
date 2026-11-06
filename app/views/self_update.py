@@ -537,7 +537,7 @@ def package_feed():
     return jsonify(upkg.check_feed())
 
 
-def _feed_worker():
+def _feed_worker(full=False):
     def work(app, jid):
         from ..services import jobs as jobsvc
 
@@ -546,7 +546,7 @@ def _feed_worker():
                                 "Downloaded %d of %d MB" % (done >> 20, total >> 20))
 
         with app.app_context():
-            res = upkg.download_from_feed(progress=progress)
+            res = upkg.download_from_feed(progress=progress, full=full)
         jobsvc.finish_success(jid, result=res, message="Downloaded and staged %s"
                               % res["name"])
         return res
@@ -561,11 +561,13 @@ def package_fetch():
     staged, not applied: the operator still reads the preflight first."""
     from ..services import jobs as jobsvc
     actor = getattr(current_user, "username", "") or ""
+    # ?full=1: the full package even when the feed has a delta for this node.
+    full = (request.args.get("full") or request.form.get("full") or "") == "1"
     job = jobsvc.create_job("update_package_download", "Downloading the update package",
-                            by=actor, cancelable=False, meta={})
-    jobsvc.run_async(current_app._get_current_object(), job["id"], _feed_worker())
+                            by=actor, cancelable=False, meta={"full": full})
+    jobsvc.run_async(current_app._get_current_object(), job["id"], _feed_worker(full))
     log_action("update_package.download", target="feed",
-               extra={"feed": upkg.feed.feed_url(), "job": job["id"]})
+               extra={"feed": upkg.feed.feed_url(), "job": job["id"], "full": full})
     return jsonify({"job_id": job["id"]}), 202
 
 

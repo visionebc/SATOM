@@ -114,6 +114,21 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>A scheduled action that runs on the SATOM server says so, and the run log
+  reads clearly (SA-0020).</strong> The alert for the weekly HSTS preload refresh
+  ended with <code>(failed: (no device))</code> and read as a lost appliance. That action
+  has no appliance: it runs on the server. Its run summary no longer appends
+  the "failed" list, its run log and per-target row say <em>SATOM server
+  (<node>)</em>, and the alert adds <em>Target: no appliance — this action runs on the
+  SATOM server itself</em>. When the server cannot reach raw.githubusercontent.com
+  at all (<code>[Errno 99]</code>, no route, a timeout), the failure says what to do:
+  import the file in HTTP Observatory and pause the action, or set
+  <code>HTTPS_PROXY</code>. In <strong>Run History</strong>, <strong>View</strong> now opens a table with one row
+  per target (where, result, time, what happened) above the full log, on the
+  light theme with failed lines marked; the log no longer prints each outcome
+  twice (<code>{device}: {device}: …</code>). The page draws the latest 200 runs
+  (<em>Showing the latest 200 of N runs</em>) instead of every run: a 3-minute action
+  has tens of thousands.</li>
 <li><strong>Every Test Connection leaves a job that says which test it was.</strong> The job
   was titled <em>Test connection · fwb01</em> whatever method was picked, and a TCP
   port (telnet), ping or traceroute test left no job at all: those probes do

@@ -13,11 +13,32 @@
 {% endblock %}
 
 {% block content %}
+<style nonce="{{ csp_nonce }}">
+  .sa-runlog > summary { cursor: pointer; font-size: 12px; }
+  .sa-runlog-body { margin-top: 6px; min-width: 420px; }
+  .sa-runlog-targets { width: 100%; font-size: 12px; border-collapse: collapse; margin-bottom: 8px; }
+  .sa-runlog-targets th { font-weight: 600; color: #3D4550; border-bottom: 1px solid #DCE3EF; padding: 3px 6px; }
+  .sa-runlog-targets td { border-bottom: 1px solid #EEF2F8; padding: 3px 6px; vertical-align: top; }
+  .sa-runlog-label { font-size: 11px; font-weight: 600; color: #3D4550; text-transform: uppercase; letter-spacing: .03em; }
+  .sa-runlog-pre { background: var(--fw-content-bg, #F3F6FC); color: #1F2733; border: 1px solid #DCE3EF;
+                   padding: 8px 10px; border-radius: 6px; margin-top: 4px; max-height: 320px; overflow: auto;
+                   font-size: 12px; white-space: pre-wrap; }
+  .sa-runlog-pre .sa-fail { color: #8B1C2A; font-weight: 600; }
+  .sa-runlog-pre .sa-ok { color: #15692A; }
+</style>
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-list-columns-reverse me-2 text-accent"></i>{{ _('Run History') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       <strong>{{ action.name }}</strong> — {{ action_label }}
+    </p>
+    <p class="text-muted mb-0" style="font-size:12px;">
+      {% if on_server %}
+        <i class="bi bi-hdd-rack me-1"></i>{{ _('Runs on the SATOM server itself, not on an appliance.') }}
+      {% endif %}
+      {% if total > runs|length %}
+        {{ _('Showing the latest %(n)d of %(total)d runs.', n=runs|length, total=total) }}
+      {% endif %}
     </p>
   </div>
   <a class="btn btn-fw-outline btn-sm" href="{{ url_for('.index') }}">
@@ -63,11 +84,43 @@
           </td>
           <td style="font-size:13px;">{{ r.summary or '—' }}</td>
           <td>
-            {% if r.log %}
-              <details>
-                <summary style="cursor:pointer; font-size:12px;">{{ _('View') }}</summary>
-                <pre style="background:#0d1626; color:#e2e8f0; padding:10px; border-radius:8px; margin-top:6px;
-                            max-height:320px; overflow:auto; font-size:12px; white-space:pre-wrap;">{{ r.log }}</pre>
+            {% set tg = targets.get(r.id, []) %}
+            {% if r.log or tg %}
+              <details class="sa-runlog">
+                <summary>{{ _('View') }}{% if tg %} · {{ tg|length }} {{ _('target') if tg|length == 1 else _('targets') }}{% endif %}</summary>
+                <div class="sa-runlog-body">
+                  {% if tg %}
+                  <table class="sa-runlog-targets">
+                    <thead><tr><th>{{ _('Where') }}</th><th>{{ _('Result') }}</th><th>{{ _('Time') }}</th><th>{{ _('What happened') }}</th></tr></thead>
+                    <tbody>
+                    {% for t in tg %}
+                      <tr>
+                        <td class="text-nowrap">
+                          {% if t.appliance_id %}<i class="bi bi-hdd-network me-1"></i>{{ t.appliance }}
+                          {% else %}<i class="bi bi-hdd-rack me-1"></i>{{ t.appliance if t.appliance.startswith('SATOM server') else server_label }}{% endif %}
+                        </td>
+                        <td>
+                          {% if t.status == 'ok' %}<span class="fw-badge fw-badge-success">{{ _('ok') }}</span>
+                          {% elif t.status == 'failed' %}<span class="fw-badge fw-badge-danger">{{ _('failed') }}</span>
+                          {% else %}<span class="fw-badge fw-badge-info">{{ t.status }}</span>{% endif %}
+                        </td>
+                        <td class="text-nowrap">
+                          {% set ms = t.elapsed_ms %}
+                          {% if ms is none %}—{% elif ms < 1000 %}{{ ms }} ms{% else %}{{ '%.1f'|format(ms / 1000) }} s{% endif %}
+                        </td>
+                        {% set ts = t.summary or '' %}{% set tp = t.appliance ~ ': ' %}
+                        <td>{{ ts[tp|length:] if ts.startswith(tp) else (ts or '—') }}</td>
+                      </tr>
+                    {% endfor %}
+                    </tbody>
+                  </table>
+                  {% endif %}
+                  {% if r.log %}
+                    <div class="sa-runlog-label">{{ _('Full log') }}</div>
+                    <pre class="sa-runlog-pre">{% for ln in r.log.splitlines() %}<span class="{{ 'sa-fail' if ln.startswith('[FAIL]') else 'sa-ok' if ln.startswith('[ok]') else '' }}">{{ ln }}</span>
+{% endfor %}</pre>
+                  {% endif %}
+                </div>
               </details>
             {% else %}
               <span class="text-muted">—</span>

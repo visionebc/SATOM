@@ -7,6 +7,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Fixed
+- **A scheduled action that runs on the SATOM server says so, and the run log
+  reads clearly (SA-0020).** The alert for the weekly HSTS preload refresh
+  ended with `(failed: (no device))` and read as a lost appliance. That action
+  has no appliance: it runs on the server. Its run summary no longer appends
+  the "failed" list, its run log and per-target row say *SATOM server
+  (<node>)*, and the alert adds *Target: no appliance — this action runs on the
+  SATOM server itself*. When the server cannot reach raw.githubusercontent.com
+  at all (`[Errno 99]`, no route, a timeout), the failure says what to do:
+  import the file in HTTP Observatory and pause the action, or set
+  `HTTPS_PROXY`. In **Run History**, **View** now opens a table with one row
+  per target (where, result, time, what happened) above the full log, on the
+  light theme with failed lines marked; the log no longer prints each outcome
+  twice (`fortiadc10: fortiadc10: …`). The page draws the latest 200 runs
+  (*Showing the latest 200 of N runs*) instead of every run: a 3-minute action
+  has tens of thousands.
 - **Every Test Connection leaves a job that says which test it was.** The job
   was titled *Test connection · fwb01* whatever method was picked, and a TCP
   port (telnet), ping or traceroute test left no job at all: those probes do

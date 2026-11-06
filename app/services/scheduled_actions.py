@@ -2306,6 +2306,16 @@ def execute_and_record(action_row, *, trigger: str = "schedule",
     return run
 
 
+def server_label() -> str:
+    """Where a no-device action (``needs_targets`` False) runs: this SATOM
+    server. "(no device)" told the operator what it was NOT, and an alert
+    reader took it for a lost appliance (SA-0020)."""
+    try:
+        return "SATOM server (%s)" % socket.gethostname()
+    except Exception:  # noqa: BLE001
+        return "SATOM server"
+
+
 def _progress_open(run, appliance, seq: int, total: int):
     """Record that this device is being worked on NOW. Returns the row or None.
 
@@ -2325,7 +2335,7 @@ def _progress_open(run, appliance, seq: int, total: int):
         row = ScheduledActionTarget(
             run_id=run.id,
             appliance_id=getattr(appliance, "id", None),
-            appliance=(getattr(appliance, "name", "") or "(no device)")[:128],
+            appliance=(getattr(appliance, "name", "") or server_label())[:128],
             seq=seq, total=total, status="running",
             started_at=datetime.utcnow())
         db.session.add(row)
@@ -2388,20 +2398,17 @@ def _run_targets(action_row, spec: ActionSpec, params: dict, *,
     params = dict(params)
     params.setdefault("_action_id", action_row.id)
     for appliance in targets:
-        name = getattr(appliance, "name", "(no device)")
+        name = getattr(appliance, "name", None) or server_label()
         total += 1
         progress = _progress_open(run, appliance, total, planned)
         out = run_action(spec, appliance, params, dry_run=False)
         last_summary = str(out.get("summary") or "")
         _progress_close(progress, bool(out.get("ok")), out.get("summary", ""))
+        lines.extend(_log_lines(name, out))
         if out.get("ok"):
             ok_n += 1
-            lines.append(f"[ok] {name}: {out.get('summary', '')}")
         else:
             fails.append(name)
-            lines.append(f"[FAIL] {name}: {out.get('summary', '')}")
-        if out.get("log"):
-            lines.append(out["log"])
 
     status = "ok" if (total and ok_n == total) else ("failed" if total else "skipped")
     summary = f"{spec.label}: {ok_n}/{total} ok"
@@ -2412,9 +2419,26 @@ def _run_targets(action_row, spec: ActionSpec, params: dict, *,
     parked = _parked_targets(action_row, spec) if trigger != "manual" else []
     if parked:
         summary += " (maintenance, skipped: " + ", ".join(sorted(parked)) + ")"
-    if fails:
+    if fails and spec.needs_targets:
+        # A no-device run's summary already IS the failure; "(failed: SATOM
+        # server)" would only repeat it.
         summary += " (failed: " + ", ".join(fails) + ")"
     return status, summary, lines
+
+
+def _log_lines(name: str, out: dict) -> list[str]:
+    """The run-log lines for one target: ``[ok]/[FAIL] <where>: <what>`` and,
+    indented under it, the executor's detail -- unless it only repeats the
+    summary. Executors often prefix their summary with the device name and
+    return the summary again as the log, which printed every outcome twice
+    as ``fortiadc10: fortiadc10: …`` (SA-0020)."""
+    summary = str(out.get("summary") or "").strip()
+    msg = summary[len(name) + 2:] if summary.startswith(name + ": ") else summary
+    lines = ["[%s] %s: %s" % ("ok" if out.get("ok") else "FAIL", name, msg or "no summary")]
+    detail = str(out.get("log") or "").strip()
+    if detail and detail not in (summary, msg):
+        lines.extend("    " + ln for ln in detail.splitlines())
+    return lines
 
 
 def _resolve_targets(action_row, spec: ActionSpec, *,

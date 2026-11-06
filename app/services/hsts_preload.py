@@ -219,12 +219,26 @@ def refresh(*, timeout: float = TIMEOUT) -> dict:
                         raise PreloadError("download larger than %d MB" % (MAX_BYTES // (1024 * 1024)))
                     chunks.append(chunk)
                 etag = resp.headers.get("etag") or ""
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ProxyError) as exc:
+        err = PreloadError("download failed (no connection to %s): %s"
+                           % (SOURCE_HOST, str(exc)[:200]))
+        err.unreachable = True
+        raise err from None
     except httpx.HTTPError as exc:
         raise PreloadError("download failed: %s" % str(exc)[:200]) from None
     raw = b"".join(chunks)
     entries = parse(raw)
     return _write(entries, {"source": SOURCE_URL, "origin": "download",
                             "fetched_at": time.time(), "etag": etag, "bytes": len(raw)})
+
+
+SOURCE_HOST = "raw.githubusercontent.com"
+
+#: Shown when the node cannot reach the source at all -- typically a server
+#: without internet access ([Errno 99] / [Errno 101], a timeout).
+UNREACHABLE_HINT = ("this server cannot reach %s: import the file in HTTP "
+                    "Observatory (Import file) and pause this action, or set "
+                    "HTTPS_PROXY for the SATOM services" % SOURCE_HOST)
 
 
 def scheduled_refresh(dry_run: bool = False) -> dict:
@@ -238,12 +252,23 @@ def scheduled_refresh(dry_run: bool = False) -> dict:
     try:
         meta = refresh()
     except PreloadError as exc:
+        unreachable = getattr(exc, "unreachable", False)
+        kept = ("the stored list (%d names) stays" % before["count"] if before["available"]
+                else "no list is stored, so no site gets the preload bonus")
+        log = ["Source: " + SOURCE_URL, "Error: %s" % exc, "Kept: " + kept]
+        if unreachable:
+            log.append("What to do: download transport_security_state_static.json from "
+                       "the source above on a machine with internet access, then in "
+                       "Troubleshooting > HTTP Observatory use 'Import file' next to "
+                       "'HSTS preload list'. Pause this action while the server has "
+                       "no internet access. If it goes out through a proxy, set "
+                       "HTTPS_PROXY in the environment of the SATOM services.")
         return {"ok": False, "summary": "HSTS preload list not refreshed: %s%s" % (
-            exc, "; the stored list (%d names) stays" % before["count"] if before["available"] else ""),
-            "log": SOURCE_URL}
+            exc, " — " + UNREACHABLE_HINT if unreachable else "; " + kept),
+            "log": "\n".join(log)}
     return {"ok": True, "summary": "HSTS preload list: %d force-https names (was %s)."
             % (meta["count"], before["count"] if before["available"] else "none"),
-            "log": SOURCE_URL}
+            "log": "Source: " + SOURCE_URL}
 
 
 __all__ = ["SOURCE_URL", "PreloadError", "parse", "lookup", "lookup_many", "status",

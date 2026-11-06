@@ -3987,6 +3987,12 @@ System Automations to Automations.</p>
   change's action against devices the change names. Anything else (another
   action, an extra device, the whole fleet) is skipped with the reason and
   leaves the change untouched.
+- <strong>Run History</strong> (list icon on each action) shows the latest 200 runs.
+  <strong>View</strong> on a run opens one row per target — where it ran (the appliance,
+  or <em>SATOM server (<node>)</em> for an action with no appliance, such as the
+  HSTS preload refresh), result, time, what happened — above the full log.
+  An action that runs on the server says so under the page title, and its
+  failure alert says <em>Target: no appliance</em>.
 - Schedules: interval / daily / weekly / monthly / once / <strong>cron</strong>, with
   catch-up semantics and a run history per action. <strong>Cron</strong> takes a standard
   five-field expression (minute hour day-of-month month day-of-week: <code>*</code>,

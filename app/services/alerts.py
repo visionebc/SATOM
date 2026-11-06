@@ -690,7 +690,11 @@ def _check_actions() -> list[dict]:
             # would use to judge how long this has been broken.
             shown = f"{streak}+" if streak >= _RUN_WINDOW else str(streak)
             lines.append(f"- Failing: {shown} consecutive scheduled run(s) failed, "
-                         f"latest {when} UTC — {why[:200]}")
+                         f"latest {when} UTC — {why[:400]}")
+            if _runs_on_server(a.action):
+                # SA-0020: the reader looked for the appliance that failed.
+                lines.append("- Target: no appliance — this action runs on the "
+                             "SATOM server itself.")
 
         # -- overdue --------------------------------------------------------
         if a.next_run:
@@ -716,6 +720,16 @@ def _check_actions() -> list[dict]:
                        f"\n\nAction '{a.action}', schedule {a.schedule_kind}, "
                        f"evaluated on {_node()}. Details: {_action_page(a)}")})
     return findings
+
+def _runs_on_server(key: str) -> bool:
+    """True for an action with no device target (``needs_targets`` False)."""
+    try:
+        from .scheduled_actions import get_spec
+        spec = get_spec(key)
+    except Exception:  # noqa: BLE001
+        return False
+    return spec is not None and not spec.needs_targets
+
 
 def _action_page(action) -> str:
     """The list that owns ``action``: /automations/ for operator work,

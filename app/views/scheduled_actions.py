@@ -761,15 +761,31 @@ def _run_now(id):
     return redirect(url_for('.index'))
 
 
+#: Runs drawn on the history page. Every run used to be drawn: a 3-minute
+#: action has tens of thousands (deep_monitor: 38,148 on a1, 2026-11-06).
+HISTORY_LIMIT = 200
+
+
 def _history(id):
+    from ..models import ScheduledActionTarget
     action = _action_or_404(id)
-    runs = (ScheduledActionRun.query
-            .filter_by(action_id=action.id)
-            .order_by(ScheduledActionRun.started_at.desc())
-            .all())
+    q = ScheduledActionRun.query.filter_by(action_id=action.id)
+    total = q.count()
+    runs = (q.order_by(ScheduledActionRun.started_at.desc())
+            .limit(HISTORY_LIMIT).all())
+    # Each run's per-target rows (where it ran, result, time): the View panel
+    # leads with them instead of a raw text log (SA-0020).
+    targets: dict[int, list] = {}
+    if runs:
+        for t in (ScheduledActionTarget.query
+                  .filter(ScheduledActionTarget.run_id.in_([r.id for r in runs]))
+                  .order_by(ScheduledActionTarget.run_id, ScheduledActionTarget.seq)):
+            targets.setdefault(t.run_id, []).append(t)
     spec = sa.get_spec(action.action)
     return render_template('scheduled_actions/history.html',
-                           action=action, runs=runs, surface=_surface(),
+                           action=action, runs=runs, total=total, targets=targets,
+                           on_server=bool(spec and not spec.needs_targets),
+                           server_label=sa.server_label(), surface=_surface(),
                            action_label=spec.label if spec else action.action)
 
 

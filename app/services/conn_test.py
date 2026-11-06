@@ -15,15 +15,21 @@ Clusters (SA-0016/SA-0018): a per-node cluster is tested member by member --
 node 0 has no connection of its own. A VIP cluster is tested on the VIP AND on
 every member: when the VIP does not answer from here but the members do, the
 answer says so and how to switch, instead of a bare "connection failed".
+
+Every run leaves a job whose title names the method and with one step per
+target and its verdict (services/device_jobs, job_progress.probe): TCP, ping
+and traceroute do not go through a product client, so without those steps a
+fast test left no trace at all.
 """
 from __future__ import annotations
 
 import re
 import shutil
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
 
-from . import backend_probe
+from . import backend_probe, job_progress
 
 METHODS = ("api", "tcp", "ping", "traceroute")
 METHOD_LABELS = {"api": "API (HTTPS)", "tcp": "TCP port (telnet)",
@@ -216,16 +222,57 @@ def _tcp(target) -> dict:
             "detail": "%s:%s — %s" % (target["host"], target["port"], res.get("detail", ""))}
 
 
+def _timed(fn, target):
+    t0 = time.monotonic()
+    out = fn(target)
+    out["_secs"] = time.monotonic() - t0
+    return out
+
+
+def _probe_target(method: str, t: dict) -> str:
+    if method == "tcp":
+        return "tcp://%s:%s" % (t["host"], t["port"])
+    if method == "api":
+        return "https://%s:%s" % (t["host"], t["port"])
+    return "icmp://%s" % t["host"]
+
+
+def _record_steps(method: str, results: list[dict]) -> None:
+    """One job step per target: what was tried, where, and the verdict."""
+    label = METHOD_LABELS[method]
+    for r in results:
+        where = r["host"] or "(no address)"
+        if method in ("tcp", "api"):
+            where = "%s:%s" % (where, r["port"])
+        outcome = ("OK" if r["ok"] else "FAILED") + (
+            " · %s" % r["verdict"] if r.get("verdict") else "")
+        if not r["ok"] and r.get("detail"):
+            outcome += " — %s" % r["detail"]
+        # The API test's REST calls are already steps of the job: its verdict
+        # is recorded, not counted again. The others reach the device here.
+        reached = method != "api" and r.get("verdict") not in (
+            "refused", "no address", "not installed", "not permitted")
+        job_progress.probe(_probe_target(method, r), "%s · %s %s" % (label, r["label"], where),
+                           outcome, r.get("_secs"), ok=r["ok"], counts=reached)
+
+
 def run(appliance, method: str, *, client_for) -> dict:
     """Test ``appliance`` with ``method`` -> the JSON Test Connection returns.
 
     ``client_for`` is passed in (clients.client_for) so this module never
     imports a product client (tests/test_product_separation.py)."""
     method = clean_method(method)
+    label = METHOD_LABELS[method]
+    # A test is kept in the Jobs ledger even when it never reached the device
+    # (refused address, no members): the operator ran it and looks for it.
+    job_progress.keep()
     targets = targets_for(appliance)
     if not targets:
-        return {"ok": False, "method": method, "members": True, "results": [],
-                "status": "this cluster has no member nodes yet", "hint": ""}
+        status = "this cluster has no member nodes yet"
+        job_progress.step("%s · %s" % (label, status))
+        return {"ok": False, "method": method, "label": label, "members": True,
+                "results": [], "status": status, "message": "%s: %s" % (label, status),
+                "hint": ""}
     results = []
     for t in targets:
         if method != "api":
@@ -236,7 +283,7 @@ def run(appliance, method: str, *, client_for) -> dict:
     if method == "api":
         # Sequential, in the request's app context: reading a credential may
         # hit the database (secret_backend).
-        outs = [_api(t, client_for) for t in targets]
+        outs = [_timed(lambda x: _api(x, client_for), t) for t in targets]
     else:
         fn = {"tcp": _tcp, "ping": _ping, "traceroute": _traceroute}[method]
 
@@ -246,17 +293,21 @@ def run(appliance, method: str, *, client_for) -> dict:
             if not t["host"]:
                 return {"ok": False, "verdict": "no address",
                         "detail": "this row has no host to reach"}
-            return fn(t)
+            return _timed(fn, t)
         with ThreadPoolExecutor(max_workers=min(4, len(targets))) as pool:
             outs = list(pool.map(guarded, targets))
     for t, o in zip(targets, outs):
         results.append(dict(o, label=t["label"], host=t["host"], port=t["port"],
                             id=t["row"].id))
+    _record_steps(method, results)
+    for r in results:
+        r.pop("_secs", None)
     ok_all = all(r["ok"] for r in results)
     multi = len(results) > 1 or appliance.is_cluster
     status = " · ".join(
         ("%s: %s" % (r["label"], "OK" if r["ok"] else r["detail"])) if multi
         else ("OK" if r["ok"] else r["detail"]) for r in results)
     hint = vip_hint(results) or next((r.get("hint") for r in results if r.get("hint")), "")
-    return {"ok": ok_all, "method": method, "members": multi, "status": status,
+    return {"ok": ok_all, "method": method, "label": label, "members": multi,
+            "status": status, "message": "%s: %s" % (label, status),
             "results": results, "hint": hint}

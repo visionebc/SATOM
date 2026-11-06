@@ -601,7 +601,11 @@ that will not come online.</p>
    tests that member only. A failure carries the next step: <code>IP address
    mismatch</code> / <code>Hostname mismatch</code> → set <strong>TLS certificate name</strong> (or add the
    address to the certificate's SAN); an untrusted issuer → import the CA
-   under Settings → Trust store.
+   under Settings → Trust store.</p>
+<p>Every test, whatever the method, leaves a job in <strong>Jobs</strong> titled with the
+   method (<em>Test connection — TCP port (telnet) · fwb01</em>), with one step per
+   tested address and its result (<em>OK</em> / <em>FAILED</em> and the reason), and a line
+   in the audit log that names the method.
 3. <strong>Discovery / Rediscovery</strong> — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
    trigger <code>rediscovery</code>, so Device health counts it); also records the
@@ -5578,9 +5582,9 @@ group, and an empty field takes it out. In the sidebar every group is a
 collapsible submenu of <strong>Plugins</strong> (open when you are on one of its apps),
 followed by the apps without a group. A placeholder ADOM (added in Settings &gt;
 ADOMs with no backend yet, such as <em>Linux</em>) is an ADOM like any other here:
-the Settings tab offers it, and its sidebar draws <strong>Plugins</strong> below Dashboard
-with the apps shown there (no Plugins group when there are none; Report Studio
-and Lua Studio stay in device ADOMs). The Web hosts example installs its apps
+the Settings tab offers it, and its sidebar draws <strong>Plugins</strong> inside
+Operations with the apps shown there (no Plugins group when there are none;
+Report Studio and Lua Studio stay in device ADOMs). The Web hosts example installs its apps
 under the group <strong>Web hosts</strong>, in the Linux ADOM when there is one. The Apps list has a <em>Menu group</em>
 column and a filter next to the search box. A group is up to 48 letters,
 digits, spaces and <code>. &amp; ( ) + , ' -</code>. It is not a user group: who may use
@@ -9015,7 +9019,9 @@ enabled and can open in a new tab; the list is shared by all ADOMs.</p>
 <p>Each row carries a key (lowercase, the URL-scoping identifier), a display name,
 title, tagline, description, sort order, an uploaded logo, a default banner, an
 <strong>active</strong> flag, a <strong>placeholder</strong> flag (a workspace that is listed but has no
-product pages behind it yet), and five <strong>capability</strong> switches — banner, API
+product pages behind it yet; its sidebar still draws the menu every ADOM
+shares — Operations, Plugin Studio, Administrator — without the entries that
+need a device of its own kind), and five <strong>capability</strong> switches — banner, API
 tokens, firmware, naming and regex — which decide which shared features that
 workspace offers.</p>
 <p><strong><code>global</code>, <code>fortiweb</code> and <code>fortiadc</code> cannot be deleted</strong>; their keys are wired

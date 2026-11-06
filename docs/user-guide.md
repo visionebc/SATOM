@@ -497,6 +497,11 @@ the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
    mismatch` / `Hostname mismatch` → set **TLS certificate name** (or add the
    address to the certificate's SAN); an untrusted issuer → import the CA
    under Settings → Trust store.
+
+   Every test, whatever the method, leaves a job in **Jobs** titled with the
+   method (*Test connection — TCP port (telnet) · fwb01*), with one step per
+   tested address and its result (*OK* / *FAILED* and the reason), and a line
+   in the audit log that names the method.
 3. **Discovery / Rediscovery** — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
    trigger `rediscovery`, so Device health counts it); also records the

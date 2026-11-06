@@ -7,6 +7,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Fixed
+- **Every Test Connection leaves a job that says which test it was.** The job
+  was titled *Test connection · fwb01* whatever method was picked, and a TCP
+  port (telnet), ping or traceroute test left no job at all: those probes do
+  not go through a product client, so the job was dropped as "never reached a
+  device" and there was no record of whether the test ran or passed. The job
+  is now titled with the method (*Test connection — TCP port (telnet) ·
+  fwb01*), has one step per tested address with its result (`TCP port
+  (telnet) · fwb01 192.0.2.63:443 · OK · open`, or `FAILED` and the reason),
+  ends as success or failure with that summary, and is kept even when the test
+  failed before reaching the device (a refused address, a cluster with no
+  members). The audit line names the method in words too.
 - **An ADOM added in Settings > ADOMs draws the menu every ADOM shares.** A
   placeholder ADOM (one with no product backend yet, such as *Linux*) drew
   only `‹ Global`, its Dashboard, its apps and a standalone Automation group:

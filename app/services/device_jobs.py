@@ -27,9 +27,10 @@ How it works (one mechanism for ~230 routes, no per-route rewrite):
 5. The final response is stored and replayed by ``GET /jobs/<id>/response``,
    flash messages included.
 
-A job is kept in the ledger only when the action reached a device or outlived
-the inline window: a validation error or a pure-database edit that returned
-in 40 ms leaves no trace, so the Jobs page lists device work, not every click.
+A job is kept in the ledger only when the action reached a device, outlived
+the inline window or asked to be kept (``job_progress.keep``, Test
+Connection): a validation error or a pure-database edit that returned in
+40 ms leaves no trace, so the Jobs page lists device work, not every click.
 
 Pass-through (no job): non-POST methods, API-token (Bearer) callers, a
 standby node (its data/ is a mirror the primary overwrites every 5 min), the
@@ -110,6 +111,22 @@ TITLES = {
     "naming.discovery_sync": "Sync device (Naming Discovery)",
 }
 
+
+
+def _test_method_detail(req) -> str:
+    from .conn_test import METHOD_LABELS, clean_method
+    body = req.get_json(silent=True)
+    raw = body.get("method") if isinstance(body, dict) else None
+    return METHOD_LABELS[clean_method(raw or req.form.get("method"))]
+
+
+#: endpoint -> callable(request) naming what THIS run does, added to the
+#: title ("Test connection — TCP port (telnet) · fwb01"): one route, several
+#: different actions depending on what the operator picked.
+TITLE_DETAIL = {
+    "appliances.test_connection": _test_method_detail,
+}
+
 # Endpoint names that only READ from the device. They never queue behind a
 # write and stay cancelable between calls. The safe side wins: a name with ANY
 # write word (``ip_list_add``, ``failover_preflight``) is a write, so it takes
@@ -180,6 +197,18 @@ def title_for(endpoint: str) -> str:
     area = endpoint.split(".", 1)[0].replace("_", " ")
     label = (name[:1].upper() + name[1:]) if name else "Device action"
     return f"{label} ({area})" if area and area not in ("appliances",) else label
+
+
+def title_detail(endpoint: str, req) -> str:
+    """`` — <what this run does>`` for endpoints in :data:`TITLE_DETAIL`, else ''."""
+    fn = TITLE_DETAIL.get(endpoint)
+    if fn is None:
+        return ""
+    try:
+        detail = fn(req)
+    except Exception:  # noqa: BLE001 — the title is cosmetic, the job is not
+        return ""
+    return f" — {detail}" if detail else ""
 
 
 def wrapped_endpoints(app) -> frozenset:
@@ -292,7 +321,8 @@ def _launch(view, endpoint):
     from flask_login import current_user
     app = current_app._get_current_object()
     aid, aname = _appliance_from_request()
-    title = title_for(endpoint) + (f" · {aname}" if aname else "")
+    title = (title_for(endpoint) + title_detail(endpoint, request)
+             + (f" · {aname}" if aname else ""))
     exclusive = not is_read(endpoint)
     meta = {"endpoint": endpoint, "path": request.path, "exclusive": exclusive,
             "device_job": True, "steps": [], "device_calls": 0}
@@ -312,7 +342,8 @@ def _launch(view, endpoint):
         _events.pop(jid, None)
         if cap is not None:
             st = jobs.get_job(jid) or {}
-            if not (st.get("meta") or {}).get("device_calls"):
+            meta = st.get("meta") or {}
+            if not meta.get("device_calls") and not meta.get("keep"):
                 _forget(jid)          # never reached a device: no ledger noise
             apply_session(cap.get("session"))
             return build_response(cap)

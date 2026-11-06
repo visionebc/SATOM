@@ -751,7 +751,7 @@ def test_connection(id):
     if len(res['results']) == 1 and res['results'][0].get('error_id'):
         res['error_id'] = res['results'][0]['error_id']
     log_action('appliance.test', target=appliance.name,
-               detail=('method=%s ok=%s' % (method, res['ok'])
+               detail=('%s · method=%s ok=%s' % (res['label'], method, res['ok'])
                        + ('' if res['ok'] else ' · ' + res['status'][:400])))
     return jsonify(res)
 

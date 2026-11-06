@@ -69,6 +69,30 @@ def step(label: str, percent: int | None = None) -> None:
         sink.add_step(label, percent=percent)
 
 
+def probe(target: str, label: str, outcome: str, secs: float | None, *,
+          ok: bool, counts: bool = True) -> None:
+    """Record one contact with a device that does not go through a product
+    client -- a TCP handshake, a ping, a traceroute -- on the job running on
+    this thread (no-op outside a job). ``target`` is ``tcp://host:port`` /
+    ``icmp://host``. With ``counts`` it is a device call like a REST request:
+    that is what keeps the job in the ledger. ``counts=False`` records a
+    verdict for work whose calls were already recorded (the API test)."""
+    sink = current()
+    if sink is not None:
+        sink.note_probe(target, label, outcome, secs, ok=ok, counts=counts)
+
+
+def keep() -> None:
+    """Keep the job running on this thread in the ledger even if it made no
+    device call (no-op outside a job). For actions whose result IS the point
+    -- a connection test that failed before reaching the device is still a
+    test the operator ran and must be able to find."""
+    sink = current()
+    if sink is not None:
+        jobs.mutate_job(sink.job_id, lambda st: st.setdefault("meta", {})
+                        .update(keep=True))
+
+
 def _locks_dir() -> Path:
     d = jobs._state_dir() / "locks"
     d.mkdir(parents=True, exist_ok=True)
@@ -186,6 +210,14 @@ class JobSink:
         label = f"{method.upper()} {_strip_query(path)}"[:160]
         failed = isinstance(status, int) and status >= 400
         self._record(label, outcome, secs, ok=error is None and not failed)
+
+    def note_probe(self, target: str, label: str, outcome: str, secs, *,
+                   ok: bool, counts: bool = True) -> None:
+        if counts:
+            self.before_call(target)
+            self.calls += 1
+        self._record(str(label)[:160], str(outcome or ("ok" if ok else "failed"))[:160],
+                     secs, ok=ok)
 
     def add_step(self, label: str, percent: int | None = None) -> None:
         self._record(str(label)[:160], "", None, ok=True, percent=percent)

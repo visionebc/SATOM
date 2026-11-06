@@ -33,7 +33,7 @@
         <td><a href="{{ url_for('ops.alert', aid=a.id) }}"><b>{{ a.title }}</b></a><div class="small text-muted">{{ a.detail }}</div>
           <a class="small obs-noprint" href="{{ url_for('ops.alert', aid=a.id) }}"><i class="bi bi-question-circle" aria-hidden="true"></i> Why, evidence and fix</a></td>
         <td>{{ names.get(a.source_id, '—') }} <span class="text-muted small">{{ a.kind }}</span></td>
-        <td>{{ ago(a.first_seen) }}</td><td class="text-end text-nowrap">{{ dur(duration(a, now)) }}</td>
+        <td>{{ ago(a.first_seen) }}</td><td class="text-end text-nowrap">{{ dur(duration(a, now_utc)) }}</td>
         <td>{% if a.incident_id %}<a href="{{ url_for('ops.incident', iid=a.incident_id) }}">#{{ a.incident_id }}</a>{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
     {% endfor %}</tbody>
   </table>

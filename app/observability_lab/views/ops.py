@@ -66,7 +66,7 @@ def events():
                            counts={"critical": sum(1 for a in all_active if a.severity == "critical"),
                                    "warning": sum(1 for a in all_active if a.severity == "warning"),
                                    "linked": sum(1 for a in all_active if a.incident_id)},
-                           now=utcnow(), duration=alerts_mod.duration_s,
+                           now_utc=utcnow(), duration=alerts_mod.duration_s,
                            resolved_n=Alert.query.filter(Alert.status == "resolved", Alert.resolved_at >= since).count())
 
 
@@ -79,7 +79,7 @@ def alert(aid):
         abort(404)
     evs = Event.query.filter_by(alert_id=a.id).order_by(Event.id.desc()).limit(100).all()
     return render_template("ops/alert.html", a=a, x=diagnose.explain(a), events=evs, names=_names(),
-                           now=utcnow(), duration=alerts_mod.duration_s)
+                           now_utc=utcnow(), duration=alerts_mod.duration_s)
 
 
 # ── Incidents ────────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ def _incident(iid) -> Incident:
 @login_required
 def incident(iid):
     inc = _incident(iid)
-    return render_template("ops/incident.html", inc=inc, names=_names(), now=utcnow(),
+    return render_template("ops/incident.html", inc=inc, names=_names(), now_utc=utcnow(),
                            duration=alerts_mod.duration_s,
                            candidates=Alert.query.filter_by(status="active", incident_id=None).all())
 
@@ -250,7 +250,7 @@ def report(kind):
     data = (_health_report(period) if kind == "health" else
             _inventory_report() if kind == "inventory" else _alerts_report(period))
     return render_template("ops/report.html", kind=kind, meta=REPORTS[kind], period=period, periods=PERIODS,
-                           d=data, names=_names(), now=utcnow(), duration=alerts_mod.duration_s,
+                           d=data, names=_names(), now_utc=utcnow(), duration=alerts_mod.duration_s,
                            health_label={"ok": "Healthy", "degraded": "Back-ends down", "all_down": "All back-ends down",
                                          "unchecked": "No health check", "no_data": "Not read", "empty": "No back-ends", "disabled": "Disabled"})
 

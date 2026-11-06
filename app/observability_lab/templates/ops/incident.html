@@ -18,7 +18,7 @@
         <tbody>{% for a in inc.alerts %}<tr><td>{{ sev_chip(a.severity) }}</td>
           <td><a href="{{ url_for('ops.alert', aid=a.id) }}">{{ a.title }}</a><div class="small text-muted">{{ names.get(a.source_id, '') }} · {{ a.detail }}</div></td>
           <td>{% if a.status == 'active' %}<span class="obs-chip st-error"><i class="bi bi-bell-fill" aria-hidden="true"></i> Active</span>{% else %}<span class="obs-chip st-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> Cleared</span>{% endif %}</td>
-          <td class="text-end text-nowrap">{{ dur(duration(a, now)) }}</td></tr>{% endfor %}</tbody>
+          <td class="text-end text-nowrap">{{ dur(duration(a, now_utc)) }}</td></tr>{% endfor %}</tbody>
       </table>{% else %}{{ empty_state('bell', 'No alerts linked', 'Link the alerts this incident covers below.') }}{% endif %}
       </div>
     </section>

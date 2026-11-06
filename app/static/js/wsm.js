@@ -253,9 +253,9 @@
       list.innerHTML = '';
       var rows = creds().map(function (c) {
         var st = { active: 'wsm-ok', expired: 'wsm-bad', revoked: 'wsm-bad', disabled: 'wsm-muted' }[c.state];
-        var acts = el('div', { cls: 'd-flex gap-1 flex-wrap' });
+        var acts = el('div', { cls: 'd-flex gap-1 flex-nowrap' });
         if (c.manageable) {
-          if (c.auth_type !== 'agent') acts.appendChild(btn('', 'bi-pencil', null, function () { credForm(c); }, 'Edit'));
+          if (c.auth_type !== 'agent' && c.state !== 'revoked') acts.appendChild(btn('', 'bi-pencil', null, function () { credForm(c); }, 'Edit'));
           if (c.state === 'active') acts.appendChild(btn('', 'bi-pause-circle', null, function () { credStatus(c, 'disabled'); }, 'Disable'));
           else if (c.state !== 'revoked') acts.appendChild(btn('', 'bi-play-circle', null, function () { credStatus(c, 'active'); }, 'Enable'));
           if (c.state !== 'revoked' && c.auth_type !== 'agent') acts.appendChild(btn('', 'bi-x-octagon', 'btn-outline-danger', function () { credStatus(c, 'revoked'); }, 'Revoke now'));
@@ -823,6 +823,7 @@
           list.appendChild(it);
           if (preset && preset.name === v.name && preset.server === v.server) setTimeout(function () { it.click(); }, 0);
         });
+        if (!vhosts.length) list.appendChild(el('div', { cls: 'p-3 text-muted wsm-small', text: 'No website with a document root on this server yet. Create one in Domains & VHosts.' }));
         vh.innerHTML = ''; vh.appendChild(list);
         localStorage.removeItem(KEY + '.htaccess');
       }).catch(function (e) { vh.innerHTML = ''; fail(e); });
@@ -972,7 +973,7 @@
   //  CRON
   // ======================================================================
   function pageCron() {
-    var who = input({ placeholder: 'user (empty = the signed-in account)' });
+    var who = input({ placeholder: 'user (empty = the signed-in account)', style: 'width:300px' });
     var box = el('div'), sched = el('div');
     var rows = [], sha = '';
     function load() {
@@ -1124,7 +1125,7 @@
         var r = x.result; side.innerHTML = '';
         side.append(el('div', { cls: 'wsm-toolbar' }, [el('strong', { text: r.total + ' update(s) pending' }), btn('Refresh package lists', 'bi-arrow-repeat', null, function () { job('pkg.refresh', {}, { title: 'Refresh lists' }).then(function (y) { flash(y.result.ok ? 'ok' : 'err', y.result.ok ? 'Lists refreshed.' : y.result.output); updates(); }).catch(fail); }),
           r.total ? btn('Update all', 'bi-arrow-up-circle', 'btn-fw-primary', function () { change('upgrade', []); }) : null]),
-        table(['Package', 'Installed', 'New'], r.updates.map(function (u) { return [u.name, u.old, u.new]; }), { empty: 'Everything is up to date (as of the last list refresh).' }));
+        table(['Package', 'Installed', 'New'], r.updates.map(function (u) { return [u.name, u.old || '—', u.new]; }), { empty: 'Everything is up to date (as of the last list refresh).' }));
       }).catch(function (e) { side.innerHTML = ''; fail(e); });
     }
     q.addEventListener('keydown', function (e) { if (e.key === 'Enter') search(); });
@@ -1244,9 +1245,9 @@
   //  SSH CONFIGURATION
   // ======================================================================
   function pageSsh() {
-    var box = el('div'), keysBox = el('div'), who = input({ placeholder: 'account (empty = the signed-in account)' });
+    var box = el('div'), keysBox = el('div'), who = input({ placeholder: 'account (empty = the signed-in account)', style: 'width:320px' });
     var LABELS = { Port: 'Port', PermitRootLogin: 'Root can sign in', PasswordAuthentication: 'Passwords accepted', PubkeyAuthentication: 'Keys accepted', KbdInteractiveAuthentication: 'Keyboard-interactive', ChallengeResponseAuthentication: 'Challenge-response', MaxAuthTries: 'Attempts per connection', LoginGraceTime: 'Time to sign in', AllowUsers: 'Only these users', AllowGroups: 'Only these groups', DenyUsers: 'Never these users', DenyGroups: 'Never these groups', X11Forwarding: 'X11 forwarding', AllowTcpForwarding: 'TCP forwarding', ClientAliveInterval: 'Keep-alive (s)', ClientAliveCountMax: 'Keep-alive misses', PermitEmptyPasswords: 'Empty passwords', UsePAM: 'Use PAM', Banner: 'Banner file' };
-    var CHOICES = { PermitRootLogin: ['yes', 'prohibit-password', 'forced-commands-only', 'no'], PasswordAuthentication: ['yes', 'no'], PubkeyAuthentication: ['yes', 'no'], KbdInteractiveAuthentication: ['yes', 'no'], ChallengeResponseAuthentication: ['yes', 'no'], X11Forwarding: ['yes', 'no'], AllowTcpForwarding: ['yes', 'no', 'local', 'remote'], PermitEmptyPasswords: ['no', 'yes'], UsePAM: ['yes', 'no'] };
+    var CHOICES = { PermitRootLogin: ['yes', 'prohibit-password', 'without-password', 'forced-commands-only', 'no'], PasswordAuthentication: ['yes', 'no'], PubkeyAuthentication: ['yes', 'no'], KbdInteractiveAuthentication: ['yes', 'no'], ChallengeResponseAuthentication: ['yes', 'no'], X11Forwarding: ['yes', 'no'], AllowTcpForwarding: ['yes', 'no', 'local', 'remote'], PermitEmptyPasswords: ['no', 'yes'], UsePAM: ['yes', 'no'] };
     function load() {
       box.innerHTML = ''; box.appendChild(loading());
       api('sshd.get', {}, { runAs: 'root' }).then(function (r) {

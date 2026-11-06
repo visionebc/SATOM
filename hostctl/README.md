@@ -243,3 +243,24 @@ file in it, and says so: removing it would leave that site unable to start.
 It removes the ACL entries, the sudoers file, the program, its configuration
 and the `satom-mon` account. Delete the connection in SATOM as well: hostguard
 then stops blocking that server.
+
+## 10. Session mode: the Web Server Manager
+
+`satom-wsm.py` is the same idea without the restricted account: the **Web
+Server Manager** (Linux ADOM, user guide §48) signs in as the operator's own
+SSH account, sends `satom-webctl.py` + `satom-wsm.py` on that session, and the
+server's `python3 -I` runs them once. Nothing is installed or left behind
+except the helper's own state, owned by the account that ran it:
+
+| As | State folder | Holds |
+|---|---|---|
+| root (sudo) | `/var/lib/satom-wsm/` | `backups/` (configuration backups), `history/` (previous versions of files SATOM overwrote, 25 per file), `trash/` (deleted items up to 64 MB), `cron-history/`, `wsm.log` |
+| an account | `~/.local/share/satom-wsm/` | the same, for that account |
+
+Elevation is `sudo -S -k -p ''` (the password is the first stdin line; `-k`
+makes sudo ask every time) or `sudo -n` for a NOPASSWD rule. The account's
+permissions and the server's sudo rules are the boundary; the guarantees of
+§6 that do not depend on `satom-mon` still hold: no shell, names checked,
+backup + test + restore for configuration, no secret in an answer.
+Certificates live in the same `/etc/satom-webctl/certs/` as the agent's, so
+both modes see the same ones.

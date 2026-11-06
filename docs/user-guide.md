@@ -12633,3 +12633,101 @@ installation, or the public site being down.
   packages, the container image), and the release pipeline rebuilds it at
   every release, so the manual matches the version installed.
 - It is on the Concept Map (§39) as **Documentation Center**.
+
+## 48. Web Server Manager (Linux ADOM)
+
+**Linux › Web Server Manager** administers Linux web servers over SSH **with
+your own account**: files, websites, certificates, security, `.htaccess`,
+scripts, scheduled tasks, packages, services, logs, users and the SSH server.
+It replaces the *Web hosts* example apps of Plugin Studio (they are switched
+off; the example bundle can still be installed as a demonstration of the
+server step).
+
+### 48.1 Servers and credentials
+
+1. **Add server**: a name, the host and the SSH port. SATOM never connects to
+   itself or to its HA peer, and a server added here can never open a
+   connection to SATOM (hostguard, §23.6).
+2. **Fetch and trust** its host key (Overview). Nothing is sent to a server
+   whose key is not trusted, and a different key later is refused.
+3. **Add credential**: your SSH account on that server.
+   - *Sign in with*: a password, or a private key (pasted, or **generated in
+     SATOM**: you add the public key to `~/.ssh/authorized_keys`) with an
+     optional passphrase.
+   - *SATOM keeps the secret* (vault or Fernet, never shown again), or asks
+     for it at **every operation** (the typed secret is used for that call and
+     forgotten; "remember in this tab" keeps it only in the page's memory).
+   - *When the account is not allowed*: never use sudo; **sudo with a
+     password** (the same as the SSH password, or asked every time); or
+     **sudo without password** when the server already has a NOPASSWD rule.
+     SATOM never edits the sudo rules of the server and never stores a root
+     password.
+   - *Run as*: **Automatic** (your account; when the server answers
+     *permission denied*, the same operation again through sudo), **always
+     my account**, or **always root**.
+   - Optional: shared service credential (needs *Manage shared server
+     credentials*), expiry date, and the modules it may be used for.
+   - Disable, **Revoke** (erases the stored secret at once) or delete.
+4. **Check access** signs in, tells you who you are on the server (user,
+   groups, distribution, package manager, web servers, PHP, firewall) and
+   whether sudo works.
+
+The bar at the top of every page shows the credential and the run-as mode;
+"last operation used sudo" appears when it did. **Advanced mode** shows the
+operation, its arguments (secrets replaced by their length) and the raw
+answer of the last call.
+
+### 48.2 Modules
+
+| Module | What it does |
+|---|---|
+| File Manager | Browse any folder the account may read; edit with syntax highlighting (PHP, HTML, CSS, JS, Python, Bash, JSON, YAML, XML, Apache, nginx); preview HTML (scripts disabled) and images; upload (drag and drop, 8 MB per file) and download; new file/folder; rename, move, copy; chmod / chown (recursive); zip / tar.gz; extract (archives with absolute paths, `..` or links are refused); search by name and content; **History** of the last 25 versions of every file SATOM overwrote, with restore. Deletes keep a backup on the server up to 64 MB. |
+| Domains & VHosts | nginx and Apache sites: new website (static, PHP-FPM with the socket detected, or reverse proxy), domains and aliases, document root, index files, HTTPS with a certificate, HTTP→HTTPS redirect, upload and time limits, security headers, own logs; edit the configuration; enable, disable, delete; test the configuration; check that the site answers. Every change: backup, the server's own test, restore when it fails, reload (never restart). |
+| SSL Certificates | Certificates in use and managed, with expiry; request with the key generated on the server and signed by the Certificate Manager (internal CA) or downloaded; install; **import** an existing certificate and key (the key goes straight to the server, never stored or logged by SATOM); use on a site; Let's Encrypt with certbot (webroot, nginx, Apache or standalone; ECDSA or RSA; staging); renew, test renewal, automatic renewal; **TLS check** (trusted chain, name, expiry, TLS 1.0–1.3). Expiring certificates raise a bell (§23.6). |
+| Security | Score and findings: world-writable files and sensitive files in public folders (with Fix / Delete), old TLS versions, directory listing, server version shown, unsupported PHP, SSH root and password login, risky services, firewall state (ufw / firewalld) and rules, fail2ban jails and unban, failed SSH logins in 24 h, listening ports. Read-only until you press a fix and confirm; firewall changes need a typed confirmation. |
+| .htaccess | A wizard (HTTPS, www, redirects, block or allow addresses, password protection, hide files, no listing, error pages, bots, rewrites, friendly URLs, caching) and templates (WordPress, Joomla, Laravel, PHP, static, custom) next to the editor. On Apache it shows whether `.htaccess` is read there (AllowOverride) and restores the previous file if the site answers 500. **On nginx** `.htaccess` is never read: the rules are converted and applied to the site's configuration (tested, restored on failure); what cannot be converted is listed and **not** applied. |
+| Scripts | Library (bash, sh, Python, PHP, Perl, custom `#!`), upload a file, shared templates. Before running: server, sign-in account, effective user, working folder, command, parameters and time limit are shown. Output, errors and exit code are kept in the run history. |
+| Cron Jobs | The crontab of your account (or another account, as root): frequency builder (every minute … monthly, or a cron expression), working folder, output to a log, errors by mail (MAILTO), enable/disable without deleting, duplicate, cron log. **Scheduled by SATOM**: SATOM runs a library script with a stored service credential (cron expression in UTC); revoking, disabling or expiring the credential parks the job as *waiting for authentication* and notifies the administrators. |
+| Package Manager | apt (Debian), dnf (RHEL, Rocky, Alma; yum as fallback) and zypper (SUSE): search, details and dependencies, installed packages, pending updates, refresh lists. Install, update or remove first shows what the package manager **would** install, upgrade and remove, then runs on confirmation. |
+| Services | systemd services: state, start, stop, restart, reload, start at boot, dependencies, logs. Stopping SSH needs a typed confirmation. |
+| Logs | nginx, Apache, PHP-FPM, system, authentication, cron, Let's Encrypt, mail and database logs found on the server, and the systemd journal (unit, severity, since); filter, live refresh, download. |
+| Users & Permissions | Accounts (admin, locked, groups, shell, home) and groups; create, change shell, groups, password, lock / unlock, delete (optionally with the home folder). Always as root. |
+| SSH Configuration | `sshd_config` settings shown as sshd uses them; saving backs up, tests with `sshd -t`, restores on failure and reloads; warnings before turning off passwords while you sign in with one, changing the port or leaving yourself out of AllowUsers. Authorized keys of an account. |
+
+### 48.3 Permissions
+
+| Permission | Allows |
+|---|---|
+| Open the Web Server Manager (`webserver.view`) | See servers and read them (every module's read operations) |
+| Change files (`webserver.files`) | File Manager writes |
+| Change sites and certificates (`webserver.sites`) | VHosts, `.htaccess`, certificates |
+| Administer servers (`webserver.system`) | Packages, services, cron, scripts, firewall, accounts, SSH; add servers |
+| Run as root (`webserver.root`) | Any use of sudo. Without it every operation runs as the SSH account |
+| Manage shared server credentials (`webserver.credentials`) | Share service credentials; see and revoke anyone's |
+
+Operators get view, files and sites; root, system and credentials are given
+explicitly. Every check is made by SATOM's server: a page cannot ask for more.
+
+### 48.4 Audit
+
+**Operations log** lists every operation, allowed or refused: time, SATOM
+user, SSH user, the Linux user that ran it, sudo, server, operation, target,
+result and exit code, credential and how it signed in (interactive, service,
+schedule, agent), session id and client address; filters and CSV export.
+Without *View audit log* you see your own operations. Changes also go to the
+application audit log. The server keeps its own log of what the helper did
+(`/var/lib/satom-wsm/wsm.log` as root, `~/.local/share/satom-wsm/wsm.log`
+otherwise).
+
+### 48.5 What runs on the server
+
+Nothing is installed. For each operation SATOM opens an SSH session as the
+credential's account and the server's own `python3` (3.6 or newer: every
+supported distribution has it) runs `hostctl/satom-webctl.py` +
+`hostctl/satom-wsm.py`, sent on that session. No shell is used for anything
+it runs; names are checked before they reach a program; the answer passes
+SATOM's ingestion gate. Supported: Debian 12, SUSE Linux Enterprise /
+openSUSE 15, RHEL 9 / Rocky / AlmaLinux — the distributions SATOM itself is
+deployed on. A server prepared with `install-satom-webctl.sh` also offers its
+restricted agent key as the credential *satom-webctl agent* (virtual hosts
+and certificates only).

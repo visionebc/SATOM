@@ -12,7 +12,7 @@
 
 <section class="fw-card mb-3" aria-labelledby="h-sum">
   <div class="fw-card-header"><h2 class="fw-card-title" id="h-sum">{{ sev_chip(a.severity) }} <span class="ms-1">{{ names.get(a.source_id, '—') }} · {{ a.kind }}</span></h2>
-    <span class="obs-card-hint">{% if a.status == 'active' %}active for {{ dur(duration(a, now)) }}{% else %}resolved {{ ago(a.resolved_at) }}{% endif %}</span></div>
+    <span class="obs-card-hint">{% if a.status == 'active' %}active for {{ dur(duration(a, now_utc)) }}{% else %}resolved {{ ago(a.resolved_at) }}{% endif %}</span></div>
   <div class="fw-card-body">
     <dl class="obs-kv">
       <dt>Condition</dt><dd>{{ a.detail }}</dd>

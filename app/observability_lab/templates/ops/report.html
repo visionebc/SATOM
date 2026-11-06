@@ -5,7 +5,7 @@
 {% block title %}{{ meta[0] }} report{% endblock %}
 {% macro csv(table) -%}<a class="btn btn-sm btn-outline-secondary obs-noprint" href="{{ url_for('ops.report_csv', kind=kind, table=table, period=period) }}"><i class="bi bi-filetype-csv" aria-hidden="true"></i> CSV</a>{%- endmacro %}
 {% block content %}
-{% call page_header(meta[0] ~ ' report', ('Last ' ~ period ~ ' · ' if kind != 'inventory' else '') ~ 'generated ' ~ now.strftime('%Y-%m-%d %H:%M') ~ ' UTC by ' ~ current_user.username, meta[1]) %}
+{% call page_header(meta[0] ~ ' report', ('Last ' ~ period ~ ' · ' if kind != 'inventory' else '') ~ 'generated ' ~ now_utc.strftime('%Y-%m-%d %H:%M') ~ ' UTC by ' ~ current_user.username, meta[1]) %}
   {% if kind != 'inventory' %}<div class="obs-seg obs-seg-sm obs-noprint" role="group" aria-label="Period">{% for p in periods %}<a href="{{ url_for('ops.report', kind=kind, period=p) }}" class="{{ 'active' if period == p }}" {{ 'aria-current="true"'|safe if period == p }}>{{ p }}</a>{% endfor %}</div>{% endif %}
   <button class="btn btn-sm btn-primary obs-noprint" type="button" data-print><i class="bi bi-printer" aria-hidden="true"></i> Print / PDF</button>
   <a class="btn btn-sm btn-outline-secondary obs-noprint" href="{{ url_for('ops.reports') }}">All reports</a>
@@ -74,7 +74,7 @@
   <div class="fw-card-body p-0 table-responsive">{% if d.alerts %}<table class="table table-sm obs-table mb-0">
     <thead><tr><th scope="col">Severity</th><th scope="col">Alert</th><th scope="col">Source</th><th scope="col">Opened (UTC)</th><th scope="col">Cleared (UTC)</th><th scope="col" class="text-end">Duration</th><th scope="col">Incident</th></tr></thead>
     <tbody>{% for a in d.alerts %}<tr><td>{{ sev_chip(a.severity) }}</td><td>{{ a.title }}</td><td>{{ names.get(a.source_id, '—') }}</td><td class="small">{{ a.first_seen.strftime('%Y-%m-%d %H:%M') }}</td>
-      <td class="small">{{ a.resolved_at.strftime('%Y-%m-%d %H:%M') if a.resolved_at else 'active' }}</td><td class="text-end text-nowrap">{{ dur(duration(a, now)) }}</td><td>{{ ('#' ~ a.incident_id) if a.incident_id else '—' }}</td></tr>{% endfor %}</tbody>
+      <td class="small">{{ a.resolved_at.strftime('%Y-%m-%d %H:%M') if a.resolved_at else 'active' }}</td><td class="text-end text-nowrap">{{ dur(duration(a, now_utc)) }}</td><td>{{ ('#' ~ a.incident_id) if a.incident_id else '—' }}</td></tr>{% endfor %}</tbody>
   </table>{% else %}{{ empty_state('check2-circle', 'No alerts in this period', '') }}{% endif %}</div></section>
 <section class="fw-card"><div class="fw-card-header"><h2 class="fw-card-title">Incidents</h2><span class="ms-auto">{{ csv('incidents') }}</span></div>
   <div class="fw-card-body p-0 table-responsive">{% if d.incidents %}<table class="table table-sm obs-table mb-0">

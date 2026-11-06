@@ -7,6 +7,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Web Server Manager (Linux ADOM).** Asked for: "a plugin for the Linux ADOM
+  to manage web servers, like cPanel, over SSH with the credentials of the
+  signed-in user; if the account cannot do something, escalate with sudo the
+  way the user sets it; adaptable to the distributions SATOM deploys on; if
+  something already exists, unify it into one". **Linux › Web Server
+  Manager** replaces the Web hosts example apps (switched off by the
+  migration; the server connection they used is the server record). Twelve
+  modules: File Manager (editor with syntax highlighting, upload/download,
+  history and restore, archives, search, chmod/chown), Domains & VHosts
+  (nginx and Apache; static, PHP-FPM or reverse proxy; HTTPS, redirects,
+  limits, headers), SSL Certificates (internal CA, import, certbot, TLS
+  check), Security (score and findings, firewall, fail2ban), `.htaccess`
+  (wizard and templates; converted to nginx where possible, the rest listed
+  and not applied), Scripts (library, run history), Cron Jobs (host crontabs
+  and jobs SATOM runs with a service credential), Package Manager
+  (apt/dnf/zypper, with a plan before every change), Services, Logs, Users &
+  Permissions and SSH Configuration. Operations run as the credential's SSH
+  account; **Automatic** repeats one through sudo only when the server
+  answers permission denied, with the account's password, a password asked
+  each time or a NOPASSWD rule. Credentials keep their secret (vault or
+  Fernet) or ask at every operation; they expire, are disabled or revoked
+  (secret erased, schedules parked as waiting for authentication, bell to
+  the administrators). Six new permissions (`webserver.*`). Every operation
+  is recorded with the SATOM user, the SSH user, the effective Linux user,
+  sudo, credential and session (**Operations log**, CSV). Nothing is
+  installed on the server: the helper (`hostctl/satom-wsm.py`, Python 3.6+
+  standard library) travels on the SSH session. Verified live on Debian 12,
+  openSUSE 15.6 and Rocky 9 (user guide §48).
 - **Plugin Studio folders, given whole to ADOMs and user groups.** Asked for:
   "assign a whole folder to a user group or an ADOM, so all the plugins we are
   going to have are easier to manage, with a section to manage the folders,

@@ -559,7 +559,21 @@ that will not come online.</p>
    needs a community string; it provisions the <code>snmp</code> scrape target at once,
    and switching it off disables that target. What is polled and what the
    appliance must allow is in §14.7.
-2. <strong>Test connection</strong> — validates REST reachability and credentials.
+   <strong>HA clusters: one TLS setting for the whole cluster.</strong> The <strong>Verify SSL
+   certificate</strong> box of a cluster (node 0) applies to every member: in
+   per-node mode each connection goes to a member, and each member is checked
+   against the trust store when the cluster's box is ticked. A member has no
+   setting of its own. Its Edit page shows the box greyed out with a link to
+   the cluster, and the API refuses <code>verify_ssl</code> on a member. Turning
+   verification off on a cluster needs the password, and it must be the one
+   every member stores, because each member sends its own (an HA pair keeps
+   the admin password in sync). A member detached from its cluster keeps the
+   setting it was running with.
+2. <strong>Test connection</strong> — validates REST reachability and credentials. On a
+   per-node HA cluster it tests every member with the cluster's TLS setting
+   and names the member that fails, with the reason (<code>certificate verify
+   failed: …</code> tells you to import the CA under Settings → Trust store, or that
+   the member's certificate does not name the address SATOM uses for it).
 3. <strong>Discovery / Rediscovery</strong> — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
    trigger <code>rediscovery</code>, so Device health counts it); also records the

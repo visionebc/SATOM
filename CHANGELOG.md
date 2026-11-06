@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.1] - 2026-11-06
+
 ### Fixed
 - **HA cluster: "Verify SSL certificate" on the cluster now applies to its
   members (SA-0012).** Reported from an install with a per-node cluster:

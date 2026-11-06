@@ -37,7 +37,7 @@
             ><i class="bi bi-box-arrow-up-right" style="opacity:.35"></i></span>
         {% endif %}</dd>
       <dt class="col-sm-4">{{ _('Username') }}</dt><dd class="col-sm-8">{{ appliance.username }}</dd>
-      <dt class="col-sm-4">{{ _('SSL Verify') }}</dt><dd class="col-sm-8">{{ 'Yes' if appliance.verify_ssl else 'No' }}</dd>
+      <dt class="col-sm-4">{{ _('SSL Verify') }}</dt><dd class="col-sm-8">{{ 'Yes' if appliance.verify_ssl else 'No' }}{% if appliance.verify_ssl_inherited %} <span class="text-muted small">({{ _('set on cluster %(name)s', name=appliance.parent.name) }})</span>{% elif appliance.is_cluster and appliance.members %} <span class="text-muted small">({{ _('applies to every member') }})</span>{% endif %}</dd>
       <dt class="col-sm-4">{{ _('Firmware') }}</dt><dd class="col-sm-8">{{ appliance.firmware or '—' }}</dd>
       {% if appliance.vdom %}<dt class="col-sm-4">{{ _('ADOM (vdom)') }}</dt><dd class="col-sm-8">{{ appliance.vdom }}</dd>{% endif %}
       {% if appliance.department %}<dt class="col-sm-4">{{ _('Dept') }}</dt><dd class="col-sm-8">{{ appliance.department }}</dd>{% endif %}
@@ -322,7 +322,7 @@ async function testConn(id, btn) {
     const r = await apiFetch(`/appliances/${id}/test`, { method: 'POST' });
     if (r.ok) {
       box.className = 'alert alert-success';
-      box.textContent = 'Connection OK';
+      box.textContent = r.members ? 'Connection OK — ' + r.status : 'Connection OK';
     } else {
       box.className = 'alert alert-danger';
       box.textContent = 'Connection failed: ' + (r.status || 'unknown error');

@@ -190,6 +190,62 @@ def _link_below(base, rel):
     return False
 
 
+#: Seconds past systemd's own deadlines the runner waits for a restart.
+RESTART_MARGIN_S = 30
+#: Used when systemd gives no stop deadline (unreadable, or "infinity").
+RESTART_FALLBACK_S = 600
+_SYSTEMD_SPAN_RE = re.compile(r"(\d+(?:\.\d+)?)(us|ms|s|min|h)(?![a-z])")
+_SYSTEMD_SPAN_UNIT = {"us": 1e-6, "ms": 1e-3, "s": 1.0, "min": 60.0, "h": 3600.0}
+
+
+def _systemd_seconds(text):
+    """A systemd time span as ``systemctl show`` prints it ('1min 30s',
+    '90s', '500ms') in seconds; None when empty, 'infinity' or unparsable."""
+    t = (text or "").strip().replace(" ", "")
+    if not t or t == "infinity":
+        return None
+    pos, total = 0, 0.0
+    for m in _SYSTEMD_SPAN_RE.finditer(t):
+        if m.start() != pos:
+            return None
+        total += float(m.group(1)) * _SYSTEMD_SPAN_UNIT[m.group(2)]
+        pos = m.end()
+    return total if pos == len(t) and pos else None
+
+
+def restart_budget(unit):
+    """How long ``systemctl restart <unit>`` may legitimately block: the
+    unit's stop deadline plus its start deadline plus a margin."""
+    stop = _systemd_seconds(_svc_prop(unit, "TimeoutStopUSec"))
+    if stop is None:
+        return RESTART_FALLBACK_S
+    start = _systemd_seconds(_svc_prop(unit, "TimeoutStartUSec")) or 0.0
+    return int(stop + start + RESTART_MARGIN_S)
+
+
+def restart_unit(unit):
+    """``systemctl restart`` that waits as long as systemd itself may take.
+
+    SA-0013: SIGTERM makes the scheduler finish the due actions it is running
+    before it exits (a firmware upgrade or a device write must not be cut in
+    half), so its stop lasts as long as that pass -- 2 to 46 s measured on
+    satom-node-1 on 2026-11-05, longer on an install with slower devices.
+    systemd allows it TimeoutStopSec (90 s by default) before SIGKILL; this
+    runner allowed 60 s and treated the overrun as a failed update, rolling
+    4.11.0 back on a node whose restart was simply still under way. The wait
+    is now derived from the unit, and an overrun says what was happening.
+    """
+    budget = restart_budget(unit)
+    try:
+        return subprocess.run(["systemctl", "restart", unit],
+                              capture_output=True, text=True, timeout=budget)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            "%s did not finish restarting within %d s (systemd's stop and "
+            "start deadlines plus %d s); a scheduler stop waits for the "
+            "scheduled actions it is running" % (unit, budget, RESTART_MARGIN_S))
+
+
 def restart_reconciler():
     """Restart the reconciler loop IF it is running (``try-restart``).
 
@@ -202,7 +258,8 @@ def restart_reconciler():
     disabled reconciler alone. Never fails the update.
     """
     try:
-        subprocess.run(["systemctl", "try-restart", RECONCILER], timeout=60)
+        subprocess.run(["systemctl", "try-restart", RECONCILER],
+                       timeout=restart_budget(RECONCILER))
     except Exception:  # noqa: BLE001
         pass
 
@@ -859,10 +916,10 @@ def restart_and_validate(st, is_standby, app_was_active, label):
     validate with the strongest check that state allows.
     """
     st.begin("restart services")
-    subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+    restart_unit(SCHED)
     restart_reconciler()
     if app_was_active:
-        subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
+        restart_unit(SERVICE)
         st.step("restart services", True, "%s + scheduler%s"
                 % (SERVICE, " (standby serving traffic)" if is_standby else ""))
         st.begin("health check")
@@ -1273,12 +1330,12 @@ def process(req_path):
             # The update already compiled the NEW .po; put back the catalogue
             # of the code that runs again.
             compile_catalogues(st, "pybabel compile (rolled-back catalogues)")
-            subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+            restart_unit(SCHED)
             restart_reconciler()
             if not app_was_active:
                 ok, _ = import_smoke_ok()
             else:
-                subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
+                restart_unit(SERVICE)
                 ok = health_ok()
             st.step("rollback to %s" % snapshot[:12], ok,
                     "recovered" if ok else "STILL UNHEALTHY after rollback")
@@ -1648,8 +1705,8 @@ def pip_change(req_path):
         try:
             if previous:
                 rb = _pip_install("%s%s==%s" % (pkg, extras, previous), env=pip_env)
-                subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
-                subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+                restart_unit(SERVICE)
+                restart_unit(SCHED)
                 ok = health_ok()
                 st.step("rollback to %s==%s" % (pkg, previous),
                         rb.returncode == 0 and ok,
@@ -2289,12 +2346,12 @@ def package_change(req_path):
                     timeout=1800, user=APP_USER)
             _chown_tree()
             compile_catalogues(st, "pybabel compile (rolled-back catalogues)")
-            subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+            restart_unit(SCHED)
             restart_reconciler()
             if not app_was_active:
                 ok, _ = import_smoke_ok()
             else:
-                subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
+                restart_unit(SERVICE)
                 ok = health_ok()
             st.step("rollback to %s" % snapshot[:12], ok,
                     "recovered" if ok else "STILL UNHEALTHY after rollback")
@@ -2597,7 +2654,7 @@ def service_action(req_path):
                 # connections. Bouncing the workers is the actual fix and it is
                 # cheap; leaving it would hand the operator a 500 they did not
                 # ask for and no obvious cause.
-                subprocess.run(["systemctl", "restart", SERVICE], timeout=180)
+                restart_unit(SERVICE)
                 ok = health_ok()
                 st.step("recycle app connection pool", ok,
                         "restarted %s after the database bounce" % SERVICE)

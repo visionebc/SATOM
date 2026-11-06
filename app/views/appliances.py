@@ -1,3 +1,4 @@
+import hmac
 import os
 
 from werkzeug.utils import secure_filename
@@ -382,7 +383,12 @@ def edit_save(id):
     # whatever presents a certificate on that host, so a MITM on the path can
     # capture it. Turning it from on to OFF therefore demands the password be
     # re-entered, exactly like pointing the row somewhere new.
-    new_verify_ssl = request.form.get('verify_ssl') == 'on'
+    # A cluster member has no setting of its own (Appliance.verify_ssl): it
+    # follows its cluster, so whatever a member's form posts is not read.
+    if appliance.verify_ssl_inherited:
+        new_verify_ssl = appliance.verify_ssl
+    else:
+        new_verify_ssl = request.form.get('verify_ssl') == 'on'
     verify_ssl_relaxed = bool(appliance.verify_ssl) and not new_verify_ssl
     api_retarget = (host_changed or user_changed or kind_changed
                     or new_port != appliance.port or verify_ssl_relaxed)
@@ -406,6 +412,18 @@ def edit_save(id):
               'certificate verification — requires re-entering the password.',
               'danger')
         return redirect(url_for('appliances.edit', id=appliance.id))
+    # On a cluster the switch also relaxes every member's connection, and each
+    # member sends its OWN stored password. Re-entering node 0's proves
+    # nothing about theirs, so the password typed must be the one every member
+    # stores (an HA pair keeps its admin password in sync).
+    if verify_ssl_relaxed and appliance.is_cluster:
+        differ = _members_with_other_password(appliance, password)
+        if differ:
+            flash('Turning off SSL certificate verification on a cluster turns it '
+                  'off for every member, so the password must be the one each '
+                  'member stores. It does not match: %s. Update those members '
+                  'first.' % ', '.join(differ), 'danger')
+            return redirect(url_for('appliances.edit', id=appliance.id))
 
     appliance.name = request.form.get('name', appliance.name).strip()
     # Guard the CHANGE, not the field: an unchanged kind is always allowed,
@@ -420,7 +438,8 @@ def edit_save(id):
     appliance.port = new_port
     appliance.username = new_username
     appliance.ssh_username = new_ssh_username
-    appliance.verify_ssl = new_verify_ssl
+    if not appliance.verify_ssl_inherited:
+        appliance.verify_ssl = new_verify_ssl
     appliance.vdom = request.form.get('vdom', appliance.vdom or '').strip() or None
     appliance.tags = request.form.get('tags', appliance.tags or '').strip() or None
     appliance.department = request.form.get('department', appliance.department or '').strip() or None
@@ -693,6 +712,8 @@ def not_in_gui_save(id):
 @require_permission('appliances.view')
 def test_connection(id):
     appliance = visible_appliance_or_404(id)
+    if appliance.is_cluster and (appliance.ha_mode or '').lower() != 'vip':
+        return _test_cluster_members(appliance)
     try:
         client = client_for(appliance)
         status = client.status_check()
@@ -701,6 +722,43 @@ def test_connection(id):
     except Exception as exc:
         eid = log_exception(exc, context='appliances.test_connection')
         return jsonify({'ok': False, 'status': str(exc), 'error_id': eid})
+
+
+def _test_cluster_members(node0):
+    """Test a per-node cluster: it has no connection of its own -- every call
+    goes to a member -- so testing node 0's empty host proved nothing. Each
+    member is tested with the cluster's TLS setting, and the answer names the
+    one that fails and why (SA-0012)."""
+    members = node0.cluster_members()
+    if not members:
+        return jsonify({'ok': False, 'members': True,
+                        'status': 'this cluster has no member nodes yet'})
+    parts, ok_all = [], True
+    for m in members:
+        try:
+            client_for(m).status_check()
+            parts.append('%s: OK' % m.name)
+        except Exception as exc:  # noqa: BLE001 - reported per member
+            ok_all = False
+            log_exception(exc, context='appliances.test_connection')
+            parts.append('%s: %s' % (m.name, exc))
+    log_action('appliance.test', target=node0.name)
+    return jsonify({'ok': ok_all, 'members': True, 'status': ' · '.join(parts)})
+
+
+def _members_with_other_password(node0, password):
+    """Names of the members whose stored password is not ``password``
+    (one that cannot be read counts as different: refuse, never assume)."""
+    out = []
+    typed = (password or '').encode()
+    for m in node0.cluster_members():
+        try:
+            same = hmac.compare_digest((m.password or '').encode(), typed)
+        except Exception:  # noqa: BLE001
+            same = False
+        if not same:
+            out.append(m.name)
+    return out
 
 
 # ===========================================================================
@@ -779,6 +837,9 @@ def detach_member(id, mid):
         db.session.delete(m)
         msg = 'Cluster member deleted.'
     else:
+        # A member follows its cluster's TLS setting; once standalone its own
+        # stored value would take over unseen. Carry the one it ran with.
+        m.verify_ssl = node0.verify_ssl
         m.parent_id = None
         m.is_cluster_member = False
         m.ha_role_hint = None

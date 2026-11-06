@@ -327,7 +327,9 @@ class Appliance(db.Model):
     port = db.Column(db.Integer, nullable=False, default=443)
     username = db.Column(db.String(64), nullable=False)
     password_enc = db.Column(db.Text, nullable=False)  # Fernet-encrypted
-    verify_ssl = db.Column(db.Boolean, nullable=False, default=True)
+    # The row's OWN TLS setting. Clients read ``verify_ssl`` (a property,
+    # below), which for a cluster member is its cluster's setting (SA-0012).
+    own_verify_ssl = db.Column("verify_ssl", db.Boolean, nullable=False, default=True)
     vdom = db.Column(db.String(64), nullable=True)
     tags = db.Column(db.Text, nullable=True)           # JSON list of strings
     department = db.Column(db.String(128), nullable=True)
@@ -456,6 +458,32 @@ class Appliance(db.Model):
     def cluster_members(self):
         """Member nodes ordered by role hint then name (stable display)."""
         return sorted(self.members, key=lambda m: (m.ha_role_hint or 'zz', m.name))
+
+    @property
+    def verify_ssl(self) -> bool:
+        """Whether connections to this appliance verify its TLS certificate
+        (public roots plus the trust store -- clients/base.py).
+
+        A cluster member answers with its cluster's (node 0's) setting. Until
+        SA-0012 every member kept the value copied when it was created -- or
+        its own, when an existing appliance was attached -- so ticking "Verify
+        SSL certificate" on the cluster page changed nothing: in per-node mode
+        every connection goes to a member, and the members went on connecting
+        unverified while the cluster page said "Yes". Every reader (the
+        product clients, rediscovery, attack log, observability) goes through
+        here, so none of them can pick the member's stale value again."""
+        parent = self.parent if self.is_cluster_member else None
+        own = parent.own_verify_ssl if parent is not None else self.own_verify_ssl
+        return True if own is None else bool(own)   # None = not flushed: column default
+
+    @verify_ssl.setter
+    def verify_ssl(self, value) -> None:
+        self.own_verify_ssl = bool(value)
+
+    @property
+    def verify_ssl_inherited(self) -> bool:
+        """True when ``verify_ssl`` comes from the cluster, not this row."""
+        return bool(self.is_cluster_member and self.parent is not None)
 
     @property
     def password(self) -> str:
@@ -716,6 +744,7 @@ class Appliance(db.Model):
             "port": self.port,
             "username": self.username,
             "verify_ssl": self.verify_ssl,
+            "verify_ssl_inherited": self.verify_ssl_inherited,
             "maintenance": bool(self.maintenance),
             "vdom": self.vdom,
             "tags": _parse_tags(self.tags),

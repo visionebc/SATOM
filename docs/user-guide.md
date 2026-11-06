@@ -452,7 +452,21 @@ the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
    needs a community string; it provisions the `snmp` scrape target at once,
    and switching it off disables that target. What is polled and what the
    appliance must allow is in §14.7.
-2. **Test connection** — validates REST reachability and credentials.
+   **HA clusters: one TLS setting for the whole cluster.** The **Verify SSL
+   certificate** box of a cluster (node 0) applies to every member: in
+   per-node mode each connection goes to a member, and each member is checked
+   against the trust store when the cluster's box is ticked. A member has no
+   setting of its own. Its Edit page shows the box greyed out with a link to
+   the cluster, and the API refuses `verify_ssl` on a member. Turning
+   verification off on a cluster needs the password, and it must be the one
+   every member stores, because each member sends its own (an HA pair keeps
+   the admin password in sync). A member detached from its cluster keeps the
+   setting it was running with.
+2. **Test connection** — validates REST reachability and credentials. On a
+   per-node HA cluster it tests every member with the cluster's TLS setting
+   and names the member that fails, with the reason (`certificate verify
+   failed: …` tells you to import the CA under Settings → Trust store, or that
+   the member's certificate does not name the address SATOM uses for it).
 3. **Discovery / Rediscovery** — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
    trigger `rediscovery`, so Device health counts it); also records the

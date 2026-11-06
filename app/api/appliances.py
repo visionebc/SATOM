@@ -191,6 +191,9 @@ def update_appliance(id):
     if 'password' in data and data['password']:
         appliance.set_password(data['password'])
     if 'verify_ssl' in data:
+        if appliance.verify_ssl_inherited:
+            return jsonify({'error': 'verify_ssl of a cluster member follows its '
+                            'cluster; change it on %s' % appliance.parent.name}), 400
         appliance.verify_ssl = bool(data['verify_ssl'])
     if 'vdom' in data:
         appliance.vdom = data['vdom'].strip()
@@ -233,7 +236,11 @@ def test_appliance(id):
     from ..clients import client_for
     appliance = visible_appliance_or_404(id)
     try:
-        client = client_for(appliance)
+        # A cluster node 0 has no connection of its own in per-node mode:
+        # build_client() asks its live primary, with the cluster's TLS
+        # setting (SA-0012). Anything else: the row's own client.
+        client = (appliance.build_client() if appliance.is_cluster
+                  else client_for(appliance))
         client.status_check()
         status, ok, detail = 'online', True, None
     except Exception as exc:

@@ -367,6 +367,31 @@ previous one passed.
 files the package added are removed, the venv is restored from the freeze, the
 services restart, and health is re-checked. The status log records every step.
 
+**How long a restart may take.** When it is stopped, the scheduler first
+finishes the scheduled actions it is running, so a firmware upgrade or a device
+write is never cut off halfway. Its stop therefore lasts as long as that run of
+actions. The runner waits for every restart as long as systemd itself may take
+(the unit's `TimeoutStopSec` plus `TimeoutStartSec`, plus 30 s; 210 s for the
+scheduler with systemd's defaults). If a restart still runs over, the step names
+the service and the reason, and the update rolls back.
+
+### 6.2 Updating a node on 4.11.0 or older (scheduler restart timed out)
+
+Up to 4.11.0 the runner gave the scheduler 60 s to restart. With devices that
+answer slowly, the update failed with `Command '['systemctl', 'restart',
+'satom-scheduler.service']' timed out after 60 seconds` and rolled back
+(SA-0013). The update is applied by the runner **already installed**, so
+installing the fixed version does not help on that run. On such a node:
+
+```
+satom execute stop scheduler     # as root; lets the running actions finish (systemd allows 90 s)
+satom execute update package satom-update-<version>.tar.gz --yes   # or Apply on the Software Update page
+```
+
+The update starts the scheduler again (on a stopped unit `restart` is just a
+start). Nothing scheduled fires while it is stopped, so apply right after
+stopping it.
+
 ### 6.1 Database changes
 
 A schema change reaches a node by two routes, and both run on every update:

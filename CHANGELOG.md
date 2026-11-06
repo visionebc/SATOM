@@ -6,6 +6,37 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **HA cluster: "Verify SSL certificate" on the cluster now applies to its
+  members (SA-0012).** Reported from an install with a per-node cluster:
+  ticking the box on the cluster's page did not make SATOM check the members'
+  certificates against the trust store. In per-node mode every connection goes
+  to a member, and each member kept the setting it got when it was created (or
+  its own, when an existing appliance was attached), so the cluster page said
+  "Yes" while the members kept connecting unverified. A member now always uses
+  its cluster's setting: its Edit page shows the box greyed out with a link to
+  the cluster, the API refuses `verify_ssl` on a member, and detaching a member
+  keeps the setting it was running with. Turning verification off on a cluster
+  needs the password, and it must be the one every member stores (each member
+  sends its own); if one differs, the save is refused and names it. **Test
+  Connection** on a per-node cluster now tests every member and says which one
+  fails and why (it used to test node 0, which has no address), and the status
+  badge on the Appliances list asks the cluster's primary.
+- **An update is no longer rolled back because the scheduler took more than
+  60 s to stop (SA-0013).** Reported from an update to 4.11.0 that failed with
+  `Command '['systemctl', 'restart', 'satom-scheduler.service']' timed out
+  after 60 seconds` and rolled back. When it is stopped, the scheduler first
+  finishes the scheduled actions it is running, so a firmware upgrade or a
+  device write is never cut off halfway. That can take longer than 60 s with slow
+  devices, and systemd allows it 90 s. The update runner now waits for a
+  restart as long as systemd itself may take (the unit's stop and start time
+  limits plus 30 s), for every service it restarts. If a restart still runs
+  over, the error names the service and the reason. **The fix is in the
+  runner, and an update is applied by the runner already installed:** a node
+  on 4.11.0 or older still gives the scheduler 60 s. To update such a node,
+  stop the scheduler first (`satom execute stop scheduler`, as root), then
+  apply; the update starts it again (docs/offline-update-packages.md §6.2).
+
 ## [4.11.0] - 2026-11-06
 
 ### Changed

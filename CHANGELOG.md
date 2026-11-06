@@ -84,6 +84,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   folder's flow apps as one bundle.
 
 ### Fixed
+- **Web Server Manager on SUSE and RHEL: enable, disable, delete, open and save a site
+  by the name you type.** On a `conf.d` layout (SUSE `vhosts.d`, RHEL `conf.d`)
+  creating `example.com` writes `example.com.conf`, but the other operations
+  wanted the `.conf` and answered *bad_name* to `example.com` (found running the
+  Domains & VHosts plugin on openSUSE 15.6 and Rocky 9). The session helper now
+  adds it on those layouts.
 - **The plugin rules pack could not be built once a step reached
   `system_backup`**: two absolute imports (`from app.services import
   doc_publication`) made the pack refuse the whole closure. They are relative

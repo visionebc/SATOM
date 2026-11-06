@@ -817,6 +817,22 @@ SECURITY_HEADERS = {"X-Content-Type-Options": "nosniff", "X-Frame-Options": "SAM
                     "Referrer-Policy": "strict-origin-when-cross-origin"}
 
 
+def _confd_name(conf, args):
+    """A site named as people type it (``example.com``) on a conf.d layout
+    (SUSE vhosts.d, RHEL conf.d), where its file is ``example.com.conf`` --
+    the name create gave it. Anything else is passed on unchanged and
+    checked by the operation as before."""
+    name = args.get("name")
+    try:
+        spec = server_spec(conf, args.get("server"))
+    except Refused:
+        return args
+    if spec.get("layout") == "confd" and isinstance(name, str) and name \
+            and not name.endswith(".conf"):
+        return dict(args, name=name + ".conf")
+    return args
+
+
 def op_vhost_create2(conf, args):
     """A new virtual host with the Web Server Manager's options. Same rules as
     satom-webctl's create: write, test, restore on failure, reload."""
@@ -2473,11 +2489,14 @@ def op_script_run(conf, args):
 SESSION_OPS = {
     "whoami": op_whoami,
     "info": lambda c, a: dict(op_info(c, a), mode="session"),
-    "vhosts.list": op_vhosts_list, "vhost.get": op_vhost_get, "vhost.put": op_vhost_put,
+    "vhosts.list": op_vhosts_list,
+    "vhost.get": lambda c, a: op_vhost_get(c, _confd_name(c, a)),
+    "vhost.put": lambda c, a: op_vhost_put(c, _confd_name(c, a)),
     "vhost.create": op_vhost_create2,
-    "vhost.enable": lambda c, a: op_vhost_toggle(c, a, True),
-    "vhost.disable": lambda c, a: op_vhost_toggle(c, a, False),
-    "vhost.delete": op_vhost_delete, "vhost.snippet": op_vhost_snippet,
+    "vhost.enable": lambda c, a: op_vhost_toggle(c, _confd_name(c, a), True),
+    "vhost.disable": lambda c, a: op_vhost_toggle(c, _confd_name(c, a), False),
+    "vhost.delete": lambda c, a: op_vhost_delete(c, _confd_name(c, a)),
+    "vhost.snippet": op_vhost_snippet,
     "vhost.test": op_vhost_test, "http.check": op_http_check,
     "htaccess.apply": op_htaccess_apply, "apache.override": op_apache_override,
     "fs.list": op_fs_list, "fs.stat": op_fs_stat, "fs.read": op_fs_read, "fs.write": op_fs_write,

@@ -6,7 +6,38 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Test Connection picks the method: API, TCP port, Ping or Traceroute
+  (SA-0017).** The appliance page has a method next to the button. **TCP port**
+  makes one TCP handshake to the management port, which is what `telnet <host>
+  <port>` is used for. It runs inside SATOM, so no telnet client is needed on
+  the server. It also tells a refused port (the host is up) from no answer.
+  **Ping** and **Traceroute** run the system tools from this server and show
+  their output. When ICMP is not allowed for the SATOM service user, or a tool
+  is missing, the result says so and how to fix it, instead of reporting the
+  device as down. Every test is one line in the audit log.
+
 ### Fixed
+- **HA cluster: members can be verified when the cluster's certificate does
+  not name their IP (SA-0015).** Reported after 4.11.1, with verification on:
+  `certificate verify failed: IP address mismatch, certificate is not valid for
+  '<member IP>'`. The CA was trusted, but an HA pair presents one synced
+  certificate, which names the cluster and not each member's management IP, so
+  every member failed. A new **TLS certificate name** on the appliance (Edit,
+  next to Verify SSL certificate; API `tls_server_name`) is the name the
+  certificate is checked against, and it is sent as SNI. The chain is still
+  verified against the trust store, and a wrong name still fails. On a cluster
+  it applies to every member, the same way as Verify SSL certificate. The field
+  accepts a host name or an IP address, never a wildcard.
+- **HA cluster: each member can be tested on its own, and a VIP cluster tests
+  its members too (SA-0016, SA-0018).** Every member card on the cluster page
+  has its own **Test** button, and a member's page tests that member only. On a
+  VIP cluster, Test Connection tests the VIP and then every member. When the
+  VIP does not answer from the SATOM server but the members do, the result says
+  so and points to per-node mode, where SATOM connects to the members and
+  writes go to the live primary. A failed test now carries the next step. "IP
+  address mismatch" / "Hostname mismatch" points to TLS certificate name. An
+  untrusted issuer points to Settings › Trust store.
 - **Updating a node on 4.11.0 or older no longer needs the scheduler stopped by
   hand (SA-0014).** Reported right after 4.11.1: the update to 4.11.1 still
   rolled back with `Command '['systemctl', 'restart',

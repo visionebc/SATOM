@@ -69,9 +69,14 @@ def _host_semaphore(host_key: str) -> threading.BoundedSemaphore:
 
 
 class BaseClient:
-    def __init__(self, host: str, port: int = 443, verify_ssl: bool = True, timeout: float = 30.0):
+    def __init__(self, host: str, port: int = 443, verify_ssl: bool = True, timeout: float = 30.0,
+                 tls_name: str | None = None):
         self.base_url = f"https://{host}:{port}"
         self._verify = verify_ssl
+        # Name the certificate is checked against (and sent as SNI) instead
+        # of ``host`` -- Appliance.tls_name, SA-0015. Only meaningful with
+        # verification on; the chain is validated exactly the same.
+        self._tls_name = (tls_name or "").strip() or None
         self._timeout = httpx.Timeout(timeout, connect=min(_MAX_CONNECT_S, timeout))
         self._sem = _host_semaphore(f"{host}:{port}")
         self._shared = None
@@ -182,6 +187,10 @@ class BaseClient:
         url = self.base_url.rstrip('/') + '/' + path.lstrip('/')
         shared = self._shared
         verify = self._verify_target() if shared is None else None
+        if self._tls_name and self._verify:
+            ext = dict(kwargs.get("extensions") or {})
+            ext.setdefault("sni_hostname", self._tls_name)
+            kwargs["extensions"] = ext
         # Inside a device job (services/device_jobs) every call is one visible
         # step, and the first write call takes the device's queue lock. The
         # hook runs BEFORE the semaphore so a queued job holds no slot.

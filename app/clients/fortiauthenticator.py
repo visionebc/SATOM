@@ -71,7 +71,8 @@ class FortiAuthenticatorClient(BaseClient):
         out of the config tree and reuses the Fernet envelope every other
         product already relies on.
         """
-        super().__init__(appliance.host, appliance.port, appliance.verify_ssl, timeout)
+        super().__init__(appliance.host, appliance.port, appliance.verify_ssl, timeout,
+                         tls_name=getattr(appliance, "tls_name", None))
         self._username = appliance.username or ''
         self._api_key = appliance.password or ''
         # The build this box runs: names resolve per build (registry.loader.resolve_for).

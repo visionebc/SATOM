@@ -36,7 +36,8 @@ def cmdb_url(path: str) -> str:
 class FortiGateClient(BaseClient):
     def __init__(self, appliance, timeout: float = 30.0):
         super().__init__(appliance.host, appliance.port or 443,
-                         appliance.verify_ssl, timeout)
+                         appliance.verify_ssl, timeout,
+                         tls_name=getattr(appliance, "tls_name", None))
         self._token = appliance.password or ''
         self._vdom = (getattr(appliance, 'vdom', None) or '').strip()
 

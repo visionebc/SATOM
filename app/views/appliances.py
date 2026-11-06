@@ -10,6 +10,7 @@ from flask import (
 from flask_login import login_required, current_user
 from ..auth.decorators import require_permission, require_device_scope
 from sqlalchemy.exc import IntegrityError
+from ..models import clean_tls_name
 from ..models import (
     Appliance, ApplianceInterface, AuditLog, db, Permission,
     INTERFACE_ROLES, clean_interface_role,
@@ -265,6 +266,10 @@ def create():
     username = request.form.get('username', '').strip()
     password = request.form.get('password', '')
     verify_ssl = request.form.get('verify_ssl') == 'on'
+    tls_name, tls_err = clean_tls_name(request.form.get('tls_server_name'))
+    if tls_err:
+        flash(tls_err, 'danger')
+        return redirect(url_for('appliances.index'))
     vdom = request.form.get('vdom', '').strip() or None
     tags = request.form.get('tags', '').strip() or None
     department = request.form.get('department', '').strip() or None
@@ -298,6 +303,7 @@ def create():
         is_cluster=is_cluster, ha_mode=ha_mode, ha_vip=ha_vip,
         password_enc='placeholder',
     )
+    appliance.tls_name = tls_name
     appliance.set_password(password)
     db.session.add(appliance)
     try:
@@ -390,6 +396,17 @@ def edit_save(id):
     else:
         new_verify_ssl = request.form.get('verify_ssl') == 'on'
     verify_ssl_relaxed = bool(appliance.verify_ssl) and not new_verify_ssl
+    # TLS certificate name (SA-0015): a member follows its cluster, like
+    # verify_ssl; only a form that renders the field changes it (the list's
+    # quick-edit does not). Not a credential retarget: the request still goes
+    # to the same host, and the certificate must still chain to the trust
+    # store -- only the name it is checked against changes.
+    tls_posted = ('tls_server_name' in request.form
+                  and not appliance.verify_ssl_inherited)
+    new_tls_name, tls_err = clean_tls_name(request.form.get('tls_server_name'))
+    if tls_posted and tls_err:
+        flash(tls_err, 'danger')
+        return redirect(url_for('appliances.edit', id=appliance.id))
     api_retarget = (host_changed or user_changed or kind_changed
                     or new_port != appliance.port or verify_ssl_relaxed)
     # The separate SSH user (``ssh_username``; empty = the API user). Only a
@@ -440,6 +457,8 @@ def edit_save(id):
     appliance.ssh_username = new_ssh_username
     if not appliance.verify_ssl_inherited:
         appliance.verify_ssl = new_verify_ssl
+    if tls_posted:
+        appliance.tls_name = new_tls_name
     appliance.vdom = request.form.get('vdom', appliance.vdom or '').strip() or None
     appliance.tags = request.form.get('tags', appliance.tags or '').strip() or None
     appliance.department = request.form.get('department', appliance.department or '').strip() or None
@@ -711,39 +730,30 @@ def not_in_gui_save(id):
 @login_required
 @require_permission('appliances.view')
 def test_connection(id):
+    """Every address SATOM uses for this row, with the method picked: API,
+    TCP port (what telnet is used for), ping or traceroute (SA-0017).
+
+    A per-node cluster has no connection of its own, so its members are
+    tested (SA-0012); a VIP cluster is tested on the VIP AND each member, and
+    says so when only the members answer (SA-0018). A member is tested on its
+    own from its page or from its card on the cluster page (SA-0016). Each
+    failure carries the next step (services/conn_test: TLS name, trust
+    store, per-node mode)."""
+    from ..services import conn_test
     appliance = visible_appliance_or_404(id)
-    if appliance.is_cluster and (appliance.ha_mode or '').lower() != 'vip':
-        return _test_cluster_members(appliance)
-    try:
-        client = client_for(appliance)
-        status = client.status_check()
-        log_action('appliance.test', target=appliance.name)
-        return jsonify({'ok': True, 'status': status})
-    except Exception as exc:
-        eid = log_exception(exc, context='appliances.test_connection')
-        return jsonify({'ok': False, 'status': str(exc), 'error_id': eid})
-
-
-def _test_cluster_members(node0):
-    """Test a per-node cluster: it has no connection of its own -- every call
-    goes to a member -- so testing node 0's empty host proved nothing. Each
-    member is tested with the cluster's TLS setting, and the answer names the
-    one that fails and why (SA-0012)."""
-    members = node0.cluster_members()
-    if not members:
-        return jsonify({'ok': False, 'members': True,
-                        'status': 'this cluster has no member nodes yet'})
-    parts, ok_all = [], True
-    for m in members:
-        try:
-            client_for(m).status_check()
-            parts.append('%s: OK' % m.name)
-        except Exception as exc:  # noqa: BLE001 - reported per member
-            ok_all = False
-            log_exception(exc, context='appliances.test_connection')
-            parts.append('%s: %s' % (m.name, exc))
-    log_action('appliance.test', target=node0.name)
-    return jsonify({'ok': ok_all, 'members': True, 'status': ' · '.join(parts)})
+    body = request.get_json(silent=True) or {}
+    method = conn_test.clean_method(body.get('method') or request.form.get('method'))
+    res = conn_test.run(appliance, method, client_for=client_for)
+    for r in res['results']:
+        exc = r.pop('exc', None)
+        if exc is not None:
+            r['error_id'] = log_exception(exc, context='appliances.test_connection')
+    if len(res['results']) == 1 and res['results'][0].get('error_id'):
+        res['error_id'] = res['results'][0]['error_id']
+    log_action('appliance.test', target=appliance.name,
+               detail=('method=%s ok=%s' % (method, res['ok'])
+                       + ('' if res['ok'] else ' · ' + res['status'][:400])))
+    return jsonify(res)
 
 
 def _members_with_other_password(node0, password):

@@ -4,6 +4,7 @@ from __future__ import annotations
 import enum
 import json
 import os
+import re
 from datetime import datetime
 from typing import Any
 
@@ -317,6 +318,35 @@ def _parse_tags(raw):
     return [t.strip() for t in raw.split(',') if t.strip()]
 
 
+_TLS_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+_TLS_NAME_RE = re.compile(r"%s(?:\.%s)*\.?" % (_TLS_LABEL, _TLS_LABEL))
+
+
+def clean_tls_name(raw):
+    """``(name or None, error or None)`` for a posted TLS certificate name.
+
+    A DNS name or an IP address; empty clears it. No wildcard: the name is
+    what the certificate is checked AGAINST, so it is a concrete host name
+    the certificate covers (``*.corp`` in the certificate covers
+    ``fwb.corp`` here)."""
+    import ipaddress
+    name = (raw or "").strip()
+    if not name:
+        return None, None
+    if len(name) > 253:
+        return None, "the TLS certificate name is longer than 253 characters"
+    try:
+        ipaddress.ip_address(name)
+        return name, None
+    except ValueError:
+        pass
+    if not _TLS_NAME_RE.fullmatch(name):
+        return None, ("the TLS certificate name must be a host name the "
+                      "certificate carries (e.g. fwb-cluster.example.com) or "
+                      "an IP address — no wildcard, no scheme, no port")
+    return name.rstrip("."), None
+
+
 class Appliance(db.Model):
     __tablename__ = "appliances"
 
@@ -330,6 +360,11 @@ class Appliance(db.Model):
     # The row's OWN TLS setting. Clients read ``verify_ssl`` (a property,
     # below), which for a cluster member is its cluster's setting (SA-0012).
     own_verify_ssl = db.Column("verify_ssl", db.Boolean, nullable=False, default=True)
+    # The name the appliance's certificate is checked against when it is not
+    # the address SATOM connects to (SA-0015): an HA pair presents ONE synced
+    # certificate, which names the cluster, not each member's IP. Empty = the
+    # host. Clients read ``tls_name`` (members follow their cluster).
+    own_tls_server_name = db.Column("tls_server_name", db.String(253), nullable=True)
     vdom = db.Column(db.String(64), nullable=True)
     tags = db.Column(db.Text, nullable=True)           # JSON list of strings
     department = db.Column(db.String(128), nullable=True)
@@ -484,6 +519,25 @@ class Appliance(db.Model):
     def verify_ssl_inherited(self) -> bool:
         """True when ``verify_ssl`` comes from the cluster, not this row."""
         return bool(self.is_cluster_member and self.parent is not None)
+
+    @property
+    def tls_name(self):
+        """The name the certificate must carry, or None to check the host.
+
+        Verification stays complete: the chain is validated against the trust
+        store exactly as before, only the NAME compared is this one instead of
+        the address connected to (SA-0015: an HA pair syncs one certificate
+        that names the cluster, so every member failed with "IP address
+        mismatch" as soon as verification was on). A member follows its
+        cluster, like ``verify_ssl``."""
+        parent = self.parent if self.is_cluster_member else None
+        raw = (parent.own_tls_server_name if parent is not None
+               else self.own_tls_server_name)
+        return (raw or "").strip() or None
+
+    @tls_name.setter
+    def tls_name(self, value) -> None:
+        self.own_tls_server_name = (value or "").strip() or None
 
     @property
     def password(self) -> str:
@@ -745,6 +799,7 @@ class Appliance(db.Model):
             "username": self.username,
             "verify_ssl": self.verify_ssl,
             "verify_ssl_inherited": self.verify_ssl_inherited,
+            "tls_server_name": self.tls_name,
             "maintenance": bool(self.maintenance),
             "vdom": self.vdom,
             "tags": _parse_tags(self.tags),

@@ -51,6 +51,11 @@
       <label class="form-check-label" for="verify_ssl">{{ _('Verify SSL Certificate') }}</label></div>
       {% if appliance.verify_ssl_inherited %}<div class="form-text">{{ _('A cluster member follows its cluster:') }} <a href="{{ url_for('appliances.edit', id=appliance.parent.id) }}">{{ appliance.parent.name }}</a></div>
       {% elif appliance.is_cluster %}<div class="form-text">{{ _('Applies to every member of this cluster. Turning it off needs the password every member stores.') }}</div>{% endif %}</div>
+    <div class="col-md-6"><label class="form-label" for="tls_server_name">{{ _('TLS certificate name') }}</label>
+      {% if appliance.verify_ssl_inherited %}<input type="text" class="form-control" id="tls_server_name" value="{{ appliance.tls_name or '' }}" disabled>
+      <div class="form-text">{{ _('A cluster member follows its cluster:') }} <a href="{{ url_for('appliances.edit', id=appliance.parent.id) }}">{{ appliance.parent.name }}</a></div>
+      {% else %}<input type="text" name="tls_server_name" class="form-control" id="tls_server_name" maxlength="253" value="{{ appliance.own_tls_server_name or '' }}" placeholder="{{ _('empty = the host') }}">
+      <div class="form-text">{{ _('The name the certificate is checked against when it does not name the address SATOM connects to — e.g. an HA pair presents one synced certificate for the cluster name, not each member IP ("IP address mismatch"). The chain is still verified against the trust store.') }}{% if appliance.is_cluster %} {{ _('Applies to every member of this cluster.') }}{% endif %}</div>{% endif %}</div>
     {% if current_user.can('appliances.view_maintenance') %}
     <div class="col-12"><input type="hidden" name="maintenance_present" value="1">
       <div class="form-check"><input type="checkbox" name="maintenance" class="form-check-input" id="edit_maintenance" {{ 'checked' if appliance.maintenance }}>

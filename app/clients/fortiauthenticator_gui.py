@@ -310,6 +310,7 @@ class FacGuiReader:
         self._user = appliance.ssh_login
         self._secret = appliance.ssh_secret
         self._verify = bool(getattr(appliance, "verify_ssl", False))
+        self._tls_name = (getattr(appliance, "tls_name", None) or "").strip() or None
         self.timeout = timeout
         self.allowed = frozenset(allowed)
         self._c: httpx.Client | None = None
@@ -363,6 +364,10 @@ class FacGuiReader:
             sink.before_call(self.base)
         label = "GUI " + url[len(self.base):]
         started = time.monotonic()
+        if self._tls_name and self._verify:
+            ext = dict(kwargs.get("extensions") or {})
+            ext.setdefault("sni_hostname", self._tls_name)
+            kwargs["extensions"] = ext
         try:
             r = self._c.request(method, url, **kwargs)
         except Exception as exc:

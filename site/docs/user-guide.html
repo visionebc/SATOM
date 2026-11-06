@@ -568,12 +568,40 @@ that will not come online.</p>
    verification off on a cluster needs the password, and it must be the one
    every member stores, because each member sends its own (an HA pair keeps
    the admin password in sync). A member detached from its cluster keeps the
-   setting it was running with.
-2. <strong>Test connection</strong> — validates REST reachability and credentials. On a
-   per-node HA cluster it tests every member with the cluster's TLS setting
-   and names the member that fails, with the reason (<code>certificate verify
-   failed: …</code> tells you to import the CA under Settings → Trust store, or that
-   the member's certificate does not name the address SATOM uses for it).
+   setting it was running with.</p>
+<p><strong>TLS certificate name.</strong> With verification on, the certificate must name
+   the address SATOM connects to. When it does not (typically an HA pair:
+   both members present one synced certificate for the cluster name, so each
+   member fails with <code>IP address mismatch</code>), enter the name the certificate
+   carries (its CN or a SAN entry) in <strong>TLS certificate name</strong>. SATOM checks the
+   certificate against that name and sends it as SNI. The chain is still
+   validated against the trust store, and a certificate that does not carry
+   the name still fails. It accepts a host name or an IP address, never a
+   wildcard (<code>*.corp.example</code> in the certificate covers <code>fwb.corp.example</code>
+   here). On a cluster it applies to every member, the same way as Verify SSL
+   certificate. API field: <code>tls_server_name</code>.
+2. <strong>Test connection</strong> — tests from the SATOM server, with the method picked
+   next to the button:
+   - <strong>API (HTTPS)</strong> — the REST status call with the stored credential and
+     the TLS settings: what every sync and write depends on.
+   - <strong>TCP port (telnet)</strong> — one TCP handshake to the management port, what
+     <code>telnet &lt;host&gt; &lt;port&gt;</code> is used for, done by SATOM itself (no telnet client
+     needed). A refused port means the host is up and answering.
+   - <strong>Ping</strong> — three ICMP echoes with the system <code>ping</code>. If ICMP is not
+     permitted for the SATOM service user, the result says so and gives the
+     one-line fix (<code>net.ipv4.ping_group_range</code>). No reply can simply mean
+     ICMP is filtered: TCP port shows whether the device answers.
+   - <strong>Traceroute</strong> — the path with the system <code>traceroute</code> (UDP probes, up
+     to 20 hops), with the last hop that answered when the device is not
+     reached.</p>
+<p>On a per-node HA cluster it tests every member with the cluster's TLS
+   settings. On a VIP cluster it tests the VIP and then every member; when
+   only the members answer, the result points to per-node mode. Each member
+   card on the cluster page has its own <strong>Test</strong> button, and a member's page
+   tests that member only. A failure carries the next step: <code>IP address
+   mismatch</code> / <code>Hostname mismatch</code> → set <strong>TLS certificate name</strong> (or add the
+   address to the certificate's SAN); an untrusted issuer → import the CA
+   under Settings → Trust store.
 3. <strong>Discovery / Rediscovery</strong> — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
    trigger <code>rediscovery</code>, so Device health counts it); also records the

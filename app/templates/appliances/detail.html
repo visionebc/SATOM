@@ -10,7 +10,15 @@
     <a href="{{ url_for('appliances.edit', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">{{ _('Edit') }}</a>
     <a href="{{ url_for('provisioning.device_baseline', appliance_id=appliance.id) }}" class="btn fw-btn-secondary btn-sm" title="{{ _('Every template of every combo this device is classified into — dry-run first') }}"><i class="bi bi-layers me-1"></i>{{ _('Apply full baseline…') }}</a>
     {% endif %}
-    <button class="btn fw-btn-primary btn-sm" data-js="test-conn">{{ _('Test Connection') }}</button>
+    <div class="input-group input-group-sm w-auto">
+      <select class="form-select form-select-sm" id="test-method" aria-label="{{ _('Test method') }}" title="{{ _('How to test, from this SATOM server') }}">
+        <option value="api">{{ _('API (HTTPS)') }}</option>
+        <option value="tcp">{{ _('TCP port (telnet)') }}</option>
+        <option value="ping">{{ _('Ping') }}</option>
+        <option value="traceroute">{{ _('Traceroute') }}</option>
+      </select>
+      <button class="btn fw-btn-primary btn-sm" data-js="test-conn">{{ _('Test Connection') }}</button>
+    </div>
   </div>
 </div>
 {% if appliance.maintenance %}
@@ -38,6 +46,7 @@
         {% endif %}</dd>
       <dt class="col-sm-4">{{ _('Username') }}</dt><dd class="col-sm-8">{{ appliance.username }}</dd>
       <dt class="col-sm-4">{{ _('SSL Verify') }}</dt><dd class="col-sm-8">{{ 'Yes' if appliance.verify_ssl else 'No' }}{% if appliance.verify_ssl_inherited %} <span class="text-muted small">({{ _('set on cluster %(name)s', name=appliance.parent.name) }})</span>{% elif appliance.is_cluster and appliance.members %} <span class="text-muted small">({{ _('applies to every member') }})</span>{% endif %}</dd>
+      {% if appliance.tls_name %}<dt class="col-sm-4">{{ _('TLS certificate name') }}</dt><dd class="col-sm-8"><code>{{ appliance.tls_name }}</code>{% if appliance.verify_ssl_inherited %} <span class="text-muted small">({{ _('set on cluster %(name)s', name=appliance.parent.name) }})</span>{% endif %}</dd>{% endif %}
       <dt class="col-sm-4">{{ _('Firmware') }}</dt><dd class="col-sm-8">{{ appliance.firmware or '—' }}</dd>
       {% if appliance.vdom %}<dt class="col-sm-4">{{ _('ADOM (vdom)') }}</dt><dd class="col-sm-8">{{ appliance.vdom }}</dd>{% endif %}
       {% if appliance.department %}<dt class="col-sm-4">{{ _('Dept') }}</dt><dd class="col-sm-8">{{ appliance.department }}</dd>{% endif %}
@@ -257,6 +266,8 @@
             </div>
             <div class="text-muted small mono">{{ m.host }}:{{ m.port }}</div>
             <div class="small mt-1">{{ _('Live role:') }} <span class="badge bg-secondary" data-live-role="{{ m.id }}">{{ _('checking…') }}</span></div>
+            <button type="button" class="btn btn-fw-secondary btn-sm mt-2" data-js="test-member" data-id="{{ m.id }}" title="{{ _('Test this node with the method picked above') }}"><i class="bi bi-plug me-1"></i>{{ _('Test') }}</button>
+            <div class="small mt-2 d-none" data-member-result="{{ m.id }}"></div>
           </div>
           {% if current_user.can('config_write') %}
           <form method="post" action="{{ url_for('appliances.detach_member', id=appliance.id, mid=m.id) }}" data-fw-confirm-form="Detach member {{ m.name }} (it becomes standalone)?">
@@ -314,30 +325,68 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }).catch(function () {});
 });
-async function testConn(id, btn) {
-  btn.disabled = true; btn.textContent = 'Testing…';
-  const box = document.getElementById('conn-result');
-  try {
-    // Kind-dispatched on the server (client_for → FortiWeb/FortiADC client).
-    const r = await apiFetch(`/appliances/${id}/test`, { method: 'POST' });
-    if (r.ok) {
-      box.className = 'alert alert-success';
-      box.textContent = r.members ? 'Connection OK — ' + r.status : 'Connection OK';
-    } else {
-      box.className = 'alert alert-danger';
-      box.textContent = 'Connection failed: ' + (r.status || 'unknown error');
+// Test Connection (services/conn_test): one line per address tested -- a
+// cluster's members, plus its VIP in VIP mode -- the next step when there
+// is one, and the raw ping/traceroute output. textContent only.
+function renderConn(box, r, method) {
+  box.textContent = '';
+  const head = document.createElement('div');
+  head.className = 'fw-bold';
+  const label = {api: 'API', tcp: 'TCP port', ping: 'Ping', traceroute: 'Traceroute'}[method] || method;
+  head.textContent = label + (r.ok ? ' — OK' : ' — failed');
+  box.appendChild(head);
+  (r.results || []).forEach(function (x) {
+    const line = document.createElement('div');
+    const badge = document.createElement('span');
+    badge.className = 'fw-badge me-2 ' + (x.ok ? 'fw-badge-success' : 'fw-badge-danger');
+    badge.textContent = x.ok ? 'OK' : (x.verdict || 'failed');
+    line.appendChild(badge);
+    const who = document.createElement('strong');
+    who.textContent = x.label + ' ';
+    line.appendChild(who);
+    line.appendChild(document.createTextNode('(' + x.host + (method === 'api' || method === 'tcp' ? ':' + x.port : '') + ') ' + (x.detail || '')));
+    box.appendChild(line);
+    if (x.output) {
+      const pre = document.createElement('pre');
+      pre.className = 'small mb-1 mt-1';
+      pre.style.whiteSpace = 'pre-wrap';
+      pre.textContent = x.output;
+      box.appendChild(pre);
     }
+  });
+  if (!(r.results || []).length && r.status) box.appendChild(document.createTextNode(r.status));
+  if (r.hint) {
+    const h = document.createElement('div');
+    h.className = 'mt-2';
+    h.textContent = r.hint;
+    box.appendChild(h);
+  }
+}
+async function testConn(id, btn, box) {
+  const method = (document.getElementById('test-method') || {}).value || 'api';
+  const label = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Testing…';
+  try {
+    const r = await apiFetch(`/appliances/${id}/test`, { method: 'POST', body: JSON.stringify({method: method}),
+                                                          headers: {'Content-Type': 'application/json'} });
+    box.className = (box.dataset.memberResult ? 'small mt-2 ' : '') + 'alert ' + (r.ok ? 'alert-success' : 'alert-danger');
+    renderConn(box, r, method);
   } catch(e) {
-    box.className = 'alert alert-danger';
+    box.className = (box.dataset.memberResult ? 'small mt-2 ' : '') + 'alert alert-danger';
     box.textContent = 'Connection failed: ' + e.message;
   }
   box.classList.remove('d-none');
-  btn.disabled = false; btn.textContent = 'Test Connection';
+  btn.disabled = false; btn.innerHTML = label;
 }
 // CSP: former inline onclick, re-bound here (Turbo-safe immediate IIFE)
 (function () {
   var btn = document.querySelector('[data-js="test-conn"]');
-  if (btn) btn.addEventListener('click', function () { testConn({{ appliance.id }}, this); });
+  if (btn) btn.addEventListener('click', function () { testConn({{ appliance.id }}, this, document.getElementById('conn-result')); });
+  document.querySelectorAll('[data-js="test-member"]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      testConn(this.dataset.id, this, document.querySelector('[data-member-result="' + this.dataset.id + '"]'));
+    });
+  });
 })();
 </script>
 {% endblock %}

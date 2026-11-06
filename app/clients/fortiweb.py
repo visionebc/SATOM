@@ -25,7 +25,8 @@ class FortiWebClient(BaseClient):
         appliance: Appliance model instance with attributes:
             host, port, verify_ssl, username, password (decrypted), vdom
         """
-        super().__init__(appliance.host, appliance.port, appliance.verify_ssl, timeout)
+        super().__init__(appliance.host, appliance.port, appliance.verify_ssl, timeout,
+                         tls_name=getattr(appliance, "tls_name", None))
         self._username = appliance.username
         self._password = appliance.password
         self._vdom = getattr(appliance, 'vdom', None)

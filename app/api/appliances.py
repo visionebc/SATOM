@@ -2,6 +2,7 @@ from flask import request, jsonify, current_app
 from flask_login import login_required, current_user
 from . import bp
 from ..models import Appliance, db, Permission, visible_appliances, visible_appliance_or_404
+from ..models import clean_tls_name
 from ..auth.decorators import require_permission
 from ..services.audit import log_action
 from ..services import product_scope
@@ -114,6 +115,9 @@ def create_appliance():
 
     if not name or not host:
         return jsonify({'error': 'name and host are required'}), 400
+    tls_name, tls_err = clean_tls_name(data.get('tls_server_name'))
+    if tls_err:
+        return jsonify({'error': tls_err}), 400
     # Same rule as the web form (appliances.create): a posted kind is not a
     # way into another ADOM.
     if not product_scope.may_assign_kind(kind):
@@ -195,6 +199,14 @@ def update_appliance(id):
             return jsonify({'error': 'verify_ssl of a cluster member follows its '
                             'cluster; change it on %s' % appliance.parent.name}), 400
         appliance.verify_ssl = bool(data['verify_ssl'])
+    if 'tls_server_name' in data:
+        if appliance.verify_ssl_inherited:
+            return jsonify({'error': 'tls_server_name of a cluster member follows its '
+                            'cluster; change it on %s' % appliance.parent.name}), 400
+        tls_name, tls_err = clean_tls_name(data.get('tls_server_name'))
+        if tls_err:
+            return jsonify({'error': tls_err}), 400
+        appliance.tls_name = tls_name
     if 'vdom' in data:
         appliance.vdom = data['vdom'].strip()
     if 'tags' in data:

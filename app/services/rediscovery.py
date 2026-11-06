@@ -1033,6 +1033,7 @@ def _client_snapshot(appliance) -> SimpleNamespace:
     return SimpleNamespace(
         id=appliance.id, name=appliance.name, host=appliance.host,
         port=appliance.port, verify_ssl=appliance.verify_ssl,
+        tls_name=getattr(appliance, "tls_name", None),
         username=appliance.username, password=appliance.password,
         vdom=appliance.vdom, kind=getattr(appliance, "kind", "fortiweb"),
         # the factory catalog files what it reads under the exact build

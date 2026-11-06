@@ -462,11 +462,41 @@ the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
    every member stores, because each member sends its own (an HA pair keeps
    the admin password in sync). A member detached from its cluster keeps the
    setting it was running with.
-2. **Test connection** — validates REST reachability and credentials. On a
-   per-node HA cluster it tests every member with the cluster's TLS setting
-   and names the member that fails, with the reason (`certificate verify
-   failed: …` tells you to import the CA under Settings → Trust store, or that
-   the member's certificate does not name the address SATOM uses for it).
+
+   **TLS certificate name.** With verification on, the certificate must name
+   the address SATOM connects to. When it does not (typically an HA pair:
+   both members present one synced certificate for the cluster name, so each
+   member fails with `IP address mismatch`), enter the name the certificate
+   carries (its CN or a SAN entry) in **TLS certificate name**. SATOM checks the
+   certificate against that name and sends it as SNI. The chain is still
+   validated against the trust store, and a certificate that does not carry
+   the name still fails. It accepts a host name or an IP address, never a
+   wildcard (`*.corp.example` in the certificate covers `fwb.corp.example`
+   here). On a cluster it applies to every member, the same way as Verify SSL
+   certificate. API field: `tls_server_name`.
+2. **Test connection** — tests from the SATOM server, with the method picked
+   next to the button:
+   - **API (HTTPS)** — the REST status call with the stored credential and
+     the TLS settings: what every sync and write depends on.
+   - **TCP port (telnet)** — one TCP handshake to the management port, what
+     `telnet <host> <port>` is used for, done by SATOM itself (no telnet client
+     needed). A refused port means the host is up and answering.
+   - **Ping** — three ICMP echoes with the system `ping`. If ICMP is not
+     permitted for the SATOM service user, the result says so and gives the
+     one-line fix (`net.ipv4.ping_group_range`). No reply can simply mean
+     ICMP is filtered: TCP port shows whether the device answers.
+   - **Traceroute** — the path with the system `traceroute` (UDP probes, up
+     to 20 hops), with the last hop that answered when the device is not
+     reached.
+
+   On a per-node HA cluster it tests every member with the cluster's TLS
+   settings. On a VIP cluster it tests the VIP and then every member; when
+   only the members answer, the result points to per-node mode. Each member
+   card on the cluster page has its own **Test** button, and a member's page
+   tests that member only. A failure carries the next step: `IP address
+   mismatch` / `Hostname mismatch` → set **TLS certificate name** (or add the
+   address to the certificate's SAN); an untrusted issuer → import the CA
+   under Settings → Trust store.
 3. **Discovery / Rediscovery** — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
    trigger `rediscovery`, so Device health counts it); also records the

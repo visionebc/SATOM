@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Fixed · 1 entry.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Fixed · 1 entry.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
-        <ul class="rel-leads"></ul>
+        <span class="rel-nav-meta">unreleased · Fixed · 1 entry</span>
+        <ul class="rel-leads"><li>An update no longer rolls back because a scheduled action held a table the migration changes (SA-0019)</li></ul>
       </a>
       <a class="rel-nav-item" href="v4.11.2.html" data-rel-version="4.11.2">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 4.11.2</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -560,7 +560,26 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>An update no longer rolls back because a scheduled action held a table
+  the migration changes (SA-0019).</strong> Reported from an update to 4.11.2:
+  <code>flask db upgrade</code> failed with <code>LockNotAvailable: canceling statement due to
+  lock timeout [SQL: ALTER TABLE appliances ADD COLUMN tls_server_name ...]</code>
+  and the update rolled back. The migration runs while the previous release's
+  scheduler is still running, and a scheduled action keeps its database
+  transaction open while it waits for devices, so it holds a read lock on the
+  tables it reads. Changing a table needs it to itself. The migration now
+  waits at most 5 s at a time for its locks, so the console is never blocked
+  for longer than that, and tries again between the scheduler's transactions,
+  for up to 7 minutes. Each try that does not get its locks changes nothing.
+  If none succeeds, the error names the session that held the table and says
+  to stop the scheduler and apply again. This is in the new release's own
+  migration code, so it also applies when an older update runner installs it.
+  The 120 s lock wait the migration hit was left on a pooled database
+  connection by the application's boot; that wait now ends with its own
+  transaction.</li>
+</ul>
 <p class="rel-prevnext"><a href="v4.11.2.html">Version 4.11.2 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">

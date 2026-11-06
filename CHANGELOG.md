@@ -6,6 +6,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **An update no longer rolls back because a scheduled action held a table
+  the migration changes (SA-0019).** Reported from an update to 4.11.2:
+  `flask db upgrade` failed with `LockNotAvailable: canceling statement due to
+  lock timeout [SQL: ALTER TABLE appliances ADD COLUMN tls_server_name ...]`
+  and the update rolled back. The migration runs while the previous release's
+  scheduler is still running, and a scheduled action keeps its database
+  transaction open while it waits for devices, so it holds a read lock on the
+  tables it reads. Changing a table needs it to itself. The migration now
+  waits at most 5 s at a time for its locks, so the console is never blocked
+  for longer than that, and tries again between the scheduler's transactions,
+  for up to 7 minutes. Each try that does not get its locks changes nothing.
+  If none succeeds, the error names the session that held the table and says
+  to stop the scheduler and apply again. This is in the new release's own
+  migration code, so it also applies when an older update runner installs it.
+  The 120 s lock wait the migration hit was left on a pooled database
+  connection by the application's boot; that wait now ends with its own
+  transaction.
+
 ## [4.11.2] - 2026-11-06
 
 ### Added

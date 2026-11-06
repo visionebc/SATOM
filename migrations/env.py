@@ -96,15 +96,24 @@ def run_migrations_online():
 
     connectable = get_engine()
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=get_metadata(),
-            **conf_args
-        )
+    # [SATOM-MIGRATION-LOCK-RETRY] An update migrates while the previous
+    # release's scheduler is still running and holding table locks (SA-0019):
+    # short lock waits, retried, instead of one long wait that fails the update.
+    from app import migration_lock
 
-        with context.begin_transaction():
-            context.run_migrations()
+    def attempt():
+        with connectable.connect() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=get_metadata(),
+                **conf_args
+            )
+
+            with context.begin_transaction():
+                migration_lock.set_attempt_lock_timeout(connection)
+                context.run_migrations()
+
+    migration_lock.run_with_retry(attempt, engine=connectable)
 
 
 if context.is_offline_mode():

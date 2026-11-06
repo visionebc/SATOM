@@ -38,7 +38,11 @@ def acquire(engine):
         return None
     conn = engine.connect()
     try:
-        conn.execute(text(f"SET lock_timeout = '{LOCK_WAIT}'"))
+        # SET LOCAL: the bound ends with this transaction. A plain SET stayed on
+        # the connection after it went back to the pool, and `flask db upgrade`
+        # then ran its ALTER TABLE with a 120 s lock_timeout (SA-0019). The
+        # advisory lock itself is session-level and outlives the commit.
+        conn.execute(text(f"SET LOCAL lock_timeout = '{LOCK_WAIT}'"))
         conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": BOOT_LOCK_KEY})
         conn.commit()
         return conn

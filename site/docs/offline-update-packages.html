@@ -485,6 +485,29 @@ script). The runner's restart is then just a start. The step log shows it as
 <code>WARN quiesce:</code> line means the scheduler was still stopping and the restart
 waited for it. Only the 4.11.1 package itself still needs the manual stop
 above on a node on 4.11.0 or older.</p>
+<h3 id="63-the-migration-waits-for-its-table-locks-sa-0019">6.3 The migration waits for its table locks (SA-0019)</h3>
+<p>The runner applies the migrations (<code>flask db upgrade</code>) <strong>before</strong> it restarts
+anything, so the previous release's web and scheduler are still running. A
+scheduled action keeps its database transaction open while it waits for
+devices, and holds a read lock on every table it read. A migration that
+changes such a table (<code>ALTER TABLE</code>) needs it to itself.</p>
+<p>Up to 4.11.2 the migration waited in one go, up to 120 s, and then failed
+with <code>LockNotAvailable ... canceling statement due to lock timeout</code> and the
+update rolled back. From the release after 4.11.2 (<code>app/migration_lock.py</code>)
+each attempt waits at most 5 s, so web requests queued behind it are held for
+no longer than that. A failed attempt rolls back (DDL is transactional in
+PostgreSQL), and the next one runs after 2, 4, 8, then every 15 s, for up to
+420 s. The step log shows each wait as <code>schema migration attempt N: a table it
+changes is in use (pid …, idle in transaction, transaction open Ns)</code>. This code
+ships with the release being applied, so it works under any installed runner.</p>
+<p>If no attempt succeeds, the database is unchanged and <strong>no restore is
+needed</strong>. Stop the scheduler, then apply again (the update starts it again):</p>
+<pre><code>satom execute stop scheduler     # as root
+satom execute update package satom-update-&lt;version&gt;.tar.gz --yes
+</code></pre>
+<p><code>SATOM_MIGRATION_LOCK_TIMEOUT</code> (default <code>5s</code>) and
+<code>SATOM_MIGRATION_LOCK_DEADLINE_S</code> (default <code>420</code>; keep it under the 600 s the
+runner gives the step) change the two limits.</p>
 <h3 id="61-database-changes">6.1 Database changes</h3>
 <p>A schema change reaches a node by two routes, and both run on every update:</p>
 <ul>

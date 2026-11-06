@@ -404,6 +404,36 @@ script). The runner's restart is then just a start. The step log shows it as
 waited for it. Only the 4.11.1 package itself still needs the manual stop
 above on a node on 4.11.0 or older.
 
+### 6.3 The migration waits for its table locks (SA-0019)
+
+The runner applies the migrations (`flask db upgrade`) **before** it restarts
+anything, so the previous release's web and scheduler are still running. A
+scheduled action keeps its database transaction open while it waits for
+devices, and holds a read lock on every table it read. A migration that
+changes such a table (`ALTER TABLE`) needs it to itself.
+
+Up to 4.11.2 the migration waited in one go, up to 120 s, and then failed
+with `LockNotAvailable ... canceling statement due to lock timeout` and the
+update rolled back. From the release after 4.11.2 (`app/migration_lock.py`)
+each attempt waits at most 5 s, so web requests queued behind it are held for
+no longer than that. A failed attempt rolls back (DDL is transactional in
+PostgreSQL), and the next one runs after 2, 4, 8, then every 15 s, for up to
+420 s. The step log shows each wait as `schema migration attempt N: a table it
+changes is in use (pid …, idle in transaction, transaction open Ns)`. This code
+ships with the release being applied, so it works under any installed runner.
+
+If no attempt succeeds, the database is unchanged and **no restore is
+needed**. Stop the scheduler, then apply again (the update starts it again):
+
+```
+satom execute stop scheduler     # as root
+satom execute update package satom-update-<version>.tar.gz --yes
+```
+
+`SATOM_MIGRATION_LOCK_TIMEOUT` (default `5s`) and
+`SATOM_MIGRATION_LOCK_DEADLINE_S` (default `420`; keep it under the 600 s the
+runner gives the step) change the two limits.
+
 ### 6.1 Database changes
 
 A schema change reaches a node by two routes, and both run on every update:

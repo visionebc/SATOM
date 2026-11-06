@@ -13,7 +13,7 @@ set -u
 APP=/opt/satom
 ROLE_PROBE="$APP/deploy/satom-node-role.sh"
 
-[ -x "$ROLE_PROBE" ] || { echo "scheduler_guard: falta $ROLE_PROBE" >&2; exit 1; }
+[ -x "$ROLE_PROBE" ] || { echo "scheduler_guard: missing $ROLE_PROBE" >&2; exit 1; }
 
 while :; do
   case "$("$ROLE_PROBE" 2>/dev/null)" in

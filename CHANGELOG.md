@@ -6,6 +6,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **Updating a node on 4.11.0 or older no longer needs the scheduler stopped by
+  hand (SA-0014).** Reported right after 4.11.1: the update to 4.11.1 still
+  rolled back with `Command '['systemctl', 'restart',
+  'satom-scheduler.service']' timed out after 60 seconds`. The SA-0013 fix lives
+  in the update runner, and an update is applied by the runner already
+  installed, so a node on 4.11.0 or older kept its 60 s limit on the very update
+  that carried the fix. The package now handles it itself: the one root script
+  every runner runs from the new release (`deploy/install-runner.sh`) asks the
+  scheduler to stop as soon as the update reaches it, and hands back only once
+  it is down (within the time an old runner allows that script). The runner's
+  restart is then just a start. This only happens during an update, never when
+  `satom execute reinstall runner` runs the script, and the update always
+  starts the scheduler again, whether it succeeds or rolls back. Applies to
+  packages newer than 4.11.1; to install the 4.11.1 package itself on such a
+  node, the manual stop in docs/offline-update-packages.md §6.2 is still needed.
+
 ## [4.11.1] - 2026-11-06
 
 ### Fixed

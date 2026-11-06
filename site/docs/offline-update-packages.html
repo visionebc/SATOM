@@ -474,6 +474,17 @@ satom execute update package satom-update-&lt;version&gt;.tar.gz --yes   # or Ap
 <p>The update starts the scheduler again (on a stopped unit <code>restart</code> is just a
 start). Nothing scheduled fires while it is stopped, so apply right after
 stopping it.</p>
+<p><strong>Packages newer than 4.11.1 do this themselves (SA-0014).</strong> Every runner,
+old or new, runs <code>deploy/install-runner.sh</code> from the package being applied,
+before it restarts anything. When the update runner is the caller, that script
+asks systemd to stop the scheduler without waiting (<code>deploy/quiesce-scheduler.sh
+begin</code>), so it winds down while the update goes on, and at its end waits for it
+to be down (<code>wait</code>, bounded by what is left of the 180 s an old runner gives the
+script). The runner's restart is then just a start. The step log shows it as
+<code>quiesce: scheduler inactive after Ns</code> in the "refresh update runner" step; a
+<code>WARN quiesce:</code> line means the scheduler was still stopping and the restart
+waited for it. Only the 4.11.1 package itself still needs the manual stop
+above on a node on 4.11.0 or older.</p>
 <h3 id="61-database-changes">6.1 Database changes</h3>
 <p>A schema change reaches a node by two routes, and both run on every update:</p>
 <ul>

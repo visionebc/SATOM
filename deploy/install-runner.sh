@@ -73,6 +73,20 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "install-runner.sh: must run as root (it writes ${LIB_DIR})." >&2
   exit 3
 fi
+
+# Called by the update runner (and not by the installer or 'reinstall runner')?
+# Read once, here: the two update-only hooks below key on it.
+parent="$(tr '\0' ' ' < "/proc/${PPID}/cmdline" 2>/dev/null || true)"
+FROM_RUNNER=0
+case "$parent" in *self_update_runner.py*) FROM_RUNNER=1 ;; esac
+
+# [SATOM-LEGACY-RESTART-QUIESCE] Start the scheduler's stop NOW, so it winds down
+# while this script and the rest of the update run; the wait is at the end.
+# Runners <=4.11.0 restart it with a fixed 60 s cap and roll the update back
+# when its stop is slower (SA-0013/SA-0014). deploy/quiesce-scheduler.sh.
+if [ "$FROM_RUNNER" -eq 1 ] && [ -f "${DEPLOY_SRC}/quiesce-scheduler.sh" ]; then
+  bash "${DEPLOY_SRC}/quiesce-scheduler.sh" begin || true
+fi
 for f in $FILES; do
   [ -f "${DEPLOY_SRC}/${f}" ] || {
     echo "install-runner.sh: missing ${DEPLOY_SRC}/${f}" >&2; exit 1; }
@@ -242,11 +256,17 @@ echo "  verify     : satom diagnose privilege"
 # installer and 'reinstall runner' set up those parts themselves. Last, so an old
 # runner's step log (the output's tail) shows it. Capped at 150 s: a 2.x runner
 # gives this whole script 180 s and does not survive the timeout.
-parent="$(tr '\0' ' ' < "/proc/${PPID}/cmdline" 2>/dev/null || true)"
-if [ -f "${DEPLOY_SRC}/upgrade-converge.sh" ]; then
-  case "$parent" in
-    *self_update_runner.py*)
-      FM_APP_DIR="$APP_DIR" SATOM_DEPLOY_SRC="$DEPLOY_SRC" SATOM_RUN_PY="$RUN_PY" \
-        timeout 150 bash "${DEPLOY_SRC}/upgrade-converge.sh" || true ;;
-  esac
+if [ "$FROM_RUNNER" -eq 1 ] && [ -f "${DEPLOY_SRC}/upgrade-converge.sh" ]; then
+  FM_APP_DIR="$APP_DIR" SATOM_DEPLOY_SRC="$DEPLOY_SRC" SATOM_RUN_PY="$RUN_PY" \
+    timeout 150 bash "${DEPLOY_SRC}/upgrade-converge.sh" || true
+fi
+
+# [SATOM-LEGACY-RESTART-QUIESCE] Hand back only once the scheduler is down, so
+# the runner's restart is a start. Bounded by what is left of the 180 s an old
+# runner gives this whole script (10 s margin); past it, the restart simply
+# waits for the stop that is already under way.
+if [ "$FROM_RUNNER" -eq 1 ] && [ -f "${DEPLOY_SRC}/quiesce-scheduler.sh" ]; then
+  left=$((170 - SECONDS))
+  [ "$left" -gt 0 ] || left=0
+  bash "${DEPLOY_SRC}/quiesce-scheduler.sh" wait "$left" || true
 fi

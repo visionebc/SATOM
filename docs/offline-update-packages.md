@@ -392,6 +392,18 @@ The update starts the scheduler again (on a stopped unit `restart` is just a
 start). Nothing scheduled fires while it is stopped, so apply right after
 stopping it.
 
+**Packages newer than 4.11.1 do this themselves (SA-0014).** Every runner,
+old or new, runs `deploy/install-runner.sh` from the package being applied,
+before it restarts anything. When the update runner is the caller, that script
+asks systemd to stop the scheduler without waiting (`deploy/quiesce-scheduler.sh
+begin`), so it winds down while the update goes on, and at its end waits for it
+to be down (`wait`, bounded by what is left of the 180 s an old runner gives the
+script). The runner's restart is then just a start. The step log shows it as
+`quiesce: scheduler inactive after Ns` in the "refresh update runner" step; a
+`WARN quiesce:` line means the scheduler was still stopping and the restart
+waited for it. Only the 4.11.1 package itself still needs the manual stop
+above on a node on 4.11.0 or older.
+
 ### 6.1 Database changes
 
 A schema change reaches a node by two routes, and both run on every update:

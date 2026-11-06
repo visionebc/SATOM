@@ -41,8 +41,12 @@ def upgrade():
         if name.lower() in have:
             continue
         have.add(name.lower())
-        bind.execute(sa.text("INSERT INTO studio_folders (name, created_by, updated_by) "
-                             "VALUES (:n, 'migration', 'migration')"), {"n": name})
+        # every column named: create_all may have made the table from the
+        # model, whose defaults live in Python, not in the database
+        bind.execute(sa.text(
+            "INSERT INTO studio_folders (name, description, adoms_json, groups_json, "
+            "created_by, updated_by, created_at, updated_at) VALUES (:n, '', '[]', '[]', "
+            "'migration', 'migration', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"), {"n": name})
 
 
 def downgrade():

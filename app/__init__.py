@@ -835,12 +835,6 @@ def create_app(config_override: object | None = None) -> Flask:
                     and current_user.can("config_write") and may_open("scripts.index"))
 
     @app.template_global()
-    def wsm_modules():
-        """The Web Server Manager's modules, for the Linux ADOM menu."""
-        from .services.wsm import MODULES
-        return MODULES
-
-    @app.template_global()
     def may_open(endpoint):
         """Whether the current user passes *endpoint*'s require_permission.
 

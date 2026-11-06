@@ -1,3 +1,46 @@
+### 48.6 The plugins
+
+The bundle `web-server-manager-<version>.satombundle` (staging hub,
+`downloads/plugins/`) holds 13 signed app plugins:
+
+| App | What it runs |
+|---|---|
+| Web servers | the servers, host key, Allow changes, the credentials you may use; a button per module |
+| File Manager | list, read, search, saved versions, new folder, delete, permissions |
+| Domains & VHosts | list (Enable / Disable buttons), configuration test, HTTP check, new site, enable, disable, delete |
+| SSL Certificates | certificates on the server, TLS check, Let's Encrypt status, issue, renew |
+| Security | security scan (score, findings, open ports), fail2ban status and unban, one firewall rule |
+| .htaccess | template + your lines, the nginx conversion (what does not convert is listed), apply to a site folder |
+| Scripts | run a script you type: interpreter, folder, arguments; stdout, stderr, exit code |
+| Cron Jobs | a user's crontab, users with a crontab, add a line, the cron log |
+| Package Manager | search, installed, details, updates; install / remove / upgrade show the plan and change only with **Apply** ticked |
+| Services | the list with Status / Restart / Start / Stop buttons, status, log, start, stop, restart, reload, enable, disable |
+| Logs | the log files with a Read button, a file's last lines, the journal |
+| Users & Permissions | accounts, groups, new account, lock, unlock, delete, new group, delete group (as root) |
+| SSH Configuration | the SSH server's settings, change one, a user's authorized keys |
+
+**Install:** Plugin Studio › **Import package or bundle** → the bundle → the
+folder *Web Server Manager* → Import. In **Folders**, give the folder the
+**Linux** ADOM (and, if you like, a user group). **Publish** each app.
+
+**Every form** asks for the server, optionally a credential (empty = your
+own credential for that server, otherwise a shared one), the run-as (empty =
+the credential's setting), and two password fields, *SSH password* and *sudo
+password*, filled only when the credential does not keep its secret or sudo
+asks. They are used for that call and never saved in the run.
+
+**Who may do what** is decided exactly as on the pages: an app never widens
+it. Reading needs `webserver.view`. A change needs the module's permission
+and **Allow changes** on the server. Root needs `webserver.root`. A
+**rehearsal** (a run that is not armed: steps that write are described, not executed) runs the reading steps and only
+*describes* the changing ones, after the same checks. Every call is in the
+**Operations log** with the three identities.
+
+**Not in the apps, on purpose:** importing a certificate's private key (a key
+never goes through an app form), editing a file in the editor, uploads and
+downloads, live log follow, the script library and SATOM-scheduled jobs:
+they stay on their pages.
+
 # SATOM — User Guide
 
 > **Audience:** operators and network/security engineers who use the web UI to
@@ -58,6 +101,7 @@
 45. [Upgrading to 3.0](#45-upgrading-to-30)
 46. [Wiki: articles the team writes for itself](#46-wiki-articles-the-team-writes-for-itself)
 47. [The manual on the node: /manual/](#47-the-manual-on-the-node-manual)
+48. [Web Server Manager (Linux ADOM)](#48-web-server-manager-linux-adom)
 
 ---
 
@@ -12636,12 +12680,17 @@ installation, or the public site being down.
 
 ## 48. Web Server Manager (Linux ADOM)
 
-**Linux › Web Server Manager** administers Linux web servers over SSH **with
+The **Web Server Manager** administers Linux web servers over SSH **with
 your own account**: files, websites, certificates, security, `.htaccess`,
 scripts, scheduled tasks, packages, services, logs, users and the SSH server.
 It replaces the *Web hosts* example apps of Plugin Studio (they are switched
 off; the example bundle can still be installed as a demonstration of the
 server step).
+
+It ships as **plugins** (§48.6): in the Linux ADOM it is the folder **Web
+Server Manager** under **Plugins**. The pages described below stay at
+`/webserver/` and every app opens its page; servers and credentials are
+added there (the *Web servers* app links to it).
 
 ### 48.1 Servers and credentials
 

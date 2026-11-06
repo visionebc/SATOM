@@ -141,7 +141,7 @@ def config_files() -> list[Path]:
     reaches the peer that is still up. A bundle is the only copy that survives
     losing both nodes, so total-loss recovery needs these in it.
     """
-    from app.services import doc_publication as _pubdoc
+    from . import doc_publication as _pubdoc
     out = []
     for p in (_pubdoc.OVERLAY_PATH, _pubdoc.LEGACY_OVERLAY_PATH):
         if p.exists():
@@ -175,7 +175,7 @@ def restore_config_files(src: Path, dest: Path) -> list[str]:
 def _pubdoc_root() -> Path:
     """Where config_files() reads from -- the same directory, so a restore
     puts the file back exactly where the loader looks for it."""
-    from app.services import doc_publication as _pubdoc
+    from . import doc_publication as _pubdoc
     return _pubdoc.OVERLAY_PATH.parent
 
 def create_backup(*, include_reports: bool = True, publish_git: bool = False,

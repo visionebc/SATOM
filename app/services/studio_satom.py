@@ -46,6 +46,7 @@ import re
 from . import studio_dns as DNS
 from . import studio_troubleshoot as TS
 from . import studio_webcert as WC
+from . import studio_wsm as WS
 from . import studio_flow as F
 
 GROUP = "satom"
@@ -54,7 +55,7 @@ GROUP = "satom"
 #: The DNS & LB Lookup steps live in their own module (``studio_dns``).
 WRITE_KINDS = ("ddi_reserve", "ddi_reserve_set", "ddi_release", "certificate",
                "fortiweb_spo", "fortiweb_spo_remove") + DNS.WRITE_KINDS + TS.WRITE_KINDS \
-    + WC.WRITE_KINDS
+    + WC.WRITE_KINDS + WS.WRITE_KINDS
 #: Of those, the ones that write to an appliance (need config_write).
 DEVICE_KINDS = ("certificate", "fortiweb_spo", "fortiweb_spo_remove") + DNS.DEVICE_KINDS \
     + TS.DEVICE_KINDS
@@ -76,15 +77,19 @@ SOURCES = (
     ("lb_appliances", "FortiWeb and FortiADC appliances"),
     ("dns_backends", "DNS backends (Settings > DNS Records)"),
     ("fortianalyzer", "FortiAnalyzer appliances"),
+    ("wsm_servers", "Web Server Manager servers"),
+    ("wsm_credentials", "Web Server Manager credentials you may use"),
 )
 SOURCE_KEYS = tuple(k for k, _ in SOURCES)
 KIND_KEYS = ("satom_appliances", "render_names", "ddi_reserve", "ddi_reserve_set",
              "ddi_release", "fortiweb_pick", "certificate", "fortiweb_spo",
-             "fortiweb_spo_remove") + DNS.KIND_KEYS + TS.KIND_KEYS + WC.KIND_KEYS
+             "fortiweb_spo_remove") + DNS.KIND_KEYS + TS.KIND_KEYS + WC.KIND_KEYS \
+    + WS.KIND_KEYS
 #: The variable a SATOM step saves its result under when the draft names
 #: none (a step later steps read by that name: ``{{ appliances }}``).
 DEFAULT_SAVE_AS = {"satom_appliances": "appliances", **DNS.DEFAULT_SAVE_AS,
-                   **TS.DEFAULT_SAVE_AS, **WC.DEFAULT_SAVE_AS}
+                   **TS.DEFAULT_SAVE_AS, **WC.DEFAULT_SAVE_AS,
+                   **WS.DEFAULT_SAVE_AS}
 #: The products ``satom_appliances`` filters on ('' = every product).
 APPLIANCE_KINDS = ("fortiweb", "fortigate", "fortiadc", "fortianalyzer", "fortiauthenticator")
 #: What each appliance of ``satom_appliances`` carries: the columns of the
@@ -270,7 +275,7 @@ def kinds(ch: dict | None = None) -> list:
           "For the error branch of a diagram.",
           [P("spo", "Created policy", required=True, help="e.g. {{ spo_internal }}"),
            F._save_as("removed")], writes=True),
-    ] + DNS.kinds() + TS.kinds() + WC.kinds()
+    ] + DNS.kinds() + TS.kinds() + WC.kinds() + WS.kinds()
 
 
 def choices() -> dict:
@@ -1099,6 +1104,8 @@ def rehearse(node: dict, ctx) -> tuple:
         return DNS.rehearse(node, ctx)
     if kind in WC.KIND_KEYS:
         return WC.rehearse(node, ctx)
+    if kind in WS.KIND_KEYS:
+        return WS.rehearse(node, ctx)
     if kind == "ddi_reserve":
         ip = _s(node, ctx, "ip") or PENDING_IP
         v = {"unit": _s(node, ctx, "unit"), "name": _s(node, ctx, "name"), "ip": ip,
@@ -1208,6 +1215,8 @@ def run(node: dict, ctx) -> tuple:
         return TS.run(node, ctx)
     if kind in WC.KIND_KEYS:
         return WC.run(node, ctx)
+    if kind in WS.KIND_KEYS:
+        return WS.run(node, ctx)
     if kind == "satom_appliances":
         rows = select_appliances(
             _fleet_rows(), product=F._p(node, "product", ""), zone=_s(node, ctx, "zone"),
@@ -1494,4 +1503,30 @@ def source_options(source: str) -> tuple[list[dict], str]:
                 out.append({"value": str(s.get("cidr") or s["name"]),
                             "label": "%s (%s, %s)" % (s["name"], s.get("cidr") or "-", s.get("zone") or "-")})
         return out, ""
+    if source in ("wsm_servers", "wsm_credentials"):
+        return _wsm_options(source), ""
     return [], "unknown SATOM list %r" % source
+
+
+def _wsm_options(source: str) -> list[dict]:
+    """The Web Server Manager lists of the person filling the form: nothing
+    without webserver.view; credentials only those they may use (their own
+    or shared, active), labelled with the server -- the step checks again."""
+    from flask import has_request_context
+    from flask_login import current_user
+    from . import wsm as W
+    user = current_user if has_request_context() else None
+    if user is None or not getattr(user, "is_authenticated", False) or not W.can(
+            user, W.VIEW_PERM):
+        return []
+    out = []
+    for c in W.servers():
+        if source == "wsm_servers":
+            out.append({"value": c.slug, "label": "%s (%s)" % (c.name, c.host)})
+            continue
+        for r in W.visible_credentials(c.slug, user):
+            if W.usable(r, user) and r.state == "active":
+                out.append({"value": str(r.id), "label": "%s: %s (%s%s)" % (
+                    c.name, r.name, r.ssh_user,
+                    ", sudo" if r.can_escalate else "")})
+    return out

@@ -7,6 +7,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Web Server Manager as plugins.** Asked for: "why is it not a plugin?"
+  (the manager had shipped as a native menu of the Linux ADOM). It is now the
+  bundle `web-server-manager` of the plugin generator: 13 signed `app` plugins
+  (Web servers, File Manager, Domains & VHosts, SSL Certificates, Security,
+  .htaccess, Scripts, Cron Jobs, Package Manager, Services, Logs, Users &
+  Permissions, SSH Configuration), imported in one go into the folder **Web
+  Server Manager** and drawn under **Plugins** in the Linux ADOM through the
+  folder's ADOM grant. They are built from four new SATOM steps
+  (`wsm_servers`, `wsm_read`, `wsm_change`, `wsm_htaccess`) over the same
+  `wsm.execute` every page calls. A step answers for the person who RUNS the
+  app (their profile, their or a shared credential, the server's Allow
+  changes switch, root only with `webserver.root`). A read step takes only
+  reading operations. A rehearsal of a change sends nothing and still checks
+  Allow changes. Passwords are password fields: used for the call, never
+  kept in the run. Two new form lists: *Web Server Manager servers* and
+  *credentials you may use*. The native **Linux › Web Server Manager**
+  submenu is gone (the Troubleshooting rule: one door per place). The pages
+  under `/webserver/` stay for what an app form cannot draw (code editor,
+  uploads, live logs) and every app links to its page. The generator gained
+  `satom_plugin.py bundle <name>` (`bundles/<name>.json`).
 - **Web Server Manager (Linux ADOM).** Asked for: "a plugin for the Linux ADOM
   to manage web servers, like cPanel, over SSH with the credentials of the
   signed-in user; if the account cannot do something, escalate with sudo the
@@ -62,6 +82,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   package is skipped and named, and one that needs another package from the
   bundle is retried after it. **Download as bundle** (Folders) writes a
   folder's flow apps as one bundle.
+
+### Fixed
+- **The plugin rules pack could not be built once a step reached
+  `system_backup`**: two absolute imports (`from app.services import
+  doc_publication`) made the pack refuse the whole closure. They are relative
+  imports now, with no change at run time.
 
 ## [4.11.4] - 2026-11-06
 

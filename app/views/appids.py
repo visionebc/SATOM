@@ -43,20 +43,41 @@ def index():
     src = dict(mapping.get("source") or {})
     src["has_password"] = bool(src.pop("password_enc", None))
     src["has_token"] = bool(src.pop("token_enc", None))
-    # GLOBAL catalog: assignment spans BOTH products' appliances.
-    # visible_appliances: maintenance devices and other ADOMs stay out of the
-    # picker, exactly as on every other device list.
-    appliances = (visible_appliances(Appliance.query
-                                     .filter(Appliance.kind.in_(("fortiweb", "fortiadc"))))
-                  .order_by(Appliance.name).all())
+    appliances = _appliances()
+    names = {a.id: a.name for a in appliances}
+    bindings = [dict(b.to_dict(), device=names.get(b.appliance_id, ""))
+                for b in svc.AppIdPolicy.query.all()]
+    catalog = svc.catalog()
+    from ..services.analysis import appid_regex_raw
     return render_template(
         "appids/index.html",
-        catalog=svc.catalog(),
+        catalog=catalog,
+        catalog_rows=[_row(a, bindings) for a in catalog],
+        columns=svc.columns(),
         mapping=mapping,
         source=src,
         appliances=appliances,
-        bindings=[b.to_dict() for b in svc.AppIdPolicy.query.all()],
+        bindings=bindings,
+        appid_regex=appid_regex_raw(),
     )
+
+
+def _appliances():
+    # GLOBAL catalog: assignment spans BOTH products' appliances.
+    # visible_appliances: maintenance devices and other ADOMs stay out of the
+    # picker, exactly as on every other device list.
+    return (visible_appliances(Appliance.query
+                               .filter(Appliance.kind.in_(("fortiweb", "fortiadc"))))
+            .order_by(Appliance.name).all())
+
+
+def _row(a, bindings) -> dict:
+    status = "stale" if a.stale else ("active" if a.active else "inactive")
+    return {"id": a.id, "app_id": a.app_id, "customer": a.customer or "",
+            "label": a.label or "", "rate": a.rate or "", "source": a.source,
+            "status": status, "stale_reason": a.stale_reason or "",
+            "policies": sum(1 for b in bindings if b.get("app_id_id") == a.id),
+            "extra": {str(k): str(v) for k, v in a.extra_dict.items()}}
 
 
 @bp.route("/create", methods=["POST"])
@@ -91,6 +112,118 @@ def delete(app_id_pk):
         log_action("appid.delete", target=name)
         flash(f"AppID {name} deleted (and its policy bindings).", "success")
     return redirect(url_for("appids.index"))
+
+
+@bp.route("/delete-bulk", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def delete_bulk():
+    pks = []
+    for v in request.form.getlist("ids"):
+        try:
+            pks.append(int(v))
+        except (TypeError, ValueError):
+            continue
+    names = svc.delete_many(pks)
+    for name in names:
+        log_action("appid.delete", target=name, extra={"bulk": True})
+    if names:
+        flash(f"{len(names)} AppID(s) deleted (and their policy bindings).", "success")
+    else:
+        flash("Select the AppIDs to delete.", "warning")
+    return redirect(url_for("appids.index"))
+
+
+@bp.route("/columns", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_columns():
+    data = request.get_json(silent=True) or {}
+    labels = data.get("labels") if isinstance(data.get("labels"), dict) else {}
+    hidden = data.get("hidden") if isinstance(data.get("hidden"), list) else []
+    cols = svc.save_columns(labels, hidden)
+    log_action("appid.columns", target="catalog",
+               extra={"labels": {c["key"]: c["label"] for c in cols
+                                 if c["label"] != c["default"]},
+                      "hidden": [c["key"] for c in cols if not c["visible"]]})
+    return jsonify({"ok": True, "columns": cols})
+
+
+@bp.route("/import/plan", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def import_plan():
+    """AJAX, before an import: which AppIDs are new, unchanged, changed (with
+    the differences, for the operator to accept) or repeated in the file.
+    Saves nothing -- not even the mapping."""
+    file = request.files.get("catalog_file")
+    if file is None or not file.filename:
+        return jsonify({"error": "no file"}), 400
+    try:
+        table = svc.parse_upload(file.filename, file.read())
+        records = svc.apply_mapping(table, _mapping_from_form())
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"parse failed: {exc}"}), 400
+    if not records:
+        return jsonify({"error": "No rows with a non-empty AppID were found — "
+                                 "check the AppID column mapping."}), 400
+    return jsonify(dict(svc.plan_import(records), rows=len(records)))
+
+
+@bp.route("/comment-bindings", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def comment_bindings():
+    """AJAX: server policies with the AppID their comment names (local store)."""
+    appls = [a for a in _appliances() if a.kind == "fortiweb"]
+    want = request.args.get("appliance_id", "")
+    if want:
+        appls = [a for a in appls if str(a.id) == want]
+        if not appls:
+            return jsonify({"error": "no such device"}), 404
+    return jsonify({"rows": svc.comment_bindings(appls)})
+
+
+@bp.route("/bind-bulk", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def bind_bulk():
+    """Save several policy -> AppID bindings at once (from the comment review).
+    Every device must be one the user sees and every policy one it has."""
+    from ..services import read_layer
+    data = request.get_json(silent=True) or {}
+    items = data.get("items") if isinstance(data.get("items"), list) else []
+    visible = {a.id: a for a in _appliances()}
+    known: dict[int, set[str]] = {}
+    saved, errors = 0, []
+    for it in items[:5000]:
+        try:
+            aid = int(it.get("appliance_id"))
+            pk = int(it.get("app_id_pk"))
+        except (TypeError, ValueError, AttributeError):
+            errors.append("bad item")
+            continue
+        policy = str(it.get("server_policy") or "").strip()
+        appl = visible.get(aid)
+        if appl is None:
+            return jsonify({"ok": False, "error": "no such device"}), 404
+        if aid not in known:
+            rows, _meta = read_layer.read_objects(aid, "server_policy")
+            known[aid] = {str(r.get("name") or "") for r in rows or []}
+        if policy not in known[aid]:
+            errors.append(f"{appl.name} has no server policy {policy!r}")
+            continue
+        try:
+            svc.assign(app_id_pk=pk, appliance_id=aid, server_policy=policy, by=_who())
+        except ValueError as exc:
+            errors.append(f"{policy}: {exc}")
+            continue
+        log_action("appid.assign", target=policy,
+                   extra={"app_id_pk": pk, "appliance_id": aid, "from": "comment"})
+        saved += 1
+    return jsonify({"ok": not errors, "saved": saved, "errors": errors[:50]})
 
 
 @bp.route("/preview", methods=["POST"])
@@ -141,8 +274,13 @@ def do_import():
               "column mapping.", "warning")
         return redirect(url_for("appids.index"))
 
+    # The page reviews first (import/plan) and sends review=1 plus the AppIDs
+    # whose changes were accepted; without a review every change applies.
+    accept = None
+    if request.form.get("review") == "1":
+        accept = {v.strip().lower() for v in request.form.getlist("accept") if v.strip()}
     res = svc.import_records(records, source="import",
-                             created_by=_who())
+                             created_by=_who(), accept=accept)
     log_action("appid.import", target=file.filename, extra=res.as_dict())
     flash(f"Imported from {file.filename}: {res.summary()}.", "success")
     return redirect(url_for("appids.index"))

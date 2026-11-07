@@ -6,6 +6,35 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **AppIDs: a catalog table you can work with (FA-0014).** Requested:
+  filters for every field, several AppIDs selected and deleted at once,
+  sorting by any column, choosing the columns to see, and renaming them
+  ("Customer" can be called something else). Every column has a filter
+  and sorts on its header; **Columns** shows, hides and renames them
+  (extra import fields included; the names apply to every administrator
+  and to the add and mapping forms); **Delete selected** removes the
+  ticked AppIDs and their bindings.
+- **AppIDs: policies bound from their comment (FA-0014).** Assign
+  policies reads the comment of every FortiWeb server policy (local copy,
+  no device call), finds the AppID with the Analysis App ID pattern and
+  proposes it; the operator corrects any row and saves. The binding stays
+  the authority -- the comment is only read. The bindings table now names
+  the device.
+- **AppIDs: a re-import asks before changing an existing AppID
+  (FA-0014).** Before importing, the page lists the AppIDs that already
+  exist with different data, field by field, and the operator accepts each
+  change or all of them; AppIDs repeated in the file are named. AppIDs that
+  come with the same data are left exactly as they are and counted as
+  *unchanged*. The nightly import still applies every change.
+
+### Fixed
+- **AppIDs used SATOM's styles only in part.** The buttons used a class
+  `btn-fw` that does not exist, the badges were Bootstrap colours, and
+  deleting an AppID did not ask for confirmation (nothing handled the
+  form's `data-confirm`). Buttons and badges are SATOM's now and deleting
+  or unassigning asks first.
+
 ## [4.11.9] - 2026-11-07
 
 ### Fixed

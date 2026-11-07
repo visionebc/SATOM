@@ -258,6 +258,8 @@ def apply_mapping(table: ParsedTable, mapping: dict[str, Any]) -> list[dict[str,
 class ImportResult:
     created: int = 0
     updated: int = 0
+    unchanged: int = 0
+    kept: int = 0                # changed in the feed, change refused in review
     stale: int = 0
     skipped: int = 0
     seen: list[str] = field(default_factory=list)
@@ -266,22 +268,83 @@ class ImportResult:
     def as_dict(self) -> dict[str, Any]:
         return {
             "created": self.created, "updated": self.updated,
+            "unchanged": self.unchanged, "kept": self.kept,
             "stale": self.stale, "skipped": self.skipped,
             "seen": len(self.seen), "errors": self.errors,
         }
 
     def summary(self) -> str:
-        return (f"{self.created} new, {self.updated} updated, "
-                f"{self.stale} newly stale, {self.skipped} skipped")
+        s = (f"{self.created} new, {self.updated} updated, "
+             f"{self.unchanged} unchanged")
+        if self.kept:
+            s += f", {self.kept} kept as they were"
+        return s + f", {self.stale} newly stale, {self.skipped} skipped"
+
+
+def _changes(row: AppId, rec: dict[str, Any]) -> dict[str, list[str]]:
+    """``field -> [old, new]`` for what importing *rec* would change on *row*,
+    under the same additive rules as :func:`import_records` (an empty cell
+    never blanks a value). Empty = the feed brings the same data."""
+    out: dict[str, list[str]] = {}
+    for f, limit in (("customer", 200), ("label", 200), ("rate", 64)):
+        new = str(rec.get(f) or "")[:limit]
+        old = getattr(row, f) or ""
+        if new and new != old:
+            out[f] = [old, new]
+    cur = row.extra_dict
+    for k, v in (rec.get("extra") or {}).items():
+        if v and str(cur.get(k, "")) != str(v):
+            out["extra." + k] = [str(cur.get(k, "")), str(v)]
+    return out
+
+
+def plan_import(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """What importing *records* would do, without doing it (FA-0014).
+
+    ``new`` AppIDs, ``unchanged`` ones (same data: left exactly as they are),
+    ``changed`` ones with their field-by-field differences -- the operator
+    accepts those one by one or all at once -- and ``repeated``: AppIDs that
+    appear more than once in the file (the last row wins, as on import)."""
+    last: dict[str, dict[str, Any]] = {}
+    repeated: set[str] = set()
+    for rec in records:
+        key = str(rec.get("app_id") or "").strip()
+        if not key:
+            continue
+        if key.lower() in last:
+            repeated.add(key)
+        last[key.lower()] = rec
+    existing = {a.app_id.lower(): a for a in AppId.query.all()}
+    new, unchanged, changed = [], [], []
+    for key, rec in last.items():
+        row = existing.get(key)
+        if row is None:
+            new.append(str(rec["app_id"]).strip())
+            continue
+        diff = _changes(row, rec)
+        if diff:
+            changed.append({"app_id": row.app_id, "customer": row.customer,
+                            "changes": diff})
+        else:
+            unchanged.append(row.app_id)
+    return {"new": sorted(new), "unchanged": sorted(unchanged),
+            "changed": sorted(changed, key=lambda c: c["app_id"].lower()),
+            "repeated": sorted(repeated)}
 
 
 def import_records(records: list[dict[str, Any]], *, product: str = "global",
-                   source: str = "import", created_by: str = "") -> ImportResult:
+                   source: str = "import", created_by: str = "",
+                   accept: set[str] | None = None) -> ImportResult:
     """ADDITIVE upsert of normalized records into the ``app_ids`` catalog.
 
     Never deletes. An AppID present before but absent from THIS batch (and whose
     ``source`` is import, i.e. not hand-authored) is flagged ``stale`` for the
     operator — assignments and billing links are preserved untouched.
+
+    *accept* is the review of the page (lower-case AppIDs whose changes the
+    operator accepted): an existing AppID the feed changes but that is not in
+    it keeps its data. ``None`` (the nightly action) accepts every change. An
+    AppID the feed brings with the same data is not touched at all.
     """
     res = ImportResult()
     run_start = datetime.utcnow()
@@ -297,30 +360,38 @@ def import_records(records: list[dict[str, Any]], *, product: str = "global",
         row = (AppId.query
                .filter(db.func.lower(AppId.app_id) == app_id.lower()).first())
         extra = rec.get("extra") or {}
+        apply = True
         if row is None:
             row = AppId(app_id=app_id, product="global", source=source,
                         created_by=created_by)
             db.session.add(row)
             res.created += 1
+        elif not _changes(row, rec):
+            res.unchanged += 1
+            apply = False
+        elif accept is not None and app_id.lower() not in accept:
+            res.kept += 1
+            apply = False
         else:
             res.updated += 1
-        # Additive update: fill/refresh display fields, keep prior values if the
-        # feed omits a column (don't blank an existing customer with "").
-        if rec.get("customer"):
-            row.customer = rec["customer"][:200]
-        if rec.get("label"):
-            row.label = rec["label"][:200]
-        if rec.get("rate"):
-            row.rate = rec["rate"][:64]
-        if extra:
-            merged = row.extra_dict
-            merged.update({k: v for k, v in extra.items() if v})
-            row.extra_json = json.dumps(merged)
+        if apply:
+            # Additive update: fill/refresh display fields, keep prior values if
+            # the feed omits a column (don't blank an existing customer with "").
+            if rec.get("customer"):
+                row.customer = rec["customer"][:200]
+            if rec.get("label"):
+                row.label = rec["label"][:200]
+            if rec.get("rate"):
+                row.rate = rec["rate"][:64]
+            if extra:
+                merged = row.extra_dict
+                merged.update({k: v for k, v in extra.items() if v})
+                row.extra_json = json.dumps(merged)
+            row.updated_at = run_start
         row.active = True
         row.stale = False
         row.stale_reason = ""
         row.last_seen = run_start
-        row.updated_at = run_start
 
     # Stale pass — imported AppIDs not in this batch. Hand-authored (source
     # 'manual') rows are never auto-staled.
@@ -411,6 +482,116 @@ def delete(app_id_pk: int) -> None:
         AppIdPolicy.query.filter_by(app_id_id=row.id).delete()
         db.session.delete(row)
         db.session.commit()
+
+
+def delete_many(pks: list[int]) -> list[str]:
+    """Delete several AppIDs (and their bindings) in one transaction. Returns
+    the names deleted; unknown ids are ignored."""
+    rows = AppId.query.filter(AppId.id.in_([int(p) for p in pks])).all() if pks else []
+    names = [r.app_id for r in rows]
+    for r in rows:
+        AppIdPolicy.query.filter_by(app_id_id=r.id).delete()
+        db.session.delete(r)
+    db.session.commit()
+    return names
+
+
+# --------------------------------------------------------------------------- #
+#  Catalog columns: which are shown and what they are called (FA-0014)        #
+# --------------------------------------------------------------------------- #
+_COLUMNS_KEY = "appid.catalog_columns"
+BASE_COLUMNS = (("app_id", "AppID"), ("customer", "Customer"), ("label", "Label"),
+                ("rate", "Rate"), ("source", "Source"), ("status", "Status"),
+                ("policies", "Policies"))
+
+
+def extra_keys() -> list[str]:
+    keys: set[str] = set()
+    for a in AppId.query.all():
+        keys.update(str(k) for k in a.extra_dict)
+    return sorted(keys, key=str.lower)
+
+
+def columns() -> list[dict[str, Any]]:
+    """The catalog's columns in order: the core ones, then every extra field an
+    import brought. Each ``{key, default, label, visible}``; ``label`` is the
+    operator's name for it (one for every admin, kept in the database)."""
+    conf = settings_store.get_json(_COLUMNS_KEY, {}) or {}
+    labels = conf.get("labels") if isinstance(conf.get("labels"), dict) else {}
+    hidden = set(conf.get("hidden") or []) if isinstance(conf.get("hidden"), list) else set()
+    out = [{"key": k, "default": d} for k, d in BASE_COLUMNS]
+    out += [{"key": "extra." + k, "default": k} for k in extra_keys()]
+    for c in out:
+        c["label"] = str(labels.get(c["key"]) or c["default"])
+        c["visible"] = c["key"] == "app_id" or c["key"] not in hidden
+    return out
+
+
+def save_columns(labels: dict, hidden: list) -> list[dict[str, Any]]:
+    """Persist column names and visibility. Unknown keys are dropped, a blank
+    name means the default, and the AppID column is always shown."""
+    known = {c["key"]: c["default"] for c in columns()}
+    clean_labels = {}
+    for k, v in (labels or {}).items():
+        v = " ".join(str(v or "").split())[:60]
+        if k in known and v and v != known[k]:
+            clean_labels[k] = v
+    clean_hidden = sorted({str(k) for k in (hidden or []) if k in known and k != "app_id"})
+    settings_store.set_json(_COLUMNS_KEY, {"labels": clean_labels, "hidden": clean_hidden})
+    return columns()
+
+
+# --------------------------------------------------------------------------- #
+#  Bindings read from the server-policy comment (FA-0014)                      #
+# --------------------------------------------------------------------------- #
+def comment_bindings(appliances: list[Appliance]) -> list[dict[str, Any]]:
+    """Every server policy of *appliances* (local store, last sync: no device
+    call) with the AppID its ``comment`` names -- the same pattern as
+    Analysis > AppID pattern -- the catalog AppID it matches and the binding
+    saved today. The comment only PROPOSES: the binding table stays the
+    authority, and nothing is saved until the operator saves it.
+
+    ``state``: ``bound`` (saved = proposed), ``proposed`` (no binding yet, the
+    comment names a catalog AppID), ``differs`` (saved to another AppID),
+    ``not_in_catalog`` (the comment names an AppID the catalog lacks),
+    ``no_appid`` (nothing in the comment), ``manual`` (bound, comment silent).
+    """
+    from . import read_layer
+    from .analysis import appid_pattern, extract_appid
+    pat = appid_pattern()
+    cat = {a.app_id.lower(): a for a in AppId.query.all()}
+    binds = {(b.appliance_id, b.server_policy): b for b in AppIdPolicy.query.all()}
+    out: list[dict[str, Any]] = []
+    for appl in appliances:
+        try:
+            payloads, _meta = read_layer.read_objects(appl.id, "server_policy")
+        except Exception:  # noqa: BLE001 -- no cache for this device
+            payloads = []
+        for p in payloads or []:
+            name = str(p.get("name") or "")
+            if not name:
+                continue
+            comment = str(p.get("comment") or "")
+            found = extract_appid(comment, pat) or ""
+            match = cat.get(found) if found else None
+            bound = binds.get((appl.id, name))
+            if bound is not None and match is not None:
+                state = "bound" if bound.app_id_id == match.id else "differs"
+            elif bound is not None:
+                state = "not_in_catalog" if found else "manual"
+            elif match is not None:
+                state = "proposed"
+            else:
+                state = "not_in_catalog" if found else "no_appid"
+            out.append({
+                "appliance_id": appl.id, "device": appl.name, "policy": name,
+                "comment": comment[:300], "found": found,
+                "found_pk": match.id if match else None,
+                "bound_pk": bound.app_id_id if bound else None,
+                "bound_app_id": bound.app.app_id if bound is not None and bound.app else "",
+                "state": state,
+            })
+    return out
 
 
 def binding_for(appliance_id: int, server_policy: str) -> AppIdPolicy | None:

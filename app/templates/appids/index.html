@@ -8,12 +8,13 @@
 {% endblock %}
 
 {% block content %}
+{% set lbl = {} %}{% for c in columns %}{% set _ = lbl.update({c.key: c.label}) %}{% endfor %}
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-tags me-2 text-accent"></i>{{ _('AppIDs') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       {{ _('The billing + access-control catalog. Each Server Policy belongs to exactly one AppID (one customer). Imports are additive — a vanished AppID is flagged') }}
-      <span class="badge bg-warning text-dark">{{ _('stale') }}</span>{{ _(', never deleted.') }}
+      <span class="fw-badge fw-badge-warning">{{ _('stale') }}</span>{{ _(', never deleted.') }}
     </p>
   </div>
 </div>
@@ -31,44 +32,31 @@
     <div class="fw-card p-3 mb-3">
       <form method="POST" action="{{ url_for('appids.create') }}" class="row g-2 align-items-end">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="col-md-2"><label class="form-label">{{ _('AppID *') }}</label><input name="app_id" class="form-control form-control-sm" required></div>
-        <div class="col-md-3"><label class="form-label">{{ _('Customer') }}</label><input name="customer" class="form-control form-control-sm"></div>
-        <div class="col-md-3"><label class="form-label">{{ _('Label') }}</label><input name="label" class="form-control form-control-sm"></div>
-        <div class="col-md-2"><label class="form-label">{{ _('Rate') }}</label><input name="rate" class="form-control form-control-sm" placeholder="{{ _('e.g. 50') }}"></div>
-        <div class="col-md-2"><button class="btn btn-fw btn-sm w-100">{{ _('Add AppID') }}</button></div>
+        <div class="col-md-2"><label class="form-label">{{ lbl.app_id }} *</label><input name="app_id" class="form-control form-control-sm" required></div>
+        <div class="col-md-3"><label class="form-label">{{ lbl.customer }}</label><input name="customer" class="form-control form-control-sm"></div>
+        <div class="col-md-3"><label class="form-label">{{ lbl.label }}</label><input name="label" class="form-control form-control-sm"></div>
+        <div class="col-md-2"><label class="form-label">{{ lbl.rate }}</label><input name="rate" class="form-control form-control-sm" placeholder="{{ _('e.g. 50') }}"></div>
+        <div class="col-md-2"><button class="btn btn-fw-primary btn-sm w-100"><i class="bi bi-plus-lg"></i> {{ _('Add AppID') }}</button></div>
       </form>
     </div>
+
+    <div class="appid-toolbar mb-2">
+      <form method="POST" action="{{ url_for('appids.delete_bulk') }}" id="bulkDeleteForm" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <span id="bulkIds"></span>
+        <button class="btn btn-fw-danger btn-sm" id="bulkDeleteBtn" disabled><i class="bi bi-trash"></i> {{ _('Delete selected') }} (<span id="selCount">0</span>)</button>
+      </form>
+      <button type="button" class="btn btn-fw-outline btn-sm" id="clearFilters"><i class="bi bi-funnel"></i> {{ _('Clear filters') }}</button>
+      <button type="button" class="btn btn-fw-outline btn-sm" id="columnsBtn"><i class="bi bi-layout-three-columns"></i> {{ _('Columns') }}</button>
+      <span class="text-muted small ms-auto" id="rowCount"></span>
+    </div>
     <div class="fw-card p-0">
-      <table class="table table-sm mb-0 fw-table">
-        <thead><tr><th>{{ _('AppID') }}</th><th>{{ _('Customer') }}</th><th>{{ _('Label') }}</th><th>{{ _('Rate') }}</th><th>{{ _('Source') }}</th><th>{{ _('Status') }}</th><th>{{ _('Policies') }}</th><th></th></tr></thead>
-        <tbody>
-        {% for a in catalog %}
-          {% set nbind = bindings|selectattr('app_id_id','equalto',a.id)|list|length %}
-          <tr>
-            <td class="mono">{{ a.app_id }}</td>
-            <td>{{ a.customer or '—' }}</td>
-            <td>{{ a.label or '—' }}</td>
-            <td>{{ a.rate or '—' }}</td>
-            <td><span class="badge bg-secondary">{{ a.source }}</span></td>
-            <td>
-              {% if a.stale %}<span class="badge bg-warning text-dark" title="{{ a.stale_reason }}">{{ _('stale') }}</span>
-              {% elif a.active %}<span class="badge bg-success">{{ _('active') }}</span>
-              {% else %}<span class="badge bg-secondary">{{ _('inactive') }}</span>{% endif %}
-            </td>
-            <td>{{ nbind }}</td>
-            <td class="text-end">
-              <form method="POST" action="{{ url_for('appids.delete', app_id_pk=a.id) }}" class="d-inline"
-                    data-confirm="Delete AppID {{ a.app_id }} and its {{ nbind }} policy binding(s)?">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-              </form>
-            </td>
-          </tr>
-        {% else %}
-          <tr><td colspan="8" class="text-muted p-3">{{ _('No AppIDs yet. Add one above or import a catalog.') }}</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 fw-table appid-table" id="catalogTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -77,9 +65,12 @@
     <div class="fw-card p-3">
       <p class="text-muted" style="font-size:13px;">
         {{ _('Upload a CSV / TSV / TXT / PDF. It\'s normalized to a table so you can map each column to a field') }} <strong>{{ _('once') }}</strong> {{ _('— the mapping is saved and reused by later uploads and the nightly action.') }}
+        {{ _('Before importing, SATOM shows the AppIDs that already exist with different data: you accept each change or all of them. AppIDs with the same data are left as they are.') }}
       </p>
       <form id="importForm" method="POST" action="{{ url_for('appids.do_import') }}" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="review" value="">
+        <span id="acceptIds"></span>
         <div class="row g-2 align-items-end mb-2">
           <div class="col-md-6"><label class="form-label">{{ _('File') }}</label>
             <input type="file" name="catalog_file" id="catalogFile" class="form-control form-control-sm" accept=".csv,.tsv,.txt,.pdf" required></div>
@@ -95,13 +86,13 @@
           <h6>{{ _('Map columns → fields') }}</h6>
           <div class="row g-2 mb-2">
             {% set saved = mapping.get('fields', {}) %}
-            <div class="col-md-3"><label class="form-label">{{ _('AppID column *') }}</label>
+            <div class="col-md-3"><label class="form-label">{{ lbl.app_id }} {{ _('column') }} *</label>
               <select name="map_app_id" id="map_app_id" class="form-select form-select-sm map-col" data-saved="{{ saved.get('app_id','') }}" required></select></div>
-            <div class="col-md-3"><label class="form-label">{{ _('Customer column') }}</label>
+            <div class="col-md-3"><label class="form-label">{{ lbl.customer }} {{ _('column') }}</label>
               <select name="map_customer" class="form-select form-select-sm map-col" data-saved="{{ saved.get('customer','') }}"></select></div>
-            <div class="col-md-3"><label class="form-label">{{ _('Label column') }}</label>
+            <div class="col-md-3"><label class="form-label">{{ lbl.label }} {{ _('column') }}</label>
               <select name="map_label" class="form-select form-select-sm map-col" data-saved="{{ saved.get('label','') }}"></select></div>
-            <div class="col-md-3"><label class="form-label">{{ _('Rate column') }}</label>
+            <div class="col-md-3"><label class="form-label">{{ lbl.rate }} {{ _('column') }}</label>
               <select name="map_rate" class="form-select form-select-sm map-col" data-saved="{{ saved.get('rate','') }}"></select></div>
           </div>
 
@@ -109,7 +100,7 @@
           <div id="extraRows"></div>
           <button type="button" id="addExtra" class="btn btn-sm btn-fw-outline mb-3"><i class="bi bi-plus"></i> {{ _('Add extra field') }}</button>
 
-          <div><button class="btn btn-fw btn-sm">{{ _('Import (additive)') }}</button></div>
+          <div><button class="btn btn-fw-primary btn-sm" id="importBtn"><i class="bi bi-upload"></i> {{ _('Import (additive)') }}</button></div>
         </div>
       </form>
     </div>
@@ -144,7 +135,7 @@
           <div class="col-md-6"><label class="form-label">{{ _('Bearer token') }}</label>
             <input name="source_token" type="password" class="form-control form-control-sm" placeholder="{{ '••••••' if source.get('has_token') else '' }}"></div>
         </div>
-        <button class="btn btn-fw btn-sm">{{ _('Save source') }}</button>
+        <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save"></i> {{ _('Save source') }}</button>
       </form>
     </div>
   </div>
@@ -152,9 +143,42 @@
   <!-- ============================ ASSIGN ============================ -->
   <div class="tab-pane fade" id="tab-assign">
     <div class="fw-card p-3 mb-3">
+      <h6 class="mb-1"><i class="bi bi-chat-left-text me-1"></i>{{ _('From the server-policy comments') }}</h6>
+      <p class="text-muted mb-2" style="font-size:12px;">
+        {{ _('SATOM reads the comment of every FortiWeb server policy (as of the last device sync) and proposes the AppID it names, with the pattern') }}
+        <code>{{ appid_regex }}</code> (<a href="{{ url_for('analysis.index') }}">{{ _('Analysis › App ID pattern') }}</a>).
+        {{ _('Change any proposal, tick the rows and save: the binding is kept in SATOM, the comment is only read.') }}
+      </p>
+      <div class="appid-toolbar mb-2">
+        <select id="cbDevice" class="form-select form-select-sm" style="width:auto">
+          <option value="">{{ _('All FortiWeb devices') }}</option>
+          {% for d in appliances if d.kind == 'fortiweb' %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
+        </select>
+        <select id="cbState" class="form-select form-select-sm" style="width:auto">
+          <option value="todo">{{ _('To review (new or different)') }}</option>
+          <option value="">{{ _('All policies') }}</option>
+          <option value="bound">{{ _('Already saved') }}</option>
+          <option value="not_in_catalog">{{ _('AppID not in the catalog') }}</option>
+          <option value="no_appid">{{ _('No AppID in the comment') }}</option>
+        </select>
+        <input id="cbFilter" class="form-control form-control-sm" style="width:220px" placeholder="{{ _('filter policy, comment, AppID') }}">
+        <button type="button" class="btn btn-fw-outline btn-sm" id="cbRead"><i class="bi bi-arrow-repeat"></i> {{ _('Read comments') }}</button>
+        <button type="button" class="btn btn-fw-primary btn-sm" id="cbSave" disabled><i class="bi bi-save"></i> {{ _('Save selected') }} (<span id="cbCount">0</span>)</button>
+        <span class="text-muted small ms-auto" id="cbInfo"></span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 fw-table" id="cbTable">
+          <thead><tr><th style="width:28px"><input type="checkbox" class="form-check-input" id="cbAll"></th><th>{{ _('Device') }}</th><th>{{ _('Server Policy') }}</th><th>{{ _('Comment') }}</th><th>{{ _('In the comment') }}</th><th>{{ _('Saved') }}</th><th>{{ lbl.app_id }}</th><th>{{ _('State') }}</th></tr></thead>
+          <tbody><tr><td colspan="8" class="text-muted p-3">{{ _('Press Read comments.') }}</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="fw-card p-3 mb-3">
+      <h6 class="mb-2">{{ _('By hand') }}</h6>
       <form method="POST" action="{{ url_for('appids.assign') }}" class="row g-2 align-items-end">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="col-md-3"><label class="form-label">{{ _('AppID *') }}</label>
+        <div class="col-md-3"><label class="form-label">{{ lbl.app_id }} *</label>
           <select name="app_id_pk" class="form-select form-select-sm" required>
             <option value="">—</option>
             {% for a in catalog %}<option value="{{ a.id }}">{{ a.app_id }} — {{ a.customer or 'no customer' }}</option>{% endfor %}
@@ -166,27 +190,27 @@
           </select></div>
         <div class="col-md-4"><label class="form-label">{{ _('Server Policy name *') }}</label>
           <input name="server_policy" class="form-control form-control-sm" required placeholder="{{ _('pol-...') }}"></div>
-        <div class="col-md-2"><button class="btn btn-fw btn-sm w-100">{{ _('Assign') }}</button></div>
+        <div class="col-md-2"><button class="btn btn-fw-primary btn-sm w-100">{{ _('Assign') }}</button></div>
       </form>
     </div>
     <div class="fw-card p-0">
       <table class="table table-sm mb-0 fw-table">
-        <thead><tr><th>{{ _('Server Policy') }}</th><th>{{ _('AppID') }}</th><th>{{ _('Customer') }}</th><th></th></tr></thead>
+        <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Server Policy') }}</th><th>{{ lbl.app_id }}</th><th>{{ lbl.customer }}</th><th></th></tr></thead>
         <tbody>
         {% for b in bindings %}
           <tr>
-            <td class="mono">{{ b.server_policy }}</td><td class="mono">{{ b.app_id }}</td><td>{{ b.customer or '—' }}</td>
+            <td>{{ b.device or '—' }}</td><td class="mono">{{ b.server_policy }}</td><td class="mono">{{ b.app_id }}</td><td>{{ b.customer or '—' }}</td>
             <td class="text-end">
-              <form method="POST" action="{{ url_for('appids.unassign') }}" class="d-inline">
+              <form method="POST" action="{{ url_for('appids.unassign') }}" class="d-inline" data-confirm="Unassign {{ b.server_policy }} from {{ b.app_id }}?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="appliance_id" value="{{ b.appliance_id }}">
                 <input type="hidden" name="server_policy" value="{{ b.server_policy }}">
-                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-lg"></i></button>
+                <button class="btn btn-sm btn-fw-outline" title="{{ _('Unassign') }}"><i class="bi bi-x-lg"></i></button>
               </form>
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="4" class="text-muted p-3">{{ _('No policies assigned yet.') }}</td></tr>
+          <tr><td colspan="5" class="text-muted p-3">{{ _('No policies assigned yet.') }}</td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -194,11 +218,210 @@
   </div>
 </div>
 
+<!-- ============================ COLUMNS MODAL ============================ -->
+<div class="modal fade" id="columnsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">{{ _('Columns') }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <p class="text-muted small mb-2">{{ _('Tick the columns to show and give any of them your own name (empty = the default). Names apply to every administrator.') }}</p>
+        <table class="table table-sm fw-table mb-0"><thead><tr><th>{{ _('Show') }}</th><th>{{ _('Column') }}</th><th>{{ _('Name') }}</th></tr></thead><tbody id="columnsBody"></tbody></table>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-fw-secondary btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button type="button" class="btn btn-fw-primary btn-sm" id="columnsSave"><i class="bi bi-save"></i> {{ _('Save') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ IMPORT REVIEW MODAL ============================ -->
+<div class="modal fade" id="reviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">{{ _('AppIDs that already exist') }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <p class="small mb-2" id="reviewSummary"></p>
+        <div class="alert alert-warning py-2 small" id="reviewRepeated" style="display:none"></div>
+        <table class="table table-sm fw-table mb-0">
+          <thead><tr><th style="width:28px"><input type="checkbox" class="form-check-input" id="reviewAll" checked></th><th>{{ lbl.app_id }}</th><th>{{ _('Field') }}</th><th>{{ _('Now') }}</th><th>{{ _('In the file') }}</th></tr></thead>
+          <tbody id="reviewBody"></tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-fw-secondary btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button type="button" class="btn btn-fw-outline btn-sm" id="reviewKeep">{{ _('Keep all as they are') }}</button>
+        <button type="button" class="btn btn-fw-outline btn-sm" id="reviewAcceptAll">{{ _('Accept all changes') }}</button>
+        <button type="button" class="btn btn-fw-primary btn-sm" id="reviewApply">{{ _('Import with the ticked changes') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style nonce="{{ csp_nonce }}">
+  .appid-toolbar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
+  .appid-table th.appid-sort { cursor:pointer; user-select:none; white-space:nowrap; }
+  .appid-table th.appid-sort .appid-arrow { color:var(--fw-accent, #EF5424); font-size:10px; margin-left:3px; }
+  .appid-table tr.appid-filters th { background:var(--fw-content-bg, #F3F6FC); padding:3px 4px; }
+  .appid-table tr.appid-filters input, .appid-table tr.appid-filters select { font-size:12px; padding:1px 5px; min-width:70px; }
+  .appid-table tr.appid-selected td { background:color-mix(in srgb, var(--fw-accent, #EF5424) 7%, transparent); }
+  #cbTable select { font-size:12px; padding:1px 5px; min-width:150px; }
+  #cbTable td.cb-comment { max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+</style>
+
 <script nonce="{{ csp_nonce }}">
 (function () {
   var csrf = document.querySelector('meta[name="csrf-token"]').content;
-  var cols = [];               // current parsed columns
+  var ROWS = {{ catalog_rows|tojson }};
+  var COLS = {{ columns|tojson }};
+  var CATALOG = ROWS.map(function (r) { return { id: r.id, app_id: r.app_id, customer: r.customer }; });
+  var URLS = { columns: '{{ url_for("appids.save_columns") }}', plan: '{{ url_for("appids.import_plan") }}',
+               cb: '{{ url_for("appids.comment_bindings") }}', bind: '{{ url_for("appids.bind_bulk") }}' };
+  var STATUS = { active: 'fw-badge-success', stale: 'fw-badge-warning', inactive: 'fw-badge-secondary' };
 
+  function el(tag, attrs, kids) {
+    var e = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (v == null || v === false) return;
+      if (k === 'text') e.textContent = v; else if (k === 'cls') e.className = v;
+      else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+    });
+    (kids || []).forEach(function (c) { if (c != null) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return e;
+  }
+  function modal(id) { return bootstrap.Modal.getOrCreateInstance(document.getElementById(id)); }
+  function postJSON(url, body) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (j) { j._status = r.status; return j; }); });
+  }
+
+  // ---------------------------------------------------------------- catalog
+  var sort = { key: 'app_id', dir: 1 }, filters = {}, selected = {};
+  function val(r, key) {
+    if (key.indexOf('extra.') === 0) return r.extra[key.slice(6)] || '';
+    return r[key] == null ? '' : r[key];
+  }
+  function visibleCols() { return COLS.filter(function (c) { return c.visible; }); }
+  function cmp(a, b) {
+    var x = val(a, sort.key), y = val(b, sort.key);
+    if (typeof x === 'number' && typeof y === 'number') return (x - y) * sort.dir;
+    var nx = parseFloat(x), ny = parseFloat(y);
+    if (String(x).trim() !== '' && String(y).trim() !== '' && !isNaN(nx) && !isNaN(ny) && String(nx) === String(x).trim() && String(ny) === String(y).trim()) return (nx - ny) * sort.dir;
+    return String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' }) * sort.dir;
+  }
+  function matches(r) {
+    return Object.keys(filters).every(function (k) {
+      var f = filters[k]; if (!f) return true;
+      var v = String(val(r, k));
+      if (k === 'source' || k === 'status') return v === f;
+      return v.toLowerCase().indexOf(f.toLowerCase()) >= 0;
+    });
+  }
+  function shown() { return ROWS.filter(matches).sort(cmp); }
+  function drawHead() {
+    var thead = document.querySelector('#catalogTable thead'); thead.innerHTML = '';
+    var all = el('input', { type: 'checkbox', cls: 'form-check-input', title: 'Select all shown', onchange: function () {
+      shown().forEach(function (r) { if (all.checked) selected[r.id] = true; else delete selected[r.id]; }); drawBody();
+    } });
+    var h = el('tr', {}, [el('th', { style: 'width:28px' }, [all])]);
+    var f = el('tr', { cls: 'appid-filters' }, [el('th')]);
+    visibleCols().forEach(function (c) {
+      var arrow = sort.key === c.key ? (sort.dir > 0 ? '▲' : '▼') : '';
+      h.appendChild(el('th', { cls: 'appid-sort', title: 'Sort by ' + c.label, onclick: function () {
+        if (sort.key === c.key) sort.dir = -sort.dir; else { sort.key = c.key; sort.dir = 1; }
+        drawHead(); drawBody();
+      } }, [c.label, el('span', { cls: 'appid-arrow', text: arrow })]));
+      var ctl;
+      if (c.key === 'source' || c.key === 'status') {
+        var opts = {}; ROWS.forEach(function (r) { opts[val(r, c.key)] = 1; });
+        ctl = el('select', { cls: 'form-select form-select-sm' }, [el('option', { value: '', text: 'All' })].concat(Object.keys(opts).sort().map(function (o) { return el('option', { value: o, text: o }); })));
+        ctl.value = filters[c.key] || '';
+        ctl.addEventListener('change', function () { filters[c.key] = ctl.value; drawBody(); });
+      } else {
+        ctl = el('input', { cls: 'form-control form-control-sm', placeholder: 'filter' });
+        ctl.value = filters[c.key] || '';
+        ctl.addEventListener('input', function () { filters[c.key] = ctl.value; drawBody(); });
+      }
+      f.appendChild(el('th', {}, [ctl]));
+    });
+    h.appendChild(el('th')); f.appendChild(el('th'));
+    thead.appendChild(h); thead.appendChild(f);
+    thead._all = all;
+  }
+  function drawBody() {
+    var tb = document.querySelector('#catalogTable tbody'); tb.innerHTML = '';
+    var rows = shown(), cols = visibleCols();
+    rows.forEach(function (r) {
+      var cb = el('input', { type: 'checkbox', cls: 'form-check-input', onchange: function () {
+        if (cb.checked) selected[r.id] = true; else delete selected[r.id]; tr.classList.toggle('appid-selected', cb.checked); syncSel();
+      } });
+      cb.checked = !!selected[r.id];
+      var tr = el('tr', { cls: selected[r.id] ? 'appid-selected' : '' }, [el('td', {}, [cb])]);
+      cols.forEach(function (c) {
+        var v = val(r, c.key), td;
+        if (c.key === 'status') td = el('td', {}, [el('span', { cls: 'fw-badge ' + (STATUS[v] || 'fw-badge-secondary'), title: r.stale_reason || null, text: v })]);
+        else if (c.key === 'source') td = el('td', {}, [el('span', { cls: 'fw-badge fw-badge-secondary', text: v })]);
+        else td = el('td', { cls: c.key === 'app_id' ? 'mono' : '', text: v === '' ? '—' : String(v) });
+        tr.appendChild(td);
+      });
+      tr.appendChild(el('td', { cls: 'text-end' }, [el('button', { type: 'button', cls: 'btn btn-sm btn-fw-outline', title: 'Delete ' + r.app_id, onclick: function () {
+        selected = {}; selected[r.id] = true; syncSel(); submitDelete();
+      } }, [el('i', { cls: 'bi bi-trash' })])]));
+      tb.appendChild(tr);
+    });
+    if (!rows.length) tb.appendChild(el('tr', {}, [el('td', { colspan: String(cols.length + 2), cls: 'text-muted p-3', text: ROWS.length ? 'No AppID matches the filters.' : 'No AppIDs yet. Add one above or import a catalog.' })]));
+    document.getElementById('rowCount').textContent = rows.length + ' of ' + ROWS.length + ' AppIDs';
+    var all = document.querySelector('#catalogTable thead')._all;
+    if (all) all.checked = rows.length > 0 && rows.every(function (r) { return selected[r.id]; });
+    syncSel();
+  }
+  function syncSel() {
+    var ids = Object.keys(selected);
+    document.getElementById('selCount').textContent = ids.length;
+    document.getElementById('bulkDeleteBtn').disabled = !ids.length;
+  }
+  function submitDelete() {
+    var ids = Object.keys(selected).map(Number);
+    var rows = ROWS.filter(function (r) { return ids.indexOf(r.id) >= 0; });
+    var nb = rows.reduce(function (s, r) { return s + (r.policies || 0); }, 0);
+    var names = rows.slice(0, 10).map(function (r) { return r.app_id; }).join(', ') + (rows.length > 10 ? ', …' : '');
+    if (!window.confirm('Delete ' + rows.length + ' AppID(s) and their ' + nb + ' policy binding(s)?\n' + names)) return;
+    var box = document.getElementById('bulkIds'); box.innerHTML = '';
+    ids.forEach(function (id) { box.appendChild(el('input', { type: 'hidden', name: 'ids', value: String(id) })); });
+    var form = document.getElementById('bulkDeleteForm');
+    form.removeAttribute('data-confirm');
+    HTMLFormElement.prototype.submit.call(form);
+  }
+  document.getElementById('bulkDeleteForm').addEventListener('submit', function (e) { e.preventDefault(); submitDelete(); });
+  document.getElementById('clearFilters').addEventListener('click', function () { filters = {}; drawHead(); drawBody(); });
+
+  // columns: show / hide and rename
+  document.getElementById('columnsBtn').addEventListener('click', function () {
+    var body = document.getElementById('columnsBody'); body.innerHTML = '';
+    COLS.forEach(function (c) {
+      var show = el('input', { type: 'checkbox', cls: 'form-check-input', 'data-key': c.key, disabled: c.key === 'app_id' ? 'disabled' : null });
+      show.checked = c.visible;
+      var name = el('input', { cls: 'form-control form-control-sm', 'data-key': c.key, maxlength: '60', placeholder: c['default'] });
+      name.value = c.label === c['default'] ? '' : c.label;
+      body.appendChild(el('tr', {}, [el('td', {}, [show]), el('td', { cls: 'mono small', text: c['default'] }), el('td', {}, [name])]));
+    });
+    modal('columnsModal').show();
+  });
+  document.getElementById('columnsSave').addEventListener('click', function () {
+    var labels = {}, hidden = [];
+    document.querySelectorAll('#columnsBody input.form-control').forEach(function (i) { labels[i.getAttribute('data-key')] = i.value; });
+    document.querySelectorAll('#columnsBody input[type=checkbox]').forEach(function (i) { if (!i.checked) hidden.push(i.getAttribute('data-key')); });
+    postJSON(URLS.columns, { labels: labels, hidden: hidden }).then(function (j) {
+      if (!j.ok) { alert(j.error || 'Could not save the columns.'); return; }
+      window.location.reload();
+    }).catch(function (e) { alert('Could not save the columns: ' + e); });
+  });
+
+  drawHead(); drawBody();
+
+  // ---------------------------------------------------------------- upload & map
+  var cols = [];
   function optionsFor(select, chosen) {
     select.innerHTML = '';
     var blank = document.createElement('option'); blank.value = ''; blank.textContent = '—';
@@ -211,14 +434,10 @@
     });
     if (chosen) select.value = chosen;
   }
-
   function refreshSelects() {
-    document.querySelectorAll('.map-col').forEach(function (s) {
-      optionsFor(s, s.getAttribute('data-saved') || '');
-    });
+    document.querySelectorAll('.map-col').forEach(function (s) { optionsFor(s, s.getAttribute('data-saved') || ''); });
     document.querySelectorAll('.extra-col').forEach(function (s) { optionsFor(s, s.value); });
   }
-
   function renderPreview(data) {
     cols = data.columns || [];
     var tbl = document.getElementById('previewTable');
@@ -239,7 +458,6 @@
     else { note.style.display = 'none'; }
     refreshSelects();
   }
-
   document.getElementById('previewBtn').addEventListener('click', function () {
     var f = document.getElementById('catalogFile');
     if (!f.files.length) { alert('Choose a file first.'); return; }
@@ -250,9 +468,7 @@
       .then(function (res) { if (!res.ok) { alert(res.j.error || 'preview failed'); return; } renderPreview(res.j); })
       .catch(function (e) { alert('preview failed: ' + e); });
   });
-
   document.getElementById('hasHeader').addEventListener('change', refreshSelects);
-
   document.getElementById('addExtra').addEventListener('click', function () {
     var wrap = document.getElementById('extraRows');
     var row = document.createElement('div');
@@ -264,11 +480,155 @@
     var sel = document.createElement('select'); sel.name = 'extra_col'; sel.className = 'form-select form-select-sm extra-col map-col';
     optionsFor(sel, ''); c2.appendChild(sel);
     var c3 = document.createElement('div'); c3.className = 'col-md-2';
-    var del = document.createElement('button'); del.type = 'button'; del.className = 'btn btn-sm btn-outline-danger';
+    var del = document.createElement('button'); del.type = 'button'; del.className = 'btn btn-sm btn-fw-outline';
     del.textContent = '×'; del.addEventListener('click', function () { row.remove(); }); c3.appendChild(del);
     row.appendChild(c1); row.appendChild(c2); row.appendChild(c3);
     wrap.appendChild(row);
   });
+
+  // import review: existing AppIDs with different data are accepted one by one or all
+  var importForm = document.getElementById('importForm'), plan = null;
+  function finishImport(accepted) {
+    importForm.querySelector('input[name=review]').value = '1';
+    var box = document.getElementById('acceptIds'); box.innerHTML = '';
+    accepted.forEach(function (a) { box.appendChild(el('input', { type: 'hidden', name: 'accept', value: a })); });
+    HTMLFormElement.prototype.submit.call(importForm);
+  }
+  importForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (!importForm.reportValidity()) return;
+    var fd = new FormData(importForm);
+    fetch(URLS.plan, { method: 'POST', headers: { 'X-CSRFToken': csrf }, body: fd })
+      .then(function (r) { return r.json().then(function (j) { j._ok = r.ok; return j; }); })
+      .then(function (j) {
+        if (!j._ok) { alert(j.error || 'Could not read the file.'); return; }
+        plan = j;
+        if (!j.changed.length && !j.repeated.length) { finishImport([]); return; }
+        document.getElementById('reviewSummary').textContent = j.rows + ' rows in the file: ' + j['new'].length + ' new AppID(s), ' + j.unchanged.length + ' with the same data (left as they are), ' + j.changed.length + ' with different data. Tick the changes to apply; unticked AppIDs keep their data.';
+        var rep = document.getElementById('reviewRepeated');
+        if (j.repeated.length) { rep.textContent = 'Repeated in the file (the last row counts): ' + j.repeated.join(', '); rep.style.display = ''; } else rep.style.display = 'none';
+        var body = document.getElementById('reviewBody'); body.innerHTML = '';
+        j.changed.forEach(function (c) {
+          var keys = Object.keys(c.changes);
+          keys.forEach(function (k, i) {
+            var tr = el('tr', {});
+            if (i === 0) {
+              var cb = el('input', { type: 'checkbox', cls: 'form-check-input review-cb', 'data-appid': c.app_id });
+              cb.checked = true;
+              tr.appendChild(el('td', { rowspan: String(keys.length) }, [cb]));
+              tr.appendChild(el('td', { rowspan: String(keys.length), cls: 'mono', text: c.app_id }));
+            }
+            var name = k.indexOf('extra.') === 0 ? k.slice(6) : ((COLS.filter(function (x) { return x.key === k; })[0] || {}).label || k);
+            tr.appendChild(el('td', { text: name }));
+            tr.appendChild(el('td', { text: c.changes[k][0] || '—' }));
+            tr.appendChild(el('td', { cls: 'fw-text-strong', text: c.changes[k][1] }));
+            body.appendChild(tr);
+          });
+        });
+        document.getElementById('reviewAll').checked = true;
+        modal('reviewModal').show();
+      })
+      .catch(function (err) { alert('Could not read the file: ' + err); });
+  });
+  function ticked() { return Array.prototype.map.call(document.querySelectorAll('.review-cb:checked'), function (c) { return c.getAttribute('data-appid'); }); }
+  document.getElementById('reviewAll').addEventListener('change', function (e) { document.querySelectorAll('.review-cb').forEach(function (c) { c.checked = e.target.checked; }); });
+  document.getElementById('reviewApply').addEventListener('click', function () { finishImport(ticked()); });
+  document.getElementById('reviewAcceptAll').addEventListener('click', function () { finishImport(plan.changed.map(function (c) { return c.app_id; })); });
+  document.getElementById('reviewKeep').addEventListener('click', function () { finishImport([]); });
+
+  // ---------------------------------------------------------------- comment bindings
+  var CB = [], cbSel = {};
+  var CB_STATE = { bound: ['saved', 'fw-badge-success'], proposed: ['new', 'fw-badge-info'], differs: ['different', 'fw-badge-warning'],
+                   not_in_catalog: ['not in catalog', 'fw-badge-danger'], no_appid: ['no AppID', 'fw-badge-secondary'], manual: ['saved by hand', 'fw-badge-secondary'] };
+  function cbKey(r) { return r.appliance_id + '|' + r.policy; }
+  function cbShown() {
+    var st = document.getElementById('cbState').value, q = document.getElementById('cbFilter').value.toLowerCase();
+    return CB.filter(function (r) {
+      if (st === 'todo' && r.state !== 'proposed' && r.state !== 'differs') return false;
+      if (st && st !== 'todo' && r.state !== st && !(st === 'bound' && r.state === 'manual')) return false;
+      return !q || (r.policy + ' ' + r.comment + ' ' + r.found + ' ' + r.bound_app_id + ' ' + r.device).toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  function cbDraw() {
+    var tb = document.querySelector('#cbTable tbody'); tb.innerHTML = '';
+    var rows = cbShown();
+    rows.forEach(function (r) {
+      var k = cbKey(r);
+      var sel = el('select', { cls: 'form-select form-select-sm' }, [el('option', { value: '', text: '—' })].concat(CATALOG.map(function (a) {
+        return el('option', { value: String(a.id), text: a.app_id + (a.customer ? ' — ' + a.customer : '') });
+      })));
+      sel.value = String(r.choice != null ? r.choice : (r.found_pk || r.bound_pk || ''));
+      var cb = el('input', { type: 'checkbox', cls: 'form-check-input' });
+      cb.checked = !!cbSel[k]; cb.disabled = !sel.value;
+      cb.addEventListener('change', function () { if (cb.checked) cbSel[k] = true; else delete cbSel[k]; cbSync(); });
+      sel.addEventListener('change', function () {
+        r.choice = sel.value ? Number(sel.value) : '';
+        cb.disabled = !sel.value;
+        if (sel.value && Number(sel.value) !== r.bound_pk) { cb.checked = true; cbSel[k] = true; } else { cb.checked = false; delete cbSel[k]; }
+        cbSync();
+      });
+      var st = CB_STATE[r.state] || [r.state, 'fw-badge-secondary'];
+      tb.appendChild(el('tr', {}, [el('td', {}, [cb]), el('td', { text: r.device }), el('td', { cls: 'mono', text: r.policy }),
+        el('td', { cls: 'cb-comment small', title: r.comment, text: r.comment || '—' }), el('td', { cls: 'mono', text: r.found || '—' }),
+        el('td', { cls: 'mono', text: r.bound_app_id || '—' }), el('td', {}, [sel]), el('td', {}, [el('span', { cls: 'fw-badge ' + st[1], text: st[0] })])]));
+    });
+    if (!rows.length) tb.appendChild(el('tr', {}, [el('td', { colspan: '8', cls: 'text-muted p-3', text: CB.length ? 'No policy in this view.' : 'No server policy in the local store for these devices.' })]));
+    var n = {}; CB.forEach(function (r) { n[r.state] = (n[r.state] || 0) + 1; });
+    document.getElementById('cbInfo').textContent = CB.length + ' policies: ' + (n.proposed || 0) + ' new, ' + (n.differs || 0) + ' different, ' + ((n.bound || 0) + (n.manual || 0)) + ' saved, ' + (n.not_in_catalog || 0) + ' not in catalog, ' + (n.no_appid || 0) + ' without AppID.';
+    cbSync();
+  }
+  function cbSync() {
+    var n = Object.keys(cbSel).length;
+    document.getElementById('cbCount').textContent = n;
+    document.getElementById('cbSave').disabled = !n;
+    var rows = cbShown().filter(function (r) { return r.choice !== '' && (r.choice || r.found_pk || r.bound_pk); });
+    document.getElementById('cbAll').checked = rows.length > 0 && rows.every(function (r) { return cbSel[cbKey(r)]; });
+  }
+  function cbLoad() {
+    var dev = document.getElementById('cbDevice').value;
+    document.querySelector('#cbTable tbody').innerHTML = '<tr><td colspan="8" class="text-muted p-3">Reading…</td></tr>';
+    fetch(URLS.cb + (dev ? '?appliance_id=' + encodeURIComponent(dev) : ''), { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j.error) { alert(j.error); return; }
+        CB = j.rows || []; cbSel = {};
+        CB.forEach(function (r) { if (r.state === 'proposed') cbSel[cbKey(r)] = true; });   // new matches start ticked
+        cbDraw();
+      }).catch(function (e) { alert('Could not read the policies: ' + e); });
+  }
+  document.getElementById('cbRead').addEventListener('click', cbLoad);
+  document.getElementById('cbDevice').addEventListener('change', cbLoad);
+  document.getElementById('cbState').addEventListener('change', cbDraw);
+  document.getElementById('cbFilter').addEventListener('input', cbDraw);
+  document.getElementById('cbAll').addEventListener('change', function (e) {
+    cbShown().forEach(function (r) {
+      var pk = r.choice !== undefined ? r.choice : (r.found_pk || r.bound_pk);
+      if (!pk) return;
+      if (e.target.checked) cbSel[cbKey(r)] = true; else delete cbSel[cbKey(r)];
+    });
+    cbDraw();
+  });
+  document.getElementById('cbSave').addEventListener('click', function () {
+    var items = CB.filter(function (r) { return cbSel[cbKey(r)]; }).map(function (r) {
+      return { appliance_id: r.appliance_id, server_policy: r.policy, app_id_pk: r.choice !== undefined && r.choice !== '' ? r.choice : (r.found_pk || r.bound_pk) };
+    }).filter(function (i) { return i.app_id_pk; });
+    if (!items.length) return;
+    postJSON(URLS.bind, { items: items }).then(function (j) {
+      if (j._status >= 400 && !('saved' in j)) { alert(j.error || 'Could not save.'); return; }
+      if (j.errors && j.errors.length) alert(j.saved + ' saved. Not saved:\n' + j.errors.join('\n'));
+      window.location.hash = 'assign';
+      window.location.reload();
+    }).catch(function (e) { alert('Could not save: ' + e); });
+  });
+  // data-confirm has no global handler in SATOM: ask here.
+  document.querySelectorAll('#tab-assign form[data-confirm]').forEach(function (f) {
+    f.addEventListener('submit', function (e) { if (!window.confirm(f.getAttribute('data-confirm'))) e.preventDefault(); });
+  });
+  if (window.location.hash === '#assign') {
+    var t = document.querySelector('[data-bs-target="#tab-assign"]');
+    if (t) bootstrap.Tab.getOrCreateInstance(t).show();
+    cbLoad();
+  }
 })();
 </script>
 {% endblock %}

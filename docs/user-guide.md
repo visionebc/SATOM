@@ -6827,7 +6827,30 @@ scheduled action **`appid_import`** (§15) fetches that URL, applies the saved
 mapping and imports additively. With no source configured the nightly reports
 "no source configured" rather than pretending it ran.
 
-**Assignment.** Assign an AppID to a Server Policy by picking the device and the
+**The catalog table.** Every column has a filter (Source and Status a list) and
+sorts when you click its header. **Columns** shows or hides columns -- extra
+import fields included, AppID always shown -- and renames them (for example
+*Department* instead of *Customer*); the names are kept in the database for
+every administrator and used in the add and mapping forms too. Tick AppIDs and
+**Delete selected** removes them with their bindings, after a confirmation.
+
+**Re-import review.** Before an upload is imported, SATOM compares it with the
+catalog: AppIDs that already exist with **different** data are listed field by
+field (now / in the file) and you accept each change, all of them, or none;
+AppIDs repeated in the file are named (the last row counts). An AppID that
+comes with the same data is not touched and is counted as *unchanged*; one
+whose change you refuse keeps its data and is still counted as present (it
+does not turn stale). The nightly action has nobody to ask and applies every
+change.
+
+**Bindings from the policy comment.** On **Assign policies**, **Read comments**
+lists every FortiWeb server policy (SATOM's local copy, no device call) with the
+AppID its comment names -- the Analysis **App ID pattern**, `app\d{5}` by
+default -- the AppID saved today and a state (new, different, saved, not in
+catalog, no AppID). New matches start ticked; change any row's AppID and
+**Save selected**. The comment is only read; the binding remains the authority.
+
+**Assignment by hand.** Assign an AppID to a Server Policy by picking the device and the
 policy name. The binding is unique per `(appliance, server policy)`, so a policy
 belongs to exactly **one** AppID; assigning a second one replaces the first
 rather than double-billing. Unassign is a separate action. Deleting an AppID also

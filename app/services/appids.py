@@ -741,6 +741,84 @@ def binding_for(appliance_id: int, server_policy: str) -> AppIdPolicy | None:
         appliance_id=appliance_id, server_policy=server_policy).first()
 
 
+# --------------------------------------------------------------------------- #
+#  AppID facts next to a policy on other pages (SA-0027)                       #
+# --------------------------------------------------------------------------- #
+#: Catalog columns that describe the catalog row, not the customer: a policy
+#: count and where the row came from mean nothing beside one policy.
+INFO_SKIP = ("policies", "source")
+
+
+def info_columns() -> list[tuple[str, str]]:
+    """``(key, label)`` of the AppID facts a page shows beside a policy: the
+    catalog's VISIBLE columns, under the names the operator gave them on the
+    AppIDs page. One definition, so DNS Lookup, Copy LB and the upgrade flow
+    never disagree with the catalog about what an AppID column is called."""
+    return [(c["key"], c["label"]) for c in columns()
+            if c["visible"] and c["key"] not in INFO_SKIP]
+
+
+def _facts(a: AppId) -> dict[str, str]:
+    out = {"app_id": a.app_id, "customer": a.customer or "", "label": a.label or "",
+           "rate": a.rate or "",
+           "status": "stale" if a.stale else ("active" if a.active else "inactive")}
+    for k, v in a.extra_dict.items():
+        out["extra." + str(k)] = "" if v is None else str(v)
+    return out
+
+
+def policy_info(pairs, comments: dict | None = None) -> dict[tuple[int, str], dict]:
+    """AppID facts for ``(appliance_id, policy)`` pairs, in two queries total.
+
+    The BINDING is the authority (``source = "binding"``). A policy with no
+    binding falls back to the token in its comment, named as such: resolved in
+    the catalog it is ``"comment"``, unknown there it is ``"comment (not in
+    catalog)"`` with only the token. Pairs with neither are left out, so a
+    caller can tell "no AppID" from an empty one. Each value is
+    ``{"app_id", "source", "fields": {column key: text}}``."""
+    want = {(int(aid), str(pol)) for aid, pol in pairs or [] if aid and pol}
+    if not want:
+        return {}
+    out: dict[tuple[int, str], dict] = {}
+    rows = (AppIdPolicy.query
+            .filter(AppIdPolicy.appliance_id.in_({aid for aid, _ in want})).all())
+    for b in rows:
+        key = (b.appliance_id, b.server_policy)
+        if key in want and b.app is not None:
+            out[key] = {"app_id": b.app.app_id, "source": "binding",
+                        "fields": _facts(b.app)}
+    tokens = {}
+    pat = None
+    for key in want - set(out):
+        comment = (comments or {}).get(key) or ""
+        if not comment:
+            continue
+        if pat is None:
+            from .analysis import appid_pattern
+            pat = appid_pattern()
+        tok = _comment_token(comment, pat)
+        if tok:
+            tokens[key] = tok
+    if tokens:
+        by_name = {a.app_id.lower(): a for a in
+                   AppId.query.filter(db.func.lower(AppId.app_id).in_(
+                       {t.lower() for t in tokens.values()})).all()}
+        for key, tok in tokens.items():
+            a = by_name.get(tok.lower())
+            out[key] = ({"app_id": a.app_id, "source": "comment", "fields": _facts(a)}
+                        if a else
+                        {"app_id": tok, "source": "comment (not in catalog)",
+                         "fields": {"app_id": tok}})
+    return out
+
+
+def _comment_token(comment: str, pat) -> str:
+    # The pattern of Analysis > AppID pattern, the one comment_bindings and the
+    # reconcile read: a page must not find an AppID the catalog would not.
+    from .analysis import extract_appid
+    return extract_appid(comment, pat) or ""
+
+
 def assign(*, app_id_pk: int, appliance_id: int, server_policy: str,
            by: str = "") -> AppIdPolicy:
     """Bind a Server Policy to an AppID. Enforces 1-AppID-per-policy: an existing

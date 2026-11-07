@@ -57,10 +57,15 @@ COLUMNS = [
     ("adom", "ADOM"),
     ("policy", "Server Policy / Virtual Server"),
     ("service_ip", "Service IP"),
+    # PTR of the service IP against the configured resolvers (SA-0027): a
+    # lookup by policy name finds the policy, and this says which published
+    # name it serves. Filled for MATCHED rows only (add_service_names).
+    ("service_name", "Service name (PTR)"),
     ("http", "HTTP Service"),
     ("https", "HTTPS Service"),
     ("pool", "Pool"),
     ("members", "Members"),
+    ("backends", "Backends (status)"),
     ("cert_cn", "Cert CN"),
     ("certificate", "Certificate"),
     ("ssl_verify", "SSL Client Verify"),
@@ -232,6 +237,17 @@ def _app_id(comment: str) -> str:
     return m.group(1) if m else ""
 
 
+def backends_text(backends: list[dict]) -> str:
+    """``ip:port (status)`` per backend: the CONFIGURED status the cache holds
+    (enable / disable / maintain), so Copy LB carries what the page draws."""
+    out = []
+    for b in backends or []:
+        addr = "%s%s" % (b.get("ip") or "", ":%s" % b["port"] if b.get("port") else "")
+        if addr:
+            out.append("%s (%s)" % (addr, b.get("status") or "unknown"))
+    return "; ".join(out)
+
+
 def _svc_label(name: str, port) -> str:
     if not name:
         return ""
@@ -313,6 +329,7 @@ def _fortiweb_rows(appliance) -> list[dict]:
                                 _service_port(pol.get("https-service"), svc_ports)),
             "pool": pool.get("name") or pol.get("server-pool") or "",
             "members": ", ".join(m for m in members if m != ":"),
+            "backends": backends_text(backends),
             "cert_cn": ", ".join(cn_bits),
             "certificate": cert_name,
             "ssl_verify": pol.get("ssl-client-verify") or "",
@@ -429,6 +446,7 @@ def _fortiadc_rows(appliance) -> list[dict]:
             "members": ", ".join(
                 f"{b['ip']}:{b['port']}" for b in backends
                 if b["ip"] or b["port"]),
+            "backends": backends_text(backends),
             "certificate": ", ".join(profile_certs.get(
                 str(vs.get("client_ssl_profile") or "").strip(), [])),
             "type": str(vs.get("type") or ""),
@@ -458,7 +476,104 @@ def fleet_lb_rows() -> list[dict]:
                 rows.extend(_fortiweb_rows(a))
         except Exception as exc:  # noqa: BLE001 — one device never sinks the sweep
             current_app.logger.info("dns_tool: %s row build failed: %s", a.name, exc)
+    try:
+        attach_appids(rows)
+    except Exception as exc:  # noqa: BLE001 — the LB half renders without AppIDs
+        current_app.logger.info("dns_tool: AppID lookup failed: %s", exc)
     return rows
+
+
+def attach_appids(rows: list[dict]) -> None:
+    """The AppID of each row from the CATALOG (SA-0027): the binding first,
+    then the comment read with Analysis > AppID pattern -- the same answer the
+    AppIDs page gives. ``app_id`` becomes that AppID; ``_appid`` carries the
+    catalog facts (``fields``) and where they came from (``source``). A row
+    neither knows keeps the comment token this page always showed."""
+    from . import appids
+    pairs = [(r.get("_aid"), r.get("policy")) for r in rows]
+    comments = {(r.get("_aid"), r.get("policy")): r.get("comment") or "" for r in rows}
+    info = appids.policy_info(pairs, comments)
+    for r in rows:
+        hit = info.get((r.get("_aid"), r.get("policy")))
+        if hit:
+            r["app_id"] = hit["app_id"]
+            r["_appid"] = hit
+        elif r.get("app_id"):
+            r["_appid"] = {"app_id": r["app_id"], "source": "comment (not in catalog)",
+                           "fields": {"app_id": r["app_id"]}}
+
+
+# ---------------------------------------------------------------- reverse
+
+PTR_MAX_IPS = 100
+
+
+def _service_ips(m: dict) -> list[str]:
+    """The addresses in a Service IP cell. A FortiWeb VIP carries its prefix
+    (``172.0.0.1/32``, measured on fortiweb19 7.6.8): the PTR is of the
+    address, so the length goes."""
+    return [ip.strip().split("/", 1)[0]
+            for ip in str(m.get("service_ip") or "").split(",") if ip.strip()]
+
+
+def add_service_names(matches: list[dict], servers: list[dict]) -> None:
+    """Fill ``service_name`` with the PTR names of each match's service IP(s),
+    asked of every configured resolver in parallel (names in the order the
+    resolvers answered, each once). Only MATCHED rows: the whole fleet would be
+    a PTR storm per search. Resolver markers (No result / timeout / error) are
+    not names and are dropped; no resolver configured leaves the column blank."""
+    if not matches or not servers:
+        return
+    ips: list[str] = []
+    for m in matches:
+        for ip in _service_ips(m):
+            if _is_ip(ip) and ip not in ips:
+                ips.append(ip)
+    ips = ips[:PTR_MAX_IPS]
+    if not ips:
+        return
+    answers = lookup_many(ips, servers)
+    names: dict[str, list[str]] = {}
+    for ip in ips:
+        got: list[str] = []
+        for s in servers:
+            for v in answers.get((ip, s["name"]), []):
+                v = v.rstrip(".")
+                if v and v not in ("No result", "timeout", "error") and v not in got:
+                    got.append(v)
+        names[ip] = got
+    for m in matches:
+        found: list[str] = []
+        for ip in _service_ips(m):
+            for n in names.get(ip, []):
+                if n not in found:
+                    found.append(n)
+        m["service_name"] = ", ".join(found)
+
+
+# ---------------------------------------------------------------- Copy LB
+
+def _tsv_cell(value) -> str:
+    """One TSV cell: a tab or line break inside a comment would split the row
+    and shift every column after it, so whitespace runs become one space."""
+    return " ".join(str("" if value is None else value).split())
+
+
+def lb_tsv_header(appid_cols=()) -> list[str]:
+    """Copy LB's columns: the entry, every LB column, then the AppID facts of
+    the catalog (the AppID itself is already the App ID column) and where the
+    AppID came from. ``appid_cols`` is ``appids.info_columns()``."""
+    return (["Entry"] + [label for _k, label in COLUMNS]
+            + ["AppID %s" % label for k, label in appid_cols if k != "app_id"]
+            + ["AppID source"])
+
+
+def lb_tsv_line(entry: str, m: dict, appid_cols=()) -> list[str]:
+    info = m.get("_appid") or {}
+    fields = info.get("fields") or {}
+    return ([_tsv_cell(entry)] + [_tsv_cell(m.get(k, "")) for k, _l in COLUMNS]
+            + [_tsv_cell(fields.get(k, "")) for k, _l in appid_cols if k != "app_id"]
+            + [_tsv_cell(info.get("source", ""))])
 
 
 def match_rows(rows: list[dict], query: str, resolved: str, *,

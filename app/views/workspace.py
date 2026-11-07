@@ -609,7 +609,14 @@ def policy_health(appliance_id, name):
     try:
         rows, err = FortiWebClient(appl).policy_health(name)
     except Exception as exc:  # noqa: BLE001
+        log_action('policy.health_probe', target=f'{appl.name}:{name}',
+                   appliance_id=appl.id, detail=f'failed: {exc}'[:400])
         return json_error(exc, 'Health probe failed', context='workspace.policy_health')
+    # A device read leaves a trace whichever way it went (Workspace topology
+    # card, DNS Lookup > Show > Check live health).
+    log_action('policy.health_probe', target=f'{appl.name}:{name}',
+               appliance_id=appl.id,
+               detail=(f'refused: {err}' if err else f'{len(rows or [])} member(s)')[:400])
     if err:
         return jsonify(ok=False, error=err, members=[])
     members = [{

@@ -6,6 +6,46 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Plugin Studio: Simulate can walk every branch of an app (FA-0008).**
+  Reported: "the tests are not enough -- each action, each question is not
+  done when I run Simulate". One simulation follows one path, so a recovery
+  runbook simulated with *Answer Yes to every question* walked 5 of its 28
+  steps. **Cover every branch** (Diagram tab › Simulate) plans the
+  scenarios that together take every arrow (yes, no and error, loops
+  included) and walks them one after the other as rehearsals. Every check
+  still really looks and keeps what it found; the scenario only picks the
+  arrow and answers the questions. A table then shows how often each step
+  was walked, what it answered, what the check really found, and every
+  arrow never taken; unwalked steps are coloured on the diagram. A scenario
+  is refused outside a rehearsal.
+- **Runbook steps that do the action instead of asking for it (FA-0008).**
+  *Connection test* (Test Connection from this node: API with the stored
+  account, TCP, ping or traceroute), *Log in to the appliance* (the stored
+  account, or a connection's account such as a remote RADIUS administrator;
+  a refused account is not retried for 10 minutes because of the admin
+  lockout), *Power state (hypervisor)* (the VM's state through the Sentinel
+  topology mapping), *Ping from the appliance* (`execute ping <target>` on
+  the device) and *Notify* (bell and e-mail; in a rehearsal only the
+  simulating person's bell, once per simulation). When SATOM cannot try,
+  each takes the error arrow, never a *no*.
+
+### Fixed
+- **Automations started by an alert died half-way and stayed "running".**
+  The alert run is a short-lived process; the automation ran on one of its
+  background threads and was killed when the process exited (six recovery
+  runs stopped after 3 steps, and the stuck runs made later ones fail with
+  "you already have 2 app runs in progress"). The alert run now waits for
+  the automations it started. Automation and app runs whose worker stopped
+  are closed as *interrupted* in the lists, without anybody opening them.
+- **An SSH read could run far past its time limit.** The limit was checked
+  only after a silent moment, so a device that kept printing held a 15 s
+  `get system status` for 18 minutes, and the read buffer grew with it.
+  Reads now stop at their limit, and at 8 MiB.
+- **A *Console read* with `execute ping` always failed** with "SSH did not
+  answer": the read-only path refused the probe its own gate allowed. It
+  now goes through the probe path.
+
 ## [4.11.11] - 2026-11-07
 
 ### Added
@@ -46,6 +86,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   this SATOM, SATOM's agent key for the server (valid only from the SATOM
   nodes), then the *satom-webctl agent* credential. What the page posts is
   ignored: key, nodes and files are SATOM's.
+- **DNS & LB Lookup: one row per match, an Actions column, and the service
+  name of the IP (SA-0027).** Requested: when the search is a server policy
+  name, say which service it is by a reverse lookup of its IP; a column with
+  the actions (edit, delete); the AppID in the table as an option; a long
+  comment must not push the table sideways; show whether the backends are
+  up; a Show button with the full information; and Copy LB with the
+  complete data. The LB matches are now rows of the table (the entry and its
+  DNS answers span them) with Gateway, Policy, *Service IP / name* -- the PTR
+  name of the service IP from your configured resolvers, the prefix of a
+  FortiWeb VIP (`/32`) dropped -- and Backends, each with its configured
+  status. **Actions**: *Show* (every field, the whole comment, the AppID
+  facts and the backends, with **Check live health** asking the FortiWeb for
+  each backend's health-check state, audited), *Edit* (opens the policy) and
+  *Delete* (the existing decommission, preview first). **Show AppID
+  columns** in Options adds the catalog's visible columns under the names
+  you gave them on the AppIDs page; the AppID is the policy's binding, else
+  the one its comment names with the Analysis pattern. **Copy LB** now
+  carries the entry, every column, the PTR name, each backend with its
+  status, the AppID facts and where the AppID came from, one line per match:
+  a tab or line break in a comment no longer splits a line. The
+  *DNS & LB Lookup* plugin app copies the same text.
+- **Upgrade flow: Affected services show the AppID (SA-0027).** Each
+  affected policy shows the AppID it is bound to and the catalog's visible
+  columns, labelled as the catalog's current answer: the frozen inventory
+  the approver signed is not changed. The `.xlsx` / `.csv` export and the
+  pre-upgrade inventory offer *AppID (catalog now)* and *AppID customer
+  (catalog now)*.
 
 ### Fixed
 - **AppIDs: Assign policies froze the browser with "All FortiWeb devices"

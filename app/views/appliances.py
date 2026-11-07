@@ -1169,7 +1169,10 @@ def _prep_payload(prep, *, result=None, stored=True) -> dict:
         return {'stored': False, 'prep_id': None, 'prep_ok': None,
                 'prep_summary': '', 'inventory': [], 'inventory_count': 0,
                 'created_at': '', 'created_by': '', 'cr_id': None, 'cr_url': ''}
-    rows = prep.inventory_list
+    # The AppID each policy is bound to in the catalog now (SA-0027): the
+    # field catalog below names it, so every row carries it.
+    from ..services import change_requests as cr_svc
+    rows = cr_svc.with_appids(prep.inventory_list)
     return {
         'stored': bool(stored),
         'prep_id': prep.id,

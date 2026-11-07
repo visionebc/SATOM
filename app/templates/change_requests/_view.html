@@ -237,7 +237,10 @@
         {% if policies %}
         <table class="fw-table mb-0">
           <thead>
-            <tr><th>{{ _('Device') }}</th><th>{{ _('Policy') }}</th><th>{{ _('VServer') }}</th><th>{{ _('Service') }}</th><th>{{ _('Status') }}</th></tr>
+            <tr><th>{{ _('Device') }}</th><th>{{ _('Policy') }}</th><th>{{ _('VServer') }}</th><th>{{ _('Service') }}</th><th>{{ _('Status') }}</th>
+              {# SA-0027: the AppID each policy is bound to in the catalog NOW
+                 (AppIDs page names), not part of the frozen inventory. #}
+              {% for _k, label in crv.appid_cols %}<th title="{{ _('From the AppID catalog now, not frozen with the change') }}">{{ label }}</th>{% endfor %}</tr>
           </thead>
           <tbody>
             {% for p in policies %}
@@ -247,6 +250,9 @@
               <td style="font-size:13px;">{{ p.vserver or '—' }}</td>
               <td style="font-size:13px;">{{ p.service or '—' }}</td>
               <td style="font-size:13px;">{{ p.status or '—' }}</td>
+              {% for k, _l in crv.appid_cols %}
+              <td style="font-size:13px;"{% if p._appid %} title="{{ p._appid.source }}"{% endif %}>{{ ((p._appid or {}).fields or {}).get(k) or '—' }}</td>
+              {% endfor %}
             </tr>
             {% endfor %}
           </tbody>

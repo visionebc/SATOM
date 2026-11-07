@@ -302,14 +302,24 @@ def path_of(m: dict) -> str:
 def lb_lookup(entries: list[str], lb_rows: list[dict], *, exact: bool = False,
               dns: dict | None = None) -> dict:
     from . import dns_tool
+    from . import appids
     rows, gateways, unmatched, members = [], [], [], []
-    tsv = ["\t".join(label for _k, label in dns_tool.COLUMNS)]
+    try:
+        appid_cols = appids.info_columns()
+    except Exception:  # noqa: BLE001 -- no catalog: the AppID column alone
+        appid_cols = [("app_id", "AppID")]
+    # The page's Copy LB, line for line (SA-0027): one writer for both.
+    tsv = ["\t".join(dns_tool.lb_tsv_header(appid_cols))]
     for e in entries:
         query, _rtype = dns_tool.parse_entry(e)
         resolved = dns_tool.resolve_wildcard(query)
         matches = dns_tool.match_rows(lb_rows, query, resolved, exact=exact)
         if not matches:
             unmatched.append(e)
+        else:
+            # The page names the service IP by PTR; so does the step.
+            dns_tool.add_service_names(
+                matches, [s for s in dns_tool.dns_servers() if s.get("enabled", True)])
         gateways.append({"Entry": e, "Gateways": ", ".join(
             sorted({str(m.get("gateway") or "") for m in matches} - {""})) or "-",
             "_entry": e})
@@ -324,7 +334,7 @@ def lb_lookup(entries: list[str], lb_rows: list[dict], *, exact: bool = False,
                 if b["ip"] and b["ip"] not in members:
                     members.append(b["ip"])
             rows.append(row)
-            tsv.append("\t".join(str(m.get(k, "")) for k, _l in dns_tool.COLUMNS))
+            tsv.append("\t".join(dns_tool.lb_tsv_line(e, m, appid_cols)))
     not_found = []
     if isinstance(dns, dict) and isinstance(dns.get("unresolved"), list):
         nores = set(dns["unresolved"])

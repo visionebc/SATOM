@@ -52,6 +52,9 @@ FIELDS: tuple[tuple[str, str], ...] = (
     ("pool", "Server pool"),
     ("backends", "Backends"),
     ("note", "Note"),
+    # The catalog's binding when the file is exported (SA-0027), not frozen.
+    ("app_id", "AppID (catalog now)"),
+    ("app_customer", "AppID customer (catalog now)"),
 )
 FIELD_KEYS: tuple[str, ...] = tuple(k for k, _ in FIELDS)
 FIELD_LABELS: dict[str, str] = dict(FIELDS)

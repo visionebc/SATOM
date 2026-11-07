@@ -843,6 +843,14 @@ def edit(id):
                            tz_name=_tz_name())
 
 
+def _appid_cols():
+    from ..services import appids
+    try:
+        return appids.info_columns()
+    except Exception:  # noqa: BLE001 -- no catalog: the AppID column alone
+        return [('app_id', 'AppID')]
+
+
 def cr_view_context(cr, *, drift=False, back='',
                     self_endpoint='change_requests.detail',
                     self_args=None) -> dict:
@@ -906,7 +914,10 @@ def cr_view_context(cr, *, drift=False, back='',
         notice=svc.maintenance_notice(cr),
         runnable_ok=runnable_ok,
         runnable_reason=runnable_reason,
-        policies=policies,
+        # The AppID each affected policy is bound to (SA-0027), from the
+        # catalog NOW and labelled so: metadata, not the signed inventory.
+        policies=svc.with_appids(policies),
+        appid_cols=_appid_cols(),
         live_drift=live_drift,
         prep=prep_store.get(cr.prep_id),
         # EVERY bound run, plus the appliances that have none. "Captured by
@@ -1111,7 +1122,7 @@ def inventory_export(id, fmt):
     cr = _cr_in_scope_or_404(id)
     if fmt not in ('xlsx', 'csv'):
         abort(404)
-    rows = svc.frozen_policies(cr)
+    rows = svc.with_appids(svc.frozen_policies(cr))
     keys = request.args.getlist('field')
     ref = cr_document.change_ref(cr)
     if fmt == 'csv':

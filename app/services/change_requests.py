@@ -815,6 +815,28 @@ def frozen_policies(cr) -> list:
     return _policies(cr)
 
 
+def with_appids(rows) -> list:
+    """Copies of affected-service rows with the AppID each policy is BOUND to
+    in the catalog now (SA-0027): ``app_id``, ``app_customer`` and ``_appid``
+    (``appids.policy_info``). The frozen inventory is not touched -- the AppID
+    is catalog metadata about a service, not part of what the approver signed,
+    and the page labels it as the catalog's current answer."""
+    from . import appids
+    out = [dict(r) for r in rows or [] if isinstance(r, dict)]
+    try:
+        info = appids.policy_info(
+            [(_as_int(r.get("device_id")), r.get("policy")) for r in out])
+    except Exception:  # noqa: BLE001 -- the inventory renders without AppIDs
+        return out
+    for r in out:
+        hit = info.get((_as_int(r.get("device_id")), str(r.get("policy") or "")))
+        if hit:
+            r["_appid"] = hit
+            r["app_id"] = hit["app_id"]
+            r["app_customer"] = (hit.get("fields") or {}).get("customer", "")
+    return out
+
+
 def maintenance_notice(cr) -> str:
     """Render the client-facing maintenance notice (English, plain text).
 

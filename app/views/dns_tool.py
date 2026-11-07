@@ -13,6 +13,7 @@ from __future__ import annotations
 from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 
+from ..services import appids
 from ..services import dns_tool
 from ..services import dns_providers
 from ..services import dns_decommission
@@ -25,16 +26,21 @@ from ..models import Permission, visible_appliance_or_404
 bp = Blueprint("dns_tool", __name__, url_prefix="/dns-lookup")
 
 
-def _clipboards(results, servers, columns):
-    """TSV exports mirroring the PHP tool's Copy DNS / Copy LB buttons."""
+def _clipboards(results, servers, columns, appid_cols=()):
+    """TSV exports mirroring the PHP tool's Copy DNS / Copy LB buttons.
+
+    Copy LB carries the FULL row (SA-0027): the entry it matched, every LB
+    column -- whole comment, PTR name, each backend with its status -- and the
+    AppID facts of the catalog. ``columns`` is kept for the DNS half's callers;
+    the LB half is ``dns_tool.lb_tsv_*``, shared with the lb_lookup step."""
     dns_lines = ["\t".join(["Entry"] + [s["name"] for s in servers])]
     for r in results:
         dns_lines.append("\t".join(
             [r["entry"]] + ["; ".join(r["dns"].get(s["name"], [])) for s in servers]))
-    lb_lines = ["\t".join(label for _k, label in columns)]
+    lb_lines = ["\t".join(dns_tool.lb_tsv_header(appid_cols))]
     for r in results:
         for m in r["matches"]:
-            lb_lines.append("\t".join(str(m.get(k, "")) for k, _l in columns))
+            lb_lines.append("\t".join(dns_tool.lb_tsv_line(r["entry"], m, appid_cols)))
     return "\n".join(dns_lines), "\n".join(lb_lines)
 
 
@@ -43,13 +49,20 @@ def _clipboards(results, servers, columns):
 @require_permission('network.view')
 def index():
     servers = [s for s in dns_tool.dns_servers() if s.get("enabled", True)]
-    opts = {"lb": True, "quick": False, "exact": False, "ttl": False}
+    opts = {"lb": True, "quick": False, "exact": False, "ttl": False,
+            "appid": False}
     entries_raw = ""
     results = []
     not_found = []
     clip_dns = clip_lb = ""
     searched = False
     lb_error = None
+    # The catalog's own column names (AppIDs page), so the optional AppID
+    # columns of this table read like the catalog they come from.
+    try:
+        appid_cols = appids.info_columns()
+    except Exception:  # noqa: BLE001 — no catalog yet: the AppID column alone
+        appid_cols = [("app_id", "AppID")]
 
     if request.method == "POST":
         searched = True
@@ -90,12 +103,17 @@ def index():
                 "matches": matches,
                 "gateways": gateways,
             })
-        clip_dns, clip_lb = _clipboards(results, servers, dns_tool.COLUMNS)
+        if opts["lb"]:
+            dns_tool.add_service_names(
+                [m for r in results for m in r["matches"]], servers)
+        clip_dns, clip_lb = _clipboards(results, servers, dns_tool.COLUMNS,
+                                        appid_cols)
 
     return render_template(
         "dns_lookup/index.html",
         servers=servers,
         columns=dns_tool.COLUMNS,
+        appid_cols=appid_cols,
         results=results,
         not_found=not_found,
         opts=opts,

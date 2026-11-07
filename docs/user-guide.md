@@ -2632,6 +2632,22 @@ against what the devices say.
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
+  Since 4.11.11 (SA-0027) each LB match is a **row** of the results table
+  (the entry and its DNS answers span its matches): Gateway, Policy, *Service
+  IP / name* (the PTR name of the service IP, asked of every configured
+  resolver; a FortiWeb VIP's `/32` is dropped first), Backends with their
+  configured status, and **Actions** — *Show* (the whole match in a dialog:
+  every field, the full comment, the AppID facts, the backends, and **Check
+  live health**, which asks the FortiWeb for each backend's health-check
+  state and leaves an audit row), *Edit* (opens the policy) and *Delete*
+  (the decommission, preview first). Nothing long is drawn inline, so a long
+  comment no longer pushes the Entry column out of view. **Show AppID
+  columns** (Options) adds the AppID catalog's visible columns under the
+  names set on the AppIDs page; the AppID is the policy's **binding**, else
+  the one its comment names (Analysis › AppID pattern). **Copy LB** is the
+  full row per match — entry, every column, PTR name, backends with status,
+  the AppID facts and their source — with tabs and line breaks inside a
+  comment turned into spaces so a line never splits.
   The same tool also exists as **three Plugin Studio apps** — the plugins
   `dns-lb-lookup`, `dns-records` and `dns-decommission` (§23.7, *Plugins:
   DNS & LB Lookup*), under **Operations › Plugins** once imported: the
@@ -6073,8 +6089,9 @@ The editor has seven tabs:
   request per item, `{{ item }}` being that item — below) and *Run a script* (the
   published version of a Script Library script, with its form values), the
   **runbook steps** (*Ask a person*, *Load an appliance*, *HTTP check*, *TCP
-  check*, *Console read*, *Appliance fact*, *Collect diagnostics* — see
-  *Runbooks* below) and the **SATOM steps** below. Every step also has
+  check*, *Console read*, *Appliance fact*, *Collect diagnostics*, *Connection
+  test*, *Log in to the appliance*, *Power state (hypervisor)*, *Ping from the
+  appliance*, *Notify* — see *Runbooks* below) and the **SATOM steps** below. Every step also has
   *Instructions*, *Responsible* and *Estimated time*, shown on the run page. A step saves its result under a name (*Save the
   result as*). **Analyze** explains the diagram being edited: what each step
   saves and reads, where its error goes and which undo steps that path
@@ -6483,7 +6500,36 @@ activities of an appliance), as automatic as the steps allow:
   diagnostics* runs the product's battery and saves the transcript (Diagnose
   › Log Collection). When SATOM **could not look** — SSH refused, no
   appliance, a target the guard refuses, a fact it does not know — the step
-  takes its **error** arrow, never *no*.
+  takes its **error** arrow, never *no*. A *Console read* may also send the
+  one probe the product permits, `execute ping <host>`.
+- **Checks that do the action** (2026-11-07):
+  - *Connection test*: Test Connection from this node, as on the Appliances
+    page — *api* (the REST status call with SATOM's stored account), *tcp*,
+    *ping* or *traceroute*. Save it (e.g. as `route`) and a question can show
+    `{{ route.summary }}` or `{{ route.output }}`. When the service user may
+    not send ICMP, or traceroute is not installed, it takes the error arrow
+    with the fix in the detail. Point that arrow at a *TCP check* or at the
+    question.
+  - *Log in to the appliance*: logs in to the REST API with SATOM's stored
+    account, or with the account of a connection (Plugin Studio ›
+    Connections, HTTP with Basic auth — e.g. a remote RADIUS administrator).
+    *yes* = accepted, *no* = refused (HTTP 401). A refused account is not
+    tried again on that appliance for 10 minutes, because each refusal counts
+    towards the product's admin lockout. FortiGate and FortiAuthenticator log
+    in to their API with a token or API key, so a connection's account takes
+    the error arrow there. Not verified on a firmware build with a RADIUS
+    administrator.
+  - *Power state (hypervisor)*: asks the hypervisor whether the device's VM is
+    running, through its Sentinel topology mapping. Hardware, or a VM without
+    a mapping, takes the error arrow.
+  - *Ping from the appliance*: runs `execute ping <target>` ON the device
+    over SSH (e.g. its gateway or its FortiAuthenticator, `{{ form.gateway }}`).
+    The target must be one address or host name; an empty one takes the
+    error arrow.
+- **Notify** rings the administrators' bell and/or sends an e-mail (*E-mail
+  to*, *E-mail the alert recipients*). In a rehearsal only the bell of the
+  person running it rings, once per simulation, and the step lists who would
+  have been told. Nobody to notify takes the error arrow.
 - **Ask a person** stops the run: it shows **waiting**, and the run page
   shows the question, the step's instructions, who is responsible and the
   time, with the step's own buttons (*Ja* / *Nein*, or one button such as
@@ -6503,7 +6549,18 @@ activities of an appliance), as automatic as the steps allow:
   rehearsal: nothing is written to a device, the checks really look (they
   only read), each question stops in the panel for your answer — or tick
   *Answer Yes to every question* — and the path is coloured on the diagram
-  as it is walked.
+  as it is walked. One simulation follows ONE path.
+- **Cover every branch** (same panel) plans the scenarios that together take
+  **every arrow** of the diagram — yes, no and error, loops included — and
+  walks them one after the other as rehearsals. In each one every check
+  really looks and keeps what it found (*really*); the scenario only picks the
+  arrow, and it answers the questions itself. A table then lists every step
+  (how often it was walked, what it answered, what the check really found)
+  and any arrow never taken; steps never walked are coloured on the diagram.
+  A scenario is accepted only in a rehearsal.
+- An automation that starts a runbook (a trigger on an alert) waits for it
+  before the alert run ends. A run whose worker stopped is shown as
+  *interrupted* in the lists, without anybody having to open it.
 
 ### 23.8 Examples
 
@@ -11649,7 +11706,7 @@ in place. Everything the change's own page shows is on the flow, as stage 3:
 | **Action bar** | Run-gate verdict and reason, plus **Approve**, **Schedule**, **Mark notified**, **Edit** and **Cancel CR** — the buttons, not links to them. |
 | **Overview** | Action, risk, window in your timezone, the appliances, who asked and who approved, notification address and status, bound scheduled action. |
 | **Change document** | The formal 13-section document, viewable and downloadable in every configured language. |
-| **Affected services** | The **frozen** inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking `.xlsx` / `.csv` export. |
+| **Affected services** | The **frozen** inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking `.xlsx` / `.csv` export. Since 4.11.11 (SA-0027) each policy also shows the AppID it is **bound** to and the catalog's visible columns — the catalog's answer now, labelled so; the frozen rows are not changed. The export offers *AppID (catalog now)* and *AppID customer (catalog now)*. |
 | **External change record** | Approval mode, change ticket, NetBox window, the integration log, and the button that queues `change.requested`. |
 | **Timeline** | Every recorded event on the change. |
 | **Maintenance notice** | The client-facing draft. |

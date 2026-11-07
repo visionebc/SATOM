@@ -73,12 +73,25 @@ apps can be copied and changed.</p>
 <li>Resolves each entry against each enabled DNS server (A by default; reverse
   lookup for IPs; <code>name TYPE</code> for another type such as <code>CNAME</code>). A wildcard
   <code>*.example.com</code> is probed as <code>example.example.com</code>.</li>
-<li>Shows <strong>LB matches</strong>: product, gateway, ADOM, policy/virtual server, service
-  IP, HTTP/HTTPS service, pool, members, certificate CN, SNI, WAF policy,
-  App ID, comment, status, zone, line, department — plus a mini path
-  <em>policy → pool → backends</em> coloured by configured status.</li>
+<li>Shows <strong>LB matches</strong> as rows of the results table, one per match (the entry
+  and its DNS answers span them): <strong>Gateway</strong>, <strong>Server Policy / Virtual
+  Server</strong>, <strong>Service IP / name</strong> — the PTR name of the service IP, asked of
+  every enabled resolver (a FortiWeb VIP's <code>/32</code> is dropped first) — and
+  <strong>Backends</strong>, each with its configured status (green enable, red disable,
+  amber maintain).</li>
+<li><strong>Actions</strong> on each match: <strong>Show</strong> opens the whole match — product, ADOM,
+  HTTP/HTTPS service, pool, members, certificate CN, SNI, WAF policy, App ID,
+  the full comment, status, zone, line, department, the AppID facts and each
+  backend — with <strong>Check live health</strong> (FortiWeb) asking the device for each
+  backend's health-check state (UP / DOWN / no health check); <strong>Edit</strong> opens
+  the policy; <strong>Delete</strong> starts the decommission (preview first).</li>
+<li><strong>Show AppID columns</strong> adds the AppID catalog's visible columns (named as on
+  the AppIDs page) to the table.</li>
 <li><strong>Quick LB</strong> shows only the gateway(s).</li>
-<li><strong>Copy DNS</strong> / <strong>Copy LB</strong> copy tab-separated results for a spreadsheet.</li>
+<li><strong>Copy DNS</strong> / <strong>Copy LB</strong> copy tab-separated results for a spreadsheet.
+  Copy LB is the full row of each match: the entry, every column, the PTR
+  name, each backend with its status, the AppID facts and where the AppID came
+  from.</li>
 <li>Lists entries <strong>Not found in any source</strong>.</li>
 <li><strong>DNS Records</strong> (administrators) — list, create, edit and delete records in a
   configured DNS backend (EfficientIP SOLIDserver, phpIPAM or NetBox).</li>
@@ -121,10 +134,11 @@ instead of sign-in alone.</p>
 <li>Paste entries into <strong>Hostnames / IPs — one per line</strong> (optionally
    <code>name TYPE</code>).</li>
 <li>Choose <strong>Options</strong>: <strong>Show LB matches</strong> (default on), <strong>Quick LB (gateway
-   only)</strong>, <strong>Exact match</strong>, <strong>Show TTL</strong>.</li>
+   only)</strong>, <strong>Exact match</strong>, <strong>Show TTL</strong>, <strong>Show AppID columns</strong>.</li>
 <li>Click <strong>Search</strong>. <strong>Reset</strong> clears the form.</li>
-<li>Expand a match to see the details; <strong>Open policy</strong> opens the FortiWeb policy
-   in a new tab.</li>
+<li>On a match, <strong>Show</strong> opens every detail (the long comment too); <strong>Check
+   live health</strong> asks the FortiWeb for the backends' state; <strong>Copy</strong> copies
+   that match. <strong>Edit</strong> opens the policy in a new tab.</li>
 </ol>
 <h3 id="manage-dns-records-administrators">Manage DNS records (administrators)<a class="dc-anchor" href="#manage-dns-records-administrators" title="Permanent link">#</a></h3>
 <ol>
@@ -136,7 +150,7 @@ instead of sign-in alone.</p>
 </ol>
 <h3 id="decommission-a-service">Decommission a service<a class="dc-anchor" href="#decommission-a-service" title="Permanent link">#</a></h3>
 <ol>
-<li>On a match, click <strong>Decommission</strong>. SATOM builds a <strong>plan</strong>: every object
+<li>On a match, click <strong>Delete</strong> in <strong>Actions</strong>. SATOM builds a <strong>plan</strong>: every object
    that would be deleted, kept or unbound, with warnings.</li>
 <li>Read the plan. If it carries warnings, tick <em>I have read the warnings above
    and accept the shared dependencies they name.</em></li>
@@ -184,6 +198,12 @@ instead of sign-in alone.</p>
 <td>No</td>
 <td>off</td>
 </tr>
+<tr>
+<td>Show AppID columns</td>
+<td>Add the AppID catalog's visible columns to each match</td>
+<td>No</td>
+<td>off</td>
+</tr>
 </tbody>
 </table></div>
 <p>DNS servers (<strong>Administrator → Objects → DNS Resolvers</strong>, <code>/dns-lookup/resolvers</code>): a list of <strong>name</strong> + <strong>server address</strong>
@@ -195,14 +215,15 @@ with an enabled flag.</p>
 <li>Enter <code>api.example.com</code>, keep <strong>Show LB matches</strong>, click <strong>Search</strong>.</li>
 <li>Both DNS servers return <code>192.0.2.40</code>; one match shows FortiWeb <code>fweb-01</code>,
    policy <code>pol-api</code>, pool <code>pool-api</code> with two backends.</li>
-<li>Click <strong>Decommission</strong>: the plan lists the A record, the policy, its pool,
+<li>Click <strong>Delete</strong>: the plan lists the A record, the policy, its pool,
    the certificate (<em>keep</em> — also used by another policy), and the WAF profile.</li>
 <li>Type <code>pol-api</code> and click <strong>Delete everything listed</strong>.</li>
 </ol>
 </div>
 <h2 id="result">Result<a class="dc-anchor" href="#result" title="Permanent link">#</a></h2>
 <ul>
-<li>Lookups change nothing and are not audited.</li>
+<li>Lookups change nothing and are not audited. <strong>Check live health</strong> is a device
+  read and writes <code>policy.health_probe</code> (member count, or the refusal).</li>
 <li>DNS record changes write audit entries <code>dns_records.create</code>, <code>.update</code>,
   <code>.delete</code>.</li>
 <li>Every decommission attempt writes <code>dns_decommission.apply</code> (successful or
@@ -245,8 +266,15 @@ See the per-object results for the reason.</p>
   are read live, read-only.</li>
 <li>Matching compares the entry and its wildcard-resolved form against <strong>every</strong>
   column of every LB row (substring by default).</li>
-<li>The App ID column is taken from the policy/virtual-server comment
-  (<code>AppID: &lt;token&gt;</code>, <code>app-id=…</code>, or a bracketed <code>[APP-123]</code>).</li>
+<li>The App ID is the policy's <strong>binding</strong> in the AppID catalog; without one,
+  the AppID its comment names with <strong>Analysis › AppID pattern</strong> (resolved in
+  the catalog when it is there); without either, the token the comment
+  carries (<code>AppID: &lt;token&gt;</code>, <code>app-id=…</code>, or a bracketed <code>[APP-123]</code>).</li>
+<li>The PTR names are looked up for the matched rows only (at most 100
+  addresses per search), never for the whole fleet.</li>
+<li>Show health reads <code>policy/policystatus.detail</code> on the FortiWeb, only when
+  you press the button; a refusal (licence, authentication) is shown as an
+  error, never as "down".</li>
 <li><code>dig</code> runs with a 2-second timeout and one try per server; lookups run in
   parallel (up to 8).</li>
 </ul>

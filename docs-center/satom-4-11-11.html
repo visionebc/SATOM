@@ -52,7 +52,8 @@
 <details class="dc-toc-m"><summary>On this page</summary><ul><li class="lv2"><a href="#in-short">In short</a></li><li class="lv2"><a href="#added">Added</a></li><li class="lv2"><a href="#fixed">Fixed</a></li></ul></details>
 <article class="dc-doc"><p><strong>Released:</strong> 2026-11-07 · <a href="satom-releases.html">All releases</a></p>
 <h2 id="in-short">In short<a class="dc-anchor" href="#in-short" title="Permanent link">#</a></h2>
-<p>Fixes for SA-0024, SA-0025 and SA-0026, and the rest of SA-0023.
+<p>Fixes for SA-0024, SA-0025, SA-0026 and SA-0027, the rest of SA-0023, and
+the FA-0008 review of Plugin Studio runbooks.
 Everything in 4.11.10 and earlier applies. A server on 4.11.10 (or one of
 the four releases before it) can take the small delta package
 (<code>satom-update-4.11.11-from-&lt;its version&gt;.tar.gz</code>) instead of the full one.</p>
@@ -83,6 +84,28 @@ the four releases before it) can take the small delta package
   selected credential and its own agent key, valid only from the SATOM
   nodes, and adds the <em>satom-webctl agent</em> credential. See
   <a href="web-server-manager.html">Web Server Manager</a>.</li>
+<li><strong>DNS &amp; LB Lookup: one row per match with Actions.</strong> Each LB match is a
+  row: gateway, policy, the service IP with its PTR name (a lookup by policy
+  name now tells you which service it is), and the backends with their
+  status. <strong>Show</strong> opens the whole match -- the long comment no longer
+  pushes the table sideways -- with <strong>Check live health</strong> for the
+  backends; <strong>Edit</strong> opens the policy; <strong>Delete</strong> is the decommission.
+  <strong>Show AppID columns</strong> adds the AppID catalog's columns, and <strong>Copy LB</strong>
+  copies the full row. See <a href="dns-tool.html">DNS &amp; LB Lookup</a>.</li>
+<li><strong>Upgrade flow: Affected services show the AppID</strong> each policy is bound
+  to, from the catalog now (the frozen inventory is unchanged), and the
+  export offers it. See <a href="change-requests.html">Change requests</a>.</li>
+<li><strong>Plugin Studio: Cover every branch.</strong> Diagram › Simulate plans the
+  scenarios that together take every arrow of an app (yes, no and error,
+  loops included), walks them as rehearsals and shows how often each step
+  was walked and which arrows were never taken. See
+  <a href="studio-apps.html">Apps</a>.</li>
+<li><strong>Runbook steps that act.</strong> <em>Connection test</em>, <em>Log in to the appliance</em>,
+  <em>Power state (hypervisor)</em>, <em>Ping from the appliance</em> and <em>Notify</em> do the
+  action instead of asking a person to; when SATOM cannot try, the step
+  takes the error arrow, never a <em>no</em>.</li>
+<li><strong>An <em>Ask a person</em> step can link to a SATOM page</strong>, shown as a button
+  next to the question on the run page.</li>
 </ul>
 <h2 id="fixed">Fixed<a class="dc-anchor" href="#fixed" title="Permanent link">#</a></h2>
 <ul>
@@ -94,6 +117,11 @@ the four releases before it) can take the small delta package
   after an update.</strong> The check of every page link ran on a leftover SQLite
   file instead of the node's PostgreSQL. It now runs on the node's database.
   The update itself was fine: nothing needs to be restored.</li>
+<li><strong>Automations started by an alert died half-way and stayed "running".</strong>
+  The alert run now waits for the automations it started, and runs whose
+  worker stopped are closed as <em>interrupted</em>.</li>
+<li><strong>A run waiting on a question of an app that was published again stayed
+  "waiting" forever.</strong> Such runs are now closed with the reason.</li>
 </ul></article>
 <div class="dc-tags"><a class="dc-tag" href="search.html?q=release">#release</a><a class="dc-tag" href="search.html?q=4.11.11">#4.11.11</a><a class="dc-tag" href="search.html?q=what%27s%20new">#what&#x27;s new</a><a class="dc-tag" href="search.html?q=changelog">#changelog</a><a class="dc-tag" href="search.html?q=appids">#appids</a><a class="dc-tag" href="search.html?q=automation">#automation</a><a class="dc-tag" href="search.html?q=notifications">#notifications</a><a class="dc-tag" href="search.html?q=web%20server%20manager">#web server manager</a><a class="dc-tag" href="search.html?q=file%20manager">#file manager</a><a class="dc-tag" href="search.html?q=home%20folder">#home folder</a><a class="dc-tag" href="search.html?q=root">#root</a><a class="dc-tag" href="search.html?q=new%20website">#new website</a><a class="dc-tag" href="search.html?q=port">#port</a><a class="dc-tag" href="search.html?q=owner">#owner</a><a class="dc-tag" href="search.html?q=wwwrun">#wwwrun</a><a class="dc-tag" href="search.html?q=satom-webctl">#satom-webctl</a><a class="dc-tag" href="search.html?q=agent">#agent</a><a class="dc-tag" href="search.html?q=software%20update">#software update</a><a class="dc-tag" href="search.html?q=route%20audit">#route audit</a></div>
 <details class="dc-src"><summary>Source files this article was verified against</summary><ul><li><code>CHANGELOG.md</code></li></ul></details>

@@ -86,6 +86,7 @@ OPS: dict[str, tuple[str, bool]] = {
     "sshd.get": ("ssh", False), "authkeys.get": ("ssh", False),
     "sshd.set": ("ssh", True), "authkeys.put": ("ssh", True),
     "script.run": ("scripts", True),
+    "agent.install": ("health", True),
 }
 #: Operations the restricted agent (satom-webctl as satom-mon) answers, and
 #: their session-helper equivalents.
@@ -115,7 +116,7 @@ MODULES = {
     "users": ("Users & Permissions", "bi-people", "Accounts, groups, passwords"),
     "ssh": ("SSH Configuration", "bi-key", "SSH server settings and authorized keys"),
 }
-SECRET_ARGS = ("content", "content_b64", "private_key", "password", "certificate", "chain",
+SECRET_ARGS = ("installer", "agent", "content", "content_b64", "private_key", "password", "certificate", "chain",
                "keys", "env", "settings")
 TARGET_ARGS = ("path", "paths", "to", "dest", "name", "names", "server", "user", "unit",
                "domains", "action", "port", "jail", "ip", "cert", "q", "host", "interpreter",
@@ -573,6 +574,25 @@ def delete_credential(cred: WsmCredential) -> None:
     db.session.commit()
 
 
+def agent_install_args(c, user) -> dict:
+    """What ``agent.install`` sends: SATOM's agent key for this server
+    (generated on first use -- the key of an agent already installed is
+    kept, a new one would lock it out), the SATOM nodes the key is valid
+    from, and the installer and agent this SATOM ships."""
+    from . import studio_connections as SC
+    from .studio_http import ha_node_ips
+    from .wsm_transport import HOSTCTL
+    pub = SC.server_public_key(c) if SC.has_secret(c.slug) else ""
+    if not pub:
+        pub = SC.generate_server_key(c)
+        from .audit import log_action
+        log_action("wsm.agent_key", target=c.slug,
+                   extra={"by": getattr(user, "username", "") or "system"})
+    return {"pubkey": pub, "from": ",".join(sorted(ha_node_ips())),
+            "installer": (HOSTCTL / "install-satom-webctl.sh").read_text(),
+            "agent": (HOSTCTL / "satom-webctl.py").read_text()}
+
+
 def ensure_agent_credential(c, by: str = "system") -> WsmCredential | None:
     """The satom-webctl key of a server, as a shared credential the manager can
     pick (restricted to the agent's operations)."""
@@ -695,6 +715,10 @@ def execute(slug: str, cred_id, op: str, args: dict | None = None, *, user,
     c = server(slug)
     args = {k: v for k, v in (args or {}).items() if not str(k).startswith("_")}
     sites = scope_gate(user, c, op, args)
+    if op == "agent.install":
+        # Everything the installer receives is SATOM's, never the caller's:
+        # the key, the nodes it is valid from and the two files.
+        args, run_as = agent_install_args(c, user), "root"
     if sites is not None and op in JAIL_OPS:
         roots = jail_roots(sites, slug)
         if not roots or any(s not in known_sites(slug) for s in sites):
@@ -708,6 +732,8 @@ def execute(slug: str, cred_id, op: str, args: dict | None = None, *, user,
         args["_jail"] = roots
     r = _execute(slug, cred_id, op, args, user=user, run_as=run_as, provided=provided,
                  timeout=timeout, mode=mode)
+    if op == "agent.install" and isinstance(r.get("result"), dict) and r["result"].get("ok"):
+        ensure_agent_credential(c, getattr(user, "username", "") or "system")
     if op == "vhosts.list" and isinstance(r.get("result"), dict):
         remember_vhosts(slug, r["result"])
         if sites is not None:

@@ -245,6 +245,21 @@
   }
   function needWrites() { if (!CFG.allow_writes) { flash('warn', 'This server is read-only in SATOM: turn on Allow changes on the Overview.'); return false; } return true; }
 
+  // SA-0023/SA-0026: install (or update) the satom-webctl agent from here,
+  // with the selected credential as root -- the command the Connections page
+  // shows, run by SATOM. Its key and the nodes it is valid from are SATOM's.
+  function installAgent() {
+    if (!needWrites()) return;
+    confirmBox({ title: 'Install the satom-webctl agent', ok: 'Install', text: 'SATOM signs in with the selected credential, becomes root (sudo) and runs install-satom-webctl.sh with its own agent key, valid only from the SATOM nodes. It creates the account satom-mon (no password, no shell), /usr/local/bin/satom-webctl, two sudo rules per web server (configuration test and reload) and ACLs on the site folders. Run it again to update the agent.' }).then(function (ok) {
+      if (!ok) return;
+      flash('ok', 'Installing the agent…');
+      api('agent.install', {}, { runAs: 'root' }).then(function (r) {
+        flash(r.ok ? 'ok' : 'err', (r.ok ? 'Agent installed: the credential "satom-webctl agent" is ready. ' : 'The installer failed (exit ' + r.exit_code + ').\n') + (r.output || ''));
+        if (r.ok) setTimeout(function () { location.reload(); }, 2500);
+      }).catch(fail);
+    });
+  }
+
   // ======================================================================
   //  OVERVIEW: identity check + credentials
   // ======================================================================
@@ -271,6 +286,9 @@
           c.last_used_at || '—', acts];
       });
       list.appendChild(table(['Name', 'SSH user', 'How', 'State', 'Last used', ''], rows, { empty: 'No credential yet: add your SSH account.' }));
+      var hasAgent = creds().some(function (c) { return c.auth_type === 'agent'; });
+      list.appendChild(el('div', { cls: 'mt-2 d-flex align-items-center gap-2' }, [btn(hasAgent ? 'Update the satom-webctl agent' : 'Install the satom-webctl agent', 'bi-download', null, installAgent),
+        el('span', { cls: 'wsm-small text-muted', text: 'Vhosts, certificates and health without anybody\'s password: a restricted key for the account satom-mon. Needs a credential that can become root.' })]));
     }
     function credStatus(c, status, del) {
       var txt = del ? 'Delete credential ' + c.name + '? Scheduled jobs using it will wait for authentication.' :
@@ -373,10 +391,19 @@
   //  FILE MANAGER
   // ======================================================================
   function pageFiles() {
-    var state = { path: localStorage.getItem(KEY + '.path') || '/var/www', hidden: false, sel: {} };
+    // SA-0026: open in the sign-in account's home folder (a site's Files
+    // button still opens that site's folder), browsing as the credential's
+    // setting, as the account or as root -- the operator picks.
+    var goto = localStorage.getItem(KEY + '.goto'); localStorage.removeItem(KEY + '.goto');
+    var state = { path: goto || '', hidden: false, sel: {} }, home = '', webRoot = '';
     // A site-scoped profile: start in (and stay under) the sites' roots.
     if (CFG.jail && CFG.jail.length && !CFG.jail.some(function (r) {
       return state.path === r || state.path.indexOf(r + '/') === 0; })) { state.path = CFG.jail[0]; }
+    var asSel = select([['', 'As: the credential\'s setting'], ['self', 'As: my account'], ['root', 'As: root (sudo)']], localStorage.getItem(KEY + '.fsAs') || '');
+    asSel.title = 'Which account reads and writes the files';
+    function fopts(o) { o = Object.assign({}, o || {}); if (asSel.value && !o.runAs) o.runAs = asSel.value; return o; }
+    function fapi(op, a, o) { return api(op, a, fopts(o)); }
+    function fjob(op, a, o) { return job(op, a, fopts(o)); }
     var pathIn = input({ cls: 'form-control form-control-sm wsm-path wsm-mono', value: state.path });
     var hiddenBox = check('Show hidden files', false);
     var listBox = el('div'), info = el('div', { cls: 'text-muted wsm-small mb-1' });
@@ -387,7 +414,7 @@
     function load() {
       listBox.innerHTML = ''; listBox.appendChild(loading());
       state.sel = {};
-      api('fs.list', { path: state.path, hidden: hiddenBox.input.checked }).then(function (r) {
+      fapi('fs.list', { path: state.path, hidden: hiddenBox.input.checked }).then(function (r) {
         info.textContent = r.entries.length + ' item(s)' + (r.skipped ? ', ' + r.skipped + ' skipped (unreadable or unsafe names)' : '') + (r.writable ? '' : ' · this folder is read-only for this account');
         var rows = [];
         if (r.parent) rows.push(['', el('span', { cls: 'wsm-name-link', text: '..', onclick: function () { go(r.parent); } }), '', '', '', '', '']);
@@ -407,10 +434,23 @@
           rows.push([cb, el('span', {}, [icon, ' ', name]), isDir ? '' : size(e.size), el('span', { cls: 'wsm-mono', text: e.mode }), e.owner + ':' + e.group, when(e.mtime), acts]);
         });
         listBox.innerHTML = ''; listBox.appendChild(table(['', 'Name', 'Size', 'Mode', 'Owner', 'Modified', ''], rows, { empty: 'Empty folder.' }));
-      }).catch(function (e) { listBox.innerHTML = ''; listBox.appendChild(el('div', { cls: 'wsm-msg err', text: e.message })); });
+      }).catch(function (e) {
+        listBox.innerHTML = '';
+        var msg = el('div', { cls: 'wsm-msg err' }, [el('div', { text: e.message })]);
+        if (asSel.value !== 'root' && /permission|denied|not allowed/i.test(e.message)) msg.appendChild(btn('Open as root', 'bi-shield-lock', null, function () { asSel.value = 'root'; asSel.dispatchEvent(new Event('change')); }));
+        listBox.appendChild(msg);
+      });
+    }
+    function start() {
+      if (state.path) return go(state.path);
+      fapi('whoami', {}, { runAs: 'self' }).then(function (w) {
+        home = w.home || '/';
+        var ws = Object.keys(w.web || {}); webRoot = ws.length ? (w.web[ws[0]].docroot_base || '') : '';
+        go(home);
+      }).catch(function () { go('/'); });
     }
     function openFile(path) {
-      api('fs.read', { path: path, text: true }).then(function (r) {
+      fapi('fs.read', { path: path, text: true }).then(function (r) {
         var body = el('div');
         var lang = WsmEditor.langOf(path);
         var langSel = select(WsmEditor.langs, lang);
@@ -432,7 +472,7 @@
         langSel.addEventListener('change', function () { ed.setLang(langSel.value); });
         var save = btn('Save', 'bi-save', 'btn-fw-primary', function () {
           if (!needWrites()) return;
-          api('fs.write', { path: path, content: ed.value(), base_sha256: r.sha256 }).then(function (w) {
+          fapi('fs.write', { path: path, content: ed.value(), base_sha256: r.sha256 }).then(function (w) {
             r.sha256 = w.sha256; flash('ok', 'Saved ' + path + (w.history ? ' (previous version kept in History)' : ''));
           }).catch(fail);
         });
@@ -441,22 +481,22 @@
       }).catch(fail);
     }
     function history(path) {
-      api('fs.history', { path: path }).then(function (r) {
+      fapi('fs.history', { path: path }).then(function (r) {
         var rows = r.versions.map(function (v) {
           return [v.version, size(v.size), el('div', { cls: 'd-flex gap-1' }, [
-            btn('View', 'bi-eye', null, function () { api('fs.version', { path: path, version: v.version }).then(function (x) { dialog(path + ' @ ' + v.version, pre(x.content || '(binary)', true), [], true); }).catch(fail); }),
-            btn('Restore', 'bi-arrow-counterclockwise', 'btn-outline-danger', function () { confirmBox({ text: 'Restore ' + path + ' to ' + v.version + '? The current content is kept as a new version.' }).then(function (ok) { if (ok) api('fs.restore', { path: path, version: v.version }).then(function () { flash('ok', 'Restored.'); modal('wsm-dialog').hide(); }).catch(fail); }); })])];
+            btn('View', 'bi-eye', null, function () { fapi('fs.version', { path: path, version: v.version }).then(function (x) { dialog(path + ' @ ' + v.version, pre(x.content || '(binary)', true), [], true); }).catch(fail); }),
+            btn('Restore', 'bi-arrow-counterclockwise', 'btn-outline-danger', function () { confirmBox({ text: 'Restore ' + path + ' to ' + v.version + '? The current content is kept as a new version.' }).then(function (ok) { if (ok) fapi('fs.restore', { path: path, version: v.version }).then(function () { flash('ok', 'Restored.'); modal('wsm-dialog').hide(); }).catch(fail); }); })])];
         });
         dialog('History of ' + path, el('div', {}, [el('p', { cls: 'wsm-small text-muted', text: 'SATOM keeps the last 25 versions of a file it overwrites, on the server, readable only by the account that saved them.' }), table(['Version (UTC)', 'Size', ''], rows, { empty: 'No saved versions.' })]), [], true);
       }).catch(fail);
     }
-    function dl(path, name) { api('fs.read', { path: path, text: false }).then(function (r) { download(name, r.content_b64, true); }).catch(fail); }
+    function dl(path, name) { fapi('fs.read', { path: path, text: false }).then(function (r) { download(name, r.content_b64, true); }).catch(fail); }
     function rename(path) {
       var to = input({ value: path, cls: 'form-control form-control-sm wsm-mono' });
       var copy = check('Copy instead of moving', false);
       dialog('Rename, move or copy', el('div', {}, [field('New path', to), copy]), [btn('Apply', 'bi-check', 'btn-fw-primary', function () {
         if (!needWrites()) return;
-        api(copy.input.checked ? 'fs.copy' : 'fs.move', { path: path, to: to.value }).then(function () { modal('wsm-dialog').hide(); flash('ok', 'Done.'); load(); }).catch(fail);
+        fapi(copy.input.checked ? 'fs.copy' : 'fs.move', { path: path, to: to.value }).then(function () { modal('wsm-dialog').hide(); flash('ok', 'Done.'); load(); }).catch(fail);
       })], false);
     }
     function perms(paths, e) {
@@ -471,22 +511,22 @@
         el('p', { cls: 'wsm-small text-muted', text: '644 = owner reads and writes, everyone reads. 755 = also runnable / enterable. 600 = only the owner. Changing the owner needs administrator rights.' }),
         rec, field('Mode for folders when applying inside', dmode), grid]), [btn('Apply', 'bi-check', 'btn-fw-primary', function () {
         if (!needWrites()) return;
-        var p = api('fs.chmod', { paths: paths, mode: mode.value, recursive: rec.input.checked, dir_mode: rec.input.checked ? dmode.value : '' });
-        if (e && (owner.value !== e.owner || group.value !== e.group)) p = p.then(function () { return api('fs.chown', { paths: paths, owner: owner.value, group: group.value, recursive: rec.input.checked }); });
+        var p = fapi('fs.chmod', { paths: paths, mode: mode.value, recursive: rec.input.checked, dir_mode: rec.input.checked ? dmode.value : '' });
+        if (e && (owner.value !== e.owner || group.value !== e.group)) p = p.then(function () { return fapi('fs.chown', { paths: paths, owner: owner.value, group: group.value, recursive: rec.input.checked }); });
         p.then(function () { modal('wsm-dialog').hide(); flash('ok', 'Permissions changed.'); load(); }).catch(fail);
       })], false);
     }
     function del(paths) {
       confirmBox({ title: 'Delete', text: 'Delete ' + paths.length + ' item(s)?\n' + paths.join('\n') + '\nItems up to 64 MB in total are kept in a backup on the server first.', danger: true, ok: 'Delete' }).then(function (ok) {
         if (!ok || !needWrites()) return;
-        api('fs.delete', { paths: paths, recursive: true }).then(function (r) { flash('ok', 'Deleted.' + (r.backup ? ' Backup: ' + r.backup_dir + '/' + r.backup : ' No backup (too large).')); load(); }).catch(fail);
+        fapi('fs.delete', { paths: paths, recursive: true }).then(function (r) { flash('ok', 'Deleted.' + (r.backup ? ' Backup: ' + r.backup_dir + '/' + r.backup : ' No backup (too large).')); load(); }).catch(fail);
       });
     }
     function extract(path) {
       var dest = input({ value: state.path, cls: 'form-control form-control-sm wsm-mono' });
       dialog('Extract ' + path, field('Into folder', dest), [btn('Extract', 'bi-file-zip', 'btn-fw-primary', function () {
         if (!needWrites()) return;
-        job('fs.extract', { path: path, dest: dest.value }, { title: 'Extract ' + path }).then(function (r) { modal('wsm-dialog').hide(); flash('ok', 'Extracted ' + r.result.files + ' file(s).'); load(); }).catch(fail);
+        fjob('fs.extract', { path: path, dest: dest.value }, { title: 'Extract ' + path }).then(function (r) { modal('wsm-dialog').hide(); flash('ok', 'Extracted ' + r.result.files + ' file(s).'); load(); }).catch(fail);
       })], false);
     }
     function upload(files) {
@@ -496,7 +536,7 @@
         var rd = new FileReader();
         rd.onload = function () {
           var b64 = String(rd.result).split(',')[1] || '';
-          api('fs.write', { path: (state.path === '/' ? '' : state.path) + '/' + f.name, content_b64: b64 }).then(function () { flash('ok', 'Uploaded ' + f.name); load(); }).catch(fail);
+          fapi('fs.write', { path: (state.path === '/' ? '' : state.path) + '/' + f.name, content_b64: b64 }).then(function () { flash('ok', 'Uploaded ' + f.name); load(); }).catch(fail);
         };
         rd.readAsDataURL(f);
       });
@@ -508,21 +548,23 @@
     fileIn.addEventListener('change', function () { upload(fileIn.files); fileIn.value = ''; });
     pathIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(pathIn.value.trim() || '/'); });
     hiddenBox.input.addEventListener('change', load);
+    asSel.addEventListener('change', function () { localStorage.setItem(KEY + '.fsAs', asSel.value); if (state.path) load(); else start(); });
     var tb = el('div', { cls: 'wsm-toolbar' }, [
       btn('', 'bi-arrow-up', null, function () { var p = state.path.replace(/\/[^/]*$/, '') || '/'; go(p); }, 'Up'),
-      btn('', 'bi-house', null, function () { go('/var/www'); }, '/var/www'),
+      btn('', 'bi-house', null, function () { if (home) go(home); else { state.path = ''; start(); } }, 'Home folder of the account'),
+      btn('', 'bi-globe2', null, function () { go(webRoot || '/var/www'); }, 'Web sites folder'),
       pathIn, btn('Go', 'bi-arrow-right', null, function () { go(pathIn.value.trim() || '/'); }),
-      btn('', 'bi-arrow-repeat', null, load, 'Reload'), hiddenBox,
+      btn('', 'bi-arrow-repeat', null, load, 'Reload'), hiddenBox, asSel,
       btn('New file', 'bi-file-earmark-plus', null, function () {
         var n = input({ placeholder: 'index.html' });
         dialog('New file in ' + state.path, field('Name', n), [btn('Create', 'bi-check', 'btn-fw-primary', function () {
-          if (!needWrites()) return; api('fs.write', { path: state.path.replace(/\/$/, '') + '/' + n.value, content: '', create_only: true }).then(function () { modal('wsm-dialog').hide(); load(); }).catch(fail);
+          if (!needWrites()) return; fapi('fs.write', { path: state.path.replace(/\/$/, '') + '/' + n.value, content: '', create_only: true }).then(function () { modal('wsm-dialog').hide(); load(); }).catch(fail);
         })], false);
       }),
       btn('New folder', 'bi-folder-plus', null, function () {
         var n = input({ placeholder: 'images' });
         dialog('New folder in ' + state.path, field('Name', n), [btn('Create', 'bi-check', 'btn-fw-primary', function () {
-          if (!needWrites()) return; api('fs.mkdir', { path: state.path.replace(/\/$/, '') + '/' + n.value }).then(function () { modal('wsm-dialog').hide(); load(); }).catch(fail);
+          if (!needWrites()) return; fapi('fs.mkdir', { path: state.path.replace(/\/$/, '') + '/' + n.value }).then(function () { modal('wsm-dialog').hide(); load(); }).catch(fail);
         })], false);
       }),
       btn('Compress', 'bi-file-zip', null, function () {
@@ -530,7 +572,7 @@
         var d = input({ value: state.path.replace(/\/$/, '') + '/archive.zip', cls: 'form-control form-control-sm wsm-mono' });
         var fm = select([['zip', 'ZIP'], ['tar.gz', 'TAR.GZ']], 'zip');
         dialog('Compress ' + s.length + ' item(s)', el('div', {}, [field('Archive path', d), field('Format', fm)]), [btn('Compress', 'bi-file-zip', 'btn-fw-primary', function () {
-          if (!needWrites()) return; job('fs.archive', { paths: s, dest: d.value, format: fm.value }, { title: 'Compress' }).then(function () { modal('wsm-dialog').hide(); flash('ok', 'Archive created.'); load(); }).catch(fail);
+          if (!needWrites()) return; fjob('fs.archive', { paths: s, dest: d.value, format: fm.value }, { title: 'Compress' }).then(function () { modal('wsm-dialog').hide(); flash('ok', 'Archive created.'); load(); }).catch(fail);
         })], false);
       }),
       btn('Permissions', 'bi-shield-lock', null, function () { var s = selected(); if (!s.length) return flash('warn', 'Tick items first.'); perms(s, null); }),
@@ -540,7 +582,7 @@
         var out = el('div');
         dialog('Search under ' + state.path, el('div', {}, [el('div', { cls: 'row g-2' }, [el('div', { cls: 'col-6' }, [field('Name (wildcards * ?)', nm)]), el('div', { cls: 'col-6' }, [field('Containing', ct)])]), out]), [btn('Search', 'bi-search', 'btn-fw-primary', function () {
           out.innerHTML = ''; out.appendChild(loading('Searching…'));
-          job('fs.search', { path: state.path, name: nm.value || '*', content: ct.value }, { title: 'Search' }).then(function (r) {
+          fjob('fs.search', { path: state.path, name: nm.value || '*', content: ct.value }, { title: 'Search' }).then(function (r) {
             var res = r.result; out.innerHTML = '';
             out.appendChild(table(['Path', 'Line'], res.hits.map(function (x) { return [el('span', { cls: 'wsm-name-link wsm-mono', text: x.path, onclick: function () { modal('wsm-dialog').hide(); x.type === 'dir' ? go(x.path) : openFile(x.path); } }), el('span', { cls: 'wsm-mono', text: x.line })]; }), { empty: 'Nothing found.' }));
             if (res.truncated) out.appendChild(el('div', { cls: 'wsm-small text-muted', text: 'More results exist: narrow the search.' }));
@@ -549,7 +591,7 @@
       })
     ]);
     setPage([tb, drop, fileIn, info, listBox]);
-    load();
+    start();
   }
 
   // ======================================================================
@@ -566,7 +608,7 @@
           var acts = el('div', { cls: 'd-flex gap-1 flex-wrap' }, [
             btn('', 'bi-file-earmark-code', null, function () { edit(v); }, 'Edit configuration'),
             v.enabled ? btn('', 'bi-toggle-on', null, function () { toggle(v, false); }, 'Disable') : btn('', 'bi-toggle-off', null, function () { toggle(v, true); }, 'Enable'),
-            v.docroots[0] ? el('a', { cls: 'btn btn-sm btn-outline-secondary', href: CFG.base + 'files', title: 'Files', onclick: function () { localStorage.setItem(KEY + '.path', v.docroots[0]); } }, [el('i', { cls: 'bi bi-folder2-open' })]) : null,
+            v.docroots[0] ? el('a', { cls: 'btn btn-sm btn-outline-secondary', href: CFG.base + 'files', title: 'Files', onclick: function () { localStorage.setItem(KEY + '.goto', v.docroots[0]); } }, [el('i', { cls: 'bi bi-folder2-open' })]) : null,
             btn('', 'bi-sliders', null, function () { localStorage.setItem(KEY + '.htaccess', JSON.stringify(v)); location.href = CFG.base + 'htaccess'; }, '.htaccess / rules'),
             btn('', 'bi-activity', null, function () { checkSite(v); }, 'Check it responds'),
             btn('', 'bi-trash', 'btn-outline-danger', function () { remove(v); }, 'Delete')]);
@@ -619,27 +661,45 @@
         redirect: check('Send HTTP visitors to HTTPS', true), upload: input({ type: 'number', min: 0, max: 10240, placeholder: 'e.g. 64' }),
         timeout: input({ type: 'number', min: 0, max: 3600, placeholder: 'e.g. 60' }), secHeaders: check('Add security headers (nosniff, frame, referrer)', true),
         logs: check('Own log files for this site', true), htaccess: check('Apache: read .htaccess files (AllowOverride All)', true),
-        owner: input({ placeholder: 'e.g. eric (owner of the new folder)' })
+        owner: input({ placeholder: 'user' }), group: input({ placeholder: 'group' }),
+        port: input({ type: 'number', min: 1, max: 65535, value: 80 }), sport: input({ type: 'number', min: 1, max: 65535, value: 443 })
       };
+      // SA-0026: the document root follows the first domain until it is
+      // edited, and a new folder belongs to the web server's account
+      // (wwwrun:www on SUSE Apache, www-data on Debian, apache/nginx on RHEL).
+      var who = null, autoRoot = true, autoOwner = true;
+      function base() { var w = who && who.web && who.web[f.server.value]; return (w && w.docroot_base) || '/var/www'; }
+      function fillRoot() { if (!autoRoot) return; var n = (f.names.value.split(/[\s,]+/).filter(Boolean)[0] || '').replace(/\*/g, 'wildcard'); f.docroot.value = n ? base() + '/' + n + '/public' : ''; f.docroot.placeholder = base() + '/example.com/public'; }
+      function fillOwner() { if (!autoOwner) return; var w = who && who.web && who.web[f.server.value]; f.owner.value = (w && w.user) || ''; f.group.value = (w && w.group) || ''; }
+      f.names.addEventListener('input', fillRoot);
+      f.docroot.addEventListener('input', function () { autoRoot = !f.docroot.value; });
+      f.owner.addEventListener('input', function () { autoOwner = false; }); f.group.addEventListener('input', function () { autoOwner = false; });
+      f.server.addEventListener('change', function () { fillRoot(); fillOwner(); });
+      api('whoami', {}, { runAs: 'self' }).then(function (w) { who = w; fillRoot(); fillOwner(); }).catch(function () { fillRoot(); });
+      function syncTls() { f.sport.closest('.col-md-3').classList.toggle('d-none', !f.https.input.checked); }
+      f.https.input.addEventListener('change', syncTls);
       function sync() { f.proxy.parentNode.classList.toggle('d-none', f.kind.value !== 'proxy'); f.php.parentNode.classList.toggle('d-none', f.kind.value !== 'php'); }
       f.kind.addEventListener('change', sync);
       var body = el('div', {}, [
         el('div', { cls: 'row g-2' }, [el('div', { cls: 'col-md-4' }, [field('Web server', f.server)]), el('div', { cls: 'col-md-8' }, [field('Domains (first = main name)', f.names)])]),
-        field('Type of site', f.kind), field('Document root', f.docroot, 'Created if it does not exist, with a placeholder page.'),
+        el('div', { cls: 'row g-2' }, [el('div', { cls: 'col-md-3' }, [field('HTTP port', f.port)]), el('div', { cls: 'col-md-3' }, [field('HTTPS port', f.sport)])]),
+        field('Type of site', f.kind), field('Document root', f.docroot, 'Filled in from the first domain; created if it does not exist, with a placeholder page.'),
         field('Application address', f.proxy), field('PHP-FPM socket (empty = detect)', f.php),
         el('div', { cls: 'row g-2' }, [el('div', { cls: 'col-md-4' }, [field('Index files', f.index)]), el('div', { cls: 'col-md-4' }, [field('Upload limit (MB)', f.upload)]), el('div', { cls: 'col-md-4' }, [field('Time limit (s)', f.timeout)])]),
-        f.https, field('Certificate', f.certName), f.redirect, f.secHeaders, f.logs, f.htaccess, field('Owner of a new document root', f.owner)]);
-      sync();
+        f.https, field('Certificate', f.certName), f.redirect, f.secHeaders, f.logs, f.htaccess,
+        el('div', { cls: 'row g-2' }, [el('div', { cls: 'col-md-6' }, [field('Owner of a new document root', f.owner, 'Default: the account the web server runs as.')]), el('div', { cls: 'col-md-6' }, [field('Group', f.group)])])]);
+      sync(); syncTls();
       dialog('New website', body, [btn('Create', 'bi-plus-lg', 'btn-fw-primary', function () {
         if (!needWrites()) return;
         var names = f.names.value.split(/[\s,]+/).filter(Boolean);
         var args = { server: f.server.value, name: (names[0] || '').replace(/\*/g, 'wildcard'), server_names: names, kind: f.kind.value,
-          docroot: f.docroot.value || ('/var/www/' + (names[0] || 'site') + '/public'), proxy_to: f.proxy.value, php_socket: f.php.value,
+          docroot: f.docroot.value || (base() + '/' + (names[0] || 'site') + '/public'), proxy_to: f.proxy.value, php_socket: f.php.value,
+          port: +f.port.value || 80, https_port: +f.sport.value || 443, group: f.group.value,
           index: f.index.value, https: f.https.input.checked, cert_name: f.certName.value, redirect_https: f.redirect.input.checked,
           upload_mb: +f.upload.value || 0, timeout_s: +f.timeout.value || 0, security_headers: f.secHeaders.input.checked,
           own_logs: f.logs.input.checked, htaccess: f.htaccess.input.checked, owner: f.owner.value };
         api('vhost.create', args).then(function (r) {
-          if (result(r, 'Site ' + names[0] + ' created')) { modal('wsm-dialog').hide(); load(); }
+          if (result(r, 'Site ' + names[0] + ' created' + (r.listen_added && r.listen_added.length ? ' (Apache now also listens on ' + r.listen_added.join(', ') + '; open the port in the firewall if needed)' : ''))) { modal('wsm-dialog').hide(); load(); }
           if (r.content) $('#wsm-trace-body').textContent = r.content;
         }).catch(fail);
       })]);
@@ -1388,10 +1448,10 @@
       keys.forEach(function (k) { f[k] = input({ type: 'number', value: c[k], step: k === 'load_warn' ? '0.1' : '1', style: 'max-width:110px' }); });
       f.ignore = el('textarea', { cls: 'form-control form-control-sm wsm-mono', rows: 3, placeholder: 'one per line, * and ? allowed, e.g. apt-daily*.service' }); f.ignore.value = c.ignore_units || '';
       var agentNote = H.agent_key ? 'This server has an agent key. The agent must be satom-webctl 1.2.0 or newer to read health: run the installer of this SATOM again on the server if it is older.' :
-        'No agent key: health is read over SSH. To use the agent instead, generate its key on the Overview and run install-satom-webctl.sh on the server.';
+        'No agent key: health is read over SSH. To use the agent instead, install it with the button below (or on the Overview).';
       setTimeout(toggle);
       return card('Settings', 'bi-sliders', [
-        field('How SATOM reads this server', f.via, agentNote), credRow,
+        field('How SATOM reads this server', f.via, agentNote), btn(H.agent_key ? 'Update the satom-webctl agent' : 'Install the satom-webctl agent', 'bi-download', null, installAgent), credRow,
         el('div', { cls: 'd-flex flex-wrap gap-3' }, [field('Every (minutes)', f.interval_min), field('Disk warning %', f.disk_warn), field('Disk critical %', f.disk_crit), field('Inodes warning %', f.inode_warn),
           field('Free memory warning %', f.mem_warn), field('Free memory critical %', f.mem_crit), field('Swap warning %', f.swap_warn), field('Load per CPU warning', f.load_warn)]),
         field('Failed services that never alert', f.ignore),

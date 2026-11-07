@@ -21,6 +21,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   ends. The Analysis *Without App ID* card and table open that view. Reads
   SATOM's local copy only: no device call.
 
+- **Web Server Manager: the File Manager opens in your home folder, as
+  your account or as root (SA-0026, SA-0023).** Requested: start in the
+  home of the user, browse it like a web FTP, and let the SATOM user switch
+  to root when the account cannot. It opened in `/var/www` -- which SUSE
+  does not have. It now opens in the home of the account you signed in with
+  (a site's Files button still opens the site's folder); a globe button
+  jumps to the web sites folder (`/srv/www/vhosts` on SUSE); **As** picks the
+  credential's setting, your account or root, and a folder your account
+  cannot read offers *Open as root*.
+- **Web Server Manager: New website asks for the ports, fills in the
+  document root and gives it to the web server's account (SA-0023).** HTTP
+  and HTTPS ports (80 and 443 by default; Apache gets a `Listen` line for a
+  new port, never a second one); the document root follows the first
+  domain until you edit it; the owner and group of a new document root
+  default to the account the web server runs as, read from its
+  configuration (`wwwrun:www` on SUSE Apache, `www-data` on Debian,
+  `apache` or `nginx` on RHEL). The placeholder page belongs to them too.
+- **Web Server Manager: Install the satom-webctl agent (SA-0023).** A
+  button on the Overview and in Health > Settings installs or updates the
+  agent from SATOM, with the selected credential as root: the installer of
+  this SATOM, SATOM's agent key for the server (valid only from the SATOM
+  nodes), then the *satom-webctl agent* credential. What the page posts is
+  ignored: key, nodes and files are SATOM's.
+
 ### Fixed
 - **AppIDs: Assign policies froze the browser with "All FortiWeb devices"
   (SA-0025).** Every row carried its own list of the whole AppID catalog, so

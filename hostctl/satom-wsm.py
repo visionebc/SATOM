@@ -67,7 +67,7 @@ if "op_vhosts_list" not in globals():   # imported on its own (tests, --selftest
     globals().update({k: v for k, v in vars(_wmod).items()
                       if not k.startswith("__") and k not in ("main",)})
 
-WSM_VERSION = "2.1.0"
+WSM_VERSION = "2.2.0"
 MAX_FILE = 8 * 1024 * 1024
 MAX_LIST = 5000
 MAX_OUT = 256 * 1024
@@ -347,6 +347,71 @@ def firewall_kind():
     return ""
 
 
+#: The account each web server runs as when its configuration does not say.
+WEB_USER_DEFAULTS = {
+    "apache": {"debian": ("www-data", "www-data"), "rhel": ("apache", "apache"),
+               "suse": ("wwwrun", "www")},
+    "nginx": {"debian": ("www-data", "www-data"), "rhel": ("nginx", "nginx"),
+              "suse": ("nginx", "nginx")},
+}
+
+
+def web_account(server):
+    """(user, group) the web server runs as: its own configuration first
+    (Debian envvars, SUSE uid.conf, httpd.conf, nginx.conf), then the
+    distribution default. Only accounts that exist here are returned."""
+    fam = os_release()["family"]
+    user = group = ""
+    if server == "apache":
+        files = ("/etc/apache2/envvars", "/etc/apache2/uid.conf", "/etc/httpd/conf/httpd.conf",
+                 "/etc/apache2/apache2.conf", "/etc/apache2/httpd.conf")
+        pats = ((r"(?m)^\s*(?:export\s+)?APACHE_RUN_USER=[\"']?([A-Za-z0-9_.-]+)", r"(?m)^\s*User\s+([A-Za-z0-9_.-]+)\s*$"),
+                (r"(?m)^\s*(?:export\s+)?APACHE_RUN_GROUP=[\"']?([A-Za-z0-9_.-]+)", r"(?m)^\s*Group\s+([A-Za-z0-9_.-]+)\s*$"))
+        for f in files:
+            try:
+                with open(f) as fh:
+                    text = fh.read(200000)
+            except OSError:
+                continue
+            for i, pair in enumerate(pats):
+                for rx in pair:
+                    m = re.search(rx, text)
+                    if m and i == 0 and not user:
+                        user = m.group(1)
+                    elif m and i == 1 and not group:
+                        group = m.group(1)
+    elif server == "nginx":
+        try:
+            with open("/etc/nginx/nginx.conf") as fh:
+                m = re.search(r"(?m)^\s*user\s+([A-Za-z0-9_.-]+)(?:\s+([A-Za-z0-9_.-]+))?\s*;",
+                              fh.read(200000))
+            if m:
+                # no group: nginx uses the group named like the user
+                user, group = m.group(1), m.group(2) or m.group(1)
+        except OSError:
+            pass
+    d = WEB_USER_DEFAULTS.get(server, {}).get(fam, ("", ""))
+    user, group = user or d[0], group or d[1]
+    try:
+        pw = pwd.getpwnam(user)
+        group = group or grp.getgrgid(pw.pw_gid).gr_name
+    except (KeyError, TypeError):
+        user = ""
+    try:
+        grp.getgrnam(group)
+    except (KeyError, TypeError):
+        group = ""
+    return clean(user, 32), clean(group, 32)
+
+
+def docroot_base():
+    """Where new sites go by default: /srv/www/vhosts on SUSE (there is no
+    /var/www there), /var/www elsewhere."""
+    if os_release()["family"] == "suse" and os.path.isdir("/srv/www"):
+        return "/srv/www/vhosts"
+    return "/var/www"
+
+
 def op_whoami(conf, args):
     u = pwd.getpwuid(os.geteuid())
     groups = []
@@ -362,8 +427,10 @@ def op_whoami(conf, args):
         sudo["rules"] = out[-2000:] if rc == 0 else clean(err, 300)
     web = {}
     for key, spec in conf["servers"].items():
+        wu, wg = web_account(key)
         web[key] = {"layout": spec["layout"], "available": spec["available"],
-                    "unit": spec.get("unit", "")}
+                    "unit": spec.get("unit", ""), "user": wu, "group": wg,
+                    "docroot_base": docroot_base()}
     return {"user": clean(u.pw_name, 64), "uid": u.pw_uid, "gid": u.pw_gid,
             "home": clean(u.pw_dir, 256), "shell": clean(u.pw_shell, 128),
             "groups": sorted(set(groups))[:100], "root": is_root(),
@@ -919,6 +986,9 @@ def op_vhost_create2(conf, args):
              "header names are letters/digits/'-', values without quotes or ';'")
         headers[str(k)] = str(v)
     own_logs = bool(args.get("own_logs", True))
+    port, sport = _port(args.get("port"), 80), _port(args.get("https_port"), 443)
+    need(not https or port != sport, "bad_port", "different HTTP and HTTPS ports")
+    hsuffix = "" if sport == 443 else ":%d" % sport
     fam = os_release()["family"]
     logdir = "/var/log/nginx" if server == "nginx" else (
         "/var/log/httpd" if fam == "rhel" else "/var/log/apache2")
@@ -952,19 +1022,19 @@ def op_vhost_create2(conf, args):
                         % (logdir, base, logdir, base))
         site = "".join(body)
         text = ("# Managed by SATOM Web Server Manager (satom-wsm %s) -- created %s\n"
-                "server {\n    listen 80;\n    listen [::]:80;\n    server_name %s;\n"
-                % (WSM_VERSION, stamp, " ".join(names)))
+                "server {\n    listen %d;\n    listen [::]:%d;\n    server_name %s;\n"
+                % (WSM_VERSION, stamp, port, port, " ".join(names)))
         if redirect:
             text += ("    location /.well-known/acme-challenge/ {\n        root %s;\n    }\n"
-                     "    location / {\n        return 301 https://$host$request_uri;\n    }\n}\n"
-                     % (docroot,))
+                     "    location / {\n        return 301 https://$host%s$request_uri;\n    }\n}\n"
+                     % (docroot, hsuffix))
         else:
             text += site + "}\n"
         if https:
-            text += ("server {\n    listen 443 ssl;\n    listen [::]:443 ssl;\n"
+            text += ("server {\n    listen %d ssl;\n    listen [::]:%d ssl;\n"
                      "    server_name %s;\n    ssl_certificate %s;\n    ssl_certificate_key %s;\n"
                      "    ssl_protocols TLSv1.2 TLSv1.3;\n%s}\n"
-                     % (" ".join(names), cert, key, site))
+                     % (sport, sport, " ".join(names), cert, key, site))
     else:
         aliases = "    ServerAlias %s\n" % " ".join(names[1:]) if len(names) > 1 else ""
         body = []
@@ -993,31 +1063,50 @@ def op_vhost_create2(conf, args):
             body.append("    ErrorLog %s/%s-error.log\n    CustomLog %s/%s-access.log combined\n"
                         % (logdir, base, logdir, base))
         site = "".join(body)
-        text = ("# Managed by SATOM Web Server Manager (satom-wsm %s) -- created %s\n"
-                "<VirtualHost *:80>\n    ServerName %s\n%s" % (WSM_VERSION, stamp, names[0], aliases))
+        listen = "".join("Listen %d%s\n" % (p_, " https" if p_ == sport and https else "")
+                         for p_ in sorted({port} | ({sport} if https else set()))
+                         if p_ not in (80, 443) and not _apache_listens(p_))
+        text = ("# Managed by SATOM Web Server Manager (satom-wsm %s) -- created %s\n%s"
+                "<VirtualHost *:%d>\n    ServerName %s\n%s"
+                % (WSM_VERSION, stamp, listen, port, names[0], aliases))
         if redirect:
             text += ('    DocumentRoot "%s"\n    RewriteEngine On\n'
                      '    RewriteCond %%{REQUEST_URI} !^/\\.well-known/acme-challenge/\n'
-                     '    RewriteRule ^/?(.*) https://%%{SERVER_NAME}/$1 [R=301,L]\n</VirtualHost>\n'
-                     % docroot)
+                     '    RewriteRule ^/?(.*) https://%%{SERVER_NAME}%s/$1 [R=301,L]\n</VirtualHost>\n'
+                     % (docroot, hsuffix))
         else:
             text += site + "</VirtualHost>\n"
         if https:
-            text += ("<VirtualHost *:443>\n    ServerName %s\n%s    SSLEngine on\n"
+            text += ("<VirtualHost *:%d>\n    ServerName %s\n%s    SSLEngine on\n"
                      "    SSLCertificateFile %s\n    SSLCertificateKeyFile %s\n"
                      "    SSLProtocol -all +TLSv1.2 +TLSv1.3\n%s</VirtualHost>\n"
-                     % (names[0], aliases, cert, key, site))
+                     % (sport, names[0], aliases, cert, key, site))
+    owner = None
+    if args.get("owner"):
+        try:
+            u = pwd.getpwnam(_name(args["owner"], USER_RE, "user"))
+        except KeyError:
+            need(False, "bad_owner", "an account that exists on this server")
+        gid = u.pw_gid
+        if args.get("group"):
+            try:
+                gid = grp.getgrnam(_name(args["group"], USER_RE, "group")).gr_gid
+            except KeyError:
+                need(False, "bad_group", "a group that exists on this server")
+        owner = (u.pw_uid, gid)
     made_root = False
     if kind != "proxy" and not os.path.isdir(docroot):
         os.makedirs(docroot, mode=0o755)
         made_root = True
-        if args.get("owner"):
-            u = pwd.getpwnam(_name(args["owner"], USER_RE, "user"))
-            os.chown(docroot, u.pw_uid, u.pw_gid)
+        if owner:
+            os.chown(docroot, *owner)
         if args.get("placeholder", True):
-            with open(os.path.join(docroot, "index.html"), "w") as fh:
+            index_path = os.path.join(docroot, "index.html")
+            with open(index_path, "w") as fh:
                 fh.write("<!doctype html><title>%s</title><h1>%s</h1>"
                          "<p>Site created by SATOM Web Server Manager.</p>\n" % (names[0], names[0]))
+            if owner:
+                os.chown(index_path, *owner)
     _write_atomic(main, text.encode("utf-8"), 0o644)
     if spec["layout"] == "debian":
         os.symlink(main, other)
@@ -1030,8 +1119,73 @@ def op_vhost_create2(conf, args):
 
     res = _apply(conf, spec, undo)
     res.update({"created": not res.get("restored"), "name": name, "docroot": docroot,
-                "docroot_created": made_root, "content": text})
+                "docroot_created": made_root, "content": text, "port": port,
+                "https_port": sport if https else None,
+                "listen_added": [int(x.split()[1]) for x in text.splitlines()
+                                 if x.startswith("Listen ")]})
     return res
+
+
+def _port(value, default):
+    try:
+        p_ = int(value or default)
+    except (TypeError, ValueError):
+        p_ = 0
+    need(1 <= p_ <= 65535, "bad_port", "a port between 1 and 65535")
+    return p_
+
+
+def _apache_listens(port):
+    """True when some Apache configuration file already has ``Listen <port>``
+    (a second one for the same port stops Apache at its next restart)."""
+    rx = re.compile(r"(?mi)^\s*Listen\s+(?:\S*:)?%d(?:\s|$)" % port)
+    for base in ("/etc/apache2", "/etc/httpd"):
+        for dirpath, _dirs, files in os.walk(base):
+            for f in files:
+                if not (f.endswith(".conf") or f in ("ports.conf", "listen.conf")):
+                    continue
+                try:
+                    with open(os.path.join(dirpath, f)) as fh:
+                        if rx.search(fh.read(500000)):
+                            return True
+                except OSError:
+                    continue
+    return False
+
+
+PUBKEY_RE = re.compile(r"^ssh-ed25519 [A-Za-z0-9+/]{60,80}={0,2}( [A-Za-z0-9._@-]{1,64})?$")
+
+
+def op_agent_install(conf, args):
+    """Install (or refresh) the satom-webctl agent: the installer SATOM ships,
+    run here as root with SATOM's agent key -- the same command an operator
+    runs by hand (install-satom-webctl.sh --pubkey ... --from ...). Both
+    files come in the request: this helper runs from memory."""
+    need(is_root(), "permission_denied", "root (sudo)")
+    pub = args.get("pubkey") or ""
+    need(isinstance(pub, str) and PUBKEY_RE.match(pub), "bad_pubkey", "an ssh-ed25519 public key")
+    frm = args.get("from") or ""
+    need(isinstance(frm, str) and re.match(r"^[0-9A-Fa-f.:,/]{0,400}$", frm), "bad_from",
+         "comma-separated SATOM node addresses")
+    script, agent = args.get("installer") or "", args.get("agent") or ""
+    need(isinstance(script, str) and script.startswith("#!/bin/bash")
+         and "install-satom-webctl.sh" in script[:400] and len(script) < 300000,
+         "bad_installer", "the SATOM installer")
+    need(isinstance(agent, str) and agent.startswith("#!") and "satom-webctl" in agent[:2000]
+         and len(agent) < 2000000, "bad_agent", "satom-webctl.py")
+    work = tempfile.mkdtemp(prefix="satom-webctl-install-")
+    try:
+        for name, body in (("install-satom-webctl.sh", script), ("satom-webctl.py", agent)):
+            with open(os.path.join(work, name), "w") as fh:
+                fh.write(body)
+            os.chmod(os.path.join(work, name), 0o700)
+        argv = ["bash", os.path.join(work, "install-satom-webctl.sh"), "--pubkey", pub]
+        if frm:
+            argv += ["--from", frm]
+        rc, out, err = run(argv, timeout=280)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return {"ok": rc == 0, "exit_code": rc, "output": clean((out + err)[-6000:], 6000)}
 
 
 def _server_blocks(text):
@@ -2526,6 +2680,7 @@ SESSION_OPS = {
     "vhost.get": lambda c, a: op_vhost_get(c, _confd_name(c, a)),
     "vhost.put": lambda c, a: op_vhost_put(c, _confd_name(c, a)),
     "vhost.create": op_vhost_create2,
+    "agent.install": op_agent_install,
     "vhost.enable": lambda c, a: op_vhost_toggle(c, _confd_name(c, a), True),
     "vhost.disable": lambda c, a: op_vhost_toggle(c, _confd_name(c, a), False),
     "vhost.delete": lambda c, a: op_vhost_delete(c, _confd_name(c, a)),

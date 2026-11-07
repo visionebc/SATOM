@@ -155,6 +155,59 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   this SATOM, SATOM's agent key for the server (valid only from the SATOM
   nodes), then the <em>satom-webctl agent</em> credential. What the page posts is
   ignored: key, nodes and files are SATOM's.</li>
+<li><strong>DNS &amp; LB Lookup: one row per match, an Actions column, and the service
+  name of the IP (SA-0027).</strong> Requested: when the search is a server policy
+  name, say which service it is by a reverse lookup of its IP; a column with
+  the actions (edit, delete); the AppID in the table as an option; a long
+  comment must not push the table sideways; show whether the backends are
+  up; a Show button with the full information; and Copy LB with the
+  complete data. The LB matches are now rows of the table (the entry and its
+  DNS answers span them) with Gateway, Policy, <em>Service IP / name</em> -- the PTR
+  name of the service IP from your configured resolvers, the prefix of a
+  FortiWeb VIP (<code>/32</code>) dropped -- and Backends, each with its configured
+  status. <strong>Actions</strong>: <em>Show</em> (every field, the whole comment, the AppID
+  facts and the backends, with <strong>Check live health</strong> asking the FortiWeb for
+  each backend's health-check state, audited), <em>Edit</em> (opens the policy) and
+  <em>Delete</em> (the existing decommission, preview first). <strong>Show AppID
+  columns</strong> in Options adds the catalog's visible columns under the names
+  you gave them on the AppIDs page; the AppID is the policy's binding, else
+  the one its comment names with the Analysis pattern. <strong>Copy LB</strong> now
+  carries the entry, every column, the PTR name, each backend with its
+  status, the AppID facts and where the AppID came from, one line per match:
+  a tab or line break in a comment no longer splits a line. The
+  <em>DNS &amp; LB Lookup</em> plugin app copies the same text.</li>
+<li><strong>Upgrade flow: Affected services show the AppID (SA-0027).</strong> Each
+  affected policy shows the AppID it is bound to and the catalog's visible
+  columns, labelled as the catalog's current answer: the frozen inventory
+  the approver signed is not changed. The <code>.xlsx</code> / <code>.csv</code> export and the
+  pre-upgrade inventory offer <em>AppID (catalog now)</em> and <em>AppID customer
+  (catalog now)</em>.</li>
+<li><strong>Plugin Studio: Simulate can walk every branch of an app (FA-0008).</strong>
+  Reported: "the tests are not enough -- each action, each question is not
+  done when I run Simulate". One simulation follows one path, so a recovery
+  runbook simulated with <em>Answer Yes to every question</em> walked 5 of its 28
+  steps. <strong>Cover every branch</strong> (Diagram tab › Simulate) plans the
+  scenarios that together take every arrow (yes, no and error, loops
+  included) and walks them one after the other as rehearsals. Every check
+  still really looks and keeps what it found; the scenario only picks the
+  arrow and answers the questions. A table then shows how often each step
+  was walked, what it answered, what the check really found, and every
+  arrow never taken; unwalked steps are coloured on the diagram. A scenario
+  is refused outside a rehearsal.</li>
+<li><strong>Runbook steps that do the action instead of asking for it (FA-0008).</strong>
+  <em>Connection test</em> (Test Connection from this node: API with the stored
+  account, TCP, ping or traceroute), <em>Log in to the appliance</em> (the stored
+  account, or a connection's account such as a remote RADIUS administrator;
+  a refused account is not retried for 10 minutes because of the admin
+  lockout), <em>Power state (hypervisor)</em> (the VM's state through the Sentinel
+  topology mapping), <em>Ping from the appliance</em> (<code>execute ping &lt;target&gt;</code> on
+  the device) and <em>Notify</em> (bell and e-mail; in a rehearsal only the
+  simulating person's bell, once per simulation). When SATOM cannot try,
+  each takes the error arrow, never a <em>no</em>.</li>
+<li><strong>Plugin Studio: an <em>Ask a person</em> step can link to a SATOM page.</strong>
+  <strong>Link (a SATOM page)</strong>, e.g. <code>/appliances/{{ appliance.id }}/restore</code>,
+  shows a button next to the question on the run page. Only a path on this
+  SATOM is shown; another site is refused and the question says so.</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
@@ -175,6 +228,28 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   first, builds on the node's database, and reports <em>unmeasured</em> -- never
   <em>ok</em> -- if it is ever built on another one. The update itself was fine:
   nothing needs to be restored.</li>
+<li><strong>Automations started by an alert died half-way and stayed "running".</strong>
+  The alert run is a short-lived process; the automation ran on one of its
+  background threads and was killed when the process exited (six recovery
+  runs stopped after 3 steps, and the stuck runs made later ones fail with
+  "you already have 2 app runs in progress"). The alert run now waits for
+  the automations it started. Automation and app runs whose worker stopped
+  are closed as <em>interrupted</em> in the lists, without anybody opening them.</li>
+<li><strong>A run waiting on a question of an app that was published again stayed
+  "waiting" forever.</strong> Its answer is refused (the diagram changed under it),
+  so nothing could close it. Such runs are now closed with the reason, and
+  a run of the draft or of the live version keeps waiting.</li>
+<li><strong>An SSH read could run far past its time limit.</strong> The limit was checked
+  only after a silent moment, so a device that kept printing held a 15 s
+  <code>get system status</code> for 18 minutes, and the read buffer grew with it.
+  Reads now stop at their limit, and at 8 MiB.</li>
+<li><strong>A <em>Console read</em> with <code>execute ping</code> always failed</strong> with "SSH did not
+  answer": the read-only path refused the probe its own gate allowed. It
+  now goes through the probe path.</li>
+<li><strong>Test Connection: a traceroute to an appliance kept by host name never
+  said "reached".</strong> The hops are printed as addresses and the name was
+  compared with them; the address traceroute resolved the name to is now
+  compared too.</li>
 </ul>
 <h2 id="41110---2026-11-07">[4.11.10] - 2026-11-07</h2>
 <h3 id="added_1">Added</h3>

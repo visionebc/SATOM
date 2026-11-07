@@ -2874,6 +2874,22 @@ against what the devices say.</p>
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
+  Since 4.11.11 (SA-0027) each LB match is a <strong>row</strong> of the results table
+  (the entry and its DNS answers span its matches): Gateway, Policy, <em>Service
+  IP / name</em> (the PTR name of the service IP, asked of every configured
+  resolver; a FortiWeb VIP's <code>/32</code> is dropped first), Backends with their
+  configured status, and <strong>Actions</strong> — <em>Show</em> (the whole match in a dialog:
+  every field, the full comment, the AppID facts, the backends, and <strong>Check
+  live health</strong>, which asks the FortiWeb for each backend's health-check
+  state and leaves an audit row), <em>Edit</em> (opens the policy) and <em>Delete</em>
+  (the decommission, preview first). Nothing long is drawn inline, so a long
+  comment no longer pushes the Entry column out of view. <strong>Show AppID
+  columns</strong> (Options) adds the AppID catalog's visible columns under the
+  names set on the AppIDs page; the AppID is the policy's <strong>binding</strong>, else
+  the one its comment names (Analysis › AppID pattern). <strong>Copy LB</strong> is the
+  full row per match — entry, every column, PTR name, backends with status,
+  the AppID facts and their source — with tabs and line breaks inside a
+  comment turned into spaces so a line never splits.
   The same tool also exists as <strong>three Plugin Studio apps</strong> — the plugins
   <code>dns-lb-lookup</code>, <code>dns-records</code> and <code>dns-decommission</code> (§23.7, <em>Plugins:
   DNS &amp; LB Lookup</em>), under <strong>Operations › Plugins</strong> once imported: the
@@ -6757,8 +6773,9 @@ nothing.</p>
   request per item, <code>{{ item }}</code> being that item — below) and <em>Run a script</em> (the
   published version of a Script Library script, with its form values), the
   <strong>runbook steps</strong> (<em>Ask a person</em>, <em>Load an appliance</em>, <em>HTTP check</em>, <em>TCP
-  check</em>, <em>Console read</em>, <em>Appliance fact</em>, <em>Collect diagnostics</em> — see
-  <em>Runbooks</em> below) and the <strong>SATOM steps</strong> below. Every step also has
+  check</em>, <em>Console read</em>, <em>Appliance fact</em>, <em>Collect diagnostics</em>, <em>Connection
+  test</em>, <em>Log in to the appliance</em>, <em>Power state (hypervisor)</em>, <em>Ping from the
+  appliance</em>, <em>Notify</em> — see <em>Runbooks</em> below) and the <strong>SATOM steps</strong> below. Every step also has
   <em>Instructions</em>, <em>Responsible</em> and <em>Estimated time</em>, shown on the run page. A step saves its result under a name (<em>Save the
   result as</em>). <strong>Analyze</strong> explains the diagram being edited: what each step
   saves and reads, where its error goes and which undo steps that path
@@ -7215,7 +7232,36 @@ activities of an appliance), as automatic as the steps allow:</p>
   diagnostics</em> runs the product's battery and saves the transcript (Diagnose
   › Log Collection). When SATOM <strong>could not look</strong> — SSH refused, no
   appliance, a target the guard refuses, a fact it does not know — the step
-  takes its <strong>error</strong> arrow, never <em>no</em>.</li>
+  takes its <strong>error</strong> arrow, never <em>no</em>. A <em>Console read</em> may also send the
+  one probe the product permits, <code>execute ping &lt;host&gt;</code>.</li>
+<li><strong>Checks that do the action</strong> (2026-11-07):</li>
+<li><em>Connection test</em>: Test Connection from this node, as on the Appliances
+    page — <em>api</em> (the REST status call with SATOM's stored account), <em>tcp</em>,
+    <em>ping</em> or <em>traceroute</em>. Save it (e.g. as <code>route</code>) and a question can show
+    <code>{{ route.summary }}</code> or <code>{{ route.output }}</code>. When the service user may
+    not send ICMP, or traceroute is not installed, it takes the error arrow
+    with the fix in the detail. Point that arrow at a <em>TCP check</em> or at the
+    question.</li>
+<li><em>Log in to the appliance</em>: logs in to the REST API with SATOM's stored
+    account, or with the account of a connection (Plugin Studio ›
+    Connections, HTTP with Basic auth — e.g. a remote RADIUS administrator).
+    <em>yes</em> = accepted, <em>no</em> = refused (HTTP 401). A refused account is not
+    tried again on that appliance for 10 minutes, because each refusal counts
+    towards the product's admin lockout. FortiGate and FortiAuthenticator log
+    in to their API with a token or API key, so a connection's account takes
+    the error arrow there. Not verified on a firmware build with a RADIUS
+    administrator.</li>
+<li><em>Power state (hypervisor)</em>: asks the hypervisor whether the device's VM is
+    running, through its Sentinel topology mapping. Hardware, or a VM without
+    a mapping, takes the error arrow.</li>
+<li><em>Ping from the appliance</em>: runs <code>execute ping &lt;target&gt;</code> ON the device
+    over SSH (e.g. its gateway or its FortiAuthenticator, <code>{{ form.gateway }}</code>).
+    The target must be one address or host name; an empty one takes the
+    error arrow.</li>
+<li><strong>Notify</strong> rings the administrators' bell and/or sends an e-mail (<em>E-mail
+  to</em>, <em>E-mail the alert recipients</em>). In a rehearsal only the bell of the
+  person running it rings, once per simulation, and the step lists who would
+  have been told. Nobody to notify takes the error arrow.</li>
 <li><strong>Ask a person</strong> stops the run: it shows <strong>waiting</strong>, and the run page
   shows the question, the step's instructions, who is responsible and the
   time, with the step's own buttons (<em>Ja</em> / <em>Nein</em>, or one button such as
@@ -7230,12 +7276,28 @@ activities of an appliance), as automatic as the steps allow:</p>
   policy name). SATOM checks all three when the answer arrives, not only in
   the browser. The answer is saved as
   <code>{{ last_answer }}</code>: <code>answer</code>, <code>acknowledged</code> (the ticked texts),
-  <code>all_acknowledged</code>, <code>by</code> and <code>note</code>.</li>
+  <code>all_acknowledged</code>, <code>by</code> and <code>note</code>. <strong>Link (a SATOM page)</strong> — a path on
+  this SATOM such as <code>/appliances/{{ appliance.id }}/restore</code> — adds a button
+  (text: <strong>Link button</strong>) that opens that page in a new tab; a link to another
+  site is not shown and the question says why. A run left waiting on a version
+  the app has since replaced cannot be answered any more, so SATOM closes it
+  with that reason.</li>
 <li><strong>Simulate</strong> (Diagram tab) walks the saved draft end to end as a
   rehearsal: nothing is written to a device, the checks really look (they
   only read), each question stops in the panel for your answer — or tick
   <em>Answer Yes to every question</em> — and the path is coloured on the diagram
-  as it is walked.</li>
+  as it is walked. One simulation follows ONE path.</li>
+<li><strong>Cover every branch</strong> (same panel) plans the scenarios that together take
+  <strong>every arrow</strong> of the diagram — yes, no and error, loops included — and
+  walks them one after the other as rehearsals. In each one every check
+  really looks and keeps what it found (<em>really</em>); the scenario only picks the
+  arrow, and it answers the questions itself. A table then lists every step
+  (how often it was walked, what it answered, what the check really found)
+  and any arrow never taken; steps never walked are coloured on the diagram.
+  A scenario is accepted only in a rehearsal.</li>
+<li>An automation that starts a runbook (a trigger on an alert) waits for it
+  before the alert run ends. A run whose worker stopped is shown as
+  <em>interrupted</em> in the lists, without anybody having to open it.</li>
 </ul>
 <h3 id="238-examples">23.8 Examples</h3>
 <p><strong>Plugin Studio → Examples</strong> installs working examples of every Studio piece
@@ -13080,7 +13142,7 @@ in place. Everything the change's own page shows is on the flow, as stage 3:</p>
 </tr>
 <tr>
 <td><strong>Affected services</strong></td>
-<td>The <strong>frozen</strong> inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking <code>.xlsx</code> / <code>.csv</code> export.</td>
+<td>The <strong>frozen</strong> inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking <code>.xlsx</code> / <code>.csv</code> export. Since 4.11.11 (SA-0027) each policy also shows the AppID it is <strong>bound</strong> to and the catalog's visible columns — the catalog's answer now, labelled so; the frozen rows are not changed. The export offers <em>AppID (catalog now)</em> and <em>AppID customer (catalog now)</em>.</td>
 </tr>
 <tr>
 <td><strong>External change record</strong></td>

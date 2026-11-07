@@ -7568,7 +7568,27 @@ never returned to the browser (the page only tells you whether one is set). The
 scheduled action <strong><code>appid_import</code></strong> (§15) fetches that URL, applies the saved
 mapping and imports additively. With no source configured the nightly reports
 "no source configured" rather than pretending it ran.</p>
-<p><strong>Assignment.</strong> Assign an AppID to a Server Policy by picking the device and the
+<p><strong>The catalog table.</strong> Every column has a filter (Source and Status a list) and
+sorts when you click its header. <strong>Columns</strong> shows or hides columns -- extra
+import fields included, AppID always shown -- and renames them (for example
+<em>Department</em> instead of <em>Customer</em>); the names are kept in the database for
+every administrator and used in the add and mapping forms too. Tick AppIDs and
+<strong>Delete selected</strong> removes them with their bindings, after a confirmation.</p>
+<p><strong>Re-import review.</strong> Before an upload is imported, SATOM compares it with the
+catalog: AppIDs that already exist with <strong>different</strong> data are listed field by
+field (now / in the file) and you accept each change, all of them, or none;
+AppIDs repeated in the file are named (the last row counts). An AppID that
+comes with the same data is not touched and is counted as <em>unchanged</em>; one
+whose change you refuse keeps its data and is still counted as present (it
+does not turn stale). The nightly action has nobody to ask and applies every
+change.</p>
+<p><strong>Bindings from the policy comment.</strong> On <strong>Assign policies</strong>, <strong>Read comments</strong>
+lists every FortiWeb server policy (SATOM's local copy, no device call) with the
+AppID its comment names -- the Analysis <strong>App ID pattern</strong>, <code>app\d{5}</code> by
+default -- the AppID saved today and a state (new, different, saved, not in
+catalog, no AppID). New matches start ticked; change any row's AppID and
+<strong>Save selected</strong>. The comment is only read; the binding remains the authority.</p>
+<p><strong>Assignment by hand.</strong> Assign an AppID to a Server Policy by picking the device and the
 policy name. The binding is unique per <code>(appliance, server policy)</code>, so a policy
 belongs to exactly <strong>one</strong> AppID; assigning a second one replaces the first
 rather than double-billing. Unassign is a separate action. Deleting an AppID also

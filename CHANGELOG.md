@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.10] - 2026-11-07
+
 ### Added
 - **AppIDs: a catalog table you can work with (FA-0014).** Requested:
   filters for every field, several AppIDs selected and deleted at once,

@@ -29162,3 +29162,383 @@ msgstr "El SDK, un ejemplo completo y respuestas simuladas: escribe y ejecuta un
 
 msgid "Developer kit"
 msgstr "Kit de desarrollo"
+
+# 2026-11-07: Web Server Manager, device scope, Plugin Studio folders and bundles
+msgid "%(n)d credential(s)"
+msgstr "%(n)d credencial(es)"
+
+msgid "%(n)s selected"
+msgstr "%(n)s seleccionados"
+
+msgid "+ New folder…"
+msgstr "+ Nueva carpeta…"
+
+msgid "A cluster member follows its cluster:"
+msgstr "Un miembro del clúster sigue a su clúster:"
+
+msgid "A folder is a submenu of Plugins. Put an app in one from its Settings, from Set folder in Apps, when you create it, or when you import a bundle."
+msgstr "Una carpeta es un submenú de Plugins. Pon una app en ella desde su configuración, desde Asignar carpeta en Apps, al crearla o al importar un paquete múltiple."
+
+msgid "A package never carries secrets. Type the password or token of each connection this import creates; it is stored on this server only (vault, or encrypted in the database). Leave a box empty to set it later in Plugin Studio › Connections."
+msgstr "Un paquete nunca lleva secretos. Escribe la contraseña o el token de cada conexión que crea esta importación; se guarda solo en este servidor (bóveda o cifrado en la base de datos). Deja un campo vacío para configurarlo después en Plugin Studio › Connections."
+
+msgid "ADOMs every app of the folder is drawn in (on top of its own)"
+msgstr "ADOMs en los que se muestra cada app de la carpeta (además de los suyos)"
+
+msgid "ADOMs it gives"
+msgstr "ADOMs que concede"
+
+msgid "API (HTTPS)"
+msgstr "API (HTTPS)"
+
+msgid "Add a server"
+msgstr "Añadir un servidor"
+
+msgid "Administrator (root via sudo)"
+msgstr "Administrador (root vía sudo)"
+
+msgid "Advanced mode"
+msgstr "Modo avanzado"
+
+msgid "Allow changes"
+msgstr "Permitir cambios"
+
+msgid "Allow changes (off = SATOM only reads this server)"
+msgstr "Permitir cambios (desactivado = SATOM solo lee este servidor)"
+
+msgid "An app package (the app, its data stores, its connections without secrets and its API versions), or a bundle of several packages (.satombundle, or a .zip of .satomplugin files): each one is checked and shown before anything is installed"
+msgstr "Un paquete de app (la app, sus almacenes de datos, sus conexiones sin secretos y sus versiones de API) o un paquete múltiple (.satombundle, o un .zip de archivos .satomplugin): cada uno se comprueba y se muestra antes de instalar nada"
+
+msgid "An app still needs to be published and enabled to appear. Plugin Studio authors always see every app."
+msgstr "Una app aún debe publicarse y activarse para aparecer. Los autores de Plugin Studio siempre ven todas las apps."
+
+msgid "An app that already exists here keeps its folder. The folder decides the Plugins submenu and can hand its apps to ADOMs and user groups (Plugin Studio › Folders)."
+msgstr "Una app que ya existe aquí conserva su carpeta. La carpeta decide el submenú de Plugins y puede dar sus apps a ADOMs y grupos de usuarios (Plugin Studio › Folders)."
+
+msgid "Applies to every member of this cluster."
+msgstr "Se aplica a todos los miembros de este clúster."
+
+msgid "Applies to every member of this cluster. Turning it off needs the password every member stores."
+msgstr "Se aplica a todos los miembros de este clúster. Desactivarlo requiere la contraseña que guarda cada miembro."
+
+msgid "Authentication needed"
+msgstr "Se necesita autenticación"
+
+msgid "Automatic (my account, sudo when needed)"
+msgstr "Automático (mi cuenta, sudo cuando haga falta)"
+
+msgid "Automatic: if the server says “permission denied”, SATOM repeats it with sudo — with your account password, a separate sudo password, or a NOPASSWD rule, as set on the credential."
+msgstr "Automático: si el servidor responde “permiso denegado”, SATOM lo repite con sudo — con la contraseña de tu cuenta, una contraseña de sudo aparte o una regla NOPASSWD, según la credencial."
+
+msgid "Bundle “%(name)s”: %(n)d plugin(s) installed%(list)s."
+msgstr "Paquete múltiple “%(name)s”: %(n)d plugin(s) instalado(s)%(list)s."
+
+msgid "Check access"
+msgstr "Comprobar acceso"
+
+msgid "Check what each package of this bundle does before it is installed. Nothing has been written yet."
+msgstr "Revisa qué hace cada paquete de este paquete múltiple antes de instalarlo. Aún no se ha escrito nada."
+
+msgid "Choose a .satomplugin or .satombundle file to import."
+msgstr "Elige un archivo .satomplugin o .satombundle para importar."
+
+msgid "Confirm"
+msgstr "Confirmar"
+
+msgid "Continue"
+msgstr "Continuar"
+
+msgid "Days"
+msgstr "Días"
+
+msgid "Delete the folder: its apps stay, with no folder"
+msgstr "Eliminar la carpeta: sus apps se quedan, sin carpeta"
+
+msgid "Download a folder as a bundle: its flow apps in one .satombundle that another SATOM installs in one go (Apps > Import package or bundle)."
+msgstr "Descargar una carpeta como paquete múltiple: sus apps de flujo en un .satombundle que otro SATOM instala de una vez (Apps > Import package or bundle)."
+
+msgid "Download its flow apps as one bundle (.satombundle)"
+msgstr "Descargar sus apps de flujo como un paquete múltiple (.satombundle)"
+
+msgid "Each credential is an SSH account on this server. Yours are private; a shared one is a service credential others may use. SATOM keeps the password or key encrypted (vault or Fernet) and never shows it again, or asks for it at every operation if you prefer."
+msgstr "Cada credencial es una cuenta SSH en este servidor. Las tuyas son privadas; una compartida es una credencial de servicio que otros pueden usar. SATOM guarda la contraseña o la clave cifrada (bóveda o Fernet) y no la vuelve a mostrar, o la pide en cada operación si lo prefieres."
+
+msgid "Edit: name, ADOMs and user groups"
+msgstr "Editar: nombre, ADOMs y grupos de usuarios"
+
+msgid "Every connection compares the key the server presents with this one before sending any password or key. A different key is refused."
+msgstr "Cada conexión compara la clave que presenta el servidor con esta antes de enviar contraseña o clave alguna. Una clave distinta se rechaza."
+
+msgid "Every folder"
+msgstr "Todas las carpetas"
+
+msgid "Every operation is logged with your SATOM user, the SSH user, the Linux user that ran it and whether sudo was used."
+msgstr "Cada operación se registra con tu usuario de SATOM, el usuario SSH, el usuario Linux que la ejecutó y si se usó sudo."
+
+msgid "Every operation runs as the SSH account of the credential you pick."
+msgstr "Cada operación se ejecuta como la cuenta SSH de la credencial que elijas."
+
+msgid "Every operation the Web Server Manager ran, allowed or refused."
+msgstr "Cada operación que ejecutó el Web Server Manager, permitida o rechazada."
+
+msgid "File the apps this import creates under"
+msgstr "Guardar las apps que crea esta importación en"
+
+msgid "Filed under folder %(folder)s: %(apps)s."
+msgstr "Guardadas en la carpeta %(folder)s: %(apps)s."
+
+msgid "Folders"
+msgstr "Carpetas"
+
+msgid "Full log"
+msgstr "Registro completo"
+
+msgid "Full package instead"
+msgstr "Paquete completo en su lugar"
+
+msgid "Give a whole folder to ADOMs and user groups: every app in it is drawn in those ADOMs and usable by those groups, on top of what each app grants itself. Script apps keep their audience for console accounts; the groups apply to Apps-only accounts."
+msgstr "Da una carpeta entera a ADOMs y grupos de usuarios: cada app de ella se muestra en esos ADOMs y la pueden usar esos grupos, además de lo que cada app concede. Las apps de script conservan su audiencia para cuentas de consola; los grupos se aplican a las cuentas solo de apps."
+
+msgid "Given by its folder"
+msgstr "Concedido por su carpeta"
+
+msgid "Host name or address"
+msgstr "Nombre de host o dirección"
+
+msgid "How privileges work"
+msgstr "Cómo funcionan los privilegios"
+
+msgid "How to test, from this SATOM server"
+msgstr "Cómo probar, desde este servidor SATOM"
+
+msgid "Import package or bundle"
+msgstr "Importar paquete o paquete múltiple"
+
+msgid "Import plugin bundle"
+msgstr "Importar paquete múltiple de plugins"
+
+msgid "Install %(n)d plugin(s)"
+msgstr "Instalar %(n)d plugin(s)"
+
+msgid "Its folder also gives it"
+msgstr "Su carpeta también le da"
+
+msgid "Keeps"
+msgstr "Conserva"
+
+msgid "Key passphrase (if it has one)"
+msgstr "Frase de paso de la clave (si tiene)"
+
+msgid "Last operation (advanced)"
+msgstr "Última operación (avanzado)"
+
+msgid "Manage Linux web servers over SSH with your own account: files, websites, certificates, security, scripts, scheduled tasks, packages, services, logs, users and SSH. When your account is not allowed to do something, SATOM uses sudo the way you set it on your credential."
+msgstr "Administra servidores web Linux por SSH con tu propia cuenta: archivos, sitios web, certificados, seguridad, scripts, tareas programadas, paquetes, servicios, registros, usuarios y SSH. Cuando tu cuenta no puede hacer algo, SATOM usa sudo como lo configuraste en tu credencial."
+
+msgid "Manage folders"
+msgstr "Gestionar carpetas"
+
+msgid "My account only"
+msgstr "Solo mi cuenta"
+
+msgid "Narrow each ADOM to some of its devices. In an ADOM with no device ticked the profile reaches all of them. Under a device, tick partitions (ADOMs of a FortiWeb or FortiADC, VDOMs of a FortiGate) to reach only those; with none ticked it reaches all of them, also the ones added later. With only some partitions, firmware, the backup vault and the console of that device are not available. The permissions above are the same on every device; this only decides where."
+msgstr "Limita cada ADOM a algunos de sus equipos. En un ADOM sin ningún equipo marcado, el perfil los alcanza todos. Bajo un equipo, marca particiones (ADOMs de un FortiWeb o FortiADC, VDOMs de un FortiGate) para alcanzar solo esas; sin ninguna marcada las alcanza todas, también las que se añadan después. Con solo algunas particiones, el firmware, la bóveda de copias y la consola de ese equipo no están disponibles. Los permisos de arriba son los mismos en todos los equipos; esto solo decide dónde."
+
+msgid "New folder name"
+msgstr "Nombre de la nueva carpeta"
+
+msgid "No device registered."
+msgstr "Ningún equipo registrado."
+
+msgid "No folder"
+msgstr "Sin carpeta"
+
+msgid "No folders yet. Make one here, or pick + New folder where an app asks for its folder."
+msgstr "Aún no hay carpetas. Crea una aquí o elige + Nueva carpeta donde una app pida su carpeta."
+
+msgid "No operations in this window."
+msgstr "No hay operaciones en este intervalo."
+
+msgid "No server yet. Add one, trust its host key, then add your SSH account."
+msgstr "Aún no hay servidores. Añade uno, confía en su clave de host y luego añade tu cuenta SSH."
+
+msgid "No user groups yet."
+msgstr "Aún no hay grupos de usuarios."
+
+msgid "Not installed: %(file)s — %(why)s"
+msgstr "No instalado: %(file)s — %(why)s"
+
+msgid "Operation starts with"
+msgstr "La operación empieza por"
+
+msgid "Operations log"
+msgstr "Registro de operaciones"
+
+msgid "Pick a credential above and press Check access: SATOM signs in, tells you who you are, and tries sudo when your credential uses it."
+msgstr "Elige una credencial arriba y pulsa Comprobar acceso: SATOM inicia sesión, te dice quién eres y prueba sudo cuando tu credencial lo usa."
+
+msgid "Pick a folder or make a new one. The apps of a folder are a submenu of Plugins and get the ADOMs and user groups the folder hands out (Folders); no folder = a plain entry of Plugins."
+msgstr "Elige una carpeta o crea una nueva. Las apps de una carpeta son un submenú de Plugins y reciben los ADOMs y grupos de usuarios que concede la carpeta (Folders); sin carpeta = una entrada simple de Plugins."
+
+msgid "Ping"
+msgstr "Ping"
+
+msgid "Please confirm"
+msgstr "Confirma, por favor"
+
+msgid "Ran as"
+msgstr "Ejecutado como"
+
+msgid "Remember in this browser tab until I leave the page (never stored by SATOM)"
+msgstr "Recordar en esta pestaña hasta que salga de la página (SATOM nunca lo guarda)"
+
+msgid "Renaming moves its apps with it."
+msgstr "Al renombrarla, sus apps se mueven con ella."
+
+msgid "Run as"
+msgstr "Ejecutar como"
+
+msgid "Runs on the SATOM server itself, not on an appliance."
+msgstr "Se ejecuta en el propio servidor SATOM, no en un appliance."
+
+msgid "SATOM has not trusted this server yet: nothing is sent to it until you do. Compare the fingerprint with the server (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub) after trusting it."
+msgstr "SATOM aún no confía en este servidor: no se le envía nada hasta que lo hagas. Compara la huella con el servidor (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub) después de confiar en ella."
+
+msgid "SATOM never connects to itself or to its HA peer, and a server added here can never open a connection to SATOM (hostguard)."
+msgstr "SATOM nunca se conecta a sí mismo ni a su par de HA, y un servidor añadido aquí nunca puede abrir una conexión a SATOM (hostguard)."
+
+msgid "SATOM never edits /etc/sudoers and never stores a root password. Running as root needs the “Run as root” permission in your SATOM profile."
+msgstr "SATOM nunca edita /etc/sudoers ni guarda una contraseña de root. Ejecutar como root requiere el permiso “Run as root” en tu perfil de SATOM."
+
+msgid "SATOM user"
+msgstr "Usuario de SATOM"
+
+msgid "Servers"
+msgstr "Servidores"
+
+msgid "Session"
+msgstr "Sesión"
+
+msgid "Set folder"
+msgstr "Asignar carpeta"
+
+msgid "Show the apps of one folder"
+msgstr "Mostrar las apps de una carpeta"
+
+msgid "Showing the latest %(n)d of %(total)d runs."
+msgstr "Mostrando las últimas %(n)d de %(total)d ejecuciones."
+
+msgid "Sign in as"
+msgstr "Iniciar sesión como"
+
+msgid "TCP port (telnet)"
+msgstr "Puerto TCP (telnet)"
+
+msgid "TLS certificate name"
+msgstr "Nombre del certificado TLS"
+
+msgid "Test method"
+msgstr "Método de prueba"
+
+msgid "Test this node with the method picked above"
+msgstr "Probar este nodo con el método elegido arriba"
+
+msgid "The Plugins submenu it goes in; the folder's ADOMs and user groups apply to it once it is published."
+msgstr "El submenú de Plugins en el que va; los ADOMs y grupos de usuarios de la carpeta se le aplican una vez publicada."
+
+msgid "The bundle itself is not signed: each package keeps its own signature and goes through the same rules as when it is imported alone. A refused package is skipped; the others are installed."
+msgstr "El paquete múltiple en sí no está firmado: cada paquete conserva su propia firma y pasa por las mismas reglas que al importarlo solo. Un paquete rechazado se omite; los demás se instalan."
+
+msgid "The folder each package names"
+msgstr "La carpeta que indica cada paquete"
+
+msgid "The folder: the submenu of Plugins the app is drawn in, and the ADOMs and user groups the folder hands to its apps"
+msgstr "La carpeta: el submenú de Plugins en el que se muestra la app, y los ADOMs y grupos de usuarios que la carpeta da a sus apps"
+
+msgid "The full package applies to any supported version. Use it when the preflight refuses the delta."
+msgstr "El paquete completo se aplica a cualquier versión soportada. Úsalo cuando la comprobación previa rechace el delta."
+
+msgid "The name the certificate is checked against when it does not name the address SATOM connects to — e.g. an HA pair presents one synced certificate for the cluster name, not each member IP (\"IP address mismatch\"). The chain is still verified against the trust store."
+msgstr "El nombre con el que se comprueba el certificado cuando no indica la dirección a la que se conecta SATOM — p. ej., un par HA presenta un único certificado sincronizado para el nombre del clúster, no para la IP de cada miembro (\"IP address mismatch\"). La cadena se sigue verificando contra el almacén de confianza."
+
+msgid "The submenu of Plugins it is drawn in; no folder = a plain entry of Plugins. Pick + New folder to make one now (it is made when you save)."
+msgstr "El submenú de Plugins en el que se muestra; sin carpeta = una entrada simple de Plugins. Elige + Nueva carpeta para crear una ahora (se crea al guardar)."
+
+msgid "Time limit per operation (seconds)"
+msgstr "Tiempo máximo por operación (segundos)"
+
+msgid "To do: %(todo)s."
+msgstr "Pendiente: %(todo)s."
+
+msgid "Traceroute"
+msgstr "Traceroute"
+
+msgid "Turn on Allow changes on the server page"
+msgstr "Activa Permitir cambios en la página del servidor"
+
+msgid "Up to 48 letters, digits, spaces and . & ( ) + , ' - (it starts with a letter or a digit)"
+msgstr "Hasta 48 letras, dígitos, espacios y . & ( ) + , ' - (empieza por una letra o un dígito)"
+
+msgid "User (SATOM, SSH or Linux)"
+msgstr "Usuario (SATOM, SSH o Linux)"
+
+msgid "User groups it gives"
+msgstr "Grupos de usuarios que concede"
+
+msgid "User groups that may use every app of the folder (on top of its own access list)"
+msgstr "Grupos de usuarios que pueden usar cada app de la carpeta (además de su propia lista de acceso)"
+
+msgid "Web Server Manager"
+msgstr "Web Server Manager"
+
+msgid "What you can manage"
+msgstr "Qué puedes administrar"
+
+msgid "Who am I on this server?"
+msgstr "¿Quién soy en este servidor?"
+
+msgid "You see your own operations (reading everyone's needs View audit log)."
+msgstr "Ves tus propias operaciones (leer las de todos requiere Ver registro de auditoría)."
+
+msgid "all devices"
+msgstr "todos los equipos"
+
+msgid "applies to every member"
+msgstr "se aplica a todos los miembros"
+
+msgid "changes allowed"
+msgstr "cambios permitidos"
+
+msgid "empty = the host"
+msgstr "vacío = el host"
+
+msgid "host key not trusted"
+msgstr "clave de host no confiable"
+
+msgid "host key trusted"
+msgstr "clave de host confiable"
+
+msgid "plugin(s)"
+msgstr "plugin(s)"
+
+msgid "refused"
+msgstr "rechazado"
+
+msgid "set on cluster %(name)s"
+msgstr "configurado en el clúster %(name)s"
+
+msgid "sudo password"
+msgstr "contraseña de sudo"
+
+msgid "target"
+msgstr "destino"
+
+msgid "targets"
+msgstr "destinos"
+
+msgid "user group(s)"
+msgstr "grupo(s) de usuarios"
+
+msgid "OpenSSH or PEM private key"
+msgstr "Clave privada OpenSSH o PEM"
+

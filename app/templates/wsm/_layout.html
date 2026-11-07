@@ -57,7 +57,7 @@
       <p id="wsm-secret-why" class="mb-2"></p>
       <div id="wsm-secret-f-secret"><label class="fw-form-label" for="wsm-secret-secret" id="wsm-secret-label">{{ _('Password') }}</label>
         <input type="password" class="form-control mb-2" id="wsm-secret-secret" autocomplete="off">
-        <textarea class="form-control mb-2 wsm-mono d-none" id="wsm-secret-key" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" autocomplete="off"></textarea></div>
+        <textarea class="form-control mb-2 wsm-mono d-none" id="wsm-secret-key" rows="5" placeholder="{{ _('OpenSSH or PEM private key') }}" autocomplete="off"></textarea></div>
       <div id="wsm-secret-f-passphrase"><label class="fw-form-label" for="wsm-secret-passphrase">{{ _('Key passphrase (if it has one)') }}</label>
         <input type="password" class="form-control mb-2" id="wsm-secret-passphrase" autocomplete="off"></div>
       <div id="wsm-secret-f-sudo"><label class="fw-form-label" for="wsm-secret-sudo">{{ _('sudo password') }}</label>

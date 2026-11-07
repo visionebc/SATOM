@@ -338,7 +338,8 @@
   });
   document.getElementById('notifBackdrop').addEventListener('click', closePanel);
   document.querySelector('[data-js="notif-close"]').addEventListener('click', closePanel);
-  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closePanel(); });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closePanel(); },
+    { signal: window.fwPageSignal ? window.fwPageSignal() : undefined });
   document.querySelector('[data-js="notif-refresh"]').addEventListener('click', function () { window.location.reload(); });
   document.querySelectorAll('#notifFilters [data-js="autosubmit"]').forEach(function (s) {
     s.addEventListener('change', function () { this.form.submit(); });

@@ -253,6 +253,9 @@ ACTION_CAPABILITY = {
     # admin non-destructive maintenance
     "backup": "maintenance",
     "device_sync": "maintenance",
+    # the Web Server Manager's scheduled scripts (2026-11-06): housekeeping like
+    # device_sync -- running them early runs what the schedules already say
+    "wsm_schedules": "maintenance",
     "device_inspect": "maintenance",
     "deep_capture": "maintenance",
     "signature_sync": "maintenance",

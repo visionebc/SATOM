@@ -22,7 +22,7 @@ def real_client_ip() -> str:
     TWO proxies in a row (fleet edge -> local nginx) append two hops:
     ``<client>, <edge>``. Taking only the last one logged every sign-in through
     the edge as the edge -- one rate-limit bucket and one audit address for
-    every operator (found 2026-11-04: 67 ``login`` rows from 192.0.2.40). So
+    every operator (found 2026-11-04: 67 ``login`` rows from the edge's address). So
     the walk goes right to left past every hop that is itself a trusted proxy,
     like nginx ``real_ip_recursive``: each of those was appended by a proxy we
     trust, and the first untrusted one is the client. Anything to its left is

@@ -485,6 +485,13 @@ PAGES: tuple[dict, ...] = (
        "compare difference drift source destination policy pool "
        "certificate content routing web protection profile package",
        "Everything behind a service on both boxes, subtracted."),
+    _p("wsm.index", "Web Server Manager", "automation",
+       "linux web server ssh vhost nginx apache files certificates packages services cron "
+       "sudo credentials hosting cpanel",
+       "Linux web servers over SSH with your own account (Linux ADOM)."),
+    _p("wsm.audit", "Web Server Manager operations log", "automation",
+       "web server manager audit operations ssh user sudo linux log csv",
+       "Every operation the Web Server Manager ran, with the three identities."),
     _p("jobs.manager", "Job Manager", "automation",
        "job queue running task progress history background worker",
        "Everything SATOM is doing or has done, with its result."),
@@ -681,6 +688,10 @@ EXCLUDED: dict[str, str] = {
     "database.py_console_page": "old URL; redirects to studio.index (Console)",
     "database.legacy_scripts": "old /database/scripts URLs; redirect to /studio/scripts",
     "script_library.index": "redirects to studio.index (the Scripts pane)",
+    "notifications.export_csv": "csv download of notifications.index",
+    "notifications.guide_page": "help page of notifications.index",
+    "observability_lab.proxy": "proxy for the lab's embedded tools",
+    "script_library.kit": "zip download (developer kit)",
     "settings.update_sources_state": "json feed",
     "factory_catalog.compare": "detail page of factory_catalog.index",
     # JSON feeds consumed by a page's own JS.

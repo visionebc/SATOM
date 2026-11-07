@@ -289,7 +289,7 @@
       f.user = input({ value: c.ssh_user || '', maxlength: 32, placeholder: 'eric' });
       f.auth = select([['password', 'Password'], ['key', 'SSH private key']], c.auth_type);
       f.secret = input({ type: 'password', autocomplete: 'new-password', placeholder: c.id && c.has_secret ? '(unchanged — type to replace)' : '' });
-      f.key = el('textarea', { cls: 'form-control form-control-sm wsm-mono', rows: 5, placeholder: c.id && c.has_secret ? '(unchanged — paste to replace)' : '-----BEGIN OPENSSH PRIVATE KEY-----' });
+      f.key = el('textarea', { cls: 'form-control form-control-sm wsm-mono', rows: 5, placeholder: c.id && c.has_secret ? '(unchanged — paste to replace)' : 'OpenSSH or PEM private key (BEGIN … PRIVATE KEY)' });
       f.gen = check('Generate a new key pair in SATOM (you add the public key to the server)', false);
       f.pass = input({ type: 'password', autocomplete: 'new-password', placeholder: 'only if the key has one' });
       f.store = check('SATOM keeps the secret (needed for scheduled jobs); untick to be asked at every operation', c.store_secret);
@@ -715,7 +715,7 @@
     }
     function importCert() {
       var n = input({ placeholder: 'example-com' }), cert = el('textarea', { cls: 'form-control wsm-mono', rows: 6, placeholder: '-----BEGIN CERTIFICATE-----' }),
-        key = el('textarea', { cls: 'form-control wsm-mono', rows: 5, placeholder: '-----BEGIN PRIVATE KEY-----', autocomplete: 'off' }), chain = el('textarea', { cls: 'form-control wsm-mono', rows: 4, placeholder: 'intermediate CA certificates (optional)' });
+        key = el('textarea', { cls: 'form-control wsm-mono', rows: 5, placeholder: 'PEM private key (BEGIN … PRIVATE KEY)', autocomplete: 'off' }), chain = el('textarea', { cls: 'form-control wsm-mono', rows: 4, placeholder: 'intermediate CA certificates (optional)' });
       dialog('Import an existing certificate', el('div', {}, [el('p', { cls: 'wsm-small text-muted', text: 'The private key goes straight to the server (0600, root only). SATOM checks it matches the certificate, never stores it, never logs it and never shows it again.' }),
         field('Name', n), field('Certificate', cert), field('Private key', key), field('CA chain', chain)]), [btn('Import', 'bi-upload', 'btn-fw-primary', function () {
         if (!needWrites()) return; api('cert.import', { name: n.value, certificate: cert.value, private_key: key.value, chain: chain.value }, { runAs: 'root' }).then(function (r) { key.value = ''; modal('wsm-dialog').hide(); flash('ok', 'Imported ' + r.name + ' (' + r.days_left + ' days).'); load(); }).catch(fail);

@@ -166,6 +166,7 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#45-upgrading-to-30">Upgrading to 3.0</a></li>
 <li><a href="#46-wiki-articles-the-team-writes-for-itself">Wiki: articles the team writes for itself</a></li>
 <li><a href="#47-the-manual-on-the-node-manual">The manual on the node: /manual/</a></li>
+<li><a href="#48-web-server-manager-linux-adom">Web Server Manager (Linux ADOM)</a></li>
 </ol>
 <hr>
 <h2 id="1-signing-in--accounts">1. Signing in &amp; accounts</h2>
@@ -4606,7 +4607,9 @@ report. Registration and the details:
 <h2 id="18-api-tokens">18. API tokens</h2>
 <p>Administrators issue bearer tokens (API Tokens section) for the <code>/api/v1</code>
 integration surface. Scope model: <code>read ⊂ write ⊂ admin</code>, capped by the
-owner's own role, bound to one product (ADOM). The plaintext token is shown
+owner's own role, bound to one product (ADOM). A token never reaches more
+devices than its <strong>owner's profile</strong>: the owner's ADOMs and device scope
+(§26.3) apply to every call. The plaintext token is shown
 <strong>once</strong> at creation. The API is read-biased: a token can trigger
 pre-created scheduled actions, author WAF carve-outs and FortiADC rules from
 a curated allow-list, and — with the <code>template_draft</code> / <code>template_apply</code>
@@ -8256,6 +8259,27 @@ profile, and cannot edit the profile they are assigned to. You may move
 yourself to a narrower profile, never a wider one. The same holds for ADOMs: a
 confined administrator composes and assigns profiles only within its own ADOMs
 and can never create or assign an unconfined one.</p>
+<p><strong>Devices.</strong> Inside its ADOMs a profile can be narrowed further in the
+<strong>Devices</strong> card: tick, per ADOM, the devices it reaches (no device ticked =
+every device of that ADOM). Under a device, tick partitions — the ADOMs of a
+FortiWeb or FortiADC, the VDOMs of a FortiGate — to reach only those; with no
+partition ticked it reaches all of them, also the ones registered later. The
+permissions are the same on every device of the scope: the card only decides
+where. The scope only narrows — a device of an ADOM the profile does not have
+is never reached — and it applies everywhere the ADOMs apply: device lists
+and pages (another device answers <em>not found</em>), the Global dashboard, jobs
+(the Job manager shows a job only when every device it names is reached),
+change requests, upgrade windows, metrics, Sentinel, Architecture, the bell
+(a notice about a device goes to who reaches it) and API tokens (a token
+carries its owner's ADOMs and devices). With only some partitions of a box,
+<strong>firmware, the backup vault and the console</strong> of that box are not available
+(they act on every partition). A job remembers, when it is started, the
+devices its user reaches: if it meets another one it stops there with <em>…
+is outside the devices … may reach</em> — a step in the job and an audit line
+(<code>job.device_refused</code>). Scheduled actions are not started by a person and
+keep acting on the whole fleet. A confined administrator cannot grant a
+device they do not reach. In the Linux ADOM the card lists the Web Server
+Manager's servers and sites (§48.8).</p>
 <h3 id="263b-apps-only-access--an-app-for-people-outside-the-console">26.3b Apps-only access — an app for people outside the console</h3>
 <p>Some Plugin Studio apps are meant for people who are not SATOM operators: a
 help desk that looks something up, a team that requests a change. They should
@@ -9076,9 +9100,9 @@ title, tagline, description, sort order, an uploaded logo, a default banner, an
 <strong>active</strong> flag, a <strong>placeholder</strong> flag (a workspace that is listed but has no
 product pages behind it yet; its sidebar still draws the menu every ADOM
 shares — Operations, Plugin Studio, Administrator — without the entries that
-need a device of its own kind), and five <strong>capability</strong> switches — banner, API
-tokens, firmware, naming and regex — which decide which shared features that
-workspace offers.</p>
+need a device of its own kind), and six <strong>capability</strong> switches — banner, API
+tokens, firmware, naming, regex and <strong>Web Server Manager</strong> (§48.7) — which
+decide which shared features that workspace offers.</p>
 <p><strong><code>global</code>, <code>fortiweb</code> and <code>fortiadc</code> cannot be deleted</strong>; their keys are wired
 into URL scoping and deleting them would orphan data. Deactivate them instead.
 Everything else is fully deletable.</p>
@@ -14325,12 +14349,19 @@ installation, or the public site being down.</p>
 <li>It is on the Concept Map (§39) as <strong>Documentation Center</strong>.</li>
 </ul>
 <h2 id="48-web-server-manager-linux-adom">48. Web Server Manager (Linux ADOM)</h2>
-<p><strong>Linux › Web Server Manager</strong> administers Linux web servers over SSH <strong>with
+<p>The <strong>Web Server Manager</strong> administers Linux web servers over SSH <strong>with
 your own account</strong>: files, websites, certificates, security, <code>.htaccess</code>,
 scripts, scheduled tasks, packages, services, logs, users and the SSH server.
-It replaces the <em>Web hosts</em> example apps of Plugin Studio (they are switched
-off; the example bundle can still be installed as a demonstration of the
-server step).</p>
+The <em>Web hosts</em> example apps of Plugin Studio stay in the Linux ADOM's
+Plugins next to it: they do the virtual hosts, files and certificates of a
+server through the restricted <code>satom-webctl</code> agent, and the server connection
+they use is also a server of the manager.</p>
+<p>It is a basic element of the Linux ADOM: <strong>Linux › Web Server Manager</strong> in
+the menu (servers, then the modules of the open server, and the Operations
+log). An administrator switches it on or off per ADOM (§48.7), and a profile
+can be narrowed to some servers, or to some sites of a server (§48.8). The
+same operations are also signed plugins, for automations and other apps
+(§48.6).</p>
 <h3 id="481-servers-and-credentials">48.1 Servers and credentials</h3>
 <ol>
 <li><strong>Add server</strong>: a name, the host and the SSH port. SATOM never connects to
@@ -14480,6 +14511,58 @@ openSUSE 15, RHEL 9 / Rocky / AlmaLinux — the distributions SATOM itself is
 deployed on. A server prepared with <code>install-satom-webctl.sh</code> also offers its
 restricted agent key as the credential <em>satom-webctl agent</em> (virtual hosts
 and certificates only).</p>
+<h3 id="486-the-plugins-for-automation">48.6 The plugins (for automation)</h3>
+<p>The bundle <code>web-server-manager-&lt;version&gt;.satombundle</code> (staging hub,
+<code>downloads/plugins/</code>) holds 13 signed app plugins built from four SATOM steps
+(<code>wsm_servers</code>, <code>wsm_read</code>, <code>wsm_change</code>, <code>wsm_htaccess</code>) over the same calls
+the pages make: Web servers, File Manager, Domains &amp; VHosts, SSL
+Certificates, Security, .htaccess, Scripts, Cron Jobs, Package Manager,
+Services, Logs, Users &amp; Permissions and SSH Configuration.</p>
+<p>The menu is the way in for people (§48); the plugins are for what a page does
+not do: a step in another app, a run from an automation or an event, a run
+from the API. Import the bundle in Plugin Studio, keep the apps you need
+switched on, and give their folder the ADOMs and groups that should see them.</p>
+<p>Every app answers for the person who <strong>runs</strong> it, with the same checks as the
+pages (profile, credential, <em>Allow changes</em>, <code>webserver.root</code>, device scope).
+A <strong>rehearsal</strong> (a run that is not armed) runs the reading steps and only
+describes the changing ones. Password fields are used for the call and never
+kept in the run. Importing a private key, the editor, uploads, live logs, the
+script library and SATOM-scheduled jobs stay on the pages.</p>
+<h3 id="487-switching-the-manager-on-or-off">48.7 Switching the manager on or off</h3>
+<p><strong>Administrator › Settings › ADOMs</strong>, on the ADOM's row: the capability
+<strong>Web Server Manager</strong>. It is on for the Linux ADOM after the upgrade and off
+for every other ADOM. With it off in every ADOM:</p>
+<ul>
+<li>the menu entry is gone and every <code>/webserver/</code> page answers <em>not found</em>;</li>
+<li>scheduled scripts do not run (the scheduled action says the module is
+  switched off);</li>
+<li>certificate warnings do not link to the manager, and the manager's service
+  credentials are not used to read certificates.</li>
+</ul>
+<p>Servers, credentials, scripts, schedules and the Operations log are kept:
+switching it on again brings everything back as it was.</p>
+<h3 id="488-who-reaches-which-server-and-site">48.8 Who reaches which server and site</h3>
+<p>The profile's <strong>Devices</strong> card (§26.3) lists, under the manager's ADOM, its
+servers, and under each server the sites (virtual hosts) it last answered
+(open the server's <em>Domains &amp; VHosts</em> page to refresh the list).</p>
+<ul>
+<li><strong>No server ticked:</strong> the profile reaches every server.</li>
+<li><strong>Some servers ticked:</strong> only those. Another server is not listed, its pages
+  answer <em>not found</em> and an operation on it is refused.</li>
+<li><strong>Sites ticked under a server:</strong> only those sites. The profile opens
+  <em>File Manager</em>, <em>Domains &amp; VHosts</em> and <em>.htaccess</em> of that server and
+  nothing else; it lists, opens, edits, tests, enables and disables only those
+  sites, and its files are confined to their document roots. The confinement
+  is applied by the helper on the server, with symlinks resolved: a link
+  inside the site that points elsewhere is refused (<em>outside the sites your
+  SATOM profile reaches</em>), whether the target exists or not. A document root
+  directly under <code>/</code> (or <code>/</code> itself) is never a confinement: the site is then
+  refused for files. Everything that acts on the whole server — packages,
+  services, users, SSH, cron, security, certificates, scripts, logs — is
+  refused with <em>your profile reaches only some sites of …</em>.</li>
+</ul>
+<p>The permissions of the profile still decide what may be done there (for
+example <em>Files</em> to edit files); the device scope only decides where.</p>
     </div>
   </div>
 </section>

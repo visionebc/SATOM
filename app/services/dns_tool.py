@@ -59,8 +59,9 @@ COLUMNS = [
     ("service_ip", "Service IP"),
     # PTR of the service IP against the configured resolvers (SA-0027): a
     # lookup by policy name finds the policy, and this says which published
-    # name it serves. Filled for MATCHED rows only (add_service_names).
-    ("service_name", "Service name (PTR)"),
+    # name it serves. Filled for MATCHED rows only (add_service_names). Named
+    # "Name" since SA-0028: an FQDN lookup puts the forward name there too.
+    ("service_name", "Name"),
     ("http", "HTTP Service"),
     ("https", "HTTPS Service"),
     ("pool", "Pool"),
@@ -237,15 +238,72 @@ def _app_id(comment: str) -> str:
     return m.group(1) if m else ""
 
 
+def member_addr(b: dict) -> str:
+    """``ip:port`` of one pool member; a domain member (FortiWeb server-type
+    domain, FortiADC FQDN real server) by its name."""
+    host = b.get("ip") or b.get("domain") or ""
+    return "%s%s" % (host, ":%s" % b["port"] if b.get("port") else "") if host else ""
+
+
 def backends_text(backends: list[dict]) -> str:
     """``ip:port (status)`` per backend: the CONFIGURED status the cache holds
-    (enable / disable / maintain), so Copy LB carries what the page draws."""
+    (enable / disable / maintain), so Copy LB carries what the page draws.
+    The weight, when the cache has one, follows the status."""
     out = []
     for b in backends or []:
-        addr = "%s%s" % (b.get("ip") or "", ":%s" % b["port"] if b.get("port") else "")
+        addr = member_addr(b)
         if addr:
-            out.append("%s (%s)" % (addr, b.get("status") or "unknown"))
+            st = b.get("status") or "unknown"
+            if b.get("weight") not in (None, ""):
+                st = "%s, weight %s" % (st, b["weight"])
+            out.append("%s (%s)" % (addr, st))
     return "; ".join(out)
+
+
+# ---------------------------------------------------------------- IP fields
+# SA-0028: an IP lookup searches the server policy's ADDRESSES, not its text:
+# the VIP, the pool members and any other field of the policy, its virtual
+# server and its pool that holds an address. Each row carries them as
+# ``_ips`` = [(field label, address)], built from the same cached payloads the
+# row is drawn from, so the search never reads anything the table does not.
+
+_IP_TOKEN_SPLIT = re.compile(r"[\s,;]+")
+_NOT_AN_ADDRESS = {"0.0.0.0", "::", "255.255.255.255"}
+
+
+def norm_ip(value) -> str:
+    """The canonical form of one address (``192.0.2.5/32`` -> ``192.0.2.5``,
+    IPv6 compressed), or "" when *value* is not one."""
+    import ipaddress
+    s = str(value or "").strip().split("/", 1)[0].strip()
+    if not s or not _IP_RE.match(s):
+        return ""
+    try:
+        ip = ipaddress.ip_address(s).compressed
+    except ValueError:
+        return ""
+    return "" if ip in _NOT_AN_ADDRESS else ip
+
+
+def ips_in_payload(payload, source: str, *, skip=()) -> list[tuple[str, str]]:
+    """``[(f"{source} {key}", ip)]`` for every address in a cached payload's
+    scalar values (lists and space-separated values too). ``skip`` names the
+    keys the caller already reports under a better label (the VIP)."""
+    out: list[tuple[str, str]] = []
+    if not isinstance(payload, dict):
+        return out
+    for key, value in payload.items():
+        if key in skip or str(key).startswith("_"):
+            continue
+        vals = value if isinstance(value, (list, tuple)) else [value]
+        for v in vals:
+            if isinstance(v, (dict, list, tuple)) or v is None:
+                continue
+            for tok in _IP_TOKEN_SPLIT.split(str(v)):
+                ip = norm_ip(tok)
+                if ip and (f"{source} {key}", ip) not in out:
+                    out.append((f"{source} {key}", ip))
+    return out
 
 
 def _svc_label(name: str, port) -> str:
@@ -303,9 +361,13 @@ def _fortiweb_rows(appliance) -> list[dict]:
         vips = [v.get("effective_ip") or "" for v in (data.get("vips") or [])]
         backends = [{"ip": str(b.get("ip") or ""),
                      "port": str(b.get("port") or ""),
-                     "status": str(b.get("status") or "")}
+                     "status": str(b.get("status") or ""),
+                     # SA-0028: the weight and a domain member's name, both in
+                     # the cached pserver-list row (fortiweb19 7.6.8).
+                     "weight": str(b.get("weight") if b.get("weight") is not None else ""),
+                     "domain": str(b.get("domain") or "") if not b.get("ip") else ""}
                     for b in (data.get("backends") or [])]
-        members = [f"{b['ip']}:{b['port']}" for b in backends]
+        members = [member_addr(b) for b in backends]
         cert_name = pol.get("certificate") or ""
         cert = certs.get(cert_name)
         cn_bits = []
@@ -347,6 +409,17 @@ def _fortiweb_rows(appliance) -> list[dict]:
         row["_aid"] = appliance.id
         row["_kind"] = "fortiweb"
         row["_backends"] = backends
+        # The config layer alone has no pserver-list: say why the members are
+        # missing instead of drawing an empty pool (SA-0028).
+        row["_backends_note"] = ("" if "backends" in data or not row["pool"]
+                                 else "only the config layer is cached; a deep "
+                                      "capture lists the pool members")
+        ips = [("VIP", norm_ip(v)) for v in vips if norm_ip(v)]
+        ips += [("Pool member", norm_ip(b["ip"])) for b in backends if norm_ip(b["ip"])]
+        ips += ips_in_payload(pol, "Server policy")
+        ips += ips_in_payload(data.get("vserver"), "Virtual server")
+        ips += ips_in_payload(pool, "Server pool")
+        row["_ips"] = ips
         rows.append(row)
     return rows
 
@@ -392,8 +465,114 @@ def _adc_profile_certs(client) -> dict[str, list[str]]:
     return out
 
 
+def _adc_s(payload, *keys) -> str:
+    """First non-empty stripped value (FortiADC pads values: ``"443 "``)."""
+    for k in keys:
+        v = str((payload or {}).get(k) or "").strip()
+        if v:
+            return v
+    return ""
+
+
+def _adc_member(m: dict, real_servers: dict) -> dict:
+    """One pool member as ``{ip, port, status, weight, domain}``.
+
+    A FortiADC 8 pool member carries ``address: 0.0.0.0`` and names its
+    ``real_server_id``; the address lives on the real server (cached
+    ``load_balance_real_server``, fadc 8.0.3). Reading the member alone drew
+    every backend as ``0.0.0.0`` or blank (SA-0028)."""
+    rs = real_servers.get(_adc_s(m, "real_server_id")) or {}
+    ip = norm_ip(_adc_s(m, "pool_member_service_ip", "ip", "address")) \
+        or norm_ip(_adc_s(rs, "address")) or norm_ip(_adc_s(rs, "address6"))
+    return {"ip": ip,
+            "port": _adc_s(m, "pool_member_service_port", "port"),
+            "status": _adc_s(m, "pool_member_status", "status"),
+            "weight": _adc_s(m, "weight"),
+            "domain": "" if ip else (_adc_s(rs, "FQDN") or _adc_s(m, "real_server_id"))}
+
+
+def _adc_row(appliance, vs: dict, backends: list[dict], certificate: str) -> dict:
+    comment = _adc_s(vs, "comments", "comment")
+    row = _base_row(appliance, "FortiADC")
+    row.update({
+        "policy": _adc_s(vs, "mkey", "name"),
+        "service_ip": _adc_s(vs, "address", "ip"),
+        "http": _adc_s(vs, "port"),
+        "pool": _adc_s(vs, "pool"),
+        "members": ", ".join(a for a in (member_addr(b) for b in backends) if a),
+        "backends": backends_text(backends),
+        "certificate": certificate,
+        "type": _adc_s(vs, "type"),
+        "waf": _adc_s(vs, "waf-profile"),
+        "comment": comment,
+        "app_id": _app_id(comment),
+        "status": _adc_s(vs, "status"),
+    })
+    row["_aid"] = appliance.id
+    row["_kind"] = "fortiadc"
+    row["_backends"] = backends
+    row["_backends_note"] = ""
+    ips = [("VIP", norm_ip(row["service_ip"]))] if norm_ip(row["service_ip"]) else []
+    ips += [("Pool member", norm_ip(b["ip"])) for b in backends if norm_ip(b["ip"])]
+    ips += ips_in_payload(vs, "Virtual server", skip=("address", "ip"))
+    row["_ips"] = ips
+    return row
+
+
+def _fortiadc_cached_rows(appliance) -> list[dict] | None:
+    """One row per virtual server from SATOM's COPY (config layer), or None
+    when nothing of this ADC's virtual servers is cached (the caller then
+    sweeps live, as before SA-0028). Zero device calls."""
+    from ..models_cache import DeviceObject
+
+    def objs(logical):
+        return (DeviceObject.query
+                .filter(DeviceObject.appliance_id == appliance.id,
+                        DeviceObject.logical_name == logical,
+                        DeviceObject.layer == "config")
+                .order_by(DeviceObject.id.asc()).all())
+    vs_objs = objs("load_balance_virtual_server")
+    if not vs_objs:
+        return None
+    real_servers = {(o.mkey or "").strip(): (o.payload or {})
+                    for o in objs("load_balance_real_server")}
+    pool_ids = {(o.mkey or "").strip(): o.id for o in objs("load_balance_pool")}
+    members: dict[int, list[dict]] = {}
+    for o in objs("load_balance_pool/pool_member"):
+        members.setdefault(o.parent_id, []).append(o)
+    profiles = {(o.mkey or "").strip(): (o.payload or {})
+                for o in objs("load_balance_client_ssl_profile")}
+    out, seen = [], set()
+    for o in reversed(vs_objs):            # newest row of a name wins
+        vs = o.payload or {}
+        name = _adc_s(vs, "mkey") or (o.mkey or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        pool_rows = sorted(members.get(pool_ids.get(_adc_s(vs, "pool")), []),
+                           key=lambda r: (r.idx, r.mkey or ""))
+        backends = [_adc_member(r.payload or {}, real_servers) for r in pool_rows]
+        # The certificate group's members are not in the copy: name the
+        # client-SSL profile and its group rather than leave the cell blank.
+        prof = _adc_s(vs, "client_ssl_profile")
+        grp = _adc_s(profiles.get(prof), "local_certificate_group")
+        cert = ("%s (group %s)" % (prof, grp) if grp else prof) if prof else ""
+        out.append(_adc_row(appliance, dict(vs, mkey=name), backends, cert))
+    out.sort(key=lambda r: r["policy"])
+    return out
+
+
 def _fortiadc_rows(appliance) -> list[dict]:
-    """One row per virtual server — live read-only sweep (no ADC deep cache)."""
+    """One row per virtual server: SATOM's copy first (SA-0028); a live
+    read-only sweep only when the copy holds no virtual server."""
+    cached = _fortiadc_cached_rows(appliance)
+    if cached is not None:
+        return cached
+    return _fortiadc_live_rows(appliance)
+
+
+def _fortiadc_live_rows(appliance) -> list[dict]:
+    """One row per virtual server — live read-only sweep (no ADC cache)."""
     from flask import current_app
     from ..clients import client_for
 
@@ -404,6 +583,14 @@ def _fortiadc_rows(appliance) -> list[dict]:
                                 appliance.name, err)
         return []
     pool_members: dict[str, list[dict]] = {}
+    real_servers: dict[str, dict] = {}
+    try:
+        rs_rows, rs_err = client.list_with_error("load_balance_real_server")
+        if not rs_err:
+            real_servers = {_adc_s(r, "mkey"): r for r in rs_rows or []
+                            if isinstance(r, dict)}
+    except Exception:  # noqa: BLE001 — addresses are best-effort
+        real_servers = {}
     try:
         for vs in vs_rows or []:
             pname = str(vs.get("pool") or "").strip()
@@ -414,14 +601,8 @@ def _fortiadc_rows(appliance) -> list[dict]:
             if perr:
                 pool_members[pname] = []
                 continue
-            pool_members[pname] = [
-                {"ip": str(m.get("pool_member_service_ip") or m.get("ip")
-                           or m.get("address") or ""),
-                 "port": str(m.get("pool_member_service_port")
-                             or m.get("port") or ""),
-                 "status": str(m.get("pool_member_status")
-                               or m.get("status") or "")}
-                for m in rows or []]
+            pool_members[pname] = [_adc_member(m, real_servers)
+                                   for m in rows or [] if isinstance(m, dict)]
     except Exception:  # noqa: BLE001 — member detail is best-effort
         pass
 
@@ -435,30 +616,11 @@ def _fortiadc_rows(appliance) -> list[dict]:
 
     out = []
     for vs in vs_rows or []:
-        comment = str(vs.get("comments") or vs.get("comment") or "")
-        backends = pool_members.get(str(vs.get("pool") or ""), [])
-        row = _base_row(appliance, "FortiADC")
-        row.update({
-            "policy": str(vs.get("mkey") or vs.get("name") or ""),
-            "service_ip": str(vs.get("address") or vs.get("ip") or ""),
-            "http": str(vs.get("port") or ""),
-            "pool": str(vs.get("pool") or ""),
-            "members": ", ".join(
-                f"{b['ip']}:{b['port']}" for b in backends
-                if b["ip"] or b["port"]),
-            "backends": backends_text(backends),
-            "certificate": ", ".join(profile_certs.get(
-                str(vs.get("client_ssl_profile") or "").strip(), [])),
-            "type": str(vs.get("type") or ""),
-            "waf": str(vs.get("waf-profile") or ""),
-            "comment": comment,
-            "app_id": _app_id(comment),
-            "status": str(vs.get("status") or ""),
-        })
-        row["_aid"] = appliance.id
-        row["_kind"] = "fortiadc"
-        row["_backends"] = backends
-        out.append(row)
+        if not isinstance(vs, dict):
+            continue
+        backends = pool_members.get(str(vs.get("pool") or "").strip(), [])
+        out.append(_adc_row(appliance, vs, backends, ", ".join(profile_certs.get(
+            str(vs.get("client_ssl_profile") or "").strip(), []))))
     return out
 
 
@@ -468,7 +630,8 @@ def fleet_lb_rows() -> list[dict]:
     from ..models import Appliance, visible_appliances
 
     rows: list[dict] = []
-    for a in visible_appliances().order_by(Appliance.name).all():
+    appliances = visible_appliances().order_by(Appliance.name).all()
+    for a in appliances:
         try:
             if getattr(a, "kind", "") == "fortiadc":
                 rows.extend(_fortiadc_rows(a))
@@ -480,7 +643,233 @@ def fleet_lb_rows() -> list[dict]:
         attach_appids(rows)
     except Exception as exc:  # noqa: BLE001 — the LB half renders without AppIDs
         current_app.logger.info("dns_tool: AppID lookup failed: %s", exc)
+    try:
+        groups = cluster_map(appliances)
+        for r in rows:
+            if r.get("_aid") in groups:
+                r["_group"] = groups[r["_aid"]]
+    except Exception as exc:  # noqa: BLE001 — rows stay one per device
+        current_app.logger.info("dns_tool: cluster grouping failed: %s", exc)
     return rows
+
+
+# ---------------------------------------------------------------- clusters
+# SA-0028: "if an entry is in a cluster it should say so and not appear twice
+# -- that would cause problems when deleting or editing it". The same server
+# policy cached on two members of one HA cluster / config-sync group is ONE
+# service; the page shows it once, on the member an edit must target.
+#
+# Membership comes from what SATOM already knows, in this order of strength:
+#   1. the cluster SATOM has REGISTERED (``Appliance.is_cluster`` node 0 and
+#      its ``is_cluster_member`` rows, ``parent_id``; ``ha_mode``,
+#      ``ha_role_hint``) -- the model every write already goes through
+#      (``services.ha.resolve_write_target``);
+#   2. the HA block in SATOM's copy (``system_ha``): devices of one product
+#      whose cached HA mode is not standalone and that share a group name;
+#   3. FortiWeb config sync in SATOM's copy (``system_conf_sync.ip`` naming
+#      another registered FortiWeb's address).
+# Which member is the PRIMARY is never asked of a device here (a page load is
+# DB-first). A vip-mode node 0 is the write target by construction; otherwise
+# the member SATOM records as primary (``ha_role_hint``, set by an operator);
+# otherwise the role is unknown and the page says so, picking by name then id.
+
+GROUP_SOURCE = {"registered": "registered in SATOM",
+                "ha": "HA group in SATOM's copy (system_ha)",
+                "config_sync": "config sync in SATOM's copy (system_conf_sync)"}
+
+
+def _cached_payloads(ids: list[int], logical: str) -> dict[int, dict]:
+    """``{appliance_id: payload}`` of one top-level cached object (newest)."""
+    from ..models_cache import DeviceObject
+    if not ids:
+        return {}
+    out: dict[int, dict] = {}
+    for o in (DeviceObject.query
+              .filter(DeviceObject.appliance_id.in_(ids),
+                      DeviceObject.logical_name == logical,
+                      DeviceObject.depth == 0)
+              .order_by(DeviceObject.id.asc()).all()):
+        if isinstance(o.payload, dict):
+            out[o.appliance_id] = o.payload
+    return out
+
+
+def cluster_map(appliances) -> dict[int, dict]:
+    """``{appliance_id: group}`` for every appliance that shares a cluster
+    with another one in *appliances* (module comment above). One dict per
+    group, shared by its members::
+
+        {"key", "name", "source", "members": [names], "count": int,
+         "rank": {aid: tuple}, "role": {aid: str}}
+
+    ``rank`` orders the members for the representative (lowest first);
+    ``role`` says why ("primary", "vip", "cluster", "unknown")."""
+    appliances = [a for a in appliances or [] if getattr(a, "id", None) is not None]
+    by_id = {a.id: a for a in appliances}
+    parent: dict[int, int] = {}
+
+    def find(x):
+        while parent.setdefault(x, x) != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+
+    sources: dict[int, set] = {}
+    names: dict[int, str] = {}
+
+    def mark(aid, src, name=""):
+        sources.setdefault(aid, set()).add(src)
+        if name:
+            names.setdefault(aid, name)
+
+    for a in appliances:
+        if getattr(a, "is_cluster_member", False) and getattr(a, "parent_id", None):
+            union(a.id, a.parent_id)
+            node0 = by_id.get(a.parent_id) or getattr(a, "parent", None)
+            mark(a.id, "registered", getattr(node0, "name", "") or "")
+            mark(a.parent_id, "registered", getattr(node0, "name", "") or "")
+        if getattr(a, "is_cluster", False):
+            mark(a.id, "registered", a.name)
+    ids = list(by_id)
+    kind = {a.id: (getattr(a, "kind", "") or "fortiweb").lower() for a in appliances}
+    # A string mode is trustworthy on FortiWeb / FortiADC only (ha_inventory's
+    # evidence rule); a group name is required, because every unnamed pair
+    # shares group-id 0 and would merge unrelated clusters.
+    ha_groups: dict[tuple, list[tuple[int, str]]] = {}
+    for aid, p in _cached_payloads(ids, "system_ha").items():
+        raw = p.get("mode")
+        grp = str(p.get("group-name") or p.get("group_name") or "").strip()
+        if not isinstance(raw, str) or raw.strip().lower() in ("", "standalone", "disable", "off"):
+            continue
+        if grp:
+            ha_groups.setdefault((kind[aid], grp.lower(), str(p.get("group-id") or "")),
+                                 []).append((aid, grp))
+    for pairs in ha_groups.values():
+        if len(pairs) > 1:
+            for aid, grp in pairs:
+                union(pairs[0][0], aid)
+                mark(aid, "ha", grp)
+    hosts = {}
+    for a in appliances:
+        h = norm_ip(getattr(a, "host", "")) or str(getattr(a, "host", "") or "").strip().lower()
+        if h:
+            hosts.setdefault((kind[a.id], h), []).append(a.id)
+    for aid, p in _cached_payloads(ids, "system_conf_sync").items():
+        peer = norm_ip(p.get("ip"))
+        for other in hosts.get((kind[aid], peer), []) if peer else []:
+            if other != aid:
+                union(aid, other)
+                mark(aid, "config_sync")
+                mark(other, "config_sync")
+
+    members: dict[int, list[int]] = {}
+    for aid in list(parent):
+        members.setdefault(find(aid), []).append(aid)
+    out: dict[int, dict] = {}
+    for root, aids in members.items():
+        if len(aids) < 2:
+            continue
+        rows = [by_id[x] for x in aids if x in by_id]
+        node0s = [a for a in rows if getattr(a, "is_cluster", False)]
+        srcs = set().union(*(sources.get(x, set()) for x in aids))
+        src = next(s for s in ("registered", "ha", "config_sync") if s in srcs) \
+            if srcs else "registered"
+        if node0s:
+            gname = node0s[0].name
+        else:
+            gname = next((names[x] for x in sorted(aids) if names.get(x)), "") or \
+                " / ".join(sorted(a.name for a in rows))
+        rank, role = {}, {}
+        for a in rows:
+            hint = (getattr(a, "ha_role_hint", "") or "").strip().lower()
+            if getattr(a, "is_cluster", False):
+                vip = (getattr(a, "ha_mode", "") or "").strip().lower() == "vip"
+                r, why = (0, "vip") if vip else (2, "cluster")
+            elif hint == "primary":
+                r, why = 1, "primary"
+            elif hint == "secondary":
+                r, why = 4, "secondary"
+            else:
+                r, why = 3, "unknown"
+            rank[a.id] = (r, a.name or "", a.id)
+            role[a.id] = why
+        # "N members": the boxes, never the node-0 container.
+        boxes = [a for a in rows if not getattr(a, "is_cluster", False)]
+        group = {"key": "g%d" % root, "name": gname, "source": GROUP_SOURCE[src],
+                 "members": sorted(a.name for a in boxes) or sorted(a.name for a in rows),
+                 "count": len(boxes) or len(rows), "rank": rank, "role": role}
+        for a in rows:
+            out[a.id] = group
+    return out
+
+
+#: Keys a match carries for ONE lookup (copied onto the representative).
+_MATCH_KEYS = ("_match_field", "_mode", "_fwd_name", "_via")
+
+
+def collapse_clusters(matches: list[dict], all_rows: list[dict] | None = None) -> list[dict]:
+    """One row per (cluster, product, policy): the copies of one server policy
+    on the members of one cluster become the member an edit must target
+    (``cluster_map``'s rank), carrying ``_cluster``. *all_rows* (the whole
+    sweep) lets the representative be the primary's copy even when only a
+    secondary's copy matched. Rows without a group pass through unchanged."""
+    index: dict[tuple, list[dict]] = {}
+    for r in all_rows if all_rows is not None else matches:
+        g = r.get("_group")
+        if g:
+            index.setdefault((g["key"], r.get("_kind"), r.get("policy")), []).append(r)
+    out: list[dict] = []
+    seen: dict[tuple, dict] = {}
+    for m in matches:
+        g = m.get("_group")
+        if not g:
+            out.append(m)
+            continue
+        k = (g["key"], m.get("_kind"), m.get("policy"))
+        if k in seen:
+            rep = seen[k]
+            for f in (m.get("_match_field") or "").split(", "):
+                if f and f not in (rep.get("_match_field") or "").split(", "):
+                    rep["_match_field"] = ", ".join(x for x in (rep.get("_match_field"), f) if x)
+            continue
+        copies = index.get(k) or [m]
+        if m not in copies:
+            copies = copies + [m]
+        best = min(copies, key=lambda r: g["rank"].get(r.get("_aid"), (9, r.get("gateway") or "",
+                                                                       r.get("_aid") or 0)))
+        rep = dict(best)
+        for key in _MATCH_KEYS:
+            if key in m:
+                rep[key] = m[key]
+        role = g["role"].get(rep.get("_aid"), "unknown")
+        rep["_cluster"] = {
+            "name": g["name"], "source": g["source"], "count": g["count"],
+            "members": g["members"], "node": rep.get("gateway") or "",
+            "role": role, "role_known": role in ("primary", "vip", "cluster"),
+            "seen_on": sorted({c.get("gateway") or "" for c in copies} - {""}),
+        }
+        seen[k] = rep
+        out.append(rep)
+    return out
+
+
+def cluster_text(m: dict) -> str:
+    """The Cluster cell of Copy LB (English, like the other TSV labels)."""
+    c = m.get("_cluster")
+    if not c:
+        return ""
+    if c["role"] == "primary":
+        return "Cluster: %s (primary %s, %d members)" % (c["name"], c["node"], c["count"])
+    if c["role"] in ("vip", "cluster"):
+        return "Cluster: %s (primary resolved by the cluster, %d members)" % (c["name"],
+                                                                               c["count"])
+    return "Cluster: %s (role unknown, showing %s, %d members)" % (c["name"], c["node"],
+                                                                   c["count"])
 
 
 def attach_appids(rows: list[dict]) -> None:
@@ -522,7 +911,15 @@ def add_service_names(matches: list[dict], servers: list[dict]) -> None:
     resolvers answered, each once). Only MATCHED rows: the whole fleet would be
     a PTR storm per search. Resolver markers (No result / timeout / error) are
     not names and are dropped; no resolver configured leaves the column blank."""
-    if not matches or not servers:
+    # SA-0028: an empty Name is never left unexplained. ``_name_state`` says
+    # why: ok / no_ip (no service IP) / no_resolver / no_ptr (every resolver
+    # answered, none with a name) / error (``_name_error``: which resolver
+    # failed how). ``service_name`` keeps the names only.
+    if not matches:
+        return
+    if not servers:
+        for m in matches:
+            m["_name_state"] = "no_resolver" if _service_ips(m) else "no_ip"
         return
     ips: list[str] = []
     for m in matches:
@@ -530,25 +927,56 @@ def add_service_names(matches: list[dict], servers: list[dict]) -> None:
             if _is_ip(ip) and ip not in ips:
                 ips.append(ip)
     ips = ips[:PTR_MAX_IPS]
-    if not ips:
-        return
-    answers = lookup_many(ips, servers)
+    answers = lookup_many(ips, servers) if ips else {}
     names: dict[str, list[str]] = {}
+    errors: dict[str, list[str]] = {}
     for ip in ips:
         got: list[str] = []
         for s in servers:
             for v in answers.get((ip, s["name"]), []):
                 v = v.rstrip(".")
-                if v and v not in ("No result", "timeout", "error") and v not in got:
+                if v in ("timeout", "error"):
+                    errors.setdefault(ip, []).append("%s %s" % (s["name"], v))
+                elif v and v != "No result" and v not in got:
                     got.append(v)
         names[ip] = got
     for m in matches:
         found: list[str] = []
-        for ip in _service_ips(m):
+        errs: list[str] = []
+        mine = [ip for ip in _service_ips(m) if ip in names]
+        for ip in mine:
             for n in names.get(ip, []):
                 if n not in found:
                     found.append(n)
+            errs += [e for e in errors.get(ip, []) if e not in errs]
         m["service_name"] = ", ".join(found)
+        if found:
+            m["_name_state"] = "ok"
+        elif not mine:
+            m["_name_state"] = "no_ip"
+        elif errs:
+            m["_name_state"], m["_name_error"] = "error", "; ".join(errs)
+        else:
+            m["_name_state"] = "no_ptr"
+
+
+#: What the Name cell says when it has no name (Copy LB; the page translates).
+NAME_STATE_TEXT = {"no_ptr": "no PTR", "no_ip": "no service IP",
+                   "no_resolver": "no resolver configured", "error": "PTR error"}
+
+
+def name_text(m: dict) -> str:
+    """The Name cell as text: the forward name an FQDN lookup resolved to this
+    service, then the PTR names of its service IP -- or why there is none."""
+    names = [m["_fwd_name"]] if m.get("_fwd_name") else []
+    names += [n for n in str(m.get("service_name") or "").split(", ") if n and n not in names]
+    state = m.get("_name_state") or ""
+    if m.get("service_name") or not state or state == "ok":
+        return ", ".join(names)
+    why = NAME_STATE_TEXT.get(state, state)
+    if state == "error" and m.get("_name_error"):
+        why = "%s: %s" % (why, m["_name_error"])
+    return "%s (%s)" % (", ".join(names), why) if names else why
 
 
 # ---------------------------------------------------------------- Copy LB
@@ -560,10 +988,13 @@ def _tsv_cell(value) -> str:
 
 
 def lb_tsv_header(appid_cols=()) -> list[str]:
-    """Copy LB's columns: the entry, every LB column, then the AppID facts of
-    the catalog (the AppID itself is already the App ID column) and where the
-    AppID came from. ``appid_cols`` is ``appids.info_columns()``."""
+    """Copy LB's columns: the entry, every LB column (Name says why it is
+    empty), then how the entry was looked up, which field matched and the
+    cluster (SA-0028), the AppID facts of the catalog (the AppID itself is
+    already the App ID column) and where the AppID came from. ``appid_cols``
+    is ``appids.info_columns()``."""
     return (["Entry"] + [label for _k, label in COLUMNS]
+            + ["Lookup", "Matched on", "Cluster"]
             + ["AppID %s" % label for k, label in appid_cols if k != "app_id"]
             + ["AppID source"])
 
@@ -571,7 +1002,11 @@ def lb_tsv_header(appid_cols=()) -> list[str]:
 def lb_tsv_line(entry: str, m: dict, appid_cols=()) -> list[str]:
     info = m.get("_appid") or {}
     fields = info.get("fields") or {}
-    return ([_tsv_cell(entry)] + [_tsv_cell(m.get(k, "")) for k, _l in COLUMNS]
+    cell = {"service_name": name_text(m)}
+    return ([_tsv_cell(entry)]
+            + [_tsv_cell(cell[k] if k in cell else m.get(k, "")) for k, _l in COLUMNS]
+            + [_tsv_cell(MODE_LABELS.get(m.get("_mode"), m.get("_mode") or "")),
+               _tsv_cell(m.get("_match_field", "")), _tsv_cell(cluster_text(m))]
             + [_tsv_cell(fields.get(k, "")) for k, _l in appid_cols if k != "app_id"]
             + [_tsv_cell(info.get("source", ""))])
 
@@ -579,19 +1014,208 @@ def lb_tsv_line(entry: str, m: dict, appid_cols=()) -> list[str]:
 def match_rows(rows: list[dict], query: str, resolved: str, *,
                exact: bool = False) -> list[dict]:
     """PHP-parity matching: any column, substring by default, exact optional."""
-    hits = []
+    return [row for row in rows if _text_hits(row, query, resolved, exact=exact, first=True)]
+
+
+def _text_hits(row: dict, query: str, resolved: str, *, exact: bool = False,
+               first: bool = False) -> list[str]:
+    """The keys of *row* whose text matches (match_rows' rule); with *first*
+    the first one only."""
+    keys = []
     q, r = (query or "").lower(), (resolved or "").lower()
-    for row in rows:
-        for key, value in row.items():
-            if key.startswith("_"):  # private (link/graph) keys never match
-                continue
-            v = str(value).lower()
-            if exact:
-                tokens = [t.strip() for t in v.split(",")]
-                if q in (v, *tokens) or r in (v, *tokens):
-                    hits.append(row)
-                    break
-            elif (q and q in v) or (r and r in v):
-                hits.append(row)
+    for key, value in row.items():
+        if key.startswith("_"):  # private (link/graph) keys never match
+            continue
+        v = str(value).lower()
+        if exact:
+            tokens = [t.strip() for t in v.split(",")]
+            hit = q in (v, *tokens) or r in (v, *tokens)
+        else:
+            hit = bool((q and q in v) or (r and r in v))
+        if hit:
+            keys.append(key)
+            if first:
                 break
-    return hits
+    return keys
+
+
+# ---------------------------------------------------------------- SA-0028
+# Three lookups, chosen per entry (or forced by the Lookup selector):
+#   element -- any text of the config (policy, pool, certificate, comment...):
+#              the match's VIP is its Service IP, its PTR the Name;
+#   ip      -- the address in any SPO's ADDRESS fields (VIP, pool members,
+#              other address fields): never a substring, so 192.0.2.5 does not
+#              find 192.0.2.50; the row says which field held it;
+#   fqdn    -- resolve the name (A and AAAA, every resolver), then look up
+#              each address as ``ip`` does, plus the name's own text (an SNI,
+#              a certificate CN, a host field).
+
+MODES = ("auto", "element", "ip", "fqdn")
+MODE_LABELS = {"element": "Element", "ip": "IP", "fqdn": "FQDN"}
+_FQDN_RE = re.compile(
+    r"^(\*\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\.?$")
+NO_ANSWER = ("No result", "timeout", "error")
+
+
+def detect_mode(query: str) -> str:
+    """``ip`` / ``fqdn`` / ``element`` for one entry (its name part)."""
+    q = (query or "").strip()
+    if _is_ip(q):
+        return "ip"
+    if _FQDN_RE.match(q):
+        return "fqdn"
+    return "element"
+
+
+def entry_mode(query: str, forced: str = "auto") -> str:
+    """The mode one entry is looked up with: the selector's, unless it is
+    ``auto`` or asks ``ip`` of something that is not an address."""
+    if forced == "ip" and not _is_ip((query or "").strip()):
+        return detect_mode(query)
+    return forced if forced in MODE_LABELS else detect_mode(query)
+
+
+def ip_hits(rows: list[dict], ip: str) -> list[tuple[dict, list[str]]]:
+    """``[(row, [field labels])]`` of the rows holding *ip* in an address
+    field (``_ips``), exact address equality."""
+    want = norm_ip(ip)
+    out = []
+    if not want:
+        return out
+    for row in rows:
+        fields = []
+        for label, value in row.get("_ips") or []:
+            if value == want and label not in fields:
+                fields.append(label)
+        if fields:
+            out.append((row, fields))
+    return out
+
+
+def answer_ips(values) -> list[str]:
+    """The addresses among resolver answers (a CNAME target and the markers
+    are not; ``(TTL:n)`` suffixes go)."""
+    out = []
+    for v in values or []:
+        ip = norm_ip(str(v).split(" (TTL:")[0])
+        if ip and ip not in out:
+            out.append(ip)
+    return out
+
+
+def match_entry(rows: list[dict], query: str, resolved: str, mode: str, *,
+                exact: bool = False, fwd_ips=()) -> list[dict]:
+    """The matches of one entry, each a COPY of its row with ``_mode``,
+    ``_match_field`` (which field held it) and, for an FQDN, ``_fwd_name``
+    when the row's VIP is one of the name's addresses."""
+    labels = dict(COLUMNS)
+    order: list[int] = []
+    found: dict[int, tuple[dict, list[str], bool]] = {}
+
+    def add(row, fields, fwd=False):
+        k = id(row)
+        if k not in found:
+            found[k] = (row, [], False)
+            order.append(k)
+        r, have, was_fwd = found[k]
+        have += [f for f in fields if f not in have]
+        found[k] = (r, have, was_fwd or fwd)
+
+    if mode == "ip":
+        for row, fields in ip_hits(rows, resolved or query):
+            add(row, fields)
+    else:
+        for row in rows:
+            keys = _text_hits(row, query, resolved, exact=exact)
+            if keys:
+                add(row, [labels.get(k, k) for k in keys])
+        if mode == "fqdn":
+            for ip in fwd_ips or ():
+                for row, fields in ip_hits(rows, ip):
+                    add(row, ["%s (%s)" % (f, ip) for f in fields],
+                        fwd=any(f == "VIP" for f in fields))
+    out = []
+    for k in order:
+        row, fields, fwd = found[k]
+        m = dict(row)
+        m["_mode"] = mode
+        m["_match_field"] = ", ".join(fields)
+        if fwd:
+            m["_fwd_name"] = (resolved or query).rstrip(".")
+        out.append(m)
+    return out
+
+
+def _merge_answers(a: list[str], aaaa: list[str]) -> list[str]:
+    real = []
+    for v in list(a or []) + list(aaaa or []):
+        if v not in NO_ANSWER and v not in real:
+            real.append(v)
+    return real or list(a or ["No result"])
+
+
+def lookup(entries: list[str], servers: list[dict], lb_rows: list[dict], *,
+           mode: str = "auto", exact: bool = False, show_ttl: bool = False,
+           names: bool = True) -> tuple[list[dict], list[str]]:
+    """The page's search: ``(results, not_found)``. One result per entry::
+
+        {entry, resolved, is_wildcard, mode, dns: {server: [answers]},
+         fwd_ips, dns_state, dns_errors, matches, gateways}
+
+    ``dns_state`` (FQDN): resolved / no_answer / error / no_resolver.
+    Matches are cluster-collapsed (``collapse_clusters``) and, with *names*,
+    named by the PTR of their service IP."""
+    mode = mode if mode in MODES else "auto"
+    parsed = []
+    jobs = list(entries)
+    for e in entries:
+        query, rtype = parse_entry(e)
+        m = entry_mode(query, mode)
+        parsed.append((e, query, rtype, m))
+        if m == "fqdn" and rtype is None:
+            jobs.append("%s AAAA" % query)          # A is the entry itself
+    dns_map = lookup_many(jobs, servers, show_ttl=show_ttl)
+    results, not_found = [], []
+    for e, query, rtype, m in parsed:
+        resolved = resolve_wildcard(query)
+        per_server = {}
+        fwd_ips: list[str] = []
+        errs: list[str] = []
+        for s in servers:
+            a = dns_map.get((e, s["name"]), ["No result"])
+            if m == "fqdn" and rtype is None:
+                aaaa = dns_map.get(("%s AAAA" % query, s["name"]), ["No result"])
+                vals = _merge_answers(a, aaaa)
+                errs += ["%s %s" % (s["name"], v) for v in set(a + aaaa)
+                         if v in ("timeout", "error")]
+            else:
+                vals = a
+                errs += ["%s %s" % (s["name"], v) for v in a if v in ("timeout", "error")]
+            per_server[s["name"]] = vals
+            if m == "fqdn":
+                fwd_ips += [ip for ip in answer_ips(vals) if ip not in fwd_ips]
+        if m != "fqdn" or rtype not in (None, "A", "AAAA"):
+            state = ""                 # "name MX" asks for no address
+        elif not servers:
+            state = "no_resolver"
+        elif fwd_ips:
+            state = "resolved"
+        elif errs:
+            state = "error"
+        else:
+            state = "no_answer"
+        matches = match_entry(lb_rows, query, resolved, m, exact=exact,
+                              fwd_ips=fwd_ips) if lb_rows else []
+        matches = collapse_clusters(matches, lb_rows)
+        no_dns = all(all(v in NO_ANSWER for v in vals) for vals in per_server.values())
+        if no_dns and not matches:
+            not_found.append(e)
+        results.append({
+            "entry": e, "resolved": resolved, "is_wildcard": query.startswith("*."),
+            "mode": m, "dns": per_server, "fwd_ips": fwd_ips, "dns_state": state,
+            "dns_errors": sorted(set(errs)), "matches": matches,
+            "gateways": sorted({x.get("gateway") or "" for x in matches} - {""}),
+        })
+    if names:
+        add_service_names([x for r in results for x in r["matches"]], servers)
+    return results, not_found

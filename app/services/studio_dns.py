@@ -292,7 +292,8 @@ def path_of(m: dict) -> str:
     parts = ["%s%s" % (m.get("policy") or "?", st(m.get("status")))]
     if m.get("pool"):
         parts.append(str(m["pool"]))
-    back = ["%s%s%s" % (b.get("ip") or "?", ":%s" % b["port"] if b.get("port") else "",
+    back = ["%s%s%s" % (b.get("ip") or b.get("domain") or "?",
+                        ":%s" % b["port"] if b.get("port") else "",
                         st(b.get("status"))) for b in (m.get("_backends") or [])
             if isinstance(b, dict)]
     parts.append(", ".join(back) or "no backends in cache")
@@ -313,7 +314,18 @@ def lb_lookup(entries: list[str], lb_rows: list[dict], *, exact: bool = False,
     for e in entries:
         query, _rtype = dns_tool.parse_entry(e)
         resolved = dns_tool.resolve_wildcard(query)
-        matches = dns_tool.match_rows(lb_rows, query, resolved, exact=exact)
+        # The page's three lookups and its cluster collapse (SA-0028): an IP
+        # is searched in the address fields, an FQDN also by the addresses
+        # the dns_lookup step resolved it to, and a server policy on two
+        # members of one cluster is one row, on the member an edit targets.
+        mode = dns_tool.entry_mode(query)
+        fwd: list[str] = []
+        if mode == "fqdn" and isinstance(dns, dict):
+            for vals in ((dns.get("answers") or {}).get(e) or {}).values():
+                fwd += [ip for ip in dns_tool.answer_ips(vals) if ip not in fwd]
+        matches = dns_tool.collapse_clusters(
+            dns_tool.match_entry(lb_rows, query, resolved, mode, exact=exact, fwd_ips=fwd),
+            lb_rows)
         if not matches:
             unmatched.append(e)
         else:
@@ -326,6 +338,9 @@ def lb_lookup(entries: list[str], lb_rows: list[dict], *, exact: bool = False,
         for m in matches:
             row = {"Entry": e}
             row.update({label: m.get(k, "") for k, label in dns_tool.COLUMNS})
+            row["Name"] = dns_tool.name_text(m)
+            row["Matched on"] = m.get("_match_field", "")
+            row["Cluster"] = dns_tool.cluster_text(m)
             row["Path"] = path_of(m)
             row.update({"_entry": e, "_hostname": resolved, "_aid": m.get("_aid"),
                         "_kind": m.get("_kind") or "", "_policy": m.get("policy") or "",

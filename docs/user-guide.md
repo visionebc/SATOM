@@ -2648,6 +2648,43 @@ against what the devices say.
   full row per match — entry, every column, PTR name, backends with status,
   the AppID facts and their source — with tabs and line breaks inside a
   comment turned into spaces so a line never splits.
+  Since SA-0028 the results are **collapsed**: a line per entry (how it was
+  looked up, its DNS answers, the number of matches) and one dense line per
+  match — Gateway, Policy, **Service IP** (the policy's VIP), **Name**,
+  Backends (pool, member count, the first members with their configured
+  status) and **Matched on** (the field that held the entry). The chevron
+  (or *Expand all*) opens the details under the row: every field, the
+  cluster, and the pool's members with weight and configured status.
+  **Lookup** (Options) picks how each entry is searched; *Automatic* decides
+  per entry: an **element** (any other text: a policy, pool, certificate,
+  comment…) is searched in the configuration text, its VIP is the Service IP
+  and the PTR of that VIP the Name; an **IP address** is searched in the
+  ADDRESS fields of every server policy — VIP, pool members and any other
+  address field of the policy, its virtual server and its pool — as a whole
+  address, never a substring (`192.0.2.5` does not find `192.0.2.50`); an
+  **FQDN** is resolved (A and AAAA, every resolver) and each address
+  searched like an IP, plus the name in the configuration text (SNI,
+  certificate CN); the Name then shows the FQDN first. A name that does not
+  resolve says so, a resolver timeout or error is shown as a **DNS error**,
+  and an empty Name says why (*no PTR*, *PTR error*, *no resolver
+  configured*, *no service IP*) — never blank. **Clusters:** a server policy
+  cached on several members of one HA cluster or config-sync group is shown
+  **once**, with a *Cluster: name (primary node, N members)* badge; Edit,
+  Delete and the live check act on that member only. Membership comes from
+  the cluster registered in SATOM (Appliances › node 0 and its members),
+  else from SATOM's copy (`system_ha` with the same group name, FortiWeb
+  `system_conf_sync` naming another registered FortiWeb). The primary is a
+  vip-mode cluster itself, else the member whose role is set to *primary* in
+  SATOM; nothing is asked of the device, so when no role is recorded the
+  badge says *role unknown* and the first member by name is shown. Backends
+  are read from SATOM's copy (a FortiADC member's address from its real
+  server; a FortiWeb with only the config layer cached says a deep capture
+  lists the members); FortiADC virtual servers are read live only when
+  SATOM holds none. **Check live health** in *Show* lists every member the
+  FortiWeb reports with its health, including members missing from SATOM's
+  copy, and shows each step (copy, device question, answer). *Copy LB*
+  adds the columns *Lookup*, *Matched on* and *Cluster*; the PTR column is
+  now *Name*.
   The same tool also exists as **three Plugin Studio apps** — the plugins
   `dns-lb-lookup`, `dns-records` and `dns-decommission` (§23.7, *Plugins:
   DNS & LB Lookup*), under **Operations › Plugins** once imported: the
@@ -6390,7 +6427,11 @@ stays.
   any source*. A cache that cannot be read shows *LB matching failed* and the
   DNS half still appears, as on the page. Actions: **Copy DNS** and **Copy
   LB** (the page's tab-separated text), **DNS Records**, and a CSV download of
-  each table.
+  each table. Since SA-0028 the *LB: match names to the fleet* step searches
+  like the page's *Automatic* lookup (an IP in the address fields, an FQDN
+  also by the addresses the *DNS* step resolved it to) and shows a server
+  policy of a cluster once; its rows carry *Name*, *Matched on* and
+  *Cluster*.
 - **DNS Records** (`dns-records`): *list* shows a name's records with
   **Edit** and **Delete** on each row — each opens this same app filled in
   with that record — and *New record*; *create*, *update* and *delete* write

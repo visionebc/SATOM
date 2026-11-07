@@ -51,6 +51,10 @@ def index():
     servers = [s for s in dns_tool.dns_servers() if s.get("enabled", True)]
     opts = {"lb": True, "quick": False, "exact": False, "ttl": False,
             "appid": False}
+    # SA-0028: how each entry is looked up -- detected per entry (auto) or
+    # forced: element (config text), ip (address fields), fqdn (resolve,
+    # then the addresses). Applied here, on the server, never in the browser.
+    mode = "auto"
     entries_raw = ""
     results = []
     not_found = []
@@ -67,6 +71,9 @@ def index():
     if request.method == "POST":
         searched = True
         opts = {k: bool(request.form.get(k)) for k in opts}
+        mode = request.form.get("mode") or "auto"
+        if mode not in dns_tool.MODES:
+            mode = "auto"
         entries_raw = request.form.get("entries", "")
         entries = []
         for line in entries_raw.splitlines():
@@ -82,30 +89,9 @@ def index():
             except Exception as exc:  # noqa: BLE001 — DNS half still renders
                 lb_error = str(exc)
 
-        dns_map = dns_tool.lookup_many(entries, servers, show_ttl=opts["ttl"])
-        for e in entries:
-            query, _rtype = dns_tool.parse_entry(e)
-            resolved = dns_tool.resolve_wildcard(query)
-            per_server = {s["name"]: dns_map.get((e, s["name"]), ["No result"])
-                          for s in servers}
-            matches = dns_tool.match_rows(lb_rows, query, resolved,
-                                          exact=opts["exact"]) if lb_rows else []
-            gateways = sorted({m["gateway"] for m in matches})
-            no_dns = all(v in (["No result"], ["timeout"], ["error"])
-                         for v in per_server.values()) if per_server else True
-            if no_dns and not matches:
-                not_found.append(e)
-            results.append({
-                "entry": e,
-                "resolved": resolved,
-                "is_wildcard": query.startswith("*."),
-                "dns": per_server,
-                "matches": matches,
-                "gateways": gateways,
-            })
-        if opts["lb"]:
-            dns_tool.add_service_names(
-                [m for r in results for m in r["matches"]], servers)
+        results, not_found = dns_tool.lookup(
+            entries, servers, lb_rows, mode=mode, exact=opts["exact"],
+            show_ttl=opts["ttl"], names=opts["lb"])
         clip_dns, clip_lb = _clipboards(results, servers, dns_tool.COLUMNS,
                                         appid_cols)
 
@@ -117,6 +103,7 @@ def index():
         results=results,
         not_found=not_found,
         opts=opts,
+        mode=mode,
         entries_raw=entries_raw,
         searched=searched,
         clip_dns=clip_dns,

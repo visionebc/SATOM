@@ -6,58 +6,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
-### Added
-- **Plugin Studio: Simulate can walk every branch of an app (FA-0008).**
-  Reported: "the tests are not enough -- each action, each question is not
-  done when I run Simulate". One simulation follows one path, so a recovery
-  runbook simulated with *Answer Yes to every question* walked 5 of its 28
-  steps. **Cover every branch** (Diagram tab › Simulate) plans the
-  scenarios that together take every arrow (yes, no and error, loops
-  included) and walks them one after the other as rehearsals. Every check
-  still really looks and keeps what it found; the scenario only picks the
-  arrow and answers the questions. A table then shows how often each step
-  was walked, what it answered, what the check really found, and every
-  arrow never taken; unwalked steps are coloured on the diagram. A scenario
-  is refused outside a rehearsal.
-- **Runbook steps that do the action instead of asking for it (FA-0008).**
-  *Connection test* (Test Connection from this node: API with the stored
-  account, TCP, ping or traceroute), *Log in to the appliance* (the stored
-  account, or a connection's account such as a remote RADIUS administrator;
-  a refused account is not retried for 10 minutes because of the admin
-  lockout), *Power state (hypervisor)* (the VM's state through the Sentinel
-  topology mapping), *Ping from the appliance* (`execute ping <target>` on
-  the device) and *Notify* (bell and e-mail; in a rehearsal only the
-  simulating person's bell, once per simulation). When SATOM cannot try,
-  each takes the error arrow, never a *no*.
-- **Plugin Studio: an *Ask a person* step can link to a SATOM page.**
-  **Link (a SATOM page)**, e.g. `/appliances/{{ appliance.id }}/restore`,
-  shows a button next to the question on the run page. Only a path on this
-  SATOM is shown; another site is refused and the question says so.
-
-### Fixed
-- **Automations started by an alert died half-way and stayed "running".**
-  The alert run is a short-lived process; the automation ran on one of its
-  background threads and was killed when the process exited (six recovery
-  runs stopped after 3 steps, and the stuck runs made later ones fail with
-  "you already have 2 app runs in progress"). The alert run now waits for
-  the automations it started. Automation and app runs whose worker stopped
-  are closed as *interrupted* in the lists, without anybody opening them.
-- **A run waiting on a question of an app that was published again stayed
-  "waiting" forever.** Its answer is refused (the diagram changed under it),
-  so nothing could close it. Such runs are now closed with the reason, and
-  a run of the draft or of the live version keeps waiting.
-- **An SSH read could run far past its time limit.** The limit was checked
-  only after a silent moment, so a device that kept printing held a 15 s
-  `get system status` for 18 minutes, and the read buffer grew with it.
-  Reads now stop at their limit, and at 8 MiB.
-- **A *Console read* with `execute ping` always failed** with "SSH did not
-  answer": the read-only path refused the probe its own gate allowed. It
-  now goes through the probe path.
-- **Test Connection: a traceroute to an appliance kept by host name never
-  said "reached".** The hops are printed as addresses and the name was
-  compared with them; the address traceroute resolved the name to is now
-  compared too.
-
 ## [4.11.11] - 2026-11-07
 
 ### Added
@@ -125,6 +73,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   the approver signed is not changed. The `.xlsx` / `.csv` export and the
   pre-upgrade inventory offer *AppID (catalog now)* and *AppID customer
   (catalog now)*.
+- **Plugin Studio: Simulate can walk every branch of an app (FA-0008).**
+  Reported: "the tests are not enough -- each action, each question is not
+  done when I run Simulate". One simulation follows one path, so a recovery
+  runbook simulated with *Answer Yes to every question* walked 5 of its 28
+  steps. **Cover every branch** (Diagram tab › Simulate) plans the
+  scenarios that together take every arrow (yes, no and error, loops
+  included) and walks them one after the other as rehearsals. Every check
+  still really looks and keeps what it found; the scenario only picks the
+  arrow and answers the questions. A table then shows how often each step
+  was walked, what it answered, what the check really found, and every
+  arrow never taken; unwalked steps are coloured on the diagram. A scenario
+  is refused outside a rehearsal.
+- **Runbook steps that do the action instead of asking for it (FA-0008).**
+  *Connection test* (Test Connection from this node: API with the stored
+  account, TCP, ping or traceroute), *Log in to the appliance* (the stored
+  account, or a connection's account such as a remote RADIUS administrator;
+  a refused account is not retried for 10 minutes because of the admin
+  lockout), *Power state (hypervisor)* (the VM's state through the Sentinel
+  topology mapping), *Ping from the appliance* (`execute ping <target>` on
+  the device) and *Notify* (bell and e-mail; in a rehearsal only the
+  simulating person's bell, once per simulation). When SATOM cannot try,
+  each takes the error arrow, never a *no*.
+- **Plugin Studio: an *Ask a person* step can link to a SATOM page.**
+  **Link (a SATOM page)**, e.g. `/appliances/{{ appliance.id }}/restore`,
+  shows a button next to the question on the run page. Only a path on this
+  SATOM is shown; another site is refused and the question says so.
 
 ### Fixed
 - **AppIDs: Assign policies froze the browser with "All FortiWeb devices"
@@ -144,6 +118,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   first, builds on the node's database, and reports *unmeasured* -- never
   *ok* -- if it is ever built on another one. The update itself was fine:
   nothing needs to be restored.
+- **Automations started by an alert died half-way and stayed "running".**
+  The alert run is a short-lived process; the automation ran on one of its
+  background threads and was killed when the process exited (six recovery
+  runs stopped after 3 steps, and the stuck runs made later ones fail with
+  "you already have 2 app runs in progress"). The alert run now waits for
+  the automations it started. Automation and app runs whose worker stopped
+  are closed as *interrupted* in the lists, without anybody opening them.
+- **A run waiting on a question of an app that was published again stayed
+  "waiting" forever.** Its answer is refused (the diagram changed under it),
+  so nothing could close it. Such runs are now closed with the reason, and
+  a run of the draft or of the live version keeps waiting.
+- **An SSH read could run far past its time limit.** The limit was checked
+  only after a silent moment, so a device that kept printing held a 15 s
+  `get system status` for 18 minutes, and the read buffer grew with it.
+  Reads now stop at their limit, and at 8 MiB.
+- **A *Console read* with `execute ping` always failed** with "SSH did not
+  answer": the read-only path refused the probe its own gate allowed. It
+  now goes through the probe path.
+- **Test Connection: a traceroute to an appliance kept by host name never
+  said "reached".** The hops are printed as addresses and the name was
+  compared with them; the address traceroute resolved the name to is now
+  compared too.
 
 ## [4.11.10] - 2026-11-07
 

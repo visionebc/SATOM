@@ -5,14 +5,14 @@ Revises: studiofold01
 Create Date: 2026-11-06
 
 The tables of models_wsm (credentials, audit, script library, schedules,
-runs). The Web Server Manager replaces the twelve-plus-six "Web hosts" apps
-of Plugin Studio > Examples in the Linux menu (operator, 2026-11-06: "if
-something already exists, unify it into one"): the installed ``ex-web-*``
-apps are switched off -- kept, not deleted; the example bundle stays
-installable as a demonstration of the server step -- and the server
-connection they used stays the server record, now reached through the
-manager. Idempotent (app.migration_guard): create_all may already have made
-the tables.
+runs). The server connection the "Web hosts" apps of Plugin Studio >
+Examples use is also a server of the manager. Those apps are NOT touched:
+until 2026-11-07 this migration switched the installed ``ex-web-*`` off
+(operator, 2026-11-06: "unify it into one"); the operator asked for them
+back in the Linux menu the next day ("the ones that were there before, add
+them to the Linux section"), so no install loses them on upgrade. It never
+shipped in a release with the switch-off. Idempotent (app.migration_guard):
+create_all may already have made the tables.
 """
 from alembic import op
 from app import migration_guard as guard
@@ -131,9 +131,6 @@ def upgrade():
         sa.Column('job_id', sa.String(64), nullable=False, server_default=''),
         _ts('started_at'), _ts('finished_at', True),
     )
-    if guard.has_table('studio_apps'):
-        op.get_bind().execute(sa.text(
-            "UPDATE studio_apps SET enabled = :f WHERE slug LIKE 'ex-web-%'"), {"f": False})
 
 
 def downgrade():

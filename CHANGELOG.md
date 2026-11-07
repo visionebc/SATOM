@@ -31,9 +31,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   to manage web servers, like cPanel, over SSH with the credentials of the
   signed-in user; if the account cannot do something, escalate with sudo the
   way the user sets it; adaptable to the distributions SATOM deploys on; if
-  something already exists, unify it into one". **Linux › Web Server
-  Manager** replaces the Web hosts example apps (switched off by the
-  migration; the server connection they used is the server record). Twelve
+  something already exists, unify it into one". The server connection the
+  *Web hosts* example apps use is a server of the manager too. The Web hosts
+  apps stay on in the Linux ADOM's Plugins (switched off for a day during
+  development, back on request: "the ones that were there before, add them
+  to the Linux section"). Twelve
   modules: File Manager (editor with syntax highlighting, upload/download,
   history and restore, archives, search, chmod/chown), Domains & VHosts
   (nginx and Apache; static, PHP-FPM or reverse proxy; HTTPS, redirects,

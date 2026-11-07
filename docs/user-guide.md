@@ -12683,9 +12683,10 @@ installation, or the public site being down.
 The **Web Server Manager** administers Linux web servers over SSH **with
 your own account**: files, websites, certificates, security, `.htaccess`,
 scripts, scheduled tasks, packages, services, logs, users and the SSH server.
-It replaces the *Web hosts* example apps of Plugin Studio (they are switched
-off; the example bundle can still be installed as a demonstration of the
-server step).
+The *Web hosts* example apps of Plugin Studio stay in the Linux ADOM's
+Plugins next to it: they do the virtual hosts, files and certificates of a
+server through the restricted `satom-webctl` agent, and the server connection
+they use is also a server of the manager.
 
 It ships as **plugins** (§48.6): in the Linux ADOM it is the folder **Web
 Server Manager** under **Plugins**. The pages described below stay at

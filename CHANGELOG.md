@@ -7,6 +7,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Maintenance with pool drain in the Web Server Manager.** Asked for: "take
+  the server out of the load balancer before working on it". A
+  **Maintenance** module per server: *Find pool members* reads every
+  FortiWeb server pool and FortiADC real-server pool the user reaches (by
+  their ADOMs and device scope) for the members whose address is this
+  server's, as a job; links keep only what a device answered. A run is one
+  job in the six steps of every SATOM write: pre-check (refuses draining the
+  last member in service of a pool unless allowed), backup of each member's
+  status, optional dry run, drain (`maintenance` / `maintain` / `disable`,
+  the status field only, every write re-read -- a write the device does not
+  keep is a failed step and the members already drained go back), the work
+  (restart or reload a service, a library script, or only drain), a
+  post-check (health, the service is active, the site answers on each
+  member's port) and the return of each member to the status it had BEFORE,
+  re-read. When the work or the check fails the members stay drained by
+  default, the administrators get a bell and the page offers *Return to
+  service*. Changing a member needs *Apply network*.
 - **Server health in the Web Server Manager (Linux ADOM).** Asked for: "monitor
   RAM, disk and processes of the Linux servers; the operator adds their own
   credentials and decides whether the agent is installed or not -- otherwise

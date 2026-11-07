@@ -98,6 +98,8 @@ VIEW_PERM = "webserver.view"
 CRED_PERM = "webserver.credentials"
 MODULES = {
     "health": ("Health", "bi-heart-pulse", "Memory, disks, load, processes, failed services"),
+    "maintenance": ("Maintenance", "bi-cone-striped",
+                    "Out of the FortiWeb / FortiADC pools, work, back in"),
     "files": ("File Manager", "bi-folder2-open", "Browse, edit, upload and download files"),
     "sites": ("Domains & VHosts", "bi-globe2", "Websites, domains, PHP, redirects"),
     "certs": ("SSL Certificates", "bi-shield-lock", "Let's Encrypt, import, renew, expiry"),

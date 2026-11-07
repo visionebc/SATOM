@@ -14411,6 +14411,10 @@ answer of the last call.</p>
 <td>Memory, swap, file systems (space and inodes), CPU and load, top processes and failed systemd services of the whole server, read every few minutes and kept in the metrics store; history charts (6 h, 24 h, 7 days); thresholds per server; a bell for each new problem and when the server is healthy again. Read through the agent or a shared SSH credential, as you choose (§48.9).</td>
 </tr>
 <tr>
+<td>Maintenance</td>
+<td>Takes the server out of the FortiWeb server pools and FortiADC real-server pools it is a member of, does the work (restart or reload a service, run a library script, or nothing while you work), checks the server and puts each member back to the status it had before — every device write re-read (§48.10).</td>
+</tr>
+<tr>
 <td>File Manager</td>
 <td>Browse any folder the account may read; edit with syntax highlighting (PHP, HTML, CSS, JS, Python, Bash, JSON, YAML, XML, Apache, nginx); preview HTML (scripts disabled) and images; upload (drag and drop, 8 MB per file) and download; new file/folder; rename, move, copy; chmod / chown (recursive); zip / tar.gz; extract (archives with absolute paths, <code>..</code> or links are refused); search by name and content; <strong>History</strong> of the last 25 versions of every file SATOM overwrote, with restore. Deletes keep a backup on the server up to 64 MB.</td>
 </tr>
@@ -14634,6 +14638,75 @@ unreachable server never looks idle. A chart whose query fails says ERROR; it
 is never an empty chart.</p>
 <p>A profile that reaches only some <strong>sites</strong> of a server (§48.8) does not see
 Health: it is the whole machine.</p>
+<h3 id="4810-maintenance-out-of-the-load-balancer-work-back-in">48.10 Maintenance: out of the load balancer, work, back in</h3>
+<p>A web server behind a FortiWeb or a FortiADC still receives traffic while it
+restarts. <strong>Linux › Web Server Manager › <em>server</em> › Maintenance</strong> takes it
+out of its pools first and puts it back afterwards, as one job whose every
+step shows on the page and in the Job Manager.</p>
+<p><strong>1. Link the server to its pool members</strong> (<em>Administer servers</em>). <strong>Find
+pool members</strong> asks every FortiWeb and FortiADC your profile reaches — by
+its ADOMs and device scope, not by the ADOM the page is open in — for the
+members whose address is this server's (the host name is resolved; a
+FortiWeb member of type <em>domain</em> matches the host name). It is a read, run
+as a job. A device that cannot be read is listed as an ERROR (for example
+<em>Invalid VM License</em>), never as "no member". Tick the members that are this
+server and <strong>Keep</strong>; SATOM only keeps members a device answered, never one
+a request names.</p>
+<p><strong>2. Run a maintenance</strong> (needs <strong>Apply network</strong> — it changes pool members
+— plus what the Web Server Manager asks for the work itself, with the
+credential and <em>Run as</em> chosen at the top of the page):</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pre-check</td>
+<td>Each member is read again from its device. Draining the <strong>last member in service</strong> of a pool is refused unless you tick <em>Allow</em>. The server's health is read (recorded, not blocking: the server may be what you are fixing).</td>
+</tr>
+<tr>
+<td>Backup</td>
+<td>Each member's status before the run is kept in the job and in the server's <em>open maintenance</em> record.</td>
+</tr>
+<tr>
+<td>Dry run</td>
+<td>With <em>Dry run</em> ticked the job lists what it would change and stops.</td>
+</tr>
+<tr>
+<td>Drain</td>
+<td>Only the member's <strong>status</strong> changes: <code>maintenance</code> on FortiWeb, <code>maintain</code> on FortiADC, or <code>disable</code>. A member already out of service is left as it is. Every write is <strong>re-read</strong>: a device that answers 200 and keeps the old value is a failed step. If one member cannot be drained, the ones already drained go back and the server is not touched.</td>
+</tr>
+<tr>
+<td>Wait</td>
+<td>Seconds for open connections to finish (default 30).</td>
+</tr>
+<tr>
+<td>Work</td>
+<td>Restart or reload a service, run a script of the library, or <strong>Only drain</strong> (the members stay out until you press <em>Return to service</em>).</td>
+</tr>
+<tr>
+<td>Post-check</td>
+<td>The server's health (nothing critical, it answers), the service is active, and the site answers on each member's port on the server itself (<code>/</code> or the path you set; 5xx or no answer fails).</td>
+</tr>
+<tr>
+<td>Return</td>
+<td>Each member gets back <strong>the status it had before</strong> (never a blind <em>enable</em>), re-read from the device.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>If the work or the post-check fails</strong>, the members <strong>stay drained</strong> by
+default — sending traffic to a broken server is the outage this exists to
+avoid — the administrators get a bell, and the page shows the open
+maintenance with <strong>Return to service</strong>. <em>Return them anyway</em> puts them back
+and still reports the failure. While a maintenance is open no other one can
+start on the server.</p>
+<p>The FortiADC write sends the whole member row with the new status and is
+re-read like the FortiWeb one; it is <strong>unverified on a licensed FortiADC</strong>
+so far (the lab FortiADCs answer <em>Invalid VM License</em>): the job says so if a
+build behaves differently.</p>
     </div>
   </div>
 </section>

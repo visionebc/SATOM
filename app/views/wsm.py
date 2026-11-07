@@ -34,7 +34,7 @@ def _module_on():
     if not W.module_active():
         abort(404)
 
-PAGES = ("health", "files", "sites", "certs", "security", "htaccess", "scripts", "cron", "packages",
+PAGES = ("health", "maintenance", "files", "sites", "certs", "security", "htaccess", "scripts", "cron", "packages",
          "services", "logs", "users", "ssh")
 
 
@@ -292,6 +292,8 @@ def module(slug, page):
         ctx["cfg"]["scripts"] = [_script_dict(s) for s in _scripts()]
     if page == "health":
         ctx["cfg"]["health"] = _health_payload(c)
+    if page == "maintenance":
+        ctx["cfg"]["maint"] = _maint_payload(c)
     if page == "certs":
         try:
             from ..services import cert_providers as CP
@@ -366,6 +368,95 @@ def health_series(slug):
 
 
 # --------------------------------------------------------------------------- #
+#  maintenance with pool drain (services.server_maint)                         #
+# --------------------------------------------------------------------------- #
+def _maint_payload(c) -> dict:
+    from ..services import server_maint as SM
+    found = SM.last_found(c.slug)
+    return {"links": SM.links(c.slug), "pending": SM.pending(c.slug),
+            "found": {"at": found.get("at") or "", "rows": found.get("found") or [],
+                      "errors": found.get("errors") or [],
+                      "addresses": found.get("addresses") or []},
+            "drain": {k: list(v[1]) for k, v in SM.DRAIN.items()},
+            "scripts": [{"id": s.id, "name": s.name} for s in _scripts()],
+            "can_apply": W.can(current_user, SM.APPLY_PERM),
+            "can_link": W.can(current_user, W.SYSTEM_PERM),
+            "urls": {"discover": url_for("wsm.maint_discover", slug=c.slug),
+                     "links": url_for("wsm.maint_links", slug=c.slug),
+                     "run": url_for("wsm.maint_run", slug=c.slug),
+                     "return": url_for("wsm.maint_return", slug=c.slug),
+                     "state": url_for("wsm.maint_state", slug=c.slug)}}
+
+
+@bp.route("/<slug>/maintenance/state")
+@login_required
+@require_permission(W.VIEW_PERM)
+def maint_state(slug):
+    _health_whole_server(slug)
+    return jsonify({"ok": True, "maint": _maint_payload(W.server(slug))})
+
+
+@bp.route("/<slug>/maintenance/discover", methods=["POST"])
+@login_required
+@require_permission(W.SYSTEM_PERM)
+def maint_discover(slug):
+    from ..services import server_maint as SM
+    _health_whole_server(slug)
+    try:
+        out = SM.start_discover(current_app._get_current_object(), slug, user=current_user)
+    except SM.MaintError as exc:
+        return _json_error(exc, 409)
+    return jsonify(dict(out, ok=True))
+
+
+@bp.route("/<slug>/maintenance/links", methods=["POST"])
+@login_required
+@require_permission(W.SYSTEM_PERM)
+def maint_links(slug):
+    from ..services import server_maint as SM
+    _health_whole_server(slug)
+    keys = (request.get_json(silent=True) or {}).get("keys") or []
+    if not isinstance(keys, list):
+        return _json_error("bad request", 400)
+    SM.save_links(slug, keys, _me())
+    return jsonify({"ok": True, "maint": _maint_payload(W.server(slug))})
+
+
+@bp.route("/<slug>/maintenance/run", methods=["POST"])
+@login_required
+@require_permission(W.VIEW_PERM)
+def maint_run(slug):
+    from ..services import server_maint as SM
+    _health_whole_server(slug)
+    data = request.get_json(silent=True) or {}
+    secrets = data.get("secrets") or {}
+    if not isinstance(secrets, dict):
+        return _json_error("bad request", 400)
+    try:
+        out = SM.start(current_app._get_current_object(), slug, data, user=current_user,
+                       provided=secrets)
+    except W.NeedSecret as exc:
+        return jsonify({"ok": False, "need": exc.fields, "why": exc.why,
+                        "credential": exc.cred.name, "ssh_user": exc.cred.ssh_user}), 401
+    except (SM.MaintError, W.WsmDenied) as exc:
+        return _json_error(exc, 409)
+    return jsonify(dict(out, ok=True))
+
+
+@bp.route("/<slug>/maintenance/return", methods=["POST"])
+@login_required
+@require_permission(W.VIEW_PERM)
+def maint_return(slug):
+    from ..services import server_maint as SM
+    _health_whole_server(slug)
+    try:
+        out = SM.start_return(current_app._get_current_object(), slug, user=current_user)
+    except SM.MaintError as exc:
+        return _json_error(exc, 409)
+    return jsonify(dict(out, ok=True))
+
+
+# --------------------------------------------------------------------------- #
 #  the API every page uses                                                     #
 # --------------------------------------------------------------------------- #
 def _call(slug, op, data, *, as_job=False, title="", run_kind="", run_meta=None,
@@ -432,7 +523,7 @@ def job_state(job_id):
     res = j.get("result")
     return jsonify({"status": j.get("status"), "percent": j.get("percent"),
                     "message": j.get("message"), "error": j.get("error"),
-                    "result": res})
+                    "result": res, "steps": ((j.get("meta") or {}).get("steps") or [])[-60:]})
 
 
 # --------------------------------------------------------------------------- #

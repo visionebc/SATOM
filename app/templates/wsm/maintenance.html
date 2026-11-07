@@ -1,0 +1,3 @@
+{% extends "wsm/_layout.html" %}
+{# Web Server Manager > {{ modules['maintenance'][0] }}: drawn by static/js/wsm.js (module "maintenance"); the runs are services/server_maint.py jobs. #}
+{% block wsm_body %}<div id="wsm-page" class="wsm-page" data-page="maintenance"><div class="text-muted p-3">{{ _('Loading…') }}</div></div>{% endblock %}

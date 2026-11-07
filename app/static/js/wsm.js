@@ -1399,9 +1399,113 @@
     draw();
   }
 
+  // ======================================================================
+  //  MAINTENANCE -- out of the FortiWeb / FortiADC pools, work, back in
+  //  (services/server_maint.py). Every run is a job; its steps show here.
+  // ======================================================================
+  function pageMaintenance() {
+    var M = CFG.maint;
+    function refresh() { return fetch(M.urls.state, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }).then(function (d) { if (d.ok) M = CFG.maint = d.maint; draw(); }); }
+    function steps(list) {
+      return el('ol', { cls: 'wsm-small mb-0' }, (list || []).map(function (s) { return el('li', { cls: s.ok ? '' : 'text-danger', text: s.at.slice(11) + '  ' + s.label + (s.outcome ? ' · ' + s.outcome : '') }); }));
+    }
+    function follow(jobId, box, done) {
+      var bar = progressBar(); box.innerHTML = ''; box.append(bar);
+      var list = el('div'); box.append(list);
+      (function poll() {
+        fetch(CFG.jobs.replace('JOB', jobId), { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }).then(function (j) {
+          bar.bar.querySelector('div').style.width = (j.percent || 5) + '%'; bar.lastChild.textContent = j.message || '';
+          list.innerHTML = ''; list.append(steps(j.steps));
+          if (j.status === 'success' || j.status === 'error' || j.status === 'cancelled') {
+            if (j.status !== 'success') box.append(el('div', { cls: 'wsm-msg err mt-2' }, [el('i', { cls: 'bi bi-x-octagon' }), el('div', { text: j.error || j.status })]));
+            else bar.bar.querySelector('div').style.width = '100%';
+            if (done) done(j);
+            return;
+          }
+          setTimeout(poll, 1500);
+        }).catch(function () { setTimeout(poll, 3000); });
+      })();
+    }
+    function draw() {
+      var nodes = [], P = M.pending || {};
+      if ((P.members || []).length) nodes.push(el('div', { cls: 'wsm-msg warn' }, [el('i', { cls: 'bi bi-cone-striped' }), el('div', {}, [
+        el('strong', { text: P.members.length + ' pool member(s) of this server are OUT of service' }), ' since ' + P.at.replace('T', ' ') + ' UTC (by ' + P.by + '): ',
+        P.members.map(function (m) { return m.pool + '/' + m.member + ' (was ' + m.before + ')'; }).join(', '), ' ',
+        M.can_apply ? btn('Return to service', 'bi-box-arrow-in-right', 'btn-fw-primary', back) : null])]));
+      var linkRows = (M.links || []).map(function (l) { return [l.appliance, l.kind, l.pool, l.member, l.address + (l.port ? ':' + l.port : '')]; });
+      var findBox = el('div', { cls: 'mt-2' });
+      nodes.push(card('Pool members of this server', 'bi-diagram-3', [
+        el('p', { cls: 'wsm-small text-muted', text: 'Members of FortiWeb server pools and FortiADC real-server pools whose address is this server\'s. Only these are drained by a maintenance run.' }),
+        table(['Device', 'Product', 'Pool', 'Member', 'Address'], linkRows, { empty: 'No member linked yet.' }),
+        M.can_link ? el('div', { cls: 'wsm-toolbar mt-2' }, [btn('Find pool members', 'bi-search', null, function () { discover(findBox); }, 'Ask every FortiWeb and FortiADC you reach (a read, as a job)')]) : null,
+        findBox], 'mt-3'));
+      if ((M.found.rows || []).length || (M.found.errors || []).length) findBox.append(foundCard());
+      if (M.can_apply && (M.links || []).length && !(P.members || []).length) nodes.push(runCard());
+      else if (!M.can_apply) nodes.push(el('div', { cls: 'wsm-msg warn mt-3' }, [el('i', { cls: 'bi bi-lock' }), el('div', { text: 'Running a maintenance changes pool members on the devices: it needs the Apply network permission.' })]));
+      nodes.push(el('div', { id: 'wsm-maint-job', cls: 'mt-3' }));
+      setPage(nodes);
+    }
+    function foundCard() {
+      var linked = {}; (M.links || []).forEach(function (l) { linked[l.appliance_id + '|' + l.pool + '|' + l.member] = 1; });
+      var boxes = [];
+      var rows = M.found.rows.map(function (f) {
+        var k = f.appliance_id + '|' + f.pool + '|' + f.member, cb = el('input', { type: 'checkbox', cls: 'form-check-input' }); cb.checked = !!linked[k] || !(M.links || []).length; cb.dataset.key = k; boxes.push(cb);
+        return [cb, f.appliance, f.kind, f.pool, f.member, f.address + (f.port ? ':' + f.port : ''), f.status];
+      });
+      return card('Found ' + (M.found.at ? 'at ' + M.found.at.replace('T', ' ') + ' UTC' : ''), 'bi-search', [
+        el('div', { cls: 'wsm-small text-muted mb-1', text: 'This server is ' + ((M.found.addresses || []).join(', ') || 'an address that did not resolve') + '. Tick the members that are this server.' }),
+        table(['', 'Device', 'Product', 'Pool', 'Member', 'Address', 'Status now'], rows, { empty: 'No pool member has this server\'s address.' }),
+        (M.found.errors || []).length ? el('div', { cls: 'wsm-msg err mt-2' }, [el('i', { cls: 'bi bi-x-octagon' }), el('div', { text: 'ERROR — not read: ' + M.found.errors.join('; ') })]) : null,
+        rows.length ? btn('Keep the ticked members', 'bi-check-lg', 'btn-fw-primary mt-2', function () {
+          post(M.urls.links, { keys: boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.dataset.key; }) }).then(function (d) { if (!d.ok) return flash('err', d.error); M = CFG.maint = d.maint; flash('ok', 'Saved.'); draw(); }).catch(fail);
+        }) : null], 'mt-2');
+    }
+    function discover(box) {
+      post(M.urls.discover, {}).then(function (d) {
+        if (!d.ok) return flash('err', d.error || ('HTTP ' + d._status));
+        follow(d.job_id, box, function () { refresh(); });
+      }).catch(fail);
+    }
+    function back() {
+      confirmBox({ text: 'Put every drained member back to the status it had before the maintenance?' }).then(function (ok) {
+        if (!ok) return;
+        post(M.urls['return'], {}).then(function (d) { if (!d.ok) return flash('err', d.error); follow(d.job_id, $('#wsm-maint-job'), function () { refresh(); }); }).catch(fail);
+      });
+    }
+    function runCard() {
+      var f = {};
+      f.action = select([['restart', 'Restart a service'], ['reload', 'Reload a service'], ['script', 'Run a script of the library'], ['hold', 'Only drain: I work, then Return to service']], 'restart');
+      f.unit = input({ placeholder: 'nginx.service', value: 'nginx.service' });
+      f.script = select((M.scripts || []).length ? M.scripts.map(function (s) { return [s.id, s.name]; }) : [['', 'No script in the library']], '');
+      f.drain = select([['', 'Default: maintenance (FortiWeb) / maintain (FortiADC)'], ['disable', 'disable']], '');
+      f.wait = input({ type: 'number', value: 30, min: 0, max: 900, style: 'max-width:110px' });
+      f.path = input({ value: '/', style: 'max-width:200px' });
+      f.fail = select([['keep', 'Keep the members drained (safer)'], ['return', 'Return them anyway']], 'keep');
+      f.last = check('Allow draining the last member in service of a pool (stops that service)', false);
+      f.dry = check('Dry run: show what would change, change nothing', false);
+      var unitRow = field('Service', f.unit), scriptRow = field('Script', f.script);
+      function toggle() { unitRow.style.display = /restart|reload/.test(f.action.value) ? '' : 'none'; scriptRow.style.display = f.action.value === 'script' ? '' : 'none'; }
+      f.action.addEventListener('change', toggle); setTimeout(toggle);
+      return card('Run a maintenance', 'bi-cone-striped', [
+        el('p', { cls: 'wsm-small text-muted', text: '1 pre-check · 2 the members\' status is kept · 3 drain (re-read from the device) · 4 wait · 5 the work, as the credential and run-as above · 6 health, service and HTTP check, then each member back to its ORIGINAL status (re-read).' }),
+        field('What to do on the server', f.action), unitRow, scriptRow,
+        el('div', { cls: 'd-flex flex-wrap gap-3' }, [field('Drain to', f.drain), field('Wait after draining (s)', f.wait), field('Check path', f.path), field('If the work or the check fails', f.fail)]),
+        f.last, f.dry,
+        btn('Run', 'bi-play-fill', 'btn-fw-primary mt-2', function () {
+          var extra = { action: f.action.value, unit: f.unit.value, script_id: f.script.value, drain_status: f.drain.value, drain_wait: f.wait.value, path: f.path.value, on_failure: f.fail.value, allow_last: f.last.input.checked, dry_run: f.dry.input.checked };
+          var txt = extra.dry_run ? 'Dry run of the maintenance (nothing changes)?' : 'Take ' + M.links.length + ' pool member(s) out of service on the devices, ' + (extra.action === 'hold' ? 'and leave them out until Return to service' : extra.action + ' on the server, then put them back') + '?';
+          confirmBox({ text: txt, danger: !extra.dry_run }).then(function (ok) {
+            if (!ok) return;
+            call(M.urls.run, 'maintenance', {}, { extra: extra }).then(function (d) { follow(d.job_id, $('#wsm-maint-job'), function () { refresh(); }); }).catch(fail);
+          });
+        })], 'mt-3');
+    }
+    draw();
+  }
+
   // ---------- boot -------------------------------------------------------------
   fillCreds();
-  var PAGES = { home: pageHome, health: pageHealth, files: pageFiles, sites: pageSites, certs: pageCerts, security: pageSecurity, htaccess: pageHtaccess, scripts: pageScripts, cron: pageCron, packages: pagePackages, services: pageServices, logs: pageLogs, users: pageUsers, ssh: pageSsh };
+  var PAGES = { home: pageHome, health: pageHealth, maintenance: pageMaintenance, files: pageFiles, sites: pageSites, certs: pageCerts, security: pageSecurity, htaccess: pageHtaccess, scripts: pageScripts, cron: pageCron, packages: pagePackages, services: pageServices, logs: pageLogs, users: pageUsers, ssh: pageSsh };
   if (PAGE === 'health') pageHealth();
   else if (PAGES[PAGE]) {
     if (PAGE !== 'home' && !currentCred()) setPage([el('div', { cls: 'wsm-msg warn' }, [el('div', {}, ['No credential to sign in with. ', el('a', { href: CFG.base, text: 'Add your SSH account on the Overview' }), '.'])])]);

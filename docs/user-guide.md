@@ -12717,6 +12717,7 @@ answer of the last call.
 | Module | What it does |
 |---|---|
 | Health | Memory, swap, file systems (space and inodes), CPU and load, top processes and failed systemd services of the whole server, read every few minutes and kept in the metrics store; history charts (6 h, 24 h, 7 days); thresholds per server; a bell for each new problem and when the server is healthy again. Read through the agent or a shared SSH credential, as you choose (§48.9). |
+| Maintenance | Takes the server out of the FortiWeb server pools and FortiADC real-server pools it is a member of, does the work (restart or reload a service, run a library script, or nothing while you work), checks the server and puts each member back to the status it had before — every device write re-read (§48.10). |
 | File Manager | Browse any folder the account may read; edit with syntax highlighting (PHP, HTML, CSS, JS, Python, Bash, JSON, YAML, XML, Apache, nginx); preview HTML (scripts disabled) and images; upload (drag and drop, 8 MB per file) and download; new file/folder; rename, move, copy; chmod / chown (recursive); zip / tar.gz; extract (archives with absolute paths, `..` or links are refused); search by name and content; **History** of the last 25 versions of every file SATOM overwrote, with restore. Deletes keep a backup on the server up to 64 MB. |
 | Domains & VHosts | nginx and Apache sites: new website (static, PHP-FPM with the socket detected, or reverse proxy), domains and aliases, document root, index files, HTTPS with a certificate, HTTP→HTTPS redirect, upload and time limits, security headers, own logs; edit the configuration; enable, disable, delete; test the configuration; check that the site answers. Every change: backup, the server's own test, restore when it fails, reload (never restart). |
 | SSL Certificates | Certificates in use and managed, with expiry; request with the key generated on the server and signed by the Certificate Manager (internal CA) or downloaded; install; **import** an existing certificate and key (the key goes straight to the server, never stored or logged by SATOM); use on a site; Let's Encrypt with certbot (webroot, nginx, Apache or standalone; ECDSA or RSA; staging); renew, test renewal, automatic renewal; **TLS check** (trusted chain, name, expiry, TLS 1.0–1.3). Expiring certificates raise a bell (§23.6). |
@@ -12883,3 +12884,47 @@ is never an empty chart.
 
 A profile that reaches only some **sites** of a server (§48.8) does not see
 Health: it is the whole machine.
+
+### 48.10 Maintenance: out of the load balancer, work, back in
+
+A web server behind a FortiWeb or a FortiADC still receives traffic while it
+restarts. **Linux › Web Server Manager › *server* › Maintenance** takes it
+out of its pools first and puts it back afterwards, as one job whose every
+step shows on the page and in the Job Manager.
+
+**1. Link the server to its pool members** (*Administer servers*). **Find
+pool members** asks every FortiWeb and FortiADC your profile reaches — by
+its ADOMs and device scope, not by the ADOM the page is open in — for the
+members whose address is this server's (the host name is resolved; a
+FortiWeb member of type *domain* matches the host name). It is a read, run
+as a job. A device that cannot be read is listed as an ERROR (for example
+*Invalid VM License*), never as "no member". Tick the members that are this
+server and **Keep**; SATOM only keeps members a device answered, never one
+a request names.
+
+**2. Run a maintenance** (needs **Apply network** — it changes pool members
+— plus what the Web Server Manager asks for the work itself, with the
+credential and *Run as* chosen at the top of the page):
+
+| Step | What happens |
+|---|---|
+| Pre-check | Each member is read again from its device. Draining the **last member in service** of a pool is refused unless you tick *Allow*. The server's health is read (recorded, not blocking: the server may be what you are fixing). |
+| Backup | Each member's status before the run is kept in the job and in the server's *open maintenance* record. |
+| Dry run | With *Dry run* ticked the job lists what it would change and stops. |
+| Drain | Only the member's **status** changes: `maintenance` on FortiWeb, `maintain` on FortiADC, or `disable`. A member already out of service is left as it is. Every write is **re-read**: a device that answers 200 and keeps the old value is a failed step. If one member cannot be drained, the ones already drained go back and the server is not touched. |
+| Wait | Seconds for open connections to finish (default 30). |
+| Work | Restart or reload a service, run a script of the library, or **Only drain** (the members stay out until you press *Return to service*). |
+| Post-check | The server's health (nothing critical, it answers), the service is active, and the site answers on each member's port on the server itself (`/` or the path you set; 5xx or no answer fails). |
+| Return | Each member gets back **the status it had before** (never a blind *enable*), re-read from the device. |
+
+**If the work or the post-check fails**, the members **stay drained** by
+default — sending traffic to a broken server is the outage this exists to
+avoid — the administrators get a bell, and the page shows the open
+maintenance with **Return to service**. *Return them anyway* puts them back
+and still reports the failure. While a maintenance is open no other one can
+start on the server.
+
+The FortiADC write sends the whole member row with the new status and is
+re-read like the FortiWeb one; it is **unverified on a licensed FortiADC**
+so far (the lab FortiADCs answer *Invalid VM License*): the job says so if a
+build behaves differently.

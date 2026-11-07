@@ -5395,7 +5395,10 @@ the full one. A delta builds on this node's own files, so its preflight row
 signed tree. If one differs (a file patched by hand, a missing one), the row
 fails, names the file and the full package to use, and <strong>Apply</strong> stays
 disabled; nothing on the node has changed. Uploading a delta by hand works the
-same way. From a shell, <code>satom execute update fetch</code> picks the delta too, and
+same way: <strong>Upload</strong> names the file for this node,
+<code>satom-update-&lt;new&gt;-from-&lt;this&gt;.tar.gz</code>, and a release publishes deltas from
+its five previous releases, so the full package is only for an older node or
+a refused delta. From a shell, <code>satom execute update fetch</code> picks the delta too, and
 <code>--full</code> the full package. Details:
 <a href="offline-update-packages.html">offline-update-packages.md §3.1</a>.</p>
 <p>The feed is the public repository unless <strong>Settings → General → Update
@@ -14443,7 +14446,7 @@ answer of the last call.</p>
 </tr>
 <tr>
 <td>Cron Jobs</td>
-<td>The crontab of your account (or another account, as root): frequency builder (every minute … monthly, or a cron expression), working folder, output to a log, errors by mail (MAILTO), enable/disable without deleting, duplicate, cron log. <strong>Scheduled by SATOM</strong>: SATOM runs a library script with a stored service credential (cron expression in UTC); revoking, disabling or expiring the credential parks the job as <em>waiting for authentication</em> and notifies the administrators.</td>
+<td>The crontab of your account (or another account, as root); a save always goes to the crontab that was loaded, also when <em>auto</em> has to retry through sudo: frequency builder (every minute … monthly, or a cron expression), working folder, output to a log, errors by mail (MAILTO), enable/disable without deleting, duplicate, cron log. <strong>Scheduled by SATOM</strong>: SATOM runs a library script with a stored service credential (cron expression in UTC); revoking, disabling or expiring the credential parks the job as <em>waiting for authentication</em> and notifies the administrators.</td>
 </tr>
 <tr>
 <td>Package Manager</td>
@@ -14451,7 +14454,7 @@ answer of the last call.</p>
 </tr>
 <tr>
 <td>Services</td>
-<td>systemd services: state, start, stop, restart, reload, start at boot, dependencies, logs. Stopping SSH needs a typed confirmation.</td>
+<td>systemd services, opening on the running ones (views: Running, Web-server services, Failed, All, with counts): state, start, stop, restart, reload, start at boot, dependencies, logs. Stopping SSH needs a typed confirmation.</td>
 </tr>
 <tr>
 <td>Logs</td>

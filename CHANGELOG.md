@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.9] - 2026-11-07
+
 ### Fixed
 - **Web Server Manager: saving a cron job no longer fails with "the crontab
   changed since it was read" (SA-0023).** With *Run as: auto*, an empty user

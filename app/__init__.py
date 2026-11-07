@@ -2546,7 +2546,9 @@ def create_app(config_override: object | None = None) -> Flask:
     # -- database & seed --------------------------------------------------
     # Skippable so Alembic migration commands (and CI that manages its own
     # schema) can import the app without create_all racing the migration.
-    if not os.environ.get("FORTINET_SKIP_DB_BOOTSTRAP"):
+    # A ``flask db ...`` command skips it on its own (SA-0021): see
+    # :func:`is_schema_command`.
+    if not os.environ.get("FORTINET_SKIP_DB_BOOTSTRAP") and not is_schema_command():
         with app.app_context():
             # Imported for its side effect: db.create_all() only creates tables
             # whose model class has been imported.
@@ -3145,6 +3147,37 @@ def _assign_missing_profiles() -> None:
             db.session.commit()
     except Exception:  # noqa: BLE001
         db.session.rollback()
+
+
+#: ``flask`` options that take a value, so the word after them is not the command.
+_FLASK_VALUE_OPTIONS = ("--app", "-A", "--env-file", "-e")
+
+
+def is_schema_command(argv: list[str] | None = None) -> bool:
+    """True when this process is ``flask db ...`` (``python -m flask db ...``).
+
+    Alembic owns the schema there, so the boot bootstrap must not run: its
+    seeds read the models (``User.query.first()`` joins ``profiles``), and the
+    models already declare the columns the pending migrations are about to
+    add. On a node one release behind, that query died with "column
+    profiles.device_scope does not exist" before Alembic ever ran, and the
+    update rolled back (SA-0021, 4.11.4 -> 4.11.6).
+
+    ``satom execute restart-all`` and ``install.sh`` already set
+    ``FORTINET_SKIP_DB_BOOTSTRAP``; the update runner of every release up to
+    4.11.6 and the container entrypoint do not, and the runner that applies an
+    update is the one already installed -- so the decision lives here, in the
+    code the package brings, not in ``deploy/``.
+    """
+    import sys
+
+    argv = sys.argv if argv is None else argv
+    if not argv or os.path.basename(argv[0]) not in ("flask", "__main__.py"):
+        return False
+    args, i = list(argv[1:]), 0
+    while i < len(args) and args[i].startswith("-"):
+        i += 2 if args[i] in _FLASK_VALUE_OPTIONS else 1
+    return i < len(args) and args[i] == "db"
 
 
 #: Operator-supplied password for the FIRST admin (installers pass it through).

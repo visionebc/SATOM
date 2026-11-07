@@ -6,6 +6,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **Updating a node from 4.11.4 or older failed at `flask db upgrade` (SA-0021).**
+  Reported: the update to 4.11.6 stopped with a database error on a query of
+  `users` joined to `profiles` and rolled back. Cause: `flask db upgrade` first
+  builds the application, and its start-up seeding queried the user table
+  with the columns the NEW release declares -- `profiles.device_scope`
+  (4.11.5) did not exist yet, because only the pending migration adds it, so
+  the command failed before any migration ran. Any `flask db ...` command now
+  skips the start-up schema and seeding work (as `satom execute restart-all`
+  and the installer already did): migrations own the schema there, and the
+  next service start runs the seeding on the migrated database. The fix is in
+  the application, not in the update runner, so it works with the runner
+  already installed on the node. The failed attempt ran no migration; at most
+  the start-up step had created new tables or added columns, which every
+  migration checks for before creating -- no database restore is needed,
+  apply 4.11.7 directly. Also covers the
+  container image, whose entrypoint runs `flask db upgrade` the same way.
+
 ## [4.11.6] - 2026-11-07
 
 ### Added

@@ -1,24 +1,33 @@
 {
   "schema": "satom.upgrade-feed/1",
   "product": "satom",
-  "version": "4.11.4",
-  "released": "2026-11-06",
-  "release_url": "https://github.com/visionebc/SATOM/releases/tag/v4.11.4",
+  "version": "4.11.5",
+  "released": "2026-11-07",
+  "release_url": "https://github.com/visionebc/SATOM/releases/tag/v4.11.5",
   "package": {
-    "name": "satom-update-4.11.4.tar.gz",
-    "url": "https://github.com/visionebc/SATOM/releases/download/v4.11.4/satom-update-4.11.4.tar.gz",
-    "sha256": "09ed940a5826299c088e4f971c26ae11dd85f4752c3d659ba4aaf891806c0954",
-    "size": 38700437
+    "name": "satom-update-4.11.5.tar.gz",
+    "url": "https://github.com/visionebc/SATOM/releases/download/v4.11.5/satom-update-4.11.5.tar.gz",
+    "sha256": "fa4e22233e3845926af404f6730f4f31a913632d032454af3d2444295e70734a",
+    "size": 38950216
   },
   "signing_key": {
     "name": "satom-release-2026.pub",
     "fingerprint": "SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA",
-    "url": "https://github.com/visionebc/SATOM/releases/download/v4.11.4/satom-release-2026.pub"
+    "url": "https://github.com/visionebc/SATOM/releases/download/v4.11.5/satom-release-2026.pub"
   },
   "api_pack": {
-    "name": "satom-apipack-4.11.4.tar.gz",
-    "url": "https://github.com/visionebc/SATOM/releases/download/v4.11.4/satom-apipack-4.11.4.tar.gz",
-    "sha256": "75e31b36e6722432b38afd784303b9d4e44c2435b82aae31f2f312ef1203908d"
+    "name": "satom-apipack-4.11.5.tar.gz",
+    "url": "https://github.com/visionebc/SATOM/releases/download/v4.11.5/satom-apipack-4.11.5.tar.gz",
+    "sha256": "5f3fbd582c27cb73e5bb0cc363a20eb8ca7e332bc3bb7bb0faa9bbe8675fd556"
   },
-  "knowledge_feed": "https://github.com/visionebc/SATOM/releases/download/knowledge/latest.json"
+  "knowledge_feed": "https://github.com/visionebc/SATOM/releases/download/knowledge/latest.json",
+  "deltas": [
+    {
+      "from": "4.11.4",
+      "name": "satom-update-4.11.5-from-4.11.4.tar.gz",
+      "url": "https://github.com/visionebc/SATOM/releases/download/v4.11.5/satom-update-4.11.5-from-4.11.4.tar.gz",
+      "sha256": "9185492680f3f3c12b1b43a5b5c004081bf6c498295b0a48161ae09a70b713dd",
+      "size": 3591751
+    }
+  ]
 }

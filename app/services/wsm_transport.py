@@ -19,7 +19,12 @@ How one call goes (``call``):
    that one line; the helper skips everything up to the marker, so a password
    sudo did not ask for is never read as code), or ``sudo -n`` for a NOPASSWD
    rule. ``-k`` makes sudo ask every time: a cached ticket never stands in for
-   the password the operator was asked for.
+   the password the operator was asked for. ``login`` is the same password
+   flow through ``sudo -i -u root`` for servers whose policy only allows
+   root's login shell: sudo hands the command to ``$SHELL -c`` with every
+   non-alphanumeric character backslash-escaped (a backslash-newline joins
+   lines), so the bootstrap travels as ONE line (base64), and root's profile
+   may print before it, so the answer starts after :data:`OUT_MARKER`.
 4. **The answer goes through the ingestion gate** (``server_ingest``): size
    before parse, strict JSON, the closed schemas of the satom-webctl
    operations where they apply and a strict generic shape elsewhere.
@@ -30,6 +35,7 @@ DATABASE-FREE: credentials and the pinned key are passed in.
 """
 from __future__ import annotations
 
+import base64
 import io
 import json
 import shlex
@@ -43,6 +49,9 @@ from . import server_ingest as G
 from . import studio_http as H
 
 MARKER = b"--SATOM-WSM-BEGIN--"
+OUT_MARKER = b"--SATOM-WSM-ANSWER--\n"
+#: the elevations that read the sudo password as the first stdin line
+PASSWORD_ELEVATIONS = ("sudo", "login")
 MAX_ANSWER = 24 * 1024 * 1024
 MAX_STDERR = 64 * 1024
 HOSTCTL = Path(__file__).resolve().parents[2] / "hostctl"
@@ -58,6 +67,11 @@ BOOT = (
     "g={'__name__':'__wsm__'}\n"
     "exec(compile(s,'satom-wsm','exec'),g)\n"
     "g['session_main'](b)\n" % MARKER)
+
+#: BOOT for ``sudo -i``: one line, only base64 inside, the answer behind OUT_MARKER
+LOGIN_BOOT = ("import base64,sys;sys.stdout.write(%r);sys.stdout.flush();"
+              "exec(base64.b64decode(%r))" % (OUT_MARKER.decode(),
+                                              base64.b64encode(BOOT.encode()).decode()))
 
 
 class WsmError(Exception):
@@ -92,7 +106,10 @@ def helper_version() -> str:
 
 
 def remote_command(elevate: str) -> str:
-    """The command line sent to the server. ``elevate``: '' | 'sudo' | 'nopasswd'."""
+    """The command line sent to the server. ``elevate``: '' | 'sudo' | 'login' |
+    'nopasswd'."""
+    if elevate == "login":
+        return "sudo -S -k -p '' -i -u root -- python3 -I -c " + shlex.quote(LOGIN_BOOT)
     base = "python3 -I -c " + shlex.quote(BOOT)
     if elevate == "sudo":
         return "sudo -S -k -p '' -- " + base
@@ -180,6 +197,15 @@ def _gate(op: str, raw: bytes):
     return verdict.data
 
 
+def answer_body(raw: bytes, elevate: str) -> bytes:
+    """What the helper wrote. Under ``login`` whatever root's profile printed
+    comes first and is dropped; no marker = the helper never started."""
+    if elevate != "login":
+        return raw
+    i = raw.find(OUT_MARKER)
+    return raw[i + len(OUT_MARKER):] if i >= 0 else b""
+
+
 def _stderr_reason(err: str, elevate: str) -> WsmError | None:
     low = err.lower()
     if elevate and ("incorrect password" in low or "sorry, try again" in low
@@ -214,10 +240,10 @@ def call(target: dict, account: dict, op: str, args: dict | None = None, *,
                                   "press Fetch and trust")
     if not account.get("secret"):
         raise WsmError("auth", "no password or key was given for %s" % account.get("user"))
-    if elevate == "sudo" and not sudo_password:
+    if elevate in PASSWORD_ELEVATIONS and not sudo_password:
         raise WsmError("sudo_password", "the sudo password is needed for this operation")
     request = {"op": op, "args": args or {}, "by": by}
-    stdin = build_stdin(request, sudo_password if elevate == "sudo" else "")
+    stdin = build_stdin(request, sudo_password if elevate in PASSWORD_ELEVATIONS else "")
     session_id = uuid.uuid4().hex[:16]
     started = time.monotonic()
     t = _transport(host, port, min(timeout, 30))
@@ -266,7 +292,7 @@ def call(target: dict, account: dict, op: str, args: dict | None = None, *,
         chan.close()
     finally:
         t.close()
-    raw = b"".join(out)
+    raw = answer_body(b"".join(out), elevate)
     errtext = b"".join(err).decode("utf-8", "replace")
     if not raw.strip():
         reason = _stderr_reason(errtext, elevate)

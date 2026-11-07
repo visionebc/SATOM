@@ -7,7 +7,8 @@ that server:
 
 * :class:`WsmCredential` -- an SSH account on one server (password, or key
   with an optional passphrase), how it becomes root (``sudo`` with its own
-  password, ``sudo`` NOPASSWD, or not at all) and whether SATOM keeps the
+  password, ``sudo -i -u root`` with its own password, ``sudo`` NOPASSWD, or
+  not at all) and whether SATOM keeps the
   secret (service credential) or asks for it at every operation. The secret
   itself never lives in a column: it is in the vault, or Fernet-encrypted in
   ``app_settings`` (services.prefixed_secret), under ``wsm.cred.<id>.*``.
@@ -39,7 +40,9 @@ class WsmCredential(db.Model):
     __tablename__ = "wsm_credentials"
 
     AUTH_TYPES = ("password", "key", "agent")
-    ESCALATIONS = ("none", "sudo", "sudo_nopasswd")
+    ESCALATIONS = ("none", "sudo", "sudo_login", "sudo_nopasswd")
+    #: the modes where sudo takes the account's password
+    PASSWORD_ESCALATIONS = ("sudo", "sudo_login")
     SUDO_PASSWORD = ("same", "ask")
     RUN_AS = ("self", "auto", "root")
     STATUSES = ("active", "disabled", "revoked")
@@ -58,9 +61,10 @@ class WsmCredential(db.Model):
     ssh_user = db.Column(db.String(64), nullable=False, default="")
     #: password | key | agent (the satom-webctl key of the connection)
     auth_type = db.Column(db.String(16), nullable=False, default="password")
-    #: none | sudo (with a password) | sudo_nopasswd (a NOPASSWD rule exists)
+    #: none | sudo (with a password) | sudo_login (``sudo -i -u root``, root's
+    #: login shell, with a password) | sudo_nopasswd (a NOPASSWD rule exists)
     escalation = db.Column(db.String(16), nullable=False, default="none")
-    #: for "sudo": same = the SSH password; ask = asked at every operation
+    #: for "sudo"/"sudo_login": same = the SSH password; ask = asked at every operation
     sudo_password = db.Column(db.String(8), nullable=False, default="same")
     #: False = on demand: the secret is asked at every operation, never kept
     store_secret = db.Column(db.Boolean, nullable=False, default=True)
@@ -96,7 +100,12 @@ class WsmCredential(db.Model):
 
     @property
     def can_escalate(self) -> bool:
-        return self.escalation in ("sudo", "sudo_nopasswd") and self.auth_type != "agent"
+        return self.escalation != "none" and self.escalation in self.ESCALATIONS \
+            and self.auth_type != "agent"
+
+    @property
+    def sudo_takes_password(self) -> bool:
+        return self.escalation in self.PASSWORD_ESCALATIONS
 
 
 class WsmAudit(db.Model):

@@ -129,8 +129,9 @@
     Array.prototype.forEach.call(runSel.options, function (o) { o.disabled = o.value !== 'self' && !canRoot; });
     if (!canRoot && runSel.value !== 'self') runSel.value = 'self';
     var r = runSel.value;
-    if (r === 'root') who.append(badge('root', 'wsm-root'), ' every operation runs as root through sudo (as ' + c.ssh_user + ')');
-    else if (r === 'auto') who.append(badge(c.ssh_user, 'wsm-info'), ' sudo only when the server refuses (' + (c.escalation === 'sudo_nopasswd' ? 'NOPASSWD rule' : c.sudo_password === 'same' && c.auth_type === 'password' ? 'with your password' : 'asks the sudo password') + ')');
+    var via = c.escalation === 'sudo_login' ? 'sudo -i -u root' : 'sudo';
+    if (r === 'root') who.append(badge('root', 'wsm-root'), ' every operation runs as root through ' + via + ' (as ' + c.ssh_user + ')');
+    else if (r === 'auto') who.append(badge(c.ssh_user, 'wsm-info'), ' ' + via + ' only when the server refuses (' + (c.escalation === 'sudo_nopasswd' ? 'NOPASSWD rule' : c.sudo_password === 'same' && c.auth_type === 'password' ? 'with your password' : 'asks the sudo password') + ')');
     else who.append(badge(c.ssh_user, 'wsm-info'), canRoot ? ' never uses sudo' : ' this credential does not use sudo');
     if (!c.store_secret && c.auth_type !== 'agent') who.append(' ', badge('asks for its secret', 'wsm-warn'));
   }
@@ -263,7 +264,7 @@
         }
         if (c.public_key) acts.appendChild(btn('', 'bi-clipboard', null, function () { dialog('Public key of ' + c.name, el('div', {}, [el('p', { text: 'Add this line to ~' + c.ssh_user + '/.ssh/authorized_keys on the server:' }), pre(c.public_key, true)]), [], false); }, 'Public key'));
         var how = c.auth_type === 'agent' ? 'satom-webctl key (vhosts and certificates only)' : (c.auth_type === 'key' ? 'SSH key' : 'password') + (c.store_secret ? ', kept by SATOM' : ', asked every time');
-        var esc = c.escalation === 'none' ? 'no sudo' : c.escalation === 'sudo_nopasswd' ? 'sudo (NOPASSWD rule)' : 'sudo with ' + (c.sudo_password === 'same' && c.auth_type === 'password' ? 'the same password' : 'a password asked each time');
+        var esc = c.escalation === 'none' ? 'no sudo' : c.escalation === 'sudo_nopasswd' ? 'sudo (NOPASSWD rule)' : (c.escalation === 'sudo_login' ? 'sudo -i -u root' : 'sudo') + ' with ' + (c.sudo_password === 'same' && c.auth_type === 'password' ? 'the same password' : 'a password asked each time');
         return [el('div', {}, [el('strong', { text: c.name }), c.shared ? badge('shared', 'wsm-info') : badge('mine', 'wsm-muted'), el('div', { cls: 'text-muted wsm-small', text: c.description || '' })]),
           c.ssh_user, el('div', { cls: 'wsm-small' }, [how, el('br'), esc + ' · run as ' + c.run_as]),
           el('div', {}, [badge(c.state, st), c.expires_at ? el('div', { cls: 'text-muted wsm-small', text: 'expires ' + c.expires_at }) : null]),
@@ -293,7 +294,7 @@
       f.gen = check('Generate a new key pair in SATOM (you add the public key to the server)', false);
       f.pass = input({ type: 'password', autocomplete: 'new-password', placeholder: 'only if the key has one' });
       f.store = check('SATOM keeps the secret (needed for scheduled jobs); untick to be asked at every operation', c.store_secret);
-      f.esc = select([['none', 'Never use sudo'], ['sudo', 'sudo with a password'], ['sudo_nopasswd', 'sudo without password (a NOPASSWD rule exists on the server)']], c.escalation);
+      f.esc = select([['none', 'Never use sudo'], ['sudo', 'sudo with a password'], ['sudo_login', 'sudo -i -u root with a password (root login shell)'], ['sudo_nopasswd', 'sudo without password (a NOPASSWD rule exists on the server)']], c.escalation);
       f.sudopw = select([['same', 'the same password as the SSH account'], ['ask', 'ask me every time']], c.sudo_password);
       f.runas = select([['auto', 'Automatic: my account, sudo when refused'], ['self', 'Always my account'], ['root', 'Always root (sudo)']], c.run_as);
       f.shared = check('Shared service credential (other operators of this server may use it)', c.shared, CFG.perms.credentials ? {} : { disabled: true });
@@ -309,7 +310,7 @@
         var key = f.auth.value === 'key';
         secretWrap.classList.toggle('d-none', key || !f.store.input.checked);
         keyWrap.classList.toggle('d-none', !key || !f.store.input.checked);
-        f.sudopw.parentNode.classList.toggle('d-none', f.esc.value !== 'sudo' || key);
+        f.sudopw.parentNode.classList.toggle('d-none', (f.esc.value !== 'sudo' && f.esc.value !== 'sudo_login') || key);
         f.runas.disabled = f.esc.value === 'none'; if (f.esc.value === 'none') f.runas.value = 'self';
       }
       [f.auth, f.esc, f.store.input].forEach(function (x) { x.addEventListener('change', sync); });

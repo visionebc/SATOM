@@ -15,8 +15,10 @@ operation of every page goes through :func:`execute`:
    ``self`` (the SSH account), ``root`` (always through sudo) or ``auto``
    (as the account first; when the server answers *permission denied* and the
    credential may escalate, the same operation again through sudo). How sudo
-   is reached is the operator's choice on the credential: with the account's
-   own password, with a separate password asked each time, or a NOPASSWD rule.
+   is reached is the operator's choice on the credential: ``sudo <command>``
+   or ``sudo -i -u root`` (root's login shell, for servers whose policy only
+   allows that form), either with the account's own password or with a
+   password asked each time, or a NOPASSWD rule.
 5. **Secrets on demand**: a credential that does not keep its secret makes
    :func:`execute` raise :class:`NeedSecret`; the page asks and sends it with
    the retry, it is used for that one call and never stored or logged.
@@ -518,7 +520,7 @@ def save_credential(cred: WsmCredential | None, slug: str, form: dict, user) -> 
                 set_secret(cred, "secret", sec.strip() + ("\n" if auth == "key" else ""))
             if auth == "key" and form.get("passphrase"):
                 set_secret(cred, "passphrase", form.get("passphrase"))
-        if esc == "sudo" and sudo_pw == "ask":
+        if esc in WsmCredential.PASSWORD_ESCALATIONS and sudo_pw == "ask":
             set_secret(cred, "sudo", "")
     db.session.commit()
     from .audit import log_action
@@ -645,7 +647,7 @@ def _account(cred: WsmCredential, provided: dict) -> dict:
 
 
 def _sudo_password(cred: WsmCredential, account: dict, provided: dict) -> str:
-    if cred.escalation != "sudo":
+    if not cred.sudo_takes_password:
         return ""
     if cred.sudo_password == "same" and cred.auth_type == "password":
         return account["secret"]
@@ -656,7 +658,8 @@ def _sudo_password(cred: WsmCredential, account: dict, provided: dict) -> str:
 
 
 def _elevate_kind(cred: WsmCredential) -> str:
-    return "nopasswd" if cred.escalation == "sudo_nopasswd" else "sudo"
+    """The transport's ``elevate``: sudo | login (``sudo -i -u root``) | nopasswd."""
+    return {"sudo_nopasswd": "nopasswd", "sudo_login": "login"}.get(cred.escalation, "sudo")
 
 
 def pick_credential(c, user, cred_id) -> WsmCredential:
@@ -740,7 +743,8 @@ def _execute(slug: str, cred_id, op: str, args: dict | None = None, *, user,
     timeout = max(timeout, float(c.timeout or 30))
 
     def attempt(elevate: str):
-        sudo_pw = _sudo_password(cred, account, provided) if elevate == "sudo" else ""
+        sudo_pw = _sudo_password(cred, account, provided) if elevate in T.PASSWORD_ELEVATIONS \
+            else ""
         try:
             r = T.call(tgt, account, op, args, elevate=elevate, sudo_password=sudo_pw,
                        timeout=timeout, by=getattr(user, "username", "") or "system")
@@ -826,7 +830,7 @@ def start_job(app, slug: str, cred_id, op: str, args: dict, *, user, run_as: str
     check_op(user, op, elevated=(run_as or cred.run_as) == "root" and cred.can_escalate)
     if not cred.store_secret:
         _account(cred, provided)
-    if (run_as or cred.run_as) == "root" and cred.escalation == "sudo":
+    if (run_as or cred.run_as) == "root" and cred.sudo_takes_password:
         _sudo_password(cred, _account(cred, provided), provided)
     uid = user.id
     uname = user.username
@@ -922,7 +926,7 @@ def schedule_problem(s: WsmSchedule) -> str:
         return "the satom-webctl agent cannot run scripts"
     if not cred.store_secret or not has(cred, "secret"):
         return "credential %s does not keep its secret (asks at every operation)" % cred.name
-    if s.run_as == "root" and cred.escalation == "sudo" and not (
+    if s.run_as == "root" and cred.sudo_takes_password and not (
             cred.sudo_password == "same" and cred.auth_type == "password"):
         return "running as root needs sudo without asking (NOPASSWD, or the stored password)"
     if s.script_id is None or db.session.get(WsmScript, s.script_id) is None:

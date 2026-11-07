@@ -6,6 +6,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Web Server Manager: a credential can reach root with `sudo -i -u root`.**
+  Requested: on servers where the administrator signs in with their own
+  account (for example `ebc`) and becomes root with `sudo -i -u root` and
+  that account's password. *When the account is not allowed* now offers
+  **sudo -i -u root with a password** next to *sudo with a password* and
+  *NOPASSWD*; the password is the SSH password or asked every time, as for
+  plain sudo, and `-k` still makes sudo ask on every operation. Because
+  `sudo -i` hands the command to root's login shell with every special
+  character escaped, the helper's bootstrap travels as one base64 line, and
+  anything root's profile prints before it is dropped (the answer starts
+  after a marker), so a welcome banner cannot break the reply. Verified live
+  on the Debian and Rocky lab servers.
+
 ## [4.11.7] - 2026-11-07
 
 ### Fixed

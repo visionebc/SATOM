@@ -12911,7 +12911,7 @@ credential and *Run as* chosen at the top of the page):
 | Pre-check | Each member is read again from its device. Draining the **last member in service** of a pool is refused unless you tick *Allow*. The server's health is read (recorded, not blocking: the server may be what you are fixing). |
 | Backup | Each member's status before the run is kept in the job and in the server's *open maintenance* record. |
 | Dry run | With *Dry run* ticked the job lists what it would change and stops. |
-| Drain | Only the member's **status** changes: `maintenance` on FortiWeb, `maintain` on FortiADC, or `disable`. A member already out of service is left as it is. Every write is **re-read**: a device that answers 200 and keeps the old value is a failed step. If one member cannot be drained, the ones already drained go back and the server is not touched. |
+| Drain | Only the member's **status** changes: `maintain` (the GUI's *Maintenance*), or `disable`. A member already out of service is left as it is. Every write is **re-read**: a device that answers 200 and keeps the old value is a failed step. If one member cannot be drained, the ones already drained go back and the server is not touched. |
 | Wait | Seconds for open connections to finish (default 30). |
 | Work | Restart or reload a service, run a script of the library, or **Only drain** (the members stay out until you press *Return to service*). |
 | Post-check | The server's health (nothing critical, it answers), the service is active, and the site answers on each member's port on the server itself (`/` or the path you set; 5xx or no answer fails). |

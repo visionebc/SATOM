@@ -1477,7 +1477,7 @@
       f.action = select([['restart', 'Restart a service'], ['reload', 'Reload a service'], ['script', 'Run a script of the library'], ['hold', 'Only drain: I work, then Return to service']], 'restart');
       f.unit = input({ placeholder: 'nginx.service', value: 'nginx.service' });
       f.script = select((M.scripts || []).length ? M.scripts.map(function (s) { return [s.id, s.name]; }) : [['', 'No script in the library']], '');
-      f.drain = select([['', 'Default: maintenance (FortiWeb) / maintain (FortiADC)'], ['disable', 'disable']], '');
+      f.drain = select([['', 'Default: maintain (new connections stop, health checks pause)'], ['disable', 'disable']], '');
       f.wait = input({ type: 'number', value: 30, min: 0, max: 900, style: 'max-width:110px' });
       f.path = input({ value: '/', style: 'max-width:200px' });
       f.fail = select([['keep', 'Keep the members drained (safer)'], ['return', 'Return them anyway']], 'keep');

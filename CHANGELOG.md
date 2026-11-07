@@ -15,7 +15,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   server's, as a job; links keep only what a device answered. A run is one
   job in the six steps of every SATOM write: pre-check (refuses draining the
   last member in service of a pool unless allowed), backup of each member's
-  status, optional dry run, drain (`maintenance` / `maintain` / `disable`,
+  status, optional dry run, drain (`maintain` / `disable`,
   the status field only, every write re-read -- a write the device does not
   keep is a failed step and the members already drained go back), the work
   (restart or reload a service, a library script, or only drain), a
@@ -45,6 +45,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   row. A failed reading writes `satom_scrape_up{collector="host_health"} 0`
   and nothing else. New scheduled action *Web Server Manager — server health*
   (every minute; each server keeps its own interval), created by itself.
+
+### Fixed
+- **A FortiWeb pool member could not be put in maintenance from SATOM.** The
+  member form offered `maintenance`; FortiWeb's REST API refuses it
+  (`-651 Invalid input value`) and takes `maintain` (measured on FortiWeb
+  7.6.8 build 1128, where the GUI calls it *Maintenance*). The form now
+  offers `maintain`.
 
 ## [4.11.5] - 2026-11-07
 

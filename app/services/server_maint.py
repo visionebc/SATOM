@@ -21,8 +21,7 @@ THE RUN (:func:`start`) follows the six steps of every SATOM write:
    the server's pending record; that is what goes back, never a blind
    "enable".
 3. **Dry run** -- the exact changes, and nothing else, when asked for.
-4. **Drain** -- the member's status only (``maintenance`` on FortiWeb,
-   ``maintain`` on FortiADC, or ``disable``), re-read from the device after
+4. **Drain** -- the member's status only (``maintain``, or ``disable``), re-read from the device after
    each write: a device that answered 200 and kept the old value is a FAILED
    step. One member that cannot be drained puts back the ones already drained
    and stops before the server is touched.
@@ -57,7 +56,10 @@ FOUND_KEY = "wsm.maint.found."
 APPLY_PERM = "network.apply"
 KINDS = ("fortiweb", "fortiadc")
 #: kind -> (default drain status, statuses that take a member out of service)
-DRAIN = {"fortiweb": ("maintenance", ("maintenance", "disable")),
+#: FortiWeb: "maintain" -- REST refuses "maintenance" (-651, measured on
+#: fortiweb19 7.6.8 b1128); "maintenance" stays recognised as out of service.
+#: FortiADC: TODO verify on a licensed 7.6/8.0 (the lab ADCs are unlicensed).
+DRAIN = {"fortiweb": ("maintain", ("maintain", "maintenance", "disable")),
          "fortiadc": ("maintain", ("maintain", "disable"))}
 FWB_POOLS = "/api/v2.0/cmdb/server-policy/server-pool"
 FWB_MEMBERS = "/api/v2.0/cmdb/server-policy/server-pool/pserver-list"

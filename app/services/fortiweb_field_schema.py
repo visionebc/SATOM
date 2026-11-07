@@ -450,7 +450,11 @@ KIND_SPECS: dict = {
     "pserver": {
         "enums": {
             "server-type": ["physical", "domain", "sdn"],
-            "status": ["enable", "disable", "maintenance"],
+            # "maintain", not "maintenance": measured on fortiweb19 (7.6.8 b1128,
+            # 2026-11-07) -- REST answers -651 "Invalid input value" to
+            # "maintenance" and stores "maintain" (status_val 2); the GUI label
+            # is "Maintenance".
+            "status": ["enable", "disable", "maintain"],
         },
         "refs": {
             "health": "server-policy/health",

@@ -977,7 +977,9 @@
   //  CRON
   // ======================================================================
   function pageCron() {
-    var who = input({ placeholder: 'user (empty = the signed-in account)', style: 'width:300px' });
+    var who = input({ placeholder: 'user name', style: 'width:200px;display:none' });
+    var whoSel = select([['', 'Crontab of the sign-in account'], ['root', 'Crontab of root'], ['other', 'Crontab of another user…']], '', { style: 'width:auto' });
+    whoSel.addEventListener('change', function () { var o = whoSel.value === 'other'; who.style.display = o ? '' : 'none'; if (o) { who.value = ''; who.focus(); } else { who.value = whoSel.value; load(); } });
     var box = el('div'), sched = el('div');
     var rows = [], sha = '', owner = '';
     function load() {
@@ -1064,8 +1066,8 @@
     var logBtn = btn('Cron log', 'bi-journal-text', null, function () { api('cron.log', { lines: 300 }).then(function (r) { dialog('Cron log — ' + r.source, pre(r.lines.join('\n') || '(empty)'), [], true); }).catch(fail); });
     var usersBtn = btn('Users with a crontab', 'bi-people', null, function () { api('cron.users', {}, { runAs: 'root' }).then(function (r) { dialog('Crontabs on this server', el('div', {}, [el('p', { text: 'Users: ' + (r.users.join(', ') || 'none') }), el('p', { text: 'System files: ' + r.system_files.join(', ') })]), [], false); }).catch(fail); });
     who.addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
-    setPage([el('div', { cls: 'wsm-toolbar' }, [who, btn('Open', 'bi-arrow-right', null, load), btn('New job', 'bi-plus-lg', 'btn-fw-primary', function () { form(null); }), logBtn, usersBtn,
-      el('span', { cls: 'wsm-small text-muted', text: 'Another user\'s crontab needs administrator rights.' })]), box, sched]);
+    setPage([el('div', { cls: 'wsm-toolbar' }, [whoSel, who, btn('Open', 'bi-arrow-right', null, load), btn('New job', 'bi-plus-lg', 'btn-fw-primary', function () { form(null); }), logBtn, usersBtn,
+      el('span', { cls: 'wsm-small text-muted', text: 'Another user\'s crontab needs administrator rights: with Run as auto, SATOM retries through sudo.' })]), box, sched]);
     load(); drawSchedules();
   }
 

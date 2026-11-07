@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · Security · 9 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Fixed · Security · 9 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,11 +59,16 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Fixed · Security · 9 entries</span>
+        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
+        <ul class="rel-leads"></ul>
+      </a>
+      <a class="rel-nav-item" href="v4.11.5.html" data-rel-version="4.11.5">
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 4.11.5</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-meta">2026-11-07 · Added · Fixed · Security · 9 entries</span>
         <ul class="rel-leads"><li>Device scope of a profile: which devices and partitions inside its ADOMs</li><li>Web Server Manager: a server or some of its sites per profile</li><li>Web Server Manager: back in the Linux menu, switchable per ADOM, and also as plugins</li><li class="rel-more">… and 6 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v4.11.4.html" data-rel-version="4.11.4">
-        <span class="rel-nav-head"><span class="rel-nav-v">Version 4.11.4</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 4.11.4</span></span>
         <span class="rel-nav-meta">2026-11-06 · Added · Fixed · 5 entries</span>
         <ul class="rel-leads"><li>Much smaller update packages: delta packages and format /2</li><li>The offline-package preflight on a standby gave the wrong order</li><li>A scheduled action that runs on the SATOM server says so, and the run log reads clearly (SA-0020)</li><li class="rel-more">… and 2 more</li></ul>
       </a>
@@ -570,126 +575,8 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="added">Added</h3>
-<ul>
-<li><strong>Device scope of a profile: which devices and partitions inside its
-  ADOMs.</strong> Asked for: "narrow which devices each profile reaches and, inside a
-  device, which partitions: ADOMs in FortiWeb/FortiADC and VDOMs in
-  FortiGate; the profile still decides WHAT, the scope only WHERE, never
-  per-device permissions, and it never widens what the ADOMs give". A
-  <strong>Devices</strong> card in Access › Profiles: per ADOM the chassis and their
-  partitions (no device = all; no partition = all, also later ones). One
-  answer (<code>product_scope.allowed_appliance_ids</code>, the ADOMs × the scope) feeds
-  the device lists and the by-id loader (404), the Global dashboard, the Job
-  manager, change requests, upgrade windows, metrics, Sentinel, Architecture
-  and the bell. With only some partitions of a box, firmware, the vault and
-  the console are refused (409 for JSON). A job records at enqueue the devices
-  its user reaches, and every device client and SSH session in it refuses
-  another device with a step, an audit line (<code>job.device_refused</code>) and an
-  error. Scheduled actions keep acting on the whole fleet. API tokens carry
-  their owner's scope. Fails closed: an unreadable scope reaches no device.
-  Migration <code>ds01</code>. Partitions were verified with synthetic rows; the lab has
-  no multi-ADOM or multi-VDOM device (unverified on a multi-VDOM device).</li>
-<li><strong>Web Server Manager: a server or some of its sites per profile.</strong> Asked
-  for: "give a user Linux, then only one server, then only one vhost, and
-  from there edit its files". The same Devices card lists the manager's
-  servers and, under each, its sites. With some sites, the profile opens File
-  Manager, Domains &amp; VHosts and .htaccess of that server only, for those
-  sites; its file paths are confined to their document roots by the helper on
-  the server (symlinks resolved; a root directly under <code>/</code> is never a
-  confinement), and what acts on the whole server is refused.</li>
-<li><strong>Web Server Manager: back in the Linux menu, switchable per ADOM, and also
-  as plugins.</strong> Asked for: "why is it not a plugin?", then "put it back as it
-  was ... basic elements for Linux" and "when the Linux ADOM is switched on,
-  choose whether this module is active". <strong>Linux › Web Server Manager</strong> is in
-  the menu again. A new ADOM capability, <strong>Web Server Manager</strong> (Settings ›
-  ADOMs; on for Linux after the upgrade, migration <code>wsm02</code>), switches it on or
-  off: off in every ADOM, the menu entry is gone, the pages answer not found,
-  scheduled scripts wait and certificate warnings do not link to it. The same
-  operations are also the bundle <code>web-server-manager</code> of the plugin generator:
-  13 signed <code>app</code> plugins over four new SATOM steps (<code>wsm_servers</code>,
-  <code>wsm_read</code>, <code>wsm_change</code>, <code>wsm_htaccess</code>), each answering for the person who
-  runs it, for automations and other apps. The generator gained
-  <code>satom_plugin.py bundle &lt;name&gt;</code>.</li>
-<li><strong>Web Server Manager (Linux ADOM).</strong> Asked for: "a plugin for the Linux ADOM
-  to manage web servers, like cPanel, over SSH with the credentials of the
-  signed-in user; if the account cannot do something, escalate with sudo the
-  way the user sets it; adaptable to the distributions SATOM deploys on; if
-  something already exists, unify it into one". The server connection the
-  <em>Web hosts</em> example apps use is a server of the manager too. The Web hosts
-  apps stay on in the Linux ADOM's Plugins (switched off for a day during
-  development, back on request: "the ones that were there before, add them
-  to the Linux section"). Twelve
-  modules: File Manager (editor with syntax highlighting, upload/download,
-  history and restore, archives, search, chmod/chown), Domains &amp; VHosts
-  (nginx and Apache; static, PHP-FPM or reverse proxy; HTTPS, redirects,
-  limits, headers), SSL Certificates (internal CA, import, certbot, TLS
-  check), Security (score and findings, firewall, fail2ban), <code>.htaccess</code>
-  (wizard and templates; converted to nginx where possible, the rest listed
-  and not applied), Scripts (library, run history), Cron Jobs (host crontabs
-  and jobs SATOM runs with a service credential), Package Manager
-  (apt/dnf/zypper, with a plan before every change), Services, Logs, Users &amp;
-  Permissions and SSH Configuration. Operations run as the credential's SSH
-  account; <strong>Automatic</strong> repeats one through sudo only when the server
-  answers permission denied, with the account's password, a password asked
-  each time or a NOPASSWD rule. Credentials keep their secret (vault or
-  Fernet) or ask at every operation; they expire, are disabled or revoked
-  (secret erased, schedules parked as waiting for authentication, bell to
-  the administrators). Six new permissions (<code>webserver.*</code>). Every operation
-  is recorded with the SATOM user, the SSH user, the effective Linux user,
-  sudo, credential and session (<strong>Operations log</strong>, CSV). Nothing is
-  installed on the server: the helper (<code>hostctl/satom-wsm.py</code>, Python 3.6+
-  standard library) travels on the SSH session. Verified live on Debian 12,
-  openSUSE 15.6 and Rocky 9 (user guide §48).</li>
-<li><strong>Plugin Studio folders, given whole to ADOMs and user groups.</strong> Asked for:
-  "assign a whole folder to a user group or an ADOM, so all the plugins we are
-  going to have are easier to manage, with a section to manage the folders,
-  and when creating a plugin pick the folder from a list instead of typing it,
-  or create it on the spot". The menu groups are now <strong>folders</strong>, objects of
-  their own (<code>studio_folders</code>; the migration makes one for every group in use,
-  with no grants). The new <strong>Folders</strong> pane creates, renames (its apps move
-  with it), describes and deletes them (its apps stay, with no folder). It
-  sets the <strong>ADOMs</strong> and <strong>user groups</strong> a folder hands every app inside, on
-  top of the app's own ADOMs and access list (<code>studio_apps.shown_in</code> /
-  <code>can_use</code>, so the sidebar, the run page, the API and Apps-only accounts all
-  follow). The app's Settings, <strong>New app</strong> and <strong>Set folder</strong> pick the folder
-  from a list ending in <strong>+ New folder…</strong>. The folder is made when the form
-  is saved, so a cancelled form leaves none behind. A user group a folder
-  hands out cannot be deleted from under it. Packages still carry only the
-  folder's name, never its grants.</li>
-<li><strong>Plugin bundles.</strong> <strong>Import package or bundle</strong> takes several plugins in
-  one file: a <code>.satombundle</code> (<code>satom.plugin-bundle/1</code>: the packages plus an
-  optional <code>bundle.json</code> with name, description, folder and install order),
-  or a plain <code>.zip</code> of <code>.satomplugin</code> files. Limits: 50 packages, 64 MB. The
-  preview checks every package exactly as a single import does, with its own
-  signature and rules; the bundle itself is unsigned and grants nothing. It
-  asks once per new connection secret and lets you pick the folder for the
-  apps it creates. The install runs the packages one by one. A refused
-  package is skipped and named, and one that needs another package from the
-  bundle is retried after it. <strong>Download as bundle</strong> (Folders) writes a
-  folder's flow apps as one bundle.</li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li><strong>Web Server Manager on SUSE and RHEL: enable, disable, delete, open and save a site
-  by the name you type.</strong> On a <code>conf.d</code> layout (SUSE <code>vhosts.d</code>, RHEL <code>conf.d</code>)
-  creating <code>example.com</code> writes <code>example.com.conf</code>, but the other operations
-  wanted the <code>.conf</code> and answered <em>bad_name</em> to <code>example.com</code> (found running the
-  Domains &amp; VHosts plugin on openSUSE 15.6 and Rocky 9). The session helper now
-  adds it on those layouts.</li>
-<li><strong>The plugin rules pack could not be built once a step reached
-  <code>system_backup</code></strong>: two absolute imports (<code>from app.services import
-  doc_publication</code>) made the pack refuse the whole closure. They are relative
-  imports now, with no change at run time.</li>
-</ul>
-<h3 id="security">Security</h3>
-<ul>
-<li><strong>API tokens did not apply their owner's ADOM confinement.</strong> <code>/api/v1</code> never
-  signs a user in, so <code>product_scope</code> saw no user and a confined owner's token
-  reached every device of its product. It now answers for the token's owner:
-  ADOMs and device scope.</li>
-</ul>
-<p class="rel-prevnext"><a href="v4.11.4.html">Version 4.11.4 →</a></p>
+
+<p class="rel-prevnext"><a href="v4.11.5.html">Version 4.11.5 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

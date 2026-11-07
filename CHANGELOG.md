@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.5] - 2026-11-07
+
 ### Added
 - **Device scope of a profile: which devices and partitions inside its
   ADOMs.** Asked for: "narrow which devices each profile reaches and, inside a

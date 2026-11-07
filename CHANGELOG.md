@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **An update ended with "route audit -- unmeasured: no such column
+  profiles_1.device_scope" (SA-0024).** The audit that checks every page
+  link after an update built the application on a leftover SQLite file
+  (`data/fortinet.db`) instead of the node's PostgreSQL: it loaded `.env`
+  after the configuration had already been read. It worked by chance until
+  4.11.10 added a column that file did not have. The audit now reads `.env`
+  first, builds on the node's database, and reports *unmeasured* -- never
+  *ok* -- if it is ever built on another one. The update itself was fine:
+  nothing needs to be restored.
+
 ## [4.11.10] - 2026-11-07
 
 ### Added

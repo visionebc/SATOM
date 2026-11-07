@@ -26,6 +26,13 @@ def _ensure_fernet_key() -> str:
     return key
 
 
+#: Variables this module invented because they were missing from the
+#: environment at import time. A caller that loads ``.env`` AFTER importing the
+#: package (``python -m app.services.route_audit``) must drop these first, or
+#: the invented random SECRET_KEY/FERNET_KEY shadow the real ones.
+INVENTED_ENV: set[str] = set()
+
+
 def _append_env(var: str, value: str) -> None:
     # NOTE (2026-06-27): intentionally does NOT write to .env anymore.
     # Standalone/CLI/test runs that import config without the env loaded used
@@ -33,6 +40,7 @@ def _append_env(var: str, value: str) -> None:
     # .env with duplicate keys and risking session/Fernet breakage. Now we
     # only set the value in-process; .env stays the single source of truth.
     os.environ[var] = value
+    INVENTED_ENV.add(var)
 
 
 def _env_int(name: str, default: int) -> int:

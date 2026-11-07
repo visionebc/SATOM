@@ -28,8 +28,10 @@ variable cannot be resolved statically and are reported separately as
 
 from __future__ import annotations
 
+import importlib
 import os
 import re
+import sys
 from pathlib import Path
 
 # A literal first argument: url_for('bp.view'  /  url_for("static"
@@ -132,6 +134,28 @@ def _load_env_file(path):
         pass
 
 
+def _load_node_env(path):
+    """Load the node's ``.env`` and make ``app.config`` see it.
+
+    ``python -m app.services.route_audit`` imports the ``app`` package -- and
+    with it ``app.config`` -- BEFORE ``main()`` runs. The config classes read
+    the environment when the module is imported, so loading ``.env`` here was
+    too late: the database URI stayed on the SQLite fallback
+    (``data/fortinet.db``) and SECRET_KEY/FERNET_KEY on random values the
+    import invented. SA-0024 (4.11.10): the audit died on that stale SQLite
+    file the first time the models gained a column it did not have.
+
+    So: drop what the import invented, load the file, re-evaluate the config.
+    """
+    cfg = sys.modules.get("app.config")
+    for var in getattr(cfg, "INVENTED_ENV", ()):
+        os.environ.pop(var, None)
+    _load_env_file(path)
+    if cfg is not None:
+        cfg.INVENTED_ENV.clear()
+        importlib.reload(cfg)
+
+
 #: exit codes -- 'could not check' is NOT 'checked and clean'. A caller that
 #: collapses the two would gate an update on a check that never ran.
 EXIT_OK = 0
@@ -143,7 +167,7 @@ def main(argv=None):
     app_dir = Path(os.environ.get("FM_APP_DIR", "/opt/satom"))
     cwd = os.getcwd()
     try:
-        _load_env_file(app_dir / ".env")
+        _load_node_env(app_dir / ".env")
         os.chdir(str(app_dir))
         from app import create_app  # imported late: needs the env above
         app = create_app()
@@ -155,6 +179,15 @@ def main(argv=None):
         # Leave the caller's working directory alone; this runs inside the
         # test process too.
         os.chdir(cwd)
+    wanted = os.environ.get("SQLALCHEMY_DATABASE_URI", "")
+    got = str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+    if wanted and got != wanted:
+        # The app was built against another database than the node's (the
+        # 4.11.10 failure: data/fortinet.db instead of PostgreSQL). Whatever
+        # it says about the templates was measured on the wrong thing.
+        print("unmeasured: the app was built against %s, not the database in "
+              ".env" % got.split("://", 1)[0])
+        return EXIT_UNMEASURED
     result = audit_template_endpoints(app)
     print(format_report(result))
     return EXIT_MISSING if result["missing"] else EXIT_OK

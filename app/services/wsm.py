@@ -42,7 +42,7 @@ _log = logging.getLogger(__name__)
 
 #: op -> (module, writes). Module "" = always allowed with webserver.view.
 OPS: dict[str, tuple[str, bool]] = {
-    "whoami": ("", False), "info": ("sites", False),
+    "whoami": ("", False), "info": ("sites", False), "host.health": ("", False),
     "vhosts.list": ("sites", False), "vhost.get": ("sites", False),
     "vhost.test": ("sites", False), "http.check": ("sites", False),
     "apache.override": ("sites", False),
@@ -87,7 +87,7 @@ OPS: dict[str, tuple[str, bool]] = {
 }
 #: Operations the restricted agent (satom-webctl as satom-mon) answers, and
 #: their session-helper equivalents.
-AGENT_OPS = {"info", "vhosts.list", "vhost.get", "vhost.put", "vhost.create", "vhost.enable",
+AGENT_OPS = {"host.health", "info", "vhosts.list", "vhost.get", "vhost.put", "vhost.create", "vhost.enable",
              "vhost.disable", "vhost.delete", "certs.list", "cert.get", "cert.csr",
              "cert.install", "cert.assign", "cert.delete"}
 MODULE_PERM = {"files": "webserver.files", "sites": "webserver.sites",
@@ -97,6 +97,7 @@ ROOT_PERM = "webserver.root"
 VIEW_PERM = "webserver.view"
 CRED_PERM = "webserver.credentials"
 MODULES = {
+    "health": ("Health", "bi-heart-pulse", "Memory, disks, load, processes, failed services"),
     "files": ("File Manager", "bi-folder2-open", "Browse, edit, upload and download files"),
     "sites": ("Domains & VHosts", "bi-globe2", "Websites, domains, PHP, redirects"),
     "certs": ("SSL Certificates", "bi-shield-lock", "Let's Encrypt, import, renew, expiry"),
@@ -1059,23 +1060,31 @@ def ensure_scheduled(by: str = "system:web-server-manager") -> bool:
         return False
 
 
+def service_credentials(slug: str) -> list[WsmCredential]:
+    """The shared, active credentials of the server that keep their secret --
+    what an unattended read (certificate expiry, host health) may sign in with."""
+    return [cred for cred in WsmCredential.query.filter_by(
+        connection_slug=slug, shared=True, status="active").order_by(WsmCredential.id)
+        if cred.state == "active" and cred.auth_type in ("password", "key")
+        and cred.store_secret and has(cred, "secret")]
+
+
 def service_credential(slug: str) -> WsmCredential | None:
-    """A shared, active credential of the server that keeps its secret -- what
-    an unattended read (the certificate expiry check) may sign in with."""
-    for cred in WsmCredential.query.filter_by(connection_slug=slug, shared=True,
-                                              status="active").order_by(WsmCredential.id):
-        if cred.state == "active" and cred.auth_type in ("password", "key") \
-                and cred.store_secret and has(cred, "secret"):
-            return cred
-    return None
+    rows = service_credentials(slug)
+    return rows[0] if rows else None
 
 
-def read_as_service(c, op: str, args: dict | None = None) -> dict:
+def read_as_service(c, op: str, args: dict | None = None, *, cred: WsmCredential | None = None,
+                    by: str = "scheduler") -> dict:
     """An unattended READ (never a write, never sudo) with the server's service
-    credential; audited as the scheduler."""
+    credential -- or ``cred``, which must qualify the same way (shared, active,
+    password or key, secret kept); audited as ``by``."""
     if OPS.get(op, ("", True))[1]:
         raise WsmDenied("%s changes the server: not an unattended read" % op)
-    cred = service_credential(c.slug)
+    if cred is not None and cred not in service_credentials(c.slug):
+        raise WsmDenied("credential %s cannot sign in unattended: it must be shared, active, "
+                        "a password or key, and keep its secret" % cred.name)
+    cred = cred or service_credential(c.slug)
     if cred is None:
         raise WsmDenied("%s has no shared service credential that keeps its secret" % c.slug)
     account = {"user": cred.ssh_user, "auth_type": cred.auth_type,
@@ -1083,12 +1092,12 @@ def read_as_service(c, op: str, args: dict | None = None) -> dict:
     module = OPS[op][0]
     try:
         r = T.call(target(c), account, op, args or {}, timeout=float(c.timeout or 60),
-                   by="scheduler")
+                   by=by)
     except T.WsmError as exc:
-        _audit(user="scheduler", c=c, cred=cred, op=op, module=module, args=args, ok=False,
+        _audit(user=by, c=c, cred=cred, op=op, module=module, args=args, ok=False,
                error=exc.remote_error or exc.code, detail=str(exc), who=exc.who, mode="schedule")
         raise
-    _audit(user="scheduler", c=c, cred=cred, op=op, module=module, args=args, ok=True,
+    _audit(user=by, c=c, cred=cred, op=op, module=module, args=args, ok=True,
            who=r["who"], session_id=r["session_id"], ms=r["ms"], mode="schedule")
     return r["result"]
 

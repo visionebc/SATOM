@@ -1,0 +1,3 @@
+{% extends "wsm/_layout.html" %}
+{# Web Server Manager > {{ modules['health'][0] }}: drawn by static/js/wsm.js (module "health"); the readings come from services/server_health.py. #}
+{% block wsm_body %}<div id="wsm-page" class="wsm-page" data-page="health"><div class="text-muted p-3">{{ _('Loading…') }}</div></div>{% endblock %}

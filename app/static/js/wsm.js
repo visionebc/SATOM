@@ -1290,10 +1290,120 @@
     load(); keys();
   }
 
+  // ======================================================================
+  //  HEALTH -- stored readings (services/server_health.py); "Read now" is the
+  //  one action that goes to the server. No credential is picked here: the
+  //  server's Settings say how it is read (agent, shared SSH credential, off).
+  // ======================================================================
+  function pageHealth() {
+    var H = CFG.health, chart = null, rng = '24h';
+    var STATE = { ok: ['healthy', 'wsm-ok'], warning: ['warning', 'wsm-warn'], critical: ['critical', 'wsm-bad'], unreachable: ['unreachable', 'wsm-bad'] };
+    var VIA = { agent: 'satom-webctl agent (installed on the server, no shell)', ssh: 'SSH with a shared credential (nothing installed)', off: 'switched off', none: 'not possible yet' };
+    function pct(a, b) { return b ? 100 * a / b : 0; }
+    function bar(p, warn, crit) {
+      var col = p >= crit ? '#8B1C2A' : p >= warn ? '#7A5700' : '#15692A';
+      return el('div', { cls: 'd-flex align-items-center gap-2' }, [el('div', { cls: 'wsm-progress flex-grow-1', style: 'min-width:80px' }, [el('div', { style: 'width:' + Math.min(100, p).toFixed(1) + '%;background:' + col })]), el('span', { cls: 'wsm-small', text: p.toFixed(0) + ' %' })]);
+    }
+    function dur(s) { var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (d ? d + ' d ' : '') + h + ' h ' + m + ' min'; }
+    function kv(pairs) { var b = el('div', { cls: 'wsm-kv' }); pairs.forEach(function (p) { b.append(el('div', { text: p[0] }), p[1] instanceof Node ? el('div', {}, [p[1]]) : el('div', { text: p[1] == null ? '—' : String(p[1]) })); }); return b; }
+    function globRe(pat) { return new RegExp('^' + pat.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$'); }
+    function draw() {
+      var L = H.last || {}, d = L.data, c = H.conf, ch = H.channel, st = STATE[L.state] || ['never read', 'wsm-muted'];
+      var head = card('', null, [el('div', { cls: 'd-flex flex-wrap gap-3 align-items-center justify-content-between' }, [
+        el('div', {}, [el('div', { cls: 'd-flex gap-2 align-items-center' }, [el('strong', { text: 'State' }), badge(st[0], st[1])]),
+          el('div', { cls: 'wsm-small text-muted mt-1', text: 'Read via: ' + (VIA[ch.via] || ch.via) + (ch.credential ? ' — ' + ch.credential : '') }),
+          ch.why ? el('div', { cls: 'wsm-small text-danger', text: ch.why }) : null,
+          el('div', { cls: 'wsm-small text-muted', text: L.at ? 'Last reading ' + L.at.replace('T', ' ') + ' UTC' + (L.ms != null ? ' (' + L.ms + ' ms)' : '') + ', every ' + c.interval_min + ' min' : 'Not read yet.' }),
+          L.error ? el('div', { cls: 'wsm-small text-danger', text: 'Last reading failed: ' + L.error + (L.fails > 1 ? ' (' + L.fails + ' in a row)' : '') + (d ? '. The figures below are from the last good reading.' : '') }) : null,
+          L.metrics_error ? el('div', { cls: 'wsm-small text-danger', text: 'Not written to the metrics store: ' + L.metrics_error }) : null]),
+        btn('Read now', 'bi-arrow-repeat', 'btn-fw-primary', readNow, 'Read the server now (memory, disks, load, processes, services)')])]);
+      var probs = L.problems || [];
+      var nodes = [head];
+      if (probs.length) nodes.push(card('Problems', 'bi-exclamation-triangle', [el('ul', { cls: 'mb-0' }, probs.map(function (p) { return el('li', {}, [badge(p.severity, p.severity === 'warning' ? 'wsm-warn' : 'wsm-bad'), ' ', p.text]); }))], 'mt-3'));
+      else if (L.ok) nodes.push(el('div', { cls: 'wsm-msg ok mt-3' }, [el('i', { cls: 'bi bi-check-circle' }), el('div', { text: 'No problem against this server\'s thresholds.' })]));
+      if (d) {
+        var m = d.memory, used = m.total_bytes - m.available_bytes;
+        nodes.push(el('div', { cls: 'wsm-grid mt-3' }, [
+          card('CPU and load', 'bi-cpu', [kv([['CPU busy', bar(d.cpu_pct, 80, 95)], ['CPUs', d.cpus], ['Load 1 / 5 / 15 min', d.load1.toFixed(2) + ' / ' + d.load5.toFixed(2) + ' / ' + d.load15.toFixed(2)], ['Load per CPU (5 min)', (d.load5 / d.cpus).toFixed(2) + ' (warning at ' + c.load_warn + ')']])]),
+          card('Memory', 'bi-memory', [kv([['Used', bar(pct(used, m.total_bytes), 100 - c.mem_warn, 100 - c.mem_crit)], ['Total', size(m.total_bytes)], ['Available', size(m.available_bytes)],
+            ['Swap', m.swap_total_bytes ? size(m.swap_used_bytes || 0) + ' of ' + size(m.swap_total_bytes) : 'none']])]),
+          card('System', 'bi-hdd-network', [kv([['Host name', d.hostname], ['Kernel', d.kernel], ['Up for', dur(d.uptime_s)], ['Processes', d.processes.counts.total + ' (' + d.processes.counts.running + ' running, ' + d.processes.counts.zombie + ' zombie)'],
+            ['Services', d.systemd ? d.services_active + ' active of ' + d.services_total + ', ' + d.services.length + ' failed' : 'no systemd on this host']])])]));
+        nodes.push(card('File systems', 'bi-device-hdd', [table(['Mount', 'Type', 'Size', 'Used', 'Use', 'Inodes'], d.filesystems.map(function (f) {
+          return [el('span', { cls: 'wsm-mono', text: f.mount }), f.fstype, size(f.size_bytes), size(f.used_bytes), bar(pct(f.used_bytes, f.size_bytes), c.disk_warn, c.disk_crit), f.inodes_total ? pct(f.inodes_used || 0, f.inodes_total).toFixed(0) + ' %' : '—'];
+        }), { empty: 'No file system reported.' })], 'mt-3'));
+        if (d.systemd) nodes.push(card('Failed services', 'bi-gear-wide-connected', [table(['Service', 'State', 'Alerts'], d.services.map(function (u) {
+          var ign = (c.ignore_units || '').split('\n').some(function (pat) { pat = pat.trim(); return pat && globRe(pat).test(u.unit); });
+          return [el('span', { cls: 'wsm-mono', text: u.unit }), badge(u.active + ' (' + u.sub + ')', 'wsm-bad'), ign ? badge('ignored', 'wsm-muted') : badge('alerts', 'wsm-warn')];
+        }), { empty: 'No failed service.' }), el('div', { cls: 'wsm-small text-muted mt-1' }, ['Start, stop or read their logs in ', el('a', { href: CFG.base + 'services', text: 'Services' }), ' (with a credential that may do it).'])], 'mt-3'));
+        nodes.push(card('Top processes (by CPU and by memory)', 'bi-list-task', [table(['PID', 'User', 'Name', 'State', 'CPU', 'Memory'], d.processes.top.map(function (p) {
+          return [p.pid, p.user, el('span', { cls: 'wsm-mono', text: p.name }), p.state, p.cpu_pct.toFixed(1) + ' %', size(p.rss_bytes)];
+        })), d.proc_restricted ? el('div', { cls: 'wsm-small text-muted mt-1', text: '/proc is mounted with hidepid on this server: the reading account sees only its own processes.' }) : null], 'mt-3'));
+      }
+      var canvas = el('canvas', { height: 90 }), err = el('div', { cls: 'wsm-small text-danger' });
+      var rsel = select([['6h', 'Last 6 hours'], ['24h', 'Last 24 hours'], ['7d', 'Last 7 days']], rng);
+      rsel.addEventListener('change', function () { rng = rsel.value; series(canvas, err); });
+      nodes.push(card('History', 'bi-graph-up', [el('div', { cls: 'wsm-toolbar' }, [rsel]), err, canvas], 'mt-3'));
+      if (H.can_configure) nodes.push(settingsCard());
+      setPage(nodes);
+      series(canvas, err);
+    }
+    function series(canvas, err) {
+      err.textContent = '';
+      fetch(H.urls.series + '?range=' + encodeURIComponent(rng), { credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-ADOM': 'linux' } }).then(function (r) { return r.json(); }).then(function (s) {
+        var names = Object.keys(s.errors || {});
+        if (names.length) err.textContent = 'ERROR: the metrics store did not answer for ' + names.join(', ') + ': ' + s.errors[names[0]];
+        if (typeof Chart === 'undefined') { err.textContent = 'Charts are not available on this page.'; return; }
+        var defs = [['cpu', 'CPU busy %', '#EF5424', 'y'], ['memory', 'Memory used %', '#4C2A85', 'y'], ['disk', 'Fullest disk %', '#15692A', 'y'], ['load', 'Load (1 min)', '#3D4550', 'y2']];
+        var ds = defs.map(function (x) { return { label: x[1], data: ((s.series || {})[x[0]] || []).map(function (p) { return { x: p[0] * 1000, y: p[1] }; }), borderColor: x[2], backgroundColor: x[2], yAxisID: x[3], pointRadius: 0, borderWidth: 1.5, tension: 0.2 }; });
+        if (!names.length && ds.every(function (x) { return !x.data.length; })) err.textContent = 'No reading stored for this range yet.';
+        if (chart) chart.destroy();
+        chart = new Chart(canvas, { type: 'line', data: { datasets: ds }, options: { animation: false, parsing: false, interaction: { mode: 'index', intersect: false },
+          scales: { x: { type: 'linear', ticks: { callback: function (v) { return new Date(v).toISOString().slice(rng === '7d' ? 5 : 11, 16).replace('T', ' '); }, maxTicksLimit: 8 }, grid: { color: '#E3E8F0' } },
+            y: { min: 0, max: 100, title: { display: true, text: '%' }, grid: { color: '#E3E8F0' } }, y2: { position: 'right', min: 0, title: { display: true, text: 'load' }, grid: { display: false } } } } });
+      }).catch(function (e) { err.textContent = 'ERROR: history unavailable: ' + e.message; });
+    }
+    function readNow() {
+      flash('ok', 'Reading ' + CFG.name + '…');
+      post(H.urls.collect, {}).then(function (d) {
+        if (d.health) H = CFG.health = d.health;
+        if (!d.ok) flash('err', 'The reading failed: ' + (d.error || ('HTTP ' + d._status)));
+        else flash('ok', 'Read.');
+        draw();
+      }).catch(fail);
+    }
+    function settingsCard() {
+      var c = H.conf, f = {};
+      var keys = ['interval_min', 'disk_warn', 'disk_crit', 'inode_warn', 'mem_warn', 'mem_crit', 'swap_warn', 'load_warn'];
+      f.via = select([['auto', 'Automatic: the agent when installed, otherwise a shared SSH credential'], ['agent', 'The satom-webctl agent only'], ['ssh', 'SSH with a credential I pick (nothing installed)'], ['off', 'Do not read this server']], c.via);
+      f.cred = select(H.eligible.length ? H.eligible.map(function (e) { return [e.id, e.name + ' (' + e.ssh_user + ')']; }) : [['', 'No eligible credential: mark one Shared and Keep the secret']], c.credential_id || '');
+      var credRow = field('SSH credential', f.cred, 'Only shared credentials that keep their secret can read unattended. The reading never uses sudo.');
+      function toggle() { credRow.style.display = f.via.value === 'ssh' ? '' : 'none'; }
+      f.via.addEventListener('change', toggle);
+      keys.forEach(function (k) { f[k] = input({ type: 'number', value: c[k], step: k === 'load_warn' ? '0.1' : '1', style: 'max-width:110px' }); });
+      f.ignore = el('textarea', { cls: 'form-control form-control-sm wsm-mono', rows: 3, placeholder: 'one per line, * and ? allowed, e.g. apt-daily*.service' }); f.ignore.value = c.ignore_units || '';
+      var agentNote = H.agent_key ? 'This server has an agent key. The agent must be satom-webctl 1.2.0 or newer to read health: run the installer of this SATOM again on the server if it is older.' :
+        'No agent key: health is read over SSH. To use the agent instead, generate its key on the Overview and run install-satom-webctl.sh on the server.';
+      setTimeout(toggle);
+      return card('Settings', 'bi-sliders', [
+        field('How SATOM reads this server', f.via, agentNote), credRow,
+        el('div', { cls: 'd-flex flex-wrap gap-3' }, [field('Every (minutes)', f.interval_min), field('Disk warning %', f.disk_warn), field('Disk critical %', f.disk_crit), field('Inodes warning %', f.inode_warn),
+          field('Free memory warning %', f.mem_warn), field('Free memory critical %', f.mem_crit), field('Swap warning %', f.swap_warn), field('Load per CPU warning', f.load_warn)]),
+        field('Failed services that never alert', f.ignore),
+        btn('Save', 'bi-check-lg', 'btn-fw-primary', function () {
+          var body = { via: f.via.value, credential_id: f.cred.value, ignore_units: f.ignore.value };
+          keys.forEach(function (k) { body[k] = f[k].value; });
+          post(H.urls.settings, body).then(function (d) { if (!d.ok) return flash('err', d.error || ('HTTP ' + d._status)); H = CFG.health = d.health; flash('ok', 'Saved.'); draw(); }).catch(fail);
+        })], 'mt-3');
+    }
+    draw();
+  }
+
   // ---------- boot -------------------------------------------------------------
   fillCreds();
-  var PAGES = { home: pageHome, files: pageFiles, sites: pageSites, certs: pageCerts, security: pageSecurity, htaccess: pageHtaccess, scripts: pageScripts, cron: pageCron, packages: pagePackages, services: pageServices, logs: pageLogs, users: pageUsers, ssh: pageSsh };
-  if (PAGES[PAGE]) {
+  var PAGES = { home: pageHome, health: pageHealth, files: pageFiles, sites: pageSites, certs: pageCerts, security: pageSecurity, htaccess: pageHtaccess, scripts: pageScripts, cron: pageCron, packages: pagePackages, services: pageServices, logs: pageLogs, users: pageUsers, ssh: pageSsh };
+  if (PAGE === 'health') pageHealth();
+  else if (PAGES[PAGE]) {
     if (PAGE !== 'home' && !currentCred()) setPage([el('div', { cls: 'wsm-msg warn' }, [el('div', {}, ['No credential to sign in with. ', el('a', { href: CFG.base, text: 'Add your SSH account on the Overview' }), '.'])])]);
     else if (PAGE !== 'home' && !CFG.trusted) setPage([el('div', { cls: 'wsm-msg err' }, [el('div', {}, ['SATOM has not trusted this server\'s host key yet. ', el('a', { href: CFG.base, text: 'Trust it on the Overview' }), '.'])])]);
     else PAGES[PAGE]();

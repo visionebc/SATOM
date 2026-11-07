@@ -34,7 +34,7 @@ def _module_on():
     if not W.module_active():
         abort(404)
 
-PAGES = ("files", "sites", "certs", "security", "htaccess", "scripts", "cron", "packages",
+PAGES = ("health", "files", "sites", "certs", "security", "htaccess", "scripts", "cron", "packages",
          "services", "logs", "users", "ssh")
 
 
@@ -108,12 +108,14 @@ def _chrome(c, page: str) -> dict:
 @login_required
 @require_permission(W.VIEW_PERM)
 def index():
+    from ..services import server_health as SH
     rows = []
     for c in W.visible_servers(current_user):
         st = W.server_state(c)
         creds = W.visible_credentials(c.slug, current_user)
         rows.append({"c": c, "state": st, "creds": len(creds),
-                     "mine": sum(1 for r in creds if r.owner == _me())})
+                     "mine": sum(1 for r in creds if r.owner == _me()),
+                     "health": SH.last(c.slug).get("state") or ""})
     return render_template("wsm/index.html", servers=rows, modules=W.MODULES,
                            can_add=W.can(current_user, W.SYSTEM_PERM))
 
@@ -129,6 +131,8 @@ def server_create():
         return redirect(url_for("wsm.index"))
     from ..services.audit import log_action
     log_action("wsm.server.create", target=c.slug, extra={"host": c.host, "port": c.port})
+    from ..services import server_health as SH
+    SH.ensure_scheduled()
     flash("Server %s added. Next: trust its host key, then add your SSH account." % c.name,
           "success")
     return redirect(url_for("wsm.server_home", slug=c.slug))
@@ -286,6 +290,8 @@ def module(slug, page):
         ctx["cfg"]["schedules"] = [_schedule_dict(s) for s in WsmSchedule.query.filter_by(
             connection_slug=slug).order_by(WsmSchedule.name)]
         ctx["cfg"]["scripts"] = [_script_dict(s) for s in _scripts()]
+    if page == "health":
+        ctx["cfg"]["health"] = _health_payload(c)
     if page == "certs":
         try:
             from ..services import cert_providers as CP
@@ -294,6 +300,69 @@ def module(slug, page):
             ctx["cfg"]["providers"] = []
         ctx["cfg"]["can_sign"] = current_user.can("user_manage")
     return render_template("wsm/%s.html" % page, **ctx)
+
+
+# --------------------------------------------------------------------------- #
+#  health (services.server_health): stored readings, read on demand            #
+# --------------------------------------------------------------------------- #
+def _health_payload(c) -> dict:
+    from ..services import server_health as SH
+    cfg = SH.conf(c.slug)
+    ch = SH.channel(c, cfg)
+    rec = SH.last(c.slug)
+    return {"conf": dict(cfg, ignore_units="\n".join(cfg["ignore_units"])),
+            "channel": {"via": ch["via"], "credential": ch["credential"].name
+                        if ch["credential"] else "", "why": ch["why"]},
+            "agent_key": W.server_state(c)["agent_key"],
+            "eligible": [{"id": r.id, "name": r.name, "ssh_user": r.ssh_user}
+                         for r in W.service_credentials(c.slug)],
+            "last": rec, "can_configure": W.can(current_user, W.SYSTEM_PERM),
+            "urls": {"collect": url_for("wsm.health_collect", slug=c.slug),
+                     "settings": url_for("wsm.health_settings", slug=c.slug),
+                     "series": url_for("wsm.health_series", slug=c.slug)}}
+
+
+def _health_whole_server(slug):
+    """Health is the whole machine: a profile that reaches only some sites of
+    the server does not read it (the chassis rule of the device scope)."""
+    _server_or_404(slug)
+    if W.site_scope(current_user, slug) is not None:
+        abort(404)
+
+
+@bp.route("/<slug>/health/collect", methods=["POST"])
+@login_required
+@require_permission(W.VIEW_PERM)
+def health_collect(slug):
+    """Read the server NOW (an explicit action that goes to the server; audited
+    like any other reading, and it rings the bell like the scheduler would)."""
+    from ..services import server_health as SH
+    _health_whole_server(slug)
+    rec = SH.collect(W.server(slug), by=_me() or "user")
+    return jsonify({"ok": rec["ok"], "error": rec["error"], "health": _health_payload(
+        W.server(slug))}), (200 if rec["ok"] else 502)
+
+
+@bp.route("/<slug>/health/settings", methods=["POST"])
+@login_required
+@require_permission(W.SYSTEM_PERM)
+def health_settings(slug):
+    from ..services import server_health as SH
+    _health_whole_server(slug)
+    try:
+        SH.save_conf(slug, request.get_json(silent=True) or {}, _me())
+    except ValueError as exc:
+        return _json_error(exc, 400)
+    return jsonify({"ok": True, "health": _health_payload(W.server(slug))})
+
+
+@bp.route("/<slug>/health/series")
+@login_required
+@require_permission(W.VIEW_PERM)
+def health_series(slug):
+    from ..services import server_health as SH
+    _health_whole_server(slug)
+    return jsonify(SH.history(slug, request.args.get("range", "24h")))
 
 
 # --------------------------------------------------------------------------- #

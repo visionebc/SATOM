@@ -11327,3 +11327,8 @@ msgstr ""
 
 msgid "The publication scope object names carry as {scope} (Administrator > Naming, e.g. spo-{scope}-{service}-{port}). This is the only place it is written: a site published in one zone takes that zone's value, one published in more than one zone takes the “More than one zone” value. An empty value, or the switch off, gives names without a scope."
 msgstr ""
+
+#: app/templates/wsm/index.html
+#, python-format
+msgid "Health: %(state)s"
+msgstr ""

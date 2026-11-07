@@ -14350,8 +14350,10 @@ installation, or the public site being down.</p>
 </ul>
 <h2 id="48-web-server-manager-linux-adom">48. Web Server Manager (Linux ADOM)</h2>
 <p>The <strong>Web Server Manager</strong> administers Linux web servers over SSH <strong>with
-your own account</strong>: files, websites, certificates, security, <code>.htaccess</code>,
-scripts, scheduled tasks, packages, services, logs, users and the SSH server.
+your own account</strong>: the server's <strong>health</strong> (memory, disks, load, processes,
+failed services, in time), files, websites, certificates, security,
+<code>.htaccess</code>, scripts, scheduled tasks, packages, services, logs, users and the
+SSH server.
 The <em>Web hosts</em> example apps of Plugin Studio stay in the Linux ADOM's
 Plugins next to it: they do the virtual hosts, files and certificates of a
 server through the restricted <code>satom-webctl</code> agent, and the server connection
@@ -14404,6 +14406,10 @@ answer of the last call.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td>Health</td>
+<td>Memory, swap, file systems (space and inodes), CPU and load, top processes and failed systemd services of the whole server, read every few minutes and kept in the metrics store; history charts (6 h, 24 h, 7 days); thresholds per server; a bell for each new problem and when the server is healthy again. Read through the agent or a shared SSH credential, as you choose (§48.9).</td>
+</tr>
 <tr>
 <td>File Manager</td>
 <td>Browse any folder the account may read; edit with syntax highlighting (PHP, HTML, CSS, JS, Python, Bash, JSON, YAML, XML, Apache, nginx); preview HTML (scripts disabled) and images; upload (drag and drop, 8 MB per file) and download; new file/folder; rename, move, copy; chmod / chown (recursive); zip / tar.gz; extract (archives with absolute paths, <code>..</code> or links are refused); search by name and content; <strong>History</strong> of the last 25 versions of every file SATOM overwrote, with restore. Deletes keep a backup on the server up to 64 MB.</td>
@@ -14511,6 +14517,8 @@ openSUSE 15, RHEL 9 / Rocky / AlmaLinux — the distributions SATOM itself is
 deployed on. A server prepared with <code>install-satom-webctl.sh</code> also offers its
 restricted agent key as the credential <em>satom-webctl agent</em> (virtual hosts
 and certificates only).</p>
+<p>A <em>satom-webctl</em> agent, when you choose to install one, is never needed: it
+only adds a way in that keeps no password of anybody's (§48.9).</p>
 <h3 id="486-the-plugins-for-automation">48.6 The plugins (for automation)</h3>
 <p>The bundle <code>web-server-manager-&lt;version&gt;.satombundle</code> (staging hub,
 <code>downloads/plugins/</code>) holds 13 signed app plugins built from four SATOM steps
@@ -14563,6 +14571,67 @@ servers, and under each server the sites (virtual hosts) it last answered
 </ul>
 <p>The permissions of the profile still decide what may be done there (for
 example <em>Files</em> to edit files); the device scope only decides where.</p>
+<h3 id="489-health-memory-disks-load-processes-and-services">48.9 Health: memory, disks, load, processes and services</h3>
+<p><strong>Linux › Web Server Manager › <em>server</em> › Health</strong> shows the whole machine:
+state (<em>healthy</em>, <em>warning</em>, <em>critical</em>, <em>unreachable</em>), problems, CPU and
+load, memory and swap, uptime, every file system with its use and inodes,
+failed systemd services, the processes that use the most CPU and memory, and
+a chart of CPU, memory, the fullest disk and load over 6 hours, 24 hours or 7
+days. The server list shows each server's state as a badge.</p>
+<p><strong>How SATOM reads the server is your choice</strong> (Health › <em>Settings</em>, needs
+<em>Administer servers</em>):</p>
+<table>
+<thead>
+<tr>
+<th>Choice</th>
+<th>What happens on the server</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Automatic</strong> (default)</td>
+<td>The agent when the server has one, otherwise the first shared SSH credential that keeps its secret.</td>
+</tr>
+<tr>
+<td><strong>The satom-webctl agent only</strong></td>
+<td>Read with the agent you installed with <code>install-satom-webctl.sh</code> (account <code>satom-mon</code>, SATOM's own key, forced command, no shell, no password of anybody's). Needs satom-webctl <strong>1.2.0</strong> or newer: run the installer of this SATOM again on a server prepared with an older one.</td>
+</tr>
+<tr>
+<td><strong>SSH with a credential I pick</strong></td>
+<td>Nothing is installed. SATOM signs in with the credential you pick and the helper travels on the session (§48.5). Only a credential marked <strong>Shared</strong> that <strong>keeps its secret</strong> can be picked: nobody types a password at 3 a.m.</td>
+</tr>
+<tr>
+<td><strong>Do not read this server</strong></td>
+<td>Nothing is read and nothing rings.</td>
+</tr>
+</tbody>
+</table>
+<p>The reading never uses sudo and never changes anything: it is <code>/proc</code>,
+<code>statvfs()</code> and <code>systemctl list-units</code>, which any account may read. On a
+server whose <code>/proc</code> is mounted with <code>hidepid</code>, the reading account sees only
+its own processes, and the page says so.</p>
+<p><strong>Every N minutes</strong> (1 to 1440, default 5) the scheduled action <em>Web Server
+Manager — server health</em> reads every server that is due (it runs every minute
+and is created by itself with the first server; Administrator › Scheduled
+actions shows each run). <strong>Read now</strong> reads the server at once. Every reading
+is a line in the Operations log (§48.4) with the credential it used.</p>
+<p><strong>Thresholds</strong> per server: disk warning and critical (85 % / 95 %), inodes
+(90 %), free memory warning and critical (15 % / 5 %), swap (80 %) and load
+per CPU over 5 minutes (2.0). Failed services always warn, except the ones
+listed under <em>Failed services that never alert</em> (one per line, <code>*</code> and <code>?</code>
+allowed, for example <code>apt-daily*.service</code>).</p>
+<p><strong>The bell</strong> rings the administrators once for each <strong>new or worse</strong> problem
+and once when the server is <strong>healthy again</strong> — not at every reading. A
+server that cannot be read is <em>unreachable</em> and rings after <strong>two</strong> failed
+readings in a row (one lost SSH session is not a problem); the page keeps the
+last good figures and says how old they are.</p>
+<p><strong>Metrics.</strong> Readings go to this node's metrics store (mirrored to the HA
+peer) as <code>satom_host_*</code> series labelled with the server; a reading that fails
+writes <code>satom_scrape_up{collector="host_health"} 0</code> and nothing else, so an
+unreachable server never looks idle. A chart whose query fails says ERROR; it
+is never an empty chart.</p>
+<p>A profile that reaches only some <strong>sites</strong> of a server (§48.8) does not see
+Health: it is the whole machine.</p>
     </div>
   </div>
 </section>

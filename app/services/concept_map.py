@@ -487,7 +487,8 @@ PAGES: tuple[dict, ...] = (
        "Everything behind a service on both boxes, subtracted."),
     _p("wsm.index", "Web Server Manager", "automation",
        "linux web server ssh vhost nginx apache files certificates packages services cron "
-       "sudo credentials hosting cpanel",
+       "sudo credentials hosting cpanel health memory disk cpu load processes failed "
+       "service monitoring agent",
        "Linux web servers over SSH with your own account (Linux ADOM)."),
     _p("wsm.audit", "Web Server Manager operations log", "automation",
        "web server manager audit operations ssh user sudo linux log csv",

@@ -456,6 +456,18 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "minute, cron expressions are evaluated in UTC.",
     ),
     ActionSpec(
+        "wsm_health", "Web Server Manager — server health", "admin",
+        needs_targets=False,
+        summary="Read memory, disks, load, processes and failed systemd units of every "
+                "managed Linux server whose interval has passed (services.server_health): "
+                "through its satom-webctl agent or over SSH with a shared credential that "
+                "keeps its secret -- the operator picks per server (Health > Settings). A "
+                "READ: no sudo, no write. Readings go to this node's metrics store; a server "
+                "that cannot be read writes satom_scrape_up 0 and, after two failures in a "
+                "row, rings the administrators. Each new problem rings once, recovery once. "
+                "Created by itself; runs every minute, each server keeps its own interval.",
+    ),
+    ActionSpec(
         "webhost_cert_expiry", "Web hosts — certificate expiry check", "admin",
         needs_targets=False,
         summary="Ask every Plugin Studio server connection (servers prepared with "
@@ -911,6 +923,19 @@ def _do_webhost_cert_expiry(dry_run: bool = False) -> dict:
             "log": "\n".join(lines)[:_LOG_MAX]}
 
 
+def _do_wsm_health(dry_run: bool = False) -> dict:
+    """Server health readings due this minute. ``ok`` is False when a server
+    could not be read (its health is unknown, which is a finding)."""
+    from . import server_health
+    r = server_health.run_due(dry_run=dry_run)
+    return {"ok": not r["failed"],
+            "summary": ("%s%d server(s), %d read, %d not due, %d deferred, %d problem(s)%s"
+                        % ("[dry-run] " if dry_run else "", r["servers"], r["read"],
+                           r["skipped"], r["deferred"], r["problems"],
+                           ", %d unreadable" % len(r["failed"]) if r["failed"] else "")),
+            "log": "\n".join("ERROR %s" % f for f in r["failed"])[:_LOG_MAX]}
+
+
 def _do_wsm_schedules(dry_run: bool = False) -> dict:
     """Web Server Manager schedules due this minute. ``ok`` is False when one
     failed or waits for authentication (it is named in the log)."""
@@ -1247,6 +1272,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_webhost_cert_expiry(dry_run)
         if key == "wsm_schedules":
             return _do_wsm_schedules(dry_run)
+        if key == "wsm_health":
+            return _do_wsm_health(dry_run)
         if key == "artifact_refs":
             return _do_artifact_refs(params, dry_run)
         if key == "netbox_reconcile":

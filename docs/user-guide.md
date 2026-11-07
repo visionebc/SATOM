@@ -12662,8 +12662,10 @@ installation, or the public site being down.
 ## 48. Web Server Manager (Linux ADOM)
 
 The **Web Server Manager** administers Linux web servers over SSH **with
-your own account**: files, websites, certificates, security, `.htaccess`,
-scripts, scheduled tasks, packages, services, logs, users and the SSH server.
+your own account**: the server's **health** (memory, disks, load, processes,
+failed services, in time), files, websites, certificates, security,
+`.htaccess`, scripts, scheduled tasks, packages, services, logs, users and the
+SSH server.
 The *Web hosts* example apps of Plugin Studio stay in the Linux ADOM's
 Plugins next to it: they do the virtual hosts, files and certificates of a
 server through the restricted `satom-webctl` agent, and the server connection
@@ -12714,6 +12716,7 @@ answer of the last call.
 
 | Module | What it does |
 |---|---|
+| Health | Memory, swap, file systems (space and inodes), CPU and load, top processes and failed systemd services of the whole server, read every few minutes and kept in the metrics store; history charts (6 h, 24 h, 7 days); thresholds per server; a bell for each new problem and when the server is healthy again. Read through the agent or a shared SSH credential, as you choose (§48.9). |
 | File Manager | Browse any folder the account may read; edit with syntax highlighting (PHP, HTML, CSS, JS, Python, Bash, JSON, YAML, XML, Apache, nginx); preview HTML (scripts disabled) and images; upload (drag and drop, 8 MB per file) and download; new file/folder; rename, move, copy; chmod / chown (recursive); zip / tar.gz; extract (archives with absolute paths, `..` or links are refused); search by name and content; **History** of the last 25 versions of every file SATOM overwrote, with restore. Deletes keep a backup on the server up to 64 MB. |
 | Domains & VHosts | nginx and Apache sites: new website (static, PHP-FPM with the socket detected, or reverse proxy), domains and aliases, document root, index files, HTTPS with a certificate, HTTP→HTTPS redirect, upload and time limits, security headers, own logs; edit the configuration; enable, disable, delete; test the configuration; check that the site answers. Every change: backup, the server's own test, restore when it fails, reload (never restart). |
 | SSL Certificates | Certificates in use and managed, with expiry; request with the key generated on the server and signed by the Certificate Manager (internal CA) or downloaded; install; **import** an existing certificate and key (the key goes straight to the server, never stored or logged by SATOM); use on a site; Let's Encrypt with certbot (webroot, nginx, Apache or standalone; ECDSA or RSA; staging); renew, test renewal, automatic renewal; **TLS check** (trusted chain, name, expiry, TLS 1.0–1.3). Expiring certificates raise a bell (§23.6). |
@@ -12764,6 +12767,9 @@ openSUSE 15, RHEL 9 / Rocky / AlmaLinux — the distributions SATOM itself is
 deployed on. A server prepared with `install-satom-webctl.sh` also offers its
 restricted agent key as the credential *satom-webctl agent* (virtual hosts
 and certificates only).
+
+A *satom-webctl* agent, when you choose to install one, is never needed: it
+only adds a way in that keeps no password of anybody's (§48.9).
 
 ### 48.6 The plugins (for automation)
 
@@ -12824,3 +12830,54 @@ servers, and under each server the sites (virtual hosts) it last answered
 
 The permissions of the profile still decide what may be done there (for
 example *Files* to edit files); the device scope only decides where.
+
+### 48.9 Health: memory, disks, load, processes and services
+
+**Linux › Web Server Manager › *server* › Health** shows the whole machine:
+state (*healthy*, *warning*, *critical*, *unreachable*), problems, CPU and
+load, memory and swap, uptime, every file system with its use and inodes,
+failed systemd services, the processes that use the most CPU and memory, and
+a chart of CPU, memory, the fullest disk and load over 6 hours, 24 hours or 7
+days. The server list shows each server's state as a badge.
+
+**How SATOM reads the server is your choice** (Health › *Settings*, needs
+*Administer servers*):
+
+| Choice | What happens on the server |
+|---|---|
+| **Automatic** (default) | The agent when the server has one, otherwise the first shared SSH credential that keeps its secret. |
+| **The satom-webctl agent only** | Read with the agent you installed with `install-satom-webctl.sh` (account `satom-mon`, SATOM's own key, forced command, no shell, no password of anybody's). Needs satom-webctl **1.2.0** or newer: run the installer of this SATOM again on a server prepared with an older one. |
+| **SSH with a credential I pick** | Nothing is installed. SATOM signs in with the credential you pick and the helper travels on the session (§48.5). Only a credential marked **Shared** that **keeps its secret** can be picked: nobody types a password at 3 a.m. |
+| **Do not read this server** | Nothing is read and nothing rings. |
+
+The reading never uses sudo and never changes anything: it is `/proc`,
+`statvfs()` and `systemctl list-units`, which any account may read. On a
+server whose `/proc` is mounted with `hidepid`, the reading account sees only
+its own processes, and the page says so.
+
+**Every N minutes** (1 to 1440, default 5) the scheduled action *Web Server
+Manager — server health* reads every server that is due (it runs every minute
+and is created by itself with the first server; Administrator › Scheduled
+actions shows each run). **Read now** reads the server at once. Every reading
+is a line in the Operations log (§48.4) with the credential it used.
+
+**Thresholds** per server: disk warning and critical (85 % / 95 %), inodes
+(90 %), free memory warning and critical (15 % / 5 %), swap (80 %) and load
+per CPU over 5 minutes (2.0). Failed services always warn, except the ones
+listed under *Failed services that never alert* (one per line, `*` and `?`
+allowed, for example `apt-daily*.service`).
+
+**The bell** rings the administrators once for each **new or worse** problem
+and once when the server is **healthy again** — not at every reading. A
+server that cannot be read is *unreachable* and rings after **two** failed
+readings in a row (one lost SSH session is not a problem); the page keeps the
+last good figures and says how old they are.
+
+**Metrics.** Readings go to this node's metrics store (mirrored to the HA
+peer) as `satom_host_*` series labelled with the server; a reading that fails
+writes `satom_scrape_up{collector="host_health"} 0` and nothing else, so an
+unreachable server never looks idle. A chart whose query fails says ERROR; it
+is never an empty chart.
+
+A profile that reaches only some **sites** of a server (§48.8) does not see
+Health: it is the whole machine.

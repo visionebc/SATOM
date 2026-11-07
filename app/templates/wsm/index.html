@@ -39,6 +39,7 @@
       {% if s.state.host_key %}<span class="wsm-badge wsm-ok"><i class="bi bi-patch-check"></i> {{ _('trusted') }}</span>{% else %}<span class="wsm-badge wsm-bad">{{ _('host key not trusted') }}</span>{% endif %}
       {% if s.state.allow_writes %}<span class="wsm-badge wsm-info">{{ _('changes allowed') }}</span>{% else %}<span class="wsm-badge wsm-muted">{{ _('read-only') }}</span>{% endif %}
       <span class="wsm-badge wsm-muted">{{ _('%(n)d credential(s)', n=s.creds) }}</span>
+      {% if s.health %}<span class="wsm-badge {{ {'ok': 'wsm-ok', 'warning': 'wsm-warn'}.get(s.health, 'wsm-bad') }}"><i class="bi bi-heart-pulse"></i> {{ _('Health: %(state)s', state=s.health) }}</span>{% endif %}
     </div>
   </a>
   {% else %}

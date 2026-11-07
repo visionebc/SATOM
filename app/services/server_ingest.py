@@ -371,6 +371,24 @@ SCHEMAS: "dict[str, Obj]" = {
     "services": SERVICES,
 }
 
+_LOAD = Num(0.0, 1.0e6)
+#: ``host.health`` (satom-webctl 1.2.0+, satom-wsm 2.1.0+): one reading of the
+#: whole host, built from the four collector schemas above.
+HOST_HEALTH = Obj({
+    "hostname": Str(max_len=255, min_len=1),
+    "kernel": Str(max_len=128, min_len=1),
+    "cpus": Int(1, 4096),
+    "cpu_pct": Num(0.0, 100.0),
+    "load1": _LOAD, "load5": _LOAD, "load15": _LOAD,
+    "uptime_s": Int(0, 2 ** 40),
+    "memory": MEMORY,
+    "filesystems": List(FILESYSTEM, max_items=64),
+    "processes": PROCESSES,
+    "proc_restricted": Bool(),
+    "systemd": Bool(),
+    "services": List(SERVICE, max_items=2048),
+})
+
 
 # ── satom-webctl answers (Plugin Studio "server" connections) ────────────────
 # One schema per operation of hostctl/satom-webctl.py, wrapped in the envelope
@@ -498,6 +516,7 @@ WEBCTL_CERT_DELETE = Obj({"name": _CERTNAME, "deleted": Bool(), "backup": _BACKU
 
 #: satom-webctl operation -> (writes, schema of its result).
 WEBCTL_OPS: "dict[str, tuple]" = {
+    "host.health": (False, HOST_HEALTH),
     "info": (False, WEBCTL_INFO),
     "vhosts.list": (False, WEBCTL_VHOSTS),
     "vhost.get": (False, WEBCTL_VHOST_GET),

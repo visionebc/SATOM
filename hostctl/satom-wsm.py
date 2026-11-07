@@ -67,7 +67,7 @@ if "op_vhosts_list" not in globals():   # imported on its own (tests, --selftest
     globals().update({k: v for k, v in vars(_wmod).items()
                       if not k.startswith("__") and k not in ("main",)})
 
-WSM_VERSION = "2.0.0"
+WSM_VERSION = "2.1.0"
 MAX_FILE = 8 * 1024 * 1024
 MAX_LIST = 5000
 MAX_OUT = 256 * 1024
@@ -2520,6 +2520,7 @@ def op_script_run(conf, args):
 
 SESSION_OPS = {
     "whoami": op_whoami,
+    "host.health": op_host_health,
     "info": lambda c, a: dict(op_info(c, a), mode="session"),
     "vhosts.list": op_vhosts_list,
     "vhost.get": lambda c, a: op_vhost_get(c, _confd_name(c, a)),

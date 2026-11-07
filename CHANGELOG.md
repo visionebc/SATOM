@@ -6,6 +6,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Server health in the Web Server Manager (Linux ADOM).** Asked for: "monitor
+  RAM, disk and processes of the Linux servers; the operator adds their own
+  credentials and decides whether the agent is installed or not -- otherwise
+  everything over SSH". A **Health** module per server: memory and swap, every
+  file system (space and inodes), CPU busy and load, uptime, the top processes
+  by CPU and by memory, failed systemd services, and history charts (6 h, 24 h,
+  7 days) from the metrics store; a state badge on the server list. How the
+  server is read is the operator's choice per server -- **the satom-webctl
+  agent** (`satom-mon`, SATOM's key, forced command), **plain SSH with a shared
+  credential that keeps its secret** (nothing installed: the helper travels on
+  the session), **automatic** (the agent when there is one) or **off** -- and
+  the page says which one was used and why a server cannot be read. The
+  reading (`host.health`, satom-webctl 1.2.0 / satom-wsm 2.1.0) never uses
+  sudo and never writes; its answer passes the closed `HOST_HEALTH` schema of
+  the ingestion gate. Thresholds per server (disk, inodes, free memory, swap,
+  load per CPU, ignored services by pattern); a bell for each new or worse
+  problem and once on recovery; *unreachable* after two failed readings in a
+  row. A failed reading writes `satom_scrape_up{collector="host_health"} 0`
+  and nothing else. New scheduled action *Web Server Manager — server health*
+  (every minute; each server keeps its own interval), created by itself.
+
 ## [4.11.5] - 2026-11-07
 
 ### Added

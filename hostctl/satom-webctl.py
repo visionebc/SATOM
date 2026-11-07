@@ -55,7 +55,7 @@ import tarfile
 import tempfile
 import time
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 CONF_PATH = os.environ.get("SATOM_WEBCTL_CONF", "/etc/satom-webctl.json")
 MAX_REQUEST_BYTES = 16 * 1024 * 1024
 READ_TIMEOUT = 30
@@ -1362,7 +1362,211 @@ def op_cert_delete(conf, args):
     return {"name": name, "deleted": True, "backup": bk}
 
 
+# ── host health (read only, no privilege) ───────────────────────────────────
+#
+# Memory, file systems, load, CPU, processes and systemd units, read from
+# /proc, statvfs() and ``systemctl list-units`` -- everything an unprivileged
+# account may read. No sudo, no write, no shell. The answer has exactly the
+# shape of SATOM's closed HOST_HEALTH schema (services/server_ingest.py).
+
+#: File systems that are not storage: never reported.
+PSEUDO_FS = {
+    "proc", "sysfs", "devtmpfs", "devpts", "cgroup", "cgroup2", "securityfs", "pstore",
+    "debugfs", "tracefs", "configfs", "fusectl", "mqueue", "hugetlbfs", "bpf", "autofs",
+    "binfmt_misc", "rpc_pipefs", "nsfs", "efivarfs", "selinuxfs", "fuse.lxcfs",
+    "fuse.gvfsd-fuse", "fuse.portal", "squashfs", "ramfs", "overlay", "nfsd", "tmpfs",
+    "devfs", "ecryptfs",
+}
+HEALTH_SAMPLE_S = 0.5
+HEALTH_TOP = 15
+UNIT_RE = re.compile(r"^[A-Za-z0-9:_.@\\-]+\.(service|socket|timer|mount|path|target)$")
+UNIT_ACTIVE = ("active", "inactive", "failed", "activating", "deactivating", "reloading",
+               "maintenance", "refreshing")
+USER_RE = re.compile(r"^[A-Za-z0-9_.@\\$-]{1,64}$")
+
+
+def _read(path):
+    with open(path) as fh:
+        return fh.read()
+
+
+def _meminfo():
+    kb = {}
+    for line in _read("/proc/meminfo").splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1].isdigit():
+            kb[parts[0].rstrip(":")] = int(parts[1]) * 1024
+    total = kb.get("MemTotal", 0)
+    avail = kb.get("MemAvailable", kb.get("MemFree", 0) + kb.get("Cached", 0))
+    out = {"total_bytes": max(1, total), "available_bytes": max(0, min(avail, total))}
+    if "SwapTotal" in kb:
+        st = kb["SwapTotal"]
+        out["swap_total_bytes"] = st
+        out["swap_used_bytes"] = max(0, min(st, st - kb.get("SwapFree", st)))
+    return out
+
+
+def _unescape_mount(text):
+    """/proc/self/mounts writes space, tab, newline and backslash as \\ooo."""
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), text)
+
+
+def _filesystems():
+    out, seen = [], set()
+    for line in _read("/proc/self/mounts").splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        mount, fstype = _unescape_mount(parts[1]), parts[2].lower()
+        if fstype in PSEUDO_FS or mount in seen or not mount.startswith("/") \
+                or UNSAFE_TEXT_RE.search(mount) or len(mount) > 512 \
+                or not re.match(r"^[a-z0-9][a-z0-9._+-]{0,31}$", fstype):
+            continue
+        try:
+            st = os.statvfs(mount)
+        except OSError:
+            continue
+        size = st.f_blocks * st.f_frsize
+        if size <= 0:
+            continue
+        used = max(0, min(size, (st.f_blocks - st.f_bfree) * st.f_frsize))
+        row = {"mount": mount, "fstype": fstype, "size_bytes": size, "used_bytes": used}
+        if st.f_files > 0:
+            row["inodes_total"] = st.f_files
+            row["inodes_used"] = max(0, min(st.f_files, st.f_files - st.f_ffree))
+        seen.add(mount)
+        out.append(row)
+        if len(out) >= 64:
+            break
+    return out
+
+
+def _cpu_times():
+    """(busy, total) jiffies of all CPUs together."""
+    vals = [int(v) for v in _read("/proc/stat").splitlines()[0].split()[1:]]
+    idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
+    total = sum(vals[:8])
+    return total - idle, total
+
+
+def _proc_table():
+    """pid -> [comm, state, uid, jiffies, rss]; what this account may read."""
+    page = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
+    rows = {}
+    for name in os.listdir("/proc"):
+        if not name.isdigit():
+            continue
+        try:
+            raw = _read("/proc/%s/stat" % name)
+            comm = raw[raw.index("(") + 1:raw.rindex(")")]
+            rest = raw[raw.rindex(")") + 2:].split()
+            uid = os.stat("/proc/%s" % name).st_uid
+            rss = int(_read("/proc/%s/statm" % name).split()[1]) * page
+        except (OSError, ValueError, IndexError):
+            continue                       # gone between listdir and read
+        rows[int(name)] = [comm, rest[0], uid, int(rest[11]) + int(rest[12]), rss]
+    return rows
+
+
+def _username(uid, cache):
+    if uid not in cache:
+        try:
+            import pwd
+            name = pwd.getpwuid(uid).pw_name
+        except (KeyError, ImportError):
+            name = str(uid)
+        cache[uid] = name if USER_RE.match(name) else str(uid)
+    return cache[uid]
+
+
+def _processes(before, after, delta_total, cpus):
+    users = {}
+    counts = {"total": 0, "running": 0, "sleeping": 0, "zombie": 0}
+    rows = []
+    for pid, (comm, state, uid, jif, rss) in after.items():
+        counts["total"] += 1
+        if state == "R":
+            counts["running"] += 1
+        elif state in ("S", "D", "I"):
+            counts["sleeping"] += 1
+        elif state == "Z":
+            counts["zombie"] += 1
+        prev = before.get(pid)
+        used = max(0, jif - prev[3]) if prev and prev[0] == comm else 0
+        pct = 100.0 * cpus * used / delta_total if delta_total > 0 else 0.0
+        name = TEXT_UNSAFE_RE.sub("?", comm)[:128] or "?"
+        rows.append({"pid": pid, "user": _username(uid, users), "name": name,
+                     "state": state if state in "RSDZTtIWXPK" else "S",
+                     "cpu_pct": round(min(pct, 409600.0), 1), "rss_bytes": rss})
+    by_cpu = sorted(rows, key=lambda r: (-r["cpu_pct"], -r["rss_bytes"]))[:HEALTH_TOP]
+    by_mem = sorted(rows, key=lambda r: -r["rss_bytes"])[:HEALTH_TOP]
+    top, seen = [], set()
+    for r in by_cpu + by_mem:
+        if r["pid"] not in seen:
+            seen.add(r["pid"])
+            top.append(r)
+    return {"counts": counts, "top": top}
+
+
+def _units(conf):
+    exe = shutil.which("systemctl")
+    if not exe or not os.path.isdir("/run/systemd/system"):
+        return False, []
+    try:
+        res = subprocess.run(
+            [exe, "list-units", "--type=service", "--all", "--no-legend", "--plain",
+             "--no-pager"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=int(conf.get("command_timeout") or 60))
+    except (OSError, subprocess.TimeoutExpired):
+        return True, []
+    out = []
+    for line in res.stdout.decode("utf-8", "replace").splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        unit, active, sub = parts[0].lstrip("●* "), parts[2], parts[3]
+        if not UNIT_RE.match(unit) or len(unit) > 256 or active not in UNIT_ACTIVE \
+                or not re.match(r"^[a-z][a-z-]{0,31}$", sub):
+            continue
+        out.append({"unit": unit, "active": active, "sub": sub})
+        if len(out) >= 2048:
+            break
+    return True, out
+
+
+def op_host_health(conf, args):
+    """One reading of the host: two CPU samples HEALTH_SAMPLE_S apart."""
+    cpus = os.cpu_count() or 1
+    busy0, total0 = _cpu_times()
+    procs0 = _proc_table()
+    time.sleep(HEALTH_SAMPLE_S)
+    busy1, total1 = _cpu_times()
+    procs1 = _proc_table()
+    dt = total1 - total0
+    load = [float(x) for x in _read("/proc/loadavg").split()[:3]]
+    systemd, units = _units(conf)
+    uname = os.uname()
+    return {
+        "hostname": TEXT_UNSAFE_RE.sub("?", uname.nodename)[:255] or "?",
+        "kernel": TEXT_UNSAFE_RE.sub("?", uname.release)[:128] or "?",
+        "cpus": max(1, min(cpus, 4096)),
+        "cpu_pct": round(max(0.0, min(100.0, 100.0 * (busy1 - busy0) / dt)) if dt > 0
+                         else 0.0, 1),
+        "load1": max(0.0, load[0]), "load5": max(0.0, load[1]), "load15": max(0.0, load[2]),
+        "uptime_s": int(float(_read("/proc/uptime").split()[0])),
+        "memory": _meminfo(),
+        "filesystems": _filesystems(),
+        "processes": _processes(procs0, procs1, dt, cpus),
+        # hidepid=: this account sees only its own processes, and PID 1 is hidden
+        "proc_restricted": not os.path.exists("/proc/1/stat")
+        or not os.access("/proc/1/stat", os.R_OK),
+        "systemd": systemd,
+        "services": units,
+    }
+
+
 OPERATIONS = {
+    "host.health": op_host_health,
     "info": op_info,
     "vhosts.list": op_vhosts_list,
     "vhost.get": op_vhost_get,

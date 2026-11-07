@@ -29523,3 +29523,5 @@ msgstr "groupe(s) d'utilisateurs"
 msgid "OpenSSH or PEM private key"
 msgstr "Clé privée OpenSSH ou PEM"
 
+msgid "Health: %(state)s"
+msgstr "Santé : %(state)s"

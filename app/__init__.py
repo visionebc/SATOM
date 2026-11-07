@@ -2810,6 +2810,17 @@ def create_app(config_override: object | None = None) -> Flask:
                     _whc.ensure_scheduled()
         except Exception:  # noqa: BLE001 — never block boot on housekeeping
             app.logger.exception("web host certificate check seed failed")
+        # Server health (Web Server Manager): a node with managed servers gets
+        # the every-minute reading; ensure_scheduled never touches a row that
+        # exists. Each server's own Health > Settings decides how, or off.
+        try:
+            from .services import server_health as _sh
+            from .services import wsm as _wsm_h
+            with app.app_context():
+                if _wsm_h.module_active() and _wsm_h.servers():
+                    _sh.ensure_scheduled()
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("server health seed failed")
         # Backfill the per-BUILD snapshot archive. Until 2026-09-16 a sweep
         # wrote one file per appliance and overwrote it every run, so the first
         # sweep after a firmware upgrade DESTROYED the evidence backing the

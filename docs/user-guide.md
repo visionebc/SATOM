@@ -6544,7 +6544,12 @@ activities of an appliance), as automatic as the steps allow:
   policy name). SATOM checks all three when the answer arrives, not only in
   the browser. The answer is saved as
   `{{ last_answer }}`: `answer`, `acknowledged` (the ticked texts),
-  `all_acknowledged`, `by` and `note`.
+  `all_acknowledged`, `by` and `note`. **Link (a SATOM page)** — a path on
+  this SATOM such as `/appliances/{{ appliance.id }}/restore` — adds a button
+  (text: **Link button**) that opens that page in a new tab; a link to another
+  site is not shown and the question says why. A run left waiting on a version
+  the app has since replaced cannot be answered any more, so SATOM closes it
+  with that reason.
 - **Simulate** (Diagram tab) walks the saved draft end to end as a
   rehearsal: nothing is written to a device, the checks really look (they
   only read), each question stops in the panel for your answer — or tick

@@ -148,6 +148,11 @@
     var w = d.waiting, h = '<div class="fw-card mb-2" style="border-left:4px solid #7A5700;"><div class="fw-card-body" style="font-size:13px;">' +
       '<div class="fw-card-title mb-1" style="font-size:14px;"><i class="bi bi-hand-index me-1"></i>' + esc(w.label) + '</div>' +
       '<div style="white-space:pre-line;">' + esc(w.prompt) + '</div>';
+    /* A SATOM page the step points at (the server sends only a local path). */
+    if (w.link && w.link.charAt(0) === '/' && w.link.charAt(1) !== '/') {
+      h += '<div class="my-2"><a class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:12px;" target="_blank" rel="noopener" href="' +
+        esc(w.link) + '">' + esc(w.link_label || 'Open') + ' <i class="bi bi-box-arrow-up-right"></i></a></div>';
+    }
     if (w.role || w.time) {
       h += '<div class="my-2">' + (w.role ? '<span class="fw-badge fw-badge-secondary me-1"><i class="bi bi-person me-1"></i>' + esc(w.role) + '</span>' : '') +
         (w.time ? '<span class="fw-badge fw-badge-secondary"><i class="bi bi-clock me-1"></i>' + esc(w.time) + '</span>' : '') + '</div>';

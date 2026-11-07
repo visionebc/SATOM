@@ -23,6 +23,7 @@ over SSH is ``ssh_ops``'s, the battery is ``diag_battery``'s.
 """
 from __future__ import annotations
 
+import re
 import threading
 import time
 
@@ -131,7 +132,12 @@ def kinds() -> list:
                          "refused and only No can be answered."),
               Param("confirm_text", "Type to confirm",
                     help="e.g. {{ plan.target.policy }}: Yes is accepted only when the "
-                         "person types exactly this text.")]),
+                         "person types exactly this text."),
+              Param("link", "Link (a SATOM page)",
+                    help="A path on this SATOM, e.g. /appliances/{{ appliance.id }}/restore: "
+                         "a button next to the question opens it in a new tab. Anything "
+                         "else (another site, //host) is not shown and the question says so."),
+              Param("link_label", "Link button", default="Open")]),
         Kind("activity", "Activity", "flow",
              "A documented box that passes at once — a heading such as "
              "'1 Connectivity tests'. Its instructions show on the run."),
@@ -212,6 +218,17 @@ ASK_GATE = "_ask_gate"
 MAX_GATE_ITEMS = 50
 
 
+_SATOM_PATH = re.compile(r"/(?![/\\])[^\s\\]{0,499}")
+
+
+def satom_path(v) -> str:
+    """``v`` when it is a path on this SATOM (one leading slash, no host, no
+    scheme, no blanks or backslashes), else "" -- an Ask step's link is a
+    button on the run page and must never send the person to another site."""
+    s = str(v if v is not None else "").strip()
+    return s if _SATOM_PATH.fullmatch(s) else ""
+
+
 def _texts(v) -> list[str]:
     """A list parameter as short texts: a list (of texts, or of objects with
     a ``text``), or one text; empty values dropped."""
@@ -247,11 +264,18 @@ def run(node, ctx):
         return "ok", None, first[:200]
 
     if kind == "ask":
+        raw_link = str(P("link") or "").strip()
+        link = satom_path(raw_link)
         ctx.vars[ASK_GATE] = {"key": node.get("key") or "",
                               "acknowledge": _texts(P("acknowledge")),
                               "blockers": _texts(P("blockers")),
-                              "confirm_text": str(P("confirm_text") or "").strip()[:200]}
-        return WAIT, None, str(P("prompt") or "")
+                              "confirm_text": str(P("confirm_text") or "").strip()[:200],
+                              "link": link,
+                              "link_label": (str(P("link_label") or "").strip() or "Open")[:80]}
+        prompt = str(P("prompt") or "")
+        if raw_link and not link:
+            prompt += "\n(Link not shown: %r is not a page of this SATOM.)" % raw_link[:200]
+        return WAIT, None, prompt
 
     if kind == "appliance_load":
         row = _appliance(node, ctx)

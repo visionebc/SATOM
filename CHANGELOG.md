@@ -29,6 +29,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   the device) and *Notify* (bell and e-mail; in a rehearsal only the
   simulating person's bell, once per simulation). When SATOM cannot try,
   each takes the error arrow, never a *no*.
+- **Plugin Studio: an *Ask a person* step can link to a SATOM page.**
+  **Link (a SATOM page)**, e.g. `/appliances/{{ appliance.id }}/restore`,
+  shows a button next to the question on the run page. Only a path on this
+  SATOM is shown; another site is refused and the question says so.
 
 ### Fixed
 - **Automations started by an alert died half-way and stayed "running".**
@@ -38,6 +42,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   "you already have 2 app runs in progress"). The alert run now waits for
   the automations it started. Automation and app runs whose worker stopped
   are closed as *interrupted* in the lists, without anybody opening them.
+- **A run waiting on a question of an app that was published again stayed
+  "waiting" forever.** Its answer is refused (the diagram changed under it),
+  so nothing could close it. Such runs are now closed with the reason, and
+  a run of the draft or of the live version keeps waiting.
 - **An SSH read could run far past its time limit.** The limit was checked
   only after a silent moment, so a device that kept printing held a 15 s
   `get system status` for 18 minutes, and the read buffer grew with it.

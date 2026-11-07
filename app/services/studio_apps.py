@@ -1475,7 +1475,9 @@ def sweep_stale_runs(limit: int = 200) -> int:
     """Close every run still "running" past the run limit. Its worker died
     (a restart, or the short-lived process that started it exited); until
     now only opening the run said so, and the run lists kept showing it as
-    running for days. Returns how many were closed."""
+    running for days. Also closes a published run "waiting" on a version the
+    app has since replaced: answer() refuses it, so it would wait forever.
+    Returns how many were closed."""
     since = datetime.utcnow() - timedelta(seconds=F.RUN_TIMEOUT + 120)
     n = 0
     for r in (StudioAppRun.query.filter(StudioAppRun.status == "running",
@@ -1483,7 +1485,21 @@ def sweep_stale_runs(limit: int = 200) -> int:
               .order_by(StudioAppRun.id).limit(limit).all()):
         if refresh_stale(r).status != "running":
             n += 1
-    return n
+    closed = 0
+    for r, slug, current in (db.session.query(StudioAppRun, StudioApp.slug, StudioApp.version)
+                             .join(StudioApp, StudioApp.id == StudioAppRun.app_id)
+                             .filter(StudioAppRun.status == "waiting",
+                                     StudioAppRun.version > 0,
+                                     StudioAppRun.version != StudioApp.version)
+                             .order_by(StudioAppRun.id).limit(limit).all()):
+        r.status = "failed"
+        r.error = ("closed: %s was published again (v%s) while this run waited on v%s; "
+                   "an answer cannot continue it -- start a new run" % (slug, current, r.version))
+        r.finished_at = datetime.utcnow()
+        closed += 1
+    if closed:
+        db.session.commit()
+    return n + closed
 
 
 def start_run(a: StudioApp, *, user, product: str, raw_inputs, draft: bool = False,
@@ -1637,14 +1653,17 @@ def waiting_step(run: StudioAppRun) -> dict | None:
 def gate_of(run: StudioAppRun, st: dict | None) -> dict:
     """What the waiting Ask step's answer must respect: ``{acknowledge,
     blockers, confirm_text}`` (``studio_checks.ASK_GATE``), empty when it set
-    none."""
+    none -- plus the page it links to (``link``, ``link_label``)."""
     from . import studio_checks as C
     g = run.vars.get(C.ASK_GATE) if st is not None else None
     if not isinstance(g, dict) or g.get("key") != st.get("key"):
-        return {"acknowledge": [], "blockers": [], "confirm_text": ""}
+        return {"acknowledge": [], "blockers": [], "confirm_text": "", "link": "",
+                "link_label": ""}
     return {"acknowledge": list(g.get("acknowledge") or []),
             "blockers": list(g.get("blockers") or []),
-            "confirm_text": str(g.get("confirm_text") or "")}
+            "confirm_text": str(g.get("confirm_text") or ""),
+            "link": C.satom_path(g.get("link")),
+            "link_label": str(g.get("link_label") or "Open")}
 
 
 def answer(a: StudioApp, run: StudioAppRun, value: str, *, user, note: str = "",

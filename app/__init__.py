@@ -839,10 +839,14 @@ def create_app(config_override: object | None = None) -> Flask:
                     and current_user.can("config_write") and may_open("scripts.index"))
 
     @app.template_global()
-    def wsm_modules():
-        """The Web Server Manager's modules, for its ADOM's menu."""
-        from .services.wsm import MODULES
-        return MODULES
+    def wsm_modules(slug=None):
+        """The Web Server Manager's modules for its ADOM's menu: on a server the
+        user reaches only some sites of, only the site pages (device scope)."""
+        from flask_login import current_user
+        from .services import wsm as _W
+        if slug and _W.site_scope(current_user, slug) is not None:
+            return {k: v for k, v in _W.MODULES.items() if k in _W.SITE_PAGES}
+        return _W.MODULES
 
     @app.template_global()
     def may_open(endpoint):

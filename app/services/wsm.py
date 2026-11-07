@@ -132,6 +132,154 @@ def module_active() -> bool:
     return bool(module_adoms())
 
 
+# --------------------------------------------------------------------------- #
+#  device scope: a server is a chassis, a site its partition (2026-11-07)     #
+# --------------------------------------------------------------------------- #
+#: Scope entry of a server in the profile's device scope (services.device_scope).
+SCOPE_ENTRY = "server:"
+#: With only SOME sites of a server, the operations on those sites and on
+#: their files; everything else acts on the whole server (packages, services,
+#: users, SSH, cron, security, certificates, scripts, logs) and is refused --
+#: the chassis rule of the device scope.
+SITE_OPS = frozenset({"whoami", "info", "vhosts.list", "vhost.get", "vhost.put",
+                      "vhost.enable", "vhost.disable", "vhost.test", "http.check",
+                      "htaccess.apply"}) | frozenset(op for op in (
+                          "fs.list", "fs.stat", "fs.read", "fs.search", "fs.history",
+                          "fs.version", "fs.write", "fs.mkdir", "fs.move", "fs.copy",
+                          "fs.delete", "fs.chmod", "fs.chown", "fs.archive", "fs.extract",
+                          "fs.restore"))
+#: Operations whose paths are confined to the sites' document roots (by the
+#: helper on the server, symlinks resolved: services never trust a path).
+JAIL_OPS = frozenset(op for op in SITE_OPS if op.startswith("fs.")) | {"htaccess.apply"}
+#: Operations that name ONE site (``args["name"]``).
+SITE_NAMED = frozenset({"vhost.get", "vhost.put", "vhost.enable", "vhost.disable"})
+#: The pages of a server a site-scoped profile opens.
+SITE_PAGES = ("files", "sites", "htaccess")
+VHOSTS_KEY = "wsm.vhosts."
+
+
+def site_key(name) -> str:
+    """A site as the scope names it: lower case, without ``.conf``."""
+    n = str(name or "").strip().lower()
+    return n[:-5] if n.endswith(".conf") else n
+
+
+def server_scope(user) -> dict | None:
+    """``{slug: None | frozenset(sites)}`` the user reaches; ``None`` = every
+    server. From the profile's device scope under the manager's ADOM(s): an
+    ADOM the profile does not have reaches no server; a scope that names no
+    server there keeps every server."""
+    from .product_scope import adoms_of, device_scope_of
+    keys = module_adoms()
+    adoms = adoms_of(user)
+    if adoms is not None:
+        keys = tuple(k for k in keys if k in adoms)
+        if not keys:
+            return {}
+    scope = device_scope_of(user)
+    if scope is None:
+        return None
+    out, scoped = {}, False
+    for k in keys:
+        entries = scope.get(k, scope.get("*"))
+        if entries is None:
+            return None                       # this ADOM is not scoped
+        scoped = True
+        for key, parts in entries.items():
+            if key.startswith(SCOPE_ENTRY):
+                slug = key[len(SCOPE_ENTRY):]
+                prev = out.get(slug, frozenset())
+                out[slug] = None if parts is None or prev is None else (
+                    prev | {site_key(p) for p in parts})
+    return out if scoped else None
+
+
+def visible_servers(user) -> list:
+    sc = server_scope(user)
+    return [c for c in servers() if sc is None or c.slug in sc]
+
+
+def may_see_server(user, slug: str) -> bool:
+    sc = server_scope(user)
+    return sc is None or slug in sc
+
+
+def site_scope(user, slug: str):
+    """``None`` = the whole server; a frozenset = only those sites."""
+    sc = server_scope(user)
+    return None if sc is None else sc.get(slug, frozenset())
+
+
+def scope_gate(user, c, op: str, args: dict):
+    """The device scope of ``user`` on server ``c`` for ``op``. Raises
+    WsmDenied; returns the sites (None = whole server)."""
+    sc = server_scope(user)
+    if sc is None:
+        return None
+    if c.slug not in sc:
+        raise WsmDenied("no server %s" % c.slug)
+    sites = sc[c.slug]
+    if sites is None:
+        return None
+    if op not in SITE_OPS:
+        raise WsmDenied("your profile reaches only some sites of %s (%s): %s acts on the "
+                        "whole server" % (c.name, ", ".join(sorted(sites)) or "none",
+                                          MODULES.get(OPS.get(op, ("", False))[0],
+                                                      (op,))[0]))
+    if op in SITE_NAMED and site_key(args.get("name")) not in sites:
+        raise WsmDenied("your profile does not reach the site %s of %s"
+                        % (args.get("name"), c.name))
+    return sites
+
+
+def remember_vhosts(slug: str, result) -> None:
+    """Keep the sites a server answered (name -> document roots): the
+    Profiles form offers them, and a site-scoped profile's files are confined
+    to their roots. Never raises."""
+    from . import settings_store as ST
+    try:
+        rows = (result or {}).get("vhosts") or []
+        sites = {}
+        for v in rows:
+            if isinstance(v, dict) and v.get("name"):
+                roots = [r for r in (v.get("docroots") or []) if isinstance(r, str)]
+                sites.setdefault(site_key(v["name"]), [])
+                sites[site_key(v["name"])] += [r for r in roots
+                                               if r not in sites[site_key(v["name"])]]
+        ST.set_json(VHOSTS_KEY + slug, {"at": datetime.utcnow().isoformat(timespec="seconds"),
+                                        "sites": sites})
+    except Exception:  # noqa: BLE001
+        _log.debug("remember_vhosts failed for %s", slug, exc_info=True)
+
+
+def known_sites(slug: str) -> dict:
+    """``{site: [document roots]}`` from the last answer of the server."""
+    from . import settings_store as ST
+    raw = ST.get_json_checked(VHOSTS_KEY + slug, {}, dict)
+    if raw is ST.MALFORMED or not isinstance(raw, dict):
+        return {}
+    sites = raw.get("sites")
+    return {str(k): [str(r) for r in v if isinstance(r, str)]
+            for k, v in (sites or {}).items() if isinstance(v, list)} \
+        if isinstance(sites, dict) else {}
+
+
+def safe_root(path: str) -> bool:
+    """A document root may confine files only below the top level: "/",
+    "/var" or "/home" as a jail would be the whole server."""
+    import posixpath
+    p = posixpath.normpath(str(path or ""))
+    return p.startswith("/") and len([x for x in p.split("/") if x]) >= 2
+
+
+def jail_roots(sites, slug: str) -> list[str]:
+    roots = []
+    for s, rs in known_sites(slug).items():
+        if s in sites:
+            roots += [r for r in rs if safe_root(r) and r not in roots]
+    return roots
+
+
 class WsmDenied(Exception):
     """Refused by SATOM's own policy (HTTP 403)."""
 
@@ -525,7 +673,42 @@ def execute(slug: str, cred_id, op: str, args: dict | None = None, *, user,
             mode: str = "") -> dict:
     """Run one operation. Returns ``{"result", "who", "sudo", "ms", "credential"}``.
     Raises WsmDenied (SATOM said no), NeedSecret (ask and retry) or
-    T.WsmError (the server or the wire said no)."""
+    T.WsmError (the server or the wire said no).
+
+    The device scope of ``user`` comes first (:func:`scope_gate`): a server
+    outside it does not exist, and with only some sites the operation must
+    be one of :data:`SITE_OPS`, a named site one of them, and every path of a
+    file operation is confined to their document roots BY THE HELPER (the
+    ``_jail`` argument, symlinks resolved there). Arguments starting with
+    ``_`` never come from a caller."""
+    c = server(slug)
+    args = {k: v for k, v in (args or {}).items() if not str(k).startswith("_")}
+    sites = scope_gate(user, c, op, args)
+    if sites is not None and op in JAIL_OPS:
+        roots = jail_roots(sites, slug)
+        if not roots or any(s not in known_sites(slug) for s in sites):
+            listed = _execute(slug, cred_id, "vhosts.list", {}, user=user, run_as=run_as,
+                              provided=provided, timeout=timeout, mode=mode)
+            remember_vhosts(slug, listed["result"])
+            roots = jail_roots(sites, slug)
+        if not roots:
+            raise WsmDenied("none of your sites on %s has a document root SATOM may confine "
+                            "files to" % c.name)
+        args["_jail"] = roots
+    r = _execute(slug, cred_id, op, args, user=user, run_as=run_as, provided=provided,
+                 timeout=timeout, mode=mode)
+    if op == "vhosts.list" and isinstance(r.get("result"), dict):
+        remember_vhosts(slug, r["result"])
+        if sites is not None:
+            r["result"] = dict(r["result"], vhosts=[
+                v for v in r["result"].get("vhosts") or []
+                if isinstance(v, dict) and site_key(v.get("name")) in sites])
+    return r
+
+
+def _execute(slug: str, cred_id, op: str, args: dict | None = None, *, user,
+             run_as: str = "", provided: dict | None = None, timeout: float = 120,
+             mode: str = "") -> dict:
     provided = provided or {}
     args = args or {}
     c = server(slug)
@@ -635,6 +818,7 @@ def start_job(app, slug: str, cred_id, op: str, args: dict, *, user, run_as: str
     from . import jobs
     c = server(slug)
     check_op(user, op, elevated=False)
+    scope_gate(user, c, op, args or {})         # refused now, not in the worker
     cred = pick_credential(c, user, cred_id)
     check_op(user, op, elevated=(run_as or cred.run_as) == "root" and cred.can_escalate)
     if not cred.store_secret:

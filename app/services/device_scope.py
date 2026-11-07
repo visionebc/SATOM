@@ -78,9 +78,20 @@ def choices(adom_keys) -> list[dict]:
     from the whole inventory (an administrator composes a profile, not a view
     of their own session). Linux servers are added by services.wsm."""
     from ..models import Appliance
+    from . import wsm
     out = []
     rows = Appliance.query.order_by(Appliance.name).all()
+    wsm_adoms = wsm.module_adoms()
     for key, name in adom_keys:
+        if key in wsm_adoms:
+            # The Web Server Manager's ADOM: its servers, each site a partition
+            # (the sites the server last listed; open its Domains & VHosts
+            # page to refresh them).
+            items = [{"key": wsm.SCOPE_ENTRY + c.slug, "label": c.name, "host": c.host or "",
+                      "parts": sorted(wsm.known_sites(c.slug))}
+                     for c in sorted(wsm.servers(), key=lambda c: (c.name or "").lower())]
+            out.append({"adom": key, "name": name, "entries": items, "servers": True})
+            continue
         groups = {}
         for a in rows:
             if kind_of(a) != key:

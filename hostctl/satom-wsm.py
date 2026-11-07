@@ -144,9 +144,37 @@ def require_root(what):
         raise Refused("permission_denied", "%s needs administrator rights" % what)
 
 
+#: Document roots a site-scoped SATOM profile is confined to (the request's
+#: ``_jail``, set by SATOM, never by the browser); None = no confinement.
+JAIL = None
+
+
+def _set_jail(value):
+    """``_jail`` of one request: a list of absolute directories, each resolved
+    (symlinks followed) once. Anything else refuses the request."""
+    global JAIL
+    if value is None:
+        JAIL = None
+        return
+    need(isinstance(value, list) and 0 < len(value) <= 50
+         and all(isinstance(v, str) and v.startswith("/") and "\x00" not in v
+                 and len([x for x in v.split("/") if x]) >= 2 for v in value),
+         "bad_jail", "the site roots of this request are not valid")
+    JAIL = [os.path.realpath(v).rstrip("/") for v in value]
+
+
+def _in_jail(p):
+    if JAIL is None:
+        return True
+    real = os.path.realpath(p)
+    return any(real == r or real.startswith(r + "/") for r in JAIL)
+
+
 def _abs(path, *, must_exist=True):
     """A normalized absolute path or Refused. Symlinks are NOT followed here:
-    the account's own permissions decide what it may touch."""
+    the account's own permissions decide what it may touch -- except for a
+    site-scoped profile (:data:`JAIL`): its path, resolved, must stay inside
+    the document roots of its sites."""
     need(isinstance(path, str) and path.startswith("/") and "\x00" not in path
          and len(path) <= 4096, "bad_path", "an absolute path is expected")
     p = os.path.normpath(path)
@@ -155,6 +183,10 @@ def _abs(path, *, must_exist=True):
     for bad in ("/proc", "/sys", "/dev"):
         need(not (p == bad or p.startswith(bad + "/")), "bad_path",
              "%s is not a place for files" % bad)
+    # before the existence check: a path outside the sites is refused the
+    # same way whether it exists or not
+    need(_in_jail(p), "outside_scope",
+         "%s is outside the sites your SATOM profile reaches" % p)
     if must_exist:
         need(os.path.lexists(p), "not_found", "no such file or directory")
     return p
@@ -2563,7 +2595,9 @@ def session_handle(raw):
         if fn is None:
             raise Refused("unknown_op", "unknown operation")
         conf = detect_conf()
-        result = fn(conf, req.get("args") or {})
+        args = dict(req.get("args") or {})
+        _set_jail(args.pop("_jail", None))
+        result = fn(conf, args)
         entry["ok"] = True
         _log(conf, entry)
         return {"ok": True, "result": _scrub(result), "who": _who()}

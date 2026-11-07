@@ -11,7 +11,7 @@
     {% set _wsm_slug = request.view_args.get('slug') if request.blueprint == 'wsm' and request.view_args else None %}
     {% if _wsm_slug %}
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'wsm.server_home' }}" href="{{ url_for('wsm.server_home', slug=_wsm_slug) }}"><i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('Overview') }}</span></a>
-    {% for key, m in wsm_modules().items() %}
+    {% for key, m in wsm_modules(_wsm_slug).items() %}
     <a class="fw-nav-item {{ 'active' if request.view_args.get('page') == key }}" href="{{ url_for('wsm.module', slug=_wsm_slug, page=key) }}"><i class="bi {{ m[1] }} fw-nav-icon"></i><span>{{ m[0] }}</span></a>
     {% endfor %}
     {% endif %}

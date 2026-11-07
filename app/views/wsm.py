@@ -47,10 +47,22 @@ def _json_error(exc, status):
 
 
 def _server_or_404(slug):
+    """A server the signed-in user reaches (device scope), or 404 -- never
+    403: a server outside the scope does not exist for them."""
+    if not W.may_see_server(current_user, slug):
+        abort(404)
     try:
         return W.server(slug)
     except W.WsmDenied:
         abort(404)
+
+
+def _modules_for(slug):
+    """The modules of this server the user's scope opens: all of them, or only
+    the site pages when it reaches only some sites."""
+    if W.site_scope(current_user, slug) is None:
+        return W.MODULES
+    return {k: v for k, v in W.MODULES.items() if k in W.SITE_PAGES}
 
 
 def _creds_payload(c) -> list[dict]:
@@ -75,14 +87,18 @@ def _chrome(c, page: str) -> dict:
     st = W.server_state(c)
     perms = {p: W.can(current_user, "webserver." + p)
              for p in ("view", "files", "sites", "system", "root", "credentials")}
-    return {"server": c, "state": st, "page": page, "modules": W.MODULES, "perms": perms,
+    sites = W.site_scope(current_user, c.slug)
+    jail = W.jail_roots(sites, c.slug) if sites is not None else []
+    return {"server": c, "state": st, "page": page, "modules": _modules_for(c.slug),
+            "perms": perms, "sites": sorted(sites) if sites is not None else None,
             "cfg": {"slug": c.slug, "name": c.name, "host": c.host, "page": page,
                     "api": url_for("wsm.api", slug=c.slug, op="OP"),
                     "job": url_for("wsm.job_start", slug=c.slug, op="OP"),
                     "jobs": url_for("wsm.job_state", job_id="JOB"),
                     "allow_writes": st["allow_writes"], "trusted": bool(st["host_key"]),
                     "credentials": _creds_payload(c), "perms": perms,
-                    "base": url_for("wsm.server_home", slug=c.slug)}}
+                    "base": url_for("wsm.server_home", slug=c.slug),
+                    "jail": jail}}
 
 
 # --------------------------------------------------------------------------- #
@@ -93,7 +109,7 @@ def _chrome(c, page: str) -> dict:
 @require_permission(W.VIEW_PERM)
 def index():
     rows = []
-    for c in W.servers():
+    for c in W.visible_servers(current_user):
         st = W.server_state(c)
         creds = W.visible_credentials(c.slug, current_user)
         rows.append({"c": c, "state": st, "creds": len(creds),
@@ -255,6 +271,8 @@ def module(slug, page):
     if page not in PAGES:
         abort(404)
     c = _server_or_404(slug)
+    if page not in _modules_for(slug):
+        abort(404)
     ctx = _chrome(c, page)
     if page == "htaccess":
         ctx["cfg"]["rules"] = HT.RULE_TYPES

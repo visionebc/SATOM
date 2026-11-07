@@ -373,6 +373,9 @@
   // ======================================================================
   function pageFiles() {
     var state = { path: localStorage.getItem(KEY + '.path') || '/var/www', hidden: false, sel: {} };
+    // A site-scoped profile: start in (and stay under) the sites' roots.
+    if (CFG.jail && CFG.jail.length && !CFG.jail.some(function (r) {
+      return state.path === r || state.path.indexOf(r + '/') === 0; })) { state.path = CFG.jail[0]; }
     var pathIn = input({ cls: 'form-control form-control-sm wsm-path wsm-mono', value: state.path });
     var hiddenBox = check('Show hidden files', false);
     var listBox = el('div'), info = el('div', { cls: 'text-muted wsm-small mb-1' });

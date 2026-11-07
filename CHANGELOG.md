@@ -7,26 +7,45 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
-- **Web Server Manager as plugins.** Asked for: "why is it not a plugin?"
-  (the manager had shipped as a native menu of the Linux ADOM). It is now the
-  bundle `web-server-manager` of the plugin generator: 13 signed `app` plugins
-  (Web servers, File Manager, Domains & VHosts, SSL Certificates, Security,
-  .htaccess, Scripts, Cron Jobs, Package Manager, Services, Logs, Users &
-  Permissions, SSH Configuration), imported in one go into the folder **Web
-  Server Manager** and drawn under **Plugins** in the Linux ADOM through the
-  folder's ADOM grant. They are built from four new SATOM steps
-  (`wsm_servers`, `wsm_read`, `wsm_change`, `wsm_htaccess`) over the same
-  `wsm.execute` every page calls. A step answers for the person who RUNS the
-  app (their profile, their or a shared credential, the server's Allow
-  changes switch, root only with `webserver.root`). A read step takes only
-  reading operations. A rehearsal of a change sends nothing and still checks
-  Allow changes. Passwords are password fields: used for the call, never
-  kept in the run. Two new form lists: *Web Server Manager servers* and
-  *credentials you may use*. The native **Linux › Web Server Manager**
-  submenu is gone (the Troubleshooting rule: one door per place). The pages
-  under `/webserver/` stay for what an app form cannot draw (code editor,
-  uploads, live logs) and every app links to its page. The generator gained
-  `satom_plugin.py bundle <name>` (`bundles/<name>.json`).
+- **Device scope of a profile: which devices and partitions inside its
+  ADOMs.** Asked for: "narrow which devices each profile reaches and, inside a
+  device, which partitions: ADOMs in FortiWeb/FortiADC and VDOMs in
+  FortiGate; the profile still decides WHAT, the scope only WHERE, never
+  per-device permissions, and it never widens what the ADOMs give". A
+  **Devices** card in Access › Profiles: per ADOM the chassis and their
+  partitions (no device = all; no partition = all, also later ones). One
+  answer (`product_scope.allowed_appliance_ids`, the ADOMs × the scope) feeds
+  the device lists and the by-id loader (404), the Global dashboard, the Job
+  manager, change requests, upgrade windows, metrics, Sentinel, Architecture
+  and the bell. With only some partitions of a box, firmware, the vault and
+  the console are refused (409 for JSON). A job records at enqueue the devices
+  its user reaches, and every device client and SSH session in it refuses
+  another device with a step, an audit line (`job.device_refused`) and an
+  error. Scheduled actions keep acting on the whole fleet. API tokens carry
+  their owner's scope. Fails closed: an unreadable scope reaches no device.
+  Migration `ds01`. Partitions were verified with synthetic rows; the lab has
+  no multi-ADOM or multi-VDOM device (unverified on a multi-VDOM device).
+- **Web Server Manager: a server or some of its sites per profile.** Asked
+  for: "give a user Linux, then only one server, then only one vhost, and
+  from there edit its files". The same Devices card lists the manager's
+  servers and, under each, its sites. With some sites, the profile opens File
+  Manager, Domains & VHosts and .htaccess of that server only, for those
+  sites; its file paths are confined to their document roots by the helper on
+  the server (symlinks resolved; a root directly under `/` is never a
+  confinement), and what acts on the whole server is refused.
+- **Web Server Manager: back in the Linux menu, switchable per ADOM, and also
+  as plugins.** Asked for: "why is it not a plugin?", then "put it back as it
+  was ... basic elements for Linux" and "when the Linux ADOM is switched on,
+  choose whether this module is active". **Linux › Web Server Manager** is in
+  the menu again. A new ADOM capability, **Web Server Manager** (Settings ›
+  ADOMs; on for Linux after the upgrade, migration `wsm02`), switches it on or
+  off: off in every ADOM, the menu entry is gone, the pages answer not found,
+  scheduled scripts wait and certificate warnings do not link to it. The same
+  operations are also the bundle `web-server-manager` of the plugin generator:
+  13 signed `app` plugins over four new SATOM steps (`wsm_servers`,
+  `wsm_read`, `wsm_change`, `wsm_htaccess`), each answering for the person who
+  runs it, for automations and other apps. The generator gained
+  `satom_plugin.py bundle <name>`.
 - **Web Server Manager (Linux ADOM).** Asked for: "a plugin for the Linux ADOM
   to manage web servers, like cPanel, over SSH with the credentials of the
   signed-in user; if the account cannot do something, escalate with sudo the
@@ -96,6 +115,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `system_backup`**: two absolute imports (`from app.services import
   doc_publication`) made the pack refuse the whole closure. They are relative
   imports now, with no change at run time.
+
+### Security
+- **API tokens did not apply their owner's ADOM confinement.** `/api/v1` never
+  signs a user in, so `product_scope` saw no user and a confined owner's token
+  reached every device of its product. It now answers for the token's owner:
+  ADOMs and device scope.
 
 ## [4.11.4] - 2026-11-06
 

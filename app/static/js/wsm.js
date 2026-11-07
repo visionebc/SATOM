@@ -979,11 +979,11 @@
   function pageCron() {
     var who = input({ placeholder: 'user (empty = the signed-in account)', style: 'width:300px' });
     var box = el('div'), sched = el('div');
-    var rows = [], sha = '';
+    var rows = [], sha = '', owner = '';
     function load() {
       box.innerHTML = ''; box.appendChild(loading());
       call(CFG.base + 'cron/load', 'cron.get', { user: who.value }).then(function (d) {
-        rows = d.rows; sha = d.result.sha256; draw(d.result.user);
+        rows = d.rows; sha = d.result.sha256; owner = d.result.user; draw(owner);
       }).catch(function (e) { box.innerHTML = ''; fail(e); });
     }
     function draw(user) {
@@ -1031,7 +1031,7 @@
     }
     function save(after) {
       if (!needWrites()) return;
-      call(CFG.base + 'cron/save', 'cron.put', { user: who.value, base_sha256: sha }, { extra: { rows: rows } }).then(function () { flash('ok', 'Crontab saved.'); if (after) after(); load(); }).catch(function (e) { fail(e); load(); });
+      call(CFG.base + 'cron/save', 'cron.put', { user: owner, base_sha256: sha }, { extra: { rows: rows } }).then(function (d) { if (d.result && d.result.sha256) sha = d.result.sha256; flash('ok', 'Crontab saved.'); if (after) after(); load(); }).catch(function (e) { fail(e); load(); });
     }
     function drawSchedules() {
       sched.innerHTML = '';
@@ -1141,7 +1141,8 @@
   //  SERVICES
   // ======================================================================
   function pageServices() {
-    var f = input({ placeholder: 'filter, e.g. nginx, php, mariadb' }), onlyActive = check('Only running', false), box = el('div'), all = [];
+    var f = input({ placeholder: 'filter, e.g. nginx, php, mariadb' }), box = el('div'), all = [];
+    var view = select([['running', 'Running'], ['web', 'Web-server services'], ['failed', 'Failed'], ['all', 'All']], 'running', { style: 'width:auto' });
     var common = /^(nginx|apache2|httpd|php.*fpm|mariadb|mysql|mysqld|postgresql.*|redis.*|certbot.*|cron|crond|sshd?|fail2ban|firewalld|ufw|docker|memcached|varnish|postfix)\.service$/;
     function load() {
       box.innerHTML = ''; box.appendChild(loading());
@@ -1149,9 +1150,10 @@
     }
     function draw() {
       var v = f.value.toLowerCase();
-      var rows = all.filter(function (s) { return (!v || s.name.toLowerCase().indexOf(v) >= 0 || s.description.toLowerCase().indexOf(v) >= 0) && (!onlyActive.input.checked || s.active === 'active') && (v || common.test(s.name) || onlyActive.input.checked); });
+      var w = view.value, n = function (k) { return all.filter(function (s) { return k === 'running' ? s.active === 'active' : k === 'failed' ? s.active === 'failed' : k === 'web' ? common.test(s.name) : true; }).length; };
+      var rows = all.filter(function (s) { return (!v || s.name.toLowerCase().indexOf(v) >= 0 || s.description.toLowerCase().indexOf(v) >= 0) && (w === 'all' || (w === 'running' && s.active === 'active') || (w === 'failed' && s.active === 'failed') || (w === 'web' && common.test(s.name))); });
       box.innerHTML = '';
-      if (!v && !onlyActive.input.checked) box.appendChild(el('div', { cls: 'wsm-small text-muted mb-1', text: 'Showing the usual web-server services. Type in the filter to see all ' + all.length + '.' }));
+      box.appendChild(el('div', { cls: 'wsm-small text-muted mb-1', text: n('running') + ' running, ' + n('failed') + ' failed, ' + all.length + ' services on this server.' }));
       box.appendChild(table(['Service', 'Description', 'State', 'At boot', ''], rows.map(function (s) {
         var st = s.active === 'active' ? 'wsm-ok' : s.active === 'failed' ? 'wsm-bad' : 'wsm-muted';
         return [el('span', { cls: 'wsm-name-link', text: s.name, onclick: function () { status(s.name); } }), s.description, badge(s.active + ' (' + s.sub + ')', st), s.enabled || '—',
@@ -1170,8 +1172,8 @@
     }
     function status(n) { Promise.all([api('svc.status', { name: n }), api('svc.deps', { name: n })]).then(function (x) { dialog(n, el('div', {}, [pre(x[0].status, true), el('details', { cls: 'mt-2' }, [el('summary', { text: 'Dependencies' }), el('div', { cls: 'row' }, [el('div', { cls: 'col-6' }, [el('strong', { text: 'Needs' }), pre(x[1].requires, true)]), el('div', { cls: 'col-6' }, [el('strong', { text: 'Needed by' }), pre(x[1].required_by, true)])])])]), [], true); }).catch(fail); }
     function logs(n) { api('svc.logs', { name: n, lines: 300 }).then(function (r) { dialog('Logs of ' + n, pre(r.lines.join('\n') || r.error || '(empty — reading the system journal may need administrator rights)'), [], true); }).catch(fail); }
-    f.addEventListener('input', draw); onlyActive.input.addEventListener('change', draw);
-    setPage([el('div', { cls: 'wsm-toolbar' }, [f, onlyActive, btn('', 'bi-arrow-repeat', null, load, 'Reload')]), box]);
+    f.addEventListener('input', draw); view.addEventListener('change', draw);
+    setPage([el('div', { cls: 'wsm-toolbar' }, [view, f, btn('', 'bi-arrow-repeat', null, load, 'Reload')]), box]);
     load();
   }
 
@@ -1283,8 +1285,8 @@
         var lines = r.keys.map(function (k) { return k.line; });
         keysBox.innerHTML = '';
         var add = el('textarea', { cls: 'form-control form-control-sm wsm-mono', rows: 2, placeholder: 'ssh-ed25519 AAAA... comment' });
-        keysBox.append(card('Authorized keys of ' + r.user, 'bi-key-fill', [table(['Type', 'Fingerprint', 'Comment', ''], r.keys.map(function (k, i) { return [k.type, el('span', { cls: 'wsm-mono', text: k.fingerprint }), k.comment + (k.options ? ' (with options)' : ''), btn('', 'bi-trash', 'btn-outline-danger', function () { confirmBox({ text: 'Remove this key? If it is the key you sign in with, you lose access.', danger: true }).then(function (ok) { if (ok && needWrites()) { lines.splice(i, 1); api('authkeys.put', { user: who.value, keys: lines, base_sha256: r.sha256 }).then(function () { flash('ok', 'Removed.'); keys(); }).catch(fail); } }); })]; }), { empty: 'No key.' }),
-          field('Add a public key', add), btn('Add', 'bi-plus-lg', 'btn-fw-primary', function () { if (!needWrites()) return; lines.push(add.value.trim()); api('authkeys.put', { user: who.value, keys: lines, base_sha256: r.sha256 }).then(function () { flash('ok', 'Added.'); keys(); }).catch(fail); })], 'mt-3'));
+        keysBox.append(card('Authorized keys of ' + r.user, 'bi-key-fill', [table(['Type', 'Fingerprint', 'Comment', ''], r.keys.map(function (k, i) { return [k.type, el('span', { cls: 'wsm-mono', text: k.fingerprint }), k.comment + (k.options ? ' (with options)' : ''), btn('', 'bi-trash', 'btn-outline-danger', function () { confirmBox({ text: 'Remove this key? If it is the key you sign in with, you lose access.', danger: true }).then(function (ok) { if (ok && needWrites()) { lines.splice(i, 1); api('authkeys.put', { user: r.user, keys: lines, base_sha256: r.sha256 }).then(function () { flash('ok', 'Removed.'); keys(); }).catch(fail); } }); })]; }), { empty: 'No key.' }),
+          field('Add a public key', add), btn('Add', 'bi-plus-lg', 'btn-fw-primary', function () { if (!needWrites()) return; lines.push(add.value.trim()); api('authkeys.put', { user: r.user, keys: lines, base_sha256: r.sha256 }).then(function () { flash('ok', 'Added.'); keys(); }).catch(fail); })], 'mt-3'));
       }).catch(function (e) { keysBox.innerHTML = ''; fail(e); });
     }
     setPage([box, el('div', { cls: 'wsm-toolbar mt-3' }, [who, btn('Show keys', 'bi-arrow-right', null, keys)]), keysBox]);

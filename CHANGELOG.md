@@ -6,7 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **Web Server Manager: saving a cron job no longer fails with "the crontab
+  changed since it was read" (SA-0023).** With *Run as: auto*, an empty user
+  meant "the account the helper runs as": the page read the account's
+  crontab, the save was refused as the account and retried through sudo,
+  and as root it compared root's crontab with the hash of the account's.
+  SATOM now names the sign-in account before any elevation, and the page
+  saves to the crontab it loaded. The same applied to SSH > authorized_keys,
+  where the retry would have edited root's keys.
+
 ### Changed
+- **Services opens on what is running (SA-0023).** The page showed a short
+  list of usual web-server services until something was typed in the
+  filter. A view selector (Running, Web-server services, Failed, All) now
+  starts on Running, with the counts above the table.
 - **Software Update names the small package for this node.** Requested: the
   update packages are still too big. The delta for the node's version was
   published next to the full package (2.5 MB against 39 MB for 4.11.8), but

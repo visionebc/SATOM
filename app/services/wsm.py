@@ -156,6 +156,11 @@ SITE_OPS = frozenset({"whoami", "info", "vhosts.list", "vhost.get", "vhost.put",
 #: Operations whose paths are confined to the sites' document roots (by the
 #: helper on the server, symlinks resolved: services never trust a path).
 JAIL_OPS = frozenset(op for op in SITE_OPS if op.startswith("fs.")) | {"htaccess.apply"}
+#: Operations on "a user's" table where an empty ``user`` means the account
+#: the helper runs as. :func:`_execute` pins it to the login account BEFORE any
+#: elevation: an auto retry through sudo must not silently mean root's table
+#: (SA-0023: a save compared root's crontab with the hash of the account's).
+ACCOUNT_SCOPED_OPS = frozenset({"cron.get", "cron.put", "authkeys.get", "authkeys.put"})
 #: Operations that name ONE site (``args["name"]``).
 SITE_NAMED = frozenset({"vhost.get", "vhost.put", "vhost.enable", "vhost.disable"})
 #: The pages of a server a site-scoped profile opens.
@@ -739,6 +744,8 @@ def _execute(slug: str, cred_id, op: str, args: dict | None = None, *, user,
     if cred.auth_type == "agent":
         return _execute_agent(c, cred, op, args, user=user, module=module, mode=mode)
     account = _account(cred, provided)
+    if op in ACCOUNT_SCOPED_OPS and not args.get("user"):
+        args = dict(args, user=account["user"])
     tgt = target(c)
     timeout = max(timeout, float(c.timeout or 30))
 

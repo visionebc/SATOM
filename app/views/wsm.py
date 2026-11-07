@@ -26,6 +26,14 @@ from ..services import wsm_transport as T
 
 bp = Blueprint("wsm", __name__, url_prefix="/webserver")
 
+
+@bp.before_request
+def _module_on():
+    """Switched off in every ADOM (Settings > ADOMs > Web Server Manager): the
+    pages do not exist."""
+    if not W.module_active():
+        abort(404)
+
 PAGES = ("files", "sites", "certs", "security", "htaccess", "scripts", "cron", "packages",
          "services", "logs", "users", "ssh")
 

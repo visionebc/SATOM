@@ -59,6 +59,9 @@ def _save_notified(seen: dict) -> None:
 def _link(slug: str = "") -> str:
     """The Web Server Manager's certificates page of the server (2026-11-06:
     the manager replaced the Web hosts apps)."""
+    from . import wsm
+    if not wsm.module_active():                 # the manager is switched off
+        return ""
     return "/webserver/%s/certs" % slug if slug else "/webserver/"
 
 
@@ -71,7 +74,8 @@ def connections() -> list:
     out = []
     for c in SC.list_connections("server"):
         if SC.server_opts(c.slug).get("host_key") and (
-                SC.has_secret(c.slug) or wsm.service_credential(c.slug) is not None):
+                SC.has_secret(c.slug) or (wsm.module_active()
+                                          and wsm.service_credential(c.slug) is not None)):
             out.append(c)
     return out
 
@@ -97,7 +101,8 @@ def scan(*, notify: bool = True) -> dict:
     for c in conns:
         out["connections"] += 1
         try:
-            if not SC.has_secret(c.slug) and wsm.service_credential(c.slug) is not None:
+            if not SC.has_secret(c.slug) and wsm.module_active() \
+                    and wsm.service_credential(c.slug) is not None:
                 res = wsm.read_as_service(c, "certs.list")     # no agent: the manager's
             else:                                              # service credential reads
                 res = SC.server_call(c, "certs.list")

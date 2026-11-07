@@ -122,7 +122,7 @@ _FALLBACK: list[dict] = [
     },
 ]
 
-_CAPS = ("banner", "tokens", "firmware", "naming", "regex")
+_CAPS = ("banner", "tokens", "firmware", "naming", "regex", "webserver")
 
 # ── DB-backed cache ─────────────────────────────────────────────────────────
 _TTL = 15.0          # seconds; edits become visible fleet-wide within this

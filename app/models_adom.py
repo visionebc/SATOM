@@ -17,6 +17,10 @@ scattered lists:
 * ``cap_firmware`` — firmware image management applies   (was firmware._PRODUCTS)
 * ``cap_naming``   — appears in the name-pattern editor  (was naming.PRODUCTS)
 * ``cap_regex``    — appears in the regex lab            (was regex_lab.PRODUCTS)
+* ``cap_webserver`` — the Web Server Manager is ON in this ADOM (2026-11-07,
+  operator: "when the Linux ADOM is switched on, choose whether this module is
+  active"): its menu, its pages, its scheduled scripts and its certificate
+  reads exist only while an active ADOM has it
 
 ``active=False`` removes the ADOM from the selector and the product gate (its
 routes 404/redirect); the admin console still lists it so it can be toggled
@@ -59,13 +63,14 @@ class Adom(db.Model):
     cap_firmware = db.Column(db.Boolean, nullable=False, default=False)
     cap_naming = db.Column(db.Boolean, nullable=False, default=False)
     cap_regex = db.Column(db.Boolean, nullable=False, default=False)
+    cap_webserver = db.Column(db.Boolean, nullable=False, default=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)
 
     # Capability flag name -> column, so branding can filter generically.
-    CAPS = ("banner", "tokens", "firmware", "naming", "regex")
+    CAPS = ("banner", "tokens", "firmware", "naming", "regex", "webserver")
 
     def has_cap(self, cap: str) -> bool:
         return bool(getattr(self, "cap_" + cap, False))

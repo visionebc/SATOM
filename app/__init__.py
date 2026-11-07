@@ -382,11 +382,15 @@ def create_app(config_override: object | None = None) -> Flask:
         if bp_name in ('fgt', 'fgt_api'):
             # And for FortiGate.
             eff = 'fortigate'
-        if bp_name == 'wsm' and 'linux' in valid:
-            # The Web Server Manager is the Linux ADOM's (operator, 2026-11-06:
-            # "publish it in the Linux ADOM"): opening it is an ADOM jump,
-            # like the FAZ / FAC / FGT areas, so its menu is Linux's.
-            eff = 'linux'
+        if bp_name == 'wsm':
+            # The Web Server Manager lives in the ADOM(s) it is switched on in
+            # (capability ``webserver``, 2026-11-07; Linux by default): opening
+            # it is an ADOM jump, like the FAZ / FAC / FGT areas, so its menu
+            # is that ADOM's. Switched off everywhere, the view 404s.
+            from .services.wsm import module_adoms as _wsm_adoms
+            _wa = _wsm_adoms()
+            if _wa and eff not in _wa:
+                eff = _wa[0]
         _gx_kind = _gui_engine_kind(ep)
         if _gx_kind:
             # The measured-GUI pages (workspace.fwgui_*) of a FortiGate, a
@@ -833,6 +837,12 @@ def create_app(config_override: object | None = None) -> Flask:
         from flask_login import current_user
         return bool(product_key == "global" and current_user and current_user.is_authenticated
                     and current_user.can("config_write") and may_open("scripts.index"))
+
+    @app.template_global()
+    def wsm_modules():
+        """The Web Server Manager's modules, for its ADOM's menu."""
+        from .services.wsm import MODULES
+        return MODULES
 
     @app.template_global()
     def may_open(endpoint):

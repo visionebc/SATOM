@@ -117,6 +117,21 @@ TARGET_ARGS = ("path", "paths", "to", "dest", "name", "names", "server", "user",
                "mode", "owner", "group")
 
 
+def module_adoms() -> tuple:
+    """The active ADOMs the Web Server Manager is switched on in (ADOM
+    capability ``webserver``). Empty = the module is off: no menu, its pages
+    404, scheduled scripts and certificate reads wait."""
+    from .. import branding
+    try:
+        return tuple(branding.products_with("webserver"))
+    except Exception:  # noqa: BLE001 -- unreadable registry = off (fail closed)
+        return ()
+
+
+def module_active() -> bool:
+    return bool(module_adoms())
+
+
 class WsmDenied(Exception):
     """Refused by SATOM's own policy (HTTP 403)."""
 
@@ -771,6 +786,10 @@ def run_due(now: datetime | None = None, *, dry_run: bool = False) -> dict:
     from ..models import User
     now = (now or datetime.utcnow()).replace(second=0, microsecond=0)
     out = {"due": 0, "ran": 0, "failed": 0, "pending": 0, "lines": []}
+    if not module_active():
+        out["lines"].append("the Web Server Manager is switched off (no ADOM has it): "
+                            "no schedule runs")
+        return out
     for s in WsmSchedule.query.filter_by(enabled=True).order_by(WsmSchedule.id).all():
         try:
             if not cron_matches(s.cron, now):

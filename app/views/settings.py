@@ -1484,7 +1484,7 @@ def create_adom():
         mark='img/global-mark.svg',
         cap_banner=caps['banner'], cap_tokens=caps['tokens'],
         cap_firmware=caps['firmware'], cap_naming=caps['naming'],
-        cap_regex=caps['regex'],
+        cap_regex=caps['regex'], cap_webserver=caps['webserver'],
     )
     db.session.add(adom)
     db.session.flush()

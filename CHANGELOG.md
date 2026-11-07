@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.7] - 2026-11-07
+
 ### Fixed
 - **Updating a node from 4.11.4 or older failed at `flask db upgrade` (SA-0021).**
   Reported: the update to 4.11.6 stopped with a database error on a query of

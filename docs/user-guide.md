@@ -12821,6 +12821,25 @@ The bar at the top of every page shows the credential and the run-as mode;
 operation, its arguments (secrets replaced by their length) and the raw
 answer of the last call.
 
+**The agent (Overview › Agent).** Optional: the restricted `satom-webctl`
+agent (account `satom-mon`, SATOM's own key, forced command, no shell) reads
+health and manages virtual hosts and certificates without anybody's password.
+Pick a credential that can become root in *Sign in as*, then:
+
+| Button | What it does |
+|---|---|
+| **Install agent** | Runs `install-satom-webctl.sh` as root with SATOM's key, valid only from the SATOM nodes, then **checks** that `satom-mon` signs in with that key. |
+| **Reinstall agent** | Removes it exactly as the installer added it, checks that the server now refuses the key, installs it again **with the same key** and checks the sign-in. A second reinstall changes nothing (the job says *0 changes*). Use it after an install that failed, when the key changed, or to update the agent. |
+| **Remove agent** | Removes the program, its configuration, the two sudo rules, the ACLs and SATOM's key line, and the account `satom-mon` only if the installer created it; checks that the server refuses the key; then SATOM forgets the key and the *satom-webctl agent* credential. *Also delete backups, log and certificates* adds `--purge` (certificates a site still uses are kept). |
+
+Each runs as a job: its steps appear under the buttons and in the Job
+Manager, each step is in the Operations log, and one line sums it up in the
+audit log (`wsm.agent.<action>_job`). The badge says what SATOM knows:
+*Installed*, *Installed (not checked by SATOM)* (installed by hand),
+*Install not confirmed*, *Install failed*, *Key changed: reinstall*,
+*Removed* or *Not installed*. Needs *Administer servers*, *Run as root* and
+*Allow changes* on the server.
+
 ### 48.2 Modules
 
 | Module | What it does |
@@ -12961,10 +12980,22 @@ days. The server list shows each server's state as a badge.
 
 | Choice | What happens on the server |
 |---|---|
-| **Automatic** (default) | The agent when the server has one, otherwise the first shared SSH credential that keeps its secret. |
-| **The satom-webctl agent only** | Read with the agent you installed with `install-satom-webctl.sh` (account `satom-mon`, SATOM's own key, forced command, no shell, no password of anybody's). Needs satom-webctl **1.2.0** or newer: run the installer of this SATOM again on a server prepared with an older one. |
+| **Automatic** (default) | The agent when the server has a working one (installed and checked, or installed by hand), otherwise the first shared SSH credential that keeps its secret. When the server refuses the agent's key, the reading is made with that credential and the page says why the agent was not used. |
+| **The satom-webctl agent only** | Read with the agent you installed with `install-satom-webctl.sh` (account `satom-mon`, SATOM's own key, forced command, no shell, no password of anybody's). Needs satom-webctl **1.2.0** or newer: **Reinstall agent** on a server prepared with an older one. |
 | **SSH with a credential I pick** | Nothing is installed. SATOM signs in with the credential you pick and the helper travels on the session (§48.5). Only a credential marked **Shared** that **keeps its secret** can be picked: nobody types a password at 3 a.m. |
 | **Do not read this server** | Nothing is read and nothing rings. |
+
+**"refused SATOM's agent key for satom-mon".** The server answered and did not
+accept the agent key: the agent was never installed with this SATOM's key,
+its install failed, it was removed, the key changed since, or sshd does not
+let `satom-mon` in (`AllowUsers`, `AllowGroups`, `DenyUsers`, or the SATOM
+addresses the key is valid from). Health says so in a yellow box with
+**Install agent** / **Reinstall agent** right there; the installer's output
+(in the job) names an sshd rule that keeps `satom-mon` out. Before SA-0028 a
+key SATOM had made counted as an installed agent even when the install never
+finished, and an HA registry that listed this node as `127.0.0.1` made the
+key valid only from addresses the server never sees; both are fixed, but an
+agent installed with the old key list needs **Reinstall agent** once.
 
 The reading never uses sudo and never changes anything: it is `/proc`,
 `statvfs()` and `systemctl list-units`, which any account may read. On a

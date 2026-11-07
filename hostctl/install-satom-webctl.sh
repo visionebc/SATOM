@@ -10,7 +10,12 @@
 # forwarding, no pty.
 #
 # What it changes (and --uninstall removes):
-#   * user satom-mon (no password, login only through the key above)
+#   * user satom-mon (no password, login only through the key above) and its
+#     own group; --uninstall deletes the account only when this installer
+#     created it (comment "SATOM web host management"), otherwise it removes
+#     SATOM's key line and leaves the account alone
+#   * ~satom-mon/.ssh/authorized_keys: SATOM's key, in the account's REAL home
+#     (the one sshd reads), whatever that home is
 #   * /usr/local/bin/satom-webctl            root:root 0755
 #   * /etc/satom-webctl.json                 root:root 0644
 #   * /etc/sudoers.d/satom-webctl            exactly two commands per server:
@@ -30,8 +35,13 @@
 #       [--from 192.0.2.248,192.0.2.249] [--roots /var/www,/srv/www] [--read-only]
 #   install-satom-webctl.sh --uninstall [--purge]
 set -euo pipefail
+# sudo keeps the caller's PATH where secure_path is not set (SUSE's default
+# sudoers): useradd, visudo, apache2ctl and sshd live in sbin and were "not
+# found" there (SA-0028). The tools this script needs, wherever they live.
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:+:$PATH}"
 
 USER_NAME="satom-mon"
+USER_COMMENT="SATOM web host management"
 HOME_DIR="/var/lib/satom-webctl"
 LOG_DIR="/var/log/satom-webctl"
 BIN="/usr/local/bin/satom-webctl"
@@ -92,6 +102,11 @@ acl_targets() {
     return 0
 }
 
+# The account's home as sshd sees it ("" when there is no such account).
+account_home() { getent passwd "$USER_NAME" | cut -d: -f6; }
+# True when this installer created the account (its comment says so).
+created_here() { [ "$(getent passwd "$USER_NAME" | cut -d: -f5)" = "$USER_COMMENT" ]; }
+
 if [ "$MODE" = "uninstall" ]; then
     echo "Removing satom-webctl:"
     if command -v setfacl >/dev/null; then
@@ -103,8 +118,24 @@ if [ "$MODE" = "uninstall" ]; then
     fi
     rm -f "$SUDOERS" "$BIN" "$CONF" && say "binary, configuration and sudoers removed"
     if id "$USER_NAME" >/dev/null 2>&1; then
-        userdel "$USER_NAME" 2>/dev/null || true
-        say "user $USER_NAME removed"
+        AK="$(account_home)/.ssh/authorized_keys"
+        if [ -f "$AK" ]; then
+            # only SATOM's line: whatever else the account trusts is not ours
+            grep -vF "command=\"$BIN\"" "$AK" > "$AK.tmp" || true
+            if [ -s "$AK.tmp" ]; then cat "$AK.tmp" > "$AK"; else rm -f "$AK"; fi
+            rm -f "$AK.tmp"
+            say "SATOM's key removed from $AK"
+        fi
+        if created_here; then
+            GRP="$(id -gn "$USER_NAME" 2>/dev/null || true)"
+            userdel "$USER_NAME" 2>/dev/null || true
+            if [ "$GRP" = "$USER_NAME" ] && getent group "$GRP" >/dev/null; then
+                groupdel "$GRP" 2>/dev/null || true
+            fi
+            say "user $USER_NAME removed"
+        else
+            say "kept the account $USER_NAME: this installer did not create it"
+        fi
     fi
     if [ "$PURGE" = "yes" ]; then
         if [ -d "$CERT_DIR" ] && grep -rqsF "$CERT_DIR/" /etc/nginx /etc/apache2 /etc/httpd 2>/dev/null; then
@@ -188,16 +219,22 @@ fi
 
 # ── account, program, configuration ─────────────────────────────────────────
 if ! id "$USER_NAME" >/dev/null 2>&1; then
-    useradd --system --home-dir "$HOME_DIR" --create-home --shell /bin/sh \
-        --comment "SATOM web host management" "$USER_NAME"
+    # --user-group: SUSE's useradd puts a new account in "users" unless asked
+    useradd --system --user-group --home-dir "$HOME_DIR" --create-home --shell /bin/sh \
+        --comment "$USER_COMMENT" "$USER_NAME"
     say "created user $USER_NAME"
 fi
 usermod -L "$USER_NAME" 2>/dev/null || passwd -l "$USER_NAME" >/dev/null 2>&1 || true
-install -d -o "$USER_NAME" -g "$USER_NAME" -m 0750 "$HOME_DIR"
-install -d -o "$USER_NAME" -g "$USER_NAME" -m 0700 "$HOME_DIR/backups"
-install -d -o "$USER_NAME" -g "$USER_NAME" -m 0750 "$LOG_DIR"
+# the account's primary group, whatever it is (an account that already existed
+# may have no group of its own name)
+GROUP_NAME="$(id -gn "$USER_NAME")"
+ACCT_HOME="$(account_home)"
+[ -n "$ACCT_HOME" ] || ACCT_HOME="$HOME_DIR"
+install -d -o "$USER_NAME" -g "$GROUP_NAME" -m 0750 "$HOME_DIR"
+install -d -o "$USER_NAME" -g "$GROUP_NAME" -m 0700 "$HOME_DIR/backups"
+install -d -o "$USER_NAME" -g "$GROUP_NAME" -m 0750 "$LOG_DIR"
 install -d -o root -g root -m 0755 "$CERT_BASE"
-install -d -o "$USER_NAME" -g "$USER_NAME" -m 0700 "$CERT_DIR"
+install -d -o "$USER_NAME" -g "$GROUP_NAME" -m 0700 "$CERT_DIR"
 install -o root -g root -m 0755 "$HERE/satom-webctl.py" "$BIN"
 say "installed $BIN ($("$BIN" --version))"
 
@@ -242,16 +279,37 @@ done
 # ── the key: this program only ──────────────────────────────────────────────
 OPTS="restrict,command=\"$BIN\""
 [ -n "$FROM" ] && OPTS="$OPTS,from=\"$FROM\""
-install -d -o "$USER_NAME" -g "$USER_NAME" -m 0700 "$HOME_DIR/.ssh"
-printf '%s %s\n' "$OPTS" "$PUBKEY" > "$HOME_DIR/.ssh/authorized_keys"
-chown "$USER_NAME:$USER_NAME" "$HOME_DIR/.ssh/authorized_keys"
-chmod 0600 "$HOME_DIR/.ssh/authorized_keys"
-say "authorized SATOM's key: $OPTS"
+# sshd reads the key from the account's REAL home: an account that already
+# existed with another home got its key where sshd never looked (SA-0028).
+[ -d "$ACCT_HOME" ] || install -d -o "$USER_NAME" -g "$GROUP_NAME" -m 0750 "$ACCT_HOME"
+if [ -n "$(find "$ACCT_HOME" -maxdepth 0 -perm /022)" ]; then
+    echo "  ! $ACCT_HOME is writable by group or others: sshd (StrictModes) ignores its keys"
+fi
+install -d -o "$USER_NAME" -g "$GROUP_NAME" -m 0700 "$ACCT_HOME/.ssh"
+printf '%s %s\n' "$OPTS" "$PUBKEY" > "$ACCT_HOME/.ssh/authorized_keys"
+chown "$USER_NAME:$GROUP_NAME" "$ACCT_HOME/.ssh/authorized_keys"
+chmod 0600 "$ACCT_HOME/.ssh/authorized_keys"
+say "authorized SATOM's key in $ACCT_HOME/.ssh: $OPTS"
 
 if command -v sshd >/dev/null 2>&1; then
-    ALLOW="$(sshd -T 2>/dev/null | awk 'tolower($1)=="allowusers"{ $1=""; print }')"
+    SSHD_T="$(sshd -T 2>/dev/null || true)"
+    sshd_opt() { echo "$SSHD_T" | awk -v k="$1" 'tolower($1)==k{ $1=""; print }'; }
+    ALLOW="$(sshd_opt allowusers)"
     if [ -n "$ALLOW" ] && ! echo " $ALLOW " | grep -q " $USER_NAME "; then
         echo "  ! sshd AllowUsers does not include $USER_NAME -- add it, or SATOM cannot connect"
+    fi
+    ALLOWG="$(sshd_opt allowgroups)"
+    if [ -n "$ALLOWG" ]; then
+        IN=""
+        for g in $(id -Gn "$USER_NAME"); do echo " $ALLOWG " | grep -q " $g " && IN=yes; done
+        [ -n "$IN" ] || echo "  ! sshd AllowGroups ($ALLOWG ) has no group of $USER_NAME -- add one, or SATOM cannot connect"
+    fi
+    if echo " $(sshd_opt denyusers) " | grep -q " $USER_NAME "; then
+        echo "  ! sshd DenyUsers names $USER_NAME -- SATOM cannot connect"
+    fi
+    AKF="$(sshd_opt authorizedkeysfile)"
+    if [ -n "$AKF" ] && ! echo " $AKF " | grep -Eq ' (%h/)?\.ssh/authorized_keys '; then
+        echo "  ! sshd reads keys from$AKF, not ~/.ssh/authorized_keys -- SATOM's key is not there"
     fi
 fi
 

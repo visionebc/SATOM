@@ -3,14 +3,19 @@
    identities (SATOM user, SSH user, effective Linux user) and sudo. #}
 {% block title %}{{ _('Operations log') }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ asset('css/wsm.css') }}" data-turbo-track="reload">{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('wsm.index') }}">{{ _('Web Server Manager') }}</a><span class="separator">/</span><span>{{ _('Operations log') }}</span>
+</div>
+{% endblock %}
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <div class="wsm-crumbs"><a href="{{ url_for('wsm.index') }}">{{ _('Web Server Manager') }}</a> › {{ _('Operations log') }}</div>
     <h1 class="fw-page-title"><i class="bi bi-journal-check me-2 text-accent"></i>{{ _('Operations log') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">{{ _('Every operation the Web Server Manager ran, allowed or refused.') }}{% if mine_only %} {{ _('You see your own operations (reading everyone\'s needs View audit log).') }}{% endif %}</p>
   </div>
-  <div><a class="btn btn-outline-secondary" href="{{ url_for('wsm.audit', format='csv', days=days, **f) }}"><i class="bi bi-download me-1"></i>{{ _('Export CSV') }}</a></div>
+  <div><a class="btn fw-btn-secondary" href="{{ url_for('wsm.audit', format='csv', days=days, **f) }}"><i class="bi bi-download me-1"></i>{{ _('Export CSV') }}</a></div>
 </div>
 <form class="fw-card p-2 mb-2 d-flex flex-wrap gap-2 align-items-end" method="get">
   <div><label class="fw-form-label" for="f-slug">{{ _('Server') }}</label><select class="form-select form-select-sm" id="f-slug" name="slug"><option value="">{{ _('All') }}</option>{% for c in servers %}<option value="{{ c.slug }}" {{ 'selected' if f.slug == c.slug }}>{{ c.name }}</option>{% endfor %}</select></div>
@@ -28,10 +33,10 @@
   <tr>
     <td class="wsm-mono">{{ r.at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
     <td>{{ r.app_user }}</td><td>{{ r.ssh_user }}</td>
-    <td>{{ r.effective_user or '—' }}{% if r.sudo %} <span class="wsm-badge wsm-warn">sudo</span>{% endif %}</td>
+    <td>{{ r.effective_user or '—' }}{% if r.sudo %} <span class="fw-badge fw-badge-warning">sudo</span>{% endif %}</td>
     <td>{{ r.connection_slug }}</td><td class="wsm-mono">{{ r.op }}</td>
     <td class="wsm-mono wsm-wrap">{{ r.target }}</td>
-    <td>{% if r.ok %}<span class="wsm-badge wsm-ok">{{ _('OK') }}</span>{% else %}<span class="wsm-badge wsm-bad" title="{{ r.detail }}">{{ r.error or _('failed') }}</span>{% endif %}{% if r.exit_code is not none %} <span class="text-muted">exit {{ r.exit_code }}</span>{% endif %}</td>
+    <td>{% if r.ok %}<span class="fw-badge fw-badge-success">{{ _('OK') }}</span>{% else %}<span class="fw-badge fw-badge-danger" title="{{ r.detail }}">{{ r.error or _('failed') }}</span>{% endif %}{% if r.exit_code is not none %} <span class="text-muted">exit {{ r.exit_code }}</span>{% endif %}</td>
     <td>{{ r.credential_name }} <span class="text-muted">({{ r.auth_mode }})</span></td>
     <td class="wsm-mono text-muted">{{ r.session_id }}</td>
   </tr>

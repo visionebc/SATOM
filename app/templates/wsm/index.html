@@ -4,6 +4,11 @@
    (Servers > <server> > Credentials). #}
 {% block title %}{{ _('Web Server Manager') }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ asset('css/wsm.css') }}" data-turbo-track="reload">{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span><span>{{ _('Web Server Manager') }}</span>
+</div>
+{% endblock %}
 {% block content %}
 <div class="fw-page-header">
   <div>
@@ -11,7 +16,7 @@
     <p class="text-muted mb-0" style="font-size:13px;">{{ _('Manage Linux web servers over SSH with your own account: files, websites, certificates, security, scripts, scheduled tasks, packages, services, logs, users and SSH. When your account is not allowed to do something, SATOM uses sudo the way you set it on your credential.') }}</p>
   </div>
   <div class="d-flex gap-2">
-    <a class="btn btn-outline-secondary" href="{{ url_for('wsm.audit') }}"><i class="bi bi-journal-check me-1"></i>{{ _('Operations log') }}</a>
+    <a class="btn fw-btn-secondary" href="{{ url_for('wsm.audit') }}"><i class="bi bi-journal-check me-1"></i>{{ _('Operations log') }}</a>
     {% if can_add %}<button type="button" class="btn btn-fw-primary" data-bs-toggle="collapse" data-bs-target="#wsm-add"><i class="bi bi-plus-lg me-1"></i>{{ _('Add server') }}</button>{% endif %}
   </div>
 </div>
@@ -36,10 +41,10 @@
     <div class="wsm-server-name"><i class="bi bi-hdd-network"></i> {{ s.c.name }}</div>
     <div class="text-muted wsm-mono" style="font-size:12px;">{{ s.c.host }}:{{ s.c.port or 22 }}</div>
     <div class="mt-2">
-      {% if s.state.host_key %}<span class="wsm-badge wsm-ok"><i class="bi bi-patch-check"></i> {{ _('trusted') }}</span>{% else %}<span class="wsm-badge wsm-bad">{{ _('host key not trusted') }}</span>{% endif %}
-      {% if s.state.allow_writes %}<span class="wsm-badge wsm-info">{{ _('changes allowed') }}</span>{% else %}<span class="wsm-badge wsm-muted">{{ _('read-only') }}</span>{% endif %}
-      <span class="wsm-badge wsm-muted">{{ _('%(n)d credential(s)', n=s.creds) }}</span>
-      {% if s.health %}<span class="wsm-badge {{ {'ok': 'wsm-ok', 'warning': 'wsm-warn'}.get(s.health, 'wsm-bad') }}"><i class="bi bi-heart-pulse"></i> {{ _('Health: %(state)s', state=s.health) }}</span>{% endif %}
+      {% if s.state.host_key %}<span class="fw-badge fw-badge-success"><i class="bi bi-patch-check"></i> {{ _('trusted') }}</span>{% else %}<span class="fw-badge fw-badge-danger">{{ _('host key not trusted') }}</span>{% endif %}
+      {% if s.state.allow_writes %}<span class="fw-badge fw-badge-info">{{ _('changes allowed') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('read-only') }}</span>{% endif %}
+      <span class="fw-badge fw-badge-secondary">{{ _('%(n)d credential(s)', n=s.creds) }}</span>
+      {% if s.health %}<span class="fw-badge {{ {'ok': 'fw-badge-success', 'warning': 'fw-badge-warning'}.get(s.health, 'fw-badge-danger') }}"><i class="bi bi-heart-pulse"></i> {{ _('Health: %(state)s', state=s.health) }}</span>{% endif %}
     </div>
   </a>
   {% else %}

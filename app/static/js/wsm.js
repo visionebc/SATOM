@@ -35,7 +35,7 @@
     return e;
   }
   function btn(label, icon, cls, onclick, title) {
-    return el('button', { type: 'button', cls: 'btn btn-sm ' + (cls || 'btn-outline-secondary'), onclick: onclick, title: title },
+    return el('button', { type: 'button', cls: 'btn btn-sm ' + (cls || 'fw-btn-secondary'), onclick: onclick, title: title },
       [icon ? el('i', { cls: 'bi ' + icon + (label ? ' me-1' : '') }) : null, label || null]);
   }
   function input(attrs) { return el('input', Object.assign({ cls: 'form-control form-control-sm' }, attrs)); }
@@ -54,14 +54,17 @@
     var w = el('div', { cls: 'form-check' }, [i, el('label', { cls: 'form-check-label', for: id, text: label })]);
     w.input = i; return w;
   }
-  function badge(text, kind, title) { return el('span', { cls: 'wsm-badge ' + (kind || 'wsm-muted'), text: text, title: title }); }
+  // SATOM's badge set (.fw-badge-*); the wsm-* names are the meanings callers pass
+  var BADGE = { 'wsm-ok': 'fw-badge-success', 'wsm-bad': 'fw-badge-danger', 'wsm-warn': 'fw-badge-warning', 'wsm-info': 'fw-badge-info', 'wsm-muted': 'fw-badge-secondary', 'wsm-root': 'fw-badge-primary' };
+  function badge(text, kind, title) { return el('span', { cls: 'fw-badge ' + (BADGE[kind] || BADGE['wsm-muted']), text: text, title: title }); }
   function card(title, icon, kids, cls) { return el('div', { cls: 'fw-card p-3 ' + (cls || '') }, [title ? el('div', { cls: 'wsm-card-title' }, [icon ? el('i', { cls: 'bi ' + icon }) : null, title]) : null].concat(kids || [])); }
   function pre(text, light) { return el('pre', { cls: 'wsm-pre' + (light ? ' light' : ''), text: text || '' }); }
   function size(n) { n = +n || 0; if (n < 1024) return n + ' B'; var u = ['KB', 'MB', 'GB', 'TB'], i = -1; do { n /= 1024; i++; } while (n >= 1024 && i < 3); return n.toFixed(n < 10 ? 1 : 0) + ' ' + u[i]; }
   function when(ts) { if (!ts) return ''; var d = new Date(ts * 1000); return d.toISOString().slice(0, 16).replace('T', ' '); }
+  var ALERT = { ok: 'fw-alert fw-alert-success', err: 'fw-alert fw-alert-danger', warn: 'fw-alert fw-alert-warning' };
   function flash(kind, text) {
     var box = $('#wsm-flash');
-    var m = el('div', { cls: 'wsm-msg ' + kind }, [el('i', { cls: 'bi ' + (kind === 'ok' ? 'bi-check-circle' : kind === 'warn' ? 'bi-exclamation-triangle' : 'bi-x-octagon') }), el('div', { text: text }), el('button', { cls: 'x', type: 'button', 'aria-label': 'Close', onclick: function () { m.remove(); } }, [el('i', { cls: 'bi bi-x' })])]);
+    var m = el('div', { cls: 'wsm-msg ' + ALERT[kind] }, [el('i', { cls: 'bi ' + (kind === 'ok' ? 'bi-check-circle' : kind === 'warn' ? 'bi-exclamation-triangle' : 'bi-x-octagon') }), el('div', { text: text }), el('button', { cls: 'x', type: 'button', 'aria-label': 'Close', onclick: function () { m.remove(); } }, [el('i', { cls: 'bi bi-x' })])]);
     box.prepend(m);
     if (kind === 'ok') setTimeout(function () { m.remove(); }, 6000);
     while (box.children.length > 4) box.lastChild.remove();
@@ -87,7 +90,7 @@
       typed.classList.toggle('d-none', !opts.typed); inp.value = '';
       if (opts.typed) $('#wsm-confirm-typed-label').textContent = 'Type ' + opts.typed + ' to confirm';
       var ok = $('#wsm-confirm-ok');
-      ok.className = 'btn ' + (opts.danger ? 'btn-danger' : 'btn-fw-primary');
+      ok.className = 'btn ' + (opts.danger ? 'btn-fw-danger' : 'btn-fw-primary');
       ok.textContent = opts.ok || 'Confirm';
       var done = false, m = modal('wsm-confirm-modal');
       ok.onclick = function () { if (opts.typed && inp.value.trim() !== opts.typed) { inp.classList.add('is-invalid'); return; } done = true; m.hide(); resolve(true); };
@@ -100,7 +103,7 @@
     var b = $('#wsm-dialog-body'); b.innerHTML = ''; b.appendChild(body);
     var f = $('#wsm-dialog-foot'); f.innerHTML = '';
     (buttons || []).forEach(function (x) { f.appendChild(x); });
-    f.appendChild(el('button', { type: 'button', cls: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: 'Close' }));
+    f.appendChild(el('button', { type: 'button', cls: 'btn fw-btn-secondary', 'data-bs-dismiss': 'modal', text: 'Close' }));
     $('#wsm-dialog .modal-dialog').className = 'modal-dialog ' + (large === false ? '' : 'modal-xl');
     var m = modal('wsm-dialog'); m.show(); return m;
   }
@@ -245,19 +248,70 @@
   }
   function needWrites() { if (!CFG.allow_writes) { flash('warn', 'This server is read-only in SATOM: turn on Allow changes on the Overview.'); return false; } return true; }
 
-  // SA-0023/SA-0026: install (or update) the satom-webctl agent from here,
-  // with the selected credential as root -- the command the Connections page
-  // shows, run by SATOM. Its key and the nodes it is valid from are SATOM's.
-  function installAgent() {
-    if (!needWrites()) return;
-    confirmBox({ title: 'Install the satom-webctl agent', ok: 'Install', text: 'SATOM signs in with the selected credential, becomes root (sudo) and runs install-satom-webctl.sh with its own agent key, valid only from the SATOM nodes. It creates the account satom-mon (no password, no shell), /usr/local/bin/satom-webctl, two sudo rules per web server (configuration test and reload) and ACLs on the site folders. Run it again to update the agent.' }).then(function (ok) {
-      if (!ok) return;
-      flash('ok', 'Installing the agent…');
-      api('agent.install', {}, { runAs: 'root' }).then(function (r) {
-        flash(r.ok ? 'ok' : 'err', (r.ok ? 'Agent installed: the credential "satom-webctl agent" is ready. ' : 'The installer failed (exit ' + r.exit_code + ').\n') + (r.output || ''));
-        if (r.ok) setTimeout(function () { location.reload(); }, 2500);
-      }).catch(fail);
-    });
+  // ---------- jobs with steps (agent, maintenance) -----------------------------
+  function stepList(list) {
+    return el('ol', { cls: 'wsm-small mb-0' }, (list || []).map(function (s) { return el('li', { cls: s.ok ? '' : 'text-danger', text: s.at.slice(11) + '  ' + s.label + (s.outcome ? ' · ' + s.outcome : '') }); }));
+  }
+  function followJob(jobId, box, done) {
+    var bar = progressBar(); box.innerHTML = ''; box.append(bar);
+    var list = el('div'); box.append(list);
+    (function poll() {
+      fetch(CFG.jobs.replace('JOB', jobId), { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }).then(function (j) {
+        bar.bar.querySelector('div').style.width = (j.percent || 5) + '%'; bar.lastChild.textContent = j.message || '';
+        list.innerHTML = ''; list.append(stepList(j.steps));
+        if (j.status === 'success' || j.status === 'error' || j.status === 'cancelled') {
+          if (j.status !== 'success') box.append(el('div', { cls: 'wsm-msg fw-alert fw-alert-danger mt-2' }, [el('i', { cls: 'bi bi-x-octagon' }), el('div', { text: j.error || j.status })]));
+          else bar.bar.querySelector('div').style.width = '100%';
+          if (done) done(j);
+          return;
+        }
+        setTimeout(poll, 1500);
+      }).catch(function () { setTimeout(poll, 3000); });
+    })();
+  }
+
+  // ---------- the satom-webctl agent: install / reinstall / remove ----------------
+  // SA-0023 installed it from here; SA-0028 adds Reinstall and Remove. Each is
+  // a job with steps and a post-check; the server decides who may (services/
+  // wsm.start_agent_job) and SATOM's key and nodes are never the page's.
+  var TX = CFG.t || {};
+  function tx(k, d) { return TX[k] || d; }
+  var AGENT_BADGE = { installed: 'wsm-ok', unknown: 'wsm-info', none: 'wsm-muted', pending: 'wsm-warn', failed: 'wsm-bad', removed: 'wsm-muted', stale: 'wsm-bad' };
+  function agentPanel(A, opts) {
+    opts = opts || {};
+    var box = el('div', { cls: 'wsm-agent' }), jobBox = el('div', { cls: 'mt-2' });
+    var present = A.key && A.state !== 'none' && A.state !== 'removed';
+    box.append(el('div', { cls: 'd-flex flex-wrap align-items-center gap-2' }, [
+      el('strong', { cls: 'wsm-small', text: tx('agent_title', 'satom-webctl agent') }),
+      badge(tx('state_' + A.state, A.state), AGENT_BADGE[A.state] || 'wsm-muted', A.detail || ''),
+      A.version ? el('span', { cls: 'wsm-small text-muted', text: 'satom-webctl ' + A.version }) : null,
+      A.at ? el('span', { cls: 'wsm-small text-muted', text: A.at.replace('T', ' ') + ' UTC · ' + A.by }) : null]));
+    if (A.why && !opts.compact) box.append(el('div', { cls: 'wsm-small text-muted mt-1', text: A.why }));
+    var acts = el('div', { cls: 'wsm-toolbar mt-2 mb-0' });
+    if (!A.can) acts.append(el('span', { cls: 'wsm-small text-muted', text: tx('need_perm', 'Installing or removing the agent needs the permissions to manage the server and to run as root.') }));
+    else if (!present) acts.append(btn(tx('install', 'Install agent'), 'bi-download', 'btn-fw-primary', function () { run('install'); }));
+    else acts.append(btn(tx('reinstall', 'Reinstall agent'), 'bi-arrow-repeat', 'btn-fw-primary', function () { run('reinstall'); }),
+      btn(tx('remove', 'Remove agent'), 'bi-trash', 'btn-outline-danger', function () { run('remove'); }));
+    box.append(acts, jobBox);
+    function run(action) {
+      if (!needWrites()) return;
+      var c = currentCred();
+      if (!c || c.auth_type === 'agent' || c.escalation === 'none') { flash('warn', tx('need_root', 'Pick a credential that can become root in Sign in as (not the agent itself).')); return; }
+      var purge = action === 'remove' ? check(tx('purge', 'Also delete the agent\'s backups, log and certificates'), false) : null;
+      var node = el('div', {}, [el('p', { text: tx('confirm_' + action, '') }),
+        el('p', { cls: 'wsm-small text-muted mb-1', text: tx('as_cred', 'Signs in as %s and becomes root (sudo).').replace('%s', c.name + ' (' + c.ssh_user + ')') }), purge]);
+      confirmBox({ title: tx('title_' + action, action), ok: tx(action, action), danger: action === 'remove', node: node }).then(function (ok) {
+        if (!ok) return;
+        call(A.url.replace('ACTION', action), 'agent.' + action, {}, { runAs: 'root', extra: { purge: !!(purge && purge.input.checked) } }).then(function (d) {
+          followJob(d.job_id, jobBox, function (j) {
+            if (j.status !== 'success') { flash('err', tx('failed', 'The agent job failed:') + ' ' + (j.error || j.status)); return; }
+            flash('ok', tx('done', 'Done.'));
+            setTimeout(function () { location.reload(); }, 2500);
+          });
+        }).catch(fail);
+      });
+    }
+    return box;
   }
 
   // ======================================================================
@@ -286,10 +340,9 @@
           c.last_used_at || '—', acts];
       });
       list.appendChild(table(['Name', 'SSH user', 'How', 'State', 'Last used', ''], rows, { empty: 'No credential yet: add your SSH account.' }));
-      var hasAgent = creds().some(function (c) { return c.auth_type === 'agent'; });
-      list.appendChild(el('div', { cls: 'mt-2 d-flex align-items-center gap-2' }, [btn(hasAgent ? 'Update the satom-webctl agent' : 'Install the satom-webctl agent', 'bi-download', null, installAgent),
-        el('span', { cls: 'wsm-small text-muted', text: 'Vhosts, certificates and health without anybody\'s password: a restricted key for the account satom-mon. Needs a credential that can become root.' })]));
     }
+    var agentBox = $('#wsm-agent-body');
+    if (agentBox && CFG.agent) { agentBox.innerHTML = ''; agentBox.appendChild(agentPanel(CFG.agent)); }
     function credStatus(c, status, del) {
       var txt = del ? 'Delete credential ' + c.name + '? Scheduled jobs using it will wait for authentication.' :
         status === 'revoked' ? 'Revoke ' + c.name + ' now? Its stored secret is erased at once and every scheduled job using it stops. This cannot be undone (add a new credential instead).' :
@@ -382,7 +435,7 @@
         row('Helper', 'satom-wsm ' + s.helper + ' on Python ' + s.python);
         if (s.sudo && s.sudo.rules) { var adv = el('div', { cls: 'wsm-advanced-only' }, [pre(s.sudo.rules, true)]); row('sudo rules', adv); }
         box.innerHTML = ''; box.appendChild(kv);
-      }).catch(function (e) { box.innerHTML = ''; box.appendChild(el('div', { cls: 'wsm-msg err', text: e.message })); });
+      }).catch(function (e) { box.innerHTML = ''; box.appendChild(el('div', { cls: 'wsm-msg fw-alert fw-alert-danger', text: e.message })); });
     });
     draw();
   }
@@ -436,7 +489,7 @@
         listBox.innerHTML = ''; listBox.appendChild(table(['', 'Name', 'Size', 'Mode', 'Owner', 'Modified', ''], rows, { empty: 'Empty folder.' }));
       }).catch(function (e) {
         listBox.innerHTML = '';
-        var msg = el('div', { cls: 'wsm-msg err' }, [el('div', { text: e.message })]);
+        var msg = el('div', { cls: 'wsm-msg fw-alert fw-alert-danger' }, [el('div', { text: e.message })]);
         if (asSel.value !== 'root' && /permission|denied|not allowed/i.test(e.message)) msg.appendChild(btn('Open as root', 'bi-shield-lock', null, function () { asSel.value = 'root'; asSel.dispatchEvent(new Event('change')); }));
         listBox.appendChild(msg);
       });
@@ -617,7 +670,7 @@
             el('div', {}, [v.enabled ? badge('on', 'wsm-ok') : badge('off', 'wsm-muted'), v.ssl ? badge('HTTPS', 'wsm-info') : null]), acts];
         });
         listBox.innerHTML = ''; listBox.appendChild(table(['Site', 'Server', 'File', 'Document root', 'State', ''], rows, { empty: 'No virtual host found.' }));
-      }).catch(function (e) { listBox.innerHTML = ''; listBox.appendChild(el('div', { cls: 'wsm-msg err', text: e.message })); });
+      }).catch(function (e) { listBox.innerHTML = ''; listBox.appendChild(el('div', { cls: 'wsm-msg fw-alert fw-alert-danger', text: e.message })); });
     }
     function result(r, what) {
       if (r.restored) { flash('err', what + ': the server\'s configuration test failed, the previous configuration was restored and nothing was reloaded.\n' + (r.test_output || '')); return false; }
@@ -735,7 +788,7 @@
         listBox.innerHTML = ''; listBox.appendChild(table(['Certificate', 'Names', 'Issuer', 'Expires', 'Used by', ''], rows, { empty: 'No certificate found.' }));
         var soon = x[0].certs.filter(function (c) { return c.status === 'expiring' || c.status === 'expired'; });
         if (soon.length) flash('warn', soon.length + ' certificate(s) expire soon or have expired: ' + soon.map(function (c) { return c.name || c.subject; }).join(', '));
-      }).catch(function (e) { listBox.innerHTML = ''; listBox.appendChild(el('div', { cls: 'wsm-msg err', text: e.message })); });
+      }).catch(function (e) { listBox.innerHTML = ''; listBox.appendChild(el('div', { cls: 'wsm-msg fw-alert fw-alert-danger', text: e.message })); });
       acmeBox.innerHTML = ''; acmeBox.appendChild(loading('Asking certbot…'));
       api('acme.status', {}).then(function (a) {
         acmeBox.innerHTML = '';
@@ -744,7 +797,7 @@
           table(['Name', 'Domains', 'Expiry'], a.certs.map(function (c) { return [c.name, (c.domains || []).join(' '), c.expiry]; }), { empty: 'No Let\'s Encrypt certificate (or not readable without root).' }),
           el('div', { cls: 'wsm-toolbar mt-2' }, [btn('Request', 'bi-plus-lg', 'btn-fw-primary', acmeIssue), btn('Renew all', 'bi-arrow-repeat', null, function () { acmeRenew(false); }), btn('Test renewal', 'bi-check2-circle', null, function () { acmeRenew(true); }),
             btn('Automatic renewal on', 'bi-alarm', null, function () { api('acme.autorenew', { enable: true }).then(function (r) { flash(r.ok ? 'ok' : 'err', r.timer + ': ' + (r.ok ? 'enabled' : r.output)); load(); }).catch(fail); })]));
-      }).catch(function (e) { acmeBox.innerHTML = ''; acmeBox.appendChild(el('div', { cls: 'wsm-msg err', text: e.message })); });
+      }).catch(function (e) { acmeBox.innerHTML = ''; acmeBox.appendChild(el('div', { cls: 'wsm-msg fw-alert fw-alert-danger', text: e.message })); });
     }
     function vhostOptions() { return vhosts.filter(function (v) { return v.ssl; }).map(function (v) { return [v.server + '|' + v.name, v.server + ' · ' + (v.server_names[0] || v.name)]; }); }
     function assign(c) {
@@ -937,7 +990,7 @@
         conv.innerHTML = '';
         if (!isNginx) return;
         conv.append(el('div', { cls: 'wsm-card-title' }, ['nginx equivalent']), pre(n.nginx || '(nothing to apply)', true));
-        if (n.skipped.length) conv.append(el('div', { cls: 'wsm-msg warn mt-2' }, [el('div', {}, [el('strong', { text: 'Not converted — will NOT be applied on nginx:' }), el('ul', { cls: 'mb-0' }, n.skipped.map(function (s) { return el('li', {}, [el('code', { text: s.line }), ' — ' + s.why]); }))])]));
+        if (n.skipped.length) conv.append(el('div', { cls: 'wsm-msg fw-alert fw-alert-warning mt-2' }, [el('div', {}, [el('strong', { text: 'Not converted — will NOT be applied on nginx:' }), el('ul', { cls: 'mb-0' }, n.skipped.map(function (s) { return el('li', {}, [el('code', { text: s.line }), ' — ' + s.why]); }))])]));
         conv.nginx = n;
       }
       ed.onChange(function () { if (isNginx) post(CFG.base.replace(/[^/]+\/$/, '') + 'htaccess/convert', { text: ed.value() }).then(function (d) { if (d.ok) showConv(d); }); });
@@ -1161,20 +1214,20 @@
         [['install', 'install', 'wsm-ok'], ['upgrade', 'upgrade', 'wsm-info'], ['remove', 'REMOVE', 'wsm-bad']].forEach(function (k) {
           if (p[k[0]].length) box.append(el('div', { cls: 'mb-2' }, [badge(k[1] + ' ' + p[k[0]].length, k[2]), ' '].concat(p[k[0]].map(function (x) { return el('span', { cls: 'wsm-chip', text: x.name + (x.version ? ' ' + x.version : '') }); }))));
         });
-        if (!total) box.append(el('div', { cls: 'wsm-msg warn', text: 'Nothing to do, or the plan could not be read (see the output).' }));
-        if (p.remove.length && action !== 'remove') box.append(el('div', { cls: 'wsm-msg err', text: 'Careful: this also REMOVES packages other services may need.' }));
+        if (!total) box.append(el('div', { cls: 'wsm-msg fw-alert fw-alert-warning', text: 'Nothing to do, or the plan could not be read (see the output).' }));
+        if (p.remove.length && action !== 'remove') box.append(el('div', { cls: 'wsm-msg fw-alert fw-alert-danger', text: 'Careful: this also REMOVES packages other services may need.' }));
         box.append(el('details', { cls: 'wsm-advanced-only mt-2' }, [el('summary', { text: 'Package manager output' }), pre(r.output)]));
         box.append(el('p', { cls: 'wsm-small mt-2', text: 'Runs with administrator rights through sudo as ' + (currentCred() || {}).ssh_user + '. Services may restart.' }));
         var bar = progressBar(); box.append(bar);
-        var go = btn('Confirm and ' + action, 'bi-check', action === 'remove' ? 'btn-danger' : 'btn-fw-primary', function () {
+        var go = btn('Confirm and ' + action, 'bi-check', action === 'remove' ? 'btn-fw-danger' : 'btn-fw-primary', function () {
           go.disabled = true;
           job('pkg.apply', { action: action, names: names }, { title: action + ' ' + names.join(' '), progress: bar.bar }).then(function (x) {
-            var a = x.result; box.append(el('div', { cls: 'wsm-msg ' + (a.ok ? 'ok' : 'err'), text: a.ok ? 'Done (as ' + x.who.user + ').' : 'The package manager failed (exit ' + a.exit_code + ').' }), pre(a.output));
+            var a = x.result; box.append(el('div', { cls: 'wsm-msg ' + ALERT[a.ok ? 'ok' : 'err'], text: a.ok ? 'Done (as ' + x.who.user + ').' : 'The package manager failed (exit ' + a.exit_code + ').' }), pre(a.output));
             if (a.ok) search();
           }).catch(function (e) { go.disabled = false; fail(e); });
         });
         $('#wsm-dialog-foot').prepend(go);
-      }).catch(function (e) { box.innerHTML = ''; box.appendChild(el('div', { cls: 'wsm-msg err', text: e.message })); });
+      }).catch(function (e) { box.innerHTML = ''; box.appendChild(el('div', { cls: 'wsm-msg fw-alert fw-alert-danger', text: e.message })); });
     }
     function installed() {
       side.innerHTML = ''; side.appendChild(loading());
@@ -1277,7 +1330,7 @@
     }
     function draw() {
       box.innerHTML = '';
-      if (!data.complete) box.appendChild(el('div', { cls: 'wsm-msg warn', text: 'Locked/unlocked state needs administrator rights (Run as: Administrator).' }));
+      if (!data.complete) box.appendChild(el('div', { cls: 'wsm-msg fw-alert fw-alert-warning', text: 'Locked/unlocked state needs administrator rights (Run as: Administrator).' }));
       box.appendChild(table(['Account', 'UID', 'Groups', 'Shell', 'Home', 'State', ''], data.users.map(function (u) {
         return [el('div', {}, [el('strong', { text: u.name }), u.admin ? badge('admin', 'wsm-root') : null, el('div', { cls: 'wsm-small text-muted', text: u.comment })]), u.uid, el('span', { cls: 'wsm-small', text: [u.primary_group].concat(u.groups).join(', ') }), el('span', { cls: 'wsm-mono', text: u.shell }), el('span', { cls: 'wsm-mono', text: u.home }),
           u.locked == null ? '?' : u.locked ? badge('locked', 'wsm-bad') : badge('active', 'wsm-ok'),
@@ -1335,11 +1388,11 @@
             if (changes.PasswordAuthentication === 'no' && c && c.auth_type === 'password') warn += ' Your credential signs in with a PASSWORD: after this, SATOM (and you) can no longer sign in with it. Add a key first.';
             if (changes.Port) warn += ' Changing the port: update the server port in SATOM and the firewall, or you lose access.';
             if (changes.AllowUsers && c && changes.AllowUsers.split(/\s+/).indexOf(c.ssh_user) < 0) warn += ' ' + c.ssh_user + ' is not in AllowUsers: you would lock yourself out.';
-            confirmBox({ title: 'Change the SSH server', node: el('div', {}, [pre(JSON.stringify(changes, null, 1), true), warn ? el('div', { cls: 'wsm-msg err mt-2', text: warn }) : null]), danger: true, typed: 'SSH' }).then(function (ok) {
+            confirmBox({ title: 'Change the SSH server', node: el('div', {}, [pre(JSON.stringify(changes, null, 1), true), warn ? el('div', { cls: 'wsm-msg fw-alert fw-alert-danger mt-2', text: warn }) : null]), danger: true, typed: 'SSH' }).then(function (ok) {
               if (ok && needWrites()) api('sshd.set', { settings: changes, base_sha256: r.sha256 }, { runAs: 'root' }).then(function (x) { if (x.restored) flash('err', 'sshd -t failed, restored: ' + x.test_output); else flash('ok', 'Saved, tested and sshd reloaded.'); load(); }).catch(fail);
             });
           })]));
-      }).catch(function (e) { box.innerHTML = ''; box.appendChild(el('div', { cls: 'wsm-msg err', text: e.message })); });
+      }).catch(function (e) { box.innerHTML = ''; box.appendChild(el('div', { cls: 'wsm-msg fw-alert fw-alert-danger', text: e.message })); });
     }
     function keys() {
       keysBox.innerHTML = ''; keysBox.appendChild(loading());
@@ -1366,7 +1419,7 @@
     var VIA = { agent: 'satom-webctl agent (installed on the server, no shell)', ssh: 'SSH with a shared credential (nothing installed)', off: 'switched off', none: 'not possible yet' };
     function pct(a, b) { return b ? 100 * a / b : 0; }
     function bar(p, warn, crit) {
-      var col = p >= crit ? '#8B1C2A' : p >= warn ? '#7A5700' : '#15692A';
+      var col = p >= crit ? 'var(--fw-danger)' : p >= warn ? 'var(--fw-warning)' : 'var(--fw-success)';
       return el('div', { cls: 'd-flex align-items-center gap-2' }, [el('div', { cls: 'wsm-progress flex-grow-1', style: 'min-width:80px' }, [el('div', { style: 'width:' + Math.min(100, p).toFixed(1) + '%;background:' + col })]), el('span', { cls: 'wsm-small', text: p.toFixed(0) + ' %' })]);
     }
     function dur(s) { var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (d ? d + ' d ' : '') + h + ' h ' + m + ' min'; }
@@ -1384,8 +1437,15 @@
         btn('Read now', 'bi-arrow-repeat', 'btn-fw-primary', readNow, 'Read the server now (memory, disks, load, processes, services)')])]);
       var probs = L.problems || [];
       var nodes = [head];
+      // SA-0028: an agent problem is said plainly, with Install / Reinstall right here
+      var A = H.agent, agentBad = A && ['pending', 'failed', 'stale', 'removed'].indexOf(A.state) >= 0 && c.via !== 'ssh' && c.via !== 'off';
+      if (A && (L.action === 'agent' || agentBad)) {
+        var why = L.note ? tx('read_ssh', 'Read over SSH instead, because:') + ' ' + L.note : (A.why || L.error);
+        nodes.push(el('div', { cls: 'wsm-msg fw-alert fw-alert-warning mt-3' }, [el('i', { cls: 'bi bi-plug' }), el('div', { cls: 'flex-grow-1' }, [
+          el('div', { text: why }), el('div', { cls: 'wsm-small mt-2 mb-1', text: tx('fix', 'Fix it here:') }), agentPanel(A, { compact: true })])]));
+      }
       if (probs.length) nodes.push(card('Problems', 'bi-exclamation-triangle', [el('ul', { cls: 'mb-0' }, probs.map(function (p) { return el('li', {}, [badge(p.severity, p.severity === 'warning' ? 'wsm-warn' : 'wsm-bad'), ' ', p.text]); }))], 'mt-3'));
-      else if (L.ok) nodes.push(el('div', { cls: 'wsm-msg ok mt-3' }, [el('i', { cls: 'bi bi-check-circle' }), el('div', { text: 'No problem against this server\'s thresholds.' })]));
+      else if (L.ok) nodes.push(el('div', { cls: 'wsm-msg fw-alert fw-alert-success mt-3' }, [el('i', { cls: 'bi bi-check-circle' }), el('div', { text: 'No problem against this server\'s thresholds.' })]));
       if (d) {
         var m = d.memory, used = m.total_bytes - m.available_bytes;
         nodes.push(el('div', { cls: 'wsm-grid mt-3' }, [
@@ -1419,7 +1479,8 @@
         var names = Object.keys(s.errors || {});
         if (names.length) err.textContent = 'ERROR: the metrics store did not answer for ' + names.join(', ') + ': ' + s.errors[names[0]];
         if (typeof Chart === 'undefined') { err.textContent = 'Charts are not available on this page.'; return; }
-        var defs = [['cpu', 'CPU busy %', '#EF5424', 'y'], ['memory', 'Memory used %', '#4C2A85', 'y'], ['disk', 'Fullest disk %', '#15692A', 'y'], ['load', 'Load (1 min)', '#3D4550', 'y2']];
+        var accent = getComputedStyle(document.documentElement).getPropertyValue('--fw-accent').trim() || '#EF5424';
+        var defs = [['cpu', 'CPU busy %', accent, 'y'], ['memory', 'Memory used %', '#4C2A85', 'y'], ['disk', 'Fullest disk %', '#15692A', 'y'], ['load', 'Load (1 min)', '#3D4550', 'y2']];
         var ds = defs.map(function (x) { return { label: x[1], data: ((s.series || {})[x[0]] || []).map(function (p) { return { x: p[0] * 1000, y: p[1] }; }), borderColor: x[2], backgroundColor: x[2], yAxisID: x[3], pointRadius: 0, borderWidth: 1.5, tension: 0.2 }; });
         if (!names.length && ds.every(function (x) { return !x.data.length; })) err.textContent = 'No reading stored for this range yet.';
         if (chart) chart.destroy();
@@ -1447,11 +1508,11 @@
       f.via.addEventListener('change', toggle);
       keys.forEach(function (k) { f[k] = input({ type: 'number', value: c[k], step: k === 'load_warn' ? '0.1' : '1', style: 'max-width:110px' }); });
       f.ignore = el('textarea', { cls: 'form-control form-control-sm wsm-mono', rows: 3, placeholder: 'one per line, * and ? allowed, e.g. apt-daily*.service' }); f.ignore.value = c.ignore_units || '';
-      var agentNote = H.agent_key ? 'This server has an agent key. The agent must be satom-webctl 1.2.0 or newer to read health: run the installer of this SATOM again on the server if it is older.' :
-        'No agent key: health is read over SSH. To use the agent instead, install it with the button below (or on the Overview).';
+      var agentNote = H.agent && H.agent.usable ? 'The agent must be satom-webctl 1.2.0 or newer to read health: reinstall it if it is older.' :
+        'No working agent: health is read over SSH. To use the agent instead, install it below (or on the Overview).';
       setTimeout(toggle);
       return card('Settings', 'bi-sliders', [
-        field('How SATOM reads this server', f.via, agentNote), btn(H.agent_key ? 'Update the satom-webctl agent' : 'Install the satom-webctl agent', 'bi-download', null, installAgent), credRow,
+        field('How SATOM reads this server', f.via, agentNote), H.agent ? el('div', { cls: 'wsm-rule mb-2' }, [agentPanel(H.agent)]) : null, credRow,
         el('div', { cls: 'd-flex flex-wrap gap-3' }, [field('Every (minutes)', f.interval_min), field('Disk warning %', f.disk_warn), field('Disk critical %', f.disk_crit), field('Inodes warning %', f.inode_warn),
           field('Free memory warning %', f.mem_warn), field('Free memory critical %', f.mem_crit), field('Swap warning %', f.swap_warn), field('Load per CPU warning', f.load_warn)]),
         field('Failed services that never alert', f.ignore),
@@ -1471,29 +1532,10 @@
   function pageMaintenance() {
     var M = CFG.maint;
     function refresh() { return fetch(M.urls.state, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }).then(function (d) { if (d.ok) M = CFG.maint = d.maint; draw(); }); }
-    function steps(list) {
-      return el('ol', { cls: 'wsm-small mb-0' }, (list || []).map(function (s) { return el('li', { cls: s.ok ? '' : 'text-danger', text: s.at.slice(11) + '  ' + s.label + (s.outcome ? ' · ' + s.outcome : '') }); }));
-    }
-    function follow(jobId, box, done) {
-      var bar = progressBar(); box.innerHTML = ''; box.append(bar);
-      var list = el('div'); box.append(list);
-      (function poll() {
-        fetch(CFG.jobs.replace('JOB', jobId), { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }).then(function (j) {
-          bar.bar.querySelector('div').style.width = (j.percent || 5) + '%'; bar.lastChild.textContent = j.message || '';
-          list.innerHTML = ''; list.append(steps(j.steps));
-          if (j.status === 'success' || j.status === 'error' || j.status === 'cancelled') {
-            if (j.status !== 'success') box.append(el('div', { cls: 'wsm-msg err mt-2' }, [el('i', { cls: 'bi bi-x-octagon' }), el('div', { text: j.error || j.status })]));
-            else bar.bar.querySelector('div').style.width = '100%';
-            if (done) done(j);
-            return;
-          }
-          setTimeout(poll, 1500);
-        }).catch(function () { setTimeout(poll, 3000); });
-      })();
-    }
+    var follow = followJob;
     function draw() {
       var nodes = [], P = M.pending || {};
-      if ((P.members || []).length) nodes.push(el('div', { cls: 'wsm-msg warn' }, [el('i', { cls: 'bi bi-cone-striped' }), el('div', {}, [
+      if ((P.members || []).length) nodes.push(el('div', { cls: 'wsm-msg fw-alert fw-alert-warning' }, [el('i', { cls: 'bi bi-cone-striped' }), el('div', {}, [
         el('strong', { text: P.members.length + ' pool member(s) of this server are OUT of service' }), ' since ' + P.at.replace('T', ' ') + ' UTC (by ' + P.by + '): ',
         P.members.map(function (m) { return m.pool + '/' + m.member + ' (was ' + m.before + ')'; }).join(', '), ' ',
         M.can_apply ? btn('Return to service', 'bi-box-arrow-in-right', 'btn-fw-primary', back) : null])]));
@@ -1506,7 +1548,7 @@
         findBox], 'mt-3'));
       if ((M.found.rows || []).length || (M.found.errors || []).length) findBox.append(foundCard());
       if (M.can_apply && (M.links || []).length && !(P.members || []).length) nodes.push(runCard());
-      else if (!M.can_apply) nodes.push(el('div', { cls: 'wsm-msg warn mt-3' }, [el('i', { cls: 'bi bi-lock' }), el('div', { text: 'Running a maintenance changes pool members on the devices: it needs the Apply network permission.' })]));
+      else if (!M.can_apply) nodes.push(el('div', { cls: 'wsm-msg fw-alert fw-alert-warning mt-3' }, [el('i', { cls: 'bi bi-lock' }), el('div', { text: 'Running a maintenance changes pool members on the devices: it needs the Apply network permission.' })]));
       nodes.push(el('div', { id: 'wsm-maint-job', cls: 'mt-3' }));
       setPage(nodes);
     }
@@ -1520,7 +1562,7 @@
       return card('Found ' + (M.found.at ? 'at ' + M.found.at.replace('T', ' ') + ' UTC' : ''), 'bi-search', [
         el('div', { cls: 'wsm-small text-muted mb-1', text: 'This server is ' + ((M.found.addresses || []).join(', ') || 'an address that did not resolve') + '. Tick the members that are this server.' }),
         table(['', 'Device', 'Product', 'Pool', 'Member', 'Address', 'Status now'], rows, { empty: 'No pool member has this server\'s address.' }),
-        (M.found.errors || []).length ? el('div', { cls: 'wsm-msg err mt-2' }, [el('i', { cls: 'bi bi-x-octagon' }), el('div', { text: 'ERROR — not read: ' + M.found.errors.join('; ') })]) : null,
+        (M.found.errors || []).length ? el('div', { cls: 'wsm-msg fw-alert fw-alert-danger mt-2' }, [el('i', { cls: 'bi bi-x-octagon' }), el('div', { text: 'ERROR — not read: ' + M.found.errors.join('; ') })]) : null,
         rows.length ? btn('Keep the ticked members', 'bi-check-lg', 'btn-fw-primary mt-2', function () {
           post(M.urls.links, { keys: boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.dataset.key; }) }).then(function (d) { if (!d.ok) return flash('err', d.error); M = CFG.maint = d.maint; flash('ok', 'Saved.'); draw(); }).catch(fail);
         }) : null], 'mt-2');
@@ -1573,8 +1615,8 @@
   var PAGES = { home: pageHome, health: pageHealth, maintenance: pageMaintenance, files: pageFiles, sites: pageSites, certs: pageCerts, security: pageSecurity, htaccess: pageHtaccess, scripts: pageScripts, cron: pageCron, packages: pagePackages, services: pageServices, logs: pageLogs, users: pageUsers, ssh: pageSsh };
   if (PAGE === 'health') pageHealth();
   else if (PAGES[PAGE]) {
-    if (PAGE !== 'home' && !currentCred()) setPage([el('div', { cls: 'wsm-msg warn' }, [el('div', {}, ['No credential to sign in with. ', el('a', { href: CFG.base, text: 'Add your SSH account on the Overview' }), '.'])])]);
-    else if (PAGE !== 'home' && !CFG.trusted) setPage([el('div', { cls: 'wsm-msg err' }, [el('div', {}, ['SATOM has not trusted this server\'s host key yet. ', el('a', { href: CFG.base, text: 'Trust it on the Overview' }), '.'])])]);
+    if (PAGE !== 'home' && !currentCred()) setPage([el('div', { cls: 'wsm-msg fw-alert fw-alert-warning' }, [el('div', {}, ['No credential to sign in with. ', el('a', { href: CFG.base, text: 'Add your SSH account on the Overview' }), '.'])])]);
+    else if (PAGE !== 'home' && !CFG.trusted) setPage([el('div', { cls: 'wsm-msg fw-alert fw-alert-danger' }, [el('div', {}, ['SATOM has not trusted this server\'s host key yet. ', el('a', { href: CFG.base, text: 'Trust it on the Overview' }), '.'])])]);
     else PAGES[PAGE]();
   }
 })();

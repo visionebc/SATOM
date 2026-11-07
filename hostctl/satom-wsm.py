@@ -67,7 +67,7 @@ if "op_vhosts_list" not in globals():   # imported on its own (tests, --selftest
     globals().update({k: v for k, v in vars(_wmod).items()
                       if not k.startswith("__") and k not in ("main",)})
 
-WSM_VERSION = "2.2.0"
+WSM_VERSION = "2.3.0"
 MAX_FILE = 8 * 1024 * 1024
 MAX_LIST = 5000
 MAX_OUT = 256 * 1024
@@ -1156,36 +1156,113 @@ def _apache_listens(port):
 PUBKEY_RE = re.compile(r"^ssh-ed25519 [A-Za-z0-9+/]{60,80}={0,2}( [A-Za-z0-9._@-]{1,64})?$")
 
 
+AGENT_USER = "satom-mon"
+AGENT_COMMENT = "SATOM web host management"
+AGENT_FILES = (("program", "/usr/local/bin/satom-webctl"), ("config", "/etc/satom-webctl.json"),
+               ("sudoers", "/etc/sudoers.d/satom-webctl"))
+
+
+def _sha_of(path):
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()[:16]
+    except OSError:
+        return ""
+
+
+def agent_inventory():
+    """What the installer leaves on this server, as fingerprints (never file
+    contents): the program, its configuration, the sudo rules, the account
+    and SATOM's key line. Two equal inventories = nothing changed."""
+    out = {k: _sha_of(p) for k, p in AGENT_FILES}
+    try:
+        pw = pwd.getpwnam(AGENT_USER)
+        out["account"], home = True, pw.pw_dir
+        out["account_ours"] = pw.pw_gecos == AGENT_COMMENT     # the installer made it
+    except KeyError:
+        out["account"], out["account_ours"], home = False, False, ""
+    out["authorized_key"] = ""
+    if home:
+        try:
+            with open(os.path.join(home, ".ssh", "authorized_keys")) as fh:
+                lines = [l for l in fh.read().splitlines()
+                         if 'command="/usr/local/bin/satom-webctl"' in l]
+            out["authorized_key"] = hashlib.sha256(
+                "\n".join(lines).encode()).hexdigest()[:16] if lines else ""
+        except OSError:
+            pass
+    return out
+
+
+def _agent_changes(before, after):
+    return sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+
+
+def _installer_args(args):
+    script = args.get("installer") or ""
+    need(isinstance(script, str) and script.startswith("#!/bin/bash")
+         and "install-satom-webctl.sh" in script[:400] and len(script) < 300000,
+         "bad_installer", "the SATOM installer")
+    return script
+
+
+def _run_installer(files, argv_tail):
+    work = tempfile.mkdtemp(prefix="satom-webctl-install-")
+    try:
+        for name, body in files:
+            with open(os.path.join(work, name), "w") as fh:
+                fh.write(body)
+            os.chmod(os.path.join(work, name), 0o700)
+        return run(["bash", os.path.join(work, "install-satom-webctl.sh")] + argv_tail,
+                   timeout=280)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def op_agent_install(conf, args):
     """Install (or refresh) the satom-webctl agent: the installer SATOM ships,
     run here as root with SATOM's agent key -- the same command an operator
     runs by hand (install-satom-webctl.sh --pubkey ... --from ...). Both
-    files come in the request: this helper runs from memory."""
+    files come in the request: this helper runs from memory. The answer
+    says what changed (``changes``: an identical second run changes nothing)."""
     need(is_root(), "permission_denied", "root (sudo)")
     pub = args.get("pubkey") or ""
     need(isinstance(pub, str) and PUBKEY_RE.match(pub), "bad_pubkey", "an ssh-ed25519 public key")
     frm = args.get("from") or ""
     need(isinstance(frm, str) and re.match(r"^[0-9A-Fa-f.:,/]{0,400}$", frm), "bad_from",
          "comma-separated SATOM node addresses")
-    script, agent = args.get("installer") or "", args.get("agent") or ""
-    need(isinstance(script, str) and script.startswith("#!/bin/bash")
-         and "install-satom-webctl.sh" in script[:400] and len(script) < 300000,
-         "bad_installer", "the SATOM installer")
+    script, agent = _installer_args(args), args.get("agent") or ""
     need(isinstance(agent, str) and agent.startswith("#!") and "satom-webctl" in agent[:2000]
          and len(agent) < 2000000, "bad_agent", "satom-webctl.py")
-    work = tempfile.mkdtemp(prefix="satom-webctl-install-")
-    try:
-        for name, body in (("install-satom-webctl.sh", script), ("satom-webctl.py", agent)):
-            with open(os.path.join(work, name), "w") as fh:
-                fh.write(body)
-            os.chmod(os.path.join(work, name), 0o700)
-        argv = ["bash", os.path.join(work, "install-satom-webctl.sh"), "--pubkey", pub]
-        if frm:
-            argv += ["--from", frm]
-        rc, out, err = run(argv, timeout=280)
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
-    return {"ok": rc == 0, "exit_code": rc, "output": clean((out + err)[-6000:], 6000)}
+    before = agent_inventory()
+    tail = ["--pubkey", pub] + (["--from", frm] if frm else [])
+    rc, out, err = _run_installer((("install-satom-webctl.sh", script),
+                                   ("satom-webctl.py", agent)), tail)
+    after = agent_inventory()
+    return {"ok": rc == 0, "exit_code": rc, "output": clean((out + err)[-6000:], 6000),
+            "before": before, "after": after, "changes": _agent_changes(before, after)}
+
+
+def op_agent_remove(conf, args):
+    """Remove the satom-webctl agent with the installer SATOM ships
+    (``--uninstall``; ``purge`` also removes its backups, log and
+    certificates). The account goes only when the installer created it;
+    otherwise only SATOM's key line. ``left`` = what is still there."""
+    need(is_root(), "permission_denied", "root (sudo)")
+    script = _installer_args(args)
+    purge = args.get("purge") is True
+    before = agent_inventory()
+    rc, out, err = _run_installer((("install-satom-webctl.sh", script),),
+                                  ["--uninstall"] + (["--purge"] if purge else []))
+    after = agent_inventory()
+    # an account the installer did not create stays, by design; anything else
+    # still there is a removal that did not happen
+    left = sorted(k for k in ("program", "config", "sudoers", "authorized_key") if after.get(k))
+    if after.get("account_ours"):
+        left.append("account")
+    return {"ok": rc == 0 and not left, "exit_code": rc,
+            "output": clean((out + err)[-6000:], 6000), "before": before, "after": after,
+            "changes": _agent_changes(before, after), "left": left, "purge": purge}
 
 
 def _server_blocks(text):
@@ -2681,6 +2758,7 @@ SESSION_OPS = {
     "vhost.put": lambda c, a: op_vhost_put(c, _confd_name(c, a)),
     "vhost.create": op_vhost_create2,
     "agent.install": op_agent_install,
+    "agent.remove": op_agent_remove,
     "vhost.enable": lambda c, a: op_vhost_toggle(c, _confd_name(c, a), True),
     "vhost.disable": lambda c, a: op_vhost_toggle(c, _confd_name(c, a), False),
     "vhost.delete": lambda c, a: op_vhost_delete(c, _confd_name(c, a)),

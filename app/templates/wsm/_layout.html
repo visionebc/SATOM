@@ -5,21 +5,26 @@
    body is drawn by static/js/wsm.js from the JSON config at the bottom. #}
 {% block title %}{{ server.name }} · {{ modules[page][0] if page in modules else _('Web Server Manager') }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ asset('css/wsm.css') }}" data-turbo-track="reload">{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('wsm.index') }}">{{ _('Web Server Manager') }}</a><span class="separator">/</span>
+  {% if page in modules %}<a href="{{ url_for('wsm.server_home', slug=server.slug) }}">{{ server.name }}</a><span class="separator">/</span><span>{{ modules[page][0] }}</span>
+  {% else %}<span>{{ server.name }}</span>{% endif %}
+</div>
+{% endblock %}
 {% block content %}
 <div class="fw-page-header wsm-head">
   <div>
-    <div class="wsm-crumbs"><a href="{{ url_for('wsm.index') }}">{{ _('Web Server Manager') }}</a> ›
-      <a href="{{ url_for('wsm.server_home', slug=server.slug) }}">{{ server.name }}</a>
-      {% if page in modules %} › {{ modules[page][0] }}{% endif %}</div>
     <h1 class="fw-page-title">
       {% if page in modules %}<i class="bi {{ modules[page][1] }} me-2 text-accent"></i>{{ modules[page][0] }}
       {% else %}<i class="bi bi-hdd-network me-2 text-accent"></i>{{ server.name }}{% endif %}
     </h1>
     <p class="text-muted mb-0 wsm-sub">{{ server.host }}:{{ server.port or 22 }}
-      {% if state.host_key %}<span class="wsm-badge wsm-ok ms-2" title="{{ state.fingerprint }}"><i class="bi bi-patch-check"></i> {{ _('host key trusted') }}</span>
-      {% else %}<span class="wsm-badge wsm-bad ms-2"><i class="bi bi-exclamation-octagon"></i> {{ _('host key not trusted') }}</span>{% endif %}
-      {% if state.allow_writes %}<span class="wsm-badge wsm-info ms-1">{{ _('changes allowed') }}</span>
-      {% else %}<span class="wsm-badge wsm-muted ms-1" title="{{ _('Turn on Allow changes on the server page') }}">{{ _('read-only') }}</span>{% endif %}
+      {% if state.host_key %}<span class="fw-badge fw-badge-success ms-2" title="{{ state.fingerprint }}"><i class="bi bi-patch-check"></i> {{ _('host key trusted') }}</span>
+      {% else %}<span class="fw-badge fw-badge-danger ms-2"><i class="bi bi-exclamation-octagon"></i> {{ _('host key not trusted') }}</span>{% endif %}
+      {% if state.allow_writes %}<span class="fw-badge fw-badge-info ms-1">{{ _('changes allowed') }}</span>
+      {% else %}<span class="fw-badge fw-badge-secondary ms-1" title="{{ _('Turn on Allow changes on the server page') }}">{{ _('read-only') }}</span>{% endif %}
     </p>
   </div>
   <div class="wsm-actas fw-card" id="wsm-actas">
@@ -39,12 +44,12 @@
     <div class="form-check form-switch wsm-adv"><input class="form-check-input" type="checkbox" id="wsm-advanced"><label class="form-check-label" for="wsm-advanced">{{ _('Advanced mode') }}</label></div>
   </div>
 </div>
-<nav class="wsm-tabs" aria-label="{{ _('Modules') }}">
-  <a class="wsm-tab {{ 'active' if page == 'home' }}" href="{{ url_for('wsm.server_home', slug=server.slug) }}"><i class="bi bi-grid-3x3-gap"></i> {{ _('Overview') }}</a>
+<ul class="nav nav-tabs wsm-tabs" aria-label="{{ _('Modules') }}">
+  <li class="nav-item"><a class="nav-link {{ 'active' if page == 'home' }}" {{ 'aria-current=page' if page == 'home' }} href="{{ url_for('wsm.server_home', slug=server.slug) }}"><i class="bi bi-grid-3x3-gap"></i> {{ _('Overview') }}</a></li>
   {% for key, m in modules.items() %}
-  <a class="wsm-tab {{ 'active' if page == key }}" href="{{ url_for('wsm.module', slug=server.slug, page=key) }}"><i class="bi {{ m[1] }}"></i> {{ m[0] }}</a>
+  <li class="nav-item"><a class="nav-link {{ 'active' if page == key }}" {{ 'aria-current=page' if page == key }} href="{{ url_for('wsm.module', slug=server.slug, page=key) }}"><i class="bi {{ m[1] }}"></i> {{ m[0] }}</a></li>
   {% endfor %}
-</nav>
+</ul>
 <div id="wsm-flash" class="wsm-flash" aria-live="polite"></div>
 {% block wsm_body %}{% endblock %}
 <div class="wsm-advanced-only fw-card mt-3" id="wsm-trace"><div class="wsm-card-title"><i class="bi bi-code-square"></i> {{ _('Last operation (advanced)') }}</div><pre class="wsm-pre" id="wsm-trace-body">—</pre></div>
@@ -65,7 +70,7 @@
       <div class="form-check"><input class="form-check-input" type="checkbox" id="wsm-secret-keep"><label class="form-check-label" for="wsm-secret-keep">{{ _('Remember in this browser tab until I leave the page (never stored by SATOM)') }}</label></div>
     </div>
     <div class="modal-footer">
-      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+      <button type="button" class="btn fw-btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
       <button type="button" class="btn btn-fw-primary" id="wsm-secret-ok">{{ _('Continue') }}</button>
     </div>
   </div></div>
@@ -77,7 +82,7 @@
     <div class="modal-body" style="font-size:13px;"><div id="wsm-confirm-body"></div>
       <div id="wsm-confirm-typed" class="d-none mt-2"><label class="fw-form-label" for="wsm-confirm-input" id="wsm-confirm-typed-label"></label><input class="form-control" id="wsm-confirm-input" autocomplete="off"></div></div>
     <div class="modal-footer">
-      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+      <button type="button" class="btn fw-btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
       <button type="button" class="btn btn-fw-primary" id="wsm-confirm-ok">{{ _('Confirm') }}</button>
     </div>
   </div></div>

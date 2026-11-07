@@ -11,7 +11,7 @@
   <div class="col-lg-7">
     <div class="fw-card p-3 mb-3">
       <div class="wsm-card-title d-flex justify-content-between"><span><i class="bi bi-person-badge"></i> {{ _('Who am I on this server?') }}</span>
-        <button class="btn btn-sm btn-outline-secondary" id="wsm-check" type="button"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Check access') }}</button></div>
+        <button class="btn btn-sm fw-btn-secondary" id="wsm-check" type="button"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Check access') }}</button></div>
       <div id="wsm-identity" class="wsm-identity text-muted">{{ _('Pick a credential above and press Check access: SATOM signs in, tells you who you are, and tries sudo when your credential uses it.') }}</div>
     </div>
     <div class="fw-card p-3">
@@ -19,6 +19,11 @@
         <button class="btn btn-sm btn-fw-primary" id="wsm-cred-new" type="button"><i class="bi bi-plus-lg me-1"></i>{{ _('Add credential') }}</button></div>
       <p class="text-muted" style="font-size:12px;">{{ _('Each credential is an SSH account on this server. Yours are private; a shared one is a service credential others may use. SATOM keeps the password or key encrypted (vault or Fernet) and never shows it again, or asks for it at every operation if you prefer.') }}</p>
       <div id="wsm-creds"></div>
+    </div>
+    <div class="fw-card p-3 mt-3" id="wsm-agent">
+      <div class="wsm-card-title"><i class="bi bi-plug"></i> {{ _('Agent') }}</div>
+      <p class="text-muted" style="font-size:12px;">{{ _('Optional: a restricted key for the account satom-mon, so virtual hosts, certificates and health work without anybody\'s password. Install, reinstall or remove it with a credential that can become root; each runs as a job with its steps and a check afterwards.') }}</p>
+      <div id="wsm-agent-body" class="text-muted wsm-small">{{ _('Loading…') }}</div>
     </div>
   </div>
   <div class="col-lg-5">

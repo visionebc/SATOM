@@ -1,19 +1,17 @@
 /* Web Server Manager (Linux ADOM). SATOM's light theme: .fw-card on
-   --fw-content-bg, status colours of the .fw-badge set, no dark surfaces
-   except the code editor and terminal output, which are code. */
+   --fw-content-bg, SATOM's own components for everything that has one
+   (.fw-breadcrumb, .nav-tabs, .fw-badge-*, .fw-alert-*, .btn-fw-* /
+   .fw-btn-secondary) -- this file only lays them out. The one dark surface is
+   the code editor, which is code (like .fw-code-block). SA-0028 audit. */
 .wsm-head { gap: 16px; align-items: flex-start; }
-.wsm-crumbs { font-size: 12px; color: var(--fw-text-secondary); margin-bottom: 2px; }
-.wsm-crumbs a { color: var(--fw-accent); text-decoration: none; }
 .wsm-sub { font-size: 13px; }
 .wsm-actas { padding: 10px 12px; min-width: 330px; display: grid; gap: 6px; font-size: 12px; }
 .wsm-actas-row { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 8px; }
 .wsm-actas-who { font-size: 12px; min-height: 18px; }
 .wsm-adv { font-size: 12px; margin: 0; }
-.wsm-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 12px; border-bottom: 1px solid var(--fw-border); }
-.wsm-tab { padding: 6px 10px; font-size: 12.5px; color: var(--fw-text-secondary); text-decoration: none; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: none; }
-.wsm-tab:hover { color: var(--fw-accent); background: var(--fw-accent-light); }
-.wsm-tab.active { color: var(--fw-accent); background: var(--fw-surface); border-color: var(--fw-border); font-weight: 600; margin-bottom: -1px; }
-.wsm-tab i { margin-right: 3px; }
+.wsm-tabs { margin: 10px 0 12px; flex-wrap: wrap; }
+.wsm-tabs .nav-link { padding: 6px 10px; font-size: 12.5px; }
+.wsm-tabs .nav-link i { margin-right: 3px; }
 .wsm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .wsm-server { padding: 14px; text-decoration: none; color: inherit; transition: box-shadow .15s; }
 .wsm-server:hover { box-shadow: var(--fw-card-shadow-hover); }
@@ -29,19 +27,10 @@ a.wsm-tile:hover { box-shadow: var(--fw-card-shadow-hover); }
 .wsm-help li { margin-bottom: 4px; }
 .wsm-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 .wsm-wrap { word-break: break-all; }
-.wsm-badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; border: 1px solid transparent; white-space: nowrap; }
-.wsm-ok { background: #E3F4E7; color: #15692A; border-color: #BFE3C7; }
-.wsm-bad { background: #FBE7EA; color: #8B1C2A; border-color: #F1C2CA; }
-.wsm-warn { background: #FFF4D6; color: #7A5700; border-color: #F2DC9C; }
-.wsm-info { background: #E8EEFA; color: #0A3F9F; border-color: #C9D7F2; }
-.wsm-muted { background: #EEF1F6; color: #3D4550; border-color: #DCE1EA; }
-.wsm-root { background: #EFE7FA; color: #4C2A85; border-color: #D8C9F0; }
 .wsm-flash:empty { display: none; }
 .wsm-flash { margin-bottom: 10px; }
-.wsm-msg { padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 6px; border: 1px solid; display: flex; gap: 8px; align-items: flex-start; }
-.wsm-msg.ok { background: #E3F4E7; color: #15692A; border-color: #BFE3C7; }
-.wsm-msg.err { background: #FBE7EA; color: #8B1C2A; border-color: #F1C2CA; }
-.wsm-msg.warn { background: #FFF4D6; color: #7A5700; border-color: #F2DC9C; }
+/* messages are .fw-alert .fw-alert-*; this only lays out icon, text and close */
+.wsm-msg { padding: 8px 12px; font-size: 13px; margin-bottom: 6px; display: flex; gap: 8px; align-items: flex-start; white-space: pre-line; }
 .wsm-msg .x { margin-left: auto; cursor: pointer; opacity: .6; background: none; border: 0; color: inherit; }
 .wsm-page { min-height: 200px; }
 .wsm-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
@@ -53,9 +42,9 @@ a.wsm-tile:hover { box-shadow: var(--fw-card-shadow-hover); }
 .wsm-table .icon .bi-folder-fill { color: #C98A11; }
 .wsm-name-link { cursor: pointer; color: var(--fw-accent); }
 .wsm-name-link:hover { text-decoration: underline; }
-.wsm-pre { background: #0F1724; color: #D6E2F5; padding: 10px 12px; border-radius: 6px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; max-height: 480px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
-.wsm-pre.light { background: var(--fw-surface-alt); color: var(--fw-text-primary); border: 1px solid var(--fw-border); }
-.wsm-err-line { color: #FF9AA8; }
+/* command output, like SATOM's .fw-pre (light), but wrapped: logs are prose */
+.wsm-pre { background: var(--fw-surface-alt); color: var(--fw-text-primary); border: 1px solid var(--fw-border); padding: 10px 12px; border-radius: var(--fw-radius); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; max-height: 480px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
+.wsm-err-line { color: #9B1C2A; font-weight: 600; }
 .wsm-advanced-only { display: none; }
 body.wsm-advanced .wsm-advanced-only { display: block; }
 body.wsm-advanced span.wsm-advanced-only, body.wsm-advanced code.wsm-advanced-only { display: inline; }
@@ -86,7 +75,7 @@ body.wsm-advanced span.wsm-advanced-only, body.wsm-advanced code.wsm-advanced-on
 .tk-c { color: #7F8EA8; font-style: italic; } .tk-s { color: #A5E07B; } .tk-k { color: #C792EA; }
 .tk-n { color: #F78C6C; } .tk-t { color: #82AAFF; } .tk-a { color: #FFCB6B; } .tk-v { color: #89DDFF; }
 .tk-d { color: #FF5370; }
-.wsm-preview { border: 1px solid var(--fw-border); border-radius: 6px; width: 100%; height: 460px; background: #fff; }
+.wsm-preview { border: 1px solid var(--fw-border); border-radius: 6px; width: 100%; height: 460px; background: var(--fw-surface); }
 .wsm-drop { border: 2px dashed var(--fw-border); border-radius: 8px; padding: 14px; text-align: center; color: var(--fw-text-secondary); font-size: 12.5px; }
 .wsm-drop.over { border-color: var(--fw-accent); background: var(--fw-accent-light); }
 .wsm-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--fw-surface-alt); border: 1px solid var(--fw-border); font-size: 11.5px; margin: 1px 2px; }

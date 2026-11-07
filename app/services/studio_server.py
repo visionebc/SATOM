@@ -46,6 +46,13 @@ from . import studio_http as H
 
 ConnectionError_ = H.ConnectionError_
 
+
+class KeyRefused(ConnectionError_):
+    """The server answered and refused SATOM's key for the agent account: the
+    agent is not installed with this key (never installed, the install failed,
+    removed, the key changed) or sshd does not let the account in. A STATE of
+    the server, not a network fault -- callers say what to do about it."""
+
 #: operation -> True when it changes something on the server.
 OPERATIONS = {op: writes for op, (writes, _schema) in G.WEBCTL_OPS.items()}
 WRITE_OPERATIONS = tuple(sorted(op for op, w in OPERATIONS.items() if w))
@@ -193,7 +200,7 @@ def call(defn: dict, private_pem: str, op: str, args: dict | None = None, *,
         try:
             t.auth_publickey(defn.get("username") or DEFAULT_USER, _pkey(private_pem))
         except Exception as exc:  # noqa: BLE001
-            raise ConnectionError_("%s refused SATOM's key for %s (%s): is satom-webctl "
+            raise KeyRefused("%s refused SATOM's key for %s (%s): is satom-webctl "
                                    "installed with this public key?"
                                    % (host, defn.get("username") or DEFAULT_USER,
                                       exc.__class__.__name__)) from None

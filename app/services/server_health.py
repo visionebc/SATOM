@@ -58,7 +58,22 @@ SEVERITY = {"ok": 0, "warning": 1, "critical": 2, "unreachable": 3}
 
 
 class HealthError(Exception):
-    """A reading that could not be made; the message is SATOM's own text."""
+    """A reading that could not be made; the message is SATOM's own text.
+    ``action``: what the page offers to fix it ("agent" = install or
+    reinstall the satom-webctl agent; "" = nothing to press)."""
+
+    def __init__(self, text: str, action: str = ""):
+        super().__init__(text)
+        self.action = action
+
+
+def refused_text(c) -> str:
+    """What a refused agent key means, for the operator (SA-0028)."""
+    return ("%s refused SATOM's agent key for %s: the satom-webctl agent is not installed "
+            "with this SATOM's key (never installed, the install failed, it was removed, or "
+            "the key changed since), or sshd does not let %s in (AllowUsers, AllowGroups, "
+            "the SATOM addresses the key is valid from). Reinstall the agent"
+            % (c.host, c.username or "satom-mon", c.username or "satom-mon"))
 
 
 # --------------------------------------------------------------------------- #
@@ -144,18 +159,21 @@ def last(slug: str) -> dict:
 def channel(c, cfg: dict | None = None) -> dict:
     """How this server would be read now: ``{"via": agent|ssh|off|none,
     "credential": WsmCredential|None, "why": str}``."""
-    from . import studio_connections as SC
     from . import wsm as W
     cfg = cfg or conf(c.slug)
     via = cfg["via"]
     if via == "off":
         return {"via": "off", "credential": None, "why": "health reading is switched off"}
-    if via in ("agent", "auto") and SC.has_secret(c.slug):
+    # "has an agent" is what SATOM KNOWS of the server's agent, not "SATOM has
+    # a key": the key is made before the installer runs, so a failed or
+    # never-finished install used to send every reading to a key the server
+    # does not trust (SA-0028).
+    agent = W.agent_status(c)
+    if via in ("agent", "auto") and agent["usable"]:
         return {"via": "agent", "credential": W.ensure_agent_credential(c), "why": ""}
     if via == "agent":
-        return {"via": "none", "credential": None,
-                "why": "the server has no satom-webctl agent key: generate one and install "
-                       "the agent, or read it over SSH with a shared credential"}
+        return {"via": "none", "credential": None, "agent": agent["state"],
+                "why": agent["why"] + ", or read it over SSH with a shared credential"}
     creds = W.service_credentials(c.slug)
     if via == "ssh":
         cred = next((r for r in creds if r.id == cfg.get("credential_id")), None)
@@ -166,7 +184,11 @@ def channel(c, cfg: dict | None = None) -> dict:
         return {"via": "ssh", "credential": cred, "why": ""}
     if creds:
         return {"via": "ssh", "credential": creds[0], "why": ""}
-    return {"via": "none", "credential": None,
+    if agent["state"] in ("pending", "failed", "stale", "removed"):
+        return {"via": "none", "credential": None, "agent": agent["state"],
+                "why": agent["why"] + "; or add a credential marked Shared that keeps its "
+                                      "secret"}
+    return {"via": "none", "credential": None, "agent": agent["state"],
             "why": "no way to read it unattended: install the satom-webctl agent, or add a "
                    "credential marked Shared that keeps its secret"}
 
@@ -176,31 +198,53 @@ def read(c, by: str = "scheduler", cfg: dict | None = None) -> dict:
     "ms"}``; raises HealthError (named reason, never the server's bytes)."""
     from . import studio_connections as SC
     from . import wsm as W
+    from .studio_server import KeyRefused
+    cfg = cfg or conf(c.slug)
     ch = channel(c, cfg)
     if ch["via"] in ("off", "none"):
-        raise HealthError(ch["why"])
+        raise HealthError(ch["why"], "agent" if ch.get("agent") not in (None, "off") and
+                          cfg["via"] != "ssh" else "")
     started = time.time()
     if ch["via"] == "agent":
         cred = ch["credential"]
         try:
             data = SC.server_call(c, "host.health")
         except Exception as exc:  # noqa: BLE001
-            text = str(exc)
-            if "unknown_op" in text or "unknown operation" in text:
-                text = ("the satom-webctl agent on the server is older than 1.2.0 and does not "
-                        "read host health: run the installer of this SATOM again on the server")
+            text, action = str(exc), ""
+            if isinstance(exc, KeyRefused):
+                text, action = refused_text(c), "agent"
+            elif "unknown_op" in text or "unknown operation" in text:
+                text, action = ("the satom-webctl agent on the server is older than 1.2.0 and "
+                                "does not read host health: reinstall the agent"), "agent"
             if cred is not None:
                 W._audit(user=by, c=c, cred=cred, op="host.health", module="", args={},
                          ok=False, error="agent", detail=text, who={"user": cred.ssh_user},
                          mode="agent")
-            raise HealthError(text[:300]) from None
+            creds = W.service_credentials(c.slug) if cfg["via"] == "auto" else []
+            if action and creds:
+                # Automatic: the agent is refused, a shared SSH credential is
+                # there -- read with it, and say why the agent was not used
+                try:
+                    r = _read_ssh(c, creds[0], by, started)
+                except HealthError as ssh_exc:
+                    raise HealthError(("%s; over SSH with %s: %s" % (text, creds[0].name,
+                                                                    ssh_exc))[:400],
+                                      action) from None
+                r["note"] = text[:400]
+                r["action"] = action
+                return r
+            raise HealthError(text[:400], action) from None
         ms = int((time.time() - started) * 1000)
         if cred is not None:
             W._audit(user=by, c=c, cred=cred, op="host.health", module="", args={}, ok=True,
                      who={"user": cred.ssh_user}, ms=ms, mode="agent")
         return {"data": data, "via": "agent",
                 "credential": cred.name if cred else "satom-webctl agent", "ms": ms}
-    cred = ch["credential"]
+    return _read_ssh(c, ch["credential"], by, started)
+
+
+def _read_ssh(c, cred, by: str, started: float) -> dict:
+    from . import wsm as W
     try:
         data = W.read_as_service(c, "host.health", cred=cred, by=by)
     except Exception as exc:  # noqa: BLE001 -- WsmError / WsmDenied carry SATOM's text
@@ -344,17 +388,18 @@ def collect(c, *, by: str = "scheduler", notify: bool = True) -> dict:
     now = datetime.utcnow()
     ts_ms = int(time.time() * 1000)
     rec = {"at": now.isoformat(timespec="seconds"), "ok": False, "via": "", "credential": "",
-           "error": "", "problems": [], "data": None, "ms": None,
+           "error": "", "problems": [], "data": None, "ms": None, "action": "", "note": "",
            "fails": int(prev.get("fails") or 0)}
     try:
         r = read(c, by=by, cfg=cfg)
         rec.update(ok=True, via=r["via"], credential=r["credential"], ms=r["ms"],
-                   data=_snapshot(r["data"]), fails=0)
+                   data=_snapshot(r["data"]), fails=0, note=r.get("note", ""),
+                   action=r.get("action", ""))
         rec["problems"] = evaluate(r["data"], cfg)
         lines = metric_lines(c, r["data"], True, ts_ms)
     except HealthError as exc:
         rec.update(error=str(exc), fails=rec["fails"] + 1, data=prev.get("data"),
-                   via=channel(c, cfg)["via"])
+                   via=channel(c, cfg)["via"], action=exc.action)
         rec["problems"] = [{"key": "unreachable", "severity": "unreachable",
                             "text": "cannot read the server: %s" % exc}]
         lines = metric_lines(c, None, False, ts_ms)

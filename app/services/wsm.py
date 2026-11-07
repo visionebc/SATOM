@@ -86,7 +86,7 @@ OPS: dict[str, tuple[str, bool]] = {
     "sshd.get": ("ssh", False), "authkeys.get": ("ssh", False),
     "sshd.set": ("ssh", True), "authkeys.put": ("ssh", True),
     "script.run": ("scripts", True),
-    "agent.install": ("health", True),
+    "agent.install": ("health", True), "agent.remove": ("health", True),
 }
 #: Operations the restricted agent (satom-webctl as satom-mon) answers, and
 #: their session-helper equivalents.
@@ -574,23 +574,218 @@ def delete_credential(cred: WsmCredential) -> None:
     db.session.commit()
 
 
+def _route_source(host: str, port: int) -> str:
+    """The address this node sends from to reach ``host`` -- asked of the
+    routing table with a UDP connect (no packet leaves). '' when unknown."""
+    import socket
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_UDP)
+    except (OSError, UnicodeError, ValueError):
+        return ""
+    for family, _t, _p, _c, addr in infos:
+        s = socket.socket(family, socket.SOCK_DGRAM)
+        try:
+            s.connect(addr)
+            return str(s.getsockname()[0])
+        except OSError:
+            continue
+        finally:
+            s.close()
+    return ""
+
+
+def agent_sources(c) -> list[str]:
+    """The addresses the agent key is valid from (its ``from=``).
+
+    A single node (no HA registry) restricts nothing, as before. With an HA
+    registry: every node's address EXCEPT loopback -- the registry writes this
+    node as 127.0.0.1 when a peer is registered from the console
+    (self_update.upsert_node), and a server never sees SATOM coming from its
+    own loopback, so a key valid only "from 127.0.0.1 and the peer" refused
+    the node that installed it (SA-0028) -- plus the address this node really
+    sends from to reach the server."""
+    import ipaddress
+    from .studio_http import ha_node_ips
+    nodes = ha_node_ips()
+    if not nodes:
+        return []
+    out = set()
+    for ip in set(nodes) | {_route_source(c.host or "", int(c.port or 22))}:
+        try:
+            addr = ipaddress.ip_address(str(ip).split("%", 1)[0])
+        except ValueError:
+            continue
+        if addr.is_loopback or addr.is_unspecified:
+            continue
+        out.add(str(getattr(addr, "ipv4_mapped", None) or addr))
+    return sorted(out)
+
+
 def agent_install_args(c, user) -> dict:
     """What ``agent.install`` sends: SATOM's agent key for this server
     (generated on first use -- the key of an agent already installed is
     kept, a new one would lock it out), the SATOM nodes the key is valid
     from, and the installer and agent this SATOM ships."""
     from . import studio_connections as SC
-    from .studio_http import ha_node_ips
     from .wsm_transport import HOSTCTL
     pub = SC.server_public_key(c) if SC.has_secret(c.slug) else ""
     if not pub:
         pub = SC.generate_server_key(c)
+        by = getattr(user, "username", "") or "system"
+        # a key exists from now on, but nothing on the server trusts it yet:
+        # Health must not read through it before the install is confirmed
+        _record_agent(c.slug, "pending", by=by, detail="agent key made; install not confirmed")
         from .audit import log_action
-        log_action("wsm.agent_key", target=c.slug,
-                   extra={"by": getattr(user, "username", "") or "system"})
-    return {"pubkey": pub, "from": ",".join(sorted(ha_node_ips())),
+        log_action("wsm.agent_key", target=c.slug, extra={"by": by})
+    return {"pubkey": pub, "from": ",".join(agent_sources(c)),
             "installer": (HOSTCTL / "install-satom-webctl.sh").read_text(),
             "agent": (HOSTCTL / "satom-webctl.py").read_text()}
+
+
+def agent_remove_args(args: dict) -> dict:
+    """What ``agent.remove`` sends: the installer this SATOM ships (run with
+    --uninstall) and whether to purge backups, log and certificates."""
+    from .wsm_transport import HOSTCTL
+    return {"installer": (HOSTCTL / "install-satom-webctl.sh").read_text(),
+            "purge": (args or {}).get("purge") is True}
+
+
+# --------------------------------------------------------------------------- #
+#  the agent's state, as SATOM knows it (SA-0028)                              #
+# --------------------------------------------------------------------------- #
+#: ``wsm.agent.<slug>`` = {"state", "at", "by", "detail", "key", "version"}.
+#: state: pending (key made, install not confirmed) | installed | failed |
+#: removed. No row = an agent installed by hand (Plugin Studio bundle) or
+#: before SA-0028: SATOM trusts a key it has, as it always did.
+AGENT_STATE_KEY = "wsm.agent."
+AGENT_ACTIONS = ("install", "reinstall", "remove")
+
+
+def _key_fp(pub: str) -> str:
+    import hashlib
+    parts = (pub or "").split()
+    return hashlib.sha256(" ".join(parts[:2]).encode()).hexdigest()[:16] if len(parts) >= 2 \
+        else ""
+
+
+def agent_record(slug: str) -> dict:
+    from . import settings_store as ST
+    raw = ST.get_json_checked(AGENT_STATE_KEY + slug, {}, dict)
+    return raw if isinstance(raw, dict) and raw is not ST.MALFORMED else {}
+
+
+def _record_agent(slug: str, state: str, *, by: str, detail: str = "", key: str = "",
+                  version: str = "") -> None:
+    from . import settings_store as ST
+    ST.set_json(AGENT_STATE_KEY + slug, {
+        "state": state, "at": datetime.utcnow().isoformat(timespec="seconds"),
+        "by": by or "system", "detail": (detail or "")[:400], "key": key,
+        "version": (version or "")[:32]})
+
+
+def agent_status(c) -> dict:
+    """``{"state", "usable", "why", "at", "by", "detail", "version", "key"}``:
+    whether SATOM may read through the agent, and if not, what to do.
+    state: none | pending | installed | unknown | failed | removed | stale."""
+    from . import studio_connections as SC
+    rec = agent_record(c.slug)
+    key = SC.has_secret(c.slug)
+    st = rec.get("state") or ""
+    when = (" (%s UTC, by %s)" % (str(rec.get("at", "")).replace("T", " "), rec.get("by"))
+            if rec.get("at") else "")
+    out = {"key": key, "at": rec.get("at") or "", "by": rec.get("by") or "",
+           "detail": rec.get("detail") or "", "version": rec.get("version") or ""}
+    if st == "removed":
+        return dict(out, state="removed", usable=False,
+                    why="the satom-webctl agent was removed from this server%s: install it "
+                        "again to read through it" % when)
+    if st == "failed":
+        return dict(out, state="failed", usable=False,
+                    why="the last install of the satom-webctl agent did not work%s: %s. "
+                        "Reinstall the agent" % (when, out["detail"] or "see the job"))
+    if not key:
+        return dict(out, state="none", usable=False,
+                    why="this server has no satom-webctl agent: install it (Overview > Agent)")
+    if st == "pending":
+        return dict(out, state="pending", usable=False,
+                    why="SATOM made an agent key for this server%s but no install with it "
+                        "was confirmed: install the agent" % when)
+    if st == "installed" and rec.get("key") and rec["key"] != _key_fp(SC.server_public_key(c)):
+        return dict(out, state="stale", usable=False,
+                    why="SATOM's agent key changed after the agent was installed%s: the "
+                        "server still trusts the old one. Reinstall the agent" % when)
+    return dict(out, state="installed" if st == "installed" else "unknown", usable=True,
+                why="")
+
+
+def after_install(c, res: dict, *, by: str, sources: str = "") -> dict:
+    """Record what an ``agent.install`` did, after CHECKING it: SATOM signs in
+    as the agent account with its key and asks ``info``. ``{"ok", "text",
+    "verified", "version"}``."""
+    from . import studio_connections as SC
+    from .studio_server import KeyRefused
+    if not res.get("ok"):
+        tail = [l for l in str(res.get("output") or "").splitlines() if l.strip()][-1:]
+        text = "the installer failed (exit %s)%s" % (res.get("exit_code"),
+                                                     ": " + tail[0][:200] if tail else "")
+        _record_agent(c.slug, "failed", by=by, detail=text)
+        return {"ok": False, "verified": False, "text": text}
+    user = c.username or "satom-mon"
+    try:
+        info = SC.server_call(c, "info")
+    except KeyRefused:
+        text = ("installed, but %s still refuses SATOM's key for %s: sshd does not let the "
+                "account in (AllowUsers, AllowGroups, DenyUsers, AuthorizedKeysFile -- see the "
+                "installer's warnings) or this node does not reach it from %s"
+                % (c.host, user, sources or "any address"))
+        _record_agent(c.slug, "failed", by=by, detail=text)
+        return {"ok": False, "verified": False, "text": text}
+    except Exception as exc:  # noqa: BLE001 -- the install worked; the check could not run
+        text = "installed; the check as %s could not run: %s" % (user, str(exc)[:200])
+        _record_agent(c.slug, "installed", by=by, detail=text,
+                      key=_key_fp(SC.server_public_key(c)))
+        ensure_agent_credential(c, by)
+        return {"ok": True, "verified": False, "text": text}
+    version = str((info or {}).get("version") or "")
+    _record_agent(c.slug, "installed", by=by, key=_key_fp(SC.server_public_key(c)),
+                  version=version)
+    ensure_agent_credential(c, by)
+    return {"ok": True, "verified": True, "version": version,
+            "text": "%s signs in with SATOM's key (satom-webctl %s)" % (user, version or "?")}
+
+
+def after_remove(c, res: dict, *, by: str, keep_key: bool = False) -> dict:
+    """Record what an ``agent.remove`` did, after CHECKING it: the server must
+    now refuse SATOM's agent key. Then SATOM forgets that key and the agent
+    credential -- nothing points at an agent that is gone -- unless the
+    removal is the first half of a reinstall (``keep_key``)."""
+    from . import studio_connections as SC
+    from .studio_server import KeyRefused
+    if not res.get("ok"):
+        left = ", ".join(res.get("left") or [])
+        text = "the removal did not finish (exit %s)%s" % (
+            res.get("exit_code"), "; still on the server: " + left if left else "")
+        return {"ok": False, "text": text}
+    text = "nothing to check: SATOM keeps no agent key for this server"
+    if SC.has_secret(c.slug):
+        try:
+            SC.server_call(c, "info")
+        except KeyRefused:
+            text = "%s now refuses SATOM's agent key" % c.host
+        except Exception as exc:  # noqa: BLE001 -- refused differently is still refused
+            text = "the agent no longer answers (%s)" % str(exc)[:160]
+        else:
+            return {"ok": False, "text": "%s STILL accepts SATOM's agent key: the account or "
+                                         "its key line is still there" % c.host}
+    if not keep_key:
+        row = WsmCredential.query.filter_by(connection_slug=c.slug, auth_type="agent").first()
+        if row is not None:
+            delete_credential(row)
+        SC.set_secret(c.slug, "")
+    _record_agent(c.slug, "removed", by=by,
+                  detail="kept the account (not created by the installer)"
+                  if res.get("after", {}).get("account") else "")
+    return {"ok": True, "text": text}
 
 
 def ensure_agent_credential(c, by: str = "system") -> WsmCredential | None:
@@ -600,6 +795,8 @@ def ensure_agent_credential(c, by: str = "system") -> WsmCredential | None:
     if not SC.has_secret(c.slug):
         return None
     row = WsmCredential.query.filter_by(connection_slug=c.slug, auth_type="agent").first()
+    if row is None and agent_record(c.slug).get("state") in ("pending", "failed", "removed"):
+        return None            # a key nothing on the server trusts is not a credential
     if row is None:
         row = WsmCredential(connection_slug=c.slug, name="satom-webctl agent",
                             ssh_user=c.username or "satom-mon", auth_type="agent",
@@ -715,10 +912,14 @@ def execute(slug: str, cred_id, op: str, args: dict | None = None, *, user,
     c = server(slug)
     args = {k: v for k, v in (args or {}).items() if not str(k).startswith("_")}
     sites = scope_gate(user, c, op, args)
+    keep_key = False
     if op == "agent.install":
         # Everything the installer receives is SATOM's, never the caller's:
         # the key, the nodes it is valid from and the two files.
         args, run_as = agent_install_args(c, user), "root"
+    elif op == "agent.remove":
+        keep_key = args.get("keep_key") is True
+        args, run_as = agent_remove_args(args), "root"
     if sites is not None and op in JAIL_OPS:
         roots = jail_roots(sites, slug)
         if not roots or any(s not in known_sites(slug) for s in sites):
@@ -732,8 +933,10 @@ def execute(slug: str, cred_id, op: str, args: dict | None = None, *, user,
         args["_jail"] = roots
     r = _execute(slug, cred_id, op, args, user=user, run_as=run_as, provided=provided,
                  timeout=timeout, mode=mode)
-    if op == "agent.install" and isinstance(r.get("result"), dict) and r["result"].get("ok"):
-        ensure_agent_credential(c, getattr(user, "username", "") or "system")
+    if op in ("agent.install", "agent.remove") and isinstance(r.get("result"), dict):
+        by = getattr(user, "username", "") or "system"
+        r["agent"] = after_install(c, r["result"], by=by, sources=args.get("from", "")) \
+            if op == "agent.install" else after_remove(c, r["result"], by=by, keep_key=keep_key)
     if op == "vhosts.list" and isinstance(r.get("result"), dict):
         remember_vhosts(slug, r["result"])
         if sites is not None:
@@ -906,6 +1109,140 @@ def start_job(app, slug: str, cred_id, op: str, args: dict, *, user, run_as: str
 
     jobs.run_async(app, job["id"], worker)
     return {"job_id": job["id"], "run_id": run_id}
+
+
+class AgentJobError(Exception):
+    """An agent install / reinstall / removal that did not end as asked."""
+
+
+def _astep(label: str, pct=None, ok: bool = True) -> None:
+    from . import job_progress
+    sink = job_progress.current()
+    if sink is None:
+        return
+    if ok:
+        sink.add_step(label[:160], percent=pct)
+    else:
+        sink._record(label[:160], "", None, ok=False, percent=pct)
+
+
+def _changes_text(changes) -> str:
+    return ("changed: " + ", ".join(changes)) if changes else "0 changes"
+
+
+def agent_plan(action: str) -> list[str]:
+    """The operations an agent action runs, in order."""
+    if action not in AGENT_ACTIONS:
+        raise WsmDenied("unknown agent action %s" % action)
+    return {"install": ["agent.install"], "remove": ["agent.remove"],
+            "reinstall": ["agent.remove", "agent.install"]}[action]
+
+
+def start_agent_job(app, slug: str, cred_id, action: str, *, user, provided: dict | None = None,
+                    purge: bool = False) -> dict:
+    """Install, reinstall (= remove + install) or remove the satom-webctl agent
+    as a job with visible steps. Every policy check happens NOW, in the
+    request: profile (webserver.system + webserver.root), scope, Allow
+    changes, a credential that can become root, its secrets."""
+    from . import jobs
+    provided = provided or {}
+    c = server(slug)
+    plan = agent_plan(action)
+    for op in plan:
+        check_op(user, op, elevated=True)
+        scope_gate(user, c, op, {})
+    cred = pick_credential(c, user, cred_id)
+    if cred.auth_type == "agent" or not cred.can_escalate:
+        raise WsmDenied("the agent is installed and removed as root: pick a credential of an "
+                        "account that may use sudo")
+    if not server_state(c)["allow_writes"]:
+        raise WsmDenied("%s is read-only in SATOM: turn on Allow changes on its server page"
+                        % c.name)
+    account = _account(cred, provided)                  # NeedSecret now, not in the worker
+    if cred.sudo_takes_password:
+        _sudo_password(cred, account, provided)
+    uid, uname, cid = user.id, user.username, cred.id
+    title = {"install": "Install the satom-webctl agent on %s",
+             "reinstall": "Reinstall the satom-webctl agent on %s",
+             "remove": "Remove the satom-webctl agent from %s"}[action] % c.name
+    job = jobs.create_job("wsm_agent_" + action, title, by=uname,
+                          meta={"server": slug, "action": action, "purge": bool(purge)})
+
+    def worker(app_, job_id):
+        from ..models import User
+        from . import job_progress
+        job_progress.bind(job_progress.JobSink(job_id, exclusive=False))
+        try:
+            with app_.app_context():
+                u = db.session.get(User, uid)
+                return run_agent_action(slug, cid, action, user=u, provided=provided,
+                                        purge=purge, job_id=job_id)
+        finally:
+            job_progress.unbind()
+
+    jobs.run_async(app, job["id"], worker)
+    return {"job_id": job["id"]}
+
+
+def run_agent_action(slug: str, cred_id, action: str, *, user, provided: dict | None = None,
+                     purge: bool = False, job_id: str = "") -> dict:
+    """The body of an agent job (also callable directly). Each operation is
+    followed by its post-check (services.wsm.after_install / after_remove);
+    one application audit line sums it up. Raises AgentJobError."""
+    from .audit import log_action
+    c = server(slug)
+    cred = pick_credential(c, user, cred_id)
+    out = {"server": slug, "action": action, "ok": False, "changes": 0}
+    plan = agent_plan(action)
+    _astep("Signing in to %s as %s and becoming root (sudo)" % (c.host, cred.ssh_user), 5)
+    try:
+        for i, op in enumerate(plan):
+            base = 10 + 80 * i // len(plan)
+            if op == "agent.remove":
+                _astep("Removing: install-satom-webctl.sh --uninstall%s"
+                       % (" --purge" if purge else ""), base)
+            else:
+                _astep("Installing: install-satom-webctl.sh with SATOM's agent key", base)
+            # a reinstall keeps SATOM's key: the same key goes back, so a second
+            # reinstall leaves the server exactly as the first one did
+            args = {"purge": purge, "keep_key": action == "reinstall"} \
+                if op == "agent.remove" else {}
+            r = execute(slug, cred_id, op, args, user=user, run_as="root", provided=provided,
+                        timeout=600)
+            res = r["result"] if isinstance(r.get("result"), dict) else {}
+            post = r.get("agent") or {"ok": False, "text": "no answer"}
+            key = "remove" if op == "agent.remove" else "install"
+            out[key] = {"exit_code": res.get("exit_code"), "changes": res.get("changes") or [],
+                        "left": res.get("left") or [], "output": res.get("output") or "",
+                        "before": res.get("before") or {}, "after": res.get("after") or {},
+                        "post_check": post.get("text", "")}
+            _astep("%s: exit %s · %s" % ("Removed" if key == "remove" else "Installed",
+                                          res.get("exit_code"), _changes_text(res.get("changes"))),
+                   base + 30, ok=bool(res.get("ok")))
+            _astep("Post-check: " + post.get("text", ""), base + 35, ok=bool(post.get("ok")))
+            if not post.get("ok"):
+                raise AgentJobError(post.get("text") or "%s did not finish" % op)
+        first, last = out[plan[0].split(".")[1]], out[plan[-1].split(".")[1]]
+        net = sorted(k for k in set(first["before"]) | set(last["after"])
+                     if first["before"].get(k) != last["after"].get(k))
+        out.update(changes=len(net), changed=net)
+        status = agent_status(c)
+        _astep("State now: agent %s · %s on the server" % (status["state"], _changes_text(net)),
+               98)
+        out.update(ok=True, state=status["state"])
+        return out
+    except AgentJobError as exc:
+        out["error"] = str(exc)
+        raise
+    except (WsmDenied, NeedSecret, T.WsmError) as exc:
+        out["error"] = str(exc)
+        _astep("FAILED: %s" % exc, None, ok=False)
+        raise AgentJobError(str(exc)) from None
+    finally:
+        log_action("wsm.agent.%s_job" % action, target=slug,
+                   extra={"ok": out["ok"], "changes": out["changes"], "job": job_id,
+                          "credential": cred.name, "purge": bool(purge),
+                          "error": out.get("error", "")[:200]})
 
 
 def _finish_run(run_id, *, ok, stdout="", stderr="", exit_code=None, effective="", sudo=False):

@@ -83,6 +83,56 @@ def _creds_payload(c) -> list[dict]:
     return out
 
 
+def _agent_payload(c) -> dict:
+    """The satom-webctl agent of this server as SATOM knows it, and what the
+    signed-in user may do about it (install / reinstall / remove)."""
+    st = W.agent_status(c)
+    return {k: st[k] for k in ("state", "usable", "why", "at", "by", "detail", "version", "key")} \
+        | {"can": W.can(current_user, W.SYSTEM_PERM) and W.can(current_user, W.ROOT_PERM),
+           "url": url_for("wsm.agent_job", slug=c.slug, action="ACTION")}
+
+
+def _texts() -> dict:
+    """The page script's own words for the agent panel (static/js/wsm.js has
+    no catalogue of its own: they are translated here)."""
+    from flask_babel import gettext as _
+    return {
+        "state_none": _("Not installed"), "state_pending": _("Install not confirmed"),
+        "state_installed": _("Installed"), "state_unknown": _("Installed (not checked by SATOM)"),
+        "state_failed": _("Install failed"), "state_removed": _("Removed"),
+        "state_stale": _("Key changed: reinstall"),
+        "install": _("Install agent"), "reinstall": _("Reinstall agent"),
+        "remove": _("Remove agent"),
+        "title_install": _("Install the satom-webctl agent"),
+        "title_reinstall": _("Reinstall the satom-webctl agent"),
+        "title_remove": _("Remove the satom-webctl agent"),
+        "confirm_install": _("SATOM runs install-satom-webctl.sh as root with its own agent key, "
+                             "valid only from the SATOM nodes. It creates the account satom-mon "
+                             "(no password, no shell), /usr/local/bin/satom-webctl, two sudo "
+                             "rules per web server (configuration test and reload) and ACLs on "
+                             "the site folders, then checks that satom-mon signs in with the key."),
+        "confirm_reinstall": _("SATOM removes the agent exactly as the installer added it, "
+                               "checks that the server refuses its key, installs it again with "
+                               "the same key and checks that satom-mon signs in. A second "
+                               "reinstall changes nothing."),
+        "confirm_remove": _("SATOM removes what the installer added: the program, its "
+                            "configuration, the sudo rules, the ACLs, SATOM's key and the "
+                            "account satom-mon if the installer created it. Then it checks that "
+                            "the server refuses the key, and forgets the key and the agent "
+                            "credential. Health falls back to a shared SSH credential."),
+        "purge": _("Also delete the agent's backups, log and certificates (kept while a site "
+                   "still uses one of its certificates)"),
+        "as_cred": _("Signs in as %(cred)s and becomes root (sudo).", cred="%s"),
+        "need_root": _("Pick a credential that can become root in Sign in as (not the agent "
+                       "itself)."),
+        "need_perm": _("Installing or removing the agent needs the permissions to manage the "
+                       "server and to run as root."),
+        "done": _("Done."), "failed": _("The agent job failed:"),
+        "fix": _("Fix it here:"), "read_ssh": _("Read over SSH instead, because:"),
+        "agent_title": _("satom-webctl agent"),
+    }
+
+
 def _chrome(c, page: str) -> dict:
     st = W.server_state(c)
     perms = {p: W.can(current_user, "webserver." + p)
@@ -98,7 +148,7 @@ def _chrome(c, page: str) -> dict:
                     "allow_writes": st["allow_writes"], "trusted": bool(st["host_key"]),
                     "credentials": _creds_payload(c), "perms": perms,
                     "base": url_for("wsm.server_home", slug=c.slug),
-                    "jail": jail}}
+                    "jail": jail, "agent": _agent_payload(c), "t": _texts()}}
 
 
 # --------------------------------------------------------------------------- #
@@ -315,7 +365,7 @@ def _health_payload(c) -> dict:
     return {"conf": dict(cfg, ignore_units="\n".join(cfg["ignore_units"])),
             "channel": {"via": ch["via"], "credential": ch["credential"].name
                         if ch["credential"] else "", "why": ch["why"]},
-            "agent_key": W.server_state(c)["agent_key"],
+            "agent_key": W.server_state(c)["agent_key"], "agent": _agent_payload(c),
             "eligible": [{"id": r.id, "name": r.name, "ssh_user": r.ssh_user}
                          for r in W.service_credentials(c.slug)],
             "last": rec, "can_configure": W.can(current_user, W.SYSTEM_PERM),
@@ -509,6 +559,32 @@ def job_start(slug, op):
                                                    "args", "domains")}
     return _call(slug, op, data, as_job=True, title=str(title)[:300], run_kind=kind,
                  run_meta=meta)
+
+
+@bp.route("/<slug>/agent/<action>", methods=["POST"])
+@login_required
+@require_permission(W.VIEW_PERM)
+def agent_job(slug, action):
+    """Install, reinstall or remove the satom-webctl agent (SA-0028), as a job
+    with steps. Who may, with which credential, is decided by
+    services.wsm.start_agent_job before anything leaves this node."""
+    _server_or_404(slug)
+    if action not in W.AGENT_ACTIONS:
+        abort(404)
+    data = request.get_json(silent=True) or {}
+    secrets = data.get("secrets") or {}
+    if not isinstance(secrets, dict):
+        return _json_error("bad request", 400)
+    try:
+        out = W.start_agent_job(current_app._get_current_object(), slug, data.get("cred"),
+                                action, user=current_user, provided=secrets,
+                                purge=data.get("purge") is True)
+    except W.NeedSecret as exc:
+        return jsonify({"ok": False, "need": exc.fields, "why": exc.why,
+                        "credential": exc.cred.name, "ssh_user": exc.cred.ssh_user}), 401
+    except W.WsmDenied as exc:
+        return _json_error(exc, 403)
+    return jsonify(dict(out, ok=True))
 
 
 @bp.route("/job/<job_id>")

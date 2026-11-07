@@ -374,7 +374,103 @@ def may_assign_kind(kind: str | None) -> bool:
     return bool(k) and k in {key for key, _ in creatable_kinds()}
 
 
+# ── device scope (2026-11-07): WHERE inside the ADOMs ───────────────────────
+_G_IDS = "_satom_allowed_appliance_ids"
+_G_DSCOPE = "_satom_device_scope"
+
+
+def device_scope_of(user):
+    """The device scope of ``user`` (``Profile.device_scope_map``); ``None`` =
+    no scope. An error reading it confines to NOTHING."""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return None
+    try:
+        return user.device_scope
+    except Exception:  # noqa: BLE001 -- fail closed, never open
+        from ..models import Profile
+        return dict(Profile.DEVICE_SCOPE_DENY)
+
+
+def _current_user():
+    try:
+        from flask_login import current_user
+        return current_user._get_current_object()
+    except Exception:  # noqa: BLE001 -- no login manager (bare test app)
+        return None
+
+
+def restricted_device_scope():
+    """Device scope of the signed-in user of this request (``None`` outside a
+    request, like :func:`restricted_adoms`: workers act on the whole fleet)."""
+    try:
+        if not has_request_context():
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    from flask import g
+    cached = getattr(g, _G_DSCOPE, _NOT_CACHED)
+    if cached is not _NOT_CACHED:
+        return cached
+    scope = device_scope_of(_current_user())
+    setattr(g, _G_DSCOPE, scope)
+    return scope
+
+
+def reachable_appliance_ids(adoms, scope) -> frozenset[int] | None:
+    """Every appliance id a profile with ``adoms`` and ``scope`` reaches;
+    ``None`` when neither restricts. Also what a job snapshots at enqueue."""
+    if adoms is None and scope is None:
+        return None
+    from ..models import Appliance
+    from . import device_scope as DS
+    return frozenset(a.id for a in Appliance.query.all() if DS.reaches(a, adoms, scope))
+
+
+def allowed_appliance_ids() -> frozenset[int] | None:
+    """The ONE answer to "which devices may the signed-in user reach": the
+    intersection of the profile's ADOMs and its device scope, cached for the
+    request. ``None`` = unrestricted (no ADOM confinement and no device
+    scope, or no request: workers act on the whole fleet)."""
+    try:
+        if not has_request_context():
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    from flask import g
+    cached = getattr(g, _G_IDS, _NOT_CACHED)
+    if cached is not _NOT_CACHED:
+        return cached
+    ids = reachable_appliance_ids(restricted_adoms(), restricted_device_scope())
+    setattr(g, _G_IDS, ids)
+    return ids
+
+
+def partial_chassis(appl) -> bool:
+    """The signed-in user reaches only SOME partitions of this device's box."""
+    from . import device_scope as DS
+    return DS.partial(appl, restricted_device_scope())
+
+
 def scope_appliance_query(query, kind_column):
+    """ADOM rule (:func:`_scope_appliance_query_adom`) plus, for a profile with
+    a device scope, only the appliances it reaches (an id is all a by-id
+    route needs to 404 a device outside the scope)."""
+    q = _scope_appliance_query_adom(query, kind_column)
+    if restricted_device_scope() is None:
+        return q
+    from ..models import Appliance
+    if getattr(kind_column, "class_", None) is not Appliance:
+        return q
+    ids = allowed_appliance_ids()
+    if ids is None:
+        return q
+    if not ids:
+        from sqlalchemy import false
+        return q.filter(false())
+    return q.filter(Appliance.id.in_(sorted(ids)))
+
+
+def _scope_appliance_query_adom(query, kind_column):
     """Scope an Appliance query by device KIND: a concrete ADOM sees only the
     boxes of its own product; the FortiWeb ADOM also sees NULL/'' kinds
     (FortiWeb-era by construction); Global/workers see all.
@@ -405,17 +501,12 @@ def scope_appliance_query(query, kind_column):
 
 def confined_appliance_ids() -> frozenset[int] | None:
     """Every appliance id the signed-in user's PROFILE reaches, whatever the
-    active ADOM is; ``None`` when the profile names no ADOM.
+    active ADOM is; ``None`` when the profile names no ADOM and has no device
+    scope (since 2026-11-07 it is :func:`allowed_appliance_ids`).
 
     For records that name several devices across ADOMs (a change request, an
     upgrade window): the per-ADOM rule shows such a record in every ADOM that
     owns ANY of its devices. A confined profile must not open one that also
     names a device outside its ADOMs — the page would list that device and
     could act on it."""
-    allowed = restricted_adoms()
-    if allowed is None:
-        return None
-    from ..models import Appliance
-    rows = (Appliance.query.with_entities(Appliance.id)
-            .filter(_allowed_clause(Appliance.kind, allowed)).all())
-    return frozenset(r[0] for r in rows)
+    return allowed_appliance_ids()

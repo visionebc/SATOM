@@ -83,6 +83,53 @@
     </div>
   </div>
 
+  <div class="fw-card mb-3" id="device-scope">
+    <div class="fw-card-header d-flex align-items-center gap-2">
+      <i class="bi bi-hdd-network text-accent"></i>
+      <strong>{{ _('Devices') }}</strong>
+    </div>
+    <div class="fw-card-body">
+      <p class="text-muted" style="font-size:12px;">
+        {{ _('Narrow each ADOM to some of its devices. In an ADOM with no device ticked the profile reaches all of them. Under a device, tick partitions (ADOMs of a FortiWeb or FortiADC, VDOMs of a FortiGate) to reach only those; with none ticked it reaches all of them, also the ones added later. With only some partitions, firmware, the backup vault and the console of that device are not available. The permissions above are the same on every device; this only decides where.') }}
+      </p>
+      {% for grp in scope_choices %}
+      {% set mine = (scope or {}).get(grp.adom) %}
+      <div class="ds-adom mb-2">
+        <div style="font-size:12.5px;"><strong>{{ grp.name }}</strong>
+          <span class="text-muted" style="font-size:11.5px;">· {{ _('all devices') if not mine else _('%(n)s selected', n=mine|length) }}</span>
+        </div>
+        {% if not grp.entries %}
+        <div class="text-muted" style="font-size:12px;">{{ _('No device registered.') }}</div>
+        {% endif %}
+        <div class="d-flex flex-column gap-1 ps-2">
+          {% for e in grp.entries %}
+          {% set ticked = mine and e.key in mine %}
+          <div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="dev_{{ grp.adom }}" value="{{ e.key }}"
+                     id="dev-{{ grp.adom }}-{{ loop.index }}" {{ 'checked' if ticked }} {{ 'disabled' if disabled }}>
+              <label class="form-check-label" for="dev-{{ grp.adom }}-{{ loop.index }}">{{ e.label }} <span class="text-muted" style="font-size:11.5px;">{{ e.host }}</span></label>
+            </div>
+            {% if e.parts %}
+            {% set parts = mine.get(e.key) if ticked else none %}
+            <div class="d-flex flex-wrap gap-2 ps-4">
+              {% for pt in e.parts %}
+              <div class="form-check form-check-inline" style="font-size:12px;">
+                <input class="form-check-input" type="checkbox" name="part_{{ grp.adom }}" value="{{ e.key }}{{ scope_sep }}{{ pt }}"
+                       id="part-{{ grp.adom }}-{{ loop.index }}-{{ pt }}" {{ 'checked' if parts and pt in parts }} {{ 'disabled' if disabled }}>
+                <label class="form-check-label" for="part-{{ grp.adom }}-{{ loop.index }}-{{ pt }}">{{ pt }}</label>
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
   {% if not disabled %}
   <div class="d-flex gap-2 mb-3">
     <button type="button" class="btn btn-sm btn-outline-secondary" data-js="set-perms" data-perms="true"><i class="bi bi-check2-all me-1"></i>{{ _('Select all') }}</button>

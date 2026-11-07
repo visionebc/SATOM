@@ -169,6 +169,14 @@ class User(db.Model, UserMixin):
         return None
 
     @property
+    def device_scope(self) -> dict | None:
+        """The device scope of the assigned profile (``Profile.device_scope_map``);
+        ``None`` for a user without one, like :attr:`allowed_adoms`."""
+        if self.profile is not None:
+            return self.profile.device_scope_map
+        return None
+
+    @property
     def permissions(self) -> set[str]:
         return self.effective_permissions
 
@@ -203,6 +211,14 @@ class Profile(db.Model):
     # services.product_scope — never compare this column directly.
     adoms = db.Column(db.Text, nullable=False, default="")
     is_system = db.Column(db.Boolean, nullable=False, default=False)
+    # Device scope (2026-11-07): WHERE inside its ADOMs. JSON
+    # ``{adom: {entry: null | [partition, ...]}}`` -- an entry is a chassis
+    # (services.device_scope.entry_key) or, in an ADOM of servers, a server;
+    # null = every partition (also the ones found later), a list = only those.
+    # An ADOM absent from the map keeps all its devices; '' = no scope at all.
+    # Read through ``device_scope_map`` and enforced by services.product_scope
+    # -- it only ever NARROWS what the ADOMs give, never widens it.
+    device_scope = db.Column(db.Text, nullable=False, default="", server_default="")
     #: ``console`` (the permission matrix decides) or ``apps`` (Apps only: the
     #: account reaches the Plugin Studio apps it is given and nothing else --
     #: services.apps_only). 2026-10-30.
@@ -269,6 +285,59 @@ class Profile(db.Model):
         keys = sorted({str(k).strip().lower() for k in (value or ())
                        if str(k).strip() and str(k).strip().lower() != "global"})
         self.adoms = json.dumps(keys) if keys else ""
+
+    #: What an unreadable device scope reads as: every ADOM confined to NO
+    #: device. A corrupted restriction must not widen access.
+    DEVICE_SCOPE_DENY = {"*": {}}
+
+    @property
+    def device_scope_map(self) -> dict | None:
+        """``{adom: {entry: frozenset(partitions) | None}}``; ``None`` = no
+        device scope (every device of the profile's ADOMs).
+
+        Fails closed like :attr:`adom_set`: anything that cannot be read is
+        :data:`DEVICE_SCOPE_DENY` (no device anywhere), never "everything"."""
+        raw = (self.device_scope or "").strip()
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            return dict(self.DEVICE_SCOPE_DENY)
+        if not isinstance(data, dict):
+            return dict(self.DEVICE_SCOPE_DENY)
+        out = {}
+        for adom, entries in data.items():
+            if not isinstance(adom, str) or not adom.strip() or not isinstance(entries, dict):
+                return dict(self.DEVICE_SCOPE_DENY)
+            ent = {}
+            for key, parts in entries.items():
+                if not isinstance(key, str) or not key.strip():
+                    return dict(self.DEVICE_SCOPE_DENY)
+                if parts is None:
+                    ent[key.strip()] = None
+                elif isinstance(parts, list) and all(isinstance(x, str) for x in parts):
+                    ent[key.strip()] = frozenset(x.strip().lower() for x in parts)
+                else:
+                    return dict(self.DEVICE_SCOPE_DENY)
+            out[adom.strip().lower()] = ent
+        return out or None
+
+    @device_scope_map.setter
+    def device_scope_map(self, value) -> None:
+        clean = {}
+        for adom, entries in (value or {}).items():
+            a = str(adom or "").strip().lower()
+            if not a or a == "global" or not entries:
+                continue
+            clean[a] = {str(k).strip(): (None if parts is None
+                                         else sorted({str(x).strip().lower()
+                                                      for x in parts if str(x).strip()}))
+                        for k, parts in entries.items() if str(k).strip()}
+            clean[a] = {k: v for k, v in clean[a].items() if v is None or v}
+            if not clean[a]:
+                del clean[a]
+        self.device_scope = json.dumps(clean, sort_keys=True) if clean else ""
 
     @property
     def effective(self) -> set[str]:

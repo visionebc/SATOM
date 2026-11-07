@@ -70,6 +70,17 @@ def require_device_scope(f):
                               visible_appliance_or_404, can_view_maintenance)
         appliance = visible_appliance_or_404(kwargs.get('id', args[0] if args else None),
                                              current_user)
+        from ..services.product_scope import partial_chassis
+        if partial_chassis(appliance):
+            # The profile reaches only some partitions of this box (device
+            # scope, 2026-11-07): a box-wide verb would reach the others.
+            msg = ('Firmware, the backup vault and the console act on the whole '
+                   'appliance. Your profile reaches only some of its ADOMs / VDOMs, '
+                   'so they are not available here.')
+            if request.is_json or request.accept_mimetypes.best == 'application/json':
+                return jsonify({'ok': False, 'error': msg, 'device_appliance_id': None}), 409
+            flash(msg, 'warning')
+            return redirect(url_for('appliances.detail', id=appliance.id))
         if owns_device_scope(appliance):
             return f(*args, **kwargs)
         owner = chassis_device_row(appliance)

@@ -54,6 +54,34 @@ def _adoms_beyond_actor(adoms: frozenset[str] | None) -> bool:
     return adoms is None or not set(adoms) <= mine
 
 
+def _posted_scope(adoms) -> dict:
+    from ..services import device_scope as DS
+    return DS.from_form(request.form, product_scope.device_products(), adoms)
+
+
+def _scope_beyond_actor(adoms, scope: dict) -> bool:
+    """True when the devices a profile with ``adoms`` and ``scope`` reaches
+    are not all devices the signed-in user reaches (and, like the ADOMs, an
+    actor with a device scope can never mint a profile without one)."""
+    from ..models import Profile
+    mine_scope = product_scope.device_scope_of(current_user)
+    if mine_scope is None:
+        return False
+    if not scope:
+        return True
+    tmp = Profile(name="_")
+    tmp.device_scope_map = scope
+    mine = product_scope.reachable_appliance_ids(product_scope.adoms_of(current_user),
+                                                 mine_scope) or frozenset()
+    theirs = product_scope.reachable_appliance_ids(adoms, tmp.device_scope_map) or frozenset()
+    return not set(theirs) <= set(mine)
+
+
+def _scope_text(scope) -> str:
+    from ..services import device_scope as DS
+    return DS.describe(scope)
+
+
 def _adom_names() -> dict[str, str]:
     return dict(product_scope.device_products())
 
@@ -128,11 +156,15 @@ def create():
 @require_permission(MANAGE)
 def edit(id):
     p = db.session.get(Profile, id) or abort(404)
+    from ..services import device_scope as DS
+    scope = p.device_scope_map
     return render_template(
         'profiles/edit.html',
         profile=p, areas=perm.AREAS, catalog=perm.GRANULAR_PERMISSIONS,
         selected=p.permission_set, user_count=_user_count(p.id),
         adom_choices=product_scope.device_products(),
+        scope_choices=DS.choices(product_scope.device_products()),
+        scope=scope, scope_sep=DS.PART_SEP,
     )
 
 
@@ -168,7 +200,12 @@ def edit_save(id):
     if _adoms_beyond_actor(new_adoms):
         flash('Refused: you cannot grant ADOMs you do not have yourself.', 'danger')
         return redirect(url_for('profiles.edit', id=id))
+    new_scope = _posted_scope(new_adoms)
+    if _scope_beyond_actor(new_adoms, new_scope):
+        flash('Refused: you cannot grant devices you do not reach yourself.', 'danger')
+        return redirect(url_for('profiles.edit', id=id))
     old_adoms = p.adom_set
+    old_scope = p.device_scope_map
     old_kind = p.kind or 'console'
     kind = request.form.get('kind', old_kind)
     p.name = name
@@ -177,6 +214,7 @@ def edit_save(id):
     p.kind = kind if kind in Profile.KINDS else old_kind
     p.permission_set = new_perms
     p.adom_set = new_adoms
+    p.device_scope_map = new_scope
     _sync_roles_for_profile(p)
 
     # Anti-lockout: simulate, then refuse if no admin-capable user remains.
@@ -192,7 +230,9 @@ def edit_save(id):
                extra={'perms': sorted(p.permission_set), 'kind': p.kind,
                       'kind_before': old_kind,
                       'adoms': sorted(new_adoms) if new_adoms else 'all',
-                      'adoms_before': sorted(old_adoms) if old_adoms else 'all'})
+                      'adoms_before': sorted(old_adoms) if old_adoms else 'all',
+                      'devices': _scope_text(p.device_scope_map),
+                      'devices_before': _scope_text(old_scope)})
     flash(f'Profile “{p.name}” updated.', 'success')
     return redirect(url_for('profiles.edit', id=id))
 
@@ -205,6 +245,9 @@ def clone(id):
     if _adoms_beyond_actor(src.adom_set):
         flash('Refused: that profile reaches ADOMs you do not have yourself.', 'danger')
         return redirect(url_for('profiles.index'))
+    if _scope_beyond_actor(src.adom_set, src.device_scope_map or {}):
+        flash('Refused: that profile reaches devices you do not reach yourself.', 'danger')
+        return redirect(url_for('profiles.index'))
     base = f'{src.name} copy'
     name = base
     n = 2
@@ -215,6 +258,7 @@ def clone(id):
                 kind=src.kind or "console")
     p.permission_set = src.permission_set
     p.adom_set = src.adom_set
+    p.device_scope = src.device_scope
     db.session.add(p)
     db.session.commit()
     log_action('profile.clone', target=name, extra={'source': src.name})

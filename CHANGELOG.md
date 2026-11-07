@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.8] - 2026-11-07
+
 ### Added
 - **Web Server Manager: a credential can reach root with `sudo -i -u root`.**
   Requested: on servers where the administrator signs in with their own

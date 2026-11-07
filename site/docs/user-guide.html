@@ -14379,7 +14379,10 @@ same operations are also signed plugins, for automations and other apps
      for it at <strong>every operation</strong> (the typed secret is used for that call and
      forgotten; "remember in this tab" keeps it only in the page's memory).
    - <em>When the account is not allowed</em>: never use sudo; <strong>sudo with a
-     password</strong> (the same as the SSH password, or asked every time); or
+     password</strong> (the same as the SSH password, or asked every time);
+     <strong>sudo -i -u root with a password</strong> for servers whose policy only lets
+     the account open root's login shell (for example, sign in as <code>ebc</code>, then
+     <code>sudo -i -u root</code> with the password of <code>ebc</code>; same password choices); or
      <strong>sudo without password</strong> when the server already has a NOPASSWD rule.
      SATOM never edits the sudo rules of the server and never stores a root
      password.

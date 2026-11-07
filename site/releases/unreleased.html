@@ -592,7 +592,8 @@
   reading (<code>host.health</code>, satom-webctl 1.2.0 / satom-wsm 2.1.0) never uses
   sudo and never writes; its answer passes the closed <code>HOST_HEALTH</code> schema of
   the ingestion gate. Thresholds per server (disk, inodes, free memory, swap,
-  load per CPU, ignored services by pattern); a bell for each new or worse
+  load per CPU -- not judged in a container, where the load average is the
+  host's -- ignored services by pattern); a bell for each new or worse
   problem and once on recovery; <em>unreachable</em> after two failed readings in a
   row. A failed reading writes <code>satom_scrape_up{collector="host_health"} 0</code>
   and nothing else. New scheduled action <em>Web Server Manager — server health</em>

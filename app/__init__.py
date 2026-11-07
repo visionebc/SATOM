@@ -2817,7 +2817,9 @@ def create_app(config_override: object | None = None) -> Flask:
             from .services import server_health as _sh
             from .services import wsm as _wsm_h
             with app.app_context():
-                if _wsm_h.module_active() and _wsm_h.servers():
+                # no module_active() here: at boot the ADOM registry may still
+                # be its fallback (no Linux ADOM) -- run_due() checks it per run
+                if _wsm_h.servers():
                     _sh.ensure_scheduled()
         except Exception:  # noqa: BLE001 — never block boot on housekeeping
             app.logger.exception("server health seed failed")

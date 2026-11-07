@@ -14619,7 +14619,9 @@ is a line in the Operations log (§48.4) with the credential it used.</p>
 (90 %), free memory warning and critical (15 % / 5 %), swap (80 %) and load
 per CPU over 5 minutes (2.0). Failed services always warn, except the ones
 listed under <em>Failed services that never alert</em> (one per line, <code>*</code> and <code>?</code>
-allowed, for example <code>apt-daily*.service</code>).</p>
+allowed, for example <code>apt-daily*.service</code>). In a container (LXC, Docker, …) the
+load average the server sees is usually its host's, so load is shown there
+but never judged.</p>
 <p><strong>The bell</strong> rings the administrators once for each <strong>new or worse</strong> problem
 and once when the server is <strong>healthy again</strong> — not at every reading. A
 server that cannot be read is <em>unreachable</em> and rings after <strong>two</strong> failed

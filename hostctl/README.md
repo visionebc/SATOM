@@ -124,7 +124,7 @@ within 30 s). Answer: `{"ok": true, "result": {...}}` or
 
 | Operation | Arguments | Result |
 |---|---|---|
-| `host.health` | — | (1.2.0+) the whole host, read without privilege from `/proc`, `statvfs()` and `systemctl list-units`: host name, kernel, CPUs, CPU busy % (two samples 0.5 s apart), load 1/5/15, uptime, memory and swap, file systems (size, used, inodes; pseudo file systems left out), process counts and the top processes by CPU and by memory (pid, user, name, state, CPU %, resident memory — never the command line), `proc_restricted` (hidepid) and every systemd service with its state. Answered on a `--read-only` host too |
+| `host.health` | — | (1.2.0+) the whole host, read without privilege from `/proc`, `statvfs()` and `systemctl list-units`: host name, kernel, CPUs, CPU busy % (two samples 0.5 s apart), load 1/5/15, uptime, memory and swap, file systems (size, used, inodes; pseudo file systems left out), process counts and the top processes by CPU and by memory (pid, user, name, state, CPU %, resident memory — never the command line), `proc_restricted` (hidepid), `container` (what `/run/systemd/container` says, empty otherwise) and every systemd service with its state. Answered on a `--read-only` host too |
 | `info` | — | version, servers and layouts, roots, `read_only`, `max_file_bytes`, `cert_dir`, `certs_ready`, `openssl` |
 | `vhosts.list` | — | every virtual host: server, name, enabled, server names, document roots, listen, ssl, size, mtime, `managed_root` |
 | `vhost.get` | `server`, `name` | the file's `content` and `sha256` |

@@ -12865,7 +12865,9 @@ is a line in the Operations log (§48.4) with the credential it used.
 (90 %), free memory warning and critical (15 % / 5 %), swap (80 %) and load
 per CPU over 5 minutes (2.0). Failed services always warn, except the ones
 listed under *Failed services that never alert* (one per line, `*` and `?`
-allowed, for example `apt-daily*.service`).
+allowed, for example `apt-daily*.service`). In a container (LXC, Docker, …) the
+load average the server sees is usually its host's, so load is shown there
+but never judged.
 
 **The bell** rings the administrators once for each **new or worse** problem
 and once when the server is **healthy again** — not at every reading. A

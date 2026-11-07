@@ -254,7 +254,8 @@ def evaluate(data: dict, cfg: dict) -> list[dict]:
             out.append({"key": "swap", "severity": "warning",
                         "text": "swap is %.0f %% used" % sw})
     cpus = max(1, int(data.get("cpus") or 1))
-    if data.get("load5", 0) / cpus >= float(cfg["load_warn"]):
+    # in a container /proc/loadavg is usually the host's: shown, not judged
+    if not data.get("container") and data.get("load5", 0) / cpus >= float(cfg["load_warn"]):
         out.append({"key": "load", "severity": "warning",
                     "text": "load %.2f over 5 minutes on %d CPU(s)" % (data["load5"], cpus)})
     for s in data.get("services") or []:

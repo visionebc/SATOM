@@ -387,6 +387,7 @@ HOST_HEALTH = Obj({
     "proc_restricted": Bool(),
     "systemd": Bool(),
     "services": List(SERVICE, max_items=2048),
+    "container": Str(max_len=32, pattern=r"([a-z0-9-]{1,32})?", required=False),
 })
 
 

@@ -1534,6 +1534,15 @@ def _units(conf):
     return True, out
 
 
+def _container():
+    """What systemd says this host runs in ('' = not a container / unknown)."""
+    try:
+        kind = _read("/run/systemd/container").strip().lower()
+    except OSError:
+        return ""
+    return kind if re.match(r"^[a-z0-9-]{1,32}$", kind) else "other"
+
+
 def op_host_health(conf, args):
     """One reading of the host: two CPU samples HEALTH_SAMPLE_S apart."""
     cpus = os.cpu_count() or 1
@@ -1562,6 +1571,9 @@ def op_host_health(conf, args):
         or not os.access("/proc/1/stat", os.R_OK),
         "systemd": systemd,
         "services": units,
+        # LXC/docker/...: /proc/loadavg is then usually the HOST's, so load is
+        # shown but not judged (SATOM's evaluate()).
+        "container": _container(),
     }
 
 

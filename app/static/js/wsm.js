@@ -1324,7 +1324,7 @@
       if (d) {
         var m = d.memory, used = m.total_bytes - m.available_bytes;
         nodes.push(el('div', { cls: 'wsm-grid mt-3' }, [
-          card('CPU and load', 'bi-cpu', [kv([['CPU busy', bar(d.cpu_pct, 80, 95)], ['CPUs', d.cpus], ['Load 1 / 5 / 15 min', d.load1.toFixed(2) + ' / ' + d.load5.toFixed(2) + ' / ' + d.load15.toFixed(2)], ['Load per CPU (5 min)', (d.load5 / d.cpus).toFixed(2) + ' (warning at ' + c.load_warn + ')']])]),
+          card('CPU and load', 'bi-cpu', [kv([['CPU busy', bar(d.cpu_pct, 80, 95)], ['CPUs', d.cpus], ['Load 1 / 5 / 15 min', d.load1.toFixed(2) + ' / ' + d.load5.toFixed(2) + ' / ' + d.load15.toFixed(2)], ['Load per CPU (5 min)', d.container ? 'not judged: in a container (' + d.container + ') the load is usually the host\'s' : (d.load5 / d.cpus).toFixed(2) + ' (warning at ' + c.load_warn + ')']])]),
           card('Memory', 'bi-memory', [kv([['Used', bar(pct(used, m.total_bytes), 100 - c.mem_warn, 100 - c.mem_crit)], ['Total', size(m.total_bytes)], ['Available', size(m.available_bytes)],
             ['Swap', m.swap_total_bytes ? size(m.swap_used_bytes || 0) + ' of ' + size(m.swap_total_bytes) : 'none']])]),
           card('System', 'bi-hdd-network', [kv([['Host name', d.hostname], ['Kernel', d.kernel], ['Up for', dur(d.uptime_s)], ['Processes', d.processes.counts.total + ' (' + d.processes.counts.running + ' running, ' + d.processes.counts.zombie + ' zombie)'],

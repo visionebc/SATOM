@@ -546,6 +546,19 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "AppID is flagged stale (services.appids). No device call.",
     ),
     ActionSpec(
+        "appid_reconcile", "AppIDs - bind server policies from their comments",
+        "admin", needs_targets=False,
+        summary="Compare every FortiWeb server policy (local store, last sync: no "
+                "device call) with the AppID its comment names, using Analysis > "
+                "App ID pattern (services.appids.reconcile). A policy whose "
+                "comment names a catalog AppID and that has no binding yet is "
+                "bound; a saved binding is never moved. Policies it cannot settle "
+                "-- a different saved AppID, an AppID the catalog lacks, no AppID "
+                "in the comment -- ring the administrators once each, with a "
+                "link to the review list in AppIDs > Assign policies. Created "
+                "from the AppIDs page; daily is plenty.",
+    ),
+    ActionSpec(
         "inventory_snapshot", "Record inventory snapshot (daily counts)",
         "admin", needs_targets=False,
         summary="Record today's fleet inventory counts (server policies, "
@@ -1256,6 +1269,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_stats(dry_run)
         if key == "appid_import":
             return _do_appid_import(params, dry_run)
+        if key == "appid_reconcile":
+            return _do_appid_reconcile(dry_run)
         if key == "inventory_snapshot":
             return _do_inventory_snapshot(dry_run)
         if key == "deep_monitor":
@@ -1587,6 +1602,23 @@ def _do_appid_import(params: dict, dry_run: bool) -> dict:
                                  created_by="scheduler")
     return {"ok": True, "summary": f"AppID import: {res.summary()}.",
             "log": json.dumps(res.as_dict())[:_LOG_MAX]}
+
+
+def _do_appid_reconcile(dry_run: bool) -> dict:
+    """Bind policies from their comments; ring what needs a person.
+    ``ok`` = the round ran (an unresolved policy is work, not a failure)."""
+    from . import appids as _appids
+    res = _appids.reconcile(dry_run=dry_run)
+    c = res["counts"]
+    summary = ("%s%d FortiWeb(s), %d policies: %d bound from the comment, "
+               "%d need a decision (%d different, %d not in catalog, %d no AppID)"
+               "%s" % ("[dry-run] " if dry_run else "", res["devices"],
+                       res["policies"], res["saved"], res["unresolved"],
+                       c["differs"], c["not_in_catalog"], c["no_appid"],
+                       ", %d new rung" % res["new_unresolved"]
+                       if res["new_unresolved"] else ""))
+    log = "\n".join(res["saved_rows"] + ["FAILED " + f for f in res["failed"]])
+    return {"ok": not res["failed"], "summary": summary, "log": log[:_LOG_MAX]}
 
 
 def _do_upgrade_prep(appliance, dry_run: bool) -> dict:

@@ -6,7 +6,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **AppIDs: an automatic check that binds policies from their comments and
+  asks you about the rest (SA-0025).** Requested: a button that creates the
+  schedule, the scheduler settling what it can by itself and sending the rest
+  to the notifications, a screen to resolve them from Analysis > Without App
+  ID, and a background run with a notice to come back later. **Create daily
+  automation** adds *AppIDs - bind server policies from their comments*
+  (System Automations, 06:40): it binds every policy whose comment names a
+  catalog AppID and has no binding yet (a saved binding is never moved) and
+  rings the administrators once per policy it cannot settle, with a link to
+  the new **Needs a decision** view. **Run the check in the background**
+  queues it for the scheduler and answers at once; the bell says when it
+  ends. The Analysis *Without App ID* card and table open that view. Reads
+  SATOM's local copy only: no device call.
+
 ### Fixed
+- **AppIDs: Assign policies froze the browser with "All FortiWeb devices"
+  (SA-0025).** Every row carried its own list of the whole AppID catalog, so
+  the page built rows x AppIDs elements, and rebuilt them on every key typed
+  in the filter. Rows now share one AppID list, the table shows 200 rows a
+  page and the filter waits for you to stop typing. The read itself was
+  already local (SATOM's copy, no FortiWeb call); it no longer loads each
+  saved binding's AppID one query at a time, and the catalog's policy counts
+  are computed once instead of once per AppID.
 - **An update ended with "route audit -- unmeasured: no such column
   profiles_1.device_scope" (SA-0024).** The audit that checks every page
   link after an update built the application on a leftover SQLite file

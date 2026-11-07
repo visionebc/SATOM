@@ -160,11 +160,30 @@
           <option value="bound">{{ _('Already saved') }}</option>
           <option value="not_in_catalog">{{ _('AppID not in the catalog') }}</option>
           <option value="no_appid">{{ _('No AppID in the comment') }}</option>
+          <option value="unresolved">{{ _('Needs a decision (different, not in catalog, no AppID)') }}</option>
         </select>
         <input id="cbFilter" class="form-control form-control-sm" style="width:220px" placeholder="{{ _('filter policy, comment, AppID') }}">
         <button type="button" class="btn btn-fw-outline btn-sm" id="cbRead"><i class="bi bi-arrow-repeat"></i> {{ _('Read comments') }}</button>
         <button type="button" class="btn btn-fw-primary btn-sm" id="cbSave" disabled><i class="bi bi-save"></i> {{ _('Save selected') }} (<span id="cbCount">0</span>)</button>
         <span class="text-muted small ms-auto" id="cbInfo"></span>
+      </div>
+      <div class="appid-toolbar mb-2 small" id="cbAuto">
+        <i class="bi bi-clock-history"></i>
+        {% if reconcile and reconcile.enabled %}
+          {{ _('Automation') }} <a href="{{ url_for('scheduled_actions.history', id=reconcile.id) }}">{{ reconcile.name }}</a>:
+          {{ _('last run') }} {{ reconcile.last_run.strftime('%Y-%m-%d %H:%M') ~ ' UTC (' ~ (reconcile.last_status or '-') ~ ')' if reconcile.last_run else _('never') }},
+          {{ _('next') }} {{ reconcile.next_run.strftime('%Y-%m-%d %H:%M') ~ ' UTC' if reconcile.next_run else '-' }}{% if reconcile.running_at %} &middot; <strong>{{ _('running now') }}</strong>{% endif %}.
+        {% else %}
+          <span class="text-muted">{{ _('No automation yet: SATOM can bind new policies from their comments every day and ring you for the ones it cannot settle.') }}</span>
+          <form method="POST" action="{{ url_for('appids.reconcile_schedule') }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-fw-outline btn-sm"><i class="bi bi-calendar-plus"></i> {{ _('Create daily automation') }}</button>
+          </form>
+        {% endif %}
+        <form method="POST" action="{{ url_for('appids.reconcile_run') }}" class="d-inline ms-auto">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-fw-outline btn-sm" title="{{ _('Bind every new policy whose comment names a catalog AppID and list the rest; runs in the background') }}"><i class="bi bi-play-circle"></i> {{ _('Run the check in the background') }}</button>
+        </form>
       </div>
       <div class="table-responsive">
         <table class="table table-sm mb-0 fw-table" id="cbTable">
@@ -172,6 +191,12 @@
           <tbody><tr><td colspan="8" class="text-muted p-3">{{ _('Press Read comments.') }}</td></tr></tbody>
         </table>
       </div>
+      <div class="appid-toolbar mt-2 small" id="cbPager" hidden>
+        <button type="button" class="btn btn-fw-outline btn-sm" id="cbPrev"><i class="bi bi-chevron-left"></i></button>
+        <span id="cbPageInfo"></span>
+        <button type="button" class="btn btn-fw-outline btn-sm" id="cbNext"><i class="bi bi-chevron-right"></i></button>
+      </div>
+      <datalist id="cbAppidList">{% for a in catalog %}<option value="{{ a.app_id }}" label="{{ a.customer or '' }}"></option>{% endfor %}</datalist>
     </div>
 
     <div class="fw-card p-3 mb-3">
@@ -541,38 +566,53 @@
   var CB_STATE = { bound: ['saved', 'fw-badge-success'], proposed: ['new', 'fw-badge-info'], differs: ['different', 'fw-badge-warning'],
                    not_in_catalog: ['not in catalog', 'fw-badge-danger'], no_appid: ['no AppID', 'fw-badge-secondary'], manual: ['saved by hand', 'fw-badge-secondary'] };
   function cbKey(r) { return r.appliance_id + '|' + r.policy; }
+  // SA-0025: one shared <datalist> for the AppID editor and 200 rows a page.
+  // A <select> holding the whole catalog in EVERY row (rows x AppIDs nodes)
+  // froze the browser on "All FortiWeb devices".
+  var CB_PAGE = 200, cbPage = 0, cbTimer = null, CAT_ID = {}, CAT_NAME = {};
+  CATALOG.forEach(function (a) { CAT_ID[String(a.app_id).toLowerCase()] = a.id; CAT_NAME[a.id] = a.app_id; });
+  var UNRESOLVED = { differs: 1, not_in_catalog: 1, no_appid: 1 };
+  function cbPk(r) { return r.choice !== undefined ? r.choice : (r.found_pk || r.bound_pk || ''); }
   function cbShown() {
     var st = document.getElementById('cbState').value, q = document.getElementById('cbFilter').value.toLowerCase();
     return CB.filter(function (r) {
       if (st === 'todo' && r.state !== 'proposed' && r.state !== 'differs') return false;
-      if (st && st !== 'todo' && r.state !== st && !(st === 'bound' && r.state === 'manual')) return false;
+      if (st === 'unresolved' && !UNRESOLVED[r.state]) return false;
+      if (st && st !== 'todo' && st !== 'unresolved' && r.state !== st && !(st === 'bound' && r.state === 'manual')) return false;
       return !q || (r.policy + ' ' + r.comment + ' ' + r.found + ' ' + r.bound_app_id + ' ' + r.device).toLowerCase().indexOf(q) >= 0;
     });
   }
   function cbDraw() {
     var tb = document.querySelector('#cbTable tbody'); tb.innerHTML = '';
-    var rows = cbShown();
-    rows.forEach(function (r) {
-      var k = cbKey(r);
-      var sel = el('select', { cls: 'form-select form-select-sm' }, [el('option', { value: '', text: '—' })].concat(CATALOG.map(function (a) {
-        return el('option', { value: String(a.id), text: a.app_id + (a.customer ? ' — ' + a.customer : '') });
-      })));
-      sel.value = String(r.choice != null ? r.choice : (r.found_pk || r.bound_pk || ''));
+    var rows = cbShown(), pages = Math.max(1, Math.ceil(rows.length / CB_PAGE));
+    if (cbPage >= pages) cbPage = pages - 1;
+    var frag = document.createDocumentFragment();
+    rows.slice(cbPage * CB_PAGE, (cbPage + 1) * CB_PAGE).forEach(function (r) {
+      var k = cbKey(r), pk = cbPk(r);
+      var inp = el('input', { cls: 'form-control form-control-sm mono', list: 'cbAppidList', placeholder: '—', value: pk ? (CAT_NAME[pk] || '') : '' });
       var cb = el('input', { type: 'checkbox', cls: 'form-check-input' });
-      cb.checked = !!cbSel[k]; cb.disabled = !sel.value;
+      cb.checked = !!cbSel[k]; cb.disabled = !pk;
       cb.addEventListener('change', function () { if (cb.checked) cbSel[k] = true; else delete cbSel[k]; cbSync(); });
-      sel.addEventListener('change', function () {
-        r.choice = sel.value ? Number(sel.value) : '';
-        cb.disabled = !sel.value;
-        if (sel.value && Number(sel.value) !== r.bound_pk) { cb.checked = true; cbSel[k] = true; } else { cb.checked = false; delete cbSel[k]; }
+      inp.addEventListener('change', function () {
+        var v = inp.value.trim(), id = v ? CAT_ID[v.toLowerCase()] : '';
+        inp.classList.toggle('is-invalid', !!v && !id);
+        r.choice = id || '';
+        cb.disabled = !id;
+        if (id && id !== r.bound_pk) { cb.checked = true; cbSel[k] = true; } else { cb.checked = false; delete cbSel[k]; }
         cbSync();
       });
       var st = CB_STATE[r.state] || [r.state, 'fw-badge-secondary'];
-      tb.appendChild(el('tr', {}, [el('td', {}, [cb]), el('td', { text: r.device }), el('td', { cls: 'mono', text: r.policy }),
+      frag.appendChild(el('tr', {}, [el('td', {}, [cb]), el('td', { text: r.device }), el('td', { cls: 'mono', text: r.policy }),
         el('td', { cls: 'cb-comment small', title: r.comment, text: r.comment || '—' }), el('td', { cls: 'mono', text: r.found || '—' }),
-        el('td', { cls: 'mono', text: r.bound_app_id || '—' }), el('td', {}, [sel]), el('td', {}, [el('span', { cls: 'fw-badge ' + st[1], text: st[0] })])]));
+        el('td', { cls: 'mono', text: r.bound_app_id || '—' }), el('td', {}, [inp]), el('td', {}, [el('span', { cls: 'fw-badge ' + st[1], text: st[0] })])]));
     });
+    tb.appendChild(frag);
     if (!rows.length) tb.appendChild(el('tr', {}, [el('td', { colspan: '8', cls: 'text-muted p-3', text: CB.length ? 'No policy in this view.' : 'No server policy in the local store for these devices.' })]));
+    var pager = document.getElementById('cbPager');
+    pager.hidden = rows.length <= CB_PAGE;
+    document.getElementById('cbPageInfo').textContent = 'Rows ' + (rows.length ? cbPage * CB_PAGE + 1 : 0) + '–' + Math.min(rows.length, (cbPage + 1) * CB_PAGE) + ' of ' + rows.length;
+    document.getElementById('cbPrev').disabled = cbPage === 0;
+    document.getElementById('cbNext').disabled = cbPage >= pages - 1;
     var n = {}; CB.forEach(function (r) { n[r.state] = (n[r.state] || 0) + 1; });
     document.getElementById('cbInfo').textContent = CB.length + ' policies: ' + (n.proposed || 0) + ' new, ' + (n.differs || 0) + ' different, ' + ((n.bound || 0) + (n.manual || 0)) + ' saved, ' + (n.not_in_catalog || 0) + ' not in catalog, ' + (n.no_appid || 0) + ' without AppID.';
     cbSync();
@@ -581,36 +621,39 @@
     var n = Object.keys(cbSel).length;
     document.getElementById('cbCount').textContent = n;
     document.getElementById('cbSave').disabled = !n;
-    var rows = cbShown().filter(function (r) { return r.choice !== '' && (r.choice || r.found_pk || r.bound_pk); });
+    var rows = cbShown().filter(function (r) { return cbPk(r); });
     document.getElementById('cbAll').checked = rows.length > 0 && rows.every(function (r) { return cbSel[cbKey(r)]; });
   }
   function cbLoad() {
     var dev = document.getElementById('cbDevice').value;
-    document.querySelector('#cbTable tbody').innerHTML = '<tr><td colspan="8" class="text-muted p-3">Reading…</td></tr>';
+    document.querySelector('#cbTable tbody').innerHTML = '<tr><td colspan="8" class="text-muted p-3">Reading the local copy…</td></tr>';
     fetch(URLS.cb + (dev ? '?appliance_id=' + encodeURIComponent(dev) : ''), { headers: { 'Accept': 'application/json' } })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (j.error) { alert(j.error); return; }
-        CB = j.rows || []; cbSel = {};
+        CB = j.rows || []; cbSel = {}; cbPage = 0;
         CB.forEach(function (r) { if (r.state === 'proposed') cbSel[cbKey(r)] = true; });   // new matches start ticked
         cbDraw();
       }).catch(function (e) { alert('Could not read the policies: ' + e); });
   }
   document.getElementById('cbRead').addEventListener('click', cbLoad);
   document.getElementById('cbDevice').addEventListener('change', cbLoad);
-  document.getElementById('cbState').addEventListener('change', cbDraw);
-  document.getElementById('cbFilter').addEventListener('input', cbDraw);
+  document.getElementById('cbState').addEventListener('change', function () { cbPage = 0; cbDraw(); });
+  document.getElementById('cbFilter').addEventListener('input', function () {
+    clearTimeout(cbTimer); cbTimer = setTimeout(function () { cbPage = 0; cbDraw(); }, 250);
+  });
+  document.getElementById('cbPrev').addEventListener('click', function () { if (cbPage > 0) { cbPage--; cbDraw(); } });
+  document.getElementById('cbNext').addEventListener('click', function () { cbPage++; cbDraw(); });
   document.getElementById('cbAll').addEventListener('change', function (e) {
     cbShown().forEach(function (r) {
-      var pk = r.choice !== undefined ? r.choice : (r.found_pk || r.bound_pk);
-      if (!pk) return;
+      if (!cbPk(r)) return;
       if (e.target.checked) cbSel[cbKey(r)] = true; else delete cbSel[cbKey(r)];
     });
     cbDraw();
   });
   document.getElementById('cbSave').addEventListener('click', function () {
     var items = CB.filter(function (r) { return cbSel[cbKey(r)]; }).map(function (r) {
-      return { appliance_id: r.appliance_id, server_policy: r.policy, app_id_pk: r.choice !== undefined && r.choice !== '' ? r.choice : (r.found_pk || r.bound_pk) };
+      return { appliance_id: r.appliance_id, server_policy: r.policy, app_id_pk: cbPk(r) };
     }).filter(function (i) { return i.app_id_pk; });
     if (!items.length) return;
     postJSON(URLS.bind, { items: items }).then(function (j) {
@@ -627,6 +670,9 @@
   if (window.location.hash === '#assign') {
     var t = document.querySelector('[data-bs-target="#tab-assign"]');
     if (t) bootstrap.Tab.getOrCreateInstance(t).show();
+    // ?review=unresolved: the bell and Analysis > Without App ID land here.
+    var review = new URLSearchParams(window.location.search).get('review');
+    if (review && document.querySelector('#cbState option[value="' + review.replace(/[^a-z_]/g, '') + '"]')) document.getElementById('cbState').value = review;
     cbLoad();
   }
 })();

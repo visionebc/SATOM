@@ -559,7 +559,10 @@ def comment_bindings(appliances: list[Appliance]) -> list[dict[str, Any]]:
     from . import read_layer
     from .analysis import appid_pattern, extract_appid
     pat = appid_pattern()
-    cat = {a.app_id.lower(): a for a in AppId.query.all()}
+    every = AppId.query.all()
+    cat = {a.app_id.lower(): a for a in every}
+    by_pk = {a.id: a.app_id for a in every}
+    # One query each, no lazy load per row: SA-0025 (thousands of policies).
     binds = {(b.appliance_id, b.server_policy): b for b in AppIdPolicy.query.all()}
     out: list[dict[str, Any]] = []
     for appl in appliances:
@@ -588,10 +591,149 @@ def comment_bindings(appliances: list[Appliance]) -> list[dict[str, Any]]:
                 "comment": comment[:300], "found": found,
                 "found_pk": match.id if match else None,
                 "bound_pk": bound.app_id_id if bound else None,
-                "bound_app_id": bound.app.app_id if bound is not None and bound.app else "",
+                "bound_app_id": by_pk.get(bound.app_id_id, "") if bound is not None else "",
                 "state": state,
             })
     return out
+
+
+#: Scheduled action that keeps the bindings in step with the comments.
+RECONCILE_ACTION = "appid_reconcile"
+RECONCILE_NAME = "AppIDs - bind server policies from their comments"
+RECONCILE_SCHEDULE = {"time": "06:40"}
+#: States the reconcile cannot settle by itself: an operator decides.
+UNRESOLVED = ("differs", "not_in_catalog", "no_appid")
+#: AppSetting: short hashes of the unresolved rows already rung, so the bell
+#: rings for what is NEW, not for the same list every day.
+_RINGED_KEY = "appid.reconcile.ringed"
+#: AppSetting: the user who asked for a background run (rung when it ends).
+REQUESTED_BY_KEY = "appid.reconcile.requested_by"
+RESOLVE_LINK = "/web/appids/?review=unresolved#assign"
+
+
+def _row_hash(r: dict[str, Any]) -> str:
+    import hashlib
+    raw = "%s|%s|%s|%s" % (r["appliance_id"], r["policy"], r["state"], r["found"])
+    return hashlib.sha1(raw.encode()).hexdigest()[:10]
+
+
+def reconcile(*, dry_run: bool = False, by: str = "scheduler",
+              notify: bool = True) -> dict[str, Any]:
+    """Compare every FortiWeb server policy (local store, no device call) with
+    the AppID its comment names and settle what needs no judgement.
+
+    * ``proposed`` (the comment names a catalog AppID, nothing saved yet) is
+      SAVED -- the same binding the operator would save from Assign policies.
+    * ``differs``, ``not_in_catalog`` and ``no_appid`` need a person: they are
+      counted and, the first time each one shows up, rung to the
+      administrators with a link to the review list (``RESOLVE_LINK``).
+    * A saved binding is never moved: the binding table stays the authority.
+    """
+    from .audit import log_action
+    appls = Appliance.query.filter_by(kind="fortiweb").order_by(Appliance.name).all()
+    rows = comment_bindings(appls)
+    saved, failed = [], []
+    for r in rows:
+        if r["state"] != "proposed" or not r["found_pk"]:
+            continue
+        if dry_run:
+            saved.append(r)
+            continue
+        try:
+            assign(app_id_pk=r["found_pk"], appliance_id=r["appliance_id"],
+                   server_policy=r["policy"], by=by)
+        except ValueError as exc:
+            failed.append("%s/%s: %s" % (r["device"], r["policy"], exc))
+            continue
+        log_action("appid.assign", target=r["policy"],
+                   extra={"app_id_pk": r["found_pk"], "appliance_id": r["appliance_id"],
+                          "from": "comment", "by": by})
+        saved.append(r)
+    open_rows = [r for r in rows if r["state"] in UNRESOLVED]
+    counts = {st: sum(1 for r in open_rows if r["state"] == st) for st in UNRESOLVED}
+    out = {"devices": len(appls), "policies": len(rows), "saved": len(saved),
+           "failed": failed, "unresolved": len(open_rows), "counts": counts,
+           "new_unresolved": 0, "rung": 0, "dry_run": dry_run,
+           "saved_rows": ["%s/%s -> %s" % (r["device"], r["policy"], r["found"])
+                          for r in saved]}
+    if dry_run:
+        return out
+    before = set(settings_store.get_json(_RINGED_KEY, []) or [])
+    now = {_row_hash(r) for r in open_rows}
+    fresh = now - before
+    out["new_unresolved"] = len(fresh)
+    # Keep only what is still open: a row that is settled and comes back
+    # rings again.
+    settings_store.set_json(_RINGED_KEY, sorted(now))
+    if notify:
+        from . import notifications as notify_svc
+        from .alerts import _admin_ids
+        body = ("%d different from the saved binding, %d naming an AppID the "
+                "catalog lacks, %d without an AppID in the comment."
+                % (counts["differs"], counts["not_in_catalog"], counts["no_appid"]))
+        if fresh:
+            out["rung"] = notify_svc.push_many(
+                _admin_ids(), "AppIDs: %d server polic%s need%s you"
+                % (len(fresh), "y" if len(fresh) == 1 else "ies",
+                   "s" if len(fresh) == 1 else ""),
+                kind="warning", body=body, link=RESOLVE_LINK, product="fortiweb")
+        requester = settings_store.get_str(REQUESTED_BY_KEY)
+        if requester:
+            settings_store.set_str(REQUESTED_BY_KEY, "")
+            try:
+                notify_svc.push(int(requester), "AppIDs: background check finished",
+                                kind="info", link=RESOLVE_LINK, product="fortiweb",
+                                body="%d policies read, %d bindings saved from the "
+                                     "comments, %d need a decision. %s"
+                                     % (len(rows), len(saved), len(open_rows), body))
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
+def reconcile_row():
+    """The scheduled row of :data:`RECONCILE_ACTION`, or ``None``."""
+    from ..models import ScheduledAction
+    return (ScheduledAction.query.filter_by(action=RECONCILE_ACTION)
+            .order_by(ScheduledAction.id).first())
+
+
+def ensure_reconcile_schedule(by: str = "") -> tuple[Any, bool]:
+    """The reconcile's scheduled row, created (daily) or re-enabled.
+    Returns ``(row, created)``. Idempotent: never a second row."""
+    from ..models import ScheduledAction
+    from . import scheduled_actions as sa
+    from .scheduler import compute_next_run
+    row = reconcile_row()
+    created = row is None
+    if created:
+        row = ScheduledAction(
+            name=RECONCILE_NAME, scope="admin", product="fortiweb",
+            action=RECONCILE_ACTION, targets="[]", params="{}",
+            schedule_kind="daily", schedule=json.dumps(RECONCILE_SCHEDULE),
+            enabled=True, catch_up=True, created_by=(by or "")[:64])
+        db.session.add(row)
+    if created or not row.enabled:
+        row.enabled = True
+        row.next_run = compute_next_run(row.schedule_kind,
+                                        json.loads(row.schedule or "{}"),
+                                        tz=sa._configured_tz())
+    db.session.commit()
+    return row, created
+
+
+def queue_reconcile_now(user_id: int | None, by: str = "") -> tuple[Any, bool]:
+    """Ask the scheduler to run the reconcile at its next tick (<= 1 min),
+    off the request: the page answers at once. Returns ``(row, queued)``;
+    ``queued`` is False while a run is already in progress."""
+    row, _created = ensure_reconcile_schedule(by)
+    if row.running_at is not None:
+        return row, False
+    row.next_run = datetime.utcnow()
+    db.session.commit()
+    if user_id:
+        settings_store.set_str(REQUESTED_BY_KEY, str(int(user_id)))
+    return row, True
 
 
 def binding_for(appliance_id: int, server_policy: str) -> AppIdPolicy | None:

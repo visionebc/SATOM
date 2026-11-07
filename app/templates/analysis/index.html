@@ -201,7 +201,8 @@
     <div class="ana-scroll"><table class="ana-tbl" id="tAppid">
       <thead><tr><th>{{ _('App ID') }}</th><th>{{ _('Policies') }}</th><th>{{ _('Devices') }}</th><th>{{ _('Policy names') }}</th></tr></thead><tbody></tbody></table></div></div>
 </div>
-<div class="ana-panel wide"><h3>{{ _('Server policies WITHOUT an App ID') }} <span id="noAppidN" style="opacity:.5"></span></h3>
+<div class="ana-panel wide"><h3>{{ _('Server policies WITHOUT an App ID') }} <span id="noAppidN" style="opacity:.5"></span>
+  {% if may_open('appids.index') %}<a id="noAppidFix" class="btn btn-fw-outline btn-sm ms-2" href="{{ url_for('appids.index', review='unresolved') }}#assign"><i class="bi bi-wrench"></i> {{ _('Resolve in AppIDs') }}</a>{% endif %}</h3>
   <div class="ana-scroll"><table class="ana-tbl" id="tNoAppid">
     <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Policy') }}</th><th>{{ _('Comment') }}</th></tr></thead><tbody></tbody></table></div>
 </div>

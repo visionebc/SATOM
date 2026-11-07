@@ -55,8 +55,10 @@
     });
   }
 
-  function card(k, v, cls) {
-    return '<div class="ana-card ' + (cls || "") + '"><div class="v">' + v + '</div><div class="k">' + esc(k) + '</div></div>';
+  function card(k, v, cls, href) {
+    var inner = '<div class="v">' + v + '</div><div class="k">' + esc(k) + '</div>';
+    if (href) return '<a class="ana-card ' + (cls || "") + '" style="text-decoration:none;color:inherit" href="' + esc(href) + '" title="Resolve in AppIDs">' + inner + '</a>';
+    return '<div class="ana-card ' + (cls || "") + '">' + inner + '</div>';
   }
 
   function rows(tbodyId, arr, fn) {
@@ -81,7 +83,9 @@
       card("Services", s.services),
       card("tlog enabled", s.tlog_enabled),
       card("App IDs", s.appids),
-      card("Without App ID", s.policies_without_appid, s.policies_without_appid ? "warn" : ""),
+      // SA-0025: the card leads to the screen where they are resolved.
+      card("Without App ID", s.policies_without_appid, s.policies_without_appid ? "warn" : "",
+           $("noAppidFix") ? $("noAppidFix").getAttribute("href") : ""),
       card("Exceptions", s.exceptions),
       card("Dup. exceptions", s.exception_duplicates, s.exception_duplicates ? "bad" : ""),
       card("Segments", s.segments),

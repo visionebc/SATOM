@@ -264,6 +264,7 @@ ACTION_CAPABILITY = {
     "cert_lifecycle": "maintenance",
     "upgrade_prep": "maintenance",
     "appid_import": "maintenance",
+    "appid_reconcile": "maintenance",
     "custom_rest": "maintenance",
     # read/report style
     "stats": "reports",

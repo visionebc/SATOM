@@ -48,11 +48,14 @@ def index():
     bindings = [dict(b.to_dict(), device=names.get(b.appliance_id, ""))
                 for b in svc.AppIdPolicy.query.all()]
     catalog = svc.catalog()
+    from collections import Counter
     from ..services.analysis import appid_regex_raw
+    per_appid = Counter(b.get("app_id_id") for b in bindings)
     return render_template(
         "appids/index.html",
         catalog=catalog,
-        catalog_rows=[_row(a, bindings) for a in catalog],
+        catalog_rows=[_row(a, per_appid) for a in catalog],
+        reconcile=svc.reconcile_row(),
         columns=svc.columns(),
         mapping=mapping,
         source=src,
@@ -71,12 +74,12 @@ def _appliances():
             .order_by(Appliance.name).all())
 
 
-def _row(a, bindings) -> dict:
+def _row(a, per_appid) -> dict:
     status = "stale" if a.stale else ("active" if a.active else "inactive")
     return {"id": a.id, "app_id": a.app_id, "customer": a.customer or "",
             "label": a.label or "", "rate": a.rate or "", "source": a.source,
             "status": status, "stale_reason": a.stale_reason or "",
-            "policies": sum(1 for b in bindings if b.get("app_id_id") == a.id),
+            "policies": per_appid.get(a.id, 0),
             "extra": {str(k): str(v) for k, v in a.extra_dict.items()}}
 
 
@@ -184,6 +187,37 @@ def comment_bindings():
         if not appls:
             return jsonify({"error": "no such device"}), 404
     return jsonify({"rows": svc.comment_bindings(appls)})
+
+
+@bp.route("/reconcile/schedule", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def reconcile_schedule():
+    """Create (or re-enable) the daily AppID reconcile automation."""
+    row, created = svc.ensure_reconcile_schedule(_who())
+    log_action("appid.reconcile_schedule", target=row.name,
+               extra={"id": row.id, "created": created})
+    flash(f"Automation \"{row.name}\" {'created' if created else 'is on'}: it "
+          f"runs every day at {svc.RECONCILE_SCHEDULE['time']} (System Automations).",
+          "success")
+    return redirect(url_for("appids.index") + "#assign")
+
+
+@bp.route("/reconcile/run", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def reconcile_run():
+    """Queue the reconcile for the scheduler (background, <= 1 min): the page
+    never waits on it -- SA-0025, the browser hung on a fleet-wide read."""
+    row, queued = svc.queue_reconcile_now(getattr(current_user, "id", None), _who())
+    log_action("appid.reconcile_run", target=row.name, extra={"queued": queued})
+    if queued:
+        flash("The check runs in the background: the scheduler starts it within "
+              "a minute. Come back later -- the bell tells you when it ends and "
+              "its result is in the automation's history.", "info")
+    else:
+        flash("The check is already running in the background.", "warning")
+    return redirect(url_for("appids.index") + "#assign")
 
 
 @bp.route("/bind-bulk", methods=["POST"])

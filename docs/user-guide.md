@@ -6847,8 +6847,21 @@ change.
 lists every FortiWeb server policy (SATOM's local copy, no device call) with the
 AppID its comment names -- the Analysis **App ID pattern**, `app\d{5}` by
 default -- the AppID saved today and a state (new, different, saved, not in
-catalog, no AppID). New matches start ticked; change any row's AppID and
-**Save selected**. The comment is only read; the binding remains the authority.
+catalog, no AppID). New matches start ticked; type or pick any row's AppID
+and **Save selected**. The comment is only read; the binding remains the
+authority. The list shows 200 rows a page and every row shares one AppID list,
+so *All FortiWeb devices* stays responsive on a large fleet.
+
+**The automatic check.** **Create daily automation** adds the System
+Automation *AppIDs - bind server policies from their comments* (06:40 every
+day). Each run binds the policies whose comment names a catalog AppID and that
+have no binding yet -- a saved binding is never moved -- and rings the
+administrators, once per policy, for the ones it cannot settle (a different
+saved AppID, an AppID the catalog lacks, no AppID in the comment). The bell
+opens the **Needs a decision** view of this tab. **Run the check in the
+background** does the same now: the page answers at once, the scheduler starts
+it within a minute, and the bell tells you when it ends. **Analysis › Without
+App ID** (card and table) opens the same view.
 
 **Assignment by hand.** Assign an AppID to a Server Policy by picking the device and the
 policy name. The binding is unique per `(appliance, server policy)`, so a policy

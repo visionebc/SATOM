@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.6] - 2026-11-07
+
 ### Added
 - **Maintenance with pool drain in the Web Server Manager.** Asked for: "take
   the server out of the load balancer before working on it". A

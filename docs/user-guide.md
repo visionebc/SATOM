@@ -6555,6 +6555,11 @@ activities of an appliance), as automatic as the steps allow:
   only read), each question stops in the panel for your answer — or tick
   *Answer Yes to every question* — and the path is coloured on the diagram
   as it is walked. One simulation follows ONE path.
+- **While a run walks**, its steps list is open on the run page and keeps
+  the way you leave it (open or closed) across refreshes. The step being
+  worked on reads **running** with a spinner from the moment it starts, and
+  a long step reports its progress — *Collect diagnostics* shows each
+  command, e.g. `[fortiweb19] 12/28  get system performance`.
 - **Cover every branch** (same panel) plans the scenarios that together take
   **every arrow** of the diagram — yes, no and error, loops included — and
   walks them one after the other as rehearsals. In each one every check

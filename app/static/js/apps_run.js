@@ -131,7 +131,7 @@
     return '<div style="white-space:pre-wrap;">' + esc(typeof v === 'string' ? v : JSON.stringify(v)) + '</div>';
   }
   var BADGE = { done: 'success', failed: 'danger', running: 'info', waiting: 'warning' };
-  var OUT = { ok: 'success', yes: 'success', no: 'warning', error: 'danger', waiting: 'info' };
+  var OUT = { ok: 'success', yes: 'success', no: 'warning', error: 'danger', waiting: 'info', running: 'info' };
 
   function statusHtml(d) {
     var h = '<div class="d-flex align-items-center gap-2 mb-2" style="font-size:13px;">' +
@@ -203,16 +203,25 @@
         '" data-confirm="' + (a.confirm ? '1' : '') + '" data-label="' + esc(a.label) + '">' + esc(a.label) + '</button>';
     }).join('') + '</div><div data-act-msg style="font-size:12px;"></div>';
   }
+  /* The steps list is redrawn on every refresh of a running run: keep it as
+     the person left it (open or closed) instead of folding it every 2 s. */
+  function stepsOpen(el, dflt) {
+    var prev = el && el.querySelector('details[data-sapp-steps]');
+    return prev ? prev.open : dflt;
+  }
   function stepsHtml(d, open) {
-    return '<details class="mt-2"' + (open ? ' open' : '') + '><summary class="text-muted" style="font-size:12px;cursor:pointer;">Steps (' + (d.steps || []).length + ')</summary>' +
+    return '<details class="mt-2" data-sapp-steps' + (open ? ' open' : '') + '><summary class="text-muted" style="font-size:12px;cursor:pointer;">Steps (' + (d.steps || []).length + ')</summary>' +
       '<table class="table table-sm mt-1" style="font-size:12px;"><tbody>' + (d.steps || []).map(function (s) {
         var doc = (d.docs || {})[s.key], extra = '';
         if (doc) {
           extra = '<details><summary class="text-muted">Instructions' + (doc.role ? ' · ' + esc(doc.role) : '') + (doc.time ? ' · ' + esc(doc.time) : '') +
             '</summary>' + (doc.doc ? '<div style="white-space:pre-line;">' + esc(doc.doc) + '</div>' : '') + '</details>';
         }
-        return '<tr><td><code>' + esc(s.key) + '</code></td><td>' + esc(s.label) + extra + '</td><td><span class="fw-badge fw-badge-' + (OUT[s.outcome] || 'secondary') +
-          '">' + esc(s.outcome) + '</span></td><td style="white-space:pre-line;">' + esc(s.detail) + '</td><td class="text-muted">' + (s.ms || 0) + ' ms</td></tr>';
+        var run = s.outcome === 'running';
+        return '<tr' + (run ? ' style="background:var(--fw-surface-alt,#F3F6FC);"' : '') + '><td><code>' + esc(s.key) + '</code></td><td>' + esc(s.label) + extra + '</td><td><span class="fw-badge fw-badge-' + (OUT[s.outcome] || 'secondary') +
+          '">' + esc(s.outcome) + (run ? ' <span class="spinner-border spinner-border-sm" style="width:9px;height:9px;border-width:1.5px;"></span>' : '') +
+          '</span></td><td style="white-space:pre-line;">' + esc(s.detail || (run ? 'in progress…' : '')) + '</td><td class="text-muted">' +
+          (run && !s.ms ? '…' : (s.ms || 0) + ' ms') + '</td></tr>';
       }).join('') + '</tbody></table>' +
       (d.vars ? '<div class="text-muted small">Variables (authors only)</div><pre class="p-2" style="max-height:30vh;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;">' +
         esc(JSON.stringify(d.vars, null, 2)) + '</pre>' : '') + '</details>';
@@ -256,7 +265,7 @@
           return '<div class="fw-card mb-2">' + outputCard(o) + '</div>';
         }).join('');
       } else if (slot === 'actions') el.innerHTML = actionsHtml(d);
-      else if (slot === 'steps') el.innerHTML = stepsHtml(d, el.getAttribute('data-open') === '1');
+      else if (slot === 'steps') el.innerHTML = stepsHtml(d, stepsOpen(el, el.getAttribute('data-open') === '1'));
     });
   }
 
@@ -275,7 +284,7 @@
     } else {
       var h = statusHtml(d);
       (d.outputs || []).forEach(function (o) { h += '<div class="fw-card mb-2">' + outputCard(o) + '</div>'; });
-      h += actionsHtml(d) + stepsHtml(d, false);
+      h += actionsHtml(d) + stepsHtml(d, stepsOpen(box, true));
       box.innerHTML = h;
     }
     box._sappRun = d;

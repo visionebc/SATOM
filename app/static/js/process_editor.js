@@ -39,7 +39,8 @@
    * window.SatomProcEditor.overlay(steps); drawing only, never saved. */
   var OVERLAY = {};
   var OUTCOME_COLOUR = { ok: "#15692A", yes: "#15692A", no: "#7A5700", error: "#8B1C2A",
-                         pass: "#15692A", fail: "#8B1C2A", unknown: "#7A5700" };
+                         pass: "#15692A", fail: "#8B1C2A", unknown: "#7A5700",
+                         running: "#4C2A85", waiting: "#4C2A85" };
 
   var statusEl = document.getElementById("proc-status");
   var hintEl = document.getElementById("proc-hint");

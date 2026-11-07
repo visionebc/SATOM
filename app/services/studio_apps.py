@@ -1619,7 +1619,11 @@ def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=(),
         res = F.walk(d.get("graph") or {}, ctx, on_step=persist, resume=resume)
     except Exception as exc:  # noqa: BLE001 -- never leave a run "running" forever
         db.session.rollback()
-        res = {"status": "failed", "error": "internal error: %s" % exc, "steps": run.steps}
+        steps = run.steps
+        if steps and steps[-1].get("outcome") == "running":
+            steps[-1]["outcome"] = "error"
+            steps[-1]["detail"] = "internal error: %s" % str(exc)[:300]
+        res = {"status": "failed", "error": "internal error: %s" % exc, "steps": steps}
     _settle(run, res, ctx, secrets)
     if job_id:
         _job_end(job_id, run)

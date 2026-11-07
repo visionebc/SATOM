@@ -597,6 +597,10 @@ class Ctx:
     #: False = a ``script`` step is recorded, not run (the Builder's
     #: rehearsal: a script run would leave a run record on this server).
     scripts: bool = True
+    #: While a step runs: ``progress(text)`` reports how far it is (e.g. the
+    #: command 12/28 of a diagnostics battery) to the run page. None between
+    #: steps; a step calls it only through :func:`report`.
+    progress: object = None
 
     def scope(self) -> dict:
         s = dict(self.vars)
@@ -608,6 +612,30 @@ class Ctx:
 def _p(node, name, default=""):
     v = (node.get("params") or {}).get(name)
     return default if v is None else v
+
+
+def report(ctx, text) -> None:
+    """Tell the run page how far the running step is; a no-op outside a walk."""
+    cb = getattr(ctx, "progress", None)
+    if callable(cb):
+        cb(text)
+
+
+#: The run page refreshes every 2 s: more than one save a second is wasted.
+PROGRESS_EVERY_S = 1.0
+
+
+def _live_progress(steps, live, ctx, on_step, t0):
+    last = [0.0]
+
+    def cb(text):
+        live["detail"] = str(text if text is not None else "")[:300]
+        live["ms"] = int((time.monotonic() - t0) * 1000)
+        now = time.monotonic()
+        if on_step and now - last[0] >= PROGRESS_EVERY_S:
+            last[0] = now
+            on_step(steps, ctx)
+    return cb
 
 
 def _json(node, ctx, name, what):
@@ -1090,7 +1118,9 @@ def _next(edges, key, outcome):
 
 def walk(graph: dict, ctx: Ctx, on_step=None, resume: dict | None = None) -> dict:
     """Run the diagram. ``{status: done|failed|waiting, error, steps, waiting}``.
-    *on_step* is called after every step (the caller persists progress).
+    *on_step* is called when a step starts (its row reads ``running``), while
+    it reports progress (:func:`report`, at most once a second) and after it
+    ends (the row gets its outcome): the caller persists, the run page shows.
 
     An *Ask a person* step stops the walk: the result is ``waiting`` with the
     step's key, and the step is recorded with outcome ``waiting``. *resume*
@@ -1134,6 +1164,14 @@ def walk(graph: dict, ctx: Ctx, on_step=None, resume: dict | None = None) -> dic
             status, error = "failed", "an arrow points at missing step %s" % key
             break
         t0 = time.monotonic()
+        # The step is on the run page while it runs (outcome "running"), not
+        # only once it is over: a diagnostics battery takes a minute.
+        live = {"key": key, "label": node.get("label") or key, "kind": node.get("kind"),
+                "outcome": "running", "detail": "", "ms": 0}
+        steps.append(live)
+        if on_step:
+            on_step(steps, ctx)
+        ctx.progress = _live_progress(steps, live, ctx, on_step, t0)
         try:
             outcome, value, detail = _run_step(node, ctx)
             p = node.get("params") or {}
@@ -1152,6 +1190,8 @@ def walk(graph: dict, ctx: Ctx, on_step=None, resume: dict | None = None) -> dic
         except FlowError as exc:
             outcome, detail = "error", str(exc)
             ctx.vars["last_error"] = {"step": key, "message": detail}
+        finally:
+            ctx.progress = None
         # A simulation scenario picks the arrow; the step itself has RUN (a
         # check really looked), and what it found stays on the record.
         really = None
@@ -1172,7 +1212,7 @@ def walk(graph: dict, ctx: Ctx, on_step=None, resume: dict | None = None) -> dic
                "ms": int((time.monotonic() - t0) * 1000)}
         if really is not None:
             rec["really"] = really
-        steps.append(rec)
+        steps[-1] = rec                     # replaces the "running" entry
         if on_step:
             on_step(steps, ctx)
         if waiting:

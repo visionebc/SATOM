@@ -6,6 +6,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **Plugin Studio: a run shows its steps while it runs (FA-0008).** Reported:
+  "the steps should be shown so the user sees them; step 7 looked stuck for
+  about 30 seconds". The run page drew the steps folded and folded them again
+  on every refresh (every 2 s), and a step appeared only once it had ended,
+  so a one-minute diagnostics battery showed nothing. Now the list is open
+  and stays as you leave it; a step shows as **running** the moment it
+  starts, a long step says how far it is (*12/28 get system performance*),
+  and the diagram colours the running step.
+
 ## [4.11.11] - 2026-11-07
 
 ### Added

@@ -254,7 +254,7 @@ def _int(v, default):
 def run(node, ctx):
     """``(outcome, value, detail)`` for one of :data:`KIND_KEYS`. Raises
     ``FlowError`` when SATOM could not look (the error arrow)."""
-    from .studio_flow import FlowError, _p, render
+    from .studio_flow import FlowError, _p, render, report
     kind = node.get("kind")
     scope = ctx.scope()
     P = lambda name, default="": render(_p(node, name, default), scope)  # noqa: E731
@@ -364,7 +364,8 @@ def run(node, ctx):
             steps = diag_battery.plan(pk, getattr(row, "firmware", None), commands)
             stats: dict = {}
             path = collect(row, label=str(P("label", "app") or "app"), commands=commands,
-                           plan=steps, stats=stats)
+                           plan=steps, stats=stats,
+                           on_log=lambda m: report(ctx, m))
         except Exception as exc:  # noqa: BLE001
             raise FlowError("the battery did not run: %s" % str(exc)[:200]) from None
         value = {"file": path.name, "ran": stats.get("ran"), "skipped": stats.get("skipped", 0)}

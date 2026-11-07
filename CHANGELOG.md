@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.11] - 2026-11-07
+
 ### Added
 - **AppIDs: an automatic check that binds policies from their comments and
   asks you about the rest (SA-0025).** Requested: a button that creates the

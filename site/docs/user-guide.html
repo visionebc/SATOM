@@ -7586,8 +7586,20 @@ change.</p>
 lists every FortiWeb server policy (SATOM's local copy, no device call) with the
 AppID its comment names -- the Analysis <strong>App ID pattern</strong>, <code>app\d{5}</code> by
 default -- the AppID saved today and a state (new, different, saved, not in
-catalog, no AppID). New matches start ticked; change any row's AppID and
-<strong>Save selected</strong>. The comment is only read; the binding remains the authority.</p>
+catalog, no AppID). New matches start ticked; type or pick any row's AppID
+and <strong>Save selected</strong>. The comment is only read; the binding remains the
+authority. The list shows 200 rows a page and every row shares one AppID list,
+so <em>All FortiWeb devices</em> stays responsive on a large fleet.</p>
+<p><strong>The automatic check.</strong> <strong>Create daily automation</strong> adds the System
+Automation <em>AppIDs - bind server policies from their comments</em> (06:40 every
+day). Each run binds the policies whose comment names a catalog AppID and that
+have no binding yet -- a saved binding is never moved -- and rings the
+administrators, once per policy, for the ones it cannot settle (a different
+saved AppID, an AppID the catalog lacks, no AppID in the comment). The bell
+opens the <strong>Needs a decision</strong> view of this tab. <strong>Run the check in the
+background</strong> does the same now: the page answers at once, the scheduler starts
+it within a minute, and the bell tells you when it ends. <strong>Analysis › Without
+App ID</strong> (card and table) opens the same view.</p>
 <p><strong>Assignment by hand.</strong> Assign an AppID to a Server Policy by picking the device and the
 policy name. The binding is unique per <code>(appliance, server policy)</code>, so a policy
 belongs to exactly <strong>one</strong> AppID; assigning a second one replaces the first
@@ -14442,11 +14454,11 @@ answer of the last call.</p>
 </tr>
 <tr>
 <td>File Manager</td>
-<td>Browse any folder the account may read; edit with syntax highlighting (PHP, HTML, CSS, JS, Python, Bash, JSON, YAML, XML, Apache, nginx); preview HTML (scripts disabled) and images; upload (drag and drop, 8 MB per file) and download; new file/folder; rename, move, copy; chmod / chown (recursive); zip / tar.gz; extract (archives with absolute paths, <code>..</code> or links are refused); search by name and content; <strong>History</strong> of the last 25 versions of every file SATOM overwrote, with restore. Deletes keep a backup on the server up to 64 MB.</td>
+<td>Opens in the <strong>home folder</strong> of the account you sign in with (a site's <em>Files</em> button opens that site's folder; the globe button jumps to the web sites folder: <code>/srv/www/vhosts</code> on SUSE, <code>/var/www</code> elsewhere). <strong>As:</strong> the credential's setting, your account, or root (sudo) -- a folder your account cannot read offers <em>Open as root</em>. Browse any folder the account may read; edit with syntax highlighting (PHP, HTML, CSS, JS, Python, Bash, JSON, YAML, XML, Apache, nginx); preview HTML (scripts disabled) and images; upload (drag and drop, 8 MB per file) and download; new file/folder; rename, move, copy; chmod / chown (recursive); zip / tar.gz; extract (archives with absolute paths, <code>..</code> or links are refused); search by name and content; <strong>History</strong> of the last 25 versions of every file SATOM overwrote, with restore. Deletes keep a backup on the server up to 64 MB.</td>
 </tr>
 <tr>
 <td>Domains &amp; VHosts</td>
-<td>nginx and Apache sites: new website (static, PHP-FPM with the socket detected, or reverse proxy), domains and aliases, document root, index files, HTTPS with a certificate, HTTP→HTTPS redirect, upload and time limits, security headers, own logs; edit the configuration; enable, disable, delete; test the configuration; check that the site answers. Every change: backup, the server's own test, restore when it fails, reload (never restart).</td>
+<td>nginx and Apache sites: new website (static, PHP-FPM with the socket detected, or reverse proxy) on the <strong>HTTP and HTTPS ports</strong> you choose (80/443 by default; Apache gets a <code>Listen</code> line for a port it does not listen on yet -- open it in the firewall), domains and aliases, document root (filled in from the first domain), owner and group of a new document root (by default the account the web server runs as, read from its configuration: <code>wwwrun:www</code> on SUSE Apache, <code>www-data</code> on Debian, <code>apache</code> / <code>nginx</code> on RHEL), index files, HTTPS with a certificate, HTTP→HTTPS redirect, upload and time limits, security headers, own logs; edit the configuration; enable, disable, delete; test the configuration; check that the site answers. Every change: backup, the server's own test, restore when it fails, reload (never restart).</td>
 </tr>
 <tr>
 <td>SSL Certificates</td>
@@ -14548,7 +14560,13 @@ deployed on. A server prepared with <code>install-satom-webctl.sh</code> also of
 restricted agent key as the credential <em>satom-webctl agent</em> (virtual hosts
 and certificates only).</p>
 <p>A <em>satom-webctl</em> agent, when you choose to install one, is never needed: it
-only adds a way in that keeps no password of anybody's (§48.9).</p>
+only adds a way in that keeps no password of anybody's (§48.9). <strong>Install the
+satom-webctl agent</strong> (Overview, and Health › Settings) installs or updates it
+from SATOM: with the selected credential as root it runs the
+<code>install-satom-webctl.sh</code> of this SATOM with SATOM's agent key for the server
+(made on first use, kept afterwards) valid only from the SATOM nodes, then
+adds the credential <em>satom-webctl agent</em>. The page sends nothing the installer
+uses: key, nodes and files are SATOM's.</p>
 <h3 id="486-the-plugins-for-automation">48.6 The plugins (for automation)</h3>
 <p>The bundle <code>web-server-manager-&lt;version&gt;.satombundle</code> (staging hub,
 <code>downloads/plugins/</code>) holds 13 signed app plugins built from four SATOM steps

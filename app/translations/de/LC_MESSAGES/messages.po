@@ -29532,3 +29532,182 @@ msgstr "Alle Zweige abdecken"
 
 msgid "Cover every branch walks the scenarios that together take every arrow, one after the other. Each check really looks and its finding is kept; the scenario only picks the arrow. A Notify step rings only your bell, once per simulation."
 msgstr "Alle Zweige abdecken durchläuft nacheinander die Szenarien, die zusammen jeden Pfeil nehmen. Jede Prüfung schaut wirklich nach und ihr Ergebnis bleibt erhalten; das Szenario wählt nur den Pfeil. Ein Benachrichtigen-Schritt (Notify) klingelt nur bei Ihnen, einmal pro Simulation."
+
+# SA-0027 round: msgids on main without a translation (2026-11-07)
+
+msgid "Resolve in AppIDs"
+msgstr "In AppIDs klären"
+
+msgid "Clear filters"
+msgstr "Filter zurücksetzen"
+
+msgid "Before importing, SATOM shows the AppIDs that already exist with different data: you accept each change or all of them. AppIDs with the same data are left as they are."
+msgstr "Vor dem Import zeigt SATOM die AppIDs, die bereits mit anderen Daten existieren: Sie übernehmen jede Änderung einzeln oder alle. AppIDs mit gleichen Daten bleiben unverändert."
+
+msgid "column"
+msgstr "Spalte"
+
+msgid "From the server-policy comments"
+msgstr "Aus den Kommentaren der Server-Policies"
+
+msgid "SATOM reads the comment of every FortiWeb server policy (as of the last device sync) and proposes the AppID it names, with the pattern"
+msgstr "SATOM liest den Kommentar jeder FortiWeb-Server-Policy (Stand der letzten Gerätesynchronisierung) und schlägt die darin genannte AppID vor, mit dem Muster"
+
+msgid "Analysis › App ID pattern"
+msgstr "Analyse › App-ID-Muster"
+
+msgid "Change any proposal, tick the rows and save: the binding is kept in SATOM, the comment is only read."
+msgstr "Ändern Sie beliebige Vorschläge, markieren Sie die Zeilen und speichern Sie: Die Zuordnung wird in SATOM gespeichert, der Kommentar wird nur gelesen."
+
+msgid "All FortiWeb devices"
+msgstr "Alle FortiWeb-Geräte"
+
+msgid "To review (new or different)"
+msgstr "Zu prüfen (neu oder abweichend)"
+
+msgid "All policies"
+msgstr "Alle Policies"
+
+msgid "Already saved"
+msgstr "Bereits gespeichert"
+
+msgid "AppID not in the catalog"
+msgstr "AppID nicht im Katalog"
+
+msgid "No AppID in the comment"
+msgstr "Keine AppID im Kommentar"
+
+msgid "Needs a decision (different, not in catalog, no AppID)"
+msgstr "Entscheidung nötig (abweichend, nicht im Katalog, ohne AppID)"
+
+msgid "filter policy, comment, AppID"
+msgstr "Policy, Kommentar, AppID filtern"
+
+msgid "Read comments"
+msgstr "Kommentare lesen"
+
+msgid "Save selected"
+msgstr "Auswahl speichern"
+
+msgid "last run"
+msgstr "letzter Lauf"
+
+msgid "next"
+msgstr "nächster"
+
+msgid "running now"
+msgstr "läuft gerade"
+
+msgid "No automation yet: SATOM can bind new policies from their comments every day and ring you for the ones it cannot settle."
+msgstr "Noch keine Automatisierung: SATOM kann neue Policies täglich anhand ihrer Kommentare zuordnen und Sie über die benachrichtigen, die es nicht klären kann."
+
+msgid "Create daily automation"
+msgstr "Tägliche Automatisierung anlegen"
+
+msgid "Bind every new policy whose comment names a catalog AppID and list the rest; runs in the background"
+msgstr "Ordnet jede neue Policy zu, deren Kommentar eine Katalog-AppID nennt, und listet den Rest; läuft im Hintergrund"
+
+msgid "Run the check in the background"
+msgstr "Prüfung im Hintergrund ausführen"
+
+msgid "In the comment"
+msgstr "Im Kommentar"
+
+msgid "Press Read comments."
+msgstr "Klicken Sie auf Kommentare lesen."
+
+msgid "By hand"
+msgstr "Manuell"
+
+msgid "Unassign"
+msgstr "Zuordnung aufheben"
+
+msgid "Tick the columns to show and give any of them your own name (empty = the default). Names apply to every administrator."
+msgstr "Markieren Sie die anzuzeigenden Spalten und geben Sie beliebigen einen eigenen Namen (leer = Standard). Die Namen gelten für alle Administratoren."
+
+msgid "AppIDs that already exist"
+msgstr "Bereits vorhandene AppIDs"
+
+msgid "Now"
+msgstr "Jetzt"
+
+msgid "In the file"
+msgstr "In der Datei"
+
+msgid "Keep all as they are"
+msgstr "Alle unverändert lassen"
+
+msgid "Accept all changes"
+msgstr "Alle Änderungen übernehmen"
+
+msgid "Import with the ticked changes"
+msgstr "Mit den markierten Änderungen importieren"
+
+msgid "From the AppID catalog now, not frozen with the change"
+msgstr "Aus dem aktuellen AppID-Katalog, nicht mit der Änderung eingefroren"
+
+msgid "The AppID catalog columns (AppIDs page) beside each match"
+msgstr "Die Spalten des AppID-Katalogs (Seite AppIDs) neben jedem Treffer"
+
+msgid "Show AppID columns"
+msgstr "AppID-Spalten anzeigen"
+
+msgid "Server Policy / Virtual Server"
+msgstr "Server-Policy / Virtual Server"
+
+msgid "Service IP / name"
+msgstr "Service-IP / Name"
+
+msgid "Backends"
+msgstr "Backends"
+
+msgid "Configured status"
+msgstr "Konfigurierter Status"
+
+msgid "Open the policy to edit it"
+msgstr "Policy zum Bearbeiten öffnen"
+
+msgid "Decommission: preview first, nothing is deleted until you confirm the plan"
+msgstr "Stilllegen: zuerst die Vorschau, nichts wird gelöscht, bevor Sie den Plan bestätigen"
+
+msgid "AppID source"
+msgstr "AppID-Quelle"
+
+msgid "Configured"
+msgstr "Konfiguriert"
+
+msgid "Live health"
+msgstr "Live-Zustand"
+
+msgid "LB match"
+msgstr "LB-Treffer"
+
+msgid "Live health is read from FortiWeb only."
+msgstr "Der Live-Zustand wird nur von FortiWeb gelesen."
+
+msgid "Asking the device…"
+msgstr "Gerät wird abgefragt…"
+
+msgid "Live health failed:"
+msgstr "Live-Zustand fehlgeschlagen:"
+
+msgid "Live health read from the device now."
+msgstr "Live-Zustand soeben vom Gerät gelesen."
+
+msgid "Download this one."
+msgstr "Laden Sie dieses herunter."
+
+msgid "Delta update for this node (it runs %(v)s): only the files that changed, a few MB. Staged under Offline update package, with its preflight, then Apply."
+msgstr "Delta-Update für diesen Knoten (er läuft mit %(v)s): nur die geänderten Dateien, wenige MB. Wird unter Offline-Update-Paket mit Preflight bereitgestellt, dann Anwenden."
+
+msgid "Full update package (tens of MB): applies from any supported version. Use it only when the release has no delta from %(v)s or the preflight refuses the delta."
+msgstr "Vollständiges Update-Paket (einige zehn MB): gilt ab jeder unterstützten Version. Nur verwenden, wenn das Release kein Delta ab %(v)s hat oder der Preflight das Delta ablehnt."
+
+msgid "the delta for this node, a few MB"
+msgstr "das Delta für diesen Knoten, wenige MB"
+
+msgid "The full"
+msgstr "Das vollständige"
+
+msgid "only when there is no delta from this version."
+msgstr "nur wenn es kein Delta ab dieser Version gibt."

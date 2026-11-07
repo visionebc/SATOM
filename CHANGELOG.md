@@ -6,6 +6,77 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Web Server Manager: Remove and Reinstall for the satom-webctl agent
+  (SA-0028).** Requested: a button to remove SATOM's agent or to reinstall
+  it. Overview > Agent, the Health settings and the Health warning now offer
+  Install, Reinstall and Remove. Each asks for confirmation and runs as a job
+  with its steps, a check afterwards and one audit line; no secret reaches a
+  step or a log. Remove undoes exactly what the installer added (program,
+  configuration, sudo rules, ACLs, SATOM's key line, and the account
+  satom-mon only if the installer created it), checks that the server now
+  refuses the key and makes SATOM forget it. Reinstall is remove + install
+  with the same key; a second run changes nothing. Agents installed before
+  this release with a loopback address in their key restriction need one
+  Reinstall (see Fixed).
+
+- **DNS & LB Lookup: IP, FQDN and element lookups with Service IP and Name
+  (SA-0028).** Requested: give an element and get the server policy, its VIP
+  and the VIP's reverse name; give an IP and see every configuration where it
+  appears; give an FQDN, resolve it and find its configuration. A mode
+  selector (Automatic per entry, Element, IP, FQDN) drives the search.
+  *Service IP* is the policy's VIP and *Name* its PTR (or the FQDN you gave).
+  An IP is matched as a whole address in the VIP, the pool members and every
+  other address field, and the row says which field matched (192.0.2.5 no
+  longer finds 192.0.2.50). An empty Name always says why (no PTR, PTR error,
+  no resolver, no service IP). Copy LB carries the new columns.
+
+- **DNS & LB Lookup: backends and pool members (SA-0028).** Requested: the
+  backends were missing and the live test did not list their members. Every
+  match shows its pool and members (address:port, weight, status when
+  cached). The live check in *Show* lists every member the FortiWeb reports
+  with its health and marks members that SATOM's copy and the device
+  disagree on.
+
+- **Change Requests: Cancel, search and filters (SA-0028).** Requested: a
+  Cancel option, a search over anything related to a change (an IP, for
+  example) and filters. Each open request has *Cancel* with a required
+  reason, recorded on its timeline and in the audit log. Cancelling disables
+  every scheduled action bound to the change (all rounds, not only the
+  first) and is refused while one of them is running, because a round cannot
+  be stopped part-way. The search runs in the database over the change's
+  text, its parameters and frozen inventory (policies, virtual servers, IPs,
+  probed URLs), the appliances it names, the AppIDs bound to its policies (any
+  catalog column), timeline entries and the number. Filters: status, type,
+  appliance, requester and creation date; all of it in the URL.
+  `POST /api/v1/change-requests/<id>/cancel` does the same over the API.
+
+- **Upgrade Flow / change: select affected services by any AppID catalog
+  column (SA-0028).** Requested: select everything that belongs to an AppID
+  or a catalog value such as the customer, the label or a column you added.
+  Every service row has a checkbox; pick a catalog column and one of the
+  values present to *Select matching* / *Clear matching*, or select all or
+  none. The export takes the ticked rows and every catalog column under the
+  names you gave them on the AppIDs page.
+
+### Changed
+- **DNS & LB Lookup: collapsed rows again, one row per cluster (SA-0028).**
+  Requested: the results used to be collapsed, and an entry on a cluster
+  should say so and appear once -- on the active or primary node -- so that
+  editing or deleting it does not act twice. Each match is one dense line
+  that expands for its details. The same policy on several members of an HA
+  cluster or config-sync group is shown once with a *Cluster* badge; Edit,
+  Delete and the live check act on that member only. The primary is the role
+  SATOM records (not read live); when none is recorded the badge says "role
+  unknown" and the first member by name is used.
+
+- **Web Server Manager follows SATOM's styling (SA-0028).** Requested: check
+  that the buttons and styles match SATOM. Pastel badges, custom alert boxes,
+  the dark output panes, the custom breadcrumb and tabs, grey Bootstrap
+  buttons and hard-coded colours were replaced with SATOM's own badges,
+  alerts, light code panes, breadcrumb, tabs, buttons and colour variables.
+  The code editor stays dark on purpose.
+
 ### Fixed
 - **Plugin Studio: a run shows its steps while it runs (FA-0008).** Reported:
   "the steps should be shown so the user sees them; step 7 looked stuck for
@@ -15,6 +86,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   and stays as you leave it; a step shows as **running** the moment it
   starts, a long step says how far it is (*12/28 get system performance*),
   and the diagram colours the running step.
+
+- **Web Server Manager Health: "refused SATOM's key for satom-mon" (SA-0028).**
+  Two defects produced exactly this message. SATOM treated "a key exists"
+  as "the agent is installed": the key is created before the installer runs,
+  so a failed or unfinished install left Health reading through a key the
+  server did not accept, with no fallback. And when a peer is registered from
+  the console, this node is stored as 127.0.0.1, so the key's `from=` list
+  could exclude the node that installed it. SATOM now records each server's
+  agent state (pending, installed, failed, removed, key changed), verifies
+  every install by signing in as satom-mon, reads through the agent only when
+  it works and otherwise falls back to a shared SSH credential and says why;
+  the `from=` list drops loopback addresses and adds the address this node
+  sends from. A refused key now shows what is wrong with Install/Reinstall in
+  place. The installer adds sbin to PATH (SUSE's sudo keeps the user's PATH,
+  so the account, sudoers and Apache tools in sbin were not found), creates
+  the group with the account and writes the key to the account's real home.
+
+- **DNS & LB Lookup: FortiADC pool members showed 0.0.0.0 (SA-0028).** The
+  cached member only names its real server; addresses now come from the real
+  server, both from the cache and live. FortiADC rows read SATOM's copy and
+  go to the device only when nothing is cached.
+
+- **Affected services: two "AppID (catalog now)" columns (SA-0028).** The
+  export offered two hard-coded catalog columns that ignored the names given
+  on the AppIDs page and left out Label, Rate, Status and custom columns.
+  They are now read from the catalog. Old links with `app_id`/`app_customer`
+  keep working.
 
 ## [4.11.11] - 2026-11-07
 

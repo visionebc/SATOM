@@ -256,6 +256,13 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>Record the external change authority's verdict on a change request in <strong>External</strong> approval mode (below)</td>
 </tr>
 <tr>
+<td><code>POST</code></td>
+<td><code>/change-requests/&lt;id&gt;/cancel</code></td>
+<td>admin</td>
+<td>—</td>
+<td>Cancel a change request that has not closed yet, with a reason (below)</td>
+</tr>
+<tr>
 <td><code>GET</code></td>
 <td><code>/waf/exception-types</code></td>
 <td>read</td>
@@ -888,6 +895,46 @@ makes the change un-runnable again.</p>
 </table>
 <p>Every call is audited (<code>api.change_request.external_approval</code>, refusals as
 <code>…_refused</code>).</p>
+<h3 id="post-change-requestsidcancel"><code>POST /change-requests/&lt;id&gt;/cancel</code></h3>
+<p>Cancel a change request that has not closed yet — the same transition as the
+<strong>Cancel</strong> button on the Change Requests list and on the change's page. Needs
+the <strong><code>admin</code></strong> scope. Body: <code>{"reason": "customer postponed", "by": "CAB"}</code> —
+<code>reason</code> is required; <code>by</code> (default: the token name) is recorded as
+<code>api:&lt;by&gt;</code>. Every scheduled action bound to the change (each round of a
+rollout) is disabled, so nothing of it fires; the timeline records who, when
+and why.</p>
+<table>
+<thead>
+<tr>
+<th>answer</th>
+<th>when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code> <code>{"ok": true, "status": "cancelled", "disabled_actions": [12, 13]}</code></td>
+<td>cancelled</td>
+</tr>
+<tr>
+<td><code>400 bad_request</code></td>
+<td><code>reason</code> missing or blank</td>
+</tr>
+<tr>
+<td><code>404 not_found</code></td>
+<td>no such change, or it names no appliance visible to the token's ADOM</td>
+</tr>
+<tr>
+<td><code>409 closed</code></td>
+<td>the change is already completed / failed / cancelled — nothing changed</td>
+</tr>
+<tr>
+<td><code>409 running</code></td>
+<td>one of its scheduled actions is firing right now; a round in flight cannot be stopped part-way — retry once it has finished</td>
+</tr>
+</tbody>
+</table>
+<p>Every call is audited (<code>api.change_request.cancel</code>, refusals as
+<code>api.change_request.cancel_refused</code>).</p>
 <hr>
 <h2 id="4-a-complete-example--drain--restore-a-backend">4. A complete example — drain / restore a backend</h2>
 <p>The API cannot <em>re-point</em> a backend to a new IP; what it can do is

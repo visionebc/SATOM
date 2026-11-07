@@ -2890,6 +2890,43 @@ against what the devices say.</p>
   full row per match — entry, every column, PTR name, backends with status,
   the AppID facts and their source — with tabs and line breaks inside a
   comment turned into spaces so a line never splits.
+  Since SA-0028 the results are <strong>collapsed</strong>: a line per entry (how it was
+  looked up, its DNS answers, the number of matches) and one dense line per
+  match — Gateway, Policy, <strong>Service IP</strong> (the policy's VIP), <strong>Name</strong>,
+  Backends (pool, member count, the first members with their configured
+  status) and <strong>Matched on</strong> (the field that held the entry). The chevron
+  (or <em>Expand all</em>) opens the details under the row: every field, the
+  cluster, and the pool's members with weight and configured status.
+  <strong>Lookup</strong> (Options) picks how each entry is searched; <em>Automatic</em> decides
+  per entry: an <strong>element</strong> (any other text: a policy, pool, certificate,
+  comment…) is searched in the configuration text, its VIP is the Service IP
+  and the PTR of that VIP the Name; an <strong>IP address</strong> is searched in the
+  ADDRESS fields of every server policy — VIP, pool members and any other
+  address field of the policy, its virtual server and its pool — as a whole
+  address, never a substring (<code>{ip}</code> does not find <code>{ip}</code>); an
+  <strong>FQDN</strong> is resolved (A and AAAA, every resolver) and each address
+  searched like an IP, plus the name in the configuration text (SNI,
+  certificate CN); the Name then shows the FQDN first. A name that does not
+  resolve says so, a resolver timeout or error is shown as a <strong>DNS error</strong>,
+  and an empty Name says why (<em>no PTR</em>, <em>PTR error</em>, <em>no resolver
+  configured</em>, <em>no service IP</em>) — never blank. <strong>Clusters:</strong> a server policy
+  cached on several members of one HA cluster or config-sync group is shown
+  <strong>once</strong>, with a <em>Cluster: name (primary node, N members)</em> badge; Edit,
+  Delete and the live check act on that member only. Membership comes from
+  the cluster registered in SATOM (Appliances › node 0 and its members),
+  else from SATOM's copy (<code>system_ha</code> with the same group name, FortiWeb
+  <code>system_conf_sync</code> naming another registered FortiWeb). The primary is a
+  vip-mode cluster itself, else the member whose role is set to <em>primary</em> in
+  SATOM; nothing is asked of the device, so when no role is recorded the
+  badge says <em>role unknown</em> and the first member by name is shown. Backends
+  are read from SATOM's copy (a FortiADC member's address from its real
+  server; a FortiWeb with only the config layer cached says a deep capture
+  lists the members); FortiADC virtual servers are read live only when
+  SATOM holds none. <strong>Check live health</strong> in <em>Show</em> lists every member the
+  FortiWeb reports with its health, including members missing from SATOM's
+  copy, and shows each step (copy, device question, answer). <em>Copy LB</em>
+  adds the columns <em>Lookup</em>, <em>Matched on</em> and <em>Cluster</em>; the PTR column is
+  now <em>Name</em>.
   The same tool also exists as <strong>three Plugin Studio apps</strong> — the plugins
   <code>dns-lb-lookup</code>, <code>dns-records</code> and <code>dns-decommission</code> (§23.7, <em>Plugins:
   DNS &amp; LB Lookup</em>), under <strong>Operations › Plugins</strong> once imported: the
@@ -4045,6 +4082,29 @@ expression as a <strong>saved run</strong>. See §23.4 for how saved runs behave
   window, and refuses any row the change does not cover.</li>
 <li>A change that names no device can be saved and read, but not scheduled:
   its automated run would have no device list to stay inside.</li>
+<li><strong>The list</strong> (Automation → Change Requests) is one table, newest first,
+  50 per page. The <strong>search</strong> box finds a change by anything about it: title,
+  reason, rollback, reference (<code>CR-2026-0126</code>, <code>126</code> or <code>#126</code>), requester,
+  approver, type, the frozen affected-service inventory (policy, virtual
+  server, service, probed URL — so an IP finds the change that takes it
+  down), the appliances it names (name or management IP), the AppIDs bound to
+  its policies (AppID, customer, label, rate or any column an import added),
+  ticket and window references, and every reason and author on its timeline.
+  <strong>Filters</strong>: status (or <em>Open</em> = not closed yet), type, appliance,
+  requester, and a created-date range in your timezone. Search and filters run
+  in the database and live in the URL, so a filtered list can be bookmarked;
+  the status chips count what each status holds under the current search.
+  Only changes the active ADOM may see are listed or searched.</li>
+<li><strong>Cancel</strong> (the ✕ on a row, or <strong>Cancel CR</strong> on the change's page) is
+  offered while a change is not closed — draft, approved, scheduled or in
+  progress. A <strong>reason is required</strong>; it is written to the timeline with who
+  and when, and to the audit log (<code>change_request.cancel</code>). Every scheduled
+  action bound to the change — each round of a rollout — is disabled, so none
+  of it fires. Refused, with nothing changed, for a change already completed,
+  failed or cancelled, and while one of its scheduled actions is <strong>running
+  right now</strong>: a round in flight cannot be stopped part-way, so wait for it to
+  finish, then cancel. Integrations: <code>POST /api/v1/change-requests/&lt;id&gt;/cancel</code>
+  (admin scope).</li>
 </ul>
 <p><strong>Jobs</strong> (Global → Jobs): every background job with owner, host/PID, progress
 and duration; Pause / Resume / Stop (cooperative — jobs park at safe
@@ -7124,7 +7184,11 @@ stays.</p>
   any source</em>. A cache that cannot be read shows <em>LB matching failed</em> and the
   DNS half still appears, as on the page. Actions: <strong>Copy DNS</strong> and <strong>Copy
   LB</strong> (the page's tab-separated text), <strong>DNS Records</strong>, and a CSV download of
-  each table.</li>
+  each table. Since SA-0028 the <em>LB: match names to the fleet</em> step searches
+  like the page's <em>Automatic</em> lookup (an IP in the address fields, an FQDN
+  also by the addresses the <em>DNS</em> step resolved it to) and shows a server
+  policy of a cluster once; its rows carry <em>Name</em>, <em>Matched on</em> and
+  <em>Cluster</em>.</li>
 <li><strong>DNS Records</strong> (<code>dns-records</code>): <em>list</em> shows a name's records with
   <strong>Edit</strong> and <strong>Delete</strong> on each row — each opens this same app filled in
   with that record — and <em>New record</em>; <em>create</em>, <em>update</em> and <em>delete</em> write
@@ -7287,6 +7351,11 @@ activities of an appliance), as automatic as the steps allow:</p>
   only read), each question stops in the panel for your answer — or tick
   <em>Answer Yes to every question</em> — and the path is coloured on the diagram
   as it is walked. One simulation follows ONE path.</li>
+<li><strong>While a run walks</strong>, its steps list is open on the run page and keeps
+  the way you leave it (open or closed) across refreshes. The step being
+  worked on reads <strong>running</strong> with a spinner from the moment it starts, and
+  a long step reports its progress — <em>Collect diagnostics</em> shows each
+  command, e.g. <code>[{device}] 12/28  get system performance</code>.</li>
 <li><strong>Cover every branch</strong> (same panel) plans the scenarios that together take
   <strong>every arrow</strong> of the diagram — yes, no and error, loops included — and
   walks them one after the other as rehearsals. In each one every check
@@ -13142,7 +13211,7 @@ in place. Everything the change's own page shows is on the flow, as stage 3:</p>
 </tr>
 <tr>
 <td><strong>Affected services</strong></td>
-<td>The <strong>frozen</strong> inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking <code>.xlsx</code> / <code>.csv</code> export. Since 4.11.11 (SA-0027) each policy also shows the AppID it is <strong>bound</strong> to and the catalog's visible columns — the catalog's answer now, labelled so; the frozen rows are not changed. The export offers <em>AppID (catalog now)</em> and <em>AppID customer (catalog now)</em>.</td>
+<td>The <strong>frozen</strong> inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking <code>.xlsx</code> / <code>.csv</code> export. Since 4.11.11 (SA-0027) each policy also shows the AppID it is <strong>bound</strong> to and the catalog's visible columns — the catalog's answer now, labelled so; the frozen rows are not changed. Since SA-0028 the export offers <strong>every AppID catalog column</strong> — AppID, Customer, Label, Rate, Status and any column an import added, under the names given on the AppIDs page — as one group, <em>AppID catalog (current values, not frozen)</em>, instead of two hard-coded <em>(catalog now)</em> boxes. A tick per service picks which rows are exported: choose a catalog column and one of the values present (for example Customer = Acme), then <strong>Select matching</strong> / <strong>Clear matching</strong>, or <strong>Select all</strong> / <strong>Select none</strong>.</td>
 </tr>
 <tr>
 <td><strong>External change record</strong></td>
@@ -14497,6 +14566,39 @@ same operations are also signed plugins, for automations and other apps
 "last operation used sudo" appears when it did. <strong>Advanced mode</strong> shows the
 operation, its arguments (secrets replaced by their length) and the raw
 answer of the last call.</p>
+<p><strong>The agent (Overview › Agent).</strong> Optional: the restricted <code>satom-webctl</code>
+agent (account <code>satom-mon</code>, SATOM's own key, forced command, no shell) reads
+health and manages virtual hosts and certificates without anybody's password.
+Pick a credential that can become root in <em>Sign in as</em>, then:</p>
+<table>
+<thead>
+<tr>
+<th>Button</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Install agent</strong></td>
+<td>Runs <code>install-satom-webctl.sh</code> as root with SATOM's key, valid only from the SATOM nodes, then <strong>checks</strong> that <code>satom-mon</code> signs in with that key.</td>
+</tr>
+<tr>
+<td><strong>Reinstall agent</strong></td>
+<td>Removes it exactly as the installer added it, checks that the server now refuses the key, installs it again <strong>with the same key</strong> and checks the sign-in. A second reinstall changes nothing (the job says <em>0 changes</em>). Use it after an install that failed, when the key changed, or to update the agent.</td>
+</tr>
+<tr>
+<td><strong>Remove agent</strong></td>
+<td>Removes the program, its configuration, the two sudo rules, the ACLs and SATOM's key line, and the account <code>satom-mon</code> only if the installer created it; checks that the server refuses the key; then SATOM forgets the key and the <em>satom-webctl agent</em> credential. <em>Also delete backups, log and certificates</em> adds <code>--purge</code> (certificates a site still uses are kept).</td>
+</tr>
+</tbody>
+</table>
+<p>Each runs as a job: its steps appear under the buttons and in the Job
+Manager, each step is in the Operations log, and one line sums it up in the
+audit log (<code>wsm.agent.&lt;action&gt;_job</code>). The badge says what SATOM knows:
+<em>Installed</em>, <em>Installed (not checked by SATOM)</em> (installed by hand),
+<em>Install not confirmed</em>, <em>Install failed</em>, <em>Key changed: reinstall</em>,
+<em>Removed</em> or <em>Not installed</em>. Needs <em>Administer servers</em>, <em>Run as root</em> and
+<em>Allow changes</em> on the server.</p>
 <h3 id="482-modules">48.2 Modules</h3>
 <table>
 <thead>
@@ -14700,11 +14802,11 @@ days. The server list shows each server's state as a badge.</p>
 <tbody>
 <tr>
 <td><strong>Automatic</strong> (default)</td>
-<td>The agent when the server has one, otherwise the first shared SSH credential that keeps its secret.</td>
+<td>The agent when the server has a working one (installed and checked, or installed by hand), otherwise the first shared SSH credential that keeps its secret. When the server refuses the agent's key, the reading is made with that credential and the page says why the agent was not used.</td>
 </tr>
 <tr>
 <td><strong>The satom-webctl agent only</strong></td>
-<td>Read with the agent you installed with <code>install-satom-webctl.sh</code> (account <code>satom-mon</code>, SATOM's own key, forced command, no shell, no password of anybody's). Needs satom-webctl <strong>1.2.0</strong> or newer: run the installer of this SATOM again on a server prepared with an older one.</td>
+<td>Read with the agent you installed with <code>install-satom-webctl.sh</code> (account <code>satom-mon</code>, SATOM's own key, forced command, no shell, no password of anybody's). Needs satom-webctl <strong>1.2.0</strong> or newer: <strong>Reinstall agent</strong> on a server prepared with an older one.</td>
 </tr>
 <tr>
 <td><strong>SSH with a credential I pick</strong></td>
@@ -14716,6 +14818,17 @@ days. The server list shows each server's state as a badge.</p>
 </tr>
 </tbody>
 </table>
+<p><strong>"refused SATOM's agent key for satom-mon".</strong> The server answered and did not
+accept the agent key: the agent was never installed with this SATOM's key,
+its install failed, it was removed, the key changed since, or sshd does not
+let <code>satom-mon</code> in (<code>AllowUsers</code>, <code>AllowGroups</code>, <code>DenyUsers</code>, or the SATOM
+addresses the key is valid from). Health says so in a yellow box with
+<strong>Install agent</strong> / <strong>Reinstall agent</strong> right there; the installer's output
+(in the job) names an sshd rule that keeps <code>satom-mon</code> out. Before SA-0028 a
+key SATOM had made counted as an installed agent even when the install never
+finished, and an HA registry that listed this node as <code>127.0.0.1</code> made the
+key valid only from addresses the server never sees; both are fixed, but an
+agent installed with the old key list needs <strong>Reinstall agent</strong> once.</p>
 <p>The reading never uses sudo and never changes anything: it is <code>/proc</code>,
 <code>statvfs()</code> and <code>systemctl list-units</code>, which any account may read. On a
 server whose <code>/proc</code> is mounted with <code>hidepid</code>, the reading account sees only

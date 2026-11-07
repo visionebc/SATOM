@@ -29711,3 +29711,297 @@ msgstr "Das vollständige"
 
 msgid "only when there is no delta from this version."
 msgstr "nur wenn es kein Delta ab dieser Version gibt."
+
+msgid "%(count)s change request(s) match"
+msgstr "%(count)s Änderungsanträge stimmen überein"
+
+msgid "(no value)"
+msgstr "(kein Wert)"
+
+msgid "+%(n)s more"
+msgstr "+%(n)s weitere"
+
+msgid "Agent"
+msgstr "Agent"
+
+msgid "All statuses"
+msgstr "Alle Status"
+
+msgid "Also delete the agent's backups, log and certificates (kept while a site still uses one of its certificates)"
+msgstr "Auch die Sicherungen, das Protokoll und die Zertifikate des Agenten löschen (bleiben erhalten, solange eine Site eines seiner Zertifikate nutzt)"
+
+msgid "Anyone"
+msgstr "Beliebig"
+
+msgid "Anything about a change — e.g. 192.0.2.12, an AppID, a policy name, CR-2026-0126"
+msgstr "Alles zu einer Änderung — z. B. 192.0.2.12, eine AppID, ein Policy-Name, CR-2026-0126"
+
+msgid "AppID catalog (current values, not frozen)"
+msgstr "AppID-Katalog (aktuelle Werte, nicht eingefroren)"
+
+msgid "AppID catalog column"
+msgstr "AppID-Katalogspalte"
+
+msgid "Asking the device for each member's health (policystatus.detail)…"
+msgstr "Gerät wird nach dem Zustand jedes Mitglieds gefragt (policystatus.detail)…"
+
+msgid "Automatic (per entry)"
+msgstr "Automatisch (pro Eintrag)"
+
+msgid "Automatic: an address is searched in the address fields, a host name is resolved and its addresses searched, anything else is searched in the configuration text."
+msgstr "Automatisch: Eine Adresse wird in den Adressfeldern gesucht, ein Hostname wird aufgelöst und seine Adressen werden gesucht, alles andere wird im Konfigurationstext gesucht."
+
+msgid "Cached on"
+msgstr "Zwischengespeichert auf"
+
+msgid "Cancel change request"
+msgstr "Änderungsantrag abbrechen"
+
+msgid "Cancel reason (required)"
+msgstr "Abbruchgrund (erforderlich)"
+
+msgid "Cancel this change request"
+msgstr "Diesen Änderungsantrag abbrechen"
+
+msgid "Cancel this change request? Every scheduled action bound to it will be disabled."
+msgstr "Diesen Änderungsantrag abbrechen? Alle daran gebundenen geplanten Aktionen werden deaktiviert."
+
+msgid "Change request cancelled."
+msgstr "Änderungsantrag abgebrochen."
+
+msgid "Clear matching"
+msgstr "Treffer abwählen"
+
+msgid "Cluster"
+msgstr "Cluster"
+
+msgid "Cluster: %(name)s (primary %(node)s, %(n)s members)"
+msgstr "Cluster: %(name)s (primär %(node)s, %(n)s Mitglieder)"
+
+msgid "Cluster: %(name)s (primary resolved by the cluster, %(n)s members)"
+msgstr "Cluster: %(name)s (primär vom Cluster bestimmt, %(n)s Mitglieder)"
+
+msgid "Cluster: %(name)s (role unknown, showing %(node)s, %(n)s members)"
+msgstr "Cluster: %(name)s (Rolle unbekannt, %(node)s wird angezeigt, %(n)s Mitglieder)"
+
+msgid "Created from"
+msgstr "Erstellt ab"
+
+msgid "Created to"
+msgstr "Erstellt bis"
+
+msgid "DNS error"
+msgstr "DNS-Fehler"
+
+msgid "Does not resolve: no A or AAAA answer"
+msgstr "Wird nicht aufgelöst: keine A- oder AAAA-Antwort"
+
+msgid "Done."
+msgstr "Fertig."
+
+msgid "Element (configuration text)"
+msgstr "Element (Konfigurationstext)"
+
+msgid "FQDN"
+msgstr "FQDN"
+
+msgid "FQDN (resolve, then search the addresses)"
+msgstr "FQDN (auflösen, dann die Adressen suchen)"
+
+msgid "Fix it here:"
+msgstr "Hier beheben:"
+
+msgid "Give a reason for cancelling this change request. Nothing was changed."
+msgstr "Geben Sie einen Grund für den Abbruch dieses Änderungsantrags an. Es wurde nichts geändert."
+
+msgid "IP"
+msgstr "IP"
+
+msgid "IP address (address fields)"
+msgstr "IP-Adresse (Adressfelder)"
+
+msgid "Include %(policy)s in the export"
+msgstr "%(policy)s in den Export aufnehmen"
+
+msgid "Install agent"
+msgstr "Agent installieren"
+
+msgid "Install failed"
+msgstr "Installation fehlgeschlagen"
+
+msgid "Install not confirmed"
+msgstr "Installation nicht bestätigt"
+
+msgid "Install the satom-webctl agent"
+msgstr "Den Agenten satom-webctl installieren"
+
+msgid "Installed (not checked by SATOM)"
+msgstr "Installiert (nicht von SATOM geprüft)"
+
+msgid "Installing or removing the agent needs the permissions to manage the server and to run as root."
+msgstr "Zum Installieren oder Entfernen des Agenten sind die Berechtigungen zur Serververwaltung und zur Ausführung als root nötig."
+
+msgid "Inventory (frozen with the change)"
+msgstr "Inventar (mit der Änderung eingefroren)"
+
+msgid "Keep it"
+msgstr "Behalten"
+
+msgid "Key changed: reinstall"
+msgstr "Schlüssel geändert: neu installieren"
+
+msgid "Live check"
+msgstr "Live-Prüfung"
+
+msgid "Manage DNS records for this name"
+msgstr "DNS-Einträge für diesen Namen verwalten"
+
+msgid "Matched on"
+msgstr "Treffer in"
+
+msgid "Matches"
+msgstr "Treffer"
+
+msgid "Member"
+msgstr "Mitglied"
+
+msgid "Members in SATOM's copy"
+msgstr "Mitglieder in SATOMs Kopie"
+
+msgid "Members the device reported"
+msgstr "Vom Gerät gemeldete Mitglieder"
+
+msgid "No DNS resolver configured: the name cannot be resolved"
+msgstr "Kein DNS-Resolver konfiguriert: Der Name kann nicht aufgelöst werden"
+
+msgid "No change request matches"
+msgstr "Kein Änderungsantrag stimmt überein"
+
+msgid "Not installed"
+msgstr "Nicht installiert"
+
+msgid "Nothing matches this search and these filters."
+msgstr "Nichts entspricht dieser Suche und diesen Filtern."
+
+msgid "Open (not closed)"
+msgstr "Offen (nicht abgeschlossen)"
+
+msgid "Optional: a restricted key for the account satom-mon, so virtual hosts, certificates and health work without anybody's password. Install, reinstall or remove it with a credential that can become root; each runs as a job with its steps and a check afterwards."
+msgstr "Optional: ein eingeschränkter Schlüssel für das Konto satom-mon, damit virtuelle Hosts, Zertifikate und Zustand ohne fremdes Passwort funktionieren. Installieren, neu installieren oder entfernen Sie ihn mit einer Anmeldeinformation, die root werden kann; jede Aktion läuft als Job mit ihren Schritten und einer anschließenden Prüfung."
+
+msgid "PTR error"
+msgstr "PTR-Fehler"
+
+msgid "Page %(page)s of %(pages)s"
+msgstr "Seite %(page)s von %(pages)s"
+
+msgid "Pick a credential that can become root in Sign in as (not the agent itself)."
+msgstr "Wählen Sie unter Anmelden als eine Anmeldeinformation, die root werden kann (nicht den Agenten selbst)."
+
+msgid "Read over SSH instead, because:"
+msgstr "Stattdessen per SSH gelesen, weil:"
+
+msgid "Recorded in the audit log."
+msgstr "Im Audit-Protokoll erfasst."
+
+msgid "Reinstall agent"
+msgstr "Agent neu installieren"
+
+msgid "Reinstall the satom-webctl agent"
+msgstr "Den Agenten satom-webctl neu installieren"
+
+msgid "Remove agent"
+msgstr "Agent entfernen"
+
+msgid "Remove the satom-webctl agent"
+msgstr "Den Agenten satom-webctl entfernen"
+
+msgid "Resolved (A and AAAA) on every resolver; each address searched in the address fields, and the name in the configuration text."
+msgstr "Auf jedem Resolver aufgelöst (A und AAAA); jede Adresse wird in den Adressfeldern gesucht, der Name im Konfigurationstext."
+
+msgid "SATOM has no primary recorded for this cluster: shown once, on the first member by name. Edit, Delete and the live check act on that member only."
+msgstr "SATOM hat für diesen Cluster keinen Primärknoten erfasst: einmal angezeigt, auf dem ersten Mitglied nach Name. Bearbeiten, Löschen und die Live-Prüfung wirken nur auf dieses Mitglied."
+
+msgid "SATOM removes the agent exactly as the installer added it, checks that the server refuses its key, installs it again with the same key and checks that satom-mon signs in. A second reinstall changes nothing."
+msgstr "SATOM entfernt den Agenten genau so, wie der Installer ihn hinzugefügt hat, prüft, dass der Server seinen Schlüssel ablehnt, installiert ihn mit demselben Schlüssel erneut und prüft, dass sich satom-mon anmeldet. Eine zweite Neuinstallation ändert nichts."
+
+msgid "SATOM removes what the installer added: the program, its configuration, the sudo rules, the ACLs, SATOM's key and the account satom-mon if the installer created it. Then it checks that the server refuses the key, and forgets the key and the agent credential. Health falls back to a shared SSH credential."
+msgstr "SATOM entfernt, was der Installer hinzugefügt hat: das Programm, seine Konfiguration, die sudo-Regeln, die ACLs, SATOMs Schlüssel und das Konto satom-mon, falls der Installer es angelegt hat. Danach prüft es, dass der Server den Schlüssel ablehnt, und vergisst den Schlüssel und die Agenten-Anmeldeinformation. Der Zustand greift auf eine gemeinsame SSH-Anmeldeinformation zurück."
+
+msgid "SATOM runs install-satom-webctl.sh as root with its own agent key, valid only from the SATOM nodes. It creates the account satom-mon (no password, no shell), /usr/local/bin/satom-webctl, two sudo rules per web server (configuration test and reload) and ACLs on the site folders, then checks that satom-mon signs in with the key."
+msgstr "SATOM führt install-satom-webctl.sh als root mit einem eigenen Agentenschlüssel aus, der nur von den SATOM-Knoten aus gilt. Es legt das Konto satom-mon (ohne Passwort, ohne Shell), /usr/local/bin/satom-webctl, zwei sudo-Regeln pro Webserver (Konfigurationstest und Neuladen) und ACLs auf den Site-Ordnern an und prüft dann, dass sich satom-mon mit dem Schlüssel anmeldet."
+
+msgid "Search (title · reason · IP · AppID · customer · policy · device · requester · timeline)"
+msgstr "Suche (Titel · Grund · IP · AppID · Kunde · Policy · Gerät · Antragsteller · Zeitleiste)"
+
+msgid "Search and filters"
+msgstr "Suche und Filter"
+
+msgid "Searched in the address fields of every server policy: VIP, pool members and other address fields."
+msgstr "Gesucht in den Adressfeldern jeder Server-Policy: VIP, Pool-Mitglieder und weitere Adressfelder."
+
+msgid "Searched in the configuration text; the Name is the PTR of the service IP."
+msgstr "Gesucht im Konfigurationstext; der Name ist der PTR der Service-IP."
+
+msgid "Select at least one service to export."
+msgstr "Wählen Sie mindestens einen Service zum Exportieren aus."
+
+msgid "Select every service"
+msgstr "Alle Services auswählen"
+
+msgid "Select matching"
+msgstr "Treffer auswählen"
+
+msgid "Select none"
+msgstr "Keine auswählen"
+
+msgid "Service IP"
+msgstr "Service-IP"
+
+msgid "Shown once, on the cluster itself: Edit, Delete and the live check go to the member that is primary when they run."
+msgstr "Einmal angezeigt, auf dem Cluster selbst: Bearbeiten, Löschen und die Live-Prüfung gehen an das Mitglied, das bei der Ausführung primär ist."
+
+msgid "Shown once, on the primary SATOM records (role set on the appliance, not read live): Edit, Delete and the live check act on it."
+msgstr "Einmal angezeigt, auf dem Primärknoten, den SATOM erfasst (Rolle am Gerät gesetzt, nicht live gelesen): Bearbeiten, Löschen und die Live-Prüfung wirken auf ihn."
+
+msgid "Signs in as %(cred)s and becomes root (sudo)."
+msgstr "Meldet sich als %(cred)s an und wird root (sudo)."
+
+msgid "The agent job failed:"
+msgstr "Der Agenten-Job ist fehlgeschlagen:"
+
+msgid "This change is scheduled: every scheduled action bound to it is disabled, so none of its rounds fires. A round that is running right now cannot be stopped part-way — the cancel is then refused."
+msgstr "Diese Änderung ist geplant: Alle daran gebundenen geplanten Aktionen werden deaktiviert, sodass keine ihrer Runden ausgelöst wird. Eine gerade laufende Runde kann nicht mittendrin gestoppt werden — der Abbruch wird dann abgelehnt."
+
+msgid "This server policy is cached on"
+msgstr "Diese Server-Policy ist zwischengespeichert auf"
+
+msgid "Why is this change cancelled? Recorded on its timeline and in the audit log."
+msgstr "Warum wird diese Änderung abgebrochen? Wird in ihrer Zeitleiste und im Audit-Protokoll erfasst."
+
+msgid "no PTR"
+msgstr "kein PTR"
+
+msgid "no health check"
+msgstr "keine Zustandsprüfung"
+
+msgid "no members in cache"
+msgstr "keine Mitglieder im Cache"
+
+msgid "no resolver configured"
+msgstr "kein Resolver konfiguriert"
+
+msgid "no service IP"
+msgstr "keine Service-IP"
+
+msgid "not in SATOM's copy"
+msgstr "nicht in SATOMs Kopie"
+
+msgid "not reported by the device"
+msgstr "vom Gerät nicht gemeldet"
+
+msgid "pool"
+msgstr "Pool"
+
+msgid "satom-webctl agent"
+msgstr "Agent satom-webctl"

@@ -19,7 +19,7 @@ from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from ..services import jobs as jobsvc
-from ..services.product_scope import visible_product
+from ..services.product_scope import job_visible, visible_product  # noqa: F401
 
 bp = Blueprint("jobs", __name__, url_prefix="/jobs")
 
@@ -38,7 +38,7 @@ def _own(job) -> bool:
 
 
 def _can_see(job) -> bool:
-    return job is not None and (_own(job) or _is_admin())
+    return job is not None and (_own(job) or _is_admin()) and job_visible(job)
 
 
 @bp.route("/manager", methods=["GET"])
@@ -67,8 +67,7 @@ def all_jobs():
     jobsvc.maybe_sweep_orphans()
     jobs = jobsvc.list_jobs(limit=limit, by=by, status=status, type_=type_,
                             appliance_id=appliance_id)
-    jobs = [j for j in jobs
-            if visible_product((j.get("meta") or {}).get("product"))]
+    jobs = [j for j in jobs if job_visible(j)]
     return jsonify({"jobs": jobs, "admin": _is_admin(), "me": _me()})
 
 
@@ -98,8 +97,7 @@ def index():
     jobsvc.maybe_sweep_orphans()
     jobs = jobsvc.list_jobs(limit=30, by=_me(), active_only=active)
     jobs = [j for j in jobs
-            if not j.get("background")
-            and visible_product((j.get("meta") or {}).get("product"))]
+            if not j.get("background") and job_visible(j)]
     return jsonify({"jobs": jobs})
 
 

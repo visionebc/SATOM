@@ -104,6 +104,11 @@ def token_required(scope: str = "read"):
             g.api_token = tok
             g.api_token_owner = owner
             g.product = tok.product  # product_scope reads g.product first
+            # product_scope answers for the OWNER from here on: drop what a
+            # before_request may already have cached for the anonymous caller.
+            for _k in ("_satom_allowed_adoms", "_satom_allowed_appliance_ids",
+                       "_satom_device_scope"):
+                g.pop(_k, None)
             _touch(tok)
             return f(*args, **kwargs)
         # The scope is STAMPED on the view so the OpenAPI document

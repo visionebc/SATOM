@@ -35,6 +35,8 @@ def cmdb_url(path: str) -> str:
 
 class FortiGateClient(BaseClient):
     def __init__(self, appliance, timeout: float = 30.0):
+        from ..services.jobs import assert_may_reach
+        assert_may_reach(appliance)       # device scope of the job's user
         super().__init__(appliance.host, appliance.port or 443,
                          appliance.verify_ssl, timeout,
                          tls_name=getattr(appliance, "tls_name", None))

@@ -40,6 +40,8 @@ class FortiAnalyzerClient(BaseClient):
         appliance: Appliance model instance with attributes:
             host, port, verify_ssl, username, password (decrypted)
         """
+        from ..services.jobs import assert_may_reach
+        assert_may_reach(appliance)       # device scope of the job's user
         super().__init__(appliance.host, appliance.port, appliance.verify_ssl, timeout,
                          tls_name=getattr(appliance, "tls_name", None))
         self._username = appliance.username

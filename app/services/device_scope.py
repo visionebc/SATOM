@@ -133,3 +133,21 @@ def describe(scope) -> str:
         "%s%s" % (k, "" if v is None else "[%s]" % ",".join(sorted(v)))
         for k, v in sorted(entries.items())) or "nothing")
         for adom, entries in sorted(scope.items()))
+
+
+def bell_gate(user_id: int, link: str) -> bool:
+    """Notification gate (services.notifications.GATES): a notice whose link
+    names ``/appliances/<id>`` is shown only to a user who reaches that device.
+    A link without an id is shown."""
+    import re
+    from ..extensions import db
+    from ..models import User
+    from .product_scope import adoms_of, device_scope_of, reachable_appliance_ids
+    m = re.search(r"/appliances/(\d+)", link or "")
+    if not m:
+        return True
+    user = db.session.get(User, int(user_id))
+    if user is None:
+        return False
+    ids = reachable_appliance_ids(adoms_of(user), device_scope_of(user))
+    return ids is None or int(m.group(1)) in ids

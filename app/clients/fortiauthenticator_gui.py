@@ -306,6 +306,8 @@ class FacGuiReader:
     """One logged-in GUI session; use as a context manager."""
 
     def __init__(self, appliance, *, timeout: float = 20.0, allowed=()):
+        from ..services.jobs import assert_may_reach
+        assert_may_reach(appliance)       # device scope of the job's user
         self.base = "https://%s:%s" % (appliance.host, appliance.port or 443)
         self._user = appliance.ssh_login
         self._secret = appliance.ssh_secret

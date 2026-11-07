@@ -106,9 +106,9 @@ def dashboard():
     jobs_running = 0
     try:
         from ..services import jobs as jobsvc
-        from ..services.product_scope import visible_product
+        from ..services.product_scope import job_visible
         jobs_running = len([j for j in jobsvc.list_jobs(active_only=True, limit=200)
-                            if visible_product((j.get('meta') or {}).get('product'))])
+                            if job_visible(j)])
     except Exception:  # noqa: BLE001 — dashboard stays up without the jobs dir
         pass
 

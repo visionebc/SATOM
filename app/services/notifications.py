@@ -29,7 +29,10 @@ logger = logging.getLogger(__name__)
 #: notice is written once, but who may read what it names can change after
 #: (a Wiki article narrowed to a group the reader left). "module:function",
 #: imported on first use so this module stays import-safe everywhere.
-GATES = {"/wiki/a/": "app.services.wiki_social:bell_gate"}
+GATES = {"/wiki/a/": "app.services.wiki_social:bell_gate",
+         # A notice about a device: shown to a user who reaches it (device
+         # scope and ADOMs of their profile, 2026-11-07).
+         "/appliances/": "app.services.device_scope:bell_gate"}
 
 
 def _gate_for(link: str | None):

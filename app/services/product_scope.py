@@ -182,6 +182,25 @@ def adoms_of(user) -> frozenset[str] | None:
     return frozenset(str(k).strip().lower() for k in allowed)
 
 
+def _current_user():
+    """Whose ADOMs and devices apply to this request: the OWNER of the API
+    token on /api/v1 (2026-11-07: until then a token saw its product's whole
+    fleet whatever its owner's profile confined -- the API never signs a user
+    in), else the signed-in user."""
+    try:
+        from flask import g
+        owner = g.get("api_token_owner")
+        if owner is not None:
+            return owner
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from flask_login import current_user
+        return current_user._get_current_object()
+    except Exception:  # noqa: BLE001 -- no login manager (bare test app)
+        return None
+
+
 def restricted_adoms() -> frozenset[str] | None:
     """ADOM confinement of the SIGNED-IN user of this request.
 
@@ -199,12 +218,7 @@ def restricted_adoms() -> frozenset[str] | None:
     cached = getattr(g, _G_ADOMS, _NOT_CACHED)
     if cached is not _NOT_CACHED:
         return cached
-    try:
-        from flask_login import current_user
-        user = current_user._get_current_object()
-    except Exception:  # noqa: BLE001 — no login manager (bare test app)
-        user = None
-    allowed = adoms_of(user)
+    allowed = adoms_of(_current_user())
     setattr(g, _G_ADOMS, allowed)
     return allowed
 
@@ -391,14 +405,6 @@ def device_scope_of(user):
         return dict(Profile.DEVICE_SCOPE_DENY)
 
 
-def _current_user():
-    try:
-        from flask_login import current_user
-        return current_user._get_current_object()
-    except Exception:  # noqa: BLE001 -- no login manager (bare test app)
-        return None
-
-
 def restricted_device_scope():
     """Device scope of the signed-in user of this request (``None`` outside a
     request, like :func:`restricted_adoms`: workers act on the whole fleet)."""
@@ -443,6 +449,32 @@ def allowed_appliance_ids() -> frozenset[int] | None:
     ids = reachable_appliance_ids(restricted_adoms(), restricted_device_scope())
     setattr(g, _G_IDS, ids)
     return ids
+
+
+def job_appliance_ids(job: dict) -> set[int]:
+    """The devices a job names: ``meta.appliance_id`` / ``meta.appliance_ids``
+    and the ones it wrote to."""
+    meta = (job or {}).get("meta") or {}
+    out = set()
+    vals = [meta.get("appliance_id")] + list(meta.get("appliance_ids") or []) \
+        + list((job or {}).get("wrote_to") or [])
+    for v in vals:
+        try:
+            if v is not None and str(v).strip():
+                out.add(int(v))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def job_visible(job: dict) -> bool:
+    """A job is shown when its ADOM is (:func:`visible_product`) and every
+    device it names is one the user reaches -- the confined_appliance_ids
+    rule for the file-backed job store."""
+    if not visible_product(((job or {}).get("meta") or {}).get("product")):
+        return False
+    ids = allowed_appliance_ids()
+    return ids is None or job_appliance_ids(job) <= set(ids)
 
 
 def partial_chassis(appl) -> bool:

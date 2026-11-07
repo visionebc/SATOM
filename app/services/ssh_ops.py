@@ -285,6 +285,8 @@ class FortiWebReadonlySSH:
     """Interactive FortiWeb CLI session over SSH (paramiko), read commands only."""
 
     def __init__(self, appliance, secret: str | None = None, *, timeout: float = 15.0):
+        from .jobs import assert_may_reach
+        assert_may_reach(appliance)       # device scope of the job's user
         self.appliance = appliance
         self._secret = secret if secret is not None else appliance.ssh_secret
         self._timeout = timeout

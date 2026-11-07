@@ -147,6 +147,18 @@ def create_job(type_: str, title: str, *, by: str = "",
             meta["product"] = stamp()
         except Exception:  # noqa: BLE001 — scoping is best-effort, never fatal
             meta["product"] = ""
+    if "allowed_appliance_ids" not in meta:
+        # The devices the user who ENQUEUES may reach (device scope,
+        # 2026-11-07): the worker refuses the others (assert_may_reach).
+        # Outside a request (scheduled actions) nothing is recorded: they act
+        # on the whole fleet, as before.
+        try:
+            from .product_scope import allowed_appliance_ids
+            ids = allowed_appliance_ids()
+        except Exception:  # noqa: BLE001 -- fail closed for a confined request
+            ids = frozenset()
+        if ids is not None:
+            meta["allowed_appliance_ids"] = sorted(int(i) for i in ids)
     state = {
         "id": job_id, "type": type_, "title": title, "status": PENDING,
         "percent": 0, "message": "", "result": None, "error": None,
@@ -251,6 +263,56 @@ class bound:
     def __exit__(self, *exc) -> bool:
         _RUN.job_id = self._prev
         return False
+
+
+class DeviceOutOfScope(PermissionError):
+    """The job's user may not reach this device (their device scope)."""
+
+
+def assert_may_reach(appliance) -> None:
+    """Called where a device client / SSH session is made for ``appliance``.
+    In a job enqueued by a user with a device scope, a device outside the
+    devices recorded at enqueue is REFUSED -- never ignored in silence: a step
+    in the job, an audit line, and :class:`DeviceOutOfScope`. Outside a job,
+    or for a job with no record (scheduled actions), nothing happens."""
+    jid = current_job_id()
+    if not jid:
+        return
+    st = get_job(jid) or {}
+    allowed = (st.get("meta") or {}).get("allowed_appliance_ids")
+    if allowed is None:
+        return
+    aid = getattr(appliance, "id", None)
+    try:
+        if aid is not None and int(aid) in {int(x) for x in allowed}:
+            return
+    except (TypeError, ValueError):
+        pass
+    name = getattr(appliance, "name", "") or "#%s" % aid
+    msg = ("%s is outside the devices %s may reach (device scope of the profile): "
+           "not contacted" % (name, st.get("by") or "the user who started this job"))
+    try:
+        from . import job_progress
+        job_progress.step(msg)
+    except Exception:  # noqa: BLE001
+        pass
+
+    def _add(s):
+        lst = s.setdefault("refused_devices", [])
+        if aid not in lst:
+            lst.append(aid)
+    try:
+        mutate_job(jid, _add)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from .audit import log_action
+        log_action("job.device_refused", target=name,
+                   extra={"job": jid, "type": st.get("type"), "by": st.get("by"),
+                          "appliance_id": aid})
+    except Exception:  # noqa: BLE001
+        pass
+    raise DeviceOutOfScope(msg)
 
 
 def note_write(appliance_id) -> None:

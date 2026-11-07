@@ -1751,6 +1751,16 @@ def create_app(config_override: object | None = None) -> Flask:
         try:
             res = _al.run(force=force, dry_run=dry_run)
             print('alerts-run:', res)
+            # An alert can start automations (a recovery runbook). They run
+            # on job threads of THIS process, which exits next: wait for them,
+            # or they die mid-walk and stay "running" (2026-11-07).
+            from .services import jobs as _jobs
+            from .services import studio_flow as _sf
+            left = _jobs.wait_background(_sf.RUN_TIMEOUT + 30)
+            if left:
+                print('alerts-run: %d automation job(s) still running at exit, '
+                      'closed as interrupted by the next sweep: %s'
+                      % (len(left), ', '.join(left)))
             # A run that found something and reached NOBODY exits non-zero, so
             # the timer's unit goes ``failed`` and the operator sees it in
             # systemctl and on the Monitoring page. Silent delivery failure is

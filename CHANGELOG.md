@@ -45,6 +45,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - **A *Console read* with `execute ping` always failed** with "SSH did not
   answer": the read-only path refused the probe its own gate allowed. It
   now goes through the probe path.
+- **Test Connection: a traceroute to an appliance kept by host name never
+  said "reached".** The hops are printed as addresses and the name was
+  compared with them; the address traceroute resolved the name to is now
+  compared too.
 
 ## [4.11.11] - 2026-11-07
 

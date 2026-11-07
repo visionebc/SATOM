@@ -29560,3 +29560,12 @@ msgstr "Chiave privata OpenSSH o PEM"
 
 msgid "Health: %(state)s"
 msgstr "Salute: %(state)s"
+
+msgid "Walk every arrow of the diagram: one rehearsal per scenario, every check really looks, every question is answered by the scenario"
+msgstr "Percorrere ogni freccia del diagramma: una prova per scenario, ogni controllo guarda davvero, lo scenario risponde a ogni domanda"
+
+msgid "Cover every branch"
+msgstr "Copri tutti i rami"
+
+msgid "Cover every branch walks the scenarios that together take every arrow, one after the other. Each check really looks and its finding is kept; the scenario only picks the arrow. A Notify step rings only your bell, once per simulation."
+msgstr "Copri tutti i rami percorre uno dopo l'altro gli scenari che insieme prendono ogni freccia. Ogni controllo guarda davvero e ciò che trova viene conservato; lo scenario sceglie solo la freccia. Un passo Notify fa suonare solo la tua campanella, una volta per simulazione."

@@ -70,6 +70,10 @@ _PROBE_COMMAND_RE = re.compile(
 #: stops only on the returning prompt or the wall clock.
 _NEVER = re.compile(r"(?!x)x")
 
+#: The most one read keeps (``_read``): a session that never stops printing
+#: is cut here instead of filling the worker's memory.
+MAX_READ_BYTES = 8 * 1024 * 1024
+
 _PROBE_DONE_RE = re.compile(
     r"packet loss|unknown host|cannot resolve|Name or service not known|"
     r"Parsing error|Command fail|Unknown action", re.I)
@@ -379,17 +383,22 @@ class FortiWebReadonlySSH:
 
     # -- exec -------------------------------------------------------------
     def _read(self, quiet: float = 1.0, maxt: float = 15.0) -> str:
+        """Read until the session has been quiet for ``quiet`` seconds or
+        ``maxt`` has passed, whichever comes first -- ALSO while data keeps
+        arriving, and never more than :data:`MAX_READ_BYTES`. Until
+        2026-11-07 ``maxt`` was checked only after a silent poll: a FortiWeb
+        that kept printing held a runbook's 15 s ``get system status`` for 18
+        minutes, past the run's own time limit, with the buffer growing."""
         buf = ""
         last = start = time.time()
         sh = self._shell
-        while True:
+        while time.time() - start <= maxt and len(buf) <= MAX_READ_BYTES:
             if sh.recv_ready():
                 buf += sh.recv(16384).decode("utf-8", "replace")
                 last = time.time()
             else:
                 time.sleep(0.15)
-                now = time.time()
-                if now - last > quiet or now - start > maxt:
+                if time.time() - last > quiet:
                     break
         return buf
 
@@ -567,6 +576,16 @@ def run_command(appliance, command: str, *, timeout: float = 15.0) -> str:
         return ssh.run_readonly(command)
 
 
+def run_probe_command(appliance, command: str, *, timeout: float = 15.0,
+                      maxt: float = 45.0) -> str:
+    """Open a session, send one reachability probe (``execute ping <host>``,
+    :func:`assert_probe_command`), close. :func:`run_command` refuses a probe:
+    it is not a read, and it has its own gate and its own end of output."""
+    command = assert_probe_command(command)  # fail fast before any connect
+    with FortiWebReadonlySSH(appliance, timeout=timeout) as ssh:
+        return ssh.run_probe(command, maxt=maxt)
+
+
 def run_tree(appliance, *, timeout: float = 20.0, maxt: float = 180.0) -> tuple[str, bool]:
     """Open a session, run ``tree``, close. Returns ``(output, complete)``."""
     assert_schema_command("tree")
@@ -592,5 +611,5 @@ __all__ = [
     "clean_output", "assert_readonly", "assert_probe_command", "assert_schema_command",
     "assert_help_path",
     "TROUBLESHOOT", "flash_battery",
-    "run_command", "run_tree", "capture_health", "health_text",
+    "run_command", "run_probe_command", "run_tree", "capture_health", "health_text",
 ]

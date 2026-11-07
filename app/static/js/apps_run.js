@@ -545,7 +545,8 @@
     if (e.key === 'Enter' && t && t.hasAttribute && t.hasAttribute('data-sapp-search')) e.preventDefault();
   });
 
-  window.AppRun = { mount: mount, draw: draw, follow: follow, fill: fill, searchSelect: searchSelect };
+  window.AppRun = { mount: mount, draw: draw, follow: follow, fill: fill, searchSelect: searchSelect,
+                    formValues: formValues };
 
   var cfgEl = document.getElementById('app-run-config');
   if (cfgEl) {

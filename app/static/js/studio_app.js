@@ -214,6 +214,114 @@
     }
   }
 
+  /* ── cover every branch (FA-0008) ─────────────────────────────────
+     The server plans the scenarios that together walk every arrow
+     (studio_flow.cover). Each is walked here, one after the other, as a
+     rehearsal of the saved draft: every check really looks (its finding is
+     kept as "really"), every question is answered by the scenario, and the
+     table says which steps and arrows the whole set walked. */
+  function getRun(url) {
+    return fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  }
+  function pause(ms) { return new Promise(function (res) { window.setTimeout(res, ms); }); }
+  function walkRun(url) {
+    var n = 0;
+    return (function poll() {
+      return getRun(url).then(function (d) {
+        if (d.status === 'running' && n++ < 600) return pause(n < 10 ? 700 : 1500).then(poll);
+        /* A question the scenario holds no answer for (a loop walked more
+           often than planned): answered Yes, and said so on the run. */
+        if (d.status === 'waiting' && d.waiting && d.waiting.can_answer && n++ < 600) {
+          return post('/apps/runs/' + d.id + '/answer', { answer: 'yes', acks: [], typed: '',
+            note: 'simulation: a question the scenario did not answer' })
+            .then(function () { return pause(400); }).then(poll);
+        }
+        return d;
+      });
+    })();
+  }
+  function counts(o) {
+    return Object.keys(o || {}).map(function (k) { return esc(k) + ' ×' + o[k]; }).join(', ');
+  }
+  function coverTable(c) {
+    var h = '<div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;">' +
+      '<i class="bi bi-diagram-3 me-2 text-accent"></i>Coverage</span><span class="text-muted ms-2" style="font-size:12px;">' +
+      c.steps_visited + ' of ' + c.steps_total + ' steps · ' + c.arrows_taken + ' of ' + c.arrows_total + ' arrows · ' +
+      c.runs.length + ' runs</span></div><div class="fw-card-body">' +
+      '<table class="table table-sm mb-2" style="font-size:12px;"><thead><tr><th>Step</th><th>Walked</th>' +
+      '<th>Answered</th><th>The check really found</th></tr></thead><tbody>' +
+      c.steps.map(function (s) {
+        var miss = !s.visits;
+        return '<tr data-step="' + esc(s.key) + '" style="cursor:pointer;' + (miss ? 'background:#FBEFF1;' : '') + '">' +
+          '<td><strong>' + esc(s.label) + '</strong><div class="text-muted"><code>' + esc(s.key) + '</code> ' + esc(s.kind) + '</div></td>' +
+          '<td>' + (miss ? '<span style="color:#8B1C2A;">never</span>' : s.visits + '×') + '</td>' +
+          '<td>' + counts(s.answered) + '</td><td>' + (s.check ? counts(s.really) : '<span class="text-muted">—</span>') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+    var missed = c.arrows.filter(function (a) { return !a.taken; });
+    h += missed.length
+      ? '<div style="color:#8B1C2A;"><strong>Arrows never taken</strong><ul class="mb-0">' + missed.map(function (a) {
+          return '<li>' + esc(a.src_label) + ' —' + esc(a.branch) + '→ ' + esc(a.dst_label) + '</li>'; }).join('') + '</ul></div>'
+      : '<div style="color:#15692A;">Every arrow was taken at least once.</div>';
+    return h + '</div></div>';
+  }
+  if ($('ap-sim-cover')) $('ap-sim-cover').addEventListener('click', function () {
+    var btn = this, form = $('ap-sim-form'), out = $('ap-sim-cov');
+    if (form && form.reportValidity && !form.reportValidity()) return;
+    var inputs = window.AppRun && window.AppRun.formValues ? window.AppRun.formValues(form) : {};
+    btn.disabled = true; $('ap-sim-run').disabled = true;
+    out.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm"></span> Planning…</span>';
+    function done() { btn.disabled = false; $('ap-sim-run').disabled = false; }
+    post(U.simPlan, {}).then(function (plan) {
+      var sc = plan.scenarios || [], ids = [], rows = [];
+      var head = '<div class="mb-1"><strong>' + sc.length + ' scenarios</strong> walk ' + plan.covered + ' of ' +
+        plan.arrows + ' arrows.' + (plan.unreachable.length ? ' <span style="color:#8B1C2A;">Never reached from Start: ' +
+        esc(plan.unreachable.join('; ')) + '</span>' : '') + '</div>';
+      function render() { out.innerHTML = head + '<ol class="mb-2" style="padding-left:1.3em;">' + rows.join('') + '</ol>'; }
+      var chain = Promise.resolve();
+      sc.forEach(function (s, i) {
+        chain = chain.then(function () {
+          rows[i] = '<li>' + esc(s.name) + ' <span class="text-muted">— running…</span></li>'; render();
+          return post(U.test, { inputs: inputs, rehearsal: true,
+                                scenario: { answers: s.answers, first: s.first, name: s.name } })
+            .then(function (d) { return walkRun(d.status_url); })
+            .then(function (r) {
+              ids.push(r.id);
+              var want = s.ends === 'fails' ? 'failed' : 'done';
+              var looked = (r.steps || []).filter(function (x) { return x.really; }).length;
+              var good = r.status === want;
+              rows[i] = '<li>' + esc(s.name) + ' — <a href="/apps/runs/' + r.id + '" target="_blank" rel="noopener">run #' + r.id + '</a> ' +
+                '<span style="color:' + (good ? '#15692A' : '#8B1C2A') + ';">' + esc(r.status) +
+                (good ? (want === 'failed' ? ' (ends at ' + esc(s.end) + ', as planned)' : '') : ': ' + esc(r.error || ('expected ' + want))) +
+                '</span> <span class="text-muted">· ' + (r.steps || []).length + ' steps, ' + looked + ' checks looked</span></li>';
+              render();
+            }, function (err) {
+              rows[i] = '<li>' + esc(s.name) + ' — <span style="color:#8B1C2A;">' + esc(err.message) + '</span></li>'; render();
+            });
+        });
+      });
+      return chain.then(function () {
+        if (!ids.length) { done(); return; }
+        return post(U.simCoverage, { runs: ids }).then(function (c) {
+          render();
+          out.insertAdjacentHTML('beforeend', coverTable(c));
+          if (window.SatomProcEditor) window.SatomProcEditor.overlay(c.steps.map(function (s) {
+            return { key: s.key, outcome: s.visits ? 'ok' : 'unknown',
+                     detail: s.visits ? 'walked ' + s.visits + '× · answered ' + counts(s.answered) +
+                       (s.check ? ' · really found ' + counts(s.really) : '') : 'never walked' };
+          }));
+          done();
+        });
+      });
+    }).catch(function (e) {
+      out.innerHTML = '<span style="color:#8B1C2A;">' + esc(e.message) + '</span>'; done();
+    });
+  });
+  if ($('ap-sim-cov')) $('ap-sim-cov').addEventListener('click', function (e) {
+    var tr = e.target.closest('tr[data-step]');
+    if (tr && window.SatomProcEditor) window.SatomProcEditor.select(tr.getAttribute('data-step'));
+  });
+
   /* ── publish ──────────────────────────────────────────────────────── */
   $('ap-publish').addEventListener('click', function () {
     post(U.publish, { note: $('ap-note').value }).then(function (d) {

@@ -1141,16 +1141,64 @@ def app_form(slug):
 def app_test(slug):
     from ..services import studio_apps as SA
     a = _app_or_404(slug)
+    from ..services import studio_flow as F
     body = request.get_json(silent=True) or {}
     rehearsal = bool(body.get("rehearsal", True))
     try:
+        scenario = F.clean_scenario(SA.definition(a, True).get("graph") or {},
+                                    body.get("scenario"))
         run = SA.start_run(a, user=current_user, product=_product_key(),
-                           raw_inputs=body.get("inputs"), draft=True, armed=not rehearsal)
-    except SA.AppError as exc:
+                           raw_inputs=body.get("inputs"), draft=True, armed=not rehearsal,
+                           scenario=scenario or None)
+    except (SA.AppError, F.FlowError) as exc:
         return _err(exc)
-    log_action("studio.app.test", target=slug, extra={"run": run.id, "rehearsal": rehearsal})
+    log_action("studio.app.test", target=slug, extra={"run": run.id, "rehearsal": rehearsal,
+                                                      "scenario": scenario.get("name", "")
+                                                      if scenario else ""})
     return jsonify({"ok": True, "run_id": run.id,
                     "status_url": url_for("apps.run_status", rid=run.id)})
+
+
+@bp.route("/apps/<slug>/simulate/plan", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_simulate_plan(slug):
+    """The scenarios that walk every arrow of the saved draft (FA-0008)."""
+    from ..services import studio_apps as SA
+    from ..services import studio_flow as F
+    a = _app_or_404(slug)
+    try:
+        plan = F.cover(SA.definition(a, True).get("graph") or {})
+    except F.FlowError as exc:
+        return _err(exc)
+    return jsonify(dict(plan, ok=True))
+
+
+@bp.route("/apps/<slug>/simulate/coverage", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_simulate_coverage(slug):
+    """What the simulation runs *runs* walked of the saved draft."""
+    from ..models_studio import StudioAppRun
+    from ..services import studio_apps as SA
+    from ..services import studio_flow as F
+    a = _app_or_404(slug)
+    ids = (request.get_json(silent=True) or {}).get("runs") or []
+    if not isinstance(ids, list) or len(ids) > F.MAX_SCENARIOS * 2:
+        return _err(SA.AppError("runs is a list of run ids"))
+    try:
+        ids = [int(x) for x in ids]
+    except (TypeError, ValueError):
+        return _err(SA.AppError("runs is a list of run ids"))
+    rows = (StudioAppRun.query.filter(StudioAppRun.app_id == a.id, StudioAppRun.id.in_(ids))
+            .order_by(StudioAppRun.id).all()) if ids else []
+    runs = [{"id": r.id, "status": r.status, "steps": r.steps} for r in rows
+            if SA.may_see_run(current_user, r)]
+    try:
+        cov = F.coverage(SA.definition(a, True).get("graph") or {}, runs)
+    except F.FlowError as exc:
+        return _err(exc)
+    return jsonify(dict(cov, ok=True))
 
 
 @bp.route("/apps/<slug>/publish", methods=["POST"])

@@ -57,7 +57,9 @@ BRANCHES = (
     {"key": "no", "label": "no", "color": "#7A5700"},
 )
 BRANCH_KEYS = tuple(b["key"] for b in BRANCHES)
-RESERVED_VARS = ("form", "vars", "run", "outputs", "event")
+#: Where a simulation keeps its scenario (the answers it still has to give).
+SCENARIO_VAR = "_scenario"
+RESERVED_VARS = ("form", "vars", "run", "outputs", "event", SCENARIO_VAR)
 DECISION_OPS = ("equals", "not_equals", "contains", "greater", "less", "empty",
                 "not_empty", "true")
 #: ``plan``: a decommission plan (items, warnings, counts) -- the DNS & LB
@@ -1150,11 +1152,27 @@ def walk(graph: dict, ctx: Ctx, on_step=None, resume: dict | None = None) -> dic
         except FlowError as exc:
             outcome, detail = "error", str(exc)
             ctx.vars["last_error"] = {"step": key, "message": detail}
+        # A simulation scenario picks the arrow; the step itself has RUN (a
+        # check really looked), and what it found stays on the record.
+        really = None
+        forced = _scenario_take(ctx, key, node)
+        if forced is not None:
+            if outcome == C.WAIT:
+                ctx.vars.pop(C.ASK_GATE, None)
+                detail = "%s — answered %s (simulation)" % (detail, forced)
+            else:
+                really = outcome
+                if outcome != forced:
+                    detail = "%s — simulation takes %s" % (detail, forced)
+            outcome = forced
         waiting = outcome == C.WAIT
-        steps.append({"key": key, "label": node.get("label") or key, "kind": node.get("kind"),
-                      "outcome": "waiting" if waiting else outcome,
-                      "detail": str(detail)[:2000],
-                      "ms": int((time.monotonic() - t0) * 1000)})
+        rec = {"key": key, "label": node.get("label") or key, "kind": node.get("kind"),
+               "outcome": "waiting" if waiting else outcome,
+               "detail": str(detail)[:2000],
+               "ms": int((time.monotonic() - t0) * 1000)}
+        if really is not None:
+            rec["really"] = really
+        steps.append(rec)
         if on_step:
             on_step(steps, ctx)
         if waiting:
@@ -1170,6 +1188,228 @@ def walk(graph: dict, ctx: Ctx, on_step=None, resume: dict | None = None) -> dic
             break
         key = nxt
     return {"status": status, "error": error, "steps": steps}
+
+
+# --------------------------------------------------------------------------- #
+#  simulation -- every arrow walked at least once (FA-0008, 2026-11-07)        #
+# --------------------------------------------------------------------------- #
+#: What a scenario may answer at a step.
+SCENARIO_OUTCOMES = ("yes", "no", "ok", "error")
+#: Scenarios one plan proposes at most.
+MAX_SCENARIOS = 60
+
+
+def _scenario_take(ctx: Ctx, key: str, node: dict):
+    """The outcome the simulation's scenario gives *key* this time, or None
+    (no scenario, an armed run, or no answer left for this step)."""
+    if ctx.armed or node.get("kind") in ("start", "end", "fail"):
+        return None
+    sc = ctx.vars.get(SCENARIO_VAR)
+    if not isinstance(sc, dict):
+        return None
+    q = (sc.get("answers") or {}).get(key)
+    if not isinstance(q, list) or not q:
+        return None
+    return q.pop(0)
+
+
+def clean_scenario(graph: dict, raw) -> dict:
+    """A scenario as a simulation may carry it, or FlowError. ``{}`` = none."""
+    if raw in (None, "", {}):
+        return {}
+    if not isinstance(raw, dict):
+        raise FlowError("a scenario is an object")
+    keys = {n.get("key") for n in graph.get("nodes") or [] if isinstance(n, dict)}
+    answers = raw.get("answers")
+    if not isinstance(answers, dict) or len(answers) > 500:
+        raise FlowError("a scenario's answers are an object of step: [outcome, …]")
+    out = {}
+    for k, q in answers.items():
+        if k not in keys:
+            raise FlowError("the scenario answers a step that does not exist: %r" % k)
+        if not isinstance(q, list) or len(q) > 50 or any(x not in SCENARIO_OUTCOMES for x in q):
+            raise FlowError("the scenario's answers for %s are a list of %s"
+                            % (k, ", ".join(SCENARIO_OUTCOMES)))
+        out[k] = list(q)
+    first = [k for k in (raw.get("first") or []) if k in keys][:500]
+    return {"answers": out, "first": first, "name": str(raw.get("name") or "")[:300]}
+
+
+def _forced_outcome(node: dict, branch: str, branches: set):
+    """The outcome that sends a simulation along *branch* out of *node*, or
+    None when the step's own result already does (a box with one arrow)."""
+    from . import studio_checks as C
+    kind = node.get("kind")
+    if kind in ("start", "end", "fail"):
+        return None
+    two_way = kind == "decision" or kind in C.YES_NO_KINDS
+    if kind == "ask":
+        return branch if branch in ("yes", "no", "error") else "yes"
+    if branch in ("yes", "no", "error"):
+        return branch
+    if branch == "ok":
+        return "ok" if len(branches) > 1 else None
+    # always
+    if two_way:
+        return "yes"
+    return "ok" if "error" in branches else None
+
+
+def _graph_parts(graph: dict):
+    nodes = {n.get("key"): n for n in graph.get("nodes") or [] if isinstance(n, dict)}
+    edges = [e for e in graph.get("edges") or [] if isinstance(e, dict)
+             and e.get("src") in nodes and e.get("dst") in nodes]
+    starts = [k for k, n in nodes.items() if n.get("kind") == "start"]
+    if len(starts) != 1:
+        raise FlowError("the diagram has no single Start step")
+    return nodes, edges, starts[0]
+
+
+def cover(graph: dict) -> dict:
+    """Scenarios that together walk EVERY arrow reachable from Start.
+
+    Each scenario is one path from Start to an end, and the answer it forces
+    at every step with a choice (a question, a check, a decision, an error
+    arrow). Walked as a rehearsal, every check still really looks and every
+    question shows; only the arrow followed is the scenario's. Greedy: the
+    first arrow not yet walked, the shortest way to it, then new arrows while
+    they still lead to an end, else the shortest way out.
+    ``{scenarios: [{name, answers, first, path, ends}], arrows, unreachable}``."""
+    from collections import deque
+    nodes, edges, start = _graph_parts(graph)
+    outs = {k: [] for k in nodes}
+    rev = {k: [] for k in nodes}
+    for i, e in enumerate(edges):
+        outs[e["src"]].append(i)
+        rev[e["dst"]].append(i)
+
+    def terminal(k):
+        return nodes[k].get("kind") in ("end", "fail") or not outs[k]
+
+    dist = {k: 0 for k in nodes if terminal(k)}
+    q = deque(dist)
+    while q:
+        k = q.popleft()
+        for i in rev[k]:
+            s = edges[i]["src"]
+            if s not in dist:
+                dist[s] = dist[k] + 1
+                q.append(s)
+    prev, order, q = {start: None}, [start], deque([start])
+    while q:
+        k = q.popleft()
+        for i in outs[k]:
+            d = edges[i]["dst"]
+            if d not in prev:
+                prev[d] = i
+                order.append(d)
+                q.append(d)
+
+    def path_to(k):
+        p = []
+        while prev[k] is not None:
+            p.append(prev[k])
+            k = edges[prev[k]]["src"]
+        return p[::-1]
+
+    def label(k):
+        return str(nodes[k].get("label") or k)
+
+    rank = {k: n for n, k in enumerate(order)}
+    todo = sorted((i for i, e in enumerate(edges) if e["src"] in prev),
+                  key=lambda i: (rank[edges[i]["src"]], i))
+    covered, scenarios = set(), []
+    for i in todo:
+        if i in covered:
+            continue
+        if len(scenarios) >= MAX_SCENARIOS:
+            break
+        p = path_to(edges[i]["src"]) + [i]
+        cur, guard = edges[i]["dst"], 0
+        while not terminal(cur) and cur in dist and guard < 4 * len(nodes):
+            guard += 1
+            cands = [j for j in outs[cur] if edges[j]["dst"] in dist]
+            fresh = [j for j in cands if j not in covered and j not in p]
+            j = fresh[0] if fresh else min(cands, key=lambda x: dist[edges[x]["dst"]])
+            p.append(j)
+            cur = edges[j]["dst"]
+        covered.update(p)
+        answers: dict = {}
+        for j in p:
+            src = edges[j]["src"]
+            f = _forced_outcome(nodes[src], edges[j].get("branch") or "always",
+                                {edges[x].get("branch") or "always" for x in outs[src]})
+            if f is not None:
+                answers.setdefault(src, []).append(f)
+        e = edges[i]
+        ends = ("no way out" if not terminal(cur)
+                else ("fails" if nodes[cur].get("kind") == "fail" else "ends"))
+        scenarios.append({"name": "%s —%s→ %s" % (label(e["src"]), e.get("branch") or "always",
+                                                  label(e["dst"])),
+                          "answers": answers, "path": [start] + [edges[j]["dst"] for j in p],
+                          "end": label(cur), "ends": ends})
+    seen: set = set()
+    for sc in scenarios:
+        firsts = []
+        for k in sc["path"]:
+            if nodes[k].get("kind") == "notify" and k not in seen and k not in firsts:
+                firsts.append(k)
+        seen.update(firsts)
+        sc["first"] = firsts
+    unreachable = ["%s → %s (%s)" % (label(e["src"]), label(e["dst"]), e.get("branch") or "always")
+                   for e in edges if e["src"] not in prev]
+    return {"scenarios": scenarios, "arrows": len(edges),
+            "covered": len(covered), "unreachable": unreachable,
+            "truncated": len(scenarios) >= MAX_SCENARIOS and len(covered) < len(todo)}
+
+
+def coverage(graph: dict, runs: list) -> dict:
+    """What a set of runs walked: per step how often, what it answered, what
+    it really found (a check whose arrow a scenario chose); per arrow how often
+    it was taken. ``runs`` = ``[{"id", "status", "steps"}]``."""
+    from collections import Counter
+    from . import studio_checks as C
+    nodes, edges, _start = _graph_parts(graph)
+    visits = {k: 0 for k in nodes}
+    answered = {k: Counter() for k in nodes}
+    really = {k: Counter() for k in nodes}
+    taken = [0] * len(edges)
+    for r in runs:
+        st = [s for s in (r.get("steps") or []) if isinstance(s, dict)]
+        for n, a in enumerate(st):
+            k = a.get("key")
+            if k not in nodes:
+                continue
+            visits[k] += 1
+            out = a.get("outcome")
+            answered[k][out] += 1
+            if a.get("really"):
+                really[k][a["really"]] += 1
+            elif nodes[k].get("kind") != "ask" and out != "waiting":
+                really[k][out] += 1
+            b = st[n + 1].get("key") if n + 1 < len(st) else None
+            if b is None:
+                continue
+            hit = None
+            for want in (out, "always", None):
+                hit = next((i for i, e in enumerate(edges) if e["src"] == k and e["dst"] == b
+                            and (want is None or (e.get("branch") or "always") == want)), None)
+                if hit is not None:
+                    break
+            if hit is not None:
+                taken[hit] += 1
+    steps = [{"key": k, "label": n.get("label") or k, "kind": n.get("kind"),
+              "check": n.get("kind") in C.YES_NO_KINDS and n.get("kind") != "ask",
+              "visits": visits[k], "answered": dict(answered[k]), "really": dict(really[k])}
+             for k, n in nodes.items()]
+    arrows = [{"src": e["src"], "dst": e["dst"], "branch": e.get("branch") or "always",
+               "src_label": nodes[e["src"]].get("label") or e["src"],
+               "dst_label": nodes[e["dst"]].get("label") or e["dst"], "taken": taken[i]}
+              for i, e in enumerate(edges)]
+    return {"steps": steps, "arrows": arrows,
+            "steps_visited": sum(1 for s in steps if s["visits"]), "steps_total": len(steps),
+            "arrows_taken": sum(1 for a in arrows if a["taken"]), "arrows_total": len(arrows),
+            "runs": [{"id": r.get("id"), "status": r.get("status")} for r in runs]}
 
 
 # --------------------------------------------------------------------------- #

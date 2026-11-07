@@ -128,9 +128,12 @@
             <label class="form-check-label small" for="ap-sim-yes">{{ _('Answer Yes to every question') }}</label></div>
           <button type="button" class="btn btn-success btn-sm" id="ap-sim-run"><i class="bi bi-play-fill me-1"></i>{{ _('Simulate') }}</button>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="ap-sim-reload" title="{{ _('Reload the form after saving it') }}"><i class="bi bi-arrow-clockwise"></i></button>
+          <button type="button" class="btn btn-outline-success btn-sm mt-1" id="ap-sim-cover" title="{{ _('Walk every arrow of the diagram: one rehearsal per scenario, every check really looks, every question is answered by the scenario') }}"><i class="bi bi-diagram-3 me-1"></i>{{ _('Cover every branch') }}</button>
           <div class="form-text">{{ _('Walks the saved draft as a rehearsal: nothing is written to a device, the checks really look (they only read), each question stops here for your answer, and the path is coloured on the diagram.') }}</div>
+          <div class="form-text">{{ _('Cover every branch walks the scenarios that together take every arrow, one after the other. Each check really looks and its finding is kept; the scenario only picks the arrow. A Notify step rings only your bell, once per simulation.') }}</div>
         </div>
-        <div class="col-lg-8"><div id="ap-sim-out" class="text-muted" style="font-size:13px;">{{ _('Save the diagram, then press Simulate.') }}</div></div>
+        <div class="col-lg-8"><div id="ap-sim-out" class="text-muted" style="font-size:13px;">{{ _('Save the diagram, then press Simulate.') }}</div>
+          <div id="ap-sim-cov" class="mt-3" style="font-size:12.5px;"></div></div>
       </div></div>
     </div>
     <div id="ap-analysis" class="mb-3" style="font-size:12.5px;"></div>
@@ -276,7 +279,9 @@
            'form': url_for('studio.app_form', slug=a.slug), 'test': url_for('studio.app_test', slug=a.slug),
            'publish': url_for('studio.app_publish', slug=a.slug), 'unpublish': url_for('studio.app_unpublish', slug=a.slug),
            'delete': url_for('studio.app_delete', slug=a.slug), 'back': url_for('studio.index', pane='apps'),
-           'analyze': url_for('studio.app_analyze', slug=a.slug), 'lastRun': url_for('studio.app_last_run', slug=a.slug)}
+           'analyze': url_for('studio.app_analyze', slug=a.slug), 'lastRun': url_for('studio.app_last_run', slug=a.slug),
+           'simPlan': url_for('studio.app_simulate_plan', slug=a.slug),
+           'simCoverage': url_for('studio.app_simulate_coverage', slug=a.slug)}
 }|tojson }}</script>
 <script src="{{ url_for('static', filename='js/process_editor.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/apps_run.js') }}" nonce="{{ csp_nonce }}"></script>

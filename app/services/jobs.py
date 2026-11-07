@@ -68,6 +68,13 @@ _ACTIVE = (PENDING, RUNNING, CANCELLING, PAUSING, PAUSED)
 _TERMINAL = (SUCCESS, ERROR, CANCELLED)
 
 _LOCK = threading.Lock()
+#: The worker threads :func:`run_async` started in THIS process and that have
+#: not returned yet. A short-lived process (the ``alerts-run`` oneshot) must
+#: wait for them before it exits: they are daemon threads, and Python kills a
+#: daemon thread mid-call at interpreter exit (2026-11-07: the recovery runbook
+#: an alert started stopped after 3 steps, six times, and stayed "running").
+_THREADS: set = set()
+_THREADS_LOCK = threading.Lock()
 _HOST = socket.gethostname()
 _PAUSE_POLL_S = 1.0
 
@@ -523,8 +530,47 @@ def run_async(flask_app, job_id: str, worker) -> None:
         finally:
             _RUN.job_id = None
             _forget_writes(job_id)
+            with _THREADS_LOCK:
+                _THREADS.discard(threading.current_thread())
 
-    threading.Thread(target=_runner, name=f"job-{job_id}", daemon=True).start()
+    t = threading.Thread(target=_runner, name=f"job-{job_id}", daemon=True)
+    with _THREADS_LOCK:
+        _THREADS.add(t)
+    t.start()
+
+
+def wait_background(timeout: float) -> list[str]:
+    """Wait up to *timeout* seconds for every job thread this process started
+    -- including the ones those jobs start while we wait (an automation that
+    chains another). Returns the ids of the jobs still running at the deadline
+    ([] when all finished). For processes that exit when their work is done;
+    a server process never needs it."""
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    while True:
+        with _THREADS_LOCK:
+            live = [t for t in _THREADS if t.is_alive()]
+        if not live:
+            return []
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return sorted(t.name[len("job-"):] for t in live)
+        live[0].join(min(left, 1.0))
+
+
+def is_alive(job_id: str) -> bool:
+    """True while *job_id* is active and, when it runs on this host, the
+    process that runs it still exists. A job whose process died keeps
+    ``running`` in its file until a sweep reaches it; this does not wait."""
+    st = get_job(job_id) if job_id else None
+    if not st or st.get("status") not in _ACTIVE:
+        return False
+    pid = st.get("pid")
+    if pid and (st.get("host") or _HOST) == _HOST:
+        try:
+            return _pid_alive(int(pid))
+        except (TypeError, ValueError):
+            return True
+    return True
 
 
 class Rollback:

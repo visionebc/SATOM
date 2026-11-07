@@ -56,6 +56,9 @@ JOB_TYPE = "event_automation"
 #: Rows kept in the two history tables (oldest pruned first).
 KEEP_FIRES = 10_000
 KEEP_RUNS = 10_000
+#: An automation run younger than this is never called an orphan: its job
+#: thread may not have marked it running yet.
+ORPHAN_AFTER_S = 120
 #: Payload bytes stored on a fire row.
 PAYLOAD_CAP = 16_000
 #: How long a job waits for a hook it queued (the runner is another unit).
@@ -352,8 +355,44 @@ def budget_left(trig: Trigger, now: datetime | None = None) -> int:
     return max(0, limit - used)
 
 
+def settle_orphans() -> int:
+    """Close automation runs whose worker died: queued or running, older than
+    :data:`ORPHAN_AFTER_S`, and their job is no longer alive (finished without
+    settling the run, swept, gone, or its process no longer exists) -- or older
+    than any run can last. Also closes the app runs left behind. 2026-11-07:
+    four ``recovery-walk`` runs said "running" for days after the
+    ``alerts-run`` process that started them exited."""
+    from ..models import db
+    from . import jobs
+    from . import studio_apps as SA
+    from . import studio_flow as F
+    now = datetime.utcnow()
+    young = now - timedelta(seconds=ORPHAN_AFTER_S)
+    too_old = now - timedelta(seconds=F.RUN_TIMEOUT + 300)
+    n = 0
+    for run in (EventAutomationRun.query
+                .filter(EventAutomationRun.status.in_((RUN_QUEUED, RUN_RUNNING)),
+                        EventAutomationRun.started_at < young)
+                .order_by(EventAutomationRun.id).limit(500).all()):
+        if run.started_at >= too_old and jobs.is_alive(run.job_id):
+            continue
+        run.status = RUN_FAILED
+        run.summary = ("interrupted: the process running it stopped before it "
+                       "finished (job %s)" % (run.job_id or "none"))[:4000]
+        run.ended_at = now
+        st = jobs.get_job(run.job_id) if run.job_id else None
+        if st and st.get("status") in jobs._ACTIVE:
+            jobs.finish_error(run.job_id, "interrupted: its process stopped")
+        n += 1
+    if n:
+        db.session.commit()
+    SA.sweep_stale_runs()
+    return n
+
+
 def _prune() -> None:
     from ..models import db
+    settle_orphans()
     for model, keep in ((TriggerFire, KEEP_FIRES), (EventAutomationRun, KEEP_RUNS)):
         n = model.query.count()
         if n > keep + 500:

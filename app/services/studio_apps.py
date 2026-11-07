@@ -1465,19 +1465,39 @@ def _room_for_run(username: str) -> None:
 
 
 def _prune_runs() -> None:
+    sweep_stale_runs()
     cutoff = datetime.utcnow() - timedelta(days=RUN_KEEP_DAYS)
     StudioAppRun.query.filter(StudioAppRun.started_at < cutoff,
                               StudioAppRun.status != "running").delete(synchronize_session=False)
 
 
+def sweep_stale_runs(limit: int = 200) -> int:
+    """Close every run still "running" past the run limit. Its worker died
+    (a restart, or the short-lived process that started it exited); until
+    now only opening the run said so, and the run lists kept showing it as
+    running for days. Returns how many were closed."""
+    since = datetime.utcnow() - timedelta(seconds=F.RUN_TIMEOUT + 120)
+    n = 0
+    for r in (StudioAppRun.query.filter(StudioAppRun.status == "running",
+                                        StudioAppRun.started_at < since)
+              .order_by(StudioAppRun.id).limit(limit).all()):
+        if refresh_stale(r).status != "running":
+            n += 1
+    return n
+
+
 def start_run(a: StudioApp, *, user, product: str, raw_inputs, draft: bool = False,
               armed: bool = True, rehearsal: bool = False, inline: bool = False,
-              event: dict | None = None) -> StudioAppRun:
+              event: dict | None = None, scenario: dict | None = None) -> StudioAppRun:
     """Start a run. ``rehearsal`` forces even a published version to record
     its writes instead of executing them (an event automation that is not
     armed). ``inline`` runs in the caller's thread -- the event automation's
     job worker, which is already off the request. ``event`` is the payload of
-    the event that started the run, ``{{ event }}`` in the diagram."""
+    the event that started the run, ``{{ event }}`` in the diagram.
+    ``scenario`` (studio_flow.clean_scenario) is a simulation's answers: it
+    picks the arrows, so it is accepted only for a rehearsal."""
+    if scenario and (bool(armed or not draft) and not rehearsal):
+        raise AppError("a simulation scenario runs only as a rehearsal")
     if not draft and not a.enabled:
         raise AppError("%s is disabled" % a.slug)
     if a.kind == "script":
@@ -1496,21 +1516,22 @@ def start_run(a: StudioApp, *, user, product: str, raw_inputs, draft: bool = Fal
     passwords = [str(inputs[f["name"]]) for f in fields
                  if f["type"] == "password" and inputs.get(f["name"])]
     if RUN_INLINE or inline:
-        execute(run.id, getattr(user, "id", None), inputs, d, passwords, event=event)
+        execute(run.id, getattr(user, "id", None), inputs, d, passwords, event=event,
+                scenario=scenario)
         db.session.refresh(run)
     else:
         from flask import current_app
         flask_app = current_app._get_current_object()
         threading.Thread(target=_bg, args=(flask_app, run.id, getattr(user, "id", None),
-                                           inputs, d, passwords, event),
+                                           inputs, d, passwords, event, scenario),
                          name="studio-app-run-%d" % run.id, daemon=True).start()
     return run
 
 
-def _bg(flask_app, run_id, user_id, inputs, d, passwords, event=None):
+def _bg(flask_app, run_id, user_id, inputs, d, passwords, event=None, scenario=None):
     with flask_app.app_context():
         try:
-            execute(run_id, user_id, inputs, d, passwords, event=event)
+            execute(run_id, user_id, inputs, d, passwords, event=event, scenario=scenario)
         finally:
             db.session.remove()
 
@@ -1550,7 +1571,8 @@ def _capped(obj) -> str:
 
 
 def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=(),
-            event: dict | None = None, resume: dict | None = None) -> None:
+            event: dict | None = None, resume: dict | None = None,
+            scenario: dict | None = None) -> None:
     from ..models import User
     run = db.session.get(StudioAppRun, run_id)
     if run is None:
@@ -1562,6 +1584,8 @@ def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=(),
         ctx.outputs = list(run.outputs)
     if event is not None:
         ctx.vars["event"] = event
+    if scenario and resume is None and not run.armed:
+        ctx.vars[F.SCENARIO_VAR] = scenario
     secrets = _spellings([p for p in passwords if len(p) >= 3])
     job_id = _job_for(run, d) if resume is None else ""
     total = max(1, len((d.get("graph") or {}).get("nodes") or []))
@@ -1755,7 +1779,8 @@ def refresh_stale(run: StudioAppRun) -> StudioAppRun:
     if run.status == "running" and began and \
             datetime.utcnow() - began > timedelta(seconds=F.RUN_TIMEOUT + 120):
         run.status = "failed"
-        run.error = "interrupted: the worker running it stopped (service restart?)"
+        run.error = ("interrupted: the worker running it stopped (a service restart, "
+                     "or the process that started it exited)")
         run.finished_at = datetime.utcnow()
         db.session.commit()
     return run

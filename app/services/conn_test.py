@@ -191,7 +191,16 @@ def parse_traceroute_output(text: str, host: str) -> dict:
     if not hops:
         return {"ok": False, "verdict": "no path", "detail": "traceroute printed no hop"}
     last = hops[-1]
-    reached = re.search(r"(?<![\d.])%s(?![\d.])" % re.escape(host), last) is not None
+    # The hops are printed as addresses (-n): an appliance kept by host name
+    # is reached when the last hop is the address traceroute resolved it to,
+    # in its header ("traceroute to fw.example (192.0.2.81), ..."). Comparing
+    # the name alone never matched (2026-11-07: faz02 was "not reached").
+    names = {host}
+    head = re.search(r"traceroute to \S+ \(([0-9A-Fa-f.:]+)\)", text)
+    if head:
+        names.add(head.group(1))
+    reached = any(re.search(r"(?<![\d.])%s(?![\d.])" % re.escape(n), last) is not None
+                  for n in names)
     if reached:
         return {"ok": True, "verdict": "reached",
                 "detail": "reached in %d hop%s" % (len(hops), "" if len(hops) == 1 else "s")}

@@ -23,6 +23,7 @@ over SSH is ``ssh_ops``'s, the battery is ``diag_battery``'s.
 """
 from __future__ import annotations
 
+import threading
 import time
 
 #: The outcome an "Ask a person" step hands the walk instead of yes/no.
@@ -38,12 +39,31 @@ APPLIANCE_FIELDS = ("id", "name", "kind", "host", "port", "ssh_port", "model", "
                     "is_cluster")
 
 KIND_KEYS = ("appliance_load", "http_check", "tcp_check", "console_read",
-             "appliance_fact", "collect_diagnostics", "ask", "activity")
+             "appliance_fact", "collect_diagnostics", "ask", "activity",
+             "connection_test", "login_check", "power_state", "appliance_ping", "notify")
 #: The variable a step saves its result under when the draft leaves
 #: *Save the result as* empty.
 DEFAULT_SAVE_AS = {"appliance_load": "appliance", "collect_diagnostics": "diagnostics"}
 #: Steps whose arrows are yes / no (and error when the step could not look).
-YES_NO_KINDS = ("ask", "http_check", "tcp_check", "console_read", "appliance_fact")
+YES_NO_KINDS = ("ask", "http_check", "tcp_check", "console_read", "appliance_fact",
+                "connection_test", "login_check", "power_state", "appliance_ping")
+
+#: Test Connection verdicts that mean SATOM could not try (the error arrow),
+#: never that the appliance failed the test (services/conn_test.py).
+BLIND_VERDICTS = ("not permitted", "not installed", "refused", "no address")
+#: A refused account is not tried again on the same appliance for this long:
+#: every refusal counts towards the product's admin lockout (FortiWeb locks the
+#: account after 3 by default), and a simulation walks a step many times.
+LOGIN_REFUSED_HOLD_S = 600
+_REFUSED: dict = {}
+_REFUSED_LOCK = threading.Lock()
+#: Products whose REST API takes a token or API key, never an administrator's
+#: password: a RADIUS account cannot log in there (clients/fortigate.py,
+#: clients/fortiauthenticator.py).
+TOKEN_API_KINDS = ("fortigate", "fortiauthenticator")
+#: Hypervisor power states, as the backends report them.
+POWER_ON = ("running", "poweredon", "on")
+POWER_OFF = ("stopped", "poweredoff", "off", "suspended", "paused")
 
 _APPLIANCE_HELP = ("id or name of the appliance, e.g. {{ appliance.id }} after a Load "
                    "step, {{ form.appliance }} or {{ event.appliance_id }}")
@@ -115,6 +135,54 @@ def kinds() -> list:
         Kind("activity", "Activity", "flow",
              "A documented box that passes at once — a heading such as "
              "'1 Connectivity tests'. Its instructions show on the run."),
+        Kind("connection_test", "Connection test", "check",
+             "Test Connection from this node, as on the Appliances page: the REST "
+             "status call with SATOM's stored account (api), one TCP handshake, ping or "
+             "traceroute. yes when every address answered; the error arrow when SATOM "
+             "could not try (ping not permitted for the service user, traceroute not "
+             "installed, an address the network guard refuses).",
+             [app_p, Param("method", "Method", "select", True,
+                           ("api", "tcp", "ping", "traceroute"), "ping"),
+              Param("save_as", "Save the result as",
+                    help="e.g. route: {{ route.summary }} is one line per address, "
+                         "{{ route.output }} what ping or traceroute printed.")]),
+        Kind("login_check", "Log in to the appliance", "check",
+             "Log in to the appliance's REST API: with SATOM's stored account, or with "
+             "the account of a Connection (Plugin Studio › Connections, HTTP with Basic "
+             "auth — e.g. a remote RADIUS administrator). yes = accepted, no = refused "
+             "(HTTP 401). A refused account is not tried again on that appliance for 10 "
+             "minutes: every refusal counts towards the product's admin lockout.",
+             [app_p, Param("connection", "Account from connection",
+                           help="The connection's slug; empty = SATOM's stored account. "
+                                "FortiGate and FortiAuthenticator take a token or API "
+                                "key, never a RADIUS password: with a connection they "
+                                "take the error arrow.")]),
+        Kind("power_state", "Power state (hypervisor)", "check",
+             "Ask the hypervisor whether the appliance's VM is running, through its "
+             "topology mapping (Sentinel). yes = running, no = stopped; the error arrow "
+             "for hardware, an unmapped VM or a hypervisor that does not answer.",
+             [app_p]),
+        Kind("appliance_ping", "Ping from the appliance", "check",
+             "Log in over SSH and run execute ping <target> ON the appliance: does it "
+             "reach its gateway, its RADIUS server…? yes when a reply came back, no "
+             "when none did; the error arrow when SSH did not answer.",
+             [app_p, Param("target", "Target", required=True,
+                           help="An IP address or host name, e.g. {{ form.gateway }}. "
+                                "Empty takes the error arrow."),
+              Param("timeout", "Timeout (s)", default="30")]),
+        Kind("notify", "Notify", "flow",
+             "Ring the administrators' bell and/or send an e-mail. In a simulation only "
+             "the bell of the person simulating rings; the step lists who would have "
+             "been told. Sending nothing at all takes the error arrow.",
+             [Param("title", "Title", required=True,
+                    help="e.g. {{ appliance.name }}: escalation to the network team"),
+              Param("body", "Message", "textarea"),
+              Param("bell", "Administrators' bell", "select", choices=("yes", "no"),
+                    default="yes"),
+              Param("email_to", "E-mail to", help="Addresses, separated by commas."),
+              Param("email_alerts", "E-mail the alert recipients", "select",
+                    choices=("yes", "no"), default="no",
+                    help="Settings › Alerts recipients.")]),
     ]
 
 
@@ -221,15 +289,23 @@ def run(node, ctx):
             host, port, row.get("verdict"), row.get("detail"))
 
     if kind == "console_read":
-        from .ssh_ops import ReadOnlyViolation, run_command
+        from .ssh_ops import ReadOnlyViolation, assert_readonly, run_command, run_probe_command
         cmd = str(_p(node, "command") or "").strip()   # never rendered: see assert_console_read
         row = _appliance(node, ctx)
         try:
             assert_console_read(cmd)
         except ReadOnlyViolation as exc:
             raise FlowError("refused to send: %s" % exc) from None
+        secs = float(_int(P("timeout", "15"), 15) or 15)
         try:
-            out = run_command(row, cmd, timeout=float(_int(P("timeout", "15"), 15) or 15))
+            assert_readonly(cmd)
+            send = run_command
+        except ReadOnlyViolation:
+            # the permitted probe (execute ping): run_command refuses it
+            send = lambda r, c, timeout: run_probe_command(r, c, timeout=timeout,  # noqa: E731
+                                                           maxt=max(45.0, timeout))
+        try:
+            out = send(row, cmd, timeout=secs)
         except Exception as exc:  # noqa: BLE001 -- a dead box is a blind spot
             raise FlowError("SSH did not answer: %s" % str(exc)[:200]) from None
         want, forbid = str(P("contains") or ""), str(P("absent") or "")
@@ -271,7 +347,226 @@ def run(node, ctx):
         return "ok", value, "diagnostics saved as %s (%s ran, %s skipped)" % (
             path.name, stats.get("ran", "?"), stats.get("skipped", 0))
 
+    if kind == "connection_test":
+        return _connection_test(node, ctx, P)
+    if kind == "login_check":
+        return _login_check(node, ctx, P)
+    if kind == "power_state":
+        return _power_state(node, ctx)
+    if kind == "appliance_ping":
+        return _appliance_ping(node, ctx, P)
+    if kind == "notify":
+        return _notify(node, ctx, P)
+
     raise FlowError("unknown step kind %r" % kind)
+
+
+def _connection_test(node, ctx, P):
+    from .. import clients
+    from . import conn_test
+    from .studio_flow import FlowError, _p
+    row = _appliance(node, ctx)
+    method = str(_p(node, "method", "ping") or "ping")
+    if method not in conn_test.METHODS:
+        raise FlowError("%r is not a Test Connection method" % method)
+    res = conn_test.run(row, method, client_for=clients.client_for)
+    results = res.get("results") or []
+    label = conn_test.METHOD_LABELS[method]
+    blind = [r for r in results if r.get("verdict") in BLIND_VERDICTS]
+    if not results or blind:
+        why = blind[0].get("detail") if blind else res.get("status")
+        hint = (blind[0].get("hint") if blind else "") or ""
+        raise FlowError("%s could not be tried from this node: %s%s"
+                        % (label, why, (" — " + hint) if hint else ""))
+    summary = "; ".join("%s %s: %s%s" % (r.get("label"), r.get("host"),
+                                         r.get("verdict") or ("ok" if r.get("ok") else "failed"),
+                                         (" — %s" % r["detail"]) if r.get("detail") else "")
+                        for r in results)
+    value = {"method": method, "ok": bool(res.get("ok")), "summary": summary[:1000],
+             "output": "\n\n".join(str(r.get("output") or "") for r in results).strip()[-4000:],
+             "results": [{k: r.get(k) for k in ("label", "host", "port", "ok", "verdict", "detail")}
+                         for r in results]}
+    return ("yes" if res.get("ok") else "no"), value, "%s: %s" % (label, summary[:400])
+
+
+class _AsAccount:
+    """The appliance as a product client reads it, with another account's
+    credentials. Reads go to the row; nothing is ever written to it (a client
+    that records a status writes on this wrapper)."""
+
+    def __init__(self, row, username, password):
+        object.__setattr__(self, "_row", row)
+        object.__setattr__(self, "username", username)
+        object.__setattr__(self, "password", password)
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_row"), name)
+
+
+def _login_check(node, ctx, P):
+    from .. import clients
+    from ..clients.base import DeviceAuthError
+    from . import studio_connections as SC
+    from .studio_flow import FlowError
+    row = _appliance(node, ctx)
+    slug = str(P("connection") or "").strip()
+    target, who = row, "SATOM's stored account"
+    if slug:
+        c = SC.get(slug)
+        if c is None:
+            raise FlowError("no connection %r (Plugin Studio › Connections)" % slug)
+        if c.kind != "http" or c.auth != "basic" or not c.username:
+            raise FlowError("connection %s must be HTTP with Basic auth and a user name" % slug)
+        if (row.kind or "") in TOKEN_API_KINDS:
+            raise FlowError("%s logs in to its REST API with a token or API key, not with "
+                            "an administrator's password: %s cannot be tried there"
+                            % (row.kind, c.username))
+        secret, problem = SC.secret_state(slug)
+        if not secret:
+            raise FlowError("connection %s has no password%s" % (slug, (": " + problem) if problem else ""))
+        target, who = _AsAccount(row, c.username, secret), "account %s" % c.username
+    memo = (row.id, slug or "")
+    with _REFUSED_LOCK:
+        held = _REFUSED.get(memo)
+    if held and time.time() - held[0] < LOGIN_REFUSED_HOLD_S:
+        return "no", None, ("%s was refused by %s at %s; not tried again for %d min (each "
+                            "refusal counts towards the admin lockout): %s"
+                            % (who, row.name, time.strftime("%H:%M:%S", time.localtime(held[0])),
+                               LOGIN_REFUSED_HOLD_S // 60, held[1]))
+    try:
+        clients.client_for(target).status_check()
+    except DeviceAuthError as exc:
+        with _REFUSED_LOCK:
+            _REFUSED[memo] = (time.time(), str(exc)[:200])
+        return "no", None, "%s refused by %s: %s" % (who, row.name, str(exc)[:200])
+    except Exception as exc:  # noqa: BLE001 -- not reached is not refused
+        raise FlowError("could not reach %s's API: %s" % (row.name, str(exc)[:200])) from None
+    with _REFUSED_LOCK:
+        _REFUSED.pop(memo, None)
+    return "yes", None, "%s logged in to %s's API" % (who, row.name)
+
+
+def _power_state(node, ctx):
+    from ..models import db
+    from ..models_provision import HypervisorTarget
+    from ..models_sentinel import SentinelTopology
+    from . import hypervisors
+    from .studio_flow import FlowError
+    row = _appliance(node, ctx)
+    if str(row.hw_type or "").lower() == "hardware":
+        raise FlowError("%s is hardware: no hypervisor knows its power state" % row.name)
+    topo = SentinelTopology.query.filter_by(appliance_id=row.id).first()
+    if topo is None or not topo.complete:
+        raise FlowError("%s has no complete topology mapping (Sentinel › Topology: "
+                        "hypervisor, VM id and node)" % row.name)
+    target = db.session.get(HypervisorTarget, topo.hypervisor_target_id)
+    if target is None:
+        raise FlowError("hypervisor target %s is gone" % topo.hypervisor_target_id)
+    try:
+        client = hypervisors.build_client(target, timeout=15)
+        st = client.vm_status(hypervisors.VmRef(backend=target.backend, identifier=str(topo.vm_id),
+                                                name=row.name, node=topo.node or ""))
+    except Exception as exc:  # noqa: BLE001 -- the hypervisor did not answer
+        raise FlowError("hypervisor %s did not answer: %s" % (target.name, str(exc)[:200])) from None
+    state = str((st or {}).get("status") or "").strip()
+    where = "VM %s on %s (%s)" % (topo.vm_id, target.name, topo.node or "-")
+    if state.lower() in POWER_ON:
+        return "yes", None, "%s is %s" % (where, state)
+    if state.lower() in POWER_OFF:
+        return "no", None, "%s is %s" % (where, state)
+    raise FlowError("%s reports power state %r" % (where, state or "unknown"))
+
+
+def _appliance_ping(node, ctx, P):
+    import re
+    from .ssh_ops import ReadOnlyViolation, run_probe_command
+    from .studio_flow import FlowError
+    row = _appliance(node, ctx)
+    target = str(P("target") or "").strip()
+    if not target:
+        raise FlowError("no target to ping")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.:\-]{0,252}", target):
+        raise FlowError("%r is not an IP address or host name" % target[:80])
+    cmd = "execute ping %s" % target
+    try:
+        assert_console_read(cmd)
+    except ReadOnlyViolation as exc:
+        raise FlowError("refused to send: %s" % exc) from None
+    try:
+        out = run_probe_command(row, cmd, timeout=15.0,
+                                maxt=float(_int(P("timeout", "30"), 30) or 30))
+    except Exception as exc:  # noqa: BLE001 -- a dead box is a blind spot
+        raise FlowError("SSH did not answer: %s" % str(exc)[:200]) from None
+    m = re.search(r"(\d+) packets transmitted, (\d+) (?:packets )?received", out or "")
+    if not m:
+        raise FlowError("%s on %s printed no ping statistics: %s"
+                        % (cmd, row.name, (out or "").strip()[-200:]))
+    sent, got = int(m.group(1)), int(m.group(2))
+    return (("yes" if got else "no"), (out or "")[-4000:],
+            "%s from %s: %d/%d replies" % (target, row.name, got, sent))
+
+
+def _as_list(v) -> list:
+    if isinstance(v, (list, tuple)):
+        items = v
+    else:
+        items = str(v or "").replace(";", ",").split(",")
+    return [str(x).strip() for x in items if str(x).strip()]
+
+
+def _notify(node, ctx, P):
+    from . import notifications as notify
+    from .studio_flow import SCENARIO_VAR, FlowError
+    title = str(P("title") or "").strip()[:200]
+    body = str(P("body") or "").strip()[:4000]
+    if not title:
+        raise FlowError("no title")
+    who = []
+    if str(P("bell", "yes") or "yes") == "yes":
+        from .alerts import _admin_ids
+        n = len(_admin_ids())
+        who.append("bell of %d administrator%s" % (n, "" if n == 1 else "s"))
+    to = _as_list(P("email_to"))
+    if str(P("email_alerts", "no") or "no") == "yes":
+        from . import alerts
+        to += list(alerts.recipients())
+    to = sorted(set(to))
+    if to:
+        who.append("e-mail to %s" % ", ".join(to))
+    if not who:
+        raise FlowError("nobody to notify: the bell is off and there is no address")
+    if not ctx.armed:
+        sc = ctx.vars.get(SCENARIO_VAR) or {}
+        quiet = isinstance(sc, dict) and sc.get("answers") is not None \
+            and node.get("key") not in (sc.get("first") or ())
+        uid = getattr(ctx.user_obj, "id", None)
+        if uid and not quiet:
+            notify.push_many([uid], "[simulation] " + title, kind=notify.Notification.KIND_INFO,
+                             body=body[:1500])
+            rang = "rang your bell"
+        else:
+            rang = ("already rang your bell earlier in this simulation" if quiet
+                    else "rang nobody (no user)")
+        return "ok", None, "simulation: %s; would notify %s" % (rang, "; ".join(who))
+    sent, failed = [], []
+    if str(P("bell", "yes") or "yes") == "yes":
+        from .alerts import _admin_ids
+        ids = _admin_ids()
+        if ids:
+            notify.push_many(ids, title, kind=notify.Notification.KIND_INFO, body=body[:1500])
+            sent.append("bell (%d)" % len(ids))
+        else:
+            failed.append("bell: no administrator to notify")
+    if to:
+        from . import email_service
+        res = email_service.send_email(to, title, body or title)
+        if (res or {}).get("ok"):
+            sent.append("e-mail (%d)" % len(to))
+        else:
+            failed.append("e-mail: %s" % ((res or {}).get("detail") or "send failed"))
+    if not sent:
+        raise FlowError("nobody was notified: %s" % "; ".join(failed))
+    return "ok", None, "notified %s%s" % (", ".join(sent), ("; " + "; ".join(failed)) if failed else "")
 
 
 def assert_console_read(command: str) -> str:

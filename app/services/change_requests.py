@@ -151,27 +151,88 @@ def approve(cr_id: int, by: str) -> ChangeRequest:
     return cr
 
 
-def cancel(cr_id: int, by: str, reason: str = "") -> ChangeRequest:
-    """Cancel a CR and disable its bound scheduled action (so it won't fire).
+#: The states a change may be cancelled from: every state that is not an
+#: outcome. Derived, so a state added to the lifecycle is not silently
+#: uncancellable (or silently cancellable once it is declared terminal).
+CANCELLABLE = tuple(s for s in ChangeRequest.STATUSES
+                    if s not in ChangeRequest.TERMINAL)
 
-    A closed CR (completed / failed / cancelled) is refused: cancelling it
-    would overwrite the recorded outcome. ``in_progress`` stays cancellable as
-    the way out of a run that never reports back.
+
+def bound_actions(cr) -> list:
+    """Every scheduled action that carries this change out: the one bound by
+    ``scheduled_action_id`` (round 1) plus rounds 2..N (:func:`round_siblings`).
+    Cancelling only the first left the later rounds enabled and on the
+    calendar; they were skipped at fire time by the gate, but a change the
+    operator cancelled still showed rounds scheduled to take boxes down."""
+    out = []
+    if cr is None:
+        return out
+    if cr.scheduled_action_id:
+        first = db.session.get(ScheduledAction, cr.scheduled_action_id)
+        if first is not None:
+            out.append(first)
+    seen = {a.id for a in out}
+    out += [r for r in round_siblings(cr.id) if r.id not in seen]
+    return out
+
+
+def cancellable(cr) -> tuple[bool, str]:
+    """``(ok, reason)`` -- may this change be cancelled right now?
+
+    Refused when it is CLOSED (completed / failed / cancelled): that status is
+    the record of what happened, and rewriting it to "cancelled" erases it.
+
+    Refused while one of its scheduled actions is FIRING (its lease is held).
+    The executor runs a round's appliances straight through and never looks
+    back at the change between two of them, so a cancel recorded mid-fire
+    would not stop the appliances still to come in that round -- the record
+    would say "cancelled" while devices kept being upgraded. Once the fire
+    ends (or the lease reaper releases a fire that died) cancelling works,
+    and it disables every round not yet fired.
+
+    ``in_progress`` with no fire running stays cancellable: it is the way out
+    of a run that never reported back, and of a multi-round change between
+    two rounds."""
+    if cr is None:
+        return False, "change request not found"
+    if cr.status not in CANCELLABLE:
+        return False, (f"This change request is already {cr.status} and "
+                       f"cannot be cancelled. Nothing was changed.")
+    running = [a for a in bound_actions(cr) if a.running_at is not None]
+    if running:
+        return False, (
+            "Scheduled action " + ", ".join(f"#{a.id}" for a in running)
+            + " of this change is running right now and cannot be stopped "
+              "part-way: the appliances already reached are being changed. "
+              "Wait for the run to finish, then cancel (or close it by hand). "
+              "Nothing was changed.")
+    return True, ""
+
+
+def cancel(cr_id: int, by: str, reason: str = "") -> ChangeRequest:
+    """Cancel a CR and disable EVERY scheduled action bound to it (so none of
+    its rounds fires). Refusals are :func:`cancellable`'s.
+
+    The ids disabled are left on ``cr.cancelled_actions`` (not a column) so
+    the caller can audit them, and named in the timeline entry.
     """
     cr = db.session.get(ChangeRequest, cr_id)
     if cr is None:
         raise ValueError("change request not found")
-    if cr.status in ChangeRequest.TERMINAL:
-        # A completed or failed change is the record of what happened;
-        # rewriting it to "cancelled" would erase that record.
-        raise ValueError(f"This change request is already {cr.status} and "
-                         f"cannot be cancelled. Nothing was changed.")
-    if cr.scheduled_action_id:
-        action = db.session.get(ScheduledAction, cr.scheduled_action_id)
-        if action is not None:
-            action.enabled = False  # committed by _transition below
-    _transition(cr, "cancelled", by=by,
-                detail=reason or "Change request cancelled")
+    ok, why = cancellable(cr)
+    if not ok:
+        raise ValueError(why)
+    disabled = []
+    for action in bound_actions(cr):
+        if action.enabled:
+            disabled.append(action.id)
+        action.enabled = False  # committed by _transition below
+    detail = reason or "Change request cancelled"
+    if disabled:
+        detail += " (disabled scheduled action " + ", ".join(
+            f"#{i}" for i in disabled) + ")"
+    _transition(cr, "cancelled", by=by, detail=detail)
+    cr.cancelled_actions = disabled
     return cr
 
 
@@ -1073,6 +1134,184 @@ def _as_int(value) -> int | None:
         return None
 
 
+# --------------------------------------------------------------------------- #
+#  The list: free-text search + filters (SA-0028)                               #
+# --------------------------------------------------------------------------- #
+#: Query-string keys the list honours. Everything a search or filter needs is
+#: in the URL, so a filtered list is a link somebody can bookmark or send.
+LIST_FILTERS = ("q", "status", "type", "device", "requester",
+                "date_from", "date_to")
+#: Pseudo-status: every change that is not closed yet (the cancellable ones).
+STATUS_OPEN = "open"
+
+#: Columns of the change itself a search reads. ``params`` and ``policies`` are
+#: the JSON the change carries (executor parameters; the frozen inventory with
+#: policy, virtual server, service, device and probed URL/host), so an IP or a
+#: policy name typed into the box finds the change that takes it down.
+_SEARCH_COLUMNS = ("title", "reason", "rollback", "ref", "requested_by",
+                   "approved_by", "owner", "action", "params", "policies",
+                   "result_summary", "notify_to", "crq_ref", "mw_ref")
+
+_CR_ID_RE = re.compile(r"^\s*#?\s*(\d{1,9})\s*$")
+_SEARCH_NAMES_MAX = 200
+
+
+def list_filters(args) -> dict:
+    """The list's filters read from a request's args (blank = not filtering)."""
+    return {k: str((args.get(k) if args is not None else "") or "").strip()[:200]
+            for k in LIST_FILTERS}
+
+
+def _day_start_utc(value: str, *, next_day: bool = False):
+    """``YYYY-MM-DD`` (a day in the console's timezone) -> the naive-UTC
+    instant that day starts (or the next day starts, for an inclusive "to")."""
+    try:
+        day = datetime.strptime(value, "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return None
+    if next_day:
+        day += timedelta(days=1)
+    try:
+        from . import settings_store
+        return settings_store.parse_local(day.strftime("%Y-%m-%dT%H:%M")) or day
+    except Exception:  # noqa: BLE001 -- no timezone configured: read as UTC
+        return day
+
+
+def _device_hits(text: str, scope: dict, visible) -> set:
+    """Changes (within ``scope``) naming an appliance whose name or management
+    host matches ``text``. Only appliances the caller may see are searched: a
+    hit through an invisible box would confirm it exists."""
+    from sqlalchemy import or_
+    query = db.session.query(Appliance.id).filter(or_(
+        Appliance.name.icontains(text, autoescape=True),
+        Appliance.host.icontains(text, autoescape=True)))
+    hits = {row[0] for row in query.all()}
+    if visible is not None:
+        hits &= set(visible)
+    if not hits:
+        return set()
+    return {cid for cid, ids in scope.items() if hits & set(ids)}
+
+
+def _appid_hits(text: str, scope: dict) -> set:
+    """Changes (within ``scope``) whose frozen inventory holds a policy BOUND
+    to an AppID matching ``text`` in any catalog column (AppID, customer,
+    label, rate, or a column an import added). The binding is the authority,
+    exactly as on the AppIDs page."""
+    from sqlalchemy import or_
+    from ..models import AppId, AppIdPolicy
+    apps = [row[0] for row in db.session.query(AppId.id).filter(or_(
+        AppId.app_id.icontains(text, autoescape=True),
+        AppId.customer.icontains(text, autoescape=True),
+        AppId.label.icontains(text, autoescape=True),
+        AppId.rate.icontains(text, autoescape=True),
+        AppId.extra_json.icontains(text, autoescape=True))).limit(500).all()]
+    if not apps:
+        return set()
+    pairs = {(b.appliance_id, b.server_policy) for b in
+             AppIdPolicy.query.filter(AppIdPolicy.app_id_id.in_(apps)).all()}
+    names = sorted({p for _a, p in pairs if p})[:_SEARCH_NAMES_MAX]
+    if not names or not scope:
+        return set()
+    # SQL narrows to the changes whose inventory mentions one of the names;
+    # the (appliance, policy) pair is then confirmed on the parsed rows, since
+    # two appliances legitimately publish policies of the same name.
+    rows = (db.session.query(ChangeRequest.id, ChangeRequest.policies)
+            .filter(ChangeRequest.id.in_(list(scope)))
+            .filter(or_(*[ChangeRequest.policies.contains(json.dumps(n),
+                                                          autoescape=True)
+                          for n in names])).all())
+    out = set()
+    for cid, raw in rows:
+        try:
+            items = json.loads(raw or "[]")
+        except (TypeError, ValueError):
+            continue
+        for p in items if isinstance(items, list) else []:
+            if (isinstance(p, dict)
+                    and (_as_int(p.get("device_id")), str(p.get("policy") or ""))
+                    in pairs):
+                out.add(cid)
+                break
+    return out
+
+
+def list_query(f: dict, scope: dict, *, hidden: bool = True, visible=None,
+               ignore_status: bool = False):
+    """The change-request list as ONE SQL query: search and filters applied in
+    the database, never by hiding rows in the browser.
+
+    ``scope`` maps every change the caller may see to the appliance ids it
+    names (the ADOM / profile rule is the view's, ``_cr_in_scope``); when
+    ``hidden`` is false nothing is out of scope and no id list is sent.
+    ``visible`` is the set of appliance ids a device-name search may match.
+
+    ``f["q"]`` matches, case-insensitively and with ``%``/``_`` taken
+    literally: the change's own text (title, reason, rollback, reference,
+    requester, approver, owner, type, executor parameters, frozen inventory --
+    policy, virtual server, service, device, probed URL --, outcome, notice
+    recipients, ticket and window references), its timeline (who did what,
+    and every reason given), the appliances it names (name or management
+    host/IP), the AppIDs bound to its policies (any catalog column), and its
+    number (``126`` or ``#126``).
+    """
+    from sqlalchemy import false, or_, select
+    from ..models import ChangeRequestEvent
+    query = ChangeRequest.query
+    if hidden:
+        query = (query.filter(ChangeRequest.id.in_(list(scope))) if scope
+                 else query.filter(false()))
+
+    text = f.get("q") or ""
+    if text:
+        terms = [getattr(ChangeRequest, c).icontains(text, autoescape=True)
+                 for c in _SEARCH_COLUMNS]
+        terms.append(ChangeRequest.id.in_(
+            select(ChangeRequestEvent.cr_id).where(or_(
+                ChangeRequestEvent.detail.icontains(text, autoescape=True),
+                ChangeRequestEvent.by.icontains(text, autoescape=True)))))
+        extra = _device_hits(text, scope, visible) | _appid_hits(text, scope)
+        if extra:
+            terms.append(ChangeRequest.id.in_(sorted(extra)))
+        m = _CR_ID_RE.match(text)
+        if m:
+            terms.append(ChangeRequest.id == int(m.group(1)))
+        query = query.filter(or_(*terms))
+
+    status = f.get("status") or ""
+    if status and not ignore_status:
+        if status == STATUS_OPEN:
+            query = query.filter(ChangeRequest.status.in_(CANCELLABLE))
+        elif status in ChangeRequest.STATUSES:
+            query = query.filter(ChangeRequest.status == status)
+    if f.get("type"):
+        query = query.filter(ChangeRequest.action == f["type"])
+    if f.get("requester"):
+        query = query.filter(ChangeRequest.requested_by == f["requester"])
+    device = _as_int(f.get("device"))
+    if device is not None:
+        ids = [cid for cid, ids in scope.items() if device in set(ids)]
+        query = query.filter(ChangeRequest.id.in_(ids) if ids else false())
+    start = _day_start_utc(f.get("date_from") or "")
+    if start is not None:
+        query = query.filter(ChangeRequest.created_at >= start)
+    end = _day_start_utc(f.get("date_to") or "", next_day=True)
+    if end is not None:
+        query = query.filter(ChangeRequest.created_at < end)
+    return query
+
+
+def status_counts(f: dict, scope: dict, **kw) -> dict:
+    """``{status: n}`` for the current search and filters, every status (the
+    status filter itself is ignored, so the chips say what each one holds)."""
+    from sqlalchemy import func
+    q = list_query(f, scope, ignore_status=True, **kw)
+    rows = (q.with_entities(ChangeRequest.status, func.count(ChangeRequest.id))
+            .group_by(ChangeRequest.status).all())
+    return {s: n for s, n in rows}
+
+
 __all__ = [
     "RISKS",
     "DEVICE_RESULT",
@@ -1083,7 +1322,15 @@ __all__ = [
     "validate_window",
     "revoke_approval",
     "approve",
+    "CANCELLABLE",
+    "bound_actions",
+    "cancellable",
     "cancel",
+    "LIST_FILTERS",
+    "STATUS_OPEN",
+    "list_filters",
+    "list_query",
+    "status_counts",
     "schedule_change_request",
     "start",
     "finish",

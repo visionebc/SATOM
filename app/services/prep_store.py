@@ -52,12 +52,21 @@ FIELDS: tuple[tuple[str, str], ...] = (
     ("pool", "Server pool"),
     ("backends", "Backends"),
     ("note", "Note"),
-    # The catalog's binding when the file is exported (SA-0027), not frozen.
-    ("app_id", "AppID (catalog now)"),
-    ("app_customer", "AppID customer (catalog now)"),
 )
 FIELD_KEYS: tuple[str, ...] = tuple(k for k, _ in FIELDS)
 FIELD_LABELS: dict[str, str] = dict(FIELDS)
+
+# The AppID columns are NOT in FIELDS (SA-0028). SA-0027 hard-coded two of
+# them here -- ``app_id`` "AppID (catalog now)" and ``app_customer`` "AppID
+# customer (catalog now)" -- so the export form offered two near-identical
+# "AppID ... (catalog now)" boxes, ignored the names the operator gave the
+# catalog's columns, and could not export Label, Rate, Status or any column an
+# import added. They are now read from the catalog itself
+# (:func:`appid_fields`), under the operator's names, keyed ``appid:<column>``.
+APPID_PREFIX = "appid:"
+#: Keys the SA-0027 export used; a bookmarked export URL still works.
+LEGACY_APPID_KEYS: dict[str, str] = {"app_id": APPID_PREFIX + "app_id",
+                                     "app_customer": APPID_PREFIX + "customer"}
 
 # What a fresh export offers when the operator has expressed no preference. The
 # five columns that answer "which customer service goes down, on which box".
@@ -563,20 +572,72 @@ def merged_inventory(preps) -> list:
 # --------------------------------------------------------------------------- #
 #  Export                                                                       #
 # --------------------------------------------------------------------------- #
-def select_fields(keys) -> list[str]:
+def appid_fields() -> list[tuple[str, str]]:
+    """``(export key, column name)`` for every AppID catalog column, in the
+    catalog's order and under the name the operator gave it on the AppIDs page
+    -- including the columns an import added and the ones hidden there (hiding
+    a column declutters the catalog; it does not make the fact unexportable).
+
+    ``policies`` and ``source`` describe the catalog ROW, not the service, and
+    are left out (``appids.INFO_SKIP``). Without a database (no app context)
+    the built-in columns under their default names are returned, so the field
+    validation below still answers."""
+    from . import appids
+    try:
+        cols = [(c["key"], c["label"]) for c in appids.columns()]
+    except Exception:  # noqa: BLE001 -- no app context / no catalog table
+        cols = list(appids.BASE_COLUMNS)
+    return [(APPID_PREFIX + k, label) for k, label in cols
+            if k not in appids.INFO_SKIP]
+
+
+def export_fields() -> list[tuple[str, str]]:
+    """Every exportable ``(key, label)``: the frozen inventory's fields, then
+    the AppID catalog's columns. This order is the column order of the file."""
+    return list(FIELDS) + appid_fields()
+
+
+def select_fields(keys, fields=None) -> list[str]:
     """Validate an operator field selection.
 
     Unknown keys are DROPPED, and an empty/absent selection falls back to
     :data:`DEFAULT_FIELDS` — an export with zero columns is a corrupt file, not
-    an expression of intent. The result is always in :data:`FIELDS` order.
+    an expression of intent. The result is always in :func:`export_fields`
+    order. The SA-0027 keys ``app_id`` / ``app_customer`` are still accepted.
     """
-    wanted = {str(k).strip() for k in (keys or []) if str(k).strip()}
-    picked = [k for k in FIELD_KEYS if k in wanted]
+    wanted = set()
+    for k in keys or []:
+        k = str(k).strip()
+        if k:
+            wanted.add(LEGACY_APPID_KEYS.get(k, k))
+    order = [k for k, _ in (fields if fields is not None else export_fields())]
+    picked = [k for k in order if k in wanted]
     return picked or list(DEFAULT_FIELDS)
 
 
+def row_key(row: dict) -> str:
+    """The identity of one affected-service row in a selection. Same triple as
+    :func:`merged_inventory`'s de-duplication key, for the same reason: a
+    policy name alone repeats across appliances."""
+    return "%s|%s|%s" % (row.get("device_id") if row.get("device_id") is not None
+                         else "", row.get("device") or "", row.get("policy") or "")
+
+
+def select_rows(rows, keys) -> list[dict]:
+    """The rows whose :func:`row_key` the operator ticked, in inventory order.
+    An empty selection is an empty list: the operator un-ticked every service,
+    and padding the file with all of them would export what they excluded."""
+    wanted = {str(k) for k in keys or []}
+    return [r for r in rows or [] if isinstance(r, dict) and row_key(r) in wanted]
+
+
 def _cell(row: dict, key: str):
-    value = row.get(key, "")
+    if key.startswith(APPID_PREFIX):
+        # The catalog's current answer for this row's AppID (with_appids).
+        value = ((row.get("_appid") or {}).get("fields") or {}).get(
+            key[len(APPID_PREFIX):], "")
+    else:
+        value = row.get(key, "")
     if isinstance(value, bool):
         return "yes" if value else "no"
     if value is None:
@@ -586,8 +647,10 @@ def _cell(row: dict, key: str):
 
 def export_matrix(rows, keys) -> list[list]:
     """``[[header...], [cells...], ...]`` for the chosen fields."""
-    picked = select_fields(keys)
-    out: list[list] = [[FIELD_LABELS[k] for k in picked]]
+    fields = export_fields()
+    labels = dict(fields)
+    picked = select_fields(keys, fields)
+    out: list[list] = [[labels[k] for k in picked]]
     for row in rows or []:
         if not isinstance(row, dict):
             continue
@@ -613,6 +676,8 @@ def export_xlsx(rows, keys, *, sheet_name: str = "Affected services") -> bytes:
 
 __all__ = [
     "FIELDS", "FIELD_KEYS", "FIELD_LABELS", "DEFAULT_FIELDS",
+    "APPID_PREFIX", "LEGACY_APPID_KEYS", "appid_fields", "export_fields",
+    "row_key", "select_rows",
     "verdict", "build_inventory", "record", "latest_for", "recent", "get",
     "recent_for_many",
     "run_for", "run_bulk",

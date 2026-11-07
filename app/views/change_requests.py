@@ -231,11 +231,51 @@ def _cr_in_scope(cr, visible: set[int] | None = None) -> bool:
     if not ids:
         return True
     from ..services.product_scope import confined_appliance_ids
-    mine = confined_appliance_ids()
+    vis = _visible_appliance_ids() if visible is None else visible
+    return _ids_in_scope(ids, vis, confined_appliance_ids())
+
+
+def _ids_in_scope(ids, vis, mine) -> bool:
+    """:func:`_cr_in_scope` over a bare id list, with the two sets read ONCE
+    by the caller -- the list asks this for every change in the table."""
+    if not ids:
+        return True
     if mine is not None and not set(ids) <= mine:
         return False        # names a device outside the profile's ADOMs
-    vis = _visible_appliance_ids() if visible is None else visible
     return any(i in vis for i in ids)
+
+
+def _scope_map():
+    """``(scope, hidden, visible)`` for the list: ``scope`` maps every change
+    the active ADOM / profile may see to the appliance ids it names, read from
+    a two-column projection (never the whole rows); ``hidden`` says whether
+    any change was left out; ``visible`` is the visible appliance id set.
+
+    The rule stays :func:`_cr_in_scope`'s, in Python; what the list then
+    shows is ONE SQL query restricted to these ids (search, filters and
+    paging included), so a page can never hold a row the scope excluded nor
+    lose one to a client-side filter."""
+    from ..services.product_scope import confined_appliance_ids
+    visible = _visible_appliance_ids()
+    mine = confined_appliance_ids()
+    scope: dict[int, list[int]] = {}
+    hidden = False
+    for cid, raw in db.session.query(ChangeRequest.id,
+                                     ChangeRequest.device_ids).all():
+        try:
+            parsed = json.loads(raw or "[]")
+        except (TypeError, ValueError):
+            parsed = []
+        parsed = parsed if isinstance(parsed, list) else []
+        # The scope test sees the ids exactly as _cr_in_scope does (so the
+        # list never shows a change its own page would 404); the device
+        # filter and search match on the normalised integers.
+        if _ids_in_scope(parsed, visible, mine):
+            scope[cid] = [i for i in (_to_int(v) for v in parsed)
+                          if i is not None]
+        else:
+            hidden = True
+    return scope, hidden, visible
 
 
 def _cr_in_scope_or_404(id):
@@ -256,20 +296,68 @@ def _cr_in_scope_or_404(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def index():
-    visible = _visible_appliance_ids()
-    crs = [c for c in (ChangeRequest.query
-                       .order_by(ChangeRequest.created_at.desc())
-                       .all())
-           if _cr_in_scope(c, visible)]
-    # Group by status, in the canonical lifecycle order, dropping empty buckets.
-    groups = []
-    for status in ChangeRequest.STATUSES:
-        members = [c for c in crs if c.status == status]
-        if members:
-            groups.append({'status': status, 'items': members})
+    """The change-request list: searched, filtered and paged IN THE DATABASE
+    (SA-0028). Every filter is a query-string parameter, so a filtered list is
+    a bookmark; the scope rule is :func:`_scope_map`'s."""
+    from sqlalchemy import false
+    f = svc.list_filters(request.args)
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        per_page = min(200, max(10, int(request.args.get('per_page', 50))))
+    except (TypeError, ValueError):
+        per_page = 50
+    scope, hidden, visible = _scope_map()
+    query = svc.list_query(f, scope, hidden=hidden, visible=visible)
+    # ``id`` breaks the tie: rows created in the same instant would otherwise
+    # come back in an order the database may change between two pages.
+    pagination = (query.order_by(ChangeRequest.created_at.desc(),
+                                 ChangeRequest.id.desc())
+                  .paginate(page=page, per_page=per_page, error_out=False))
+    counts = svc.status_counts(f, scope, hidden=hidden, visible=visible)
+
+    # Filter choices come from the changes in scope only: a requester or an
+    # appliance from another ADOM must not appear in this one's dropdowns.
+    in_scope = list(scope) if hidden else None
+    opt = db.session.query(ChangeRequest.action, ChangeRequest.requested_by)
+    if in_scope is not None:
+        opt = opt.filter(ChangeRequest.id.in_(in_scope) if in_scope
+                         else false())
+    pairs = opt.distinct().all()
+    try:
+        labels = {e['key']: e['label'] for e in cr_type_entries()}
+    except Exception:  # noqa: BLE001 - a label lookup must not break the list
+        labels = {}
+    types = sorted({a for a, _r in pairs if a},
+                   key=lambda k: labels.get(k, k).lower())
+    type_options = [(k, labels.get(k, k)) for k in types]
+    requesters = sorted({r for _a, r in pairs if r}, key=str.lower)
+    named = {i for ids in scope.values() for i in ids} & set(visible)
+    device_options = ([(a.id, a.name) for a in
+                       Appliance.query.filter(Appliance.id.in_(named))
+                       .order_by(Appliance.name).all()] if named else [])
+    page_ids = {i for c in pagination.items for i in (scope.get(c.id) or [])}
+    names = ({a.id: a.name for a in
+              Appliance.query.filter(Appliance.id.in_(page_ids)).all()}
+             if page_ids else {})
     return render_template('change_requests/index.html',
-                           groups=groups,
-                           total=len(crs),
+                           items=pagination.items,
+                           pagination=pagination,
+                           total=sum(counts.values()),
+                           counts=counts,
+                           filters=f,
+                           filtering=any(f.values()),
+                           statuses=ChangeRequest.STATUSES,
+                           status_open=svc.STATUS_OPEN,
+                           cancellable=svc.CANCELLABLE,
+                           type_options=type_options,
+                           type_labels=labels,
+                           requesters=requesters,
+                           device_options=device_options,
+                           device_names=names,
+                           scope=scope,
                            status_badge=_STATUS_BADGE,
                            risk_badge=_RISK_BADGE)
 
@@ -843,6 +931,23 @@ def edit(id):
                            tz_name=_tz_name())
 
 
+def appid_values(rows, appid_fields) -> dict:
+    """``{export key: [distinct values]}`` among these affected-service rows,
+    for each AppID catalog column. ``""`` is included when some row has no
+    value there (unbound policy, or the column is blank for its AppID), so
+    "the services with no customer" can be selected too."""
+    from ..services import prep_store
+    out: dict[str, list[str]] = {}
+    for key, _label in appid_fields:
+        col = key[len(prep_store.APPID_PREFIX):]
+        seen = set()
+        for r in rows or []:
+            value = ((r.get('_appid') or {}).get('fields') or {}).get(col, '')
+            seen.add(str(value if value is not None else ''))
+        out[key] = sorted(seen, key=lambda v: (v == '', v.lower()))
+    return out
+
+
 def _appid_cols():
     from ..services import appids
     try:
@@ -897,6 +1002,8 @@ def cr_view_context(cr, *, drift=False, back='',
             'removed': sorted(k[1] or '?' for k in frozen_keys - live_keys),
             'total': len(live),
         }
+    rows = svc.with_appids(policies)
+    appid_fields = prep_store.appid_fields()
     return dict(
         cr=cr,
         # Derived, not stored: whether this change has an executor is a
@@ -916,8 +1023,15 @@ def cr_view_context(cr, *, drift=False, back='',
         runnable_reason=runnable_reason,
         # The AppID each affected policy is bound to (SA-0027), from the
         # catalog NOW and labelled so: metadata, not the signed inventory.
-        policies=svc.with_appids(policies),
+        policies=rows,
         appid_cols=_appid_cols(),
+        # SA-0028: every AppID catalog column (operator's names, custom ones
+        # included) for the export and for "select the services where
+        # <column> is <value>"; the values offered are the ones present.
+        appid_fields=appid_fields,
+        appid_values=appid_values(rows, appid_fields),
+        row_key=prep_store.row_key,
+        appid_prefix=prep_store.APPID_PREFIX,
         live_drift=live_drift,
         prep=prep_store.get(cr.prep_id),
         # EVERY bound run, plus the appliances that have none. "Captured by
@@ -1056,6 +1170,15 @@ def _after(cr_id: int) -> str:
     if _back_token() == 'upgrade_flow':
         from .appliances import _adom_arg
         return url_for('upgrade_flow.index', cr=cr_id, **_adom_arg())
+    if _back_token() == 'list':
+        # Back to the list AS IT WAS FILTERED. The filters are re-read key by
+        # key (list_<name>) and re-encoded by url_for onto the list's own
+        # route, so nothing in the form can name another destination.
+        from .appliances import _adom_arg
+        args = {k: (request.form.get('list_' + k) or '').strip()[:200]
+                for k in svc.LIST_FILTERS + ('page',)}
+        return url_for('change_requests.index',
+                       **{k: v for k, v in args.items() if v}, **_adom_arg())
     return url_for('change_requests.detail', id=cr_id)
 
 
@@ -1110,7 +1233,7 @@ def document(id):
                            langs=cr_document.document_langs(), text=text)
 
 
-@bp.route('/<int:id>/inventory.<fmt>')
+@bp.route('/<int:id>/inventory.<fmt>', methods=['GET', 'POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def inventory_export(id, fmt):
@@ -1123,7 +1246,13 @@ def inventory_export(id, fmt):
     if fmt not in ('xlsx', 'csv'):
         abort(404)
     rows = svc.with_appids(svc.frozen_policies(cr))
-    keys = request.args.getlist('field')
+    # GET (a bookmarked column choice) or POST (the page's form, which also
+    # carries the ticked services: one key per row would outgrow a URL).
+    keys = request.values.getlist('field')
+    if request.values.get('svc_pick'):
+        # The operator chose WHICH services (SA-0028); without the marker the
+        # whole inventory is exported, as before.
+        rows = prep_store.select_rows(rows, request.values.getlist('svc'))
     ref = cr_document.change_ref(cr)
     if fmt == 'csv':
         return Response(
@@ -1224,13 +1353,31 @@ def schedule(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def cancel(id):
-    _cr_in_scope_or_404(id)
-    reason = (request.form.get('reason') or '').strip()
+    """Cancel a change that has not closed yet (SA-0028: also from the list).
+
+    A REASON is required: a cancelled window is a decision somebody has to be
+    able to read back, on the timeline and in the audit log. Refusals (closed,
+    or a bound action firing right now) are the service's,
+    :func:`svc.cancellable`, and change nothing."""
+    from flask_babel import gettext
+    cr = _cr_in_scope_or_404(id)
+    reason = (request.form.get('reason') or '').strip()[:500]
+    if not reason:
+        flash(gettext('Give a reason for cancelling this change request. '
+                      'Nothing was changed.'), 'danger')
+        return redirect(_after(id))
     try:
         cr = svc.cancel(id, current_user.username, reason)
-        log_action('change_request.cancel', target=cr.title, detail=reason)
-        flash('Change request cancelled.', 'success')
+        disabled = getattr(cr, 'cancelled_actions', None) or []
+        log_action('change_request.cancel', target=cr.ref or cr.title,
+                   detail=f'#{cr.id} {cr.title} | reason: {reason}'
+                          + (' | disabled scheduled action(s): '
+                             + ', '.join(f'#{i}' for i in disabled)
+                             if disabled else ''))
+        flash(gettext('Change request cancelled.'), 'success')
     except ValueError as exc:
+        log_action('change_request.cancel_refused', target=cr.ref or cr.title,
+                   detail=f'#{cr.id} {exc}')
         flash(str(exc), 'danger')
     return redirect(_after(id))
 

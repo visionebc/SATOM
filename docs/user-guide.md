@@ -3681,6 +3681,29 @@ expression as a **saved run**. See §23.4 for how saved runs behave.
   window, and refuses any row the change does not cover.
 - A change that names no device can be saved and read, but not scheduled:
   its automated run would have no device list to stay inside.
+- **The list** (Automation → Change Requests) is one table, newest first,
+  50 per page. The **search** box finds a change by anything about it: title,
+  reason, rollback, reference (`CR-2026-0126`, `126` or `#126`), requester,
+  approver, type, the frozen affected-service inventory (policy, virtual
+  server, service, probed URL — so an IP finds the change that takes it
+  down), the appliances it names (name or management IP), the AppIDs bound to
+  its policies (AppID, customer, label, rate or any column an import added),
+  ticket and window references, and every reason and author on its timeline.
+  **Filters**: status (or *Open* = not closed yet), type, appliance,
+  requester, and a created-date range in your timezone. Search and filters run
+  in the database and live in the URL, so a filtered list can be bookmarked;
+  the status chips count what each status holds under the current search.
+  Only changes the active ADOM may see are listed or searched.
+- **Cancel** (the ✕ on a row, or **Cancel CR** on the change's page) is
+  offered while a change is not closed — draft, approved, scheduled or in
+  progress. A **reason is required**; it is written to the timeline with who
+  and when, and to the audit log (`change_request.cancel`). Every scheduled
+  action bound to the change — each round of a rollout — is disabled, so none
+  of it fires. Refused, with nothing changed, for a change already completed,
+  failed or cancelled, and while one of its scheduled actions is **running
+  right now**: a round in flight cannot be stopped part-way, so wait for it to
+  finish, then cancel. Integrations: `POST /api/v1/change-requests/<id>/cancel`
+  (admin scope).
 
 **Jobs** (Global → Jobs): every background job with owner, host/PID, progress
 and duration; Pause / Resume / Stop (cooperative — jobs park at safe
@@ -11757,7 +11780,7 @@ in place. Everything the change's own page shows is on the flow, as stage 3:
 | **Action bar** | Run-gate verdict and reason, plus **Approve**, **Schedule**, **Mark notified**, **Edit** and **Cancel CR** — the buttons, not links to them. |
 | **Overview** | Action, risk, window in your timezone, the appliances, who asked and who approved, notification address and status, bound scheduled action. |
 | **Change document** | The formal 13-section document, viewable and downloadable in every configured language. |
-| **Affected services** | The **frozen** inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking `.xlsx` / `.csv` export. Since 4.11.11 (SA-0027) each policy also shows the AppID it is **bound** to and the catalog's visible columns — the catalog's answer now, labelled so; the frozen rows are not changed. The export offers *AppID (catalog now)* and *AppID customer (catalog now)*. |
+| **Affected services** | The **frozen** inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking `.xlsx` / `.csv` export. Since 4.11.11 (SA-0027) each policy also shows the AppID it is **bound** to and the catalog's visible columns — the catalog's answer now, labelled so; the frozen rows are not changed. Since SA-0028 the export offers **every AppID catalog column** — AppID, Customer, Label, Rate, Status and any column an import added, under the names given on the AppIDs page — as one group, *AppID catalog (current values, not frozen)*, instead of two hard-coded *(catalog now)* boxes. A tick per service picks which rows are exported: choose a catalog column and one of the values present (for example Customer = Acme), then **Select matching** / **Clear matching**, or **Select all** / **Select none**. |
 | **External change record** | Approval mode, change ticket, NetBox window, the integration log, and the button that queues `change.requested`. |
 | **Timeline** | Every recorded event on the change. |
 | **Maintenance notice** | The client-facing draft. |

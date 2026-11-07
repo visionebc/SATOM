@@ -10,6 +10,8 @@ Deliberately NARROW and read-biased. What it exposes:
 * ``GET  /api/v1/actions/runs/<run_id>``    — poll a run's outcome
 * ``POST /api/v1/change-requests/<id>/external-approval`` — the external
   approver's verdict on a change in External mode (``admin`` scope)
+* ``POST /api/v1/change-requests/<id>/cancel`` — cancel a change that has
+  not closed yet, with a reason (``admin`` scope)
 
 What it does NOT expose, by construction: firmware upgrade / flash / reboot and
 any action flagged ``danger`` in the catalog — no scope can reach them.
@@ -441,3 +443,48 @@ def _429(_e):
 @bp.errorhandler(500)
 def _500(_e):
     return jsonify({"error": "server_error"}), 500
+
+
+@bp.route("/change-requests/<int:id>/cancel", methods=["POST"])
+@limiter.limit("30 per minute")
+@token_required("admin")
+def change_request_cancel(id):
+    """Cancel a change request that has not closed yet, with a reason.
+
+    The same transition as the Cancel button (``change_requests.cancel``):
+    every scheduled action bound to the change is disabled and the timeline
+    records who cancelled it, when and why. Refused while one of its actions
+    is firing, and for a change already completed, failed or cancelled.
+
+    Responses:
+      200: cancelled
+      400: reason missing
+      404: no such change request in the token's scope
+      409: already closed, or a bound action is running right now
+    """
+    from ..models import ChangeRequest
+    from ..services import change_requests as cr_svc
+
+    cr = db.session.get(ChangeRequest, id)
+    if cr is None or not _cr_visible_to_token(cr):
+        return jsonify({"error": "not_found", "message": "No such change request."}), 404
+    body = request.get_json(silent=True) or {}
+    reason = str(body.get("reason") or "").strip()[:500]
+    if not reason:
+        return jsonify({"error": "bad_request",
+                        "message": "'reason' is required."}), 400
+    who = str(body.get("by") or g.api_token.name or "integration").strip()
+    by = ("api:" + who)[:64]
+    target = cr.ref or f"CR #{cr.id}"
+    ok, why = cr_svc.cancellable(cr)
+    if not ok:
+        code = "closed" if cr.status in ChangeRequest.TERMINAL else "running"
+        log_action("api.change_request.cancel_refused", target=target,
+                   extra=audit_extra(reason=code, by=by))
+        return jsonify({"error": code, "message": why}), 409
+    cr = cr_svc.cancel(cr.id, by, reason)
+    disabled = list(getattr(cr, "cancelled_actions", None) or [])
+    log_action("api.change_request.cancel", target=target,
+               extra=audit_extra(by=by, reason=reason, disabled_actions=disabled))
+    return jsonify({"ok": True, "id": cr.id, "ref": cr.ref or "",
+                    "status": cr.status, "disabled_actions": disabled})

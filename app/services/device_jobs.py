@@ -88,6 +88,7 @@ EXCLUDED = {
     "service_monitor.discover": "already a background job",
     "signatures.sync": "already a background job",
     "console.bundle": "streams a support bundle download",
+    "change_requests.inventory_export": "a file download of the change's stored inventory; never reaches a device",
     "naming.save": "a settings edit; never reaches a device",
     "naming.preview": "computes a name preview; never reaches a device",
     "naming.discovery_adopt": "a settings edit; never reaches a device",

@@ -117,6 +117,7 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `POST` | `/actions/<id>/run` | write | — | Trigger a **non-destructive** action |
 | `GET`  | `/actions/runs/<run_id>` | read | — | Poll the outcome of a run |
 | `POST` | `/change-requests/<id>/external-approval` | admin | — | Record the external change authority's verdict on a change request in **External** approval mode (below) |
+| `POST` | `/change-requests/<id>/cancel` | admin | — | Cancel a change request that has not closed yet, with a reason (below) |
 | `GET`  | `/waf/exception-types` | read | — | The allow-list of WAF carve-out types (§6) |
 | `GET`  | `/waf/exceptions` | read | — | Carve-outs this token authored (`?all=1` needs `admin`) |
 | `GET`  | `/waf/exceptions/<id>` | read | — | One carve-out |
@@ -381,6 +382,26 @@ makes the change un-runnable again.
 
 Every call is audited (`api.change_request.external_approval`, refusals as
 `…_refused`).
+
+### `POST /change-requests/<id>/cancel`
+Cancel a change request that has not closed yet — the same transition as the
+**Cancel** button on the Change Requests list and on the change's page. Needs
+the **`admin`** scope. Body: `{"reason": "customer postponed", "by": "CAB"}` —
+`reason` is required; `by` (default: the token name) is recorded as
+`api:<by>`. Every scheduled action bound to the change (each round of a
+rollout) is disabled, so nothing of it fires; the timeline records who, when
+and why.
+
+| answer | when |
+|---|---|
+| `200` `{"ok": true, "status": "cancelled", "disabled_actions": [12, 13]}` | cancelled |
+| `400 bad_request` | `reason` missing or blank |
+| `404 not_found` | no such change, or it names no appliance visible to the token's ADOM |
+| `409 closed` | the change is already completed / failed / cancelled — nothing changed |
+| `409 running` | one of its scheduled actions is firing right now; a round in flight cannot be stopped part-way — retry once it has finished |
+
+Every call is audited (`api.change_request.cancel`, refusals as
+`api.change_request.cancel_refused`).
 
 ---
 

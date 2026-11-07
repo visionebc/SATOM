@@ -25,69 +25,213 @@
   </a>
 </div>
 
-{% if groups %}
-  {% for group in groups %}
-  <div class="fw-card mb-3">
-    <div class="fw-card-header d-flex align-items-center justify-content-between">
-      <span class="fw-card-title text-capitalize">
-        {{ group.status|replace('_', ' ') }}
-        <span class="fw-badge {{ status_badge.get(group.status, 'fw-badge-secondary') }} ms-2">
-          {{ group['items']|length }}
-        </span>
-      </span>
-    </div>
-    <div class="fw-card-body p-0">
-      <table class="fw-table mb-0">
-        <thead>
-          <tr>
-            <th>{{ _('Title') }}</th>
-            <th>{{ _('Action') }}</th>
-            <th>{{ _('Risk') }}</th>
-            <th>{{ _('Window') }}</th>
-            <th>{{ _('Requested by') }}</th>
-            <th class="actions-col">&nbsp;</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for cr in group['items'] %}
-          <tr>
-            <td>
-              <a href="{{ url_for('change_requests.detail', id=cr.id) }}"><strong>{{ cr.title }}</strong></a>
-              <div class="text-muted" style="font-size:12px;">#{{ cr.id }}</div>
-            </td>
-            <td style="font-size:13px;">{{ cr.action }}</td>
-            <td>
-              <span class="fw-badge {{ risk_badge.get(cr.risk, 'fw-badge-secondary') }} text-uppercase">{{ cr.risk }}</span>
-            </td>
-            <td style="font-size:13px;">
-              {% if cr.window_start %}
-                {{ cr.window_start|localtime('%Y-%m-%d %H:%M %Z') }}
-                {% if cr.window_end %}<span class="text-muted">→ {{ cr.window_end|localtime('%H:%M') }}</span>{% endif %}
-                <span class="text-muted">UTC</span>
-              {% else %}
-                <span class="text-muted">{{ _('— not set —') }}</span>
-              {% endif %}
-            </td>
-            <td style="font-size:13px;">{{ cr.requested_by or '—' }}</td>
-            <td class="actions-col">
-              <a class="btn btn-sm btn-outline-primary btn-sm-icon"
-                 href="{{ url_for('change_requests.detail', id=cr.id) }}" title="{{ _('Open') }}">
-                <i class="bi bi-box-arrow-up-right"></i>
-              </a>
-              {% if cr.status not in ['completed', 'failed', 'cancelled'] %}
-              <a class="btn btn-sm btn-outline-secondary btn-sm-icon"
-                 href="{{ url_for('change_requests.edit', id=cr.id) }}" title="{{ _('Edit') }}">
-                <i class="bi bi-pencil-square"></i>
-              </a>
-              {% endif %}
-            </td>
-          </tr>
+{# SA-0028: search + filters, applied IN THE DATABASE and carried in the URL
+   (a filtered list is a bookmark). Same filter bar as the Audit Log. #}
+<div class="fw-card mb-3" id="cr-filters">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-funnel me-2"></i>{{ _('Search and filters') }}</span>
+    {% if filtering %}
+    <a href="{{ url_for('change_requests.index') }}" class="btn btn-sm btn-secondary">
+      <i class="bi bi-x-lg me-1"></i>{{ _('Clear') }}
+    </a>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+    <form method="GET" action="{{ url_for('change_requests.index') }}" class="row g-3 align-items-end">
+      <div class="col-md-10">
+        <label class="fw-form-label" for="cr-q">{{ _('Search (title · reason · IP · AppID · customer · policy · device · requester · timeline)') }}</label>
+        <input type="search" id="cr-q" name="q" class="form-control form-control-sm"
+               placeholder="{{ _('Anything about a change — e.g. 192.0.2.12, an AppID, a policy name, CR-2026-0126') }}"
+               value="{{ filters.q }}">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-fw-primary btn-sm w-100">
+          <i class="bi bi-search me-1"></i>{{ _('Apply') }}
+        </button>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="cr-status">{{ _('Status') }}</label>
+        <select id="cr-status" name="status" class="form-select form-select-sm">
+          <option value="">{{ _('All statuses') }}</option>
+          <option value="{{ status_open }}" {{ 'selected' if filters.status == status_open }}>{{ _('Open (not closed)') }}</option>
+          {% for s in statuses %}
+          <option value="{{ s }}" {{ 'selected' if filters.status == s }}>{{ s|replace('_', ' ') }}</option>
           {% endfor %}
-        </tbody>
-      </table>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="cr-type">{{ _('Type') }}</label>
+        <select id="cr-type" name="type" class="form-select form-select-sm">
+          <option value="">{{ _('All types') }}</option>
+          {% for key, label in type_options %}
+          <option value="{{ key }}" {{ 'selected' if filters.type == key }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="cr-device">{{ _('Appliance') }}</label>
+        <select id="cr-device" name="device" class="form-select form-select-sm">
+          <option value="">{{ _('All appliances') }}</option>
+          {% for did, dname in device_options %}
+          <option value="{{ did }}" {{ 'selected' if filters.device == did|string }}>{{ dname }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="cr-requester">{{ _('Requested by') }}</label>
+        <select id="cr-requester" name="requester" class="form-select form-select-sm">
+          <option value="">{{ _('Anyone') }}</option>
+          {% for r in requesters %}
+          <option value="{{ r }}" {{ 'selected' if filters.requester == r }}>{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="cr-from">{{ _('Created from') }}</label>
+        <input type="date" id="cr-from" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="cr-to">{{ _('Created to') }}</label>
+        <input type="date" id="cr-to" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+      </div>
+    </form>
+  </div>
+</div>
+
+{# One chip per status for the CURRENT search and filters: a link that adds
+   the status filter, so the count and the list it opens always agree. #}
+{% set _chip_args = request.args.to_dict() %}{% set _noop = _chip_args.pop('page', None) %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2" id="cr-status-chips" style="font-size:13px;">
+  <span class="text-muted">{{ _('%(count)s change request(s) match', count=pagination.total) }}</span>
+  {% for s in statuses %}{% if counts.get(s) %}
+    {% set _noop = _chip_args.update({'status': s}) %}
+    <a class="fw-badge {{ status_badge.get(s, 'fw-badge-secondary') }} text-decoration-none{% if filters.status == s %} border border-secondary{% endif %}"
+       href="{{ url_for('change_requests.index', **_chip_args) }}">{{ s|replace('_', ' ') }} · {{ counts[s] }}</a>
+  {% endif %}{% endfor %}
+</div>
+
+{% if items %}
+<div class="fw-table-wrapper">
+  <table class="fw-table mb-0" id="cr-table">
+    <thead>
+      <tr>
+        <th>{{ _('Title') }}</th>
+        <th>{{ _('Status') }}</th>
+        <th>{{ _('Type') }}</th>
+        <th>{{ _('Risk') }}</th>
+        <th>{{ _('Appliances') }}</th>
+        <th>{{ _('Window') }}</th>
+        <th>{{ _('Requested by') }}</th>
+        <th>{{ _('Created') }}</th>
+        <th class="actions-col">&nbsp;</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for cr in items %}
+      <tr data-cr-id="{{ cr.id }}">
+        <td>
+          <a href="{{ url_for('change_requests.detail', id=cr.id) }}"><strong>{{ cr.title }}</strong></a>
+          <div class="text-muted" style="font-size:12px;">{{ cr.ref or ('#' ~ cr.id) }}</div>
+        </td>
+        <td><span class="fw-badge {{ status_badge.get(cr.status, 'fw-badge-secondary') }}">{{ cr.status|replace('_', ' ') }}</span></td>
+        <td style="font-size:13px;">{{ type_labels.get(cr.action, cr.action) }}</td>
+        <td>
+          <span class="fw-badge {{ risk_badge.get(cr.risk, 'fw-badge-secondary') }} text-uppercase">{{ cr.risk }}</span>
+        </td>
+        <td style="font-size:13px;">
+          {% set _ids = scope.get(cr.id) or [] %}
+          {% for i in _ids[:3] %}{{ device_names.get(i, '#' ~ i) }}{% if not loop.last %}, {% endif %}{% endfor %}
+          {% if _ids|length > 3 %}<span class="text-muted">{{ _('+%(n)s more', n=_ids|length - 3) }}</span>{% endif %}
+          {% if not _ids %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td style="font-size:13px;">
+          {% if cr.window_start %}
+            {{ cr.window_start|localtime('%Y-%m-%d %H:%M %Z') }}
+            {% if cr.window_end %}<span class="text-muted">→ {{ cr.window_end|localtime('%H:%M') }}</span>{% endif %}
+          {% else %}
+            <span class="text-muted">{{ _('— not set —') }}</span>
+          {% endif %}
+        </td>
+        <td style="font-size:13px;">{{ cr.requested_by or '—' }}</td>
+        <td class="text-nowrap" style="font-size:12px;">{{ cr.created_at|localtime('%Y-%m-%d %H:%M') }}</td>
+        <td class="actions-col text-nowrap">
+          <a class="btn btn-sm btn-outline-primary btn-sm-icon"
+             href="{{ url_for('change_requests.detail', id=cr.id) }}" title="{{ _('Open') }}">
+            <i class="bi bi-box-arrow-up-right"></i>
+          </a>
+          {% if cr.status in cancellable %}
+          <a class="btn btn-sm btn-outline-secondary btn-sm-icon"
+             href="{{ url_for('change_requests.edit', id=cr.id) }}" title="{{ _('Edit') }}">
+            <i class="bi bi-pencil-square"></i>
+          </a>
+          <button type="button" class="btn btn-sm btn-outline-danger btn-sm-icon cr-cancel-btn"
+                  title="{{ _('Cancel this change request') }}"
+                  data-cancel-url="{{ url_for('change_requests.cancel', id=cr.id) }}"
+                  data-cancel-name="{{ cr.ref or ('#' ~ cr.id) }} — {{ cr.title }}"
+                  data-cancel-bound="{{ '1' if cr.scheduled_action_id else '' }}">
+            <i class="bi bi-x-circle"></i>
+          </button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if pagination.pages > 1 %}
+{% set _page_args = request.args.to_dict() %}
+<div class="d-flex justify-content-between align-items-center mt-3">
+  <span class="text-muted" style="font-size:13px;">{{ _('Page %(page)s of %(pages)s', page=pagination.page, pages=pagination.pages) }}</span>
+  <div class="d-flex gap-2">
+    {% if pagination.has_prev %}
+      {% set _noop = _page_args.update({'page': pagination.page - 1}) %}
+      <a href="{{ url_for('change_requests.index', **_page_args) }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-chevron-left"></i> {{ _('Previous') }}
+      </a>
+    {% endif %}
+    {% if pagination.has_next %}
+      {% set _noop = _page_args.update({'page': pagination.page + 1}) %}
+      <a href="{{ url_for('change_requests.index', **_page_args) }}" class="btn btn-outline-secondary btn-sm">
+        {{ _('Next') }} <i class="bi bi-chevron-right"></i>
+      </a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ONE cancel dialog for every row; the button fills in which change. A
+   plain form POST (CSRF token in the form): the reason is required, and the
+   server refuses closed changes and changes whose action is firing. #}
+<div class="modal fade fw-modal" id="crCancelModal" tabindex="-1" aria-hidden="true" aria-labelledby="crCancelTitle">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="crCancelTitle"><i class="bi bi-x-circle me-2 text-danger"></i>{{ _('Cancel change request') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <form method="POST" id="crCancelForm" action="">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="back" value="list">
+        {% for k, v in filters.items() %}{% if v %}<input type="hidden" name="list_{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+        {% if pagination.page > 1 %}<input type="hidden" name="list_page" value="{{ pagination.page }}">{% endif %}
+        <div class="modal-body">
+          <p class="mb-2"><strong id="crCancelName"></strong></p>
+          <div class="fw-alert fw-alert-warning mb-3 d-none" id="crCancelBound" style="font-size:13px;">
+            <i class="bi bi-calendar-x me-1"></i>{{ _('This change is scheduled: every scheduled action bound to it is disabled, so none of its rounds fires. A round that is running right now cannot be stopped part-way — the cancel is then refused.') }}
+          </div>
+          <label class="fw-form-label" for="crCancelReason">{{ _('Reason') }} <span class="text-danger">*</span></label>
+          <textarea class="form-control" id="crCancelReason" name="reason" rows="3" required maxlength="500"
+                    placeholder="{{ _('Why is this change cancelled? Recorded on its timeline and in the audit log.') }}"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Keep it') }}</button>
+          <button type="submit" class="btn btn-danger"><i class="bi bi-x-circle me-1"></i>{{ _('Cancel change request') }}</button>
+        </div>
+      </form>
     </div>
   </div>
-  {% endfor %}
+</div>
 {% else %}
   <div class="fw-table-wrapper">
     <table class="fw-table">
@@ -96,6 +240,13 @@
           <td>
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-clipboard2-check"></i></div>
+              {% if filtering %}
+              <div class="fw-empty-state-title">{{ _('No change request matches') }}</div>
+              <div class="fw-empty-state-text">{{ _('Nothing matches this search and these filters.') }}</div>
+              <a class="btn btn-fw-outline mt-2" href="{{ url_for('change_requests.index') }}">
+                <i class="bi bi-x-lg me-1"></i>{{ _('Clear') }}
+              </a>
+              {% else %}
               <div class="fw-empty-state-title">{{ _('No change requests yet') }}</div>
               <div class="fw-empty-state-text">
                 {{ _('Raise a change request to plan a maintenance window and gate a risky change behind an approval.') }}
@@ -103,6 +254,7 @@
               <a class="btn btn-fw-primary mt-2" href="{{ url_for('change_requests.new') }}">
                 <i class="bi bi-plus-lg me-1"></i>{{ _('New Change Request') }}
               </a>
+              {% endif %}
             </div>
           </td>
         </tr>
@@ -110,4 +262,26 @@
     </table>
   </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var modalEl = document.getElementById('crCancelModal');
+  if (!modalEl) return;
+  var form = document.getElementById('crCancelForm');
+  document.querySelectorAll('.cr-cancel-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      form.setAttribute('action', btn.dataset.cancelUrl);
+      document.getElementById('crCancelName').textContent = btn.dataset.cancelName || '';
+      document.getElementById('crCancelBound').classList.toggle('d-none', !btn.dataset.cancelBound);
+      document.getElementById('crCancelReason').value = '';
+      bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    });
+  });
+  modalEl.addEventListener('shown.bs.modal', function () {
+    document.getElementById('crCancelReason').focus();
+  });
+})();
+</script>
 {% endblock %}

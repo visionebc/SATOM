@@ -86,7 +86,7 @@
     </a>
     <form method="POST" action="{{ url_for('change_requests.cancel', id=cr.id) }}"
           class="d-inline-flex align-items-center gap-2 flex-nowrap"
-          data-fw-confirm-form="Cancel this change request? Its bound scheduled action will be disabled.">
+          data-fw-confirm-form="{{ _('Cancel this change request? Every scheduled action bound to it will be disabled.') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="back" value="{{ crv.back }}">
       <!-- flex:0 1 220px, NOT the .form-control default width:100%: inside this
@@ -94,7 +94,7 @@
            button whatever is left over - 80px, which broke the two-word label
            across THREE lines at every viewport width. -->
       <input type="text" class="form-control form-control-sm" name="reason"
-             placeholder="{{ _('Cancel reason (optional)') }}"
+             placeholder="{{ _('Cancel reason (required)') }}" required maxlength="500"
              style="flex:0 1 220px; width:auto; min-width:110px;">
       <button type="submit" class="btn btn-sm btn-outline-danger flex-shrink-0">
         <i class="bi bi-x-circle me-1"></i>{{ _('Cancel CR') }}
@@ -233,11 +233,45 @@
         </a>
         {% endif %}
       </div>
+      {% if policies %}
+      {# SA-0028: pick the services by ANY AppID catalog column (built-in or
+         added by an import, under the operator's names) and a value present
+         among these rows. The ticks belong to the export form below (form=),
+         so the selection reaches the server with the columns, as before. #}
+      <div class="fw-card-body border-top py-2" id="crv-svc-tools-{{ cr.id }}"
+           data-crv-form="crv-export-{{ cr.id }}"
+           data-crv-values="{{ crv.appid_values|tojson|forceescape }}"
+           data-crv-empty="{{ _('(no value)') }}">
+        <div class="d-flex flex-wrap align-items-end gap-2" style="font-size:12.5px;">
+          <div>
+            <label class="fw-form-label mb-0" for="crv-col-{{ cr.id }}">{{ _('AppID catalog column') }}</label>
+            <select class="form-select form-select-sm" id="crv-col-{{ cr.id }}" data-crv-col>
+              {% for key, label in crv.appid_fields %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="fw-form-label mb-0" for="crv-val-{{ cr.id }}">{{ _('Value') }}</label>
+            <select class="form-select form-select-sm" id="crv-val-{{ cr.id }}" data-crv-val style="min-width:160px;"></select>
+          </div>
+          <button type="button" class="btn btn-sm btn-fw-outline" data-crv-act="match-on">
+            <i class="bi bi-check2-square me-1"></i>{{ _('Select matching') }}
+          </button>
+          <button type="button" class="btn btn-sm btn-fw-outline" data-crv-act="match-off">
+            <i class="bi bi-square me-1"></i>{{ _('Clear matching') }}
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-crv-act="all">{{ _('Select all') }}</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-crv-act="none">{{ _('Select none') }}</button>
+          <span class="text-muted ms-auto" data-crv-count></span>
+        </div>
+      </div>
+      {% endif %}
       <div class="fw-card-body p-0">
         {% if policies %}
         <table class="fw-table mb-0">
           <thead>
-            <tr><th>{{ _('Device') }}</th><th>{{ _('Policy') }}</th><th>{{ _('VServer') }}</th><th>{{ _('Service') }}</th><th>{{ _('Status') }}</th>
+            <tr><th style="width:2rem;"><input type="checkbox" class="form-check-input" data-crv-all checked
+                       aria-label="{{ _('Select every service') }}"></th>
+              <th>{{ _('Device') }}</th><th>{{ _('Policy') }}</th><th>{{ _('VServer') }}</th><th>{{ _('Service') }}</th><th>{{ _('Status') }}</th>
               {# SA-0027: the AppID each policy is bound to in the catalog NOW
                  (AppIDs page names), not part of the frozen inventory. #}
               {% for _k, label in crv.appid_cols %}<th title="{{ _('From the AppID catalog now, not frozen with the change') }}">{{ label }}</th>{% endfor %}</tr>
@@ -245,6 +279,10 @@
           <tbody>
             {% for p in policies %}
             <tr>
+              <td><input type="checkbox" class="form-check-input crv-svc" name="svc"
+                         value="{{ crv.row_key(p) }}" form="crv-export-{{ cr.id }}" checked
+                         data-crv-appid="{{ ((p._appid or {}).fields or {})|tojson|forceescape }}"
+                         aria-label="{{ _('Include %(policy)s in the export', policy=(p.policy or p.device)) }}"></td>
               <td style="font-size:13px;">{{ p.device }}</td>
               <td style="font-size:13px;">{{ p.policy or '—' }}</td>
               <td style="font-size:13px;">{{ p.vserver or '—' }}</td>
@@ -269,14 +307,43 @@
       </div>
       {% if policies %}
       <div class="fw-card-body border-top">
-        <form method="GET" action="{{ url_for('change_requests.inventory_export', id=cr.id, fmt='xlsx') }}">
+        {# POST, not GET: the ticked services travel with the columns, and one
+           key per service outgrows a URL on a large window. #}
+        <form method="POST" id="crv-export-{{ cr.id }}"
+              action="{{ url_for('change_requests.inventory_export', id=cr.id, fmt='xlsx') }}"
+              data-crv-none="{{ _('Select at least one service to export.') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="svc_pick" value="1">
           <label class="fw-form-label">{{ _('Export columns') }}</label>
+          <div class="d-flex align-items-center gap-2 mb-1" style="font-size:12.5px;">
+            <span class="text-muted">{{ _('Inventory (frozen with the change)') }}</span>
+            <button type="button" class="btn btn-link btn-sm p-0" data-crv-cols="inv" data-crv-on="1">{{ _('Select all') }}</button>
+            <button type="button" class="btn btn-link btn-sm p-0" data-crv-cols="inv" data-crv-on="">{{ _('Select none') }}</button>
+          </div>
           <div class="row g-1 mb-2">
             {% for key, label in crv.fields %}
             <div class="col-md-4">
               <label class="d-flex align-items-center gap-1" style="font-size:12.5px;">
-                <input type="checkbox" name="field" value="{{ key }}"
+                <input type="checkbox" name="field" value="{{ key }}" data-crv-group="inv"
                        {{ 'checked' if key in crv.default_fields else '' }}>
+                <span>{{ label }}</span>
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+          {# ONE group for the catalog, named once: the columns are the AppIDs
+             page's own (names included), read NOW -- not frozen with the
+             change, which is what "(catalog now)" on every box used to say. #}
+          <div class="d-flex align-items-center gap-2 mb-1" style="font-size:12.5px;">
+            <span class="text-muted" title="{{ _('From the AppID catalog now, not frozen with the change') }}">{{ _('AppID catalog (current values, not frozen)') }}</span>
+            <button type="button" class="btn btn-link btn-sm p-0" data-crv-cols="appid" data-crv-on="1">{{ _('Select all') }}</button>
+            <button type="button" class="btn btn-link btn-sm p-0" data-crv-cols="appid" data-crv-on="">{{ _('Select none') }}</button>
+          </div>
+          <div class="row g-1 mb-2">
+            {% for key, label in crv.appid_fields %}
+            <div class="col-md-4">
+              <label class="d-flex align-items-center gap-1" style="font-size:12.5px;">
+                <input type="checkbox" name="field" value="{{ key }}" data-crv-group="appid">
                 <span>{{ label }}</span>
               </label>
             </div>
@@ -296,6 +363,75 @@
           </div>
         </form>
       </div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var tools = document.getElementById('crv-svc-tools-{{ cr.id }}');
+  var form = document.getElementById('crv-export-{{ cr.id }}');
+  if (!tools || !form) return;
+  var PREFIX = '{{ crv.appid_prefix }}';
+  var values = {};
+  try { values = JSON.parse(tools.dataset.crvValues || '{}'); } catch (e) { values = {}; }
+  var col = tools.querySelector('[data-crv-col]');
+  var val = tools.querySelector('[data-crv-val]');
+  var count = tools.querySelector('[data-crv-count]');
+  var all = document.querySelector('[data-crv-all]');
+  function boxes() {
+    return Array.prototype.slice.call(
+      document.querySelectorAll('input.crv-svc[form="' + form.id + '"]'));
+  }
+  function refresh() {
+    var b = boxes(), on = b.filter(function (x) { return x.checked; }).length;
+    count.textContent = on + ' / ' + b.length;
+    if (all) { all.checked = on === b.length; all.indeterminate = on > 0 && on < b.length; }
+  }
+  function fillValues() {
+    val.innerHTML = '';
+    (values[col.value] || []).forEach(function (v) {
+      var o = document.createElement('option');
+      o.value = v;
+      o.textContent = v === '' ? tools.dataset.crvEmpty : v;
+      val.appendChild(o);
+    });
+  }
+  function cell(box) {
+    var facts = {};
+    try { facts = JSON.parse(box.dataset.crvAppid || '{}'); } catch (e) { facts = {}; }
+    var v = facts[col.value.slice(PREFIX.length)];
+    return v === undefined || v === null ? '' : String(v);
+  }
+  tools.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-crv-act]');
+    if (!btn) return;
+    var act = btn.dataset.crvAct;
+    boxes().forEach(function (b) {
+      if (act === 'all') b.checked = true;
+      else if (act === 'none') b.checked = false;
+      else if (cell(b) === val.value) b.checked = (act === 'match-on');
+    });
+    refresh();
+  });
+  col.addEventListener('change', fillValues);
+  if (all) all.addEventListener('change', function () {
+    boxes().forEach(function (b) { b.checked = all.checked; });
+    refresh();
+  });
+  boxes().forEach(function (b) { b.addEventListener('change', refresh); });
+  form.querySelectorAll('[data-crv-cols]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      form.querySelectorAll('input[data-crv-group="' + btn.dataset.crvCols + '"]')
+        .forEach(function (x) { x.checked = !!btn.dataset.crvOn; });
+    });
+  });
+  form.addEventListener('submit', function (ev) {
+    if (!boxes().some(function (b) { return b.checked; })) {
+      ev.preventDefault();
+      alert(form.dataset.crvNone);
+    }
+  });
+  fillValues();
+  refresh();
+})();
+</script>
       {% endif %}
     </div>
   </div>

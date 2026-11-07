@@ -262,8 +262,11 @@
     </form>
     <table class="table table-sm small mb-0" id="up-kinds">
       <tbody>
-        <tr><td class="text-nowrap"><code>satom-update-&lt;version&gt;.tar.gz</code></td>
-            <td>{{ _('SATOM update: staged under Offline update package, with its preflight, then Apply.') }}</td></tr>
+        <tr id="up-kind-delta"><td class="text-nowrap"><code>satom-update-&lt;version&gt;-from-{{ app_version }}.tar.gz</code></td>
+            <td><strong>{{ _('Download this one.') }}</strong>
+              {{ _('Delta update for this node (it runs %(v)s): only the files that changed, a few MB. Staged under Offline update package, with its preflight, then Apply.', v=app_version) }}</td></tr>
+        <tr id="up-kind-full"><td class="text-nowrap"><code>satom-update-&lt;version&gt;.tar.gz</code></td>
+            <td>{{ _('Full update package (tens of MB): applies from any supported version. Use it only when the release has no delta from %(v)s or the preflight refuses the delta.', v=app_version) }}</td></tr>
         <tr><td class="text-nowrap"><code>satom-apipack-&lt;version&gt;.tar.gz</code></td>
             <td>{{ _('API pack of a SATOM release: listed under API packs & kbpacks, then Import selected.') }}</td></tr>
         <tr><td class="text-nowrap"><code>satom-kbpack-&lt;date&gt;.tar.gz</code></td>
@@ -335,8 +338,10 @@
         <div class="row g-3">
           <!-- upload -->
           <div class="col-lg-5">
-            <div class="small text-muted">{{ _('Upload a') }} <code>satom-update-&lt;version&gt;.tar.gz</code>
-              {{ _('in') }} <a href="#upload">{{ _('Upload') }}</a>.</div>
+            <div class="small text-muted">{{ _('Upload') }} <code>satom-update-&lt;version&gt;-from-{{ app_version }}.tar.gz</code>
+              ({{ _('the delta for this node, a few MB') }}) {{ _('in') }} <a href="#upload">{{ _('Upload') }}</a>.
+              {{ _('The full') }} <code>satom-update-&lt;version&gt;.tar.gz</code>
+              {{ _('only when there is no delta from this version.') }}</div>
 
             {% if uploads %}
             <div class="mt-3">

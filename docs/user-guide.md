@@ -4803,7 +4803,10 @@ the full one. A delta builds on this node's own files, so its preflight row
 signed tree. If one differs (a file patched by hand, a missing one), the row
 fails, names the file and the full package to use, and **Apply** stays
 disabled; nothing on the node has changed. Uploading a delta by hand works the
-same way. From a shell, `satom execute update fetch` picks the delta too, and
+same way: **Upload** names the file for this node,
+`satom-update-<new>-from-<this>.tar.gz`, and a release publishes deltas from
+its five previous releases, so the full package is only for an older node or
+a refused delta. From a shell, `satom execute update fetch` picks the delta too, and
 `--full` the full package. Details:
 [offline-update-packages.md §3.1](offline-update-packages.md).
 

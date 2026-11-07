@@ -6,6 +6,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+- **Software Update names the small package for this node.** Requested: the
+  update packages are still too big. The delta for the node's version was
+  published next to the full package (2.5 MB against 39 MB for 4.11.8), but
+  **Upload** said to download `satom-update-<version>.tar.gz`, so that is what
+  was downloaded. It now names `satom-update-<version>-from-<this node's
+  version>.tar.gz` first, and the full package only for a node with no delta
+  or a refused one. Releases now publish deltas from their five previous
+  releases instead of two, so a node a few releases behind still gets a few MB.
+
 ## [4.11.8] - 2026-11-07
 
 ### Added

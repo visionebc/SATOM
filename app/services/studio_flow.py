@@ -1242,9 +1242,7 @@ def _forced_outcome(node: dict, branch: str, branches: set):
     kind = node.get("kind")
     if kind in ("start", "end", "fail"):
         return None
-    two_way = kind == "decision" or kind in C.YES_NO_KINDS
-    if kind == "ask":
-        return branch if branch in ("yes", "no", "error") else "yes"
+    two_way = kind == "decision" or kind in C.YES_NO_KINDS   # Ask a person included
     if branch in ("yes", "no", "error"):
         return branch
     if branch == "ok":

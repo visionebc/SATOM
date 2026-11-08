@@ -101,3 +101,66 @@ def persist(cli, known: Path, error) -> None:
             "could not record the host key in %s (%s); refusing to continue — "
             "an unwritable store means every future connect is treated as "
             "first contact and the pin never takes effect" % (known, exc)) from exc
+
+
+def _names_for(host: str, port: int) -> set[str]:
+    host = (host or "").strip().lower()
+    return {host} if int(port or 22) == 22 else {"[%s]:%d" % (host, int(port))}
+
+
+def _matches(entry_names, targets: set[str]) -> bool:
+    from paramiko.hostkeys import HostKeys
+    for name in entry_names:
+        if name.lower() in targets:
+            return True
+        if name.startswith("|1|"):
+            salt = name.split("|")[2]
+            if any(HostKeys.hash_host(t, salt) == name for t in targets):
+                return True
+    return False
+
+
+def forget(known: Path, host: str, port: int = 22) -> int:
+    """Drop every pin for ``host`` (``[host]:port`` off 22), hashed or not.
+
+    Called when the LAST appliance that dials an address is de-registered:
+    the pin then protects nothing, and keeping it breaks the next device the
+    address is given to (2026-11-09: fortiweb19 deleted, its 192.0.2.82 handed
+    to the new fortiweb21, whose SSH was refused against fortiweb19's key).
+    While any registered appliance still dials the address the pin stays --
+    that is the case it exists for.
+
+    Every other line is kept byte for byte; the store is rewritten atomically
+    with its mode. If no pin is left the file is removed, because an existing
+    store with no pins is refused by :func:`load_pins` (a truncated store is
+    not first contact) -- an absent one is. Returns the pins removed."""
+    from paramiko.hostkeys import HostKeyEntry
+    import os
+
+    known = Path(known)
+    if not known.exists() or not host:
+        return 0
+    targets = _names_for(host, port)
+    lines = known.read_text(encoding="utf-8").splitlines(keepends=True)
+    keep, removed, pins_left = [], 0, 0
+    for lineno, raw in enumerate(lines, 1):
+        line = raw.strip()
+        if line and not line.startswith("#"):
+            entry = HostKeyEntry.from_line(line, lineno)
+            if entry is not None and _matches(entry.hostnames, targets):
+                removed += 1
+                continue
+            pins_left += 1
+        keep.append(raw)
+    if not removed:
+        return 0
+    if not pins_left:
+        known.unlink()
+        return removed
+    mode = known.stat().st_mode & 0o777
+    tmp = known.with_name(known.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write("".join(keep))
+    os.replace(tmp, known)
+    return removed

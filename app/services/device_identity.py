@@ -236,6 +236,7 @@ def deregister(appliance, note: str = "de-registered from SATOM") -> str:
     from ..extensions import db
     from . import datasheets
     name = appliance.name
+    host, ssh_port = appliance.host, appliance.ssh_port or 22
     # Record the identity BEFORE the row goes: everything hanging off
     # appliances.id is ON DELETE CASCADE, so after the delete there is nothing
     # left to read a serial or a model from -- and its backups are still on
@@ -249,7 +250,32 @@ def deregister(appliance, note: str = "de-registered from SATOM") -> str:
     datasheets.delete(appliance.id)
     db.session.delete(appliance)
     db.session.commit()
+    forget_unused_ssh_pin(name, host, ssh_port)
     return name
+
+
+def forget_unused_ssh_pin(name: str, host: str, ssh_port: int = 22) -> int:
+    """Drop the SSH host-key pin of an address no appliance dials any more
+    (:func:`app.services.ssh_pinning.forget`). Kept while any row -- another
+    ADOM row of the same box, another product -- still uses the address.
+    Audited when it removes something; never blocks the delete."""
+    from sqlalchemy import func
+    from ..models import Appliance
+    try:
+        if not host or Appliance.query.filter(
+                func.lower(Appliance.host) == host.strip().lower()).count():
+            return 0
+        from .ssh_ops import _data_dir
+        from .ssh_pinning import forget
+        n = forget(_data_dir() / "known_hosts", host, ssh_port)
+    except Exception:  # noqa: BLE001 -- never block a delete on bookkeeping
+        return 0
+    if n:
+        from .audit import log_action
+        log_action("appliance.ssh_pin_forget", target=name,
+                   extra={"host": host, "port": ssh_port, "pins": n,
+                          "reason": "no appliance dials this address any more"})
+    return n
 
 
 #: Note written on every incident closed because its device was deleted.

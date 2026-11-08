@@ -24,6 +24,7 @@ from ..services.audit import log_action
 from ..services import settings_store as store
 from ..services import datasheets
 from ..services import product_scope
+from ..services import job_progress
 
 HW_TYPES = ("hardware", "vm", "unknown")
 HA_MODES = ("per_node", "vip")
@@ -2315,22 +2316,40 @@ def restore_run(id):
         return render_template('appliances/restore.html', appliance=appliance, firmware=fw,
                                backups=backups, result=result, pre_backup=None)
 
+    # A FortiWeb in HA answers a restore by handing the file to its HA
+    # configuration-update flow (the GUI's ha_upgrade page), which SATOM does
+    # not drive: the restore would sit half-done on the cluster. Refused before
+    # anything is sent.
+    if not dry_run and (appliance.is_cluster or appliance.is_cluster_member):
+        log_action('appliance.restore', target=appliance.name,
+                   extra={'outcome': 'refused', 'filename': filename,
+                          'reason': 'HA cluster: FortiWeb hands a cluster restore to its '
+                                    'HA configuration-update flow'})
+        flash(f'{appliance.name} is registered as an HA cluster. A FortiWeb cluster takes a '
+              f'restore through its HA configuration-update flow, which SATOM does not drive, '
+              f'so nothing was sent. Restore through the FortiWeb GUI on the primary unit.',
+              'danger')
+        return redirect(url_for('appliances.restore', id=id))
+
     try:
         client = appliance.build_client(timeout=600)
     except Exception as exc:
         flash(f'Cannot connect to {appliance.name}: {type(exc).__name__}: {exc}', 'danger')
         return redirect(url_for('appliances.restore', id=id))
 
-    # Automatic pre-restore backup -- the rollback net (live runs only, taken
-    # over the device REST backup). If it cannot be taken the live restore is
+    # Automatic pre-restore backup -- the rollback net (live runs only): the
+    # box's own CLI backup, kept in the vault. It is also the template a CLI
+    # dump is converted with. If it cannot be taken the live restore is
     # ABORTED, unless the operator explicitly ticked "Restore without a
     # pre-restore backup" -- which is audited either way.
     pre_backup = None
     skipped_pre = ''
+    template = None
     without_pre = request.form.get('skip_pre_backup') == 'on'
     if not dry_run:
+        job_progress.step('Pre-restore backup', 10)
         try:
-            pre = backup_svc.fetch_device_backup(
+            pre, template = backup_svc.fetch_restore_point(
                 client, appliance_id=appliance.id, appliance_name=appliance.name,
                 created_by=getattr(current_user, 'username', '') or '')
             pre_backup = pre.filename
@@ -2348,19 +2367,53 @@ def restore_run(id):
                 return redirect(url_for('appliances.restore', id=id))
             skipped_pre = why
             pre_backup = f'(none: {type(exc).__name__}; restored without a pre-restore backup)'
+    elif backup_svc.classify(data) == backup_svc.pkg.KIND_CLI_DUMP:
+        # A dry run of a CLI dump validates the conversion against the box's
+        # current backup -- a read, nothing is sent.
+        try:
+            template, _name = backup_svc.cli_backup(client)
+        except Exception:
+            template = None
 
+    job_progress.step('Sending the configuration' if not dry_run else 'Validating', 30)
     try:
-        result = backup_svc.restore(client, data, filename, password=password, dry_run=dry_run)
+        result = backup_svc.restore(client, data, filename, password=password,
+                                    dry_run=dry_run, template=template)
     except Exception as exc:
+        if not dry_run:
+            log_action('appliance.restore', target=appliance.name,
+                       extra={'outcome': 'refused', 'filename': filename,
+                              'pre_backup': pre_backup,
+                              'error': f'{type(exc).__name__}: {exc}'[:300]})
         flash(f'Restore failed: {type(exc).__name__}: {exc}', 'danger')
         return redirect(url_for('appliances.restore', id=id))
 
+    # Post-check: an "applying" answer is a promise, not a result. Wait for the
+    # reboot and read the configuration back (services.backup.verify_restore).
+    if not dry_run and result.get('ok'):
+        job_progress.step('Waiting for the reboot, then reading the configuration back', 45)
+        check = backup_svc.verify_restore(
+            appliance, data, progress=lambda pct, msg: job_progress.step(msg, pct))
+        result['verify'] = check
+        result['ok'] = bool(check.get('verified'))
+        result['message'] = f"{result['message']}; {check.get('message', '')}"
+
     if not dry_run:
+        check = result.get('verify') or {}
+        if not result.get('accepted'):
+            outcome = 'failure'
+        elif check.get('verified'):
+            outcome = 'success'
+        else:
+            outcome = 'unverified'
         log_action('appliance.restore', target=appliance.name,
-                   extra={'outcome': 'success' if result.get('ok') else 'failure',
+                   extra={'outcome': outcome,
                           'filename': filename, 'pre_backup': pre_backup,
+                          'converted': result.get('converted'),
                           'without_pre_backup': bool(skipped_pre),
                           'pre_backup_error': skipped_pre or None,
+                          'device_answer': result.get('message', '')[:300],
+                          'mismatches': (check.get('mismatches') or [])[:20],
                           'ok': result.get('ok')})
     fw, backups = _restore_context(appliance)
     return render_template('appliances/restore.html', appliance=appliance, firmware=fw,

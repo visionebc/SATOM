@@ -8,7 +8,25 @@ All device paths are resolved from the endpoint registry
 * ``local_backup_list``   → ``system/maintenance.localbackup.list``   (GET, 200)
 * ``local_backup_download``→ ``system/maintenance.localbackup.download``(GET + name)
 * ``local_backup``        → ``system/maintenance.localbackup.backup``  (create)
-* ``system_restore``      → ``system/maintenance.backuprestore``       (multipart)
+
+Restore (measured on fortiweb20, 7.6.8 build1128, 2026-11-08 — the calls the
+box's own GUI makes, ``fwb-backup-restore.js``):
+
+* ``config_backup``  → ``GET system/maintenance.backupconfiguration?type=cli``
+  — the box's CLI backup: a ZIP with ``fwb_system_no_defaults.conf``.
+* ``config_restore`` → ``POST system/maintenance.restoreconfiguration``,
+  multipart ``file`` + ``encryption`` (0/1) + ``password``. ``{"mode": "stand",
+  "msg": "u_msg"}`` means "applying, rebooting"; any other ``mode`` is the HA
+  configuration-update flow, which SATOM does not drive.
+
+``system_restore`` (``maintenance.backuprestore``) is NOT a restore: it is the
+partition/firmware READ the same GUI page loads. Until 2026-11-08 SATOM posted
+the configuration there, the box answered 200 with its partition table, applied
+nothing, and the page said the restore had run.
+
+Only the box's own package format is restorable. A CLI dump captured over SSH
+is converted first (:mod:`app.services.fwb_config_package`), with the header of
+a backup the target writes at restore time.
 
 The vault stores each backup's bytes on disk under ``<data>/backups/<id>/`` and
 its metadata in the ``ConfigBackup`` table — mirroring the firmware repository.
@@ -30,13 +48,18 @@ from flask import current_app
 from ..extensions import db
 from ..models_backup import ConfigBackup
 from ..registry import loader
+from . import fwb_config_package as pkg
 
-# The multipart field FortiWeb's config restore expects on
-# ``maintenance.backuprestore``. Held as ONE constant so it is trivially
-# correctable once a live restore round-trip confirms the exact wire name
-# (see the Phase-0 spike note): the endpoint is verified, the field pending a
-# gated live confirmation. Restore stays dry_run by default until then.
+#: The multipart field ``maintenance.restoreconfiguration`` reads the file
+#: from (the GUI's ``formData.file``; measured 7.6.8).
 RESTORE_FILE_FIELD = "file"
+
+#: Registry names of the two calls a restore makes.
+CONFIG_BACKUP = "config_backup"
+CONFIG_RESTORE = "config_restore"
+
+#: A CLI backup the box names itself; used when it sends no filename.
+DEFAULT_PACKAGE_NAME = "config_system_no_defaults.conf.zip"
 
 
 # --------------------------------------------------------------------------- #
@@ -85,59 +108,211 @@ def create_backup(client: Any, name: str | None = None) -> dict[str, Any]:
         return {"status_code": getattr(resp, "status_code", None)}
 
 
+def _body_of(resp: Any) -> dict[str, Any]:
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            return body
+        return {"value": body}
+    except Exception:  # noqa: BLE001
+        return {"status_code": getattr(resp, "status_code", None),
+                "text": (getattr(resp, "text", "") or "")[:300]}
+
+
+def _attachment_name(resp: Any) -> str:
+    cd = ((getattr(resp, "headers", None) or {}).get("content-disposition") or "")
+    m = re.search(r'filename="?([^";]+)"?', cd)
+    return (m.group(1).strip() if m else "") or DEFAULT_PACKAGE_NAME
+
+
+def cli_backup(client: Any) -> tuple[bytes, str]:
+    """The box's own CLI backup (``config_backup``, ``type=cli``) and the name
+    it gives it. Raises ``RuntimeError`` unless the body really is a FortiWeb
+    backup package — a 200 carrying a JSON error is a refusal, not a backup."""
+    resp = client.get(_resolve(client, CONFIG_BACKUP) + "?type=cli&ml_backup=&password=")
+    status = getattr(resp, "status_code", 0)
+    data = getattr(resp, "content", b"") or b""
+    if status != 200 or pkg.classify(data) != pkg.KIND_PACKAGE:
+        hint = data[:200].decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"the device returned no configuration backup "
+                           f"(HTTP {status}{': ' + hint if hint else ''})")
+    return data, _attachment_name(resp)
+
+
+def fetch_restore_point(client: Any, *, appliance_id: int, appliance_name: str,
+                        created_by: str = "") -> tuple[ConfigBackup, bytes]:
+    """Take the box's CLI backup and keep it in the vault: the rollback copy of
+    a live restore, and the template a CLI dump is converted with."""
+    data, name = cli_backup(client)
+    fw = ""
+    try:
+        from . import upgrade as upg
+        fw = upg.firmware_version(client)
+    except Exception:  # noqa: BLE001 — firmware is optional metadata
+        pass
+    cb = store_bytes(appliance_id=appliance_id, appliance_name=appliance_name,
+                     data=data, filename=name, source="device", created_by=created_by,
+                     firmware=fw or None,
+                     note="Pre-restore backup (the device's own CLI backup) — "
+                          "the rollback copy of the restore that followed.")
+    return cb, data
+
+
+def classify(data: bytes) -> str:
+    """What a vault entry is — see :func:`fwb_config_package.classify`."""
+    return pkg.classify(data)
+
+
+def _restore_answer(status: int, body: dict[str, Any]) -> tuple[bool, str]:
+    """Read the device's answer to ``config_restore``. Only the GUI's own
+    "applying" acknowledgement counts; a bare 200 does not (it is what the
+    partition-read endpoint returned for years while restoring nothing)."""
+    if status >= 400:
+        return False, f"the device refused the restore (HTTP {status})"
+    res = body.get("results") if isinstance(body.get("results"), dict) else body
+    err = res.get("errcode", body.get("errcode"))
+    if err not in (None, 0, "0", ""):
+        return False, f"the device refused the restore (errcode {err})"
+    mode, msg = res.get("mode"), res.get("msg")
+    if mode == "stand" and msg == "u_msg":
+        return True, "the device accepted the configuration and is rebooting to apply it"
+    if mode:
+        return False, (f"the device answered in HA mode ({mode!r}): it hands the file to its "
+                       "HA configuration-update flow, which SATOM does not drive — nothing "
+                       "is confirmed; finish or cancel it in the FortiWeb GUI")
+    return False, (f"the device sent no 'applying' acknowledgement (HTTP {status}) — "
+                   "nothing is confirmed")
+
+
 def restore(client: Any, file_bytes: bytes, filename: str, *,
-            password: str | None = None, dry_run: bool = True) -> dict[str, Any]:
+            password: str | None = None, dry_run: bool = True,
+            template: bytes | None = None) -> dict[str, Any]:
     """Restore a FortiWeb configuration by uploading it to the box.
 
     DESTRUCTIVE on a real run: FortiWeb applies the config and reboots.
     ``dry_run=True`` (default) validates and returns the plan WITHOUT uploading.
-    The multipart field name is :data:`RESTORE_FILE_FIELD` and the endpoint is
-    resolved via the registry (``system_restore`` → ``maintenance.backuprestore``).
+
+    What is sent depends on what the vault holds (:func:`classify`):
+    a backup ZIP goes as is; a CLI dump is converted with ``template`` — a CLI
+    backup the TARGET box just wrote (:func:`fetch_restore_point`); anything
+    else is sent only with a password (``encryption=1``), the GUI's handling of
+    a password-protected backup. ``ok`` is True only on the device's "applying"
+    acknowledgement — :func:`verify_restore` then proves what it applied.
     """
     size = len(file_bytes or b"")
+    if size == 0:
+        raise ValueError("configuration file is empty")
+    kind = pkg.classify(file_bytes)
     plan: dict[str, Any] = {
         "dry_run": dry_run,
         "filename": filename,
         "size": size,
-        "endpoint": _resolve(client, "system_restore"),
-        "encrypted": is_encrypted(file_bytes),
+        "endpoint": _resolve(client, CONFIG_RESTORE),
+        "encrypted": kind == pkg.KIND_UNKNOWN,
+        "kind": kind,
+        "converted": False,
     }
-    if size == 0:
-        raise ValueError("configuration file is empty")
+    if kind == pkg.KIND_UNKNOWN and not password:
+        raise ValueError(
+            "this file is neither a FortiWeb configuration backup (.zip) nor a CLI dump "
+            "(show full-configuration). If it is a password-protected backup, enter its "
+            "password.")
+
+    payload, send_name = file_bytes, filename
+    pending = ""
+    if kind == pkg.KIND_CLI_DUMP:
+        if template is None:
+            if not dry_run:
+                raise ValueError("a CLI dump is converted with a backup taken from the "
+                                 "target device, and none is available")
+            pending = (" It is a CLI dump: it is converted with a backup the device writes "
+                       "at restore time (not validated now: that backup could not be read).")
+        else:
+            payload = pkg.build_package(file_bytes, template)
+            base = re.sub(r"\.(conf|txt|cfg)$", "", filename or "config", flags=re.I)
+            send_name = f"{base}_restore.conf.zip"
+            plan["converted"] = True
+    plan["send_filename"], plan["send_size"] = send_name, len(payload)
 
     if dry_run:
         plan["ok"] = True
-        plan["message"] = (
-            f"DRY-RUN — would upload {filename} ({size:,} bytes) to the appliance "
-            f"and reboot. No file was sent.")
+        how = (f"converted from a CLI dump to the device's package format ({len(payload):,} "
+               f"bytes) and " if plan["converted"] else "")
+        plan["message"] = (f"DRY-RUN — {filename} ({size:,} bytes) would be {how}sent to the "
+                           f"appliance, which applies it and reboots. Nothing was sent."
+                           + pending)
         return plan
 
-    data: dict[str, Any] = {}
-    if password:
-        data["password"] = password
-    files = {RESTORE_FILE_FIELD: (filename, file_bytes, "application/octet-stream")}
-    resp = client.upload(plan["endpoint"], files=files, data=data or None, timeout=600.0)
-    try:
-        body = resp.json()
-    except Exception:  # noqa: BLE001
-        body = {"status_code": getattr(resp, "status_code", None),
-                "text": getattr(resp, "text", "")[:300]}
+    data = {"encryption": "1" if password else "0", "password": password or ""}
+    files = {RESTORE_FILE_FIELD: (send_name, payload, "application/octet-stream")}
+    resp = client.upload(plan["endpoint"], files=files, data=data, timeout=600.0)
+    body = _body_of(resp)
     plan["response"] = body
-    status = getattr(resp, "status_code", 500)
-    plan["ok"] = status < 400
-    plan["message"] = (f"restore uploaded to the appliance (HTTP {status}) — it is applying "
-                       f"the configuration and may reboot."
-                       if plan["ok"] else f"restore upload failed (HTTP {status}).")
+    plan["ok"], plan["message"] = _restore_answer(getattr(resp, "status_code", 500), body)
+    plan["accepted"] = plan["ok"]
     return plan
+
+
+def verify_restore(appliance, sent: bytes, *, progress=None) -> dict[str, Any]:
+    """After an accepted restore: wait for the reboot, read the configuration
+    back and compare it with what was sent, object for object.
+
+    The read-back uses the format that was sent, because the two do not
+    compare across formats (a no-defaults backup omits whole predefined
+    tables): a CLI dump is checked against a new ``show full-configuration``
+    over SSH, a backup ZIP against a new CLI backup over REST. The comparison
+    counts the entries of every configuration table
+    (:func:`fwb_config_package.config_profile`) — re-salted secrets make the
+    text differ even when the restore is exact. Never raises."""
+    from . import upgrade as upg
+    rec = upg.monitor_recovery(appliance, progress=progress,
+                               down_timeout=240.0, up_timeout=900.0)
+    out: dict[str, Any] = {**rec, "verified": False, "mismatches": [], "objects": 0}
+    if not rec.get("recovered"):
+        out["message"] = (f"the appliance did not answer again within "
+                          f"{int(rec.get('elapsed_s') or 0)} s of the restore")
+        return out
+    kind = pkg.classify(sent)
+    try:
+        if kind == pkg.KIND_CLI_DUMP:
+            out["readback"] = "show full-configuration (SSH)"
+            after = ssh_config_backup(appliance)
+        elif kind == pkg.KIND_PACKAGE:
+            out["readback"] = "CLI backup (REST)"
+            after, _ = cli_backup(appliance.build_client(timeout=120))
+        else:
+            out["message"] = ("an encrypted backup cannot be read back by SATOM: the "
+                              "restore was accepted and the appliance is back, but what it "
+                              "applied is not verified")
+            return out
+        expected = pkg.config_profile(pkg.package_sections(sent))
+        actual = pkg.config_profile(pkg.package_sections(after))
+    except Exception as exc:  # noqa: BLE001
+        out["message"] = (f"the appliance is back but its configuration could not be read "
+                          f"back ({type(exc).__name__}: {exc})"[:300])
+        return out
+    out["objects"] = sum(expected.values())
+    out["mismatches"] = pkg.profile_diff(expected, actual)
+    out["verified"] = not out["mismatches"]
+    if not rec.get("went_down"):
+        out["warning"] = "the appliance was never seen going down after the restore"
+    out["message"] = (
+        f"verified: {out['objects']:,} objects in {len(expected)} configuration tables "
+        f"read back identical" if out["verified"] else
+        f"the configuration read back differs in {len(out['mismatches'])} tables")
+    return out
 
 
 # --------------------------------------------------------------------------- #
 # The vault (on-disk store + ConfigBackup rows)                                #
 # --------------------------------------------------------------------------- #
 def is_encrypted(data: bytes) -> bool:
-    """A FortiWeb plaintext config starts with ``#config``/``config``; anything
-    else (a password-encrypted backup) is treated as encrypted → restore will
-    prompt for the backup password."""
+    """A FortiWeb plaintext config starts with ``#config``/``config``, and the
+    box's own backup is a ZIP package; anything else (a password-encrypted
+    backup) is treated as encrypted → restore will prompt for the backup
+    password."""
+    if pkg.classify(data) == pkg.KIND_PACKAGE:
+        return False
     head = (data or b"")[:64].lstrip()
     return not (head.startswith(b"#config") or head.startswith(b"config"))
 
@@ -397,7 +572,8 @@ def fetch_device_backup_auto(appliance, *, created_by: str = "",
         note=note)
 
 
-__all__ = ["RESTORE_FILE_FIELD", "list_backups", "download_backup", "create_backup",
-           "restore", "is_encrypted", "vault_root", "store_bytes", "read_vault_bytes",
+__all__ = ["RESTORE_FILE_FIELD", "CONFIG_BACKUP", "CONFIG_RESTORE", "list_backups",
+           "download_backup", "create_backup", "cli_backup", "fetch_restore_point",
+           "classify", "restore", "verify_restore", "is_encrypted", "vault_root", "store_bytes", "read_vault_bytes",
            "delete_vault", "fetch_device_backup", "ssh_config_backup",
            "fetch_device_backup_auto"]

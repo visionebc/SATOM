@@ -10,6 +10,7 @@
   <i class="bi bi-exclamation-octagon-fill mt-1"></i>
   <div>
     {{ _('A live restore') }} <b>{{ _('overwrites the running configuration and reboots the appliance') }}</b>{{ _(', interrupting every service it fronts. Before a live restore a') }} <b>{{ _('pre-restore backup is pulled over the device REST API') }}</b>{{ _('; if it cannot be taken the restore is aborted unless you explicitly choose to restore without one. Leave') }} <b>{{ _('Dry run') }}</b> {{ _('checked to validate without sending anything, and type the appliance name to authorise a live restore. Encrypted backups require the backup password.') }}
+    {{ _('A CLI dump captured over SSH is converted to the device package format first. After the reboot SATOM reads the configuration back and compares it table by table; the restore is reported as done only when they match.') }}
   </div>
 </div>
 
@@ -20,8 +21,18 @@
     <div class="fw-alert fw-alert-{{ 'success' if result.ok else 'warning' }} mb-2">{{ result.message }}</div>
     <dl class="row mb-0 small">
       <dt class="col-sm-3">{{ _('File') }}</dt><dd class="col-sm-9">{{ result.filename }} ({{ '{:,}'.format(result.size) }} bytes){% if result.encrypted %} · <span class="text-warning">{{ _('encrypted') }}</span>{% endif %}</dd>
+      {% if result.converted %}<dt class="col-sm-3">{{ _('Sent as') }}</dt><dd class="col-sm-9">{{ result.send_filename }} ({{ '{:,}'.format(result.send_size) }} bytes) · {{ _('converted from a CLI dump to the device package format') }}</dd>{% endif %}
       <dt class="col-sm-3">{{ _('Endpoint') }}</dt><dd class="col-sm-9"><code>{{ result.endpoint }}</code></dd>
       {% if pre_backup %}<dt class="col-sm-3">{{ _('Pre-restore backup') }}</dt><dd class="col-sm-9">{{ pre_backup }}</dd>{% endif %}
+      {% if result.verify %}{% set v = result.verify %}
+      <dt class="col-sm-3">{{ _('Reboot') }}</dt><dd class="col-sm-9">{{ _('went down') if v.went_down else _('not seen going down') }} · {{ _('back online') if v.recovered else _('did not come back') }}{% if v.firmware_after %} ({{ v.firmware_after }}){% endif %} · {{ v.elapsed_s }} s</dd>
+      <dt class="col-sm-3">{{ _('Read-back check') }}</dt><dd class="col-sm-9">
+        <span class="fw-badge fw-badge-{{ 'success' if v.verified else 'danger' }}">{{ _('verified') if v.verified else _('not verified') }}</span>
+        {{ v.message }}{% if v.readback %} · {{ _('read with') }} {{ v.readback }}{% endif %}
+        {% if v.warning %}<div class="text-warning">{{ v.warning }}</div>{% endif %}
+        {% if v.mismatches %}<ul class="mb-0 mt-1">{% for m in v.mismatches[:30] %}<li><code>{{ m }}</code></li>{% endfor %}</ul>{% endif %}
+      </dd>
+      {% endif %}
     </dl>
   </div>
 </div>

@@ -152,13 +152,9 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
       <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
     {% endif %}
-    {# DNS Lookup (operator, 2026-10-23): the tool stays in Fleet for every
-       network.view holder; here it is the administrator's door to it. Its
-       resolver list is Objects › DNS Resolvers (above). #}
-    {% if may_open('dns_tool.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' and request.endpoint != 'dns_tool.resolvers' else '' }}" href="{{ url_for('dns_tool.index') }}">
-      <i class="bi bi-globe fw-nav-icon"></i><span>{{ _('DNS Lookup') }}</span></a>
-    {% endif %}
+    {# DNS Lookup left System on 2026-11-08 (operator): it is the page plugin
+       dns-lookup, under Plugins. Its resolver list stays Objects › DNS
+       Resolvers (above): that is configuration. #}
     {# System Automations, System Backup & Restore, Software Update and High
        Availability live in Settings since 2026-10-21 (FA-0005, operator):
        settings/_nav.html draws them and each page draws that menu. #}

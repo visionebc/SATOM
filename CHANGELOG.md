@@ -27,6 +27,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   adds `studio_apps.page_key`.
 
 ### Changed
+- **DNS Lookup is a plugin: its entry is under Plugins only.** Requested:
+  "the entry must be in plugins, period". The native entries (the device
+  ADOMs' Operations and Administrator › System) are gone; the page plugin
+  `dns-lookup` (signed, `satom-plugins` 1.0.0) draws *DNS Lookup* under
+  Plugins in the ADOMs ticked for it and opens the page exactly as before --
+  same page, same functions, same view. Without the plugin no menu draws it;
+  the page keeps answering by URL for whoever holds `network.view`. DNS
+  Resolvers stays in Administrator › Objects (it is configuration).
 - **DNS & LB Lookup: the main table is the DNS side only (SA-0029, second
   round).** Requested: the main table shows only the DNS results and the
   actions; an *Expand* button opens everything as before, and *Show* opens

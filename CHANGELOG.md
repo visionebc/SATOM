@@ -27,6 +27,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   adds `studio_apps.page_key`.
 
 ### Changed
+- **Sidebar: Global has no Automation subgroup; Automations is now Scheduler.**
+  Requested: take the entries out of Global > Automation and put them at the
+  level of Search, and call the menu Scheduler. In the Global ADOM, API,
+  Certificate Manager, Change Requests and Scheduler now sit directly in the
+  Global block, sorted, right above Plugins. The entry that opens the
+  Scheduled / On a trigger / Triggers page is labelled *Scheduler* in every
+  ADOM (also in Scout's page map and the notification guide). Device and
+  placeholder ADOMs keep Operations > Automation as before.
 - **DNS Lookup is a plugin: its entry is under Plugins only.** Requested:
   "the entry must be in plugins, period". The native entries (the device
   ADOMs' Operations and Administrator › System) are gone; the page plugin

@@ -96,6 +96,8 @@
    it here, as a subgroup above Jobs, with Global › Plugins right below it
    (partials/nav_global_apps.html; the same order as a device ADOM).
    Placeholder ADOMs draw it in Operations like a device ADOM (2026-11-06).
+   Since 2026-11-08 (operator) Global draws its entries flat, at the level of
+   Search, with no Automation ▸ subgroup (still right above Plugins).
    config_write-gated inside the partial. #}
 {% if _pk == 'global' %}
 {% include 'partials/nav_automation.html' %}

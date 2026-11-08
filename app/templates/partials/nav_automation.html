@@ -113,10 +113,12 @@
        (services/adom_menu.py). #}
     {% if (product.key == 'global' or _dev) and current_user.can('config_write') %}
     {% if may_open('automations.index') %}
+    {# Labelled "Scheduler" since 2026-11-08 (operator); the page and its
+       tabs (Scheduled / On a trigger / Triggers) are unchanged. #}
     {% if product.key == 'global' or _m_au.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint in ('automations', 'event_automations', 'triggers') else '' }}" href="{{ url_for('automations.index', _adom=product.key) }}">
-      <i class="bi bi-calendar2-check fw-nav-icon"></i><span>{{ _('Automations') }}</span></a>
-    {% else %}{{ nav_off('bi-calendar2-check', _('Automations'), _m_au.reason, ep='automations.index') }}{% endif %}
+      <i class="bi bi-calendar2-check fw-nav-icon"></i><span>{{ _('Scheduler') }}</span></a>
+    {% else %}{{ nav_off('bi-calendar2-check', _('Scheduler'), _m_au.reason, ep='automations.index') }}{% endif %}
     {% endif %}
     {% endif %}
     {# Device / System Provisioning: Administrator > Devices for user_manage
@@ -167,10 +169,20 @@
    here since (operator). registry.view still gates it (partials/_nav_api.html).
    Passed to nav_sorted() as ONE block, sorted under its "API" label. #}
 {% set _a_api %}{{ api_menu(true) }}{% endset %}
+{# Global (operator, 2026-11-08): no Automation ▸ subgroup -- its entries sit
+   in the Global block itself, at the level of Search, in the same sorted
+   order and the same place (right above Plugins). Device and placeholder
+   ADOMs keep the subgroup inside Operations. #}
+{% if product.key == 'global' %}
+<!-- nav-flat:Automation -->
+{{ nav_sorted(_a_items, _a_api) }}
+<!-- /nav-flat:Automation -->
+{% else %}
 <div class="fw-nav-subgroup{{ ' open' if request.blueprint in _auto_bps }}" data-nav-subgroup="Automation">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-gear-wide-connected fw-nav-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
     {{ nav_sorted(_a_items, _a_api) }}
   </div>
 </div>
+{% endif %}
 {% endif %}

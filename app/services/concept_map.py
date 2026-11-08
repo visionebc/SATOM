@@ -462,8 +462,8 @@ PAGES: tuple[dict, ...] = (
        "schedule cron timer recurring job automation periodic task system "
        "maintenance housekeeping backup sync sweep",
        "SATOM's own housekeeping, on a schedule."),
-    _p("automations.index", "Automations", "automation",
-       "schedule automation cutover planned change policy backend "
+    _p("automations.index", "Scheduler", "automation",
+       "scheduler automations schedule automation cutover planned change policy backend "
        "certificate swap maintenance window operator reboot upgrade "
        "firmware ha failover certificate renewal lifecycle custom rest",
        "Fleet work you schedule for a chosen time."),

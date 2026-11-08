@@ -11495,14 +11495,14 @@ both as "ungrouped".
 The panel reads **ADOM → what is inside it → its classification**:
 
 ```
-FortiWeb                      (each ADOM you may enter that holds anything;
-├─ Favourites                  Global first, then registry order)
-├─ Links                       its unstarred bookmarks not filed in a folder
-└─ Line › Zone › Department    its devices, nested by your grouping order
-FortiADC
-└─ …
+Favourites                    every star, of every ADOM, in your own order
 Folders                       your folders (may mix ADOMs)
 Shared                        team bookmarks not filed yet
+FortiWeb                      each ADOM you may enter that holds anything
+├─ Links                       (Global first, then registry order):
+└─ Line › Zone › Department    its unstarred bookmarks not in a folder, and
+FortiADC                       its devices nested by YOUR grouping order
+└─ …                           (Profile → Bookmarks — grouping order)
 ```
 
 Bookmarks are **general**, not per ADOM. The panel lists your bookmarks from
@@ -11524,12 +11524,11 @@ link would be a 404 in the console you are in.
 - Every ADOM root carries its own device tree, so the devices of every ADOM
   you may enter are listed, each under its ADOM. A device of another ADOM
   switches the tab to it when opened, like a bookmark does.
-- **Favourites is divided by ADOM**: one group per ADOM that holds a
-  favourite (Global first, then the ADOMs in registry order), only the ADOMs
-  your profile may enter. A device goes under its product; a page under the
-  ADOM you starred it in.
+- **Favourites is one list**, not divided by ADOM: every star of every ADOM
+  your profile may enter, in your own order. A star of another ADOM shows
+  that ADOM's name and opens there.
 - A **menu star belongs to its ADOM**. Starring *Fleet › Architecture* in
-  FortiWeb and again in FortiADC gives two favourites, one per group, each
+  FortiWeb and again in FortiADC gives two favourites, each tagged and
   opening in its own ADOM; each menu lights only its own stars, and
   unstarring in one ADOM leaves the other.
 

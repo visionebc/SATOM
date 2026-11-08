@@ -78,8 +78,9 @@ ROOT_SHARED = 'r:shared'
 #: keyed by node key, and a root whose key changed with the order would
 #: slam itself shut every time somebody re-ordered their own tree.
 ROOT_LENS = 'r:lens'
-#: Per-ADOM roots (2026-11-08): ``r:adom@<key>`` holds ``r:fav@<key>``,
-#: ``r:links@<key>`` and ``r:lens@<key>`` ('global' for Global). Stable,
+#: Per-ADOM roots (2026-11-08, after Favourites/Folders/Shared since
+#: 2026-11-09): ``r:adom@<key>`` holds ``r:links@<key>`` and
+#: ``r:lens@<key>`` ('global' for Global). Stable,
 #: registry keys -- never the display name -- for the same open-set reason.
 ROOT_ADOM = 'r:adom'
 ROOT_LINKS = 'r:links'
@@ -285,18 +286,19 @@ def build_panel(q: str = '') -> dict:
             if prev is None or (not prev['mine'] and item['mine']):
                 by_appliance[bm.appliance_id] = item
 
-    # ---- the ADOMs: one root each ------------------------------------------
-    # 2026-11-08 (user): the panel reads "ADOM -> what is inside it -> its
-    # classification". Each ADOM the reader may enter and that holds anything
-    # is a root, Global first, then the ADOM registry's order; inside it:
-    #   Favourites  -- its stars, hand-ordered, a drop target (drop = star);
-    #   Links       -- its unstarred rows that are not filed in a folder;
-    #   <lens>      -- its devices, nested in the reader's chosen order
-    #                  (Line > Zone > Department by default).
+    # ---- the roots, in this order (user, 2026-11-09) ------------------------
+    #   Favourites  -- ONE flat list of every star, whatever its ADOM, in the
+    #                  reader's hand order; a drop target (drop = star);
+    #   Folders     -- the reader's folders (a folder may mix ADOMs);
+    #   Shared      -- the team's tray;
+    #   one root per ADOM the reader may enter that holds anything (Global
+    #   first, then the ADOM registry's order), with:
+    #     Links     -- its unstarred rows that are not filed in a folder;
+    #     <lens>    -- its devices, nested in THIS reader's chosen order
+    #                  (profile; Line > Zone > Department by default).
     # Only ADOMs the profile allows can appear: the rows passed
     # visible_bookmarks and the devices the same gate (svc.visible_devices).
-    # Folders and the Shared tray stay outside: a folder may hold rows of
-    # several ADOMs, and the tray is the team's.
+    # A star of another ADOM keeps its ADOM chip and opens through the switch.
     adom_rank = {'': 0}
     adom_name = {'': 'Global'}
     for i, (k, name) in enumerate(product_scope.device_products(), start=1):
@@ -318,16 +320,12 @@ def build_panel(q: str = '') -> dict:
         sec = a.get(part)
         if sec is None:
             tag = adom or 'global'
-            if part == 'fav':
-                sec = _node(f'{ROOT_FAV}@{tag}', 'Favourites',
-                            icon='bi-star-fill', droppable=True,
-                            drop_into=svc.FAV, manual=True, pos=0)
-            elif part == 'links':
+            if part == 'links':
                 sec = _node(f'{ROOT_LINKS}@{tag}', 'Links',
-                            icon='bi-link-45deg', manual=True, pos=1)
+                            icon='bi-link-45deg', manual=True, pos=0)
             else:
                 sec = _node(f'{ROOT_LENS}@{tag}', svc.lens_title(stack),
-                            icon='bi-diagram-3', pos=2)
+                            icon='bi-diagram-3', pos=1)
                 sec['lens_head'] = True
             a[part] = sec
             a['node']['children'].append(sec)
@@ -335,11 +333,12 @@ def build_panel(q: str = '') -> dict:
 
     stack = svc.lens_for(current_user)
 
+    fav_root = _node(ROOT_FAV, 'Favourites', icon='bi-star-fill',
+                     droppable=True, drop_into=svc.FAV, manual=True)
     for it in items:
         if it['fav'] and it['bm'].kind != KIND_FOLDER:
-            sec = _section(_adom_of(svc.adom_group(it['bm'])), 'fav')
-            sec['children'].append(
-                _node(f'{sec["key"]}|b{it["bm"].id}', it['label'],
+            fav_root['children'].append(
+                _node(f'{ROOT_FAV}|b{it["bm"].id}', it['label'],
                       icon=_icon_for(it), kind='item', item=it,
                       sub=_sub_for(it), container=svc.FAV,
                       pos=fav_pos.get(it['bm'].id, 0)))
@@ -454,8 +453,8 @@ def build_panel(q: str = '') -> dict:
             item['dev_url'], item['dev_note'] = svc.device_link(appl)
         cursor['children'].append(_device_node(cursor['key'], appl, item))
 
-    roots = [adoms[k]['node'] for k in sorted(adoms, key=lambda k: adom_rank[k])]
-    roots += [folders_root, shared_root]
+    roots = [fav_root, folders_root, shared_root]
+    roots += [adoms[k]['node'] for k in sorted(adoms, key=lambda k: adom_rank[k])]
     roots = [r for r in roots if _prune(r, q)]
     for r in roots:
         _count(r)

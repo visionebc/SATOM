@@ -125,6 +125,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Shared stay as their own roots (a folder may hold rows of several ADOMs).
   A profile confined to some ADOMs gets only those roots. Which device
   branches you had open is reset once (the node keys now carry the ADOM).
+- **Bookmarks: Favourites first, without ADOMs; the ADOMs last.**
+  Requested (correcting the two entries above): first the favourites without
+  ADOMs, then Folders, then Shared, then the ADOMs with their Line › Zone ›
+  Department tree following each user's own grouping order. Favourites is
+  again ONE list of every star in your own order (a star of another ADOM
+  keeps its ADOM tag and still opens there); each ADOM root holds its Links
+  and its device tree. Menu stars stay per ADOM.
 - **Bookmarks: drag to reorder Favourites and folders.** Requested: inside
   Favourites a bookmark could not be moved above or below another. Every
   list you file by hand (Favourites, each folder, the Folders root) is now in

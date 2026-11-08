@@ -25,6 +25,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   (`172.0.0.1 → name`, or `→ No result`), with a *DNS: reverse lookup of the
   VIP* badge; a match without a VIP says there is nothing to look up. Copy DNS
   carries the same. The PTR is asked once and also fills Service IP / name.
+- **DNS & LB Lookup: the AppID is always shown (SA-0029).** Requested: remove
+  the AppID checkbox and show the AppID data both in Expand and in the
+  dialog. The *Show AppID columns* option is gone; the details of every match
+  (Expand and Show) have an **AppID** section with every column of the AppID
+  catalog under the names set on the AppIDs page, and where the AppID came
+  from, or a line saying the policy has none.
 
 ## [4.11.14] - 2026-11-08
 

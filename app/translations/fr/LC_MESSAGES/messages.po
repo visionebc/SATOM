@@ -30191,3 +30191,6 @@ msgstr "DNS : recherche inverse de la VIP"
 msgid "No VIP in what it matched: nothing to look up in DNS"
 msgstr "La correspondance n'a pas de VIP : rien à chercher dans le DNS"
 
+
+msgid "No AppID: the policy is not bound in the AppID catalog and its comment names none"
+msgstr "Pas d'AppID : la policy n'est pas liée dans le catalogue AppID et son commentaire n'en nomme aucun"

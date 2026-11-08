@@ -51,8 +51,8 @@ def _clipboards(results, servers, columns, appid_cols=()):
 @require_permission('network.view')
 def index():
     servers = [s for s in dns_tool.dns_servers() if s.get("enabled", True)]
-    opts = {"lb": True, "quick": False, "exact": False, "ttl": False,
-            "appid": False}
+    # "appid" was an option until SA-0029: the AppID is always in the details.
+    opts = {"lb": True, "quick": False, "exact": False, "ttl": False}
     # SA-0028: how each entry is looked up -- detected per entry (auto) or
     # forced: element (config text), ip (address fields), fqdn (resolve,
     # then the addresses). Applied here, on the server, never in the browser.

@@ -2641,9 +2641,9 @@ against what the devices say.
   live health**, which asks the FortiWeb for each backend's health-check
   state and leaves an audit row), *Edit* (opens the policy) and *Delete*
   (the decommission, preview first). Nothing long is drawn inline, so a long
-  comment no longer pushes the Entry column out of view. **Show AppID
-  columns** (Options) adds the AppID catalog's visible columns under the
-  names set on the AppIDs page; the AppID is the policy's **binding**, else
+  comment no longer pushes the Entry column out of view. The details
+  of each match have an **AppID** section (since 4.11.14 always, no option)
+  with the AppID catalog's columns under the names set on the AppIDs page; the AppID is the policy's **binding**, else
   the one its comment names (Analysis › AppID pattern). **Copy LB** is the
   full row per match — entry, every column, PTR name, backends with status,
   the AppID facts and their source — with tabs and line breaks inside a

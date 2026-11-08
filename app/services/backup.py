@@ -158,6 +158,29 @@ def fetch_restore_point(client: Any, *, appliance_id: int, appliance_name: str,
     return cb, data
 
 
+def capture_source(appliance, *, created_by: str = "") -> ConfigBackup:
+    """A fresh copy of a migration SOURCE in its vault: the box's CLI backup
+    over REST, or ``show full-configuration`` over SSH when REST cannot answer
+    (the usual reason to migrate: an expired VM licence locks every REST route
+    and leaves SSH up). Raises ``RuntimeError`` naming both reasons."""
+    try:
+        client = appliance.build_client(timeout=120)
+        data, name = cli_backup(client)
+        note = "Migration source — the device's own CLI backup (REST)."
+    except Exception as exc:  # noqa: BLE001 — fall back to the SSH dump
+        rest_err = f"{type(exc).__name__}: {exc}"[:200]
+        try:
+            data = ssh_config_backup(appliance)
+        except Exception as ssh_exc:  # noqa: BLE001
+            raise RuntimeError(f"REST backup failed ({rest_err}); SSH dump also failed "
+                               f"({type(ssh_exc).__name__}: {ssh_exc})") from ssh_exc
+        name = f"{(appliance.name or 'appliance')}_{time.strftime('%Y%m%d_%H%M%S')}_cli.conf"
+        note = f"Migration source — captured over SSH (show full-configuration); REST: {rest_err}"
+    return store_bytes(appliance_id=appliance.id, appliance_name=appliance.name or "",
+                       data=data, filename=name, source="device", created_by=created_by,
+                       note=note[:500])
+
+
 def classify(data: bytes) -> str:
     """What a vault entry is — see :func:`fwb_config_package.classify`."""
     return pkg.classify(data)
@@ -253,7 +276,21 @@ def restore(client: Any, file_bytes: bytes, filename: str, *,
     return plan
 
 
-def verify_restore(appliance, sent: bytes, *, progress=None) -> dict[str, Any]:
+def _hostname_of(sections: dict[str, list[str]]) -> str:
+    in_global = False
+    for line in sections.get("global", []):
+        if line == "config system global":
+            in_global = True
+        elif in_global and line == "end":
+            break
+        elif in_global and line.startswith("  set hostname "):
+            return line.split(" ", 4)[-1].strip().strip('"')
+    return ""
+
+
+def verify_restore(appliance, sent: bytes, *, progress=None,
+                   expected: dict[str, int] | None = None, readback: str | None = None,
+                   hostname: str | None = None) -> dict[str, Any]:
     """After an accepted restore: wait for the reboot, read the configuration
     back and compare it with what was sent, object for object.
 
@@ -263,7 +300,11 @@ def verify_restore(appliance, sent: bytes, *, progress=None) -> dict[str, Any]:
     over SSH, a backup ZIP against a new CLI backup over REST. The comparison
     counts the entries of every configuration table
     (:func:`fwb_config_package.config_profile`) — re-salted secrets make the
-    text differ even when the restore is exact. Never raises."""
+    text differ even when the restore is exact. Never raises.
+
+    A migration passes ``expected`` (only the tables it copied, in the
+    format its source had), ``readback`` (``"ssh"`` or ``"rest"``, that
+    format) and ``hostname`` (the target's own, which must survive)."""
     from . import upgrade as upg
     rec = upg.monitor_recovery(appliance, progress=progress,
                                down_timeout=240.0, up_timeout=900.0)
@@ -273,11 +314,13 @@ def verify_restore(appliance, sent: bytes, *, progress=None) -> dict[str, Any]:
                           f"{int(rec.get('elapsed_s') or 0)} s of the restore")
         return out
     kind = pkg.classify(sent)
+    if readback is None:
+        readback = {pkg.KIND_CLI_DUMP: "ssh", pkg.KIND_PACKAGE: "rest"}.get(kind)
     try:
-        if kind == pkg.KIND_CLI_DUMP:
+        if readback == "ssh":
             out["readback"] = "show full-configuration (SSH)"
             after = ssh_config_backup(appliance)
-        elif kind == pkg.KIND_PACKAGE:
+        elif readback == "rest":
             out["readback"] = "CLI backup (REST)"
             after, _ = cli_backup(appliance.build_client(timeout=120))
         else:
@@ -285,14 +328,24 @@ def verify_restore(appliance, sent: bytes, *, progress=None) -> dict[str, Any]:
                               "restore was accepted and the appliance is back, but what it "
                               "applied is not verified")
             return out
-        expected = pkg.config_profile(pkg.package_sections(sent))
-        actual = pkg.config_profile(pkg.package_sections(after))
+        after_sections = pkg.package_sections(after)
+        actual = pkg.config_profile(after_sections)
+        if expected is None:
+            expected = pkg.config_profile(pkg.package_sections(sent))
+        else:
+            actual = {k: actual.get(k, 0) for k in expected}
     except Exception as exc:  # noqa: BLE001
         out["message"] = (f"the appliance is back but its configuration could not be read "
                           f"back ({type(exc).__name__}: {exc})"[:300])
         return out
     out["objects"] = sum(expected.values())
     out["mismatches"] = pkg.profile_diff(expected, actual)
+    if hostname is not None:
+        got = _hostname_of(after_sections)
+        out["hostname"] = got
+        if got != hostname:
+            out["mismatches"].append(f"global:system global hostname: expected {hostname!r}, "
+                                     f"device has {got!r}")
     out["verified"] = not out["mismatches"]
     if not rec.get("went_down"):
         out["warning"] = "the appliance was never seen going down after the restore"
@@ -574,6 +627,6 @@ def fetch_device_backup_auto(appliance, *, created_by: str = "",
 
 __all__ = ["RESTORE_FILE_FIELD", "CONFIG_BACKUP", "CONFIG_RESTORE", "list_backups",
            "download_backup", "create_backup", "cli_backup", "fetch_restore_point",
-           "classify", "restore", "verify_restore", "is_encrypted", "vault_root", "store_bytes", "read_vault_bytes",
+           "classify", "capture_source", "restore", "verify_restore", "is_encrypted", "vault_root", "store_bytes", "read_vault_bytes",
            "delete_vault", "fetch_device_backup", "ssh_config_backup",
            "fetch_device_backup_auto"]

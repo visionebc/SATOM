@@ -119,7 +119,8 @@ def inventory(data: bytes) -> dict[str, dict[str, int]]:
             for dom, body in pkg.package_sections(data).items()}
 
 
-def _is_identity(domain: str, table: str) -> bool:
+def is_identity(domain: str, table: str) -> bool:
+    """Whether ``domain:table`` describes the box (always the target's)."""
     return (f"{domain}:{table}" in IDENTITY_TABLES
             or (domain != "global" and f"*:{table}" in IDENTITY_TABLES))
 
@@ -274,8 +275,8 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
         new: list[tuple[str, list[str]]] = []
         for table in order:
             key = f"{sdom}:{table}"
-            take = table in sbl and not _is_identity(sdom, table) and key not in exclude
-            if table in sbl and _is_identity(sdom, table):
+            take = table in sbl and not is_identity(sdom, table) and key not in exclude
+            if table in sbl and is_identity(sdom, table):
                 report["identity_kept"].append(f"{tdom}:{table}")
             elif table in sbl and key in exclude:
                 report["excluded"].append(key)
@@ -315,4 +316,4 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
 
 
 __all__ = ["IDENTITY_TABLES", "DROPPED_BY_RESTORE", "MigrationError", "blocks",
-           "entries", "inventory", "plan"]
+           "entries", "inventory", "is_identity", "plan", "unique_dummy"]

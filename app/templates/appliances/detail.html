@@ -222,6 +222,9 @@
       </div>
       {% if current_user.can('user_manage') and current_user.can('backups.restore') %}
       <a href="{{ url_for('appliances.restore', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-danger" title="{{ _('Manage this appliance\'s configuration-backup vault and restore a saved config (admin only)') }}"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore') }}</a>
+      {% if appliance.kind == 'fortiweb' %}
+      <a href="{{ url_for('appliances.migrate', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-danger" title="{{ _('Copy another FortiWeb\'s configuration into this one: all of it, some ADOMs or some tables, keeping this box\'s identity (admin only)') }}"><i class="bi bi-box-arrow-in-down-right me-1"></i>{{ _('Migrate into') }}</a>
+      {% endif %}
       {% endif %}
       {% endif %}
     </div>

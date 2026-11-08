@@ -2421,6 +2421,242 @@ def restore_run(id):
 
 
 # --------------------------------------------------------------------------- #
+#  Migrate — another FortiWeb's configuration into this one                     #
+#                                                                               #
+#  The routes hang off the TARGET: it is the box that is written, so the        #
+#  device-job queue (keyed on the URL's appliance) serialises the right one.    #
+#  The planner is services/fwb_migrate.py; sending and reading back are the     #
+#  restore's own (services/backup.py).                                          #
+# --------------------------------------------------------------------------- #
+def _migrate_target_or_none(id):
+    target = _managed_or_404(id)
+    if target is not None and target.kind != 'fortiweb':
+        flash('Configuration migration is available between FortiWeb appliances only.', 'warning')
+        return None
+    return target
+
+
+def _migrate_sources(target):
+    """FortiWeb rows the user can see, other than the target, that speak for
+    their box (one row per chassis -- an ADOM row is not a box)."""
+    from ..models import owns_device_scope
+    rows = (visible_appliances(Appliance.query.filter(Appliance.kind == 'fortiweb',
+                                                       Appliance.id != target.id))
+            .order_by(Appliance.name).all())
+    return [a for a in rows if owns_device_scope(a)]
+
+
+def _migrate_source_backups(source):
+    if source is None:
+        return []
+    rows = (ConfigBackup.query.filter_by(appliance_id=source.id)
+            .order_by(ConfigBackup.created_at.desc()).all())
+    return [b for b in rows if not b.encrypted]
+
+
+def _migrate_default_map(src_domains, tgt_domains):
+    """Same-named domains pair up; one domain on each side pairs up whatever
+    the names (an ADOM onto a box without ADOMs, or the other way round)."""
+    src = [d for d in src_domains if d != 'global']
+    tgt = [d for d in tgt_domains if d != 'global']
+    out = {d: d for d in src if d in tgt}
+    if not out and len(src) == 1 and len(tgt) == 1:
+        out = {src[0]: tgt[0]}
+    return out
+
+
+@bp.route('/<int:id>/migrate')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def migrate(id):
+    target = _migrate_target_or_none(id)
+    if target is None:
+        return redirect(url_for('appliances.detail', id=id))
+    sources = _migrate_sources(target)
+    sid = request.args.get('source', type=int)
+    source = next((s for s in sources if s.id == sid), None)
+    from ..services import clone_rules
+    return render_template('appliances/migrate.html', appliance=target, sources=sources,
+                           source=source, backups=_migrate_source_backups(source),
+                           selected_backup=request.args.get('backup', type=int),
+                           dummy_rules=clone_rules.rules_summary())
+
+
+@bp.route('/<int:id>/migrate/capture', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def migrate_capture(id):
+    """A fresh backup of the SOURCE into its vault (REST, SSH fallback)."""
+    target = _migrate_target_or_none(id)
+    if target is None:
+        return redirect(url_for('appliances.detail', id=id))
+    sid = request.form.get('source_id', type=int)
+    source = next((s for s in _migrate_sources(target) if s.id == sid), None)
+    if source is None:
+        flash('Choose a source FortiWeb first.', 'warning')
+        return redirect(url_for('appliances.migrate', id=id))
+    from ..services import backup as backup_svc
+    try:
+        cb = backup_svc.capture_source(source, created_by=getattr(current_user, 'username', '') or '')
+    except Exception as exc:
+        flash(f'Could not take a backup of {source.name}: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.migrate', id=id, source=source.id))
+    log_action('appliance.backup_fetch', target=source.name,
+               extra={'filename': cb.filename, 'purpose': f'migration source for {target.name}'})
+    flash(f'Stored "{cb.filename}" from {source.name} in its vault.', 'success')
+    return redirect(url_for('appliances.migrate', id=id, source=source.id, backup=cb.id))
+
+
+@bp.route('/<int:id>/migrate/run', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def migrate_run(id):
+    target = _migrate_target_or_none(id)
+    if target is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import backup as backup_svc, clone_rules
+    from ..services import fwb_config_package as fwb_pkg, fwb_migrate
+
+    sources = _migrate_sources(target)
+    sid = request.form.get('source_id', type=int)
+    source = next((s for s in sources if s.id == sid), None)
+    cb = (ConfigBackup.query.filter_by(id=request.form.get('backup_id', type=int),
+                                       appliance_id=source.id).first() if source else None)
+    if source is None or cb is None:
+        flash('Choose a source FortiWeb and one of its stored backups.', 'warning')
+        return redirect(url_for('appliances.migrate', id=id, source=sid or ''))
+    back = url_for('appliances.migrate', id=id, source=source.id, backup=cb.id)
+    try:
+        data = backup_svc.read_vault_bytes(cb)
+    except Exception as exc:
+        flash(f'Stored backup unreadable: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(back)
+    kind = backup_svc.classify(data)
+    if kind not in (fwb_pkg.KIND_PACKAGE, fwb_pkg.KIND_CLI_DUMP):
+        flash(f'"{cb.filename}" is neither a FortiWeb backup (.zip) nor a CLI dump, so it cannot '
+              f'be split into tables. Take a fresh backup of {source.name}.', 'danger')
+        return redirect(back)
+
+    analyze = request.form.get('analyze') == '1'
+    dry_run = analyze or request.form.get('dry_run') == 'on'
+    if not dry_run:
+        if request.form.get('confirm_name', '').strip() != target.name:
+            flash('A live migration requires typing the exact target name to confirm.', 'danger')
+            return redirect(back)
+        if target.is_cluster or target.is_cluster_member:
+            log_action('appliance.migrate', target=target.name,
+                       extra={'outcome': 'refused', 'source': source.name,
+                              'reason': 'HA cluster target'})
+            flash(f'{target.name} is registered as an HA cluster. A FortiWeb cluster takes a '
+                  f'configuration through its HA configuration-update flow, which SATOM does not '
+                  f'drive, so nothing was sent.', 'danger')
+            return redirect(back)
+    try:
+        client = target.build_client(timeout=600)
+    except Exception as exc:
+        flash(f'Cannot connect to {target.name}: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(back)
+
+    pre_backup = None
+    try:
+        if dry_run:
+            job_progress.step('Reading the target configuration', 20)
+            tgt_backup, _name = backup_svc.cli_backup(client)
+        else:
+            # The rollback copy AND the base of the package: no "without" option.
+            job_progress.step('Pre-migration backup of the target', 10)
+            pre, tgt_backup = backup_svc.fetch_restore_point(
+                client, appliance_id=target.id, appliance_name=target.name,
+                created_by=getattr(current_user, 'username', '') or '')
+            pre_backup = pre.filename
+    except Exception as exc:
+        why = f'{type(exc).__name__}: {exc}'[:200]
+        if not dry_run:
+            log_action('appliance.migrate', target=target.name,
+                       extra={'outcome': 'refused', 'source': source.name,
+                              'reason': 'target backup failed', 'error': why})
+        flash(f'The configuration of {target.name} could not be read ({why}). It is the base '
+              f'of the migration and its rollback copy, so nothing was sent.', 'danger')
+        return redirect(back)
+
+    try:
+        inventory = fwb_migrate.inventory(data)
+        tgt_domains = list(fwb_pkg.package_sections(tgt_backup))
+    except (fwb_migrate.MigrationError, fwb_pkg.PackageError) as exc:
+        flash(f'Cannot read the configurations: {exc}', 'danger')
+        return redirect(back)
+    if analyze:
+        domains = _migrate_default_map(inventory, tgt_domains)
+        exclude, copy_global, dummy_on = set(), True, True
+    else:
+        domains = {k[5:]: v for k, v in request.form.items() if k.startswith('map__') and v}
+        exclude = set(request.form.getlist('excl'))
+        copy_global = request.form.get('copy_global') == 'on'
+        dummy_on = request.form.get('dummy') == 'on'
+    cfg = clone_rules.config()
+    dummy = (lambda ip: clone_rules.dummy_ip(ip, cfg)) if dummy_on else None
+
+    report, plan_error, payload = None, '', b''
+    try:
+        payload, report = fwb_migrate.plan(data, tgt_backup, domains=domains,
+                                           copy_global=copy_global, exclude=exclude,
+                                           dummy=dummy)
+    except (fwb_migrate.MigrationError, fwb_pkg.PackageError) as exc:
+        plan_error = str(exc)
+
+    ctx = dict(appliance=target, sources=sources, source=source,
+               backups=_migrate_source_backups(source), selected_backup=cb.id, backup=cb,
+               dummy_rules=clone_rules.rules_summary(), inventory=inventory,
+               tgt_domains=tgt_domains, domains=domains, exclude=exclude,
+               copy_global=copy_global, dummy_on=dummy_on, report=report,
+               plan_error=plan_error, is_identity=fwb_migrate.is_identity,
+               dry_run=dry_run, result=None, pre_backup=pre_backup)
+    if dry_run or report is None:
+        if not dry_run:
+            log_action('appliance.migrate', target=target.name,
+                       extra={'outcome': 'refused', 'source': source.name,
+                              'reason': plan_error[:300]})
+        return render_template('appliances/migrate.html', **ctx)
+
+    job_progress.step('Sending the migrated configuration', 35)
+    send_name = f"{source.name}_to_{target.name}_migrate.conf.zip"
+    try:
+        result = backup_svc.restore(client, payload, send_name, dry_run=False)
+    except Exception as exc:
+        result = {'ok': False, 'accepted': False, 'message': f'{type(exc).__name__}: {exc}'[:300]}
+    if result.get('ok'):
+        job_progress.step('Waiting for the reboot, then reading the configuration back', 45)
+        check = backup_svc.verify_restore(
+            target, payload, progress=lambda pct, msg: job_progress.step(msg, pct),
+            expected=report['copied'],
+            readback='ssh' if kind == fwb_pkg.KIND_CLI_DUMP else 'rest',
+            hostname=backup_svc._hostname_of(fwb_pkg.package_sections(tgt_backup)))
+        result['verify'] = check
+        result['ok'] = bool(check.get('verified'))
+        result['message'] = f"{result['message']}; {check.get('message', '')}"
+    check = result.get('verify') or {}
+    outcome = ('failure' if not result.get('accepted')
+               else 'success' if check.get('verified') else 'unverified')
+    log_action('appliance.migrate', target=target.name,
+               extra={'outcome': outcome, 'source': source.name, 'source_backup': cb.filename,
+                      'pre_backup': pre_backup, 'domains': domains,
+                      'excluded': sorted(exclude)[:50], 'copy_global': copy_global,
+                      'dummy_ips': len(report['dummy_ips']), 'objects': report['objects'],
+                      'tables': len(report['copied']), 'dangling': len(report['dangling']),
+                      'device_answer': result.get('message', '')[:300],
+                      'mismatches': (check.get('mismatches') or [])[:20],
+                      'ok': result.get('ok')})
+    ctx['result'] = result
+    return render_template('appliances/migrate.html', **ctx)
+
+
+# --------------------------------------------------------------------------- #
 #  HA failover — the device-page surface of the ``ha_failover`` action          #
 # --------------------------------------------------------------------------- #
 FAILOVER_ACTION = 'ha_failover'

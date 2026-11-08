@@ -105,6 +105,8 @@ TITLES = {
     "appliances.restore_upload": "Upload configuration backup",
     "appliances.restore_fetch": "Fetch configuration backup",
     "appliances.restore_run": "Restore configuration",
+    "appliances.migrate_run": "Migrate configuration",
+    "appliances.migrate_capture": "Back up a migration source",
     "appliances.failover_preflight": "Failover preflight",
     "appliances.failover_run": "HA failover",
     "appliances.create": "Add appliance",

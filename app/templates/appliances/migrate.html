@@ -1,0 +1,224 @@
+{% extends 'base.html' %}
+{% block title %}Migrate into - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-box-arrow-in-down-right me-2"></i>{{ _('Migrate a configuration into') }} {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; {{ _('Back') }}</a>
+</div>
+
+<div class="fw-alert fw-alert-danger d-flex align-items-start gap-2">
+  <i class="bi bi-exclamation-octagon-fill mt-1"></i>
+  <div>
+    {{ _('Copies another FortiWeb\'s configuration into') }} <b>{{ appliance.name }}</b>: {{ _('all of it, some ADOMs, or all but some tables.') }}
+    {{ _('A live migration') }} <b>{{ _('replaces the copied tables and reboots') }} {{ appliance.name }}</b>.
+    {{ _('Its identity stays its own: hostname, interfaces, routes, DNS, NTP, SNMP, HA, administrators and ADOM mode are never copied, so it keeps its management address.') }}
+    {{ _('A backup of') }} {{ appliance.name }} {{ _('is taken first; it is the base of the migration and the rollback copy. After the reboot SATOM reads the copied tables back and reports the migration as done only when they match.') }}
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="card fw-card shadow-sm h-100">
+      <div class="card-header fw-card-header"><i class="bi bi-hdd-stack me-1"></i>{{ _('1. Source') }}</div>
+      <div class="card-body">
+        <form method="get" action="{{ url_for('appliances.migrate', id=appliance.id) }}" class="mb-3">
+          <label class="form-label small">{{ _('Source FortiWeb') }}</label>
+          <div class="input-group input-group-sm">
+            <select class="form-select" name="source">
+              <option value="">{{ _('— choose a FortiWeb —') }}</option>
+              {% for s in sources %}<option value="{{ s.id }}" {% if source and s.id == source.id %}selected{% endif %}>{{ s.name }} · {{ s.host }}{% if s.firmware %} · {{ s.firmware }}{% endif %}</option>{% endfor %}
+            </select>
+            <button class="btn fw-btn-secondary" type="submit">{{ _('Choose') }}</button>
+          </div>
+          {% if not sources %}<p class="small text-muted mt-2 mb-0">{{ _('No other FortiWeb you can see.') }}</p>{% endif %}
+        </form>
+        {% if source %}
+        <form method="post" action="{{ url_for('appliances.migrate_capture', id=appliance.id) }}" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="source_id" value="{{ source.id }}">
+          <button class="btn btn-sm fw-btn-secondary" type="submit"><i class="bi bi-cloud-download me-1"></i>{{ _('Take a fresh backup of') }} {{ source.name }}</button>
+          <span class="small text-muted d-block mt-1">{{ _('Over REST; over SSH (show full-configuration) when REST does not answer, e.g. an expired VM licence.') }}</span>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card fw-card shadow-sm h-100">
+      <div class="card-header fw-card-header"><i class="bi bi-search me-1"></i>{{ _('2. Backup to migrate') }}</div>
+      <div class="card-body">
+        {% if source %}
+          {% if backups %}
+          <form method="post" action="{{ url_for('appliances.migrate_run', id=appliance.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="source_id" value="{{ source.id }}">
+            <input type="hidden" name="analyze" value="1">
+            <label class="form-label small">{{ _('A backup of') }} {{ source.name }} {{ _('from its vault') }}</label>
+            <select class="form-select form-select-sm mb-2" name="backup_id">
+              {% for b in backups %}<option value="{{ b.id }}" {% if selected_backup == b.id %}selected{% endif %}>{{ b.filename }} · {{ b.created_at.strftime('%Y-%m-%d %H:%M') }}</option>{% endfor %}
+            </select>
+            <button class="btn fw-btn-primary btn-sm" type="submit"><i class="bi bi-diagram-3 me-1"></i>{{ _('Analyze') }}</button>
+            <span class="small text-muted d-block mt-1">{{ _('Reads the configuration of') }} {{ appliance.name }} {{ _('and shows what would be copied. Nothing is sent.') }}</span>
+          </form>
+          {% else %}
+          <p class="small text-muted mb-0">{{ _('No usable backup of') }} {{ source.name }} {{ _('in its vault. Take a fresh one.') }}</p>
+          {% endif %}
+        {% else %}
+          <p class="small text-muted mb-0">{{ _('Choose a source first.') }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if result %}
+<div class="card fw-card shadow-sm mb-3">
+  <div class="card-header fw-card-header">{{ _('Result — LIVE MIGRATION') }}</div>
+  <div class="card-body">
+    <div class="fw-alert fw-alert-{{ 'success' if result.ok else 'warning' }} mb-2">{{ result.message }}</div>
+    <dl class="row mb-0 small">
+      {% if pre_backup %}<dt class="col-sm-3">{{ _('Pre-migration backup') }}</dt><dd class="col-sm-9">{{ pre_backup }}</dd>{% endif %}
+      {% if result.verify %}{% set v = result.verify %}
+      <dt class="col-sm-3">{{ _('Reboot') }}</dt><dd class="col-sm-9">{{ _('went down') if v.went_down else _('not seen going down') }} · {{ _('back online') if v.recovered else _('did not come back') }}{% if v.firmware_after %} ({{ v.firmware_after }}){% endif %} · {{ v.elapsed_s }} s</dd>
+      <dt class="col-sm-3">{{ _('Read-back check') }}</dt><dd class="col-sm-9">
+        <span class="fw-badge fw-badge-{{ 'success' if v.verified else 'danger' }}">{{ _('verified') if v.verified else _('not verified') }}</span>
+        {{ v.message }}{% if v.readback %} · {{ _('read with') }} {{ v.readback }}{% endif %}{% if v.hostname %} · {{ _('hostname') }} <code>{{ v.hostname }}</code>{% endif %}
+        {% if v.warning %}<div class="text-warning">{{ v.warning }}</div>{% endif %}
+        {% if v.mismatches %}<ul class="mb-0 mt-1">{% for m in v.mismatches[:40] %}<li><code>{{ m }}</code></li>{% endfor %}</ul>{% endif %}
+      </dd>
+      {% endif %}
+    </dl>
+  </div>
+</div>
+{% endif %}
+
+{% if inventory %}
+<form method="post" action="{{ url_for('appliances.migrate_run', id=appliance.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="source_id" value="{{ source.id }}">
+  <input type="hidden" name="backup_id" value="{{ backup.id }}">
+  <div class="row g-3 mb-3">
+    <div class="col-lg-5">
+      <div class="card fw-card shadow-sm h-100">
+        <div class="card-header fw-card-header"><i class="bi bi-sliders me-1"></i>{{ _('3. What to copy') }}</div>
+        <div class="card-body small">
+          <p class="mb-1 fw-semibold">{{ _('Domains') }}</p>
+          <p class="text-muted mb-2">{{ _('A FortiWeb without ADOMs has one domain, root; with ADOMs, one per ADOM. A source domain left on "not copied" is not migrated; a target domain nothing lands in keeps its own configuration.') }}</p>
+          <table class="table table-sm fw-table mb-3">
+            <thead><tr><th>{{ source.name }}</th><th></th><th>{{ appliance.name }}</th></tr></thead>
+            <tbody>
+            {% for dom in inventory if dom != 'global' %}
+              <tr><td><code>{{ dom }}</code> <span class="text-muted">({{ inventory[dom].values()|sum }} {{ _('entries') }})</span></td><td>&rarr;</td>
+                <td><select class="form-select form-select-sm" name="map__{{ dom }}">
+                  <option value="">{{ _('— not copied —') }}</option>
+                  {% for t in tgt_domains if t != 'global' %}<option value="{{ t }}" {% if domains.get(dom) == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+                </select></td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          <div class="form-check mb-1">
+            <input class="form-check-input" type="checkbox" name="copy_global" id="copy_global" {% if copy_global %}checked{% endif %}>
+            <label class="form-check-label" for="copy_global">{{ _('Copy the global configuration too (certificates, global objects); identity tables stay the target\'s either way') }}</label>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="dummy" id="dummy" {% if dummy_on %}checked{% endif %}>
+            <label class="form-check-label" for="dummy">{{ _('Dummy virtual IPs') }} <span class="text-muted">({{ dummy_rules }}; {{ _('a repeated address takes the next free one of 198.18.0.0/15') }})</span></label>
+            <span class="text-muted d-block">{{ _('Leave ticked while the source still answers on the real addresses.') }}</span>
+          </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked>
+            <label class="form-check-label" for="dry_run">{{ _('Dry run (preview only — nothing is sent)') }}</label>
+          </div>
+          <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(139,28,42,.05)">
+            <p class="mb-2 text-danger"><i class="bi bi-exclamation-triangle me-1"></i>{{ _('A live migration reboots') }} {{ appliance.name }} {{ _('and replaces the copied tables.') }}</p>
+            <label class="form-label">{{ _('Type the target name') }} <code>{{ appliance.name }}</code> {{ _('to authorise:') }}</label>
+            <input class="form-control form-control-sm" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
+          </div>
+          <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>{{ _('Preview / Migrate') }}</button>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-7">
+      <div class="card fw-card shadow-sm h-100">
+        <div class="card-header fw-card-header"><i class="bi bi-table me-1"></i>{{ _('Tables — tick to exclude') }}</div>
+        <div class="card-body small">
+          {% for dom in inventory if dom == 'global' or dom in domains %}
+          <details class="mb-2" {% if loop.first and dom != 'global' %}open{% endif %}>
+            <summary><code>{{ dom }}</code>{% if dom != 'global' %} &rarr; <code>{{ domains[dom] }}</code>{% endif %} · {{ inventory[dom]|length }} {{ _('tables') }}</summary>
+            <div class="row row-cols-1 row-cols-md-2 g-0 mt-1">
+            {% for table, n in inventory[dom]|dictsort %}
+              <div class="col">
+              {% if is_identity(dom, table) %}
+                <span class="text-muted"><i class="bi bi-lock me-1"></i>{{ table }} <span class="fw-badge fw-badge-secondary">{{ _('target keeps its own') }}</span></span>
+              {% else %}
+                <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="excl" value="{{ dom }}:{{ table }}" {% if (dom ~ ':' ~ table) in exclude %}checked{% endif %}>{{ table }}{% if n %} <span class="text-muted">({{ n }})</span>{% endif %}</label>
+              {% endif %}
+              </div>
+            {% endfor %}
+            </div>
+          </details>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+{% endif %}
+
+{% if plan_error %}
+<div class="fw-alert fw-alert-warning"><i class="bi bi-exclamation-triangle me-1"></i>{{ plan_error }}</div>
+{% endif %}
+
+{% if report %}
+<div class="card fw-card shadow-sm mb-3">
+  <div class="card-header fw-card-header"><i class="bi bi-clipboard-check me-1"></i>{{ _('What the migration copies') }}{% if dry_run %} — {{ _('DRY RUN') }}{% endif %}</div>
+  <div class="card-body small">
+    <p class="mb-2">
+      <span class="fw-badge fw-badge-primary">{{ '{:,}'.format(report.objects) }} {{ _('objects in') }} {{ report.copied|length }} {{ _('tables copied') }}</span>
+      <span class="fw-badge fw-badge-secondary">{{ report.kept_from_target|length }} {{ _('tables kept from the target') }}</span>
+      <span class="fw-badge fw-badge-secondary">{{ report.identity_kept|length }} {{ _('identity tables kept') }}</span>
+      {% if report.excluded %}<span class="fw-badge fw-badge-info">{{ report.excluded|length }} {{ _('excluded') }}</span>{% endif %}
+      {% if report.dummy_ips %}<span class="fw-badge fw-badge-info">{{ report.dummy_ips|length }} {{ _('dummy IPs') }}</span>{% endif %}
+      {% if report.dangling %}<span class="fw-badge fw-badge-danger">{{ report.dangling|length }} {{ _('broken references') }}</span>{% endif %}
+      {% if report.dropped_by_restore %}<span class="fw-badge fw-badge-warning">{{ report.dropped_by_restore|length }} {{ _('tables a restore drops') }}</span>{% endif %}
+    </p>
+    {% if report.dangling %}
+    <div class="fw-alert fw-alert-danger mb-2"><b>{{ _('Broken references') }}</b> — {{ _('copied objects that name an object the target will not have. Copy the table that holds it, or expect the device to refuse or drop the object.') }}
+      <ul class="mb-0 mt-1">{% for d in report.dangling[:50] %}<li><code>{{ d }}</code></li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if report.dropped_by_restore %}
+    <div class="fw-alert fw-alert-warning mb-2"><b>{{ _('Not carried by a restore') }}</b> — {{ _('a FortiWeb restore drops XML Schema, WSDL and gRPC IDL files (the objects, not only their content). Re-create them on the target after the migration.') }}
+      <ul class="mb-0 mt-1">{% for k, n in report.dropped_by_restore|dictsort %}<li><code>{{ k }}</code> ({{ n }})</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if report.untouched_domains or report.not_copied_source_domains %}
+    <p class="mb-2 text-muted">
+      {% if report.untouched_domains %}{{ _('Target domains left as they are:') }} {% for d in report.untouched_domains %}<code>{{ d }}</code> {% endfor %}. {% endif %}
+      {% if report.not_copied_source_domains %}{{ _('Source domains not copied:') }} {% for d in report.not_copied_source_domains %}<code>{{ d }}</code> {% endfor %}.{% endif %}
+    </p>
+    {% endif %}
+    <details class="mb-2"><summary>{{ _('Copied') }} ({{ report.copied|length }})</summary>
+      <table class="table table-sm fw-table mb-0"><tbody>{% for k, n in report.copied|dictsort %}<tr><td><code>{{ k }}</code></td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></details>
+    {% if report.dummy_ips %}
+    <details class="mb-2"><summary>{{ _('Dummy IPs') }} ({{ report.dummy_ips|length }})</summary>
+      <table class="table table-sm fw-table mb-0"><thead><tr><th>{{ _('Virtual IP') }}</th><th>{{ _('Source') }}</th><th>{{ _('On the target') }}</th></tr></thead><tbody>
+      {% for d in report.dummy_ips %}<tr><td><code>{{ d.vip }}</code></td><td>{{ d['from'] }}</td><td>{{ d.to }}</td></tr>{% endfor %}</tbody></table></details>
+    {% endif %}
+    <details class="mb-2"><summary>{{ _('Kept from the target') }} ({{ report.kept_from_target|length }})</summary>
+      <table class="table table-sm fw-table mb-0"><tbody>{% for k, n in report.kept_from_target|dictsort %}<tr><td><code>{{ k }}</code></td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></details>
+    <details><summary>{{ _('Identity kept') }} ({{ report.identity_kept|length }})</summary>
+      <p class="mb-0">{% for k in report.identity_kept %}<code>{{ k }}</code> {% endfor %}</p></details>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var dry = document.getElementById('dry_run');
+  if (dry) dry.addEventListener('change', function () {
+    document.getElementById('live-fields').classList.toggle('d-none', this.checked);
+  });
+})();
+</script>
+{% endblock %}

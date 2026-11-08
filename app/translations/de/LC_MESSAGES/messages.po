@@ -30179,3 +30179,13 @@ msgstr "Die LB-Treffer dieses Eintrags, mit allen Details"
 
 msgid "Match"
 msgstr "Treffer"
+
+msgid "Not a DNS name: the resolvers were asked for the VIP of what it matched (reverse lookup)"
+msgstr "Kein DNS-Name: die Resolver wurden nach der VIP des Treffers gefragt (Reverse-Lookup)"
+
+msgid "DNS: reverse lookup of the VIP"
+msgstr "DNS: Reverse-Lookup der VIP"
+
+msgid "No VIP in what it matched: nothing to look up in DNS"
+msgstr "Der Treffer hat keine VIP: nichts im DNS nachzuschlagen"
+

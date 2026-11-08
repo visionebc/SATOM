@@ -30200,3 +30200,13 @@ msgstr "Las coincidencias LB de esta entrada, con todo el detalle"
 
 msgid "Match"
 msgstr "Coincidencia"
+
+msgid "Not a DNS name: the resolvers were asked for the VIP of what it matched (reverse lookup)"
+msgstr "No es un nombre DNS: se preguntó a los resolvers por la VIP de lo que encontró (búsqueda inversa)"
+
+msgid "DNS: reverse lookup of the VIP"
+msgstr "DNS: búsqueda inversa de la VIP"
+
+msgid "No VIP in what it matched: nothing to look up in DNS"
+msgstr "Lo encontrado no tiene VIP: nada que buscar en DNS"
+

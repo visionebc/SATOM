@@ -182,6 +182,11 @@
                           data-entry="{{ r.resolved }}" title="{{ _('Manage DNS records for this name') }}"
                           style="font-size:10px;"><i class="bi bi-pencil-square"></i></button>
                   {% endif %}
+                  {% if r.dns_via == 'vip' %}
+                  <div><span class="fw-badge fw-badge-info" title="{{ _('Not a DNS name: the resolvers were asked for the VIP of what it matched (reverse lookup)') }}">{{ _('DNS: reverse lookup of the VIP') }}</span></div>
+                  {% elif r.dns_via == 'no_vip' %}
+                  <div><span class="fw-badge fw-badge-warning">{{ _('No VIP in what it matched: nothing to look up in DNS') }}</span></div>
+                  {% endif %}
                   {% if r.mode == 'fqdn' %}
                     {% if r.dns_state == 'no_answer' %}
                     <div><span class="fw-badge fw-badge-warning">{{ _('Does not resolve: no A or AAAA answer') }}</span></div>
@@ -200,7 +205,8 @@
                 {% for s in servers %}
                 <td>
                   {% for val in r.dns[s.name] %}
-                  <span class="fw-badge font-monospace d-inline-block mb-1 {{ 'fw-badge-danger' if val in ('timeout','error') else ('fw-badge-secondary' if val in ('No result', 'invalid name', 'invalid server') else 'fw-badge-info') }}">{{ val }}</span><br>
+                  {% set ans = val.split(' → ')[-1] %}
+                  <span class="fw-badge font-monospace d-inline-block mb-1 {{ 'fw-badge-danger' if ans in ('timeout','error') else ('fw-badge-secondary' if ans in ('No result', 'invalid name', 'invalid server') else 'fw-badge-info') }}">{{ val }}</span><br>
                   {% endfor %}
                 </td>
                 {% endfor %}

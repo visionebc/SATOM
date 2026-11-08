@@ -30181,3 +30181,13 @@ msgstr "Les correspondances LB de cette entrée, avec tous les détails"
 
 msgid "Match"
 msgstr "Correspondance"
+
+msgid "Not a DNS name: the resolvers were asked for the VIP of what it matched (reverse lookup)"
+msgstr "Pas un nom DNS : les résolveurs ont été interrogés sur la VIP de la correspondance (recherche inverse)"
+
+msgid "DNS: reverse lookup of the VIP"
+msgstr "DNS : recherche inverse de la VIP"
+
+msgid "No VIP in what it matched: nothing to look up in DNS"
+msgstr "La correspondance n'a pas de VIP : rien à chercher dans le DNS"
+

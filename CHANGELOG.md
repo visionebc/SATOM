@@ -17,6 +17,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   check, with a picker when the entry has several matches. *Expand all* /
   *Collapse all* act on every entry. The matches scroll inside their block,
   so the DNS columns never move off screen.
+- **DNS & LB Lookup: a policy name is looked up in DNS by its VIP (SA-0029,
+  third round).** Requested: searching `lab-spo-001` gave nothing in DNS; it
+  should take the IP of the server policy and look that up. An element entry
+  (a policy, pool, certificate...) is not a DNS name, so its DNS columns are
+  now the reverse lookup of the VIP of what it matched, per resolver
+  (`172.0.0.1 → name`, or `→ No result`), with a *DNS: reverse lookup of the
+  VIP* badge; a match without a VIP says there is nothing to look up. Copy DNS
+  carries the same. The PTR is asked once and also fills Service IP / name.
 
 ## [4.11.14] - 2026-11-08
 

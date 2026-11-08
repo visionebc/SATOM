@@ -935,7 +935,17 @@ def _service_ips(m: dict) -> list[str]:
             for ip in str(m.get("service_ip") or "").split(",") if ip.strip()]
 
 
-def add_service_names(matches: list[dict], servers: list[dict]) -> None:
+def match_ips(matches: list[dict]) -> list[str]:
+    """The service IPs of *matches*, each once, at most PTR_MAX_IPS."""
+    ips: list[str] = []
+    for m in matches:
+        for ip in _service_ips(m):
+            if _is_ip(ip) and ip not in ips:
+                ips.append(ip)
+    return ips[:PTR_MAX_IPS]
+
+
+def add_service_names(matches: list[dict], servers: list[dict], answers=None) -> None:
     """Fill ``service_name`` with the PTR names of each match's service IP(s),
     asked of every configured resolver in parallel (names in the order the
     resolvers answered, each once). Only MATCHED rows: the whole fleet would be
@@ -951,13 +961,9 @@ def add_service_names(matches: list[dict], servers: list[dict]) -> None:
         for m in matches:
             m["_name_state"] = "no_resolver" if _service_ips(m) else "no_ip"
         return
-    ips: list[str] = []
-    for m in matches:
-        for ip in _service_ips(m):
-            if _is_ip(ip) and ip not in ips:
-                ips.append(ip)
-    ips = ips[:PTR_MAX_IPS]
-    answers = lookup_many(ips, servers) if ips else {}
+    ips = match_ips(matches)
+    if answers is None:                 # lookup() passes the PTRs it already asked
+        answers = lookup_many(ips, servers) if ips else {}
     names: dict[str, list[str]] = {}
     errors: dict[str, list[str]] = {}
     for ip in ips:
@@ -1414,8 +1420,37 @@ def lookup(entries: list[str], servers: list[dict], lb_rows: list[dict], *,
             "dns_errors": sorted(set(errs)), "matches": matches,
             "gateways": sorted({x.get("gateway") or "" for x in matches} - {""}),
         })
+    every = [x for r in results for x in r["matches"]]
+    ptr = lookup_many(match_ips(every), servers) if every and servers else {}
+    for r in results:
+        if r["mode"] == "element" and r["matches"]:
+            vip_dns(r, ptr, servers)
     if names:
-        every = [x for r in results for x in r["matches"]]
-        add_service_names(every, servers)
+        add_service_names(every, servers, answers=ptr)
         _spo_resolve(every, servers)
     return results, not_found
+
+
+VIP_SEP = " → "
+
+
+def vip_dns(r: dict, ptr: dict, servers: list[dict]) -> None:
+    """SA-0029: an ELEMENT (a policy name, a pool...) is not a DNS name, so
+    asking the resolvers for it answers nothing. Its DNS columns are the
+    reverse lookup of the VIP of what it matched, per resolver, as
+    ``"<vip> → <answer>"``; ``dns_via`` says so (``vip``), or that no match
+    has a VIP (``no_vip``, the entry's own answers stay)."""
+    ips = match_ips(r["matches"])
+    if not ips:
+        r["dns_via"] = "no_vip"
+        return
+    errs = []
+    for s in servers:
+        vals = []
+        for ip in ips:
+            for v in ptr.get((ip, s["name"])) or ["No result"]:
+                vals.append(ip + VIP_SEP + v)
+                if v in ("timeout", "error"):
+                    errs.append("%s %s %s" % (s["name"], ip, v))
+        r["dns"][s["name"]] = vals
+    r["dns_via"], r["vip_ips"], r["dns_errors"] = "vip", ips, sorted(set(errs))

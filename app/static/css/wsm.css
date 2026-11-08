@@ -1,7 +1,7 @@
 /* Web Server Manager (Linux ADOM). SATOM's light theme: .fw-card on
    --fw-content-bg, SATOM's own components for everything that has one
    (.fw-breadcrumb, .nav-tabs, .fw-badge-*, .fw-alert-*, .btn-fw-* /
-   .fw-btn-secondary) -- this file only lays them out. The one dark surface is
+   .btn-fw-secondary) -- this file only lays them out. The one dark surface is
    the code editor, which is code (like .fw-code-block). SA-0028 audit. */
 .wsm-head { gap: 16px; align-items: flex-start; }
 .wsm-sub { font-size: 13px; }

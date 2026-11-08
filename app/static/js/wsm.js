@@ -35,7 +35,7 @@
     return e;
   }
   function btn(label, icon, cls, onclick, title) {
-    return el('button', { type: 'button', cls: 'btn btn-sm ' + (cls || 'fw-btn-secondary'), onclick: onclick, title: title },
+    return el('button', { type: 'button', cls: 'btn btn-sm ' + (cls || 'btn-fw-secondary'), onclick: onclick, title: title },
       [icon ? el('i', { cls: 'bi ' + icon + (label ? ' me-1' : '') }) : null, label || null]);
   }
   function input(attrs) { return el('input', Object.assign({ cls: 'form-control form-control-sm' }, attrs)); }
@@ -103,7 +103,7 @@
     var b = $('#wsm-dialog-body'); b.innerHTML = ''; b.appendChild(body);
     var f = $('#wsm-dialog-foot'); f.innerHTML = '';
     (buttons || []).forEach(function (x) { f.appendChild(x); });
-    f.appendChild(el('button', { type: 'button', cls: 'btn fw-btn-secondary', 'data-bs-dismiss': 'modal', text: 'Close' }));
+    f.appendChild(el('button', { type: 'button', cls: 'btn btn-fw-secondary', 'data-bs-dismiss': 'modal', text: 'Close' }));
     $('#wsm-dialog .modal-dialog').className = 'modal-dialog ' + (large === false ? '' : 'modal-xl');
     var m = modal('wsm-dialog'); m.show(); return m;
   }

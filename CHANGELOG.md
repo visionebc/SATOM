@@ -32,6 +32,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   or looped run), the step finds the one it already opened. In a simulation
   nothing is created; the step says what it would have opened.
 
+### Fixed
+- **The job of a Plugin Studio app run listed every step twice.** Since a
+  run shows each step while it runs (4.11.12), the job behind it also
+  recorded the live *running* row next to the finished one. The job log
+  now gets each step once, when it is over; the run page still shows the
+  step in progress.
+- **Web Server Manager buttons use the product button class.** Its pages
+  spelled the secondary button `fw-btn-secondary`, the legacy alias, where
+  new code uses `btn-fw-secondary`; they look the same.
+
 ## [4.11.12] - 2026-11-08
 
 ### Added

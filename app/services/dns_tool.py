@@ -363,7 +363,7 @@ def _fortiweb_rows(appliance) -> list[dict]:
                      "port": str(b.get("port") or ""),
                      "status": str(b.get("status") or ""),
                      # SA-0028: the weight and a domain member's name, both in
-                     # the cached pserver-list row (fortiweb19 7.6.8).
+                     # the cached pserver-list row (FortiWeb 7.6.8).
                      "weight": str(b.get("weight") if b.get("weight") is not None else ""),
                      "domain": str(b.get("domain") or "") if not b.get("ip") else ""}
                     for b in (data.get("backends") or [])]
@@ -899,7 +899,7 @@ PTR_MAX_IPS = 100
 
 def _service_ips(m: dict) -> list[str]:
     """The addresses in a Service IP cell. A FortiWeb VIP carries its prefix
-    (``172.0.0.1/32``, measured on fortiweb19 7.6.8): the PTR is of the
+    (``172.0.0.1/32``, measured on FortiWeb 7.6.8): the PTR is of the
     address, so the length goes."""
     return [ip.strip().split("/", 1)[0]
             for ip in str(m.get("service_ip") or "").split(",") if ip.strip()]

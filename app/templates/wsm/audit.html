@@ -15,7 +15,7 @@
     <h1 class="fw-page-title"><i class="bi bi-journal-check me-2 text-accent"></i>{{ _('Operations log') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">{{ _('Every operation the Web Server Manager ran, allowed or refused.') }}{% if mine_only %} {{ _('You see your own operations (reading everyone\'s needs View audit log).') }}{% endif %}</p>
   </div>
-  <div><a class="btn fw-btn-secondary" href="{{ url_for('wsm.audit', format='csv', days=days, **f) }}"><i class="bi bi-download me-1"></i>{{ _('Export CSV') }}</a></div>
+  <div><a class="btn btn-fw-secondary" href="{{ url_for('wsm.audit', format='csv', days=days, **f) }}"><i class="bi bi-download me-1"></i>{{ _('Export CSV') }}</a></div>
 </div>
 <form class="fw-card p-2 mb-2 d-flex flex-wrap gap-2 align-items-end" method="get">
   <div><label class="fw-form-label" for="f-slug">{{ _('Server') }}</label><select class="form-select form-select-sm" id="f-slug" name="slug"><option value="">{{ _('All') }}</option>{% for c in servers %}<option value="{{ c.slug }}" {{ 'selected' if f.slug == c.slug }}>{{ c.name }}</option>{% endfor %}</select></div>

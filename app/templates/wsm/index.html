@@ -16,7 +16,7 @@
     <p class="text-muted mb-0" style="font-size:13px;">{{ _('Manage Linux web servers over SSH with your own account: files, websites, certificates, security, scripts, scheduled tasks, packages, services, logs, users and SSH. When your account is not allowed to do something, SATOM uses sudo the way you set it on your credential.') }}</p>
   </div>
   <div class="d-flex gap-2">
-    <a class="btn fw-btn-secondary" href="{{ url_for('wsm.audit') }}"><i class="bi bi-journal-check me-1"></i>{{ _('Operations log') }}</a>
+    <a class="btn btn-fw-secondary" href="{{ url_for('wsm.audit') }}"><i class="bi bi-journal-check me-1"></i>{{ _('Operations log') }}</a>
     {% if can_add %}<button type="button" class="btn btn-fw-primary" data-bs-toggle="collapse" data-bs-target="#wsm-add"><i class="bi bi-plus-lg me-1"></i>{{ _('Add server') }}</button>{% endif %}
   </div>
 </div>

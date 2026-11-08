@@ -11541,7 +11541,7 @@ discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
    the console is either **on the map** (138 today) or **excluded with a written
-   reason** (185 today — JSON feeds, downloads, redirects and fragments that
+   reason** (186 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

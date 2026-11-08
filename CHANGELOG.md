@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.14] - 2026-11-08
+
 ### Changed
 - **DNS & LB Lookup: the 4.11.11 table again, details as a table (SA-0029).**
   Requested: keep the table headers as they were, because the new layout is

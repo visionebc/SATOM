@@ -151,10 +151,12 @@
                             'fqdn': _('Resolved (A and AAAA) on every resolver; each address searched in the address fields, and the name in the configuration text.')} %}
         {% set lb_cols = (5 + (appid_cols|length if opts.appid else 0)) if opts.lb else 0 %}
         {% set ncols = 1 + servers|length + (1 if opts.quick else 0) + (1 if opts.lb else 0) %}
-        <div class="d-flex justify-content-end gap-2 px-3 pt-2">
+        <div class="d-flex justify-content-end gap-2 px-3 py-2">
           {% if opts.lb %}
-          <button type="button" class="btn btn-sm btn-link p-0" id="dlExpandAll">{{ _('Expand all') }}</button>
-          <button type="button" class="btn btn-sm btn-link p-0" id="dlCollapseAll">{{ _('Collapse all') }}</button>
+          <button type="button" class="btn btn-sm btn-fw-secondary" id="dlExpandAll">
+            <i class="bi bi-arrows-expand me-1"></i>{{ _('Expand all') }}</button>
+          <button type="button" class="btn btn-sm btn-fw-secondary" id="dlCollapseAll">
+            <i class="bi bi-arrows-collapse me-1"></i>{{ _('Collapse all') }}</button>
           {% endif %}
         </div>
         <div class="table-responsive">

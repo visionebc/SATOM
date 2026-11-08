@@ -142,7 +142,7 @@
       {% if hidden_count %}<span class="fw-badge fw-badge-secondary"
         title="{{ _('hidden by you') }}">{{ hidden_count }} {{ _('hidden') }}</span>{% endif %}
     {% endif %}
-    {% if n.key == root_lens %}
+    {% if n.lens_head %}
       {# The link sits ON the heading that shows the order, not only in the
          toolbar: the operator who wants to change it is looking at the order
          when they decide to. #}

@@ -11492,6 +11492,19 @@ both as "ungrouped".
 
 ### 38.4 One panel for every ADOM
 
+The panel reads **ADOM → what is inside it → its classification**:
+
+```
+FortiWeb                      (each ADOM you may enter that holds anything;
+├─ Favourites                  Global first, then registry order)
+├─ Links                       its unstarred bookmarks not filed in a folder
+└─ Line › Zone › Department    its devices, nested by your grouping order
+FortiADC
+└─ …
+Folders                       your folders (may mix ADOMs)
+Shared                        team bookmarks not filed yet
+```
+
 Bookmarks are **general**, not per ADOM. The panel lists your bookmarks from
 every ADOM you may enter, whichever console you are in, and a menu page you
 starred stays starred in the other ADOMs too. (Until 2026-11-08 each ADOM had
@@ -11508,8 +11521,9 @@ link would be a 404 in the console you are in.
 - A link that leaves SATOM (a wiki, a ticket queue) opens as it is.
 - A profile confined to some ADOMs still sees **nothing** of the others —
   not on the panel and not by opening `/bookmarks/<id>/open` directly.
-- The inventory lens (the device tree) is still the inventory of the ADOM you
-  are in.
+- Every ADOM root carries its own device tree, so the devices of every ADOM
+  you may enter are listed, each under its ADOM. A device of another ADOM
+  switches the tab to it when opened, like a bookmark does.
 - **Favourites is divided by ADOM**: one group per ADOM that holds a
   favourite (Global first, then the ADOMs in registry order), only the ADOMs
   your profile may enter. A device goes under its product; a page under the

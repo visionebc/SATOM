@@ -260,11 +260,25 @@ def _visible_appliance_ids(user) -> set[int]:
     and opening it switches the tab to FortiADC (:func:`opens_in`)."""
     if not may_see_devices(user):
         return set()
-    q = product_scope.scope_appliance_query(
-        db.session.query(Appliance.id), Appliance.kind, any_adom=True)
+    return {row[0] for row in _devices_query(
+        db.session.query(Appliance.id), user).all()}
+
+
+def _devices_query(query, user):
+    q = product_scope.scope_appliance_query(query, Appliance.kind,
+                                            any_adom=True)
     if not can_view_maintenance(user):
         q = q.filter(Appliance.maintenance.is_(False))
-    return {row[0] for row in q.all()}
+    return q
+
+
+def visible_devices(user) -> list[Appliance]:
+    """Every device *user* may open in any of their ADOMs — what the panel
+    files under each ADOM's classification (2026-11-08). Nothing without
+    ``appliances.view``."""
+    if not may_see_devices(user):
+        return []
+    return _devices_query(db.session.query(Appliance), user).all()
 
 
 def visible_bookmarks(user) -> list[Bookmark]:
@@ -687,13 +701,26 @@ def home_adom(bm: Bookmark) -> str:
     FortiWeb, as everywhere else). A link or view opens in the ADOM it was
     created in; '' (Global, or a row older than the stamp) pins nothing."""
     if bm.kind == KIND_APPLIANCE:
-        appl = bm.appliance
-        if appl is None:
-            return ""
-        k = (appl.kind or "").strip().lower() or product_scope.LEGACY_PRODUCT
-    else:
-        k = (bm.product or "").strip().lower()
+        return appliance_adom(bm.appliance) if bm.appliance is not None else ""
+    k = (bm.product or "").strip().lower()
     return k if k in product_scope.concrete_products() else ""
+
+
+def appliance_adom(appl) -> str:
+    """The ADOM a device belongs to: its product (a kind-less device is a
+    FortiWeb); '' for a kind no ADOM owns, which only Global shows."""
+    k = (appl.kind or "").strip().lower() or product_scope.LEGACY_PRODUCT
+    return k if k in product_scope.concrete_products() else ""
+
+
+def device_opens_in(appl, current: str) -> str:
+    """:func:`opens_in` for a device with no bookmark behind it."""
+    if current not in product_scope.concrete_products():
+        return ""
+    adom = appliance_adom(appl)
+    if not adom or adom == current or not product_scope.adom_allowed(adom):
+        return ""
+    return adom
 
 
 def adom_group(bm: Bookmark) -> str:

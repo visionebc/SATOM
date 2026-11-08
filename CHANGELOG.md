@@ -111,6 +111,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   ADOM and each opening there, and a menu lights only its own ADOM's stars
   (the previous change had made one star light every menu and reuse the
   other ADOM's row). Unstarring touches only this ADOM's star.
+- **Bookmarks: the panel reads ADOM → what is inside it → its
+  classification.** Requested: the panel should be first an ADOM, then what
+  is inside the ADOM and its classification (Line › Zone › Department). Each
+  ADOM you may enter that holds anything is now a root (Global first, then
+  the ADOM registry's order) with, inside it: **Favourites** (its stars, your
+  order), **Links** (its unstarred bookmarks that are not in a folder; they
+  used to sit loose at the root of Folders) and its **devices nested by your
+  grouping order** (Line › Zone › Department by default). The device tree
+  used to show only the ADOM you were in; it now shows every ADOM you may
+  enter, each under its own root, and a device of another ADOM opens through
+  `/bookmarks/device/<id>/open`, which switches the tab first. Folders and
+  Shared stay as their own roots (a folder may hold rows of several ADOMs).
+  A profile confined to some ADOMs gets only those roots. Which device
+  branches you had open is reset once (the node keys now carry the ADOM).
 - **Bookmarks: drag to reorder Favourites and folders.** Requested: inside
   Favourites a bookmark could not be moved above or below another. Every
   list you file by hand (Favourites, each folder, the Folders root) is now in

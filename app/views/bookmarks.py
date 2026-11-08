@@ -78,6 +78,11 @@ ROOT_SHARED = 'r:shared'
 #: keyed by node key, and a root whose key changed with the order would
 #: slam itself shut every time somebody re-ordered their own tree.
 ROOT_LENS = 'r:lens'
+#: Per-ADOM roots (2026-11-08): ``r:adom@<key>`` holds ``r:fav@<key>``,
+#: ``r:links@<key>`` and ``r:lens@<key>`` ('global' for Global). Stable,
+#: registry keys -- never the display name -- for the same open-set reason.
+ROOT_ADOM = 'r:adom'
+ROOT_LINKS = 'r:links'
 
 MAX_OPEN_KEYS = 400
 
@@ -280,37 +285,61 @@ def build_panel(q: str = '') -> dict:
             if prev is None or (not prev['mine'] and item['mine']):
                 by_appliance[bm.appliance_id] = item
 
-    # ---- root: favourites -------------------------------------------------
-    # Hand-ordered (drag a row above/below another), and a drop target: a
-    # row dropped on the heading is starred at the end of the list.
-    #
-    # Divided by ADOM (2026-11-08): one group per ADOM that holds a favourite,
-    # Global first, then the ADOM registry's order. Only ADOMs the reader may
-    # enter can appear -- the rows already passed visible_bookmarks. Groups
-    # start collapsed like every other node (the open-set is the reader's).
-    # Inside a group the order is the reader's hand order of Favourites.
-    fav_root = _node(ROOT_FAV, 'Favourites', icon='bi-star-fill',
-                     droppable=True, drop_into=svc.FAV, manual=True)
+    # ---- the ADOMs: one root each ------------------------------------------
+    # 2026-11-08 (user): the panel reads "ADOM -> what is inside it -> its
+    # classification". Each ADOM the reader may enter and that holds anything
+    # is a root, Global first, then the ADOM registry's order; inside it:
+    #   Favourites  -- its stars, hand-ordered, a drop target (drop = star);
+    #   Links       -- its unstarred rows that are not filed in a folder;
+    #   <lens>      -- its devices, nested in the reader's chosen order
+    #                  (Line > Zone > Department by default).
+    # Only ADOMs the profile allows can appear: the rows passed
+    # visible_bookmarks and the devices the same gate (svc.visible_devices).
+    # Folders and the Shared tray stay outside: a folder may hold rows of
+    # several ADOMs, and the tray is the team's.
     adom_rank = {'': 0}
     adom_name = {'': 'Global'}
     for i, (k, name) in enumerate(product_scope.device_products(), start=1):
         adom_rank[k] = i
         adom_name[k] = name
-    fav_groups: dict[str, dict] = {}
+
+    def _adom_of(key: str) -> str:
+        return key if key in adom_rank else ''
+
+    adoms: dict[str, dict] = {}
+
+    def _section(adom: str, part: str) -> dict:
+        a = adoms.get(adom)
+        if a is None:
+            a = {'node': _node(f'{ROOT_ADOM}@{adom or "global"}', adom_name[adom],
+                               icon='bi-boxes', manual=True,
+                               pos=adom_rank[adom])}
+            adoms[adom] = a
+        sec = a.get(part)
+        if sec is None:
+            tag = adom or 'global'
+            if part == 'fav':
+                sec = _node(f'{ROOT_FAV}@{tag}', 'Favourites',
+                            icon='bi-star-fill', droppable=True,
+                            drop_into=svc.FAV, manual=True, pos=0)
+            elif part == 'links':
+                sec = _node(f'{ROOT_LINKS}@{tag}', 'Links',
+                            icon='bi-link-45deg', manual=True, pos=1)
+            else:
+                sec = _node(f'{ROOT_LENS}@{tag}', svc.lens_title(stack),
+                            icon='bi-diagram-3', pos=2)
+                sec['lens_head'] = True
+            a[part] = sec
+            a['node']['children'].append(sec)
+        return sec
+
+    stack = svc.lens_for(current_user)
+
     for it in items:
         if it['fav'] and it['bm'].kind != KIND_FOLDER:
-            adom = svc.adom_group(it['bm'])
-            if adom not in adom_rank:
-                adom = ''
-            grp = fav_groups.get(adom)
-            if grp is None:
-                grp = _node(f'{ROOT_FAV}|adom:{adom or "global"}',
-                            adom_name[adom], icon='bi-collection',
-                            manual=True, pos=adom_rank[adom])
-                fav_groups[adom] = grp
-                fav_root['children'].append(grp)
-            grp['children'].append(
-                _node(f'{grp["key"]}|b{it["bm"].id}', it['label'],
+            sec = _section(_adom_of(svc.adom_group(it['bm'])), 'fav')
+            sec['children'].append(
+                _node(f'{sec["key"]}|b{it["bm"].id}', it['label'],
                       icon=_icon_for(it), kind='item', item=it,
                       sub=_sub_for(it), container=svc.FAV,
                       pos=fav_pos.get(it['bm'].id, 0)))
@@ -340,6 +369,16 @@ def build_panel(q: str = '') -> dict:
                 # An unfiled TEAM bookmark belongs in the Shared tray, which is
                 # the default destination of a row nobody has placed yet — not
                 # a folder anybody can delete.
+                if parent_id is None:
+                    # Not in any folder: it lives under its ADOM (Links), in
+                    # the hand order of the root list it still belongs to.
+                    if not it['fav']:
+                        sec = _section(_adom_of(svc.adom_group(bm)), 'links')
+                        sec['children'].append(_node(
+                            f'{sec["key"]}|b{bm.id}', it['label'],
+                            icon=_icon_for(it), kind='item', item=it,
+                            sub=_sub_for(it), container=box, pos=it['pos']))
+                    continue
                 out.append(_node(f'{prefix}|b{bm.id}', it['label'],
                                  icon=_icon_for(it), kind='item', item=it,
                                  sub=_sub_for(it), container=box,
@@ -357,20 +396,17 @@ def build_panel(q: str = '') -> dict:
                       icon=_icon_for(it), kind='item', item=it,
                       sub=_sub_for(it)))
 
-    # ---- root: THE inventory lens ----------------------------------------
-    # One root, nested in the order this reader chose, and named after it.
-    # Four fixed roots answered "how COULD this be grouped"; an operator wants
-    # one answer and wants to see which one without opening anything, so the
-    # order is the heading. Changing it is a per-user act on the profile page:
-    # nobody re-shapes anybody else's panel.
-    stack = svc.lens_for(current_user)
-    appliances = (visible_appliances(
-        db.session.query(Appliance), user=current_user).all()
-        if svc.may_see_devices(current_user) else [])
-    lens_root = _node(ROOT_LENS, svc.lens_title(stack), icon='bi-diagram-3')
+    # ---- each ADOM's devices, nested by the reader's lens ------------------
+    # Nested in the order this reader chose, and named after it: an operator
+    # wants one answer and wants to see which one without opening anything,
+    # so the order is the heading. Changing it is a per-user act on the
+    # profile page: nobody re-shapes anybody else's panel.
+    appliances = svc.visible_devices(current_user)
     for appl in appliances:
-        cursor = lens_root
-        path = ROOT_LENS
+        adom = _adom_of(svc.appliance_adom(appl))
+        lens = _section(adom, 'lens')
+        cursor = lens
+        path = lens['key']
         values = [svc.dimension_value(appl, d, segments) for d in stack]
         # A device classified nowhere would otherwise sink three levels of
         # "(unclassified) → (unclassified) → (unclassified)": depth with no
@@ -402,10 +438,24 @@ def build_panel(q: str = '') -> dict:
                             chip=(dim == 'kind' and value != svc.UNCLASSIFIED))
                 cursor['children'].append(nxt)
             cursor = nxt
-        cursor['children'].append(
-            _device_node(cursor['key'], appl, by_appliance.get(appl.id)))
+        item = by_appliance.get(appl.id)
+        if item is None:
+            # No bookmark behind it: the device's own switch, so a device of
+            # another ADOM is not a 404 in this console.
+            sw = svc.device_opens_in(appl, current_adom)
+            item = {'bm': None, 'appliance_id': appl.id, 'label': appl.name,
+                    'fav': False, 'hidden': False, 'shared': False,
+                    'mine': False, 'may_edit': False, 'parent_id': None,
+                    'switch': sw,
+                    'switch_name': (get_product(sw) or {}).get('name', sw)
+                                   if sw else '',
+                    'open_url': url_for('bookmarks.open_device', aid=appl.id)
+                                if sw else None}
+            item['dev_url'], item['dev_note'] = svc.device_link(appl)
+        cursor['children'].append(_device_node(cursor['key'], appl, item))
 
-    roots = [fav_root, folders_root, shared_root, lens_root]
+    roots = [adoms[k]['node'] for k in sorted(adoms, key=lambda k: adom_rank[k])]
+    roots += [folders_root, shared_root]
     roots = [r for r in roots if _prune(r, q)]
     for r in roots:
         _count(r)
@@ -435,7 +485,6 @@ def build_panel(q: str = '') -> dict:
         'can_share': current_user.can(svc.SHARE_PERMISSION),
         'root_shared': ROOT_SHARED,
         'root_folders': ROOT_FOLDERS,
-        'root_lens': ROOT_LENS,
         'lens': stack,
         'lens_url': url_for('auth.profile') + '#bookmark-view',
         'device_count': len(appliances),
@@ -604,6 +653,33 @@ def move(bid):
     return _render(_q())
 
 
+def _switch_and_go(adom: str, target: str):
+    """Write the ADOM switch and redirect, ``_adom`` pinned on the target so
+    a stale per-tab header cannot win the first request."""
+    if adom and product_scope.adom_allowed(adom):
+        session['product'] = adom
+        session.permanent = True
+        base, hsh, frag = target.partition('#')
+        target = (base + ('&' if '?' in base else '?') + '_adom=' + adom
+                  + hsh + frag)
+    return redirect(target)
+
+
+@bp.route('/device/<int:aid>/open')
+@login_required
+def open_device(aid):
+    """A device of ANOTHER ADOM listed under that ADOM's classification, with
+    no bookmark behind it: switch this tab's ADOM, then open the device."""
+    from .product import _is_prefetch
+    if _is_prefetch(request):
+        return '', 204
+    if aid not in svc._visible_appliance_ids(current_user):
+        abort(404)
+    appl = db.session.get(Appliance, aid)
+    return _switch_and_go(svc.appliance_adom(appl),
+                          url_for('appliances.detail', id=aid))
+
+
 @bp.route('/<int:bid>/open')
 @login_required
 def open_bookmark(bid):
@@ -629,14 +705,7 @@ def open_bookmark(bid):
         target = safe
     else:
         abort(404)
-    adom = svc.home_adom(bm)
-    if adom and product_scope.adom_allowed(adom):
-        session['product'] = adom
-        session.permanent = True
-        base, hsh, frag = target.partition('#')
-        target = (base + ('&' if '?' in base else '?') + '_adom=' + adom
-                  + hsh + frag)
-    return redirect(target)
+    return _switch_and_go(svc.home_adom(bm), target)
 
 
 @bp.route('/<int:bid>/favorite', methods=['POST'])

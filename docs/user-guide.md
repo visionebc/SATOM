@@ -2685,6 +2685,38 @@ against what the devices say.
   copy, and shows each step (copy, device question, answer). *Copy LB*
   adds the columns *Lookup*, *Matched on* and *Cluster*; the PTR column is
   now *Name*.
+  Since 4.11.14 (SA-0029) the table has the **4.11.11 columns again**, which
+  read better: *Entry*, one column per resolver with its answers, then
+  Gateway, Server Policy / Virtual Server, **Service IP / name**, Backends
+  and Actions; the entry and its answers span its matches. The Entry cell
+  also says how it was looked up and **Matches: N**; an entry with no match
+  is one row (*Matches: 0*), without a separate *No matches* row. There is no
+  *Matched on* column any more: the chevron folds each match open into a
+  **Field | Value table** with every field (where the entry was found
+  included) and the pool's members; *Show* opens the same table in a dialog.
+  *Automatic* decides **IP or FQDN first**: an entry the resolvers answer
+  with addresses is searched by those addresses even when it does not look
+  like an FQDN (`intranet_app.corp`). **Service IP:** a FortiWeb VIP that
+  uses its interface address is now read from the cached interface, and a
+  virtual server VIP is the address of its `system vip` object, never its
+  name; when there is still none the cell says **no service IP** and why
+  (only the config layer cached, no virtual server, interface without an
+  address in SATOM's copy). A FortiADC IPv6 virtual server shows its
+  `address6`.
+  **SPO Regex** (button under Search) holds the rules that turn a server
+  policy or virtual server name into the FQDN it publishes, e.g.
+  `^spo[-_](.+?)(?:[-_](?:80|443|https?))?$` → `\1` with *Underscores to
+  dots* makes `spo_www_example_com_443` → `www.example.com`. Rules are tried
+  in order and the first that yields a valid FQDN wins; without a result the
+  group named `fqdn`, else group 1, else the whole match is taken. With
+  them an **FQDN finds the policy named after it** (*Matched on: SPO name
+  (SPO Regex)*), even when the name does not resolve or resolves to an
+  address that is not the VIP (NAT, a CDN in front), and a lookup by policy
+  name shows that FQDN and the address it resolves to. The dialog tries the
+  rules on any names (the policies on the page are pre-filled) before they
+  are saved; everyone who can use the page sees and tries them, saving
+  needs *Manage users* (like the resolvers) and is audited
+  (`dns_tool.spo_regex`). Copy LB has a *SPO Regex FQDN* column.
   The same tool also exists as **three Plugin Studio apps** — the plugins
   `dns-lb-lookup`, `dns-records` and `dns-decommission` (§23.7, *Plugins:
   DNS & LB Lookup*), under **Operations › Plugins** once imported: the
@@ -12915,7 +12947,13 @@ same operations are also signed plugins, for automations and other apps
      *permission denied*, the same operation again through sudo), **always
      my account**, or **always root**.
    - Optional: shared service credential (needs *Manage shared server
-     credentials*), expiry date, and the modules it may be used for.
+     credentials*), expiry date, and the modules it may be used for (none
+     ticked = all). **health** covers installing, reinstalling and removing
+     the satom-webctl agent: a credential limited to other modules is
+     refused for them when you press the button — before any job starts —
+     with what it is limited to and how to allow it (since 4.11.14, SA-0029;
+     before, Health could not be ticked and the job failed after signing
+     in with *credential x is not allowed for Health*).
    - Disable, **Revoke** (erases the stored secret at once) or delete.
 4. **Check access** signs in, tells you who you are on the server (user,
    groups, distribution, package manager, web servers, PHP, firewall) and

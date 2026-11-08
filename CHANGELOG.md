@@ -6,6 +6,55 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+- **DNS & LB Lookup: the 4.11.11 table again, details as a table (SA-0029).**
+  Requested: keep the table headers as they were, because the new layout is
+  hard to read; when something matches, show its data as a table in the
+  collapsible section; drop the *Matched on* column; with no match, no extra
+  *No matches* row, *Matches: 0* is enough. The columns are again Entry, one
+  per resolver, Gateway, Server Policy / Virtual Server, Service IP / name,
+  Backends and Actions, the entry spanning its matches; the Entry cell says
+  *Matches: N*; each match folds open into a Field | Value table (where it
+  matched included) with the pool's members.
+
+### Added
+- **DNS & LB Lookup: SPO Regex (SA-0029).** Requested: a regex that turns the
+  server policy's name into its FQDN, behind an *SPO Regex* button. Ordered
+  rules (pattern, result, underscores to dots, on/off; at most 10) with a
+  dialog that tries them on any names before saving. An FQDN then also finds
+  the policy named after it, even when it does not resolve or resolves to an
+  address that is not the VIP, and a lookup by policy name shows that FQDN
+  and the address it resolves to; Copy LB has a *SPO Regex FQDN* column.
+  Saving needs *Manage users* and is audited. `GET/POST /dns-lookup/spo-regex`,
+  `POST /dns-lookup/spo-regex/test`.
+- **Web Server Manager: *health* is a module a credential can be given
+  (SA-0029).** It covers installing, reinstalling and removing the agent.
+
+### Fixed
+- **DNS & LB Lookup: a server policy's Service IP was "-" (SA-0029).** A
+  FortiWeb VIP that uses its interface address was looked up under the wrong
+  cache key and always read empty; a vip-list row naming a `system vip`
+  object that was not cached under the policy showed the NAME as the
+  address. Both now read the cached interface / `vip` object, so a lookup by
+  policy name gives the VIP and an FQDN that resolves to it finds the
+  policy. An empty Service IP says why (config layer only, no virtual
+  server, interface without an address); a FortiADC IPv6 virtual server
+  shows `address6`. The same fix applies everywhere SATOM reads a cached
+  policy's VIPs.
+- **DNS & LB Lookup: an entry that resolved was not searched by its
+  addresses (SA-0029).** Requested: when I send an FQDN the DNS answers, but
+  the IP is not searched in the FortiWebs or FortiADCs. *Automatic* now
+  searches what the resolvers answered even when the entry does not look
+  like an FQDN (an underscore, a single-label suffix).
+- **Web Server Manager: Reinstall/Remove agent failed with "credential x is
+  not allowed for Health" (SA-0029).** The agent operations belong to the
+  Health module, which no credential could be given: a credential limited to
+  some modules could never manage the agent, and the refusal came inside
+  the job after "Signing in… Removing…". Now Health can be ticked on the
+  credential, and a credential without it is refused when the button is
+  pressed (no job, nothing sent), saying what it is limited to and how to
+  allow it; the page says the same before asking.
+
 ## [4.11.13] - 2026-11-08
 
 ### Added

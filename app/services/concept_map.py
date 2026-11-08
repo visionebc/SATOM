@@ -290,7 +290,7 @@ PAGES: tuple[dict, ...] = (
        "Free-text search over the synced configuration of the active ADOM's "
        "appliances."),
     _p("dns_tool.index", "DNS Lookup", "fleet",
-       "dns resolve record a cname lookup nslookup dig zone",
+       "dns resolve record a cname lookup nslookup dig zone spo regex policy name fqdn",
        "Resolve names and inspect DNS records from the console."),
     _p("dns_tool.resolvers", "DNS Resolvers", "fleet",
        "dns resolver server nameserver lookup columns query which dns",
@@ -737,6 +737,7 @@ EXCLUDED: dict[str, str] = {
     "database.report_column_values": "json feed", "database.table": "sub-view of database.index",
     "device_provision.data": "json feed", "dns_tool.records_list": "json feed",
     "dns_tool.records_schema": "json feed", "jobs.index": "json feed",
+    "dns_tool.spo_regex_get": "json feed",
     "jobs.all_jobs": "json feed", "metrics.api_data": "json feed",
     "monitor_analytics.cadence": "json feed", "monitor_analytics.catalog": "json feed",
     "monitor_analytics.data": "json feed", "metrics_admin.data": "json feed",

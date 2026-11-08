@@ -125,6 +125,9 @@ def _texts() -> dict:
         "as_cred": _("Signs in as %(cred)s and becomes root (sudo).", cred="%s"),
         "need_root": _("Pick a credential that can become root in Sign in as (not the agent "
                        "itself)."),
+        "need_health": _("Credential %(cred)s is limited to %(mods)s: tick health on it "
+                         "(Credentials > Edit) or pick another credential in Sign in as.",
+                         cred="%s", mods="%m"),
         "need_perm": _("Installing or removing the agent needs the permissions to manage the "
                        "server and to run as root."),
         "done": _("Done."), "failed": _("The agent job failed:"),

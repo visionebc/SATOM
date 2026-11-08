@@ -46,7 +46,10 @@ class WsmCredential(db.Model):
     SUDO_PASSWORD = ("same", "ask")
     RUN_AS = ("self", "auto", "root")
     STATUSES = ("active", "disabled", "revoked")
-    MODULES = ("files", "sites", "certs", "security", "scripts", "cron", "packages",
+    #: "health" since SA-0029: the agent's install / reinstall / remove run
+    #: under it, and without the option a credential limited to some modules
+    #: could never be granted them.
+    MODULES = ("health", "files", "sites", "certs", "security", "scripts", "cron", "packages",
                "services", "logs", "users", "ssh")
 
     id = db.Column(db.Integer, primary_key=True)

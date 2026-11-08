@@ -62,6 +62,10 @@
             <a class="btn btn-outline-secondary btn-sm flex-fill" href="{{ url_for('dns_tool.index') }}">{{ _('Reset') }}</a>
             <button type="submit" class="btn btn-primary btn-sm flex-fill"><i class="bi bi-search me-1"></i>{{ _('Search') }}</button>
           </div>
+          <button type="button" class="btn btn-outline-secondary btn-sm w-100 mt-2" id="spoRegexBtn"
+                  title="{{ _('How server policy names become the FQDN they publish: an FQDN then finds its policy by name, and a policy says which name it serves') }}">
+            <i class="bi bi-regex me-1"></i>{{ _('SPO Regex') }}
+            {% if spo_rules %}<span class="fw-badge fw-badge-info ms-1">{{ spo_rules|selectattr('enabled')|list|length }}</span>{% endif %}</button>
         </form>
         <hr class="my-3" style="opacity:.15;">
         <div style="font-size:12px;" class="text-muted">
@@ -108,25 +112,28 @@
         {% elif not results %}
         <div class="text-center text-muted py-5" style="font-size:13px;">{{ _('No valid entries.') }}</div>
         {% else %}
-        {# SA-0028: collapsed again. One dense line per match under a line per
-           entry (its lookup, its DNS answers); the details expand under the
-           row, and Show opens them in a dialog with the live check. The
-           details live in a <template>, so nothing long is drawn until asked
-           (a long comment never widens the table, SA-0027). A server policy
-           cached on several members of one cluster is ONE row, on the member
-           every action targets (dns_tool.collapse_clusters). #}
+        {# SA-0029: the SA-0027 columns again (Entry, one per resolver, then
+           the LB columns), the entry and its DNS answers spanning its matches,
+           "Matches: N" in the Entry cell (no extra "No matches" row), no
+           Matched on column. Each match still folds: the chevron opens its
+           data as a table under the row; Show opens the same in a dialog with
+           the live check. The details live in a <template>, so nothing long
+           is drawn until asked (a long comment never widens the table). A
+           server policy cached on several members of one cluster is ONE row,
+           on the member every action targets (dns_tool.collapse_clusters). #}
         <style nonce="{{ csp_nonce }}">
-          .dl-table td, .dl-table th { vertical-align: middle; }
+          .dl-table td, .dl-table th { vertical-align: top; }
           .dl-table .dl-trunc { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
           .dl-table .dl-nowrap, .dl-table .dl-actions { white-space: nowrap; }
-          .dl-table tr.dl-entry-row > td { background: var(--fw-surface-alt); border-top: 1px solid var(--fw-border); }
-          .dl-table tr.dl-detail > td { background: var(--fw-surface-alt); padding: 10px 16px 14px 34px; }
-          .dl-entry-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-          .dl-entry-line .dl-dns { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+          .dl-table .dl-entry { position: sticky; left: 0; background: #fff; z-index: 1; min-width: 170px; border-right: 1px solid var(--fw-border); }
+          .dl-table .dl-count { font-size: 11px; margin-top: 2px; }
+          .dl-table tr.dl-detail > td { background: var(--fw-surface-alt); padding: 10px 16px 14px 16px; }
           .dl-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
           .dl-toggle { color: var(--fw-text-secondary); line-height: 1; }
-          .dl-grid { display: grid; grid-template-columns: 170px 1fr; gap: 2px 10px; font-size: 12px; }
-          .dl-grid span:nth-child(even) { white-space: pre-wrap; word-break: break-word; }
+          .dl-fields { table-layout: fixed; width: 100%; }
+          .dl-fields thead th:first-child, .dl-fields tbody th { width: 200px; }
+          .dl-fields tbody th { font-weight: 500; color: var(--fw-text-secondary); }
+          .dl-fields td { white-space: pre-wrap; word-break: break-word; }
           .dl-section { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600; margin: 12px 0 4px; }
         </style>
         {% set st_colors = {'enable': '#15692A', 'enabled': '#15692A',
@@ -136,7 +143,7 @@
         {% set mode_help = {'element': _('Searched in the configuration text; the Name is the PTR of the service IP.'),
                             'ip': _('Searched in the address fields of every server policy: VIP, pool members and other address fields.'),
                             'fqdn': _('Resolved (A and AAAA) on every resolver; each address searched in the address fields, and the name in the configuration text.')} %}
-        {% set ncols = (8 + (appid_cols|length if opts.appid else 0)) if opts.lb else 1 %}
+        {% set lb_cols = (5 + (appid_cols|length if opts.appid else 0)) if opts.lb else 0 %}
         <div class="d-flex justify-content-end gap-2 px-3 pt-2">
           {% if opts.lb %}
           <button type="button" class="btn btn-sm btn-link p-0" id="dlExpandAll">{{ _('Expand all') }}</button>
@@ -147,90 +154,93 @@
           <table class="table fw-table mb-0 dl-table" style="font-size:12px;">
             <thead>
               <tr>
+                <th class="dl-entry">{{ _('Entry') }}</th>
+                {% for s in servers %}<th>{{ s.name }}</th>{% endfor %}
+                {% if opts.quick %}<th>{{ _('Quick LB') }}</th>{% endif %}
                 {% if opts.lb %}
-                <th style="width:24px;"></th>
                 <th>{{ _('Gateway') }}</th>
                 <th>{{ _('Server Policy / Virtual Server') }}</th>
-                <th>{{ _('Service IP') }}</th>
-                <th>{{ _('Name') }}</th>
+                <th>{{ _('Service IP / name') }}</th>
                 <th>{{ _('Backends') }}</th>
-                <th>{{ _('Matched on') }}</th>
                 {% if opts.appid %}{% for _k, label in appid_cols %}<th>{{ label }}</th>{% endfor %}{% endif %}
                 <th class="dl-actions">{{ _('Actions') }}</th>
-                {% else %}
-                <th>{{ _('Entry') }}</th>
                 {% endif %}
               </tr>
             </thead>
             <tbody>
               {% for r in results %}
               {% set ri = loop.index %}
-              <tr class="dl-entry-row">
-                <td colspan="{{ ncols }}">
-                  <div class="dl-entry-line">
-                    <span class="fw-semibold font-monospace">{{ r.entry }}</span>
-                    <span class="fw-badge fw-badge-secondary" title="{{ mode_help.get(r.mode, '') }}">{{ mode_labels.get(r.mode, r.mode) }}</span>
-                    {% if r.is_wildcard %}
-                    <span class="fw-badge fw-badge-warning">&rarr; {{ r.resolved }}</span>
-                    {% endif %}
-                    {% if can_manage_records and dns_backends %}
-                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 dns-rec-btn"
-                            data-entry="{{ r.resolved }}" title="{{ _('Manage DNS records for this name') }}"
-                            style="font-size:10px;"><i class="bi bi-pencil-square"></i></button>
-                    {% endif %}
-                    {% for s in servers %}
-                    <span class="dl-dns"><span class="text-muted">{{ s.name }}:</span>
-                      {% for val in r.dns[s.name] %}
-                      <span class="fw-badge font-monospace {{ 'fw-badge-danger' if val in ('timeout','error') else ('fw-badge-secondary' if val in ('No result', 'invalid name', 'invalid server') else 'fw-badge-info') }}">{{ val }}</span>
-                      {% endfor %}</span>
-                    {% endfor %}
-                    {% if r.mode == 'fqdn' %}
-                      {% if r.dns_state == 'no_answer' %}
-                      <span class="fw-badge fw-badge-warning">{{ _('Does not resolve: no A or AAAA answer') }}</span>
-                      {% elif r.dns_state == 'error' %}
-                      <span class="fw-badge fw-badge-danger">{{ _('DNS error') }}: {{ r.dns_errors|join(', ') }}</span>
-                      {% elif r.dns_state == 'no_resolver' %}
-                      <span class="fw-badge fw-badge-warning">{{ _('No DNS resolver configured: the name cannot be resolved') }}</span>
-                      {% endif %}
-                    {% elif r.dns_errors %}
-                      <span class="fw-badge fw-badge-danger">{{ _('DNS error') }}: {{ r.dns_errors|join(', ') }}</span>
-                    {% endif %}
-                    {% if opts.quick %}
-                    <span class="text-muted">{{ _('Quick LB') }}:</span>
-                    {% for gw in r.gateways %}<span class="fw-badge fw-badge-primary">{{ gw }}</span>{% else %}<span class="text-muted">—</span>{% endfor %}
-                    {% endif %}
-                    {% if opts.lb %}
-                    <span class="ms-auto text-muted">{{ _('Matches') }}: {{ r.matches|length }}</span>
-                    {% endif %}
-                  </div>
-                </td>
-              </tr>
-              {% if opts.lb and not r.matches %}
-              <tr><td></td><td colspan="{{ ncols - 1 }}"><span class="text-muted fst-italic" style="font-size:11px;">{{ _('No matches') }}</span></td></tr>
-              {% endif %}
-              {% for m in (r.matches if opts.lb else []) %}
+              {% set has = opts.lb and r.matches %}
+              {% set ms = r.matches if has else [none] %}
+              {# each match is a row plus its (hidden) details row: the entry
+                 and its DNS answers span both #}
+              {% set span = (ms|length * 2) if has else 1 %}
+              {% for m in ms %}
               {% set mi = loop.index %}
-              {% set c = m['_cluster'] %}
-              {% if not m['policy'] or not m['_aid'] %}
-                {% set pol_url = none %}
-              {% elif m['_kind'] == 'fortiadc' %}
-                {% set pol_url = url_for('adc.use_device', id=m['_aid'],
-                     next=url_for('adc.object_detail', logical='load_balance_virtual_server', mkey=m['policy'])) %}
-              {% else %}
-                {% set pol_url = url_for('workspace.policy_detail', appliance_id=m['_aid'], name=m['policy']) %}
-              {% endif %}
-              {% set pcol = st_colors.get((m['status'] or '')|lower, '#3D4550') %}
-              {% set ns = m['_name_state'] %}
-              {% set ptr_names = (m['service_name'] or '').split(', ') | reject('equalto', '') | list %}
-              {% set names = ([m['_fwd_name']] if m['_fwd_name'] else []) + (ptr_names | reject('equalto', m['_fwd_name']) | list) %}
-              <tr class="dl-match">
-                <td><button type="button" class="btn btn-sm btn-link p-0 dl-toggle" aria-expanded="false"
-                            data-tpl="dlm-{{ ri }}-{{ mi }}" data-slot="dls-{{ ri }}-{{ mi }}"
-                            title="{{ _('Details') }}"><i class="bi bi-chevron-right"></i></button></td>
+              <tr class="{{ 'dl-match' if m else 'dl-nomatch' }}">
+                {% if loop.first %}
+                <td class="dl-entry" rowspan="{{ span }}">
+                  <span class="fw-semibold font-monospace">{{ r.entry }}</span>
+                  <span class="fw-badge fw-badge-secondary" title="{{ mode_help.get(r.mode, '') }}">{{ mode_labels.get(r.mode, r.mode) }}</span>
+                  {% if r.is_wildcard %}
+                  <span class="fw-badge fw-badge-warning">&rarr; {{ r.resolved }}</span>
+                  {% endif %}
+                  {% if can_manage_records and dns_backends %}
+                  <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 dns-rec-btn"
+                          data-entry="{{ r.resolved }}" title="{{ _('Manage DNS records for this name') }}"
+                          style="font-size:10px;"><i class="bi bi-pencil-square"></i></button>
+                  {% endif %}
+                  {% if r.mode == 'fqdn' %}
+                    {% if r.dns_state == 'no_answer' %}
+                    <div><span class="fw-badge fw-badge-warning">{{ _('Does not resolve: no A or AAAA answer') }}</span></div>
+                    {% elif r.dns_state == 'error' %}
+                    <div><span class="fw-badge fw-badge-danger">{{ _('DNS error') }}: {{ r.dns_errors|join(', ') }}</span></div>
+                    {% elif r.dns_state == 'no_resolver' %}
+                    <div><span class="fw-badge fw-badge-warning">{{ _('No DNS resolver configured: the name cannot be resolved') }}</span></div>
+                    {% endif %}
+                  {% elif r.dns_errors %}
+                    <div><span class="fw-badge fw-badge-danger">{{ _('DNS error') }}: {{ r.dns_errors|join(', ') }}</span></div>
+                  {% endif %}
+                  {% if opts.lb %}
+                  <div class="text-muted dl-count">{{ _('Matches') }}: {{ r.matches|length }}</div>
+                  {% endif %}
+                </td>
+                {% for s in servers %}
+                <td rowspan="{{ span }}">
+                  {% for val in r.dns[s.name] %}
+                  <span class="fw-badge font-monospace d-inline-block mb-1 {{ 'fw-badge-danger' if val in ('timeout','error') else ('fw-badge-secondary' if val in ('No result', 'invalid name', 'invalid server') else 'fw-badge-info') }}">{{ val }}</span><br>
+                  {% endfor %}
+                </td>
+                {% endfor %}
+                {% if opts.quick %}
+                <td rowspan="{{ span }}">
+                  {% for gw in r.gateways %}<span class="fw-badge fw-badge-primary d-inline-block mb-1">{{ gw }}</span><br>{% else %}<span class="text-muted">—</span>{% endfor %}
+                </td>
+                {% endif %}
+                {% endif %}
+                {% if opts.lb %}
+                {% if m %}
+                {% set c = m['_cluster'] %}
+                {% if not m['policy'] or not m['_aid'] %}
+                  {% set pol_url = none %}
+                {% elif m['_kind'] == 'fortiadc' %}
+                  {% set pol_url = url_for('adc.use_device', id=m['_aid'],
+                       next=url_for('adc.object_detail', logical='load_balance_virtual_server', mkey=m['policy'])) %}
+                {% else %}
+                  {% set pol_url = url_for('workspace.policy_detail', appliance_id=m['_aid'], name=m['policy']) %}
+                {% endif %}
+                {% set pcol = st_colors.get((m['status'] or '')|lower, '#3D4550') %}
+                {% set ns = m['_name_state'] %}
+                {% set ptr_names = (m['service_name'] or '').split(', ') | reject('equalto', '') | list %}
+                {% set names = ([m['_fwd_name']] if m['_fwd_name'] else []) + (ptr_names | reject('equalto', m['_fwd_name']) | list) %}
+                {% set spo = m['_spo_fqdn'] %}
                 <td class="dl-nowrap" title="{{ m.product }} · {{ m.gateway }}">
+                  <button type="button" class="btn btn-sm btn-link p-0 me-1 dl-toggle" aria-expanded="false"
+                          data-tpl="dlm-{{ ri }}-{{ mi }}" data-slot="dls-{{ ri }}-{{ mi }}"
+                          title="{{ _('Details') }}"><i class="bi bi-chevron-right"></i></button>
                   <span class="text-muted" style="font-size:10px;">{{ m.product }}</span> {{ m.gateway }}
                   {% if c %}
-                  <span class="fw-badge fw-badge-info dl-cluster"
+                  <br><span class="fw-badge fw-badge-info dl-cluster"
                         title="{{ c.source }} · {{ _('Members') }}: {{ c.members|join(', ') }} · {{ _('Cached on') }}: {{ c.seen_on|join(', ') }}">
                     {% if c.role == 'primary' %}{{ _('Cluster: %(name)s (primary %(node)s, %(n)s members)', name=c.name, node=c.node, n=c.count) }}
                     {% elif c.role in ('vip', 'cluster') %}{{ _('Cluster: %(name)s (primary resolved by the cluster, %(n)s members)', name=c.name, n=c.count) }}
@@ -239,16 +249,16 @@
                 </td>
                 <td class="dl-trunc" title="{{ m['policy'] }} ({{ m['status'] or 'unknown' }})">
                   <span class="dl-dot me-1" style="background:{{ pcol }};"></span>{{ m['policy'] }}</td>
-                <td class="dl-trunc font-monospace" title="{{ m['service_ip'] }}">{{ m['service_ip'] or '—' }}</td>
-                <td class="dl-trunc dl-name" title="{{ names|join(', ') }}{% if m['_name_error'] %} — {{ m['_name_error'] }}{% endif %}">
-                  {% if names %}{{ names|join(', ') }}{% endif %}
-                  {% if not ptr_names %}
-                    {% if ns == 'no_ptr' %}<span class="fw-badge fw-badge-secondary">{{ _('no PTR') }}</span>
-                    {% elif ns == 'error' %}<span class="fw-badge fw-badge-danger">{{ _('PTR error') }}</span>
-                    {% elif ns == 'no_resolver' %}<span class="fw-badge fw-badge-secondary">{{ _('no resolver configured') }}</span>
-                    {% elif ns == 'no_ip' %}<span class="fw-badge fw-badge-secondary">{{ _('no service IP') }}</span>
-                    {% elif not names %}<span class="text-muted">—</span>{% endif %}
+                <td class="dl-trunc dl-name" title="{{ m['service_ip'] or m['_vip_note'] }}{% if names %} — {{ names|join(', ') }}{% endif %}{% if m['_name_error'] %} — {{ m['_name_error'] }}{% endif %}">
+                  {% if m['service_ip'] %}<span class="font-monospace">{{ m['service_ip'] }}</span>
+                  {% else %}<span class="fw-badge fw-badge-secondary" title="{{ m['_vip_note'] }}">{{ _('no service IP') }}</span>{% endif %}
+                  {% if names %}<br><span class="text-muted">{{ names|join(', ') }}</span>
+                  {% elif m['service_ip'] %}
+                    {% if ns == 'no_ptr' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no PTR') }}</span>
+                    {% elif ns == 'error' %}<br><span class="fw-badge fw-badge-danger">{{ _('PTR error') }}</span>
+                    {% elif ns == 'no_resolver' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no resolver configured') }}</span>{% endif %}
                   {% endif %}
+                  {% if spo and spo not in names %}<br><span class="text-muted" title="{{ _('From the server policy name (SPO Regex)') }}"><i class="bi bi-regex"></i> {{ spo }}{% if m['_spo_ips'] %} &rarr; <span class="font-monospace">{{ m['_spo_ips']|join(', ') }}</span>{% endif %}</span>{% endif %}
                 </td>
                 {% set bs = m['_backends'] or [] %}
                 <td class="dl-nowrap" title="{% for b in bs %}{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %} ({{ b.status or 'unknown' }}){% if not loop.last %}; {% endif %}{% else %}{{ m['_backends_note'] or _('no backends in cache') }}{% endfor %}">
@@ -260,7 +270,6 @@
                   <span class="text-muted fst-italic">{{ _('no members in cache') }}</span>
                   {% endif %}
                 </td>
-                <td class="dl-trunc text-muted" title="{{ m['_match_field'] }}">{{ m['_match_field'] or '—' }}</td>
                 {% if opts.appid %}
                 {% set ai = m['_appid'] or {} %}
                 {% for k, _l in appid_cols %}
@@ -305,28 +314,36 @@
                       {% else %}{{ _('SATOM has no primary recorded for this cluster: shown once, on the first member by name. Edit, Delete and the live check act on that member only.') }}{% endif %}
                     </div>
                     {% endif %}
-                    <div class="dl-grid">
-                      <span class="text-muted">{{ _('Lookup') }}</span><span>{{ mode_labels.get(m['_mode'], m['_mode']) }}</span>
-                      <span class="text-muted">{{ _('Matched on') }}</span><span>{{ m['_match_field'] or '—' }}</span>
-                      <span class="text-muted">{{ _('Name') }}</span>
-                      <span>{{ names|join(', ') }}{% if not ptr_names %}{% if names %} {% endif %}{% if ns == 'no_ptr' %}({{ _('no PTR') }}){% elif ns == 'error' %}({{ _('PTR error') }}: {{ m['_name_error'] }}){% elif ns == 'no_resolver' %}({{ _('no resolver configured') }}){% elif ns == 'no_ip' %}({{ _('no service IP') }}){% endif %}{% endif %}</span>
-                      {% for key, label in columns %}
-                      {% if m[key] and key != 'service_name' %}
-                      <span class="text-muted">{{ label }}</span>
-                      <span class="{{ 'text-danger fw-semibold' if key == 'status' and m[key] == 'disable' }}">{{ m[key] }}</span>
-                      {% endif %}
-                      {% endfor %}
-                      {% if m['_appid'] %}
-                      {% for k, label in appid_cols %}
-                      {% if k != 'app_id' and (m['_appid'].fields or {}).get(k) %}
-                      <span class="text-muted">AppID {{ label }}</span>
-                      <span>{{ m['_appid'].fields[k] }}</span>
-                      {% endif %}
-                      {% endfor %}
-                      <span class="text-muted">{{ _('AppID source') }}</span>
-                      <span>{{ m['_appid'].source }}</span>
-                      {% endif %}
-                    </div>
+                    {# SA-0029: the data as a table, field | value #}
+                    <table class="table fw-table table-sm mb-0 dl-fields" style="font-size:12px;">
+                      <thead><tr><th>{{ _('Field') }}</th><th>{{ _('Value') }}</th></tr></thead>
+                      <tbody>
+                        <tr><th>{{ _('Lookup') }}</th><td>{{ mode_labels.get(m['_mode'], m['_mode']) }}</td></tr>
+                        <tr><th>{{ _('Matched on') }}</th><td>{{ m['_match_field'] or '—' }}</td></tr>
+                        {% for key, label in columns %}
+                        {% if key == 'service_ip' %}
+                        <tr><th>{{ label }}</th><td class="font-monospace">{% if m[key] %}{{ m[key] }}{% else %}— <span class="text-muted">({{ m['_vip_note'] or _('no service IP') }})</span>{% endif %}</td></tr>
+                        {% elif key == 'service_name' %}
+                        <tr><th>{{ label }}</th>
+                          <td>{{ names|join(', ') }}{% if not ptr_names %}{% if names %} {% endif %}{% if ns == 'no_ptr' %}({{ _('no PTR') }}){% elif ns == 'error' %}({{ _('PTR error') }}: {{ m['_name_error'] }}){% elif ns == 'no_resolver' %}({{ _('no resolver configured') }}){% elif ns == 'no_ip' %}({{ _('no service IP') }}){% endif %}{% endif %}</td></tr>
+                        {% if spo %}
+                        <tr><th>{{ _('SPO Regex FQDN') }}</th><td>{{ spo }}{% if m['_spo_ips'] %} &rarr; <span class="font-monospace">{{ m['_spo_ips']|join(', ') }}</span>{% endif %}</td></tr>
+                        {% endif %}
+                        {% elif m[key] %}
+                        <tr><th>{{ label }}</th>
+                          <td class="{{ 'text-danger fw-semibold' if key == 'status' and m[key] == 'disable' }}">{{ m[key] }}</td></tr>
+                        {% endif %}
+                        {% endfor %}
+                        {% if m['_appid'] %}
+                        {% for k, label in appid_cols %}
+                        {% if k != 'app_id' and (m['_appid'].fields or {}).get(k) %}
+                        <tr><th>AppID {{ label }}</th><td>{{ m['_appid'].fields[k] }}</td></tr>
+                        {% endif %}
+                        {% endfor %}
+                        <tr><th>{{ _('AppID source') }}</th><td>{{ m['_appid'].source }}</td></tr>
+                        {% endif %}
+                      </tbody>
+                    </table>
                     <div class="dl-section">{{ _('Backends') }}{% if m['pool'] %} — {{ _('pool') }} <span class="font-monospace">{{ m['pool'] }}</span>{% endif %}</div>
                     <table class="table fw-table table-sm mb-0 dl-backends" style="font-size:12px;">
                       <thead><tr><th>{{ _('Member') }}</th><th>{{ _('Weight') }}</th><th>{{ _('Configured') }}</th><th>{{ _('Live health') }}</th></tr></thead>
@@ -346,10 +363,16 @@
                     </table>
                   </template>
                 </td>
+                {% else %}
+                <td colspan="{{ lb_cols }}"></td>
+                {% endif %}
+                {% endif %}
               </tr>
+              {% if m and opts.lb %}
               <tr class="dl-detail" id="dls-{{ ri }}-{{ mi }}" hidden>
-                <td colspan="{{ ncols }}"><div class="dl-slot"></div></td>
+                <td colspan="{{ lb_cols }}"><div class="dl-slot"></div></td>
               </tr>
+              {% endif %}
               {% endfor %}
               {% endfor %}
             </tbody>
@@ -542,11 +565,9 @@
   });
   copyBtn.addEventListener('click', function () {
     var lines = [];
-    body.querySelectorAll('.dl-grid').forEach(function (g) {
-      var cells = g.children;
-      for (var i = 0; i + 1 < cells.length; i += 2) {
-        lines.push(cells[i].textContent.trim() + '\t' + cells[i + 1].textContent.trim());
-      }
+    body.querySelectorAll('table.dl-fields tbody tr').forEach(function (tr) {
+      var th = tr.querySelector('th'), td = tr.querySelector('td');
+      if (th && td) lines.push(th.textContent.trim() + '\t' + td.textContent.replace(/\s+/g, ' ').trim());
     });
     body.querySelectorAll('tr[data-backend]').forEach(function (tr) {
       var t = tr.querySelectorAll('td');
@@ -557,6 +578,135 @@
       var old = copyBtn.textContent; copyBtn.textContent = 'Copied!';
       setTimeout(function () { copyBtn.textContent = old; }, 1600);
     });
+  });
+})();
+</script>
+
+<!-- SPO Regex (SA-0029): server policy / virtual server name -> the FQDN it publishes -->
+<div class="modal fade" id="spoRegexModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-regex me-2"></i>{{ _('SPO Regex') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body" style="font-size:12px;">
+        <p class="text-muted mb-2">{{ _('Rules that turn a server policy or virtual server name into the FQDN it publishes, tried in order; the first that gives an FQDN wins. A lookup by FQDN then also finds the policy named after it, and a lookup by policy name shows that FQDN and the address it resolves to.') }}</p>
+        <p class="text-muted mb-2">{{ _('Pattern: a regular expression searched in the name (case-insensitive). Result: the replacement (\\1, \\g<name>); empty = the group named fqdn, else group 1, else the whole match. Underscores to dots turns www_example_com into www.example.com.') }}
+          {{ _('Example') }}: <code>^spo[-_](.+?)(?:[-_](?:80|443|https?))?$</code> &rarr; <code>\1</code> + {{ _('Underscores to dots') }}.</p>
+        <table class="table fw-table table-sm align-middle mb-2">
+          <thead><tr><th style="width:36px;">#</th><th>{{ _('Pattern') }}</th><th style="width:180px;">{{ _('Result') }}</th>
+            <th style="width:130px;">{{ _('Underscores to dots') }}</th><th style="width:70px;">{{ _('On') }}</th><th style="width:40px;"></th></tr></thead>
+          <tbody id="spoRules"></tbody>
+        </table>
+        {% if can_edit_spo %}
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="spoAdd"><i class="bi bi-plus-lg me-1"></i>{{ _('Add rule') }}</button>
+        {% else %}
+        <div class="text-muted">{{ _('You can try the rules here; changing them needs the administrator permission.') }}</div>
+        {% endif %}
+        <div class="dl-section">{{ _('Try it') }}</div>
+        <div class="row g-2">
+          <div class="col-md-4">
+            <label class="fw-form-label" for="spoNames">{{ _('Policy names — one per line') }}</label>
+            <textarea id="spoNames" rows="6" class="form-control fw-form-control font-monospace" style="font-size:12px;">{% for r in results %}{% for m in r.matches %}{{ m['policy'] }}
+{% endfor %}{% endfor %}</textarea>
+            <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="spoTest"><i class="bi bi-play me-1"></i>{{ _('Test') }}</button>
+          </div>
+          <div class="col-md-8">
+            <table class="table fw-table table-sm mb-0">
+              <thead><tr><th>{{ _('Name') }}</th><th>FQDN</th><th>{{ _('Rule') }}</th></tr></thead>
+              <tbody id="spoOut"><tr><td colspan="3" class="text-muted">—</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span class="text-muted me-auto" id="spoMsg"></span>
+        {% if can_edit_spo %}
+        <button type="button" class="btn btn-sm btn-primary" id="spoSave"><i class="bi bi-check-lg me-1"></i>{{ _('Save') }}</button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var btn = document.getElementById('spoRegexBtn'), modalEl = document.getElementById('spoRegexModal');
+  if (!btn || !modalEl) return;
+  var CSRF = {{ csrf_token() | tojson }};
+  var URL_SAVE = {{ url_for('dns_tool.spo_regex_save') | tojson }};
+  var URL_TEST = {{ url_for('dns_tool.spo_regex_test') | tojson }};
+  var CAN_EDIT = {{ 'true' if can_edit_spo else 'false' }};
+  var MAX = {{ spo_rules_max }};
+  var rules = {{ spo_rules | tojson }};
+  var T = { saved: {{ _('Saved. Search again to apply.') | tojson }}, max: {{ _('No more rules can be added.') | tojson }},
+            noFqdn: {{ _('no FQDN') | tojson }}, failed: {{ _('Failed:') | tojson }}, none: {{ _('No rule yet.') | tojson }} };
+  var tbody = document.getElementById('spoRules'), out = document.getElementById('spoOut'), msg = document.getElementById('spoMsg');
+  function cell(tr, node) { var td = document.createElement('td'); if (node) td.appendChild(node); tr.appendChild(td); return td; }
+  function inp(type, value, cls) {
+    var i = document.createElement('input'); i.type = type; i.disabled = !CAN_EDIT;
+    if (type === 'checkbox') { i.className = 'form-check-input'; i.checked = !!value; }
+    else { i.className = 'form-control form-control-sm fw-form-control font-monospace ' + (cls || ''); i.value = value || ''; i.maxLength = type === 'text' ? 300 : 200; }
+    return i;
+  }
+  function read() {
+    var rows = [];
+    tbody.querySelectorAll('tr[data-rule]').forEach(function (tr) {
+      var f = tr.querySelectorAll('input');
+      rows.push({ pattern: f[0].value, replace: f[1].value, dots: f[2].checked, enabled: f[3].checked });
+    });
+    return rows;
+  }
+  function draw() {
+    tbody.innerHTML = '';
+    if (!rules.length) { var e = document.createElement('tr'); var td = cell(e); td.colSpan = 6; td.className = 'text-muted'; td.textContent = T.none; tbody.appendChild(e); }
+    rules.forEach(function (r, i) {
+      var tr = document.createElement('tr'); tr.setAttribute('data-rule', i);
+      cell(tr).textContent = i + 1;
+      cell(tr, inp('text', r.pattern)); cell(tr, inp('search', r.replace));
+      cell(tr, inp('checkbox', r.dots)); cell(tr, inp('checkbox', r.enabled !== false));
+      var del = null;
+      if (CAN_EDIT) {
+        del = document.createElement('button'); del.type = 'button'; del.className = 'btn btn-sm btn-outline-danger py-0 px-1';
+        del.innerHTML = '<i class="bi bi-trash"></i>';
+        del.addEventListener('click', function () { rules = read(); rules.splice(i, 1); draw(); });
+      }
+      cell(tr, del);
+      tbody.appendChild(tr);
+    });
+  }
+  function post(url, body) {
+    return fetch(url, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF, 'Accept': 'application/json' },
+      body: JSON.stringify(body) }).then(function (r) { return r.json(); });
+  }
+  btn.addEventListener('click', function () { msg.textContent = ''; draw(); bootstrap.Modal.getOrCreateInstance(modalEl).show(); });
+  var add = document.getElementById('spoAdd');
+  if (add) add.addEventListener('click', function () {
+    rules = read();
+    if (rules.length >= MAX) { msg.textContent = T.max; return; }
+    rules.push({ pattern: '', replace: '', dots: false, enabled: true }); draw();
+  });
+  document.getElementById('spoTest').addEventListener('click', function () {
+    var names = document.getElementById('spoNames').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    post(URL_TEST, { names: names, rules: read() }).then(function (d) {
+      out.innerHTML = '';
+      if (!d.ok) { msg.textContent = T.failed + ' ' + (d.error || ''); return; }
+      d.results.forEach(function (x) {
+        var tr = document.createElement('tr');
+        var a = cell(tr); a.className = 'font-monospace'; a.textContent = x.name;
+        var b = cell(tr); b.className = x.fqdn ? 'font-monospace fw-semibold' : 'text-muted'; b.textContent = x.fqdn || T.noFqdn;
+        var c = cell(tr); c.className = 'text-muted'; c.textContent = x.fqdn ? '#' + x.rule : x.why.join('; ');
+        out.appendChild(tr);
+      });
+    }).catch(function (e) { msg.textContent = T.failed + ' ' + e; });
+  });
+  var save = document.getElementById('spoSave');
+  if (save) save.addEventListener('click', function () {
+    post(URL_SAVE, { rules: read() }).then(function (d) {
+      if (!d.ok) { msg.textContent = T.failed + ' ' + (d.error || ''); return; }
+      rules = d.rules; draw(); msg.textContent = T.saved;
+    }).catch(function (e) { msg.textContent = T.failed + ' ' + e; });
   });
 })();
 </script>

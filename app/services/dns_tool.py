@@ -323,6 +323,29 @@ def _base_row(appliance, product: str) -> dict:
     }
 
 
+def _vip_note(data: dict, pol: dict) -> str:
+    """Why a FortiWeb policy has no Service IP, said on the row instead of a
+    bare dash (SA-0029). "" when it has one."""
+    vips = data.get("vips")
+    if any((v or {}).get("effective_ip") for v in vips or []):
+        return ""
+    if not pol.get("vserver"):
+        return "the server policy has no virtual server"
+    if vips is None:
+        return ("only the config layer is cached; a deep capture resolves the virtual "
+                "server's VIPs")
+    if not vips:
+        return "virtual server %s has no VIP" % pol.get("vserver")
+    why = []
+    for v in vips:
+        src = str((v or {}).get("ip_source") or "")
+        if src.startswith("interface"):
+            why.append("%s: no address cached for that interface" % src)
+        elif src:
+            why.append(src)
+    return "; ".join(why) or "the VIP has no address in SATOM's copy"
+
+
 def _fortiweb_rows(appliance) -> list[dict]:
     """One row per cached server policy (deep layer preferred) — no box call."""
     from ..extensions import db
@@ -414,6 +437,7 @@ def _fortiweb_rows(appliance) -> list[dict]:
         row["_backends_note"] = ("" if "backends" in data or not row["pool"]
                                  else "only the config layer is cached; a deep "
                                       "capture lists the pool members")
+        row["_vip_note"] = _vip_note(data, pol)
         ips = [("VIP", norm_ip(v)) for v in vips if norm_ip(v)]
         ips += [("Pool member", norm_ip(b["ip"])) for b in backends if norm_ip(b["ip"])]
         ips += ips_in_payload(pol, "Server policy")
@@ -512,6 +536,12 @@ def _adc_row(appliance, vs: dict, backends: list[dict], certificate: str) -> dic
     row["_kind"] = "fortiadc"
     row["_backends"] = backends
     row["_backends_note"] = ""
+    # An IPv6 virtual server carries its VIP in address6 (address stays
+    # 0.0.0.0); an empty Service IP says why (SA-0029).
+    if not norm_ip(row["service_ip"]) and norm_ip(_adc_s(vs, "address6")):
+        row["service_ip"] = _adc_s(vs, "address6")
+    row["_vip_note"] = "" if norm_ip(row["service_ip"]) else \
+        "the virtual server has no address in SATOM's copy"
     ips = [("VIP", norm_ip(row["service_ip"]))] if norm_ip(row["service_ip"]) else []
     ips += [("Pool member", norm_ip(b["ip"])) for b in backends if norm_ip(b["ip"])]
     ips += ips_in_payload(vs, "Virtual server", skip=("address", "ip"))
@@ -970,13 +1000,25 @@ def name_text(m: dict) -> str:
     service, then the PTR names of its service IP -- or why there is none."""
     names = [m["_fwd_name"]] if m.get("_fwd_name") else []
     names += [n for n in str(m.get("service_name") or "").split(", ") if n and n not in names]
+    if m.get("_spo_fqdn") and m["_spo_fqdn"] not in names:
+        names.append(m["_spo_fqdn"])            # SA-0029: the name the policy is named after
     state = m.get("_name_state") or ""
     if m.get("service_name") or not state or state == "ok":
         return ", ".join(names)
     why = NAME_STATE_TEXT.get(state, state)
     if state == "error" and m.get("_name_error"):
         why = "%s: %s" % (why, m["_name_error"])
+    elif state == "no_ip" and m.get("_vip_note"):
+        why = "%s: %s" % (why, m["_vip_note"])
     return "%s (%s)" % (", ".join(names), why) if names else why
+
+
+def spo_text(m: dict) -> str:
+    """``www.example.com -> 192.0.2.5`` (SPO Regex FQDN and what it resolves
+    to), or the FQDN alone, or ""."""
+    f = m.get("_spo_fqdn") or ""
+    ips = m.get("_spo_ips") or []
+    return "%s -> %s" % (f, ", ".join(ips)) if f and ips else f
 
 
 # ---------------------------------------------------------------- Copy LB
@@ -994,7 +1036,7 @@ def lb_tsv_header(appid_cols=()) -> list[str]:
     already the App ID column) and where the AppID came from. ``appid_cols``
     is ``appids.info_columns()``."""
     return (["Entry"] + [label for _k, label in COLUMNS]
-            + ["Lookup", "Matched on", "Cluster"]
+            + ["Lookup", "Matched on", "Cluster", "SPO Regex FQDN"]
             + ["AppID %s" % label for k, label in appid_cols if k != "app_id"]
             + ["AppID source"])
 
@@ -1006,7 +1048,8 @@ def lb_tsv_line(entry: str, m: dict, appid_cols=()) -> list[str]:
     return ([_tsv_cell(entry)]
             + [_tsv_cell(cell[k] if k in cell else m.get(k, "")) for k, _l in COLUMNS]
             + [_tsv_cell(MODE_LABELS.get(m.get("_mode"), m.get("_mode") or "")),
-               _tsv_cell(m.get("_match_field", "")), _tsv_cell(cluster_text(m))]
+               _tsv_cell(m.get("_match_field", "")), _tsv_cell(cluster_text(m)),
+               _tsv_cell(spo_text(m))]
             + [_tsv_cell(fields.get(k, "")) for k, _l in appid_cols if k != "app_id"]
             + [_tsv_cell(info.get("source", ""))])
 
@@ -1134,6 +1177,12 @@ def match_entry(rows: list[dict], query: str, resolved: str, mode: str, *,
                 for row, fields in ip_hits(rows, ip):
                     add(row, ["%s (%s)" % (f, ip) for f in fields],
                         fwd=any(f == "VIP" for f in fields))
+            # SA-0029: the policy NAMED after this FQDN (SPO Regex), even when
+            # the name resolves to an address that is not its VIP.
+            want = (resolved or query).strip().rstrip(".").lower()
+            for row in rows:
+                if want and row.get("_spo_fqdn") == want:
+                    add(row, [SPO_FIELD], fwd=True)
     out = []
     for k in order:
         row, fields, fwd = found[k]
@@ -1146,6 +1195,144 @@ def match_entry(rows: list[dict], query: str, resolved: str, mode: str, *,
     return out
 
 
+# ---------------------------------------------------------------- SA-0029
+# SPO Regex: how this site names its server policies / virtual servers after
+# the service they publish (``spo_www_example_com_443`` -> ``www.example.com``).
+# Ordered rules, the first that turns the name into an FQDN wins. With it an
+# FQDN finds its policy by NAME even when the address it resolves to is not
+# the VIP (NAT, a CDN in front), and an element lookup says which name the
+# policy serves. Stored console-wide like the resolvers.
+
+SPO_REGEX_KEY = "dnstool.spo_regex"
+SPO_RULES_MAX = 10
+SPO_PATTERN_MAX = 300
+SPO_REPLACE_MAX = 200
+SPO_NAME_MAX = 128          # policy names are <= 63 on FortiWeb/FortiADC
+SPO_FIELD = "SPO name (SPO Regex)"
+
+
+def _clean_rule(r) -> dict | None:
+    if not isinstance(r, dict):
+        return None
+    pattern = str(r.get("pattern") or "").strip()
+    if not pattern:
+        return None
+    return {"pattern": pattern[:SPO_PATTERN_MAX],
+            "replace": str(r.get("replace") or "").strip()[:SPO_REPLACE_MAX],
+            "dots": bool(r.get("dots")),
+            "enabled": bool(r.get("enabled", True))}
+
+
+def spo_rules() -> list[dict]:
+    """The SPO Regex rules (AppSetting ``dnstool.spo_regex``), in order."""
+    from ..models import AppSetting
+    try:
+        rows = json.loads(AppSetting.get(SPO_REGEX_KEY) or "[]")
+    except (ValueError, TypeError):
+        return []
+    out = [c for c in (_clean_rule(r) for r in (rows if isinstance(rows, list) else []))
+           if c]
+    return out[:SPO_RULES_MAX]
+
+
+def save_spo_rules(rows) -> list[dict]:
+    """Validate (every pattern compiles, at most SPO_RULES_MAX) and persist."""
+    from ..extensions import db
+    from ..models import AppSetting
+    clean = [c for c in (_clean_rule(r) for r in (rows or [])) if c]
+    if len(clean) > SPO_RULES_MAX:
+        raise ValueError("at most %d SPO Regex rules" % SPO_RULES_MAX)
+    for c in clean:
+        try:
+            re.compile(c["pattern"])
+        except re.error as exc:
+            raise ValueError("SPO Regex %r does not compile: %s" % (c["pattern"], exc)) from None
+    AppSetting.set(SPO_REGEX_KEY, json.dumps(clean))
+    db.session.commit()
+    return clean
+
+
+def spo_apply(name: str, rule: dict) -> tuple[str, str]:
+    """``(fqdn, why_not)`` of one rule on one policy name. The result is the
+    replacement (``\\1``, ``\\g<name>``) or, without one, the group named
+    ``fqdn``, else group 1, else the whole match; "Underscores to dots"
+    turns ``www_example_com`` into ``www.example.com``. Only a valid FQDN
+    counts."""
+    name = str(name or "")[:SPO_NAME_MAX]
+    try:
+        rx = re.compile(rule["pattern"], re.IGNORECASE)
+        m = rx.search(name)
+        if not m:
+            return "", "no match"
+        if rule.get("replace"):
+            out = m.expand(rule["replace"])
+        elif "fqdn" in rx.groupindex:
+            out = m.group("fqdn") or ""
+        else:
+            out = m.group(1) if rx.groups else m.group(0)
+    except (re.error, IndexError) as exc:
+        return "", "rule error: %s" % exc
+    if rule.get("dots"):
+        out = out.replace("_", ".")
+    out = (out or "").strip().strip(".").lower()
+    if not _FQDN_RE.match(out):
+        return "", "%r is not an FQDN" % out
+    return out, ""
+
+
+def spo_fqdn(name: str, rules: list[dict]) -> str:
+    """The FQDN the first enabled rule gives *name*, or ""."""
+    for rule in rules or ():
+        if rule.get("enabled", True):
+            out, _why = spo_apply(name, rule)
+            if out:
+                return out
+    return ""
+
+
+def spo_test(names: list[str], rules: list[dict]) -> list[dict]:
+    """The SPO Regex dialog's preview: per name, the FQDN and which rule gave
+    it -- or why each rule did not."""
+    out = []
+    for n in names:
+        row = {"name": n, "fqdn": "", "rule": None, "why": []}
+        for i, rule in enumerate(rules or ()):
+            if not rule.get("enabled", True):
+                row["why"].append("rule %d: off" % (i + 1))
+                continue
+            fqdn, why = spo_apply(n, rule)
+            if fqdn:
+                row.update(fqdn=fqdn, rule=i + 1)
+                break
+            row["why"].append("rule %d: %s" % (i + 1, why))
+        out.append(row)
+    return out
+
+
+def _spo_resolve(matches: list[dict], servers: list[dict]) -> None:
+    """``_spo_ips`` = the addresses the SPO Regex FQDN of each match resolves
+    to (A, every resolver), so an element lookup by policy name says which
+    name -- and which address -- the policy serves."""
+    names = []
+    for m in matches:
+        f = m.get("_spo_fqdn")
+        if f and f not in names:
+            names.append(f)
+    names = names[:PTR_MAX_IPS]
+    if not names or not servers:
+        return
+    answers = lookup_many(names, servers)
+    ips: dict[str, list[str]] = {}
+    for n in names:
+        got: list[str] = []
+        for s in servers:
+            got += [ip for ip in answer_ips(answers.get((n, s["name"]), [])) if ip not in got]
+        ips[n] = got
+    for m in matches:
+        if m.get("_spo_fqdn"):
+            m["_spo_ips"] = ips.get(m["_spo_fqdn"], [])
+
+
 def _merge_answers(a: list[str], aaaa: list[str]) -> list[str]:
     real = []
     for v in list(a or []) + list(aaaa or []):
@@ -1156,7 +1343,7 @@ def _merge_answers(a: list[str], aaaa: list[str]) -> list[str]:
 
 def lookup(entries: list[str], servers: list[dict], lb_rows: list[dict], *,
            mode: str = "auto", exact: bool = False, show_ttl: bool = False,
-           names: bool = True) -> tuple[list[dict], list[str]]:
+           names: bool = True, spo_rules=None) -> tuple[list[dict], list[str]]:
     """The page's search: ``(results, not_found)``. One result per entry::
 
         {entry, resolved, is_wildcard, mode, dns: {server: [answers]},
@@ -1164,8 +1351,16 @@ def lookup(entries: list[str], servers: list[dict], lb_rows: list[dict], *,
 
     ``dns_state`` (FQDN): resolved / no_answer / error / no_resolver.
     Matches are cluster-collapsed (``collapse_clusters``) and, with *names*,
-    named by the PTR of their service IP."""
+    named by the PTR of their service IP.
+
+    SA-0029: with *spo_rules* every row carries ``_spo_fqdn`` (the FQDN its
+    name gives, SPO Regex), an FQDN also finds the policy named after it, and
+    an element match says which address its SPO FQDN resolves to. In
+    ``auto``, an entry that is not FQDN-shaped but that the resolvers answer
+    with addresses is looked up as an FQDN: what DNS answered is searched."""
     mode = mode if mode in MODES else "auto"
+    for row in lb_rows or ():
+        row["_spo_fqdn"] = spo_fqdn(row.get("policy") or "", spo_rules) if spo_rules else ""
     parsed = []
     jobs = list(entries)
     for e in entries:
@@ -1178,6 +1373,9 @@ def lookup(entries: list[str], servers: list[dict], lb_rows: list[dict], *,
     results, not_found = [], []
     for e, query, rtype, m in parsed:
         resolved = resolve_wildcard(query)
+        if mode == "auto" and m == "element" and rtype is None and any(
+                answer_ips(dns_map.get((e, s["name"]), [])) for s in servers):
+            m = "fqdn"          # it resolved: search what DNS answered (SA-0029)
         per_server = {}
         fwd_ips: list[str] = []
         errs: list[str] = []
@@ -1217,5 +1415,7 @@ def lookup(entries: list[str], servers: list[dict], lb_rows: list[dict], *,
             "gateways": sorted({x.get("gateway") or "" for x in matches} - {""}),
         })
     if names:
-        add_service_names([x for r in results for x in r["matches"]], servers)
+        every = [x for r in results for x in r["matches"]]
+        add_service_names(every, servers)
+        _spo_resolve(every, servers)
     return results, not_found

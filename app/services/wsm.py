@@ -884,6 +884,20 @@ def _elevate_kind(cred: WsmCredential) -> str:
     return {"sudo_nopasswd": "nopasswd", "sudo_login": "login"}.get(cred.escalation, "sudo")
 
 
+def module_gate(cred: WsmCredential, module: str) -> None:
+    """A credential limited to some modules is refused for the others (Logs
+    is always allowed). The refusal says what the credential IS allowed for
+    and how to change it (SA-0029: "credential x is not allowed for Health"
+    left the operator with nothing to do)."""
+    if not cred.modules or not module or module in cred.modules or module == "logs":
+        return
+    label = MODULES.get(module, (module,))[0]
+    raise WsmDenied(
+        "credential %s is not allowed for %s (it is limited to %s): tick %s on the credential "
+        "(server Overview > Credentials > Edit) or pick another credential"
+        % (cred.name, label, ", ".join(MODULES.get(m, (m,))[0] for m in cred.modules), label))
+
+
 def pick_credential(c, user, cred_id) -> WsmCredential:
     cred = db.session.get(WsmCredential, int(cred_id)) if cred_id else None
     if cred is None or cred.connection_slug != c.slug:
@@ -962,9 +976,7 @@ def _execute(slug: str, cred_id, op: str, args: dict | None = None, *, user,
     if run_as == "auto" and not can(user, ROOT_PERM):
         run_as = "self"
     module, writes = check_op(user, op, elevated=(run_as == "root"))
-    if cred.modules and module and module not in cred.modules and module != "logs":
-        raise WsmDenied("credential %s is not allowed for %s" % (
-            cred.name, MODULES.get(module, (module,))[0]))
+    module_gate(cred, module)
     if writes and not server_state(c)["allow_writes"]:
         raise WsmDenied("%s is read-only in SATOM: turn on Allow changes on its server page"
                         % c.name)
@@ -1155,6 +1167,8 @@ def start_agent_job(app, slug: str, cred_id, action: str, *, user, provided: dic
     if cred.auth_type == "agent" or not cred.can_escalate:
         raise WsmDenied("the agent is installed and removed as root: pick a credential of an "
                         "account that may use sudo")
+    for op in plan:             # SA-0029: refused here, not in the job after "Signing in…"
+        module_gate(cred, OPS[op][0])
     if not server_state(c)["allow_writes"]:
         raise WsmDenied("%s is read-only in SATOM: turn on Allow changes on its server page"
                         % c.name)

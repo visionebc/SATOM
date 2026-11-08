@@ -297,6 +297,9 @@
       if (!needWrites()) return;
       var c = currentCred();
       if (!c || c.auth_type === 'agent' || c.escalation === 'none') { flash('warn', tx('need_root', 'Pick a credential that can become root in Sign in as (not the agent itself).')); return; }
+      // SA-0029: a credential limited to some modules needs Health for this;
+      // said before the job starts (the server refuses it the same way).
+      if (c.modules && c.modules.length && c.modules.indexOf('health') < 0) { flash('warn', tx('need_health', 'Credential %s is limited to %m: tick health on it (Credentials > Edit) or pick another credential in Sign in as.').replace('%s', c.name).replace('%m', c.modules.join(', '))); return; }
       var purge = action === 'remove' ? check(tx('purge', 'Also delete the agent\'s backups, log and certificates'), false) : null;
       var node = el('div', {}, [el('p', { text: tx('confirm_' + action, '') }),
         el('p', { cls: 'wsm-small text-muted mb-1', text: tx('as_cred', 'Signs in as %s and becomes root (sudo).').replace('%s', c.name + ' (' + c.ssh_user + ')') }), purge]);
@@ -372,7 +375,8 @@
       f.exp = input({ type: 'date', value: c.expires_at || '' });
       f.desc = input({ value: c.description || '', maxlength: 300 });
       var modsBox = el('div', { cls: 'd-flex flex-wrap gap-2' });
-      var MODS = ['files', 'sites', 'certs', 'security', 'scripts', 'cron', 'packages', 'services', 'logs', 'users', 'ssh'];
+      // 'health' since SA-0029: it also covers installing / removing the agent
+      var MODS = ['health', 'files', 'sites', 'certs', 'security', 'scripts', 'cron', 'packages', 'services', 'logs', 'users', 'ssh'];
       var modChecks = MODS.map(function (m) { var x = check(m, c.modules.indexOf(m) >= 0); modsBox.appendChild(x); return [m, x.input]; });
       var secretWrap = el('div'), keyWrap = el('div');
       secretWrap.appendChild(field('Password', f.secret));

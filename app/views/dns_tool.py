@@ -10,6 +10,8 @@ page; the operator moved it to Objects the same day.
 """
 from __future__ import annotations
 
+import json
+
 from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 
@@ -91,7 +93,7 @@ def index():
 
         results, not_found = dns_tool.lookup(
             entries, servers, lb_rows, mode=mode, exact=opts["exact"],
-            show_ttl=opts["ttl"], names=opts["lb"])
+            show_ttl=opts["ttl"], names=opts["lb"], spo_rules=dns_tool.spo_rules())
         clip_dns, clip_lb = _clipboards(results, servers, dns_tool.COLUMNS,
                                         appid_cols)
 
@@ -114,7 +116,57 @@ def index():
                       for r in dns_providers.enabled_backends("dns")],
         can_manage_records=current_user.can("user_manage"),
         can_decommission=current_user.can("config_write"),
+        spo_rules=dns_tool.spo_rules(),
+        spo_rules_max=dns_tool.SPO_RULES_MAX,
+        can_edit_spo=current_user.can("user_manage"),
     )
+
+
+# ------------------------------------------------------------- SPO Regex
+# SA-0029: how this site's server policy / virtual server names become the
+# FQDN they publish. Everyone who can use the lookup sees the rules and can
+# try them; changing them is the resolvers' permission (console-wide data).
+
+@bp.route("/spo-regex", methods=["GET"])
+@login_required
+@require_permission('network.view')
+def spo_regex_get():
+    return jsonify(ok=True, rules=dns_tool.spo_rules(), max=dns_tool.SPO_RULES_MAX)
+
+
+@bp.route("/spo-regex", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def spo_regex_save():
+    body = request.get_json(silent=True) or {}
+    rows = body.get("rules")
+    if not isinstance(rows, list):
+        return jsonify(ok=False, error="rules must be a list"), 400
+    try:
+        saved = dns_tool.save_spo_rules(rows)
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    log_action("dns_tool.spo_regex", target="dnstool.spo_regex",
+               detail=json.dumps(saved)[:400])
+    return jsonify(ok=True, rules=saved)
+
+
+@bp.route("/spo-regex/test", methods=["POST"])
+@login_required
+@require_permission('network.view')
+def spo_regex_test():
+    """Preview the rules in the dialog (saved or not) on names the operator
+    types or the page already shows. Nothing is stored, no device is read."""
+    body = request.get_json(silent=True) or {}
+    names = [str(n).strip()[:dns_tool.SPO_NAME_MAX] for n in (body.get("names") or [])
+             if str(n).strip()][:50]
+    rules = body.get("rules")
+    if rules is None:
+        rules = dns_tool.spo_rules()
+    if not isinstance(rules, list):
+        return jsonify(ok=False, error="rules must be a list"), 400
+    rules = [c for c in (dns_tool._clean_rule(r) for r in rules) if c][:dns_tool.SPO_RULES_MAX]
+    return jsonify(ok=True, results=dns_tool.spo_test(names, rules))
 
 
 @bp.route("/resolvers", methods=["GET"])

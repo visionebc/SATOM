@@ -197,6 +197,15 @@ def has_any_cache(appliance_id: int, *, session=None) -> bool:
             .filter_by(appliance_id=appliance_id).first()) is not None
 
 
+def _is_address(value) -> bool:
+    import ipaddress
+    try:
+        ipaddress.ip_interface(str(value or "").strip())
+    except ValueError:
+        return False
+    return True
+
+
 def _resolve_vips_cached(appliance_id: int, vip_rows, vip_children, *, session=None):
     """Mirror FortiWebClient._resolve_vip_ips over cached rows; a cached
     system/vip child upgrades the static case from name to the real IP."""
@@ -209,14 +218,28 @@ def _resolve_vips_cached(appliance_id: int, vip_rows, vip_children, *, session=N
         use_if = str(v.get("use-interface-ip", "")).lower() in (
             "enable", "enabled", "1", "true")
         if use_if and v.get("interface"):
-            iface = object_by_mkey(appliance_id, "interface", v["interface"],
-                                   session=session)
+            # FortiWeb's system/interface is cached as ``interface_2`` (the
+            # registry key, see interface_inventory); ``interface`` matched
+            # nothing, so every interface-IP VIP read as "" (SA-0029).
+            iface = (object_by_mkey(appliance_id, "interface_2", v["interface"],
+                                    session=session)
+                     or object_by_mkey(appliance_id, "interface", v["interface"],
+                                       session=session))
             ip = (iface.payload or {}).get("ip") if iface else ""
             v["effective_ip"] = ip or ""
             v["ip_source"] = "interface (%s)" % v["interface"]
         elif v.get("vip"):
-            v["effective_ip"] = ip_by_name.get(v["vip"]) or v["vip"]
-            v["ip_source"] = "static"
+            # The vip-list row names a system/vip object: its address is the
+            # cached child, else the config-layer ``vip`` object -- never the
+            # name itself, which is not an address (SA-0029).
+            ip = ip_by_name.get(v["vip"])
+            if not ip:
+                obj = object_by_mkey(appliance_id, "vip", v["vip"], session=session)
+                ip = (obj.payload or {}).get("vip") if obj else ""
+            if not ip and _is_address(v["vip"]):
+                ip = v["vip"]
+            v["effective_ip"] = ip or ""
+            v["ip_source"] = "static" if ip else "vip %s (not cached)" % v["vip"]
         else:
             v["effective_ip"] = ""
             v["ip_source"] = ""

@@ -30142,3 +30142,55 @@ msgstr "ejecución #%(id)s"
 
 msgid "runbook"
 msgstr "runbook"
+
+msgid "How server policy names become the FQDN they publish: an FQDN then finds its policy by name, and a policy says which name it serves"
+msgstr "Cómo los nombres de server policy se convierten en el FQDN que publican: un FQDN encuentra entonces su policy por nombre, y una policy dice qué nombre sirve"
+
+msgid "SPO Regex"
+msgstr "SPO Regex"
+
+msgid "From the server policy name (SPO Regex)"
+msgstr "Del nombre de la server policy (SPO Regex)"
+
+msgid "SPO Regex FQDN"
+msgstr "FQDN de SPO Regex"
+
+msgid "Rules that turn a server policy or virtual server name into the FQDN it publishes, tried in order; the first that gives an FQDN wins. A lookup by FQDN then also finds the policy named after it, and a lookup by policy name shows that FQDN and the address it resolves to."
+msgstr "Reglas que convierten el nombre de una server policy o de un virtual server en el FQDN que publica, probadas en orden; gana la primera que da un FQDN. Una búsqueda por FQDN encuentra entonces también la policy con ese nombre, y una búsqueda por nombre de policy muestra ese FQDN y la dirección a la que resuelve."
+
+msgid "Pattern: a regular expression searched in the name (case-insensitive). Result: the replacement (\\1, \\g<name>); empty = the group named fqdn, else group 1, else the whole match. Underscores to dots turns www_example_com into www.example.com."
+msgstr "Patrón: una expresión regular buscada en el nombre (sin distinguir mayúsculas). Resultado: el reemplazo (\\1, \\g<name>); vacío = el grupo llamado fqdn, si no el grupo 1, si no toda la coincidencia. Guiones bajos a puntos convierte www_example_com en www.example.com."
+
+msgid "Underscores to dots"
+msgstr "Guiones bajos a puntos"
+
+msgid "Pattern"
+msgstr "Patrón"
+
+msgid "You can try the rules here; changing them needs the administrator permission."
+msgstr "Aquí puede probar las reglas; cambiarlas requiere el permiso de administrador."
+
+msgid "Try it"
+msgstr "Probar"
+
+msgid "Policy names — one per line"
+msgstr "Nombres de policy — uno por línea"
+
+msgid "Rule"
+msgstr "Regla"
+
+msgid "Saved. Search again to apply."
+msgstr "Guardado. Busque de nuevo para aplicarlo."
+
+msgid "No more rules can be added."
+msgstr "No se pueden añadir más reglas."
+
+msgid "no FQDN"
+msgstr "sin FQDN"
+
+msgid "No rule yet."
+msgstr "Todavía no hay reglas."
+
+#, python-format
+msgid "Credential %(cred)s is limited to %(mods)s: tick health on it (Credentials > Edit) or pick another credential in Sign in as."
+msgstr "La credencial %(cred)s está limitada a %(mods)s: marque health en ella (Credentials > Edit) o elija otra credencial en Sign in as."

@@ -1362,6 +1362,50 @@ def page_allowed(user, page_key) -> bool:
     return user_passes(user, required_permission(page["endpoint"], current_app))
 
 
+def page_built(page_key) -> dict | None:
+    """How a page plugin's page is made, for Plugin Studio (read-only): the
+    link its entry opens, every route of the page's blueprint with its methods,
+    permission and what it does, and the source files (services.studio_pages).
+    Read off the running app (url_map, the ``require_permission`` stamp, the
+    view's docstring), never re-declared. Needs an app context."""
+    import os
+    from flask import current_app
+    from .concept_map import required_permission
+    page = SP.get(page_key)
+    if page is None:
+        return None
+
+    def perm(endpoint):
+        p = required_permission(endpoint, current_app)
+        return str(getattr(p, "value", p) or "") if p is not None else ""
+
+    routes = []
+    for rule in current_app.url_map.iter_rules():
+        if rule.endpoint.split(".", 1)[0] != page["blueprint"]:
+            continue
+        fn = current_app.view_functions.get(rule.endpoint)
+        doc = " ".join(((fn.__doc__ or "").strip().split("\n\n", 1)[0]).split()) if fn else ""
+        routes.append({"rule": rule.rule, "endpoint": rule.endpoint,
+                       "methods": sorted(m for m in rule.methods if m not in ("HEAD", "OPTIONS")),
+                       "permission": perm(rule.endpoint), "doc": doc,
+                       "entry": rule.endpoint == page["endpoint"]})
+    routes.sort(key=lambda r: (not r["entry"], r["rule"]))
+    root = os.path.dirname(current_app.root_path)
+    files = []
+    for f in SP.files(page_key):
+        full = os.path.join(root, f["path"])
+        try:
+            with open(full, "rb") as fh:
+                data = fh.read()
+            f.update(lines=data.count(b"\n"), size=len(data), present=True)
+        except OSError:
+            f.update(lines=0, size=0, present=False)
+        files.append(f)
+    return {"key": page_key, "name": page["name"], "endpoint": page["endpoint"],
+            "blueprint": page["blueprint"], "not_active": list(page.get("not_active") or ()),
+            "permission": perm(page["endpoint"]), "routes": routes, "files": files}
+
+
 def shown_in(a: StudioApp, product_key: str) -> bool:
     """Drawn in this ADOM by its own ADOMs or by its folder's."""
     key = product_key or "global"

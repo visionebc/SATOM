@@ -904,6 +904,7 @@ def app_edit(slug):
     if a.kind == "page":    # nothing to design: where it is drawn, the page it opens
         from ..services import studio_pages as SP
         return render_template("studio/app_page.html", a=a, page=SP.get(a.page_key),
+                               built=SA.page_built(a.page_key),
                                adoms=_adom_choices(), app_groups=SA.groups(),
                                template=SA.is_template(a))
     ch = SA.choices()
@@ -956,6 +957,26 @@ def app_draft(slug):
     log_action("studio.app.draft", target=slug,
                extra={"fields": len(a.fields), "actions": len(a.actions)})
     return jsonify({"ok": True, "problems": SA.problems(a)})
+
+
+@bp.route("/apps/<slug>/source")
+@login_required
+@require_permission(LIBRARY)
+def app_page_source(slug):
+    """A page plugin's source, read-only: one file of the closed list its page
+    names (services.studio_pages), as text. Nothing else is ever read."""
+    import os
+    from flask import current_app
+    from ..services import studio_pages as SP
+    a = _app_or_404(slug)
+    if a.kind != "page":
+        return jsonify({"ok": False, "error": "only a page plugin shows SATOM source"}), 404
+    path = request.args.get("path", "")
+    try:
+        text = SP.read_source(a.page_key, path, os.path.dirname(current_app.root_path))
+    except SP.SourceError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, "path": path, "text": text})
 
 
 @bp.route("/apps/<slug>/export")

@@ -35,6 +35,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   same page, same functions, same view. Without the plugin no menu draws it;
   the page keeps answering by URL for whoever holds `network.view`. DNS
   Resolvers stays in Administrator › Objects (it is configuration).
+- **Plugin Studio: a page plugin shows how it is built.** Requested: "it is a
+  plugin, it must be possible to see how it is made". The editor of a page
+  plugin now has *How it is built* -- the menu entry, the address it opens,
+  the permission that decides who may open it, where the entry is marked
+  active, and every route of the page with its methods, permission and what
+  it does -- and *Source code*: the files the page is made of (for DNS
+  Lookup: its routes, the lookup, decommission, the page with its script, and
+  the Plugin Studio steps on the same code), each read-only with line
+  numbers. The list of files is closed per page in SATOM; nothing else is
+  ever read.
 - **DNS & LB Lookup: the main table is the DNS side only (SA-0029, second
   round).** Requested: the main table shows only the DNS results and the
   actions; an *Expand* button opens everything as before, and *Show* opens

@@ -64,10 +64,58 @@
   </div>
 </div>
 
+{% if built %}
+{# How it is made (operator, 2026-11-08: "it is a plugin, it must be possible
+   to see how it is made"): read off the running app by
+   services.studio_apps.page_built -- the link, the routes with their
+   permissions, the source files (closed list, read-only). #}
+<div class="fw-card mt-3" id="ap-built"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('How it is built') }}</span></div>
+  <div class="fw-card-body" style="font-size:13px;">
+    <table class="table table-sm mb-3" style="font-size:12px;max-width:900px;"><tbody>
+      <tr><th class="text-muted fw-normal" style="width:220px;">{{ _('Menu entry') }}</th><td><i class="bi {{ a.icon }} me-1"></i>{{ a.name }} · {{ _('Plugins of') }} {{ _('every ADOM') if '*' in a.adoms else (a.adoms|sort|join(', ') or _('no ADOM (drawn nowhere)')) }}{% if a.menu_group %} › {{ a.menu_group }}{% endif %}</td></tr>
+      <tr><th class="text-muted fw-normal">{{ _('Opens') }}</th><td><a href="{{ url_for(built.endpoint) }}"><code>{{ url_for(built.endpoint) }}</code></a> · <code>{{ built.endpoint }}</code></td></tr>
+      <tr><th class="text-muted fw-normal">{{ _('Who may open it') }}</th><td>{% if built.permission %}<code>{{ built.permission }}</code> {{ _('(the permission the route declares; the access list is not used)') }}{% else %}{{ _('any signed-in user') }}{% endif %}</td></tr>
+      <tr><th class="text-muted fw-normal">{{ _('Entry marked active on') }}</th><td>{{ _('every route of') }} <code>{{ built.blueprint }}</code>{% if built.not_active %} {{ _('except') }} {% for e in built.not_active %}<code>{{ e }}</code>{{ ', ' if not loop.last }}{% endfor %}{% endif %}</td></tr>
+    </tbody></table>
+    <div class="small fw-semibold mb-1">{{ _('Routes of the page') }} ({{ built.routes|length }})</div>
+    <div class="table-responsive"><table class="table table-sm table-hover mb-0" id="ap-routes" style="font-size:12px;">
+      <thead><tr><th>{{ _('Address') }}</th><th>{{ _('Methods') }}</th><th>{{ _('Endpoint') }}</th><th>{{ _('Permission') }}</th><th>{{ _('What it does') }}</th></tr></thead>
+      <tbody>{% for r in built.routes %}
+        <tr><td><code>{{ r.rule }}</code>{% if r.entry %} <span class="fw-badge fw-badge-info">{{ _('menu entry') }}</span>{% endif %}</td>
+          <td>{{ r.methods|join(', ') }}</td><td><code>{{ r.endpoint }}</code></td>
+          <td>{% if r.permission %}<code>{{ r.permission }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="text-muted">{{ r.doc or '—' }}</td></tr>
+      {% endfor %}</tbody></table></div>
+  </div></div>
+
+<div class="fw-card mt-3" id="ap-source"><div class="fw-card-header d-flex align-items-center"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-file-earmark-code me-2 text-accent"></i>{{ _('Source code') }}</span>
+    <span class="text-muted ms-2" style="font-size:12px;">{{ _('read-only · the code this SATOM is running') }}</span></div>
+  <div class="fw-card-body" style="font-size:13px;">
+    <div class="d-flex flex-wrap gap-2 mb-2">{% for f in built.files %}
+      <button type="button" class="btn btn-outline-secondary btn-sm ap-src-file" data-path="{{ f.path }}" {{ 'disabled' if not f.present }} title="{{ f.role }}">
+        <i class="bi bi-file-earmark-text me-1"></i><code>{{ f.path }}</code> <span class="text-muted">· {{ f.lines }} {{ _('lines') }}</span></button>
+    {% endfor %}</div>
+    <div class="text-muted mb-2" style="font-size:12px;" id="ap-src-role">{{ _('Pick a file to read it.') }}</div>
+    <pre class="ap-src d-none" id="ap-src-view"></pre>
+  </div></div>
+<style nonce="{{ csp_nonce }}">
+  .ap-src { counter-reset: ln; background: #F8FAFC; border: 1px solid #D9E1EC; border-radius: 6px;
+            max-height: 70vh; overflow: auto; font-size: 12px; line-height: 1.45; padding: 8px 0; margin: 0; }
+  .ap-src .ap-ln { display: block; padding-right: 12px; white-space: pre; }
+  .ap-src .ap-ln::before { counter-increment: ln; content: counter(ln); display: inline-block; width: 4.5em;
+            padding-right: 1em; margin-right: .75em; text-align: right; color: #6B7686; border-right: 1px solid #D9E1EC;
+            user-select: none; }
+  .ap-src-file.active { border-color: #EF5424; color: #EF5424; }
+</style>
+{% endif %}
+
 <script type="application/json" id="ap-page-config">{{ {
   'slug': a.slug,
   'urls': {'settings': url_for('studio.app_settings', slug=a.slug), 'delete': url_for('studio.app_delete', slug=a.slug),
-           'back': url_for('studio.index', pane='apps')}
+           'source': url_for('studio.app_page_source', slug=a.slug),
+           'back': url_for('studio.index', pane='apps')},
+  'roles': (built.files if built else [])|map(attribute='role')|list,
+  'paths': (built.files if built else [])|map(attribute='path')|list
 }|tojson }}</script>
 <script src="{{ asset('js/studio_folder_select.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/studio_app_page.js') }}" nonce="{{ csp_nonce }}"></script>

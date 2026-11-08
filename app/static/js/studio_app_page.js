@@ -43,6 +43,30 @@
     }).then(function () { $('ap-title').textContent = $('ap-name').value; state('Settings saved.'); })
       .catch(function (e) { state(e.message, true); });
   });
+  // Source code (read-only): one file of the page's closed list at a time,
+  // fetched as text and drawn escaped, a line per span (the gutter is CSS).
+  var files = document.querySelectorAll('.ap-src-file');
+  Array.prototype.forEach.call(files, function (btn) {
+    btn.addEventListener('click', function () {
+      var path = btn.getAttribute('data-path');
+      var view = $('ap-src-view');
+      var role = $('ap-src-role');
+      Array.prototype.forEach.call(files, function (b) { b.classList.toggle('active', b === btn); });
+      role.textContent = 'Loading ' + path + '…';
+      fetch(U.source + '?path=' + encodeURIComponent(path), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok || !d.ok) throw new Error(d.error || ('HTTP ' + r.status)); return d; }); })
+        .then(function (d) {
+          var i = (CFG.paths || []).indexOf(path);
+          role.textContent = path + (i >= 0 && CFG.roles[i] ? ' — ' + CFG.roles[i] : '');
+          view.innerHTML = d.text.replace(/\n$/, '').split('\n').map(function (l) {
+            return '<span class="ap-ln">' + esc(l) + '</span>';
+          }).join('');
+          view.classList.remove('d-none');
+          view.scrollTop = 0;
+        })
+        .catch(function (e) { role.textContent = e.message; view.classList.add('d-none'); });
+    });
+  });
   if ($('ap-delete')) $('ap-delete').addEventListener('click', function () {
     if (!window.confirm('Delete the app ' + CFG.slug + '? The page stays in SATOM and keeps answering by its address.')) return;
     post(U['delete']).then(function () { window.location = U.back; }).catch(function (e) { state(e.message, true); });

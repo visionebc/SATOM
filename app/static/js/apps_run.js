@@ -140,6 +140,11 @@
       (d.armed ? '' : ' · rehearsal: nothing was written') + ' · ' + esc(d.user) + '</span>' +
       (d.status === 'running' ? '<span class="spinner-border spinner-border-sm text-secondary"></span>' : '') + '</div>';
     if (d.error) h += '<div class="alert alert-danger py-2" style="font-size:13px;">' + esc(d.error) + '</div>';
+    /* The incident this run raised (Open incident step): a local path only. */
+    if (d.incident && /^\/incidents\/\d+$/.test(d.incident.url || '')) {
+      h += '<div class="mb-2" style="font-size:13px;" data-sapp-incident><i class="bi bi-ticket-detailed me-1"></i>Incident <a href="' +
+        esc(d.incident.url) + '">' + esc(d.incident.ref) + '</a> · ' + esc(String(d.incident.status || '').replace('_', ' ')) + '</div>';
+    }
     if (d.waiting) h += waitingHtml(d);
     return h;
   }

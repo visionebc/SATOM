@@ -6,6 +6,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Operations > Incidents: SATOM's own tickets, and a runbook that raises one
+  at the end of its run (FA-0008).** Requested: the run should end by raising
+  an incident, a local ticket that can later be joined to the company's ticket
+  system, holding the ticket and its history with the vendor or L3. Each
+  incident gets a `SAT-INC-000001` reference, an appliance, a severity
+  (P1-P4), a status (open, in progress, waiting vendor, resolved, closed), an
+  owner, and a history where every note and every change is recorded with who
+  made it and when. On its page you add the tickets opened with a vendor or L3
+  (Fortinet TAC, your L3 team): number, link and status, each with its own
+  history ("TAC asks for a debug flow", "RMA approved"). The list is searched
+  and filtered in the database (reference, title, appliance, summary, owner,
+  vendor ticket number; status, severity, appliance, who opened it, dates).
+  It only shows incidents of appliances the ADOM sees, plus those tied to no
+  appliance. Reading needs *View operations*; changing needs *Run
+  operations*, and every change also goes to the audit log. Nothing is
+  deleted: an incident opened by mistake is closed with a note. The fields
+  for the company ticket are reserved and not yet connected. These are not
+  Sentinel's security incidents, which keep their own `INC-` console.
+- **Plugin Studio: the *Open incident* step.** It raises the incident with
+  the run's finished steps as its summary and links it from the run page. It
+  opens as *open*, or as *resolved* when the run fixed the problem, so the
+  record stays either way. A run opens one incident: walked again (a resumed
+  or looped run), the step finds the one it already opened. In a simulation
+  nothing is created; the step says what it would have opened.
+
 ## [4.11.12] - 2026-11-08
 
 ### Added

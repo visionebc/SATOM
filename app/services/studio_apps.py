@@ -1822,6 +1822,11 @@ def run_json(run: StudioAppRun, a: StudioApp, user) -> dict:
          "finished_at": run.finished_at.isoformat(timespec="seconds") + "Z" if run.finished_at else None}
     if author:
         d["vars"] = run.vars
+    # The incident an *Open incident* step raised: a link on the run page.
+    from .incidents import for_run
+    inc = for_run(run.id)
+    if inc is not None:
+        d["incident"] = {"ref": inc.ref, "status": inc.status, "url": "/incidents/%d" % inc.id}
     d["layout"] = result_layout(a, run.version)
     try:
         graph = definition(a, run.version == 0).get("graph") or {}

@@ -41,10 +41,12 @@ APPLIANCE_FIELDS = ("id", "name", "kind", "host", "port", "ssh_port", "model", "
 
 KIND_KEYS = ("appliance_load", "http_check", "tcp_check", "console_read",
              "appliance_fact", "collect_diagnostics", "ask", "activity",
-             "connection_test", "login_check", "power_state", "appliance_ping", "notify")
+             "connection_test", "login_check", "power_state", "appliance_ping", "notify",
+             "open_incident")
 #: The variable a step saves its result under when the draft leaves
 #: *Save the result as* empty.
-DEFAULT_SAVE_AS = {"appliance_load": "appliance", "collect_diagnostics": "diagnostics"}
+DEFAULT_SAVE_AS = {"appliance_load": "appliance", "collect_diagnostics": "diagnostics",
+                   "open_incident": "incident"}
 #: Steps whose arrows are yes / no (and error when the step could not look).
 YES_NO_KINDS = ("ask", "http_check", "tcp_check", "console_read", "appliance_fact",
                 "connection_test", "login_check", "power_state", "appliance_ping")
@@ -189,6 +191,21 @@ def kinds() -> list:
               Param("email_alerts", "E-mail the alert recipients", "select",
                     choices=("yes", "no"), default="no",
                     help="Settings › Alerts recipients.")]),
+        Kind("open_incident", "Open incident", "flow",
+             "Raise a SATOM incident (SAT-INC-…, Operations › Incidents) with this run's "
+             "steps as its summary. A run opens one: walked again, the step finds it. "
+             "Open = still to be worked on; Resolved = the run fixed it and the record "
+             "stays. In a simulation nothing is created.",
+             [Param("title", "Title", required=True,
+                    default="{{ appliance.name }}: appliance recovery"),
+              Param("severity", "Severity", "select", choices=("P1", "P2", "P3", "P4"),
+                    default="P3"),
+              Param("status", "Opens as", "select", choices=("open", "resolved"),
+                    default="open"),
+              Param("appliance", "Appliance", default="{{ appliance.id }}",
+                    help=_APPLIANCE_HELP + " Empty = an incident tied to no appliance."),
+              Param("note", "Note", "textarea",
+                    help="A first line in the incident's history, e.g. why it opens.")]),
     ]
 
 
@@ -382,6 +399,8 @@ def run(node, ctx):
         return _appliance_ping(node, ctx, P)
     if kind == "notify":
         return _notify(node, ctx, P)
+    if kind == "open_incident":
+        return _open_incident(node, ctx, P)
 
     raise FlowError("unknown step kind %r" % kind)
 
@@ -592,6 +611,49 @@ def _notify(node, ctx, P):
     if not sent:
         raise FlowError("nobody was notified: %s" % "; ".join(failed))
     return "ok", None, "notified %s%s" % (", ".join(sent), ("; " + "; ".join(failed)) if failed else "")
+
+
+def _open_incident(node, ctx, P):
+    """One incident per run (``op_incidents.run_id`` is unique): walked again
+    -- a resumed run, a loop back -- the step reports the one it opened. A
+    rehearsal creates nothing and says what it would have opened."""
+    from . import incidents as I
+    from ..models_incidents import OpIncident
+    from .studio_flow import FlowError
+    title = " ".join(str(P("title") or "").split())[:200]
+    severity = str(P("severity", "P3") or "P3").strip().upper()
+    status = str(P("status", "open") or "open").strip().lower()
+    if not title:
+        raise FlowError("no title")
+    if severity not in OpIncident.SEVERITIES:
+        raise FlowError("%r is not a severity (P1-P4)" % severity)
+    if status not in ("open", "resolved"):
+        raise FlowError("an incident opens as open or resolved, not %r" % status)
+    row = _appliance(node, ctx, required=False)
+    trail = [s for s in (getattr(ctx, "trail", None) or []) if isinstance(s, dict)]
+    done = len([s for s in trail if s.get("outcome") != "running"])
+    what = "%s, %s, %s, %d step%s" % (title, severity, status, done, "" if done == 1 else "s")
+    if not ctx.armed:
+        return "ok", {"ref": None, "simulated": True}, "simulation: would open an incident (%s)" % what
+    if not ctx.run_id:
+        raise FlowError("an incident is opened by a stored run; this walk has none")
+    from ..models import db
+    from ..models_studio import StudioApp, StudioAppRun
+    run = db.session.get(StudioAppRun, int(ctx.run_id))
+    app = db.session.get(StudioApp, run.app_id) if run is not None else None
+    try:
+        inc, created = I.open_from_run(run_id=ctx.run_id, user=ctx.user or "system",
+                                       title=title, severity=severity, status=status,
+                                       appliance=row, steps=trail,
+                                       app_slug=getattr(app, "slug", "") or "",
+                                       note=str(P("note") or ""))
+    except I.IncidentError as exc:
+        db.session.rollback()
+        raise FlowError(str(exc)) from None
+    value = {"ref": inc.ref, "id": inc.id, "status": inc.status, "url": "/incidents/%d" % inc.id}
+    if not created:
+        return "ok", value, "this run already opened %s (%s)" % (inc.ref, I.label(inc.status))
+    return "ok", value, "opened %s (%s)" % (inc.ref, what)
 
 
 def assert_console_read(command: str) -> str:

@@ -601,6 +601,9 @@ class Ctx:
     #: command 12/28 of a diagnostics battery) to the run page. None between
     #: steps; a step calls it only through :func:`report`.
     progress: object = None
+    #: The steps walked so far, the running one last (set by :func:`walk`):
+    #: *Open incident* keeps them as the incident's summary.
+    trail: list = field(default_factory=list)
 
     def scope(self) -> dict:
         s = dict(self.vars)
@@ -1136,8 +1139,10 @@ def walk(graph: dict, ctx: Ctx, on_step=None, resume: dict | None = None) -> dic
     ctx.deadline = ctx.deadline or time.time() + RUN_TIMEOUT
     steps, key, count = [], start[0], 0
     status, error = "done", ""
+    ctx.trail = steps
     if resume:
         steps = list(resume.get("steps") or [])
+        ctx.trail = steps
         at, answer = resume.get("key"), resume.get("answer")
         if answer not in ("yes", "no") or at not in nodes:
             return {"status": "failed", "error": "nothing to answer at %r" % at, "steps": steps}

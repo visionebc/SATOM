@@ -6594,6 +6594,13 @@ activities of an appliance), as automatic as the steps allow:
   to*, *E-mail the alert recipients*). In a rehearsal only the bell of the
   person running it rings, once per simulation, and the step lists who would
   have been told. Nobody to notify takes the error arrow.
+- **Open incident** raises a SATOM incident (`SAT-INC-…`, §27.4) with the
+  run's finished steps as its summary: *Title*, *Severity* (P1-P4), *Opens
+  as* (*open*, or *resolved* when the run fixed the problem: the record stays
+  either way), *Appliance* and a first *Note*. The run page links the
+  incident. A run opens one incident: walked again, the step reports the one
+  it already opened. In a rehearsal nothing is created and the step says what
+  it would have opened. Put it right before each end of a runbook.
 - **Ask a person** stops the run: it shows **waiting**, and the run page
   shows the question, the step's instructions, who is responsible and the
   time, with the step's own buttons (*Ja* / *Nein*, or one button such as
@@ -8706,6 +8713,40 @@ Use it for a box you do not manage, a backup someone emailed you, or a
 pre-migration comparison. A file that is encrypted, truncated or simply not a
 FortiWeb configuration is rejected with the reason and **no snapshot is stored** —
 a half-parsed snapshot that looks real is worse than no snapshot.
+
+### 27.4 Incidents — SATOM's own tickets, with the vendor's
+
+Operations → **Incidents** (every ADOM, right below Monitoring), or
+`/incidents/`. An incident is SATOM's ticket for an operational problem: a
+device that does not answer, a failover, a recovery. It has a reference
+(`SAT-INC-000001`), an appliance, a severity (P1-P4), a status (*open*, *in
+progress*, *waiting vendor*, *resolved*, *closed*) and an owner. Sentinel's
+security incidents (`INC-…`, Operations → Sentinel) are a different thing and
+stay there.
+
+- **Who opens one.** A person (**New incident**), or a runbook through its
+  *Open incident* step (§23.7) at the end of each run. Then the summary is the
+  run's steps and the page links the run.
+- **History.** Every note and every change of status, severity or owner is a
+  line with who made it and when. Nothing is edited without a line, and
+  nothing is deleted: an incident opened by mistake is closed with a note.
+  Resolving or closing stamps the time; reopening clears it.
+- **Vendor / L3 tickets.** On the incident's page, **Add a vendor / L3
+  ticket**: who it is with (*Fortinet TAC*, *L3*…), the ticket number (it can
+  come later), a link to the vendor's portal (`https://` only) and what was
+  reported. Each ticket keeps its own history: write what the vendor or L3
+  said or did, change its status (*open*, *waiting vendor*, *waiting us*,
+  *resolved*, *closed*) or its number, and press **Record**. An incident can
+  have several tickets.
+- **The list** is searched and filtered in the database (reference, title,
+  appliance, summary, owner and vendor ticket number; status, *Active* = not
+  yet resolved, severity, appliance, who opened it, dates), and the filters
+  stay in the URL. It shows only the incidents of the appliances the current
+  ADOM sees, plus those tied to no appliance; Global shows them all.
+- **Permissions.** *View operations* reads; *Run operations* opens and
+  changes. Every change is also an audit log line (`incident.*`).
+- **Company ticket system.** The incident has room for the ticket of your
+  company's system (ServiceNow, Jira…), but no system is connected yet.
 
 ## 28. System provisioning: profiles and baselines
 

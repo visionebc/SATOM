@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Incidents') }} — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Operations') }}</span>
+  <span class="separator">/</span>
+  <span>{{ _('Incidents') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-ticket-detailed me-2 text-accent"></i>{{ _('Incidents') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('SATOM tickets (SAT-INC-…) for operational problems: opened by hand or by a runbook at the end of its run, with their history and the tickets opened with a vendor or L3. Security incidents stay in Sentinel.') }}
+    </p>
+  </div>
+  {% if current_user.can('operations.apply') %}
+  <button type="button" class="btn btn-fw-primary" data-bs-toggle="collapse" data-bs-target="#inc-new">
+    <i class="bi bi-plus-lg me-1"></i>{{ _('New incident') }}
+  </button>
+  {% endif %}
+</div>
+
+{% if current_user.can('operations.apply') %}
+<div class="collapse mb-3" id="inc-new">
+  <div class="fw-card">
+    <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-plus-circle me-2"></i>{{ _('New incident') }}</span></div>
+    <div class="fw-card-body">
+      <form method="POST" action="{{ url_for('incidents.create') }}" class="row g-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-6">
+          <label class="fw-form-label" for="inc-title">{{ _('Title') }}</label>
+          <input id="inc-title" name="title" class="form-control form-control-sm" maxlength="200" required>
+        </div>
+        <div class="col-md-2">
+          <label class="fw-form-label" for="inc-sev">{{ _('Severity') }}</label>
+          <select id="inc-sev" name="severity" class="form-select form-select-sm">
+            {% for s in severities %}<option {{ 'selected' if s == 'P3' }}>{{ s }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="fw-form-label" for="inc-dev">{{ _('Appliance') }}</label>
+          <select id="inc-dev" name="appliance_id" class="form-select form-select-sm">
+            <option value="">{{ _('None') }}</option>
+            {% for did, dname in devices %}<option value="{{ did }}">{{ dname }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="fw-form-label" for="inc-sum">{{ _('Summary') }}</label>
+          <textarea id="inc-sum" name="summary" rows="3" class="form-control form-control-sm"></textarea>
+        </div>
+        <div class="col-12">
+          <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-check2 me-1"></i>{{ _('Open incident') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="fw-card mb-3" id="inc-filters">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-funnel me-2"></i>{{ _('Search and filters') }}</span>
+    {% if filtering %}
+    <a href="{{ url_for('incidents.index') }}" class="btn btn-sm btn-secondary"><i class="bi bi-x-lg me-1"></i>{{ _('Clear') }}</a>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+    <form method="GET" action="{{ url_for('incidents.index') }}" class="row g-3 align-items-end">
+      <div class="col-md-10">
+        <label class="fw-form-label" for="inc-q">{{ _('Search (reference · title · appliance · summary · owner · vendor ticket)') }}</label>
+        <input type="search" id="inc-q" name="q" class="form-control form-control-sm" value="{{ filters.q }}"
+               placeholder="{{ _('e.g. SAT-INC-000012, fortiweb19, a TAC ticket number') }}">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-fw-primary btn-sm w-100"><i class="bi bi-search me-1"></i>{{ _('Apply') }}</button>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="inc-status">{{ _('Status') }}</label>
+        <select id="inc-status" name="status" class="form-select form-select-sm">
+          <option value="">{{ _('All statuses') }}</option>
+          <option value="{{ ACTIVE }}" {{ 'selected' if filters.status == ACTIVE }}>{{ _('Active (not resolved)') }}</option>
+          {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if filters.status == s }}>{{ label(s) }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="inc-fsev">{{ _('Severity') }}</label>
+        <select id="inc-fsev" name="severity" class="form-select form-select-sm">
+          <option value="">{{ _('Any') }}</option>
+          {% for s in severities %}<option {{ 'selected' if filters.severity == s }}>{{ s }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="inc-fdev">{{ _('Appliance') }}</label>
+        <select id="inc-fdev" name="device" class="form-select form-select-sm">
+          <option value="">{{ _('All appliances') }}</option>
+          {% for did, dname in devices %}<option value="{{ did }}" {{ 'selected' if filters.device == did|string }}>{{ dname }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="inc-src">{{ _('Opened by') }}</label>
+        <select id="inc-src" name="source" class="form-select form-select-sm">
+          <option value="">{{ _('Anyone') }}</option>
+          <option value="runbook" {{ 'selected' if filters.source == 'runbook' }}>{{ _('A runbook') }}</option>
+          <option value="manual" {{ 'selected' if filters.source == 'manual' }}>{{ _('A person') }}</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="inc-from">{{ _('Created from') }}</label>
+        <input type="date" id="inc-from" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" for="inc-to">{{ _('Created to') }}</label>
+        <input type="date" id="inc-to" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+      </div>
+    </form>
+  </div>
+</div>
+
+{% set _chip_args = request.args.to_dict() %}{% set _noop = _chip_args.pop('page', None) %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2" id="inc-status-chips" style="font-size:13px;">
+  <span class="text-muted">{{ _('%(count)s incident(s) match', count=pagination.total) }}</span>
+  {% if active_count %}{% set _noop = _chip_args.update({'status': ACTIVE}) %}
+  <a class="fw-badge fw-badge-danger text-decoration-none" href="{{ url_for('incidents.index', **_chip_args) }}">{{ _('active') }} · {{ active_count }}</a>
+  {% endif %}
+  {% for s in statuses %}{% if counts.get(s) %}{% set _noop = _chip_args.update({'status': s}) %}
+  <a class="fw-badge {{ status_badge.get(s, 'fw-badge-secondary') }} text-decoration-none{% if filters.status == s %} border border-secondary{% endif %}"
+     href="{{ url_for('incidents.index', **_chip_args) }}">{{ label(s) }} · {{ counts[s] }}</a>
+  {% endif %}{% endfor %}
+</div>
+
+{% if items %}
+<div class="fw-table-wrapper">
+  <table class="fw-table mb-0" id="inc-table">
+    <thead>
+      <tr>
+        <th>{{ _('Incident') }}</th>
+        <th>{{ _('Status') }}</th>
+        <th>{{ _('Severity') }}</th>
+        <th>{{ _('Appliance') }}</th>
+        <th>{{ _('Owner') }}</th>
+        <th>{{ _('Vendor / L3') }}</th>
+        <th>{{ _('Opened') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inc in items %}
+      <tr data-inc-id="{{ inc.id }}">
+        <td>
+          <a href="{{ url_for('incidents.detail', iid=inc.id) }}"><strong>{{ inc.title }}</strong></a>
+          <div class="text-muted" style="font-size:12px;">{{ inc.ref }}{% if inc.source == 'runbook' %} · {{ _('runbook') }} {{ inc.app_slug }}{% endif %}</div>
+        </td>
+        <td><span class="fw-badge {{ status_badge.get(inc.status, 'fw-badge-secondary') }}">{{ label(inc.status) }}</span></td>
+        <td><span class="fw-badge {{ severity_badge.get(inc.severity, 'fw-badge-secondary') }}">{{ inc.severity }}</span></td>
+        <td style="font-size:13px;">{{ inc.appliance_name or '—' }}</td>
+        <td style="font-size:13px;">{{ inc.owner or '—' }}</td>
+        <td style="font-size:12px;">
+          {% for t in inc.vendor_tickets %}<div>{{ t.vendor }}{% if t.ticket_no %} {{ t.ticket_no }}{% endif %} · {{ label(t.status) }}</div>{% else %}—{% endfor %}
+        </td>
+        <td style="font-size:12px;" class="text-muted">{{ inc.created_at.strftime('%Y-%m-%d %H:%M') }} UTC<br>{{ inc.created_by }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% set _page_args = request.args.to_dict() %}
+{% if pagination.pages > 1 %}
+<div class="d-flex gap-2 mt-2" style="font-size:13px;">
+  {% if pagination.has_prev %}{% set _noop = _page_args.update({'page': pagination.page - 1}) %}
+  <a class="btn btn-sm btn-secondary" href="{{ url_for('incidents.index', **_page_args) }}">{{ _('Previous') }}</a>{% endif %}
+  <span class="text-muted align-self-center">{{ pagination.page }} / {{ pagination.pages }}</span>
+  {% if pagination.has_next %}{% set _noop = _page_args.update({'page': pagination.page + 1}) %}
+  <a class="btn btn-sm btn-secondary" href="{{ url_for('incidents.index', **_page_args) }}">{{ _('Next') }}</a>{% endif %}
+</div>
+{% endif %}
+{% else %}
+<div class="fw-card"><div class="fw-card-body text-muted" style="font-size:13px;">
+  {% if filtering %}{{ _('No incident matches these filters.') }}{% else %}{{ _('No incidents yet. A runbook with an Open incident step raises one at the end of each run.') }}{% endif %}
+</div></div>
+{% endif %}
+{% endblock %}

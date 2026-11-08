@@ -2589,6 +2589,9 @@ def create_app(config_override: object | None = None) -> Flask:
             # Web Server Manager (credentials, audit, scripts, schedules):
             # without this import create_all() never makes the wsm_* tables.
             from . import models_wsm  # noqa: F401
+            # Operations > Incidents (SAT-INC-): without this import
+            # create_all() never makes the op_incident* tables.
+            from . import models_incidents  # noqa: F401
             # Path Diagnostics saved reports: without this import
             # create_all() never makes ``path_diag_reports``.
             from . import models_pathdiag  # noqa: F401
@@ -3031,6 +3034,10 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.observability_lab", "bp"),
         # Web Server Manager (Linux ADOM): /webserver/
         ("app.views.wsm", "bp"),
+        # Operations > Incidents (SAT-INC-, 2026-11-08): /incidents/. Not
+        # /web-prefixed: every ADOM draws it, scoped by the appliances the
+        # ADOM sees.
+        ("app.views.incidents", "bp"),
     ]
 
     # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).

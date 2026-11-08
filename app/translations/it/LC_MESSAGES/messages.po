@@ -30042,3 +30042,119 @@ msgstr "pool"
 
 msgid "satom-webctl agent"
 msgstr "agente satom-webctl"
+
+# Operations > Incidents (SAT-INC-), 2026-11-08
+
+msgid "%(count)s incident(s) match"
+msgstr "%(count)s incidente/i corrispondono"
+
+msgid "(no number yet)"
+msgstr "(ancora senza numero)"
+
+msgid "A person"
+msgstr "Una persona"
+
+msgid "A runbook"
+msgstr "Un runbook"
+
+msgid "Active (not resolved)"
+msgstr "Attivi (non risolti)"
+
+msgid "Add a note"
+msgstr "Aggiungi una nota"
+
+msgid "Add a vendor / L3 ticket"
+msgstr "Aggiungi un ticket fornitore / L3"
+
+msgid "Add note"
+msgstr "Aggiungi nota"
+
+msgid "Add ticket"
+msgstr "Aggiungi ticket"
+
+msgid "All incidents"
+msgstr "Tutti gli incidenti"
+
+msgid "Closed"
+msgstr "Chiuso"
+
+msgid "Company ticket"
+msgstr "Ticket aziendale"
+
+msgid "Incident"
+msgstr "Incidente"
+
+msgid "Link (https://…)"
+msgstr "Link (https://…)"
+
+msgid "New incident"
+msgstr "Nuovo incidente"
+
+msgid "No incident matches these filters."
+msgstr "Nessun incidente corrisponde a questi filtri."
+
+msgid "No incidents yet. A runbook with an Open incident step raises one at the end of each run."
+msgstr "Ancora nessun incidente. Un runbook con un passo Open incident ne apre uno alla fine di ogni esecuzione."
+
+msgid "No ticket with a vendor or L3 yet."
+msgstr "Ancora nessun ticket con un fornitore o L3."
+
+msgid "Nobody"
+msgstr "Nessuno"
+
+msgid "Open in the vendor portal"
+msgstr "Apri nel portale del fornitore"
+
+msgid "Open incident"
+msgstr "Apri incidente"
+
+msgid "Opened"
+msgstr "Aperto"
+
+msgid "Opened by"
+msgstr "Aperto da"
+
+msgid "SATOM tickets (SAT-INC-…) for operational problems: opened by hand or by a runbook at the end of its run, with their history and the tickets opened with a vendor or L3. Security incidents stay in Sentinel."
+msgstr "Ticket SATOM (SAT-INC-…) per i problemi operativi: aperti a mano o da un runbook alla fine della sua esecuzione, con la loro cronologia e i ticket aperti con un fornitore o L3. Gli incidenti di sicurezza restano in Sentinel."
+
+msgid "Search (reference · title · appliance · summary · owner · vendor ticket)"
+msgstr "Cerca (riferimento · titolo · appliance · riepilogo · responsabile · ticket fornitore)"
+
+msgid "Set"
+msgstr "Imposta"
+
+msgid "Ticket number"
+msgstr "Numero del ticket"
+
+msgid "Vendor / L3"
+msgstr "Fornitore / L3"
+
+msgid "Vendor / L3 tickets"
+msgstr "Ticket fornitore / L3"
+
+msgid "What the vendor or L3 said or did"
+msgstr "Cosa ha detto o fatto il fornitore o L3"
+
+msgid "What was reported to them"
+msgstr "Cosa è stato loro segnalato"
+
+msgid "Why (optional)"
+msgstr "Perché (facoltativo)"
+
+msgid "With"
+msgstr "Con"
+
+msgid "e.g. SAT-INC-000012, fortiweb19, a TAC ticket number"
+msgstr "es. SAT-INC-000012, fortiweb19, un numero di ticket TAC"
+
+msgid "not linked (no company ticket system connected yet)"
+msgstr "non collegato (nessun sistema di ticket aziendale ancora collegato)"
+
+msgid "opened %(when)s UTC by %(who)s"
+msgstr "aperto il %(when)s UTC da %(who)s"
+
+msgid "run #%(id)s"
+msgstr "esecuzione #%(id)s"
+
+msgid "runbook"
+msgstr "runbook"

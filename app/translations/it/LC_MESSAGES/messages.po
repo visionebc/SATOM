@@ -30210,3 +30210,9 @@ msgstr "Ancora nessuna regola."
 #, python-format
 msgid "Credential %(cred)s is limited to %(mods)s: tick health on it (Credentials > Edit) or pick another credential in Sign in as."
 msgstr "La credenziale %(cred)s è limitata a %(mods)s: spunta health su di essa (Credentials > Edit) o scegli un'altra credenziale in Sign in as."
+
+msgid "The LB matches of this entry, with every detail"
+msgstr "Le corrispondenze LB di questa voce, con tutti i dettagli"
+
+msgid "Match"
+msgstr "Corrispondenza"

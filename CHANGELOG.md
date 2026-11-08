@@ -6,6 +6,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+- **DNS & LB Lookup: the main table is the DNS side only (SA-0029, second
+  round).** Requested: the main table shows only the DNS results and the
+  actions; an *Expand* button opens everything as before, and *Show* opens
+  the dialog. Each row is now Entry, one column per DNS server and Actions:
+  **Expand** opens the entry's LB matches (Gateway, Server Policy / Virtual
+  Server, Service IP / name, Backends, Edit, Delete) with each match's
+  Field | Value table already open; **Show** opens the dialog with the live
+  check, with a picker when the entry has several matches. *Expand all* /
+  *Collapse all* act on every entry. The matches scroll inside their block,
+  so the DNS columns never move off screen.
+
 ## [4.11.14] - 2026-11-08
 
 ### Changed

@@ -30173,3 +30173,9 @@ msgstr "Noch keine Regel."
 #, python-format
 msgid "Credential %(cred)s is limited to %(mods)s: tick health on it (Credentials > Edit) or pick another credential in Sign in as."
 msgstr "Die Zugangsdaten %(cred)s sind auf %(mods)s beschränkt: health dort ankreuzen (Credentials > Edit) oder unter Sign in as andere Zugangsdaten wählen."
+
+msgid "The LB matches of this entry, with every detail"
+msgstr "Die LB-Treffer dieses Eintrags, mit allen Details"
+
+msgid "Match"
+msgstr "Treffer"

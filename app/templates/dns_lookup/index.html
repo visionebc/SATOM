@@ -112,15 +112,15 @@
         {% elif not results %}
         <div class="text-center text-muted py-5" style="font-size:13px;">{{ _('No valid entries.') }}</div>
         {% else %}
-        {# SA-0029: the SA-0027 columns again (Entry, one per resolver, then
-           the LB columns), the entry and its DNS answers spanning its matches,
-           "Matches: N" in the Entry cell (no extra "No matches" row), no
-           Matched on column. Each match still folds: the chevron opens its
-           data as a table under the row; Show opens the same in a dialog with
-           the live check. The details live in a <template>, so nothing long
-           is drawn until asked (a long comment never widens the table). A
-           server policy cached on several members of one cluster is ONE row,
-           on the member every action targets (dns_tool.collapse_clusters). #}
+        {# SA-0029 (2nd round, the operator): the main table shows the DNS side
+           only -- Entry, one column per resolver -- and Actions: Expand opens
+           the entry's LB matches with every detail (Gateway, policy, Service
+           IP / name, Backends, Edit, Delete, each match's Field | Value table),
+           Show opens the dialog with the live check (a picker when an entry
+           has several matches). The details live in a <template>, so nothing
+           long is drawn until asked. A server policy cached on several members
+           of one cluster is ONE match, on the member every action targets
+           (dns_tool.collapse_clusters). #}
         <style nonce="{{ csp_nonce }}">
           .dl-table td, .dl-table th { vertical-align: top; }
           .dl-table .dl-trunc { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -134,6 +134,12 @@
           .dl-fields thead th:first-child, .dl-fields tbody th { width: 200px; }
           .dl-fields tbody th { font-weight: 500; color: var(--fw-text-secondary); }
           .dl-fields td { white-space: pre-wrap; word-break: break-word; }
+          .dl-table tr.dl-lb > td { background: var(--fw-surface-alt); padding: 8px 12px 12px 12px; }
+          .dl-lbtable { background: #fff; }
+          /* width 0 + min-width 100%: the matches scroll inside their cell
+             instead of widening the DNS table */
+          .dl-lbwrap { width: 0; min-width: 100%; overflow-x: auto; }
+          .dl-lbtable td, .dl-lbtable th { vertical-align: top; }
           .dl-section { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600; margin: 12px 0 4px; }
         </style>
         {% set st_colors = {'enable': '#15692A', 'enabled': '#15692A',
@@ -144,6 +150,7 @@
                             'ip': _('Searched in the address fields of every server policy: VIP, pool members and other address fields.'),
                             'fqdn': _('Resolved (A and AAAA) on every resolver; each address searched in the address fields, and the name in the configuration text.')} %}
         {% set lb_cols = (5 + (appid_cols|length if opts.appid else 0)) if opts.lb else 0 %}
+        {% set ncols = 1 + servers|length + (1 if opts.quick else 0) + (1 if opts.lb else 0) %}
         <div class="d-flex justify-content-end gap-2 px-3 pt-2">
           {% if opts.lb %}
           <button type="button" class="btn btn-sm btn-link p-0" id="dlExpandAll">{{ _('Expand all') }}</button>
@@ -157,29 +164,14 @@
                 <th class="dl-entry">{{ _('Entry') }}</th>
                 {% for s in servers %}<th>{{ s.name }}</th>{% endfor %}
                 {% if opts.quick %}<th>{{ _('Quick LB') }}</th>{% endif %}
-                {% if opts.lb %}
-                <th>{{ _('Gateway') }}</th>
-                <th>{{ _('Server Policy / Virtual Server') }}</th>
-                <th>{{ _('Service IP / name') }}</th>
-                <th>{{ _('Backends') }}</th>
-                {% if opts.appid %}{% for _k, label in appid_cols %}<th>{{ label }}</th>{% endfor %}{% endif %}
-                <th class="dl-actions">{{ _('Actions') }}</th>
-                {% endif %}
+                {% if opts.lb %}<th class="dl-actions">{{ _('Actions') }}</th>{% endif %}
               </tr>
             </thead>
             <tbody>
               {% for r in results %}
               {% set ri = loop.index %}
-              {% set has = opts.lb and r.matches %}
-              {% set ms = r.matches if has else [none] %}
-              {# each match is a row plus its (hidden) details row: the entry
-                 and its DNS answers span both #}
-              {% set span = (ms|length * 2) if has else 1 %}
-              {% for m in ms %}
-              {% set mi = loop.index %}
-              <tr class="{{ 'dl-match' if m else 'dl-nomatch' }}">
-                {% if loop.first %}
-                <td class="dl-entry" rowspan="{{ span }}">
+              <tr class="dl-entry-row">
+                <td class="dl-entry">
                   <span class="fw-semibold font-monospace">{{ r.entry }}</span>
                   <span class="fw-badge fw-badge-secondary" title="{{ mode_help.get(r.mode, '') }}">{{ mode_labels.get(r.mode, r.mode) }}</span>
                   {% if r.is_wildcard %}
@@ -206,174 +198,201 @@
                   {% endif %}
                 </td>
                 {% for s in servers %}
-                <td rowspan="{{ span }}">
+                <td>
                   {% for val in r.dns[s.name] %}
                   <span class="fw-badge font-monospace d-inline-block mb-1 {{ 'fw-badge-danger' if val in ('timeout','error') else ('fw-badge-secondary' if val in ('No result', 'invalid name', 'invalid server') else 'fw-badge-info') }}">{{ val }}</span><br>
                   {% endfor %}
                 </td>
                 {% endfor %}
                 {% if opts.quick %}
-                <td rowspan="{{ span }}">
+                <td>
                   {% for gw in r.gateways %}<span class="fw-badge fw-badge-primary d-inline-block mb-1">{{ gw }}</span><br>{% else %}<span class="text-muted">—</span>{% endfor %}
                 </td>
                 {% endif %}
-                {% endif %}
                 {% if opts.lb %}
-                {% if m %}
-                {% set c = m['_cluster'] %}
-                {% if not m['policy'] or not m['_aid'] %}
-                  {% set pol_url = none %}
-                {% elif m['_kind'] == 'fortiadc' %}
-                  {% set pol_url = url_for('adc.use_device', id=m['_aid'],
-                       next=url_for('adc.object_detail', logical='load_balance_virtual_server', mkey=m['policy'])) %}
-                {% else %}
-                  {% set pol_url = url_for('workspace.policy_detail', appliance_id=m['_aid'], name=m['policy']) %}
-                {% endif %}
-                {% set pcol = st_colors.get((m['status'] or '')|lower, '#3D4550') %}
-                {% set ns = m['_name_state'] %}
-                {% set ptr_names = (m['service_name'] or '').split(', ') | reject('equalto', '') | list %}
-                {% set names = ([m['_fwd_name']] if m['_fwd_name'] else []) + (ptr_names | reject('equalto', m['_fwd_name']) | list) %}
-                {% set spo = m['_spo_fqdn'] %}
-                <td class="dl-nowrap" title="{{ m.product }} · {{ m.gateway }}">
-                  <button type="button" class="btn btn-sm btn-link p-0 me-1 dl-toggle" aria-expanded="false"
-                          data-tpl="dlm-{{ ri }}-{{ mi }}" data-slot="dls-{{ ri }}-{{ mi }}"
-                          title="{{ _('Details') }}"><i class="bi bi-chevron-right"></i></button>
-                  <span class="text-muted" style="font-size:10px;">{{ m.product }}</span> {{ m.gateway }}
-                  {% if c %}
-                  <br><span class="fw-badge fw-badge-info dl-cluster"
-                        title="{{ c.source }} · {{ _('Members') }}: {{ c.members|join(', ') }} · {{ _('Cached on') }}: {{ c.seen_on|join(', ') }}">
-                    {% if c.role == 'primary' %}{{ _('Cluster: %(name)s (primary %(node)s, %(n)s members)', name=c.name, node=c.node, n=c.count) }}
-                    {% elif c.role in ('vip', 'cluster') %}{{ _('Cluster: %(name)s (primary resolved by the cluster, %(n)s members)', name=c.name, n=c.count) }}
-                    {% else %}{{ _('Cluster: %(name)s (role unknown, showing %(node)s, %(n)s members)', name=c.name, node=c.node, n=c.count) }}{% endif %}</span>
-                  {% endif %}
-                </td>
-                <td class="dl-trunc" title="{{ m['policy'] }} ({{ m['status'] or 'unknown' }})">
-                  <span class="dl-dot me-1" style="background:{{ pcol }};"></span>{{ m['policy'] }}</td>
-                <td class="dl-trunc dl-name" title="{{ m['service_ip'] or m['_vip_note'] }}{% if names %} — {{ names|join(', ') }}{% endif %}{% if m['_name_error'] %} — {{ m['_name_error'] }}{% endif %}">
-                  {% if m['service_ip'] %}<span class="font-monospace">{{ m['service_ip'] }}</span>
-                  {% else %}<span class="fw-badge fw-badge-secondary" title="{{ m['_vip_note'] }}">{{ _('no service IP') }}</span>{% endif %}
-                  {% if names %}<br><span class="text-muted">{{ names|join(', ') }}</span>
-                  {% elif m['service_ip'] %}
-                    {% if ns == 'no_ptr' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no PTR') }}</span>
-                    {% elif ns == 'error' %}<br><span class="fw-badge fw-badge-danger">{{ _('PTR error') }}</span>
-                    {% elif ns == 'no_resolver' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no resolver configured') }}</span>{% endif %}
-                  {% endif %}
-                  {% if spo and spo not in names %}<br><span class="text-muted" title="{{ _('From the server policy name (SPO Regex)') }}"><i class="bi bi-regex"></i> {{ spo }}{% if m['_spo_ips'] %} &rarr; <span class="font-monospace">{{ m['_spo_ips']|join(', ') }}</span>{% endif %}</span>{% endif %}
-                </td>
-                {% set bs = m['_backends'] or [] %}
-                <td class="dl-nowrap" title="{% for b in bs %}{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %} ({{ b.status or 'unknown' }}){% if not loop.last %}; {% endif %}{% else %}{{ m['_backends_note'] or _('no backends in cache') }}{% endfor %}">
-                  {% if m['pool'] %}<span class="font-monospace">{{ m['pool'] }}</span>{% endif %}
-                  {% if bs %}
-                  <span class="text-muted">({{ bs|length }})</span>
-                  {% for b in bs[:2] %}<span class="font-monospace ms-1"><span class="dl-dot me-1" style="background:{{ st_colors.get((b.status or '')|lower, '#3D4550') }};"></span>{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %}</span>{% endfor %}{% if bs|length > 2 %} <span class="text-muted">+{{ bs|length - 2 }}</span>{% endif %}
-                  {% else %}
-                  <span class="text-muted fst-italic">{{ _('no members in cache') }}</span>
-                  {% endif %}
-                </td>
-                {% if opts.appid %}
-                {% set ai = m['_appid'] or {} %}
-                {% for k, _l in appid_cols %}
-                <td class="dl-trunc" title="{{ (ai.fields or {}).get(k, '') }}{% if ai.source %} ({{ ai.source }}){% endif %}">
-                  {{ (ai.fields or {}).get(k, '') or '—' }}</td>
-                {% endfor %}
-                {% endif %}
                 <td class="dl-actions">
+                  {% if r.matches %}
+                  <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 dl-expand"
+                          style="font-size:10px;" aria-expanded="false" data-slot="dle-{{ ri }}"
+                          title="{{ _('The LB matches of this entry, with every detail') }}">
+                    <i class="bi bi-chevron-right"></i> {{ _('Expand') }}</button>
+                  {% set picks = [] %}
+                  {% for m in r.matches %}{% set _x = picks.append({'tpl': 'dlm-%d-%d' % (ri, loop.index),
+                       'aid': m['_aid'] or '', 'kind': m['_kind'] or '', 'policy': m['policy'],
+                       'gateway': m.gateway, 'label': m.gateway ~ ' / ' ~ m['policy']}) %}{% endfor %}
                   <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 dl-show-btn"
-                          style="font-size:10px;" data-tpl="dlm-{{ ri }}-{{ mi }}"
-                          data-aid="{{ m['_aid'] or '' }}" data-kind="{{ m['_kind'] or '' }}"
-                          data-policy="{{ m['policy'] }}" data-gateway="{{ m.gateway }}">
+                          style="font-size:10px;" data-picks="{{ picks | tojson | forceescape }}">
                     <i class="bi bi-eye"></i> {{ _('Show') }}</button>
-                  {% if pol_url %}
-                  <a href="{{ pol_url }}" target="_blank" rel="noopener"
-                     class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:10px;"
-                     title="{{ _('Open the policy to edit it') }}{% if c %} ({{ m.gateway }}){% endif %}">
-                    <i class="bi bi-pencil"></i> {{ _('Edit') }}</a>
                   {% endif %}
-                  {% if can_decommission and m['_aid'] and m['policy']
-                        and m['_kind'] in ('fortiweb', 'fortiadc') %}
-                  <button type="button"
-                          class="btn btn-sm btn-outline-danger py-0 px-2 dns-decom-btn"
-                          style="font-size:10px;"
-                          title="{{ _('Decommission: preview first, nothing is deleted until you confirm the plan') }}"
-                          data-aid="{{ m['_aid'] }}"
-                          data-policy="{{ m['policy'] }}"
-                          data-hostname="{{ r.resolved }}"
-                          data-gateway="{{ m.gateway }}">
-                    <i class="bi bi-trash3"></i> {{ _('Delete') }}</button>
-                  {% endif %}
-                  <template id="dlm-{{ ri }}-{{ mi }}">
-                    <div class="fw-semibold mb-2" style="font-size:12px;">
-                      {{ r.entry }} &rarr; {{ m.product }} · {{ m.gateway }} · {{ m['policy'] }}</div>
-                    {% if c %}
-                    <div class="fw-card mb-2 px-2 py-1" style="font-size:12px;">
-                      <strong>{{ _('Cluster') }} {{ c.name }}</strong> — {{ c.source }}.
-                      {{ _('Members') }}: {{ c.members|join(', ') }}.
-                      {{ _('This server policy is cached on') }}: {{ c.seen_on|join(', ') }}.
-                      {% if c.role == 'primary' %}{{ _('Shown once, on the primary SATOM records (role set on the appliance, not read live): Edit, Delete and the live check act on it.') }}
-                      {% elif c.role in ('vip', 'cluster') %}{{ _('Shown once, on the cluster itself: Edit, Delete and the live check go to the member that is primary when they run.') }}
-                      {% else %}{{ _('SATOM has no primary recorded for this cluster: shown once, on the first member by name. Edit, Delete and the live check act on that member only.') }}{% endif %}
-                    </div>
-                    {% endif %}
-                    {# SA-0029: the data as a table, field | value #}
-                    <table class="table fw-table table-sm mb-0 dl-fields" style="font-size:12px;">
-                      <thead><tr><th>{{ _('Field') }}</th><th>{{ _('Value') }}</th></tr></thead>
-                      <tbody>
-                        <tr><th>{{ _('Lookup') }}</th><td>{{ mode_labels.get(m['_mode'], m['_mode']) }}</td></tr>
-                        <tr><th>{{ _('Matched on') }}</th><td>{{ m['_match_field'] or '—' }}</td></tr>
-                        {% for key, label in columns %}
-                        {% if key == 'service_ip' %}
-                        <tr><th>{{ label }}</th><td class="font-monospace">{% if m[key] %}{{ m[key] }}{% else %}— <span class="text-muted">({{ m['_vip_note'] or _('no service IP') }})</span>{% endif %}</td></tr>
-                        {% elif key == 'service_name' %}
-                        <tr><th>{{ label }}</th>
-                          <td>{{ names|join(', ') }}{% if not ptr_names %}{% if names %} {% endif %}{% if ns == 'no_ptr' %}({{ _('no PTR') }}){% elif ns == 'error' %}({{ _('PTR error') }}: {{ m['_name_error'] }}){% elif ns == 'no_resolver' %}({{ _('no resolver configured') }}){% elif ns == 'no_ip' %}({{ _('no service IP') }}){% endif %}{% endif %}</td></tr>
-                        {% if spo %}
-                        <tr><th>{{ _('SPO Regex FQDN') }}</th><td>{{ spo }}{% if m['_spo_ips'] %} &rarr; <span class="font-monospace">{{ m['_spo_ips']|join(', ') }}</span>{% endif %}</td></tr>
-                        {% endif %}
-                        {% elif m[key] %}
-                        <tr><th>{{ label }}</th>
-                          <td class="{{ 'text-danger fw-semibold' if key == 'status' and m[key] == 'disable' }}">{{ m[key] }}</td></tr>
-                        {% endif %}
-                        {% endfor %}
-                        {% if m['_appid'] %}
-                        {% for k, label in appid_cols %}
-                        {% if k != 'app_id' and (m['_appid'].fields or {}).get(k) %}
-                        <tr><th>AppID {{ label }}</th><td>{{ m['_appid'].fields[k] }}</td></tr>
-                        {% endif %}
-                        {% endfor %}
-                        <tr><th>{{ _('AppID source') }}</th><td>{{ m['_appid'].source }}</td></tr>
-                        {% endif %}
-                      </tbody>
-                    </table>
-                    <div class="dl-section">{{ _('Backends') }}{% if m['pool'] %} — {{ _('pool') }} <span class="font-monospace">{{ m['pool'] }}</span>{% endif %}</div>
-                    <table class="table fw-table table-sm mb-0 dl-backends" style="font-size:12px;">
-                      <thead><tr><th>{{ _('Member') }}</th><th>{{ _('Weight') }}</th><th>{{ _('Configured') }}</th><th>{{ _('Live health') }}</th></tr></thead>
-                      <tbody>
-                        {% for b in m['_backends'] %}
-                        {% set bcol = st_colors.get((b.status or '')|lower, '#3D4550') %}
-                        <tr data-backend="{{ b.ip or b.domain }}:{{ b.port }}">
-                          <td class="font-monospace">{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %}</td>
-                          <td>{{ b.weight or '—' }}</td>
-                          <td><span class="dl-dot me-1" style="background:{{ bcol }};"></span>{{ b.status or 'unknown' }}</td>
-                          <td class="dl-live text-muted">—</td>
-                        </tr>
-                        {% else %}
-                        <tr class="dl-none"><td colspan="4" class="text-muted fst-italic">{{ m['_backends_note'] or _('no backends in cache') }}</td></tr>
-                        {% endfor %}
-                      </tbody>
-                    </table>
-                  </template>
                 </td>
-                {% else %}
-                <td colspan="{{ lb_cols }}"></td>
-                {% endif %}
                 {% endif %}
               </tr>
-              {% if m and opts.lb %}
-              <tr class="dl-detail" id="dls-{{ ri }}-{{ mi }}" hidden>
-                <td colspan="{{ lb_cols }}"><div class="dl-slot"></div></td>
+              {% if opts.lb and r.matches %}
+              <tr class="dl-lb" id="dle-{{ ri }}" hidden>
+                <td colspan="{{ ncols }}"><div class="dl-lbwrap">
+                  <table class="table fw-table table-sm mb-0 dl-lbtable" style="font-size:12px;">
+                    <thead>
+                      <tr>
+                        <th>{{ _('Gateway') }}</th>
+                        <th>{{ _('Server Policy / Virtual Server') }}</th>
+                        <th>{{ _('Service IP / name') }}</th>
+                        <th>{{ _('Backends') }}</th>
+                        {% if opts.appid %}{% for _k, label in appid_cols %}<th>{{ label }}</th>{% endfor %}{% endif %}
+                        <th class="dl-actions">{{ _('Actions') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for m in r.matches %}
+                      {% set mi = loop.index %}
+                      <tr class="dl-match">
+                        {% set c = m['_cluster'] %}
+                        {% if not m['policy'] or not m['_aid'] %}
+                          {% set pol_url = none %}
+                        {% elif m['_kind'] == 'fortiadc' %}
+                          {% set pol_url = url_for('adc.use_device', id=m['_aid'],
+                               next=url_for('adc.object_detail', logical='load_balance_virtual_server', mkey=m['policy'])) %}
+                        {% else %}
+                          {% set pol_url = url_for('workspace.policy_detail', appliance_id=m['_aid'], name=m['policy']) %}
+                        {% endif %}
+                        {% set pcol = st_colors.get((m['status'] or '')|lower, '#3D4550') %}
+                        {% set ns = m['_name_state'] %}
+                        {% set ptr_names = (m['service_name'] or '').split(', ') | reject('equalto', '') | list %}
+                        {% set names = ([m['_fwd_name']] if m['_fwd_name'] else []) + (ptr_names | reject('equalto', m['_fwd_name']) | list) %}
+                        {% set spo = m['_spo_fqdn'] %}
+                        <td class="dl-nowrap" title="{{ m.product }} · {{ m.gateway }}">
+                          <button type="button" class="btn btn-sm btn-link p-0 me-1 dl-toggle" aria-expanded="false"
+                                  data-tpl="dlm-{{ ri }}-{{ mi }}" data-slot="dls-{{ ri }}-{{ mi }}"
+                                  title="{{ _('Details') }}"><i class="bi bi-chevron-right"></i></button>
+                          <span class="text-muted" style="font-size:10px;">{{ m.product }}</span> {{ m.gateway }}
+                          {% if c %}
+                          <br><span class="fw-badge fw-badge-info dl-cluster"
+                                title="{{ c.source }} · {{ _('Members') }}: {{ c.members|join(', ') }} · {{ _('Cached on') }}: {{ c.seen_on|join(', ') }}">
+                            {% if c.role == 'primary' %}{{ _('Cluster: %(name)s (primary %(node)s, %(n)s members)', name=c.name, node=c.node, n=c.count) }}
+                            {% elif c.role in ('vip', 'cluster') %}{{ _('Cluster: %(name)s (primary resolved by the cluster, %(n)s members)', name=c.name, n=c.count) }}
+                            {% else %}{{ _('Cluster: %(name)s (role unknown, showing %(node)s, %(n)s members)', name=c.name, node=c.node, n=c.count) }}{% endif %}</span>
+                          {% endif %}
+                        </td>
+                        <td class="dl-trunc" title="{{ m['policy'] }} ({{ m['status'] or 'unknown' }})">
+                          <span class="dl-dot me-1" style="background:{{ pcol }};"></span>{{ m['policy'] }}</td>
+                        <td class="dl-trunc dl-name" title="{{ m['service_ip'] or m['_vip_note'] }}{% if names %} — {{ names|join(', ') }}{% endif %}{% if m['_name_error'] %} — {{ m['_name_error'] }}{% endif %}">
+                          {% if m['service_ip'] %}<span class="font-monospace">{{ m['service_ip'] }}</span>
+                          {% else %}<span class="fw-badge fw-badge-secondary" title="{{ m['_vip_note'] }}">{{ _('no service IP') }}</span>{% endif %}
+                          {% if names %}<br><span class="text-muted">{{ names|join(', ') }}</span>
+                          {% elif m['service_ip'] %}
+                            {% if ns == 'no_ptr' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no PTR') }}</span>
+                            {% elif ns == 'error' %}<br><span class="fw-badge fw-badge-danger">{{ _('PTR error') }}</span>
+                            {% elif ns == 'no_resolver' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no resolver configured') }}</span>{% endif %}
+                          {% endif %}
+                          {% if spo and spo not in names %}<br><span class="text-muted" title="{{ _('From the server policy name (SPO Regex)') }}"><i class="bi bi-regex"></i> {{ spo }}{% if m['_spo_ips'] %} &rarr; <span class="font-monospace">{{ m['_spo_ips']|join(', ') }}</span>{% endif %}</span>{% endif %}
+                        </td>
+                        {% set bs = m['_backends'] or [] %}
+                        <td class="dl-nowrap" title="{% for b in bs %}{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %} ({{ b.status or 'unknown' }}){% if not loop.last %}; {% endif %}{% else %}{{ m['_backends_note'] or _('no backends in cache') }}{% endfor %}">
+                          {% if m['pool'] %}<span class="font-monospace">{{ m['pool'] }}</span>{% endif %}
+                          {% if bs %}
+                          <span class="text-muted">({{ bs|length }})</span>
+                          {% for b in bs[:2] %}<span class="font-monospace ms-1"><span class="dl-dot me-1" style="background:{{ st_colors.get((b.status or '')|lower, '#3D4550') }};"></span>{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %}</span>{% endfor %}{% if bs|length > 2 %} <span class="text-muted">+{{ bs|length - 2 }}</span>{% endif %}
+                          {% else %}
+                          <span class="text-muted fst-italic">{{ _('no members in cache') }}</span>
+                          {% endif %}
+                        </td>
+                        {% if opts.appid %}
+                        {% set ai = m['_appid'] or {} %}
+                        {% for k, _l in appid_cols %}
+                        <td class="dl-trunc" title="{{ (ai.fields or {}).get(k, '') }}{% if ai.source %} ({{ ai.source }}){% endif %}">
+                          {{ (ai.fields or {}).get(k, '') or '—' }}</td>
+                        {% endfor %}
+                        {% endif %}
+                        <td class="dl-actions">
+                          {% if pol_url %}
+                          <a href="{{ pol_url }}" target="_blank" rel="noopener"
+                             class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:10px;"
+                             title="{{ _('Open the policy to edit it') }}{% if c %} ({{ m.gateway }}){% endif %}">
+                            <i class="bi bi-pencil"></i> {{ _('Edit') }}</a>
+                          {% endif %}
+                          {% if can_decommission and m['_aid'] and m['policy']
+                                and m['_kind'] in ('fortiweb', 'fortiadc') %}
+                          <button type="button"
+                                  class="btn btn-sm btn-outline-danger py-0 px-2 dns-decom-btn"
+                                  style="font-size:10px;"
+                                  title="{{ _('Decommission: preview first, nothing is deleted until you confirm the plan') }}"
+                                  data-aid="{{ m['_aid'] }}"
+                                  data-policy="{{ m['policy'] }}"
+                                  data-hostname="{{ r.resolved }}"
+                                  data-gateway="{{ m.gateway }}">
+                            <i class="bi bi-trash3"></i> {{ _('Delete') }}</button>
+                          {% endif %}
+                          <template id="dlm-{{ ri }}-{{ mi }}">
+                            <div class="fw-semibold mb-2" style="font-size:12px;">
+                              {{ r.entry }} &rarr; {{ m.product }} · {{ m.gateway }} · {{ m['policy'] }}</div>
+                            {% if c %}
+                            <div class="fw-card mb-2 px-2 py-1" style="font-size:12px;">
+                              <strong>{{ _('Cluster') }} {{ c.name }}</strong> — {{ c.source }}.
+                              {{ _('Members') }}: {{ c.members|join(', ') }}.
+                              {{ _('This server policy is cached on') }}: {{ c.seen_on|join(', ') }}.
+                              {% if c.role == 'primary' %}{{ _('Shown once, on the primary SATOM records (role set on the appliance, not read live): Edit, Delete and the live check act on it.') }}
+                              {% elif c.role in ('vip', 'cluster') %}{{ _('Shown once, on the cluster itself: Edit, Delete and the live check go to the member that is primary when they run.') }}
+                              {% else %}{{ _('SATOM has no primary recorded for this cluster: shown once, on the first member by name. Edit, Delete and the live check act on that member only.') }}{% endif %}
+                            </div>
+                            {% endif %}
+                            {# SA-0029: the data as a table, field | value #}
+                            <table class="table fw-table table-sm mb-0 dl-fields" style="font-size:12px;">
+                              <thead><tr><th>{{ _('Field') }}</th><th>{{ _('Value') }}</th></tr></thead>
+                              <tbody>
+                                <tr><th>{{ _('Lookup') }}</th><td>{{ mode_labels.get(m['_mode'], m['_mode']) }}</td></tr>
+                                <tr><th>{{ _('Matched on') }}</th><td>{{ m['_match_field'] or '—' }}</td></tr>
+                                {% for key, label in columns %}
+                                {% if key == 'service_ip' %}
+                                <tr><th>{{ label }}</th><td class="font-monospace">{% if m[key] %}{{ m[key] }}{% else %}— <span class="text-muted">({{ m['_vip_note'] or _('no service IP') }})</span>{% endif %}</td></tr>
+                                {% elif key == 'service_name' %}
+                                <tr><th>{{ label }}</th>
+                                  <td>{{ names|join(', ') }}{% if not ptr_names %}{% if names %} {% endif %}{% if ns == 'no_ptr' %}({{ _('no PTR') }}){% elif ns == 'error' %}({{ _('PTR error') }}: {{ m['_name_error'] }}){% elif ns == 'no_resolver' %}({{ _('no resolver configured') }}){% elif ns == 'no_ip' %}({{ _('no service IP') }}){% endif %}{% endif %}</td></tr>
+                                {% if spo %}
+                                <tr><th>{{ _('SPO Regex FQDN') }}</th><td>{{ spo }}{% if m['_spo_ips'] %} &rarr; <span class="font-monospace">{{ m['_spo_ips']|join(', ') }}</span>{% endif %}</td></tr>
+                                {% endif %}
+                                {% elif m[key] %}
+                                <tr><th>{{ label }}</th>
+                                  <td class="{{ 'text-danger fw-semibold' if key == 'status' and m[key] == 'disable' }}">{{ m[key] }}</td></tr>
+                                {% endif %}
+                                {% endfor %}
+                                {% if m['_appid'] %}
+                                {% for k, label in appid_cols %}
+                                {% if k != 'app_id' and (m['_appid'].fields or {}).get(k) %}
+                                <tr><th>AppID {{ label }}</th><td>{{ m['_appid'].fields[k] }}</td></tr>
+                                {% endif %}
+                                {% endfor %}
+                                <tr><th>{{ _('AppID source') }}</th><td>{{ m['_appid'].source }}</td></tr>
+                                {% endif %}
+                              </tbody>
+                            </table>
+                            <div class="dl-section">{{ _('Backends') }}{% if m['pool'] %} — {{ _('pool') }} <span class="font-monospace">{{ m['pool'] }}</span>{% endif %}</div>
+                            <table class="table fw-table table-sm mb-0 dl-backends" style="font-size:12px;">
+                              <thead><tr><th>{{ _('Member') }}</th><th>{{ _('Weight') }}</th><th>{{ _('Configured') }}</th><th>{{ _('Live health') }}</th></tr></thead>
+                              <tbody>
+                                {% for b in m['_backends'] %}
+                                {% set bcol = st_colors.get((b.status or '')|lower, '#3D4550') %}
+                                <tr data-backend="{{ b.ip or b.domain }}:{{ b.port }}">
+                                  <td class="font-monospace">{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %}</td>
+                                  <td>{{ b.weight or '—' }}</td>
+                                  <td><span class="dl-dot me-1" style="background:{{ bcol }};"></span>{{ b.status or 'unknown' }}</td>
+                                  <td class="dl-live text-muted">—</td>
+                                </tr>
+                                {% else %}
+                                <tr class="dl-none"><td colspan="4" class="text-muted fst-italic">{{ m['_backends_note'] or _('no backends in cache') }}</td></tr>
+                                {% endfor %}
+                              </tbody>
+                            </table>
+                          </template>
+                        </td>
+                      </tr>
+                      <tr class="dl-detail" id="dls-{{ ri }}-{{ mi }}" hidden>
+                        <td colspan="{{ lb_cols }}"><div class="dl-slot"></div></td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div></td>
               </tr>
               {% endif %}
-              {% endfor %}
               {% endfor %}
             </tbody>
           </table>
@@ -427,9 +446,22 @@
   toggles.forEach(function (b) {
     b.addEventListener('click', function () { setOpen(b, b.getAttribute('aria-expanded') !== 'true'); });
   });
+  // Expand (SA-0029, 2nd round): an entry's LB matches, each with its details open.
+  function setEntry(btn, open) {
+    var row = document.getElementById(btn.getAttribute('data-slot'));
+    if (!row) return;
+    row.hidden = !open;
+    row.querySelectorAll('.dl-toggle').forEach(function (b) { setOpen(b, open); });
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.querySelector('i').className = open ? 'bi bi-chevron-down' : 'bi bi-chevron-right';
+  }
+  var expands = document.querySelectorAll('.dl-expand');
+  expands.forEach(function (b) {
+    b.addEventListener('click', function () { setEntry(b, b.getAttribute('aria-expanded') !== 'true'); });
+  });
   var ex = document.getElementById('dlExpandAll'), co = document.getElementById('dlCollapseAll');
-  if (ex) ex.addEventListener('click', function () { toggles.forEach(function (b) { setOpen(b, true); }); });
-  if (co) co.addEventListener('click', function () { toggles.forEach(function (b) { setOpen(b, false); }); });
+  if (ex) ex.addEventListener('click', function () { expands.forEach(function (b) { setEntry(b, true); }); });
+  if (co) co.addEventListener('click', function () { expands.forEach(function (b) { setEntry(b, false); }); });
 })();
 </script>
 
@@ -442,6 +474,10 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
       <div class="modal-body">
+        <div class="mb-2" hidden>
+          <label class="fw-form-label" for="dlShowPick">{{ _('Match') }}</label>
+          <select id="dlShowPick" class="form-select form-select-sm fw-form-control"></select>
+        </div>
         <div id="dlShowBody"></div>
         {# The live check is a visible STEP: what was read from SATOM's copy,
            what the device was asked, what it answered (audited by the
@@ -490,17 +526,31 @@
     steps.appendChild(li);
     return li;
   }
-  function open(btn) {
-    var tpl = document.getElementById(btn.getAttribute('data-tpl'));
+  // Show (SA-0029, 2nd round): one per entry; an entry with several matches
+  // picks which one the dialog (and its live check) is about.
+  var pick = document.getElementById('dlShowPick');
+  var picks = [];
+  function render(i) {
+    var p = picks[i] || {};
+    var tpl = document.getElementById(p.tpl);
     body.innerHTML = '';
     steps.innerHTML = '';
     if (tpl) body.appendChild(tpl.content.cloneNode(true));
-    current = {aid: btn.getAttribute('data-aid'), kind: btn.getAttribute('data-kind'),
-               policy: btn.getAttribute('data-policy'), gateway: btn.getAttribute('data-gateway')};
+    current = {aid: p.aid, kind: p.kind, policy: p.policy, gateway: p.gateway};
     step(T.cached + ': ' + body.querySelectorAll('tr[data-backend]').length);
     var canLive = current.kind === 'fortiweb' && current.aid && current.policy;
     liveBtn.disabled = !canLive;
     liveMsg.textContent = canLive ? '' : T.fwOnly;
+  }
+  pick.addEventListener('change', function () { render(+pick.value); });
+  function open(btn) {
+    try { picks = JSON.parse(btn.getAttribute('data-picks') || '[]'); } catch (e) { picks = []; }
+    pick.innerHTML = '';
+    picks.forEach(function (p, i) {
+      var o = document.createElement('option'); o.value = i; o.textContent = p.label; pick.appendChild(o);
+    });
+    pick.parentNode.hidden = picks.length < 2;
+    render(0);
     bootstrap.Modal.getOrCreateInstance(modalEl).show();
   }
   document.querySelectorAll('.dl-show-btn').forEach(function (b) {

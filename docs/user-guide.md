@@ -11441,8 +11441,8 @@ There are two scopes: **personal** and **team**. "Team" here means *everyone
 who operates this SATOM* — there is deliberately no roster to maintain.
 
 **Sharing a bookmark is not a way to hand somebody a device.** The list you see
-is filtered by **your** permissions, never the sharer's: the ADOM stamp filter
-first, and then — for device bookmarks — the same visibility rule the inventory
+is filtered by **your** permissions, never the sharer's: the ADOMs your profile
+may enter first (§38.4), and then — for device bookmarks — the same visibility rule the inventory
 itself uses. A colleague who shares a FortiADC you may not operate has shared
 you nothing.
 
@@ -11455,8 +11455,9 @@ Two consequences worth knowing before you file a hundred devices:
   changes what every operator sees without a traceable origin is an
   unattributable change to the console.
 
-**Favourite** pins an entry to the top of your own panel; **Hide** removes it
-from your view without deleting it for anyone else. Both are per-user.
+**Favourite** pins an entry to the Favourites list at the top of your own
+panel, in the order you arrange (§38.5); **Hide** removes it from your view
+without deleting it for anyone else. Both are per-user.
 
 ### 38.3 Grouping is computed, not stored
 
@@ -11473,7 +11474,54 @@ that is not a device has no classification at all, and a device nobody has
 classified yet is a different situation. They are shown separately rather than
 both as "ungrouped".
 
-### 38.1 When the rail says your session expired
+### 38.4 One panel for every ADOM
+
+Bookmarks are **general**, not per ADOM. The panel lists your bookmarks from
+every ADOM you may enter, whichever console you are in, and a menu page you
+starred stays starred in the other ADOMs too. (Until 2026-11-08 each ADOM had
+its own panel, and switching ADOM emptied it.)
+
+A bookmark still remembers where it belongs: a device belongs to its product,
+and a link to a console page belongs to the ADOM you created it in. A row whose
+page only exists in **another** ADOM shows that ADOM's name next to it (hover
+for *Opens in the … ADOM*). Clicking it switches **this tab** to that ADOM and
+then opens the page; other tabs keep their own ADOM. Without the switch the
+link would be a 404 in the console you are in.
+
+- The **Global** console never switches: it already sees every device.
+- A link that leaves SATOM (a wiki, a ticket queue) opens as it is.
+- A profile confined to some ADOMs still sees **nothing** of the others —
+  not on the panel and not by opening `/bookmarks/<id>/open` directly.
+- The inventory lens (the device tree) is still the inventory of the ADOM you
+  are in.
+
+### 38.5 Your own order: drag to reorder
+
+Every list you file by hand — **Favourites**, each **folder** and the
+**Folders** root — is in your own order. Drag a row and drop it:
+
+| Drop it on… | What happens |
+|---|---|
+| the **upper half** of a row | it goes right **above** that row (a 2px bar on top shows it) |
+| the **lower half** of a row | it goes right **below** that row (bar at the bottom) |
+| the **middle** of a folder heading | it goes **into** that folder, at the end |
+| the **Favourites** heading | it is starred, at the end of Favourites |
+
+Folders can be dragged too: the top and bottom quarter of a folder heading
+reorder it among its neighbours; the middle files the dragged row inside it.
+A device from the inventory lens that has no bookmark yet becomes one where
+you drop it.
+
+- A new star, and a row dropped on a folder heading, go to the **end** of the
+  list: nothing jumps to the top of an order you arranged.
+- The order is **yours alone**, also on team bookmarks everybody starred.
+- Lists nobody has reordered keep the old look (folders first, then by name).
+- A folder cannot be a favourite, and cannot be dropped inside one of its own
+  sub-folders: both are refused with the reason.
+- The Shared tray and the inventory lens are not hand-ordered: they are
+  recomputed on every render, so they take no drop.
+
+### 38.6 When the rail says your session expired
 
 The panel is kept alive across page changes rather than re-fetched on every
 click, which is why it holds its scroll position and its open folders while you

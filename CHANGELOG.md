@@ -74,6 +74,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   table (Entry, each DNS server, Quick LB) is now kept, so a DNS server's
   column is never hidden either. The Plugin Studio app *DNS & LB Lookup*
   keeps its own options.
+- **Bookmarks are general, not per ADOM.** Requested: bookmarks were kept
+  per ADOM and have to be general. The panel now lists your bookmarks from
+  every ADOM you may enter, whichever console you are in, and a starred menu
+  page stays starred in the other ADOMs too. A bookmark still remembers the
+  ADOM it was made in, and a device still belongs to its product: a row
+  whose page only exists in another ADOM carries that ADOM's name and opens
+  through `/bookmarks/<id>/open`, which switches this tab to that ADOM first
+  (the plain link was a 404 there). Global never switches, and a link that
+  leaves SATOM opens as it is. A profile confined to some ADOMs still sees
+  nothing of the others, by panel or by id.
+- **Bookmarks: drag to reorder Favourites and folders.** Requested: inside
+  Favourites a bookmark could not be moved above or below another. Every
+  list you file by hand (Favourites, each folder, the Folders root) is now in
+  your own order: drop a row on the upper half of another to put it above,
+  on the lower half to put it below (a 2px bar shows where it will land).
+  Folders drag too, and their heading takes a row *into* the folder when
+  dropped in the middle. Dropping a row on the Favourites heading stars it.
+  A new star or a row dropped on a folder heading goes to the end; nothing
+  jumps to the top of an order you arranged. The order is yours alone, also
+  on team bookmarks. Until now every list was re-sorted by name on each
+  render and the stored folder position was never read. A folder can no
+  longer be dropped inside its own sub-folder (only the direct case was
+  refused, and the folder vanished from the panel with all it held).
+  Migration `bmorder01` adds `bookmark_favorites.position`; existing stars
+  keep their alphabetical order until you move one.
 
 ## [4.11.14] - 2026-11-08
 

@@ -41,7 +41,7 @@ import json
 
 from flask import (
     Blueprint, render_template, request, abort, jsonify, url_for, g, session,
-    make_response,
+    make_response, redirect,
 )
 from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
@@ -54,7 +54,7 @@ from ..models_bookmarks import (
     Bookmark, KIND_APPLIANCE, KIND_FOLDER, KIND_LINK, SCOPE_TEAM,
 )
 from ..services import bookmarks as svc
-from ..services import settings_store
+from ..services import product_scope, settings_store
 from ..services.audit import log_action
 
 bp = Blueprint('bookmarks', __name__, url_prefix='/bookmarks')
@@ -131,11 +131,17 @@ def _label(bm: Bookmark) -> str:
 
 
 def _node(key, name, *, icon='', kind='group', item=None,
-          folder_id=None, droppable=False, sub='', note='', chip=False):
+          folder_id=None, droppable=False, sub='', note='', chip=False,
+          drop_into='', manual=False, container='', pos=0):
+    # ``manual`` = this node's children are in the reader's hand order (pos),
+    # not alphabetical; ``container`` = the list a row sits in, which the rail
+    # posts back on a drop above/below it ('fav', a folder id, '0' = root).
     return {
         'key': key, 'name': name, 'icon': icon, 'kind': kind, 'item': item,
         'children': [], 'folder_id': folder_id, 'droppable': droppable,
         'sub': sub, 'note': note, 'count': 0, 'chip': chip,
+        'drop_into': drop_into or (str(folder_id) if droppable else ''),
+        'manual': manual, 'container': container, 'pos': pos,
     }
 
 
@@ -169,12 +175,19 @@ def _count(node: dict) -> int:
 def _sorted_children(node: dict) -> None:
     """Groups before devices, each alphabetically. ``(unclassified)`` and the
     other synthetic buckets sort LAST so they never push the real tree below
-    the fold — they are shown, never hidden, but they are not the headline."""
+    the fold — they are shown, never hidden, but they are not the headline.
+
+    Favourites and folders are the exception: they are in the order the
+    reader dragged them into (``svc.order_key``, the same key the move
+    renumbers with)."""
     def rank(c):
         synthetic = c['name'] in (svc.UNCLASSIFIED, svc.NO_SEGMENT, svc.NON_DEVICE)
         return (0 if c['kind'] == 'group' else 1, 1 if synthetic else 0,
                 c['name'].lower())
-    node['children'].sort(key=rank)
+
+    def hand(c):
+        return svc.order_key(c['pos'], c['kind'] == 'group', c['name'])
+    node['children'].sort(key=hand if node.get('manual') else rank)
     for c in node['children']:
         _sorted_children(c)
 
@@ -199,7 +212,9 @@ def build_panel(q: str = '') -> dict:
     q = (q or '').strip().lower()
     rows = svc.visible_bookmarks(current_user)
     placed = svc.placements(current_user)
-    favs = svc.favorites(current_user)
+    fav_pos = svc.favorite_positions(current_user)
+    favs = set(fav_pos)
+    current_adom = product_scope.session_product()
     show_hidden = _show_hidden()
     segments = settings_store.segments()
 
@@ -229,6 +244,11 @@ def build_panel(q: str = '') -> dict:
         link_url, link_note = (
             svc.safe_link_url(bm.url) if bm.kind == KIND_LINK
             else (None, ''))
+        # The panel is general: a row of another ADOM opens through
+        # /bookmarks/<id>/open, which switches THIS tab to that ADOM first.
+        # The plain link would be a 404 there (visible_appliance_or_404).
+        switch = svc.opens_in(bm, current_adom) if (
+            bm.kind == KIND_APPLIANCE or link_url) else ''
         item = {
             'bm': bm,
             'dev_url': dev_url,
@@ -244,6 +264,12 @@ def build_panel(q: str = '') -> dict:
             'may_edit': svc.may_edit(bm, current_user),
             'parent_id': row.parent_id if row is not None else None,
             'filed': row is not None,
+            'pos': row.position if row is not None else 0,
+            'switch': switch,
+            'switch_name': (get_product(switch) or {}).get('name', switch)
+                           if switch else '',
+            'open_url': url_for('bookmarks.open_bookmark', bid=bm.id)
+                        if switch else None,
         }
         items.append(item)
         if bm.kind == KIND_APPLIANCE and bm.appliance_id is not None:
@@ -255,30 +281,36 @@ def build_panel(q: str = '') -> dict:
                 by_appliance[bm.appliance_id] = item
 
     # ---- root: favourites -------------------------------------------------
-    fav_root = _node(ROOT_FAV, 'Favourites', icon='bi-star-fill')
+    # Hand-ordered (drag a row above/below another), and a drop target: a
+    # row dropped on the heading is starred at the end of the list.
+    fav_root = _node(ROOT_FAV, 'Favourites', icon='bi-star-fill',
+                     droppable=True, drop_into=svc.FAV, manual=True)
     for it in items:
         if it['fav'] and it['bm'].kind != KIND_FOLDER:
             fav_root['children'].append(
                 _node(f'{ROOT_FAV}|b{it["bm"].id}', it['label'],
                       icon=_icon_for(it), kind='item', item=it,
-                      sub=_sub_for(it)))
+                      sub=_sub_for(it), container=svc.FAV,
+                      pos=fav_pos.get(it['bm'].id, 0)))
 
     # ---- root: personal folders ------------------------------------------
     folders_root = _node(ROOT_FOLDERS, 'Folders', icon='bi-folder2',
-                         droppable=True, folder_id=0)
+                         droppable=True, folder_id=0, manual=True)
     by_parent: dict[int | None, list[dict]] = {}
     for it in items:
         by_parent.setdefault(it['parent_id'], []).append(it)
 
     def _folder_children(parent_id, prefix, seen):
         out = []
+        box = str(parent_id or 0)
         for it in by_parent.get(parent_id, []):
             bm = it['bm']
             if bm.kind == KIND_FOLDER:
                 if bm.id in seen:
                     continue
                 n = _node(f'{prefix}|f{bm.id}', it['label'], icon='bi-folder2',
-                          folder_id=bm.id, droppable=it['may_edit'])
+                          folder_id=bm.id, droppable=it['may_edit'],
+                          manual=True, container=box, pos=it['pos'])
                 n['children'] = _folder_children(bm.id, n['key'], seen | {bm.id})
                 n['item'] = it
                 out.append(n)
@@ -288,7 +320,8 @@ def build_panel(q: str = '') -> dict:
                 # a folder anybody can delete.
                 out.append(_node(f'{prefix}|b{bm.id}', it['label'],
                                  icon=_icon_for(it), kind='item', item=it,
-                                 sub=_sub_for(it)))
+                                 sub=_sub_for(it), container=box,
+                                 pos=it['pos']))
         return out
 
     folders_root['children'] = _folder_children(None, ROOT_FOLDERS, set())
@@ -510,11 +543,78 @@ def place(bid):
     bm = _visible_or_404(bid)
     parent = request.form.get('parent_id', type=int)
     try:
-        svc.place(current_user, bm, parent_id=parent,
-                  position=request.form.get('position', 0, type=int))
+        if 'position' in request.form:
+            svc.place(current_user, bm, parent_id=parent,
+                      position=request.form.get('position', 0, type=int))
+        else:
+            # Dropped on a folder heading: to the END of that folder. Position
+            # 0 would tie with the folder's first row and leave the spot to
+            # the alphabet.
+            svc.move(current_user, bm, parent or 0)
     except svc.BookmarkDenied as exc:
         return _denied(exc)
     return _render(_q())
+
+
+@bp.route('/<int:bid>/move', methods=['POST'])
+@login_required
+def move(bid):
+    """Drag to reorder: put the row in ``container`` ('fav', a folder id, or
+    0 = the Folders root) right before ``before`` / after ``after`` — another
+    row of that list — or at its end. Writes only the acting user's own
+    placements and stars."""
+    bm = _visible_or_404(bid)
+    f = request.form
+    raw = (f.get('container') or '').strip()
+    if raw == svc.FAV:
+        container = svc.FAV
+    else:
+        try:
+            container = int(raw or 0)
+        except ValueError:
+            return _denied(svc.BookmarkDenied('bad_container', 'no such list'))
+    try:
+        svc.move(current_user, bm, container,
+                 before_id=f.get('before', type=int),
+                 after_id=f.get('after', type=int))
+    except svc.BookmarkDenied as exc:
+        return _denied(exc)
+    return _render(_q())
+
+
+@bp.route('/<int:bid>/open')
+@login_required
+def open_bookmark(bid):
+    """Open a bookmark of ANOTHER ADOM: switch this tab's ADOM, then go.
+
+    The panel is general (2026-11-08), so it lists rows whose page only exists
+    in another console. This is the explicit ADOM switch for them, like
+    ``product.enter`` (which also writes the session): the rail sets the tab's
+    own ADOM on click (``data-adom-switch``, turbo-boot.js), and ``_adom`` on
+    the target pins the first request even if a stale header comes along.
+    """
+    from .product import _is_prefetch
+    if _is_prefetch(request):
+        # A hover prefetch must never switch the ADOM.
+        return '', 204
+    bm = _visible_or_404(bid)
+    if bm.kind == KIND_APPLIANCE and bm.appliance_id is not None:
+        target = url_for('appliances.detail', id=bm.appliance_id)
+    elif bm.kind == KIND_LINK:
+        safe, _why = svc.safe_link_url(bm.url)
+        if not safe or not svc.internal_path(safe):
+            abort(404)           # not a page of this console: nothing to switch
+        target = safe
+    else:
+        abort(404)
+    adom = svc.home_adom(bm)
+    if adom and product_scope.adom_allowed(adom):
+        session['product'] = adom
+        session.permanent = True
+        base, hsh, frag = target.partition('#')
+        target = (base + ('&' if '?' in base else '?') + '_adom=' + adom
+                  + hsh + frag)
+    return redirect(target)
 
 
 @bp.route('/<int:bid>/favorite', methods=['POST'])

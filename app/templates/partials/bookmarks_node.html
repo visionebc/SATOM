@@ -20,12 +20,20 @@
   {% set it = n.item %}
   <div class="bm-row bm-item bm-d{{ d }}{% if it.hidden %} bm-row-hidden{% endif %}"
        draggable="true"
+       {% if n.container %}data-bm-container="{{ n.container }}"{% endif %}
        {% if it.bm %}data-bm-id="{{ it.bm.id }}"{% endif %}
        {% if it.appliance_id %}data-bm-appliance="{{ it.appliance_id }}"{% endif %}>
+    {#  The panel is general: a row of ANOTHER ADOM opens through
+        /bookmarks/<id>/open, and `data-adom-switch` moves this tab's own ADOM
+        on click (turbo-boot.js) -- the plain href would be a 404 there. The
+        chip says where it will land before anybody clicks. #}
     {% if it.appliance_id %}
-      <a class="bm-link" href="{{ url_for('appliances.detail', id=it.appliance_id) }}">
+      <a class="bm-link" href="{{ it.open_url or url_for('appliances.detail', id=it.appliance_id) }}"
+         {% if it.switch %}data-adom-switch="{{ it.switch }}"
+         title="{{ _('Opens in the %(adom)s ADOM', adom=it.switch_name) }}"{% endif %}>
         <i class="bi {{ n.icon }} bm-ico"></i>
         <span class="bm-name">{{ n.name }}</span>
+        {% if it.switch %}<span class="bm-adom">{{ it.switch_name }}</span>{% endif %}
         {% if n.sub %}<span class="bm-sub">{{ n.sub }}</span>{% endif %}
       </a>
     {% elif it.bm and it.bm.kind == 'link' %}
@@ -36,9 +44,12 @@
           refused device does -- a row that silently loses its href reads as a
           UI bug, and nobody goes and fixes the URL. #}
       {% if it.link_url %}
-      <a class="bm-link" href="{{ it.link_url }}" rel="noopener noreferrer">
+      <a class="bm-link" href="{{ it.open_url or it.link_url }}" rel="noopener noreferrer"
+         {% if it.switch %}data-adom-switch="{{ it.switch }}"
+         title="{{ _('Opens in the %(adom)s ADOM', adom=it.switch_name) }}"{% endif %}>
         <i class="bi {{ n.icon }} bm-ico"></i>
         <span class="bm-name">{{ n.name }}</span>
+        {% if it.switch %}<span class="bm-adom">{{ it.switch_name }}</span>{% endif %}
       </a>
       {% else %}
       <span class="bm-link bm-link-off"
@@ -111,7 +122,9 @@
   </div>
 {% else %}
   <div class="bm-row bm-grp bm-d{{ d }}" data-bm-node="{{ n.key }}"
-       {% if n.droppable %}data-bm-drop="{{ n.folder_id }}"{% endif %}>
+       {% if n.droppable %}data-bm-drop="{{ n.drop_into }}"{% endif %}
+       {% if n.container and n.folder_id %}data-bm-container="{{ n.container }}"
+         data-bm-id="{{ n.folder_id }}" draggable="true"{% endif %}>
     <i class="bi bi-caret-{{ 'down' if is_open else 'right' }}-fill bm-caret"></i>
     <i class="bi {{ n.icon or 'bi-folder2' }} bm-ico bm-ico-grp"></i>
     {#  A product bucket wears the reader's own banner colour, at a wash so

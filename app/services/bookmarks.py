@@ -4,7 +4,8 @@ Three rules carry this module; everything else is plumbing.
 
 1. **The reader's permissions decide the list, never the sharer's.** Every
    bookmark leaving :func:`visible_bookmarks` has passed the ADOM stamp filter
-   AND — for device bookmarks — ``models.visible_appliances`` for the person
+   (every ADOM the reader may enter -- the panel is general since 2026-11-08)
+   AND — for device bookmarks — the appliance visibility gate for the person
    looking. A shared bookmark is therefore not a way to hand somebody a device
    in maintenance, or one from another product. This product already learned
    that lesson the expensive way: until 2026-08-06 every by-id appliance route
@@ -30,7 +31,7 @@ from urllib.parse import urlsplit
 
 from ..extensions import db
 from ..models import (
-    Appliance, Permission, User, UserSetting, visible_appliances,
+    Appliance, Permission, User, UserSetting, can_view_maintenance,
 )
 from ..models_bookmarks import (
     Bookmark, BookmarkFavorite, BookmarkPlacement,
@@ -252,18 +253,30 @@ def may_see_devices(user) -> bool:
 
 
 def _visible_appliance_ids(user) -> set[int]:
+    """Every device *user* may open in ANY of their ADOMs — the same gate as
+    ``models.visible_appliances`` (device scope, maintenance), with the ADOM
+    half applied the Global way. Bookmarks are general (2026-11-08): a
+    FortiADC starred from the FortiADC console stays on the panel in FortiWeb,
+    and opening it switches the tab to FortiADC (:func:`opens_in`)."""
     if not may_see_devices(user):
         return set()
-    return {
-        row[0] for row in
-        visible_appliances(db.session.query(Appliance.id), user=user).all()
-    }
+    q = product_scope.scope_appliance_query(
+        db.session.query(Appliance.id), Appliance.kind, any_adom=True)
+    if not can_view_maintenance(user):
+        q = q.filter(Appliance.maintenance.is_(False))
+    return {row[0] for row in q.all()}
 
 
 def visible_bookmarks(user) -> list[Bookmark]:
     """Every bookmark *user* may see: their own personal rows plus the team's,
-    scoped by ADOM, with device bookmarks filtered through the appliance
-    visibility gate of THIS user."""
+    from every ADOM they may enter (never one outside their profile), with
+    device bookmarks filtered through the appliance visibility gate of THIS
+    user.
+
+    GENERAL, not per ADOM (user's rule, 2026-11-08: *"bookmarks have to be
+    general, not per ADOM"*). The panel is the operator's own; it used to
+    empty itself on every ADOM switch. The stamp stays on the row: it is what
+    :func:`home_adom` reads to open the bookmark in the right console."""
     if user is None or not getattr(user, "is_authenticated", False):
         return []
     q = Bookmark.query.filter(
@@ -273,7 +286,7 @@ def visible_bookmarks(user) -> list[Bookmark]:
                     Bookmark.owner_user_id == user.id),
         )
     )
-    q = product_scope.scope_query(q, Bookmark.product)
+    q = product_scope.scope_query(q, Bookmark.product, any_adom=True)
     rows = q.order_by(Bookmark.id).all()
     allowed = _visible_appliance_ids(user)
     return [
@@ -570,6 +583,148 @@ def favorites(user) -> set[int]:
     }
 
 
+def favorite_positions(user) -> dict[int, int]:
+    """bookmark id → where *user* put it in their Favourites."""
+    return {
+        r.bookmark_id: r.position or 0 for r in
+        BookmarkFavorite.query.filter_by(user_id=user.id).all()
+    }
+
+
+# ---------------------------------------------------------------------------
+# Hand-ordered lists (Favourites, a folder, the Folders root)
+# ---------------------------------------------------------------------------
+
+#: The container id of the Favourites root in :func:`move`. A folder is its
+#: bookmark id; the Folders root is 0.
+FAV = "fav"
+
+
+def order_key(position, is_folder: bool, label: str) -> tuple:
+    """THE order of a hand-ordered list. The panel draws with it and
+    :func:`move` renumbers with it: if they disagreed, "drop above X" would
+    land somewhere else. Ties (every row older than drag-to-reorder sits at 0)
+    keep the old look: folders first, then by name."""
+    return (position or 0, 0 if is_folder else 1, (label or "").lower())
+
+
+def container_members(user, container) -> list[Bookmark]:
+    """What *user* sees in *container*, in the order the panel draws it —
+    hidden rows included, so reordering with "show hidden" off does not
+    renumber them on top of the visible ones."""
+    rows = visible_bookmarks(user)
+    if container == FAV:
+        pos = favorite_positions(user)
+        members = [b for b in rows if b.id in pos and b.kind != KIND_FOLDER]
+        return sorted(members, key=lambda b: order_key(
+            pos[b.id], False, b.display_label()))
+    parent = container or None
+    placed = placements(user)
+
+    def _parent(b):
+        r = placed.get(b.id)
+        return r.parent_id if r is not None else None
+
+    # Same membership as the panel's Folders root: an unfiled TEAM row lives
+    # in the Shared tray, not at the root.
+    members = [b for b in rows if _parent(b) == parent
+               and (parent is not None or b.scope != SCOPE_TEAM
+                    or b.id in placed)]
+    return sorted(members, key=lambda b: order_key(
+        placed[b.id].position if b.id in placed else 0,
+        b.kind == KIND_FOLDER, b.display_label()))
+
+
+def move(user, bm: Bookmark, container, before_id: int | None = None,
+         after_id: int | None = None) -> None:
+    """Put *bm* in *container* right before/after another entry of it (at the
+    end with neither) and renumber the whole list for *user* only.
+
+    Moving into Favourites stars it; moving into a folder files it. Positions
+    are rewritten for the WHOLE list, not just the moved row: two rows on the
+    same number would leave the order to the label, and the drop would appear
+    to have done nothing.
+    """
+    parent = None
+    if container == FAV:
+        if bm.kind == KIND_FOLDER:
+            raise BookmarkDenied("folder_favourite",
+                                 "a folder cannot be a favourite")
+    else:
+        parent = container or None
+        _check_parent(user, bm, parent)
+    ref = before_id if before_id is not None else after_id
+    if ref == bm.id:
+        return                       # dropped on itself: nothing moves
+    members = [b for b in container_members(user, container) if b.id != bm.id]
+    ids = [b.id for b in members]
+    idx = len(members)
+    if ref is not None:
+        if ref not in ids:
+            raise BookmarkDenied("bad_anchor", "that entry is not in this list")
+        idx = ids.index(ref) + (0 if before_id is not None else 1)
+    members.insert(idx, bm)
+    for pos, b in enumerate(members):
+        if container == FAV:
+            row = db.session.get(BookmarkFavorite, (user.id, b.id))
+            if row is None:
+                row = BookmarkFavorite(user_id=user.id, bookmark_id=b.id)
+                db.session.add(row)
+            row.position = pos
+        else:
+            place(user, b, parent_id=parent, position=pos, commit=False)
+    db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Which console opens a bookmark
+# ---------------------------------------------------------------------------
+
+def home_adom(bm: Bookmark) -> str:
+    """The ADOM whose console opens *bm*, '' when none in particular.
+
+    A device opens in its own product's ADOM (a kind-less device is a
+    FortiWeb, as everywhere else). A link or view opens in the ADOM it was
+    created in; '' (Global, or a row older than the stamp) pins nothing."""
+    if bm.kind == KIND_APPLIANCE:
+        appl = bm.appliance
+        if appl is None:
+            return ""
+        k = (appl.kind or "").strip().lower() or product_scope.LEGACY_PRODUCT
+    else:
+        k = (bm.product or "").strip().lower()
+    return k if k in product_scope.concrete_products() else ""
+
+
+def internal_path(url) -> bool:
+    """A page of THIS console (``/x``), not another site and not ``//host``."""
+    s = (url or "").strip()
+    return s.startswith("/") and not s.startswith("//") \
+        and not s.startswith("/\\")
+
+
+def opens_in(bm: Bookmark, current: str) -> str:
+    """The ADOM the tab must switch to before opening *bm* from the console of
+    ADOM *current*, or '' when it opens right where it is.
+
+    Without the switch a general panel would hand out dead links: a FortiADC
+    page opened from a FortiWeb tab is a 404 (``visible_appliance_or_404``).
+    Global never switches — it sees every device and pins no page. A link
+    that leaves SATOM never switches either: the ADOM is meaningless there.
+    """
+    if current not in product_scope.concrete_products():
+        return ""
+    if bm.kind == KIND_LINK:
+        if not internal_path(bm.url):
+            return ""
+    elif bm.kind != KIND_APPLIANCE:
+        return ""
+    adom = home_adom(bm)
+    if not adom or adom == current or not product_scope.adom_allowed(adom):
+        return ""
+    return adom
+
+
 def tray_counts(user) -> dict[str, int]:
     """What the "Shared" header must always show: how many team bookmarks are
     waiting to be filed, and how many this user has hidden.
@@ -656,7 +811,7 @@ def adopt(user, appliance_id: int | None, parent_id: int | None = None) -> Bookm
     device twice with disagreeing stars, and neither one is wrong.
 
     Resolution goes through :func:`visible_bookmarks`, so this cannot reach a
-    row stamped for another ADOM, and creation goes through :func:`create`, so
+    row the reader may not see, and creation goes through :func:`create`, so
     the appliance itself is still checked against the reader's own gate.
     """
     if appliance_id is None:
@@ -697,20 +852,37 @@ def share(bm: Bookmark, user) -> Bookmark:
     return bm
 
 
+def _check_parent(user, bm: Bookmark, parent_id: int | None) -> None:
+    """May *user* file *bm* under *parent_id*? Raises :class:`BookmarkDenied`."""
+    if parent_id is None:
+        return
+    folder = db.session.get(Bookmark, parent_id)
+    if folder is None or folder.kind != KIND_FOLDER:
+        raise BookmarkDenied("bad_folder", "no such folder")
+    if folder.owner_user_id != user.id:
+        # Filing into somebody else's folder would let one user rearrange
+        # another's panel.
+        raise BookmarkDenied("foreign_folder", "not your folder")
+    # Walk up from the target: a folder dropped into its own sub-folder would
+    # hang off a loop no path from the root reaches, and vanish from the panel
+    # with everything inside it. Only the direct case was refused until
+    # drag-to-reorder (2026-11-08) made the deep one a single drag away.
+    placed = placements(user)
+    seen: set[int] = set()
+    cur = folder.id
+    while cur is not None and cur not in seen:
+        if cur == bm.id:
+            raise BookmarkDenied("folder_cycle", "a folder cannot contain itself")
+        seen.add(cur)
+        r = placed.get(cur)
+        cur = r.parent_id if r is not None else None
+
+
 def place(user, bm: Bookmark, parent_id: int | None = None,
           position: int = 0, commit: bool = True) -> BookmarkPlacement:
     """File *bm* for *user* only. Filing a team bookmark is not editing it —
     this writes exclusively to the acting user's own placement row."""
-    if parent_id is not None:
-        folder = db.session.get(Bookmark, parent_id)
-        if folder is None or folder.kind != KIND_FOLDER:
-            raise BookmarkDenied("bad_folder", "no such folder")
-        if folder.owner_user_id != user.id:
-            # Filing into somebody else's folder would let one user rearrange
-            # another's panel.
-            raise BookmarkDenied("foreign_folder", "not your folder")
-        if folder.id == bm.id:
-            raise BookmarkDenied("folder_cycle", "a folder cannot contain itself")
+    _check_parent(user, bm, parent_id)
     row = db.session.get(BookmarkPlacement, (user.id, bm.id))
     if row is None:
         row = BookmarkPlacement(user_id=user.id, bookmark_id=bm.id)
@@ -742,10 +914,16 @@ def set_hidden(user, bm: Bookmark, hidden: bool) -> BookmarkPlacement:
 
 
 def set_favorite(user, bm: Bookmark, favorite: bool) -> None:
-    """Star/unstar for *user* only — including on a team bookmark."""
+    """Star/unstar for *user* only — including on a team bookmark. A new star
+    goes to the END of the user's Favourites: landing on top would reshuffle
+    an order they arranged by hand."""
     row = db.session.get(BookmarkFavorite, (user.id, bm.id))
     if favorite and row is None:
-        db.session.add(BookmarkFavorite(user_id=user.id, bookmark_id=bm.id))
+        top = db.session.query(db.func.max(BookmarkFavorite.position)) \
+            .filter(BookmarkFavorite.user_id == user.id).scalar()
+        db.session.add(BookmarkFavorite(
+            user_id=user.id, bookmark_id=bm.id,
+            position=0 if top is None else top + 1))
     elif not favorite and row is not None:
         db.session.delete(row)
     db.session.commit()

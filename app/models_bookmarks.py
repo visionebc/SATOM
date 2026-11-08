@@ -79,9 +79,12 @@ class Bookmark(db.Model):
     # NULL on an appliance bookmark means "use the device's live name", so a
     # rename in the inventory reaches the panel. A label is an override.
     label = db.Column(db.String(160), nullable=True)
-    # ADOM stamp, same rule as every other scoped record: a link created in the
-    # FortiADC console does not belong in the FortiWeb one. Appliance bookmarks
-    # are scoped a SECOND time, by the device itself (see services.bookmarks).
+    # ADOM stamp: the ADOM the row was created in. The panel is general since
+    # 2026-11-08 (every ADOM the reader may enter), so the stamp no longer
+    # hides a row from the other consoles: it says which console OPENS it
+    # (services.bookmarks.home_adom), and still keeps a confined profile out of
+    # the rows of ADOMs it may not enter. Appliance bookmarks are scoped a
+    # SECOND time, by the device itself.
     product = db.Column(db.String(32), nullable=False, default="", index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
@@ -157,4 +160,9 @@ class BookmarkFavorite(db.Model):
         db.Integer, db.ForeignKey("bookmarks.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    # The user's own order of the Favourites root (drag to reorder,
+    # 2026-11-08). Ties -- every star older than the column -- fall back to
+    # the label, so the upgrade itself moves nothing.
+    position = db.Column(db.Integer, nullable=False, default=0,
+                         server_default="0")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

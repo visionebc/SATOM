@@ -301,15 +301,22 @@ def visible_product(record_product: str | None) -> bool:
     return rp == p
 
 
-def scope_query(query, column):
+def scope_query(query, column, any_adom: bool = False):
     """Apply the same rule to a SQLAlchemy query. ``column`` is the model's
     ``product`` column; NULL/'' rows count as unscoped (visible to FortiWeb
     and Global, hidden from every other ADOM). A user confined to some ADOMs
-    sees, in Global, only the rows of those ADOMs."""
+    sees, in Global, only the rows of those ADOMs.
+
+    ``any_adom=True`` applies the GLOBAL rule whatever ADOM the request is in:
+    every ADOM the signed-in user may enter, and still nothing of the others.
+    For records that follow their reader from ADOM to ADOM (bookmarks,
+    2026-11-08). An unresolved ADOM still yields zero rows."""
     p = session_product()
     if p == UNRESOLVED:
         from sqlalchemy import false
         return query.filter(false())   # ADOM unknown → zero rows, not all rows
+    if any_adom:
+        p = GLOBAL
     allowed = restricted_adoms()
     if allowed is not None and p in concrete_products() and p not in allowed:
         from sqlalchemy import false
@@ -483,11 +490,12 @@ def partial_chassis(appl) -> bool:
     return DS.partial(appl, restricted_device_scope())
 
 
-def scope_appliance_query(query, kind_column):
+def scope_appliance_query(query, kind_column, any_adom: bool = False):
     """ADOM rule (:func:`_scope_appliance_query_adom`) plus, for a profile with
     a device scope, only the appliances it reaches (an id is all a by-id
-    route needs to 404 a device outside the scope)."""
-    q = _scope_appliance_query_adom(query, kind_column)
+    route needs to 404 a device outside the scope). ``any_adom`` as in
+    :func:`scope_query`; the device scope applies either way."""
+    q = _scope_appliance_query_adom(query, kind_column, any_adom=any_adom)
     if restricted_device_scope() is None:
         return q
     from ..models import Appliance
@@ -502,7 +510,7 @@ def scope_appliance_query(query, kind_column):
     return q.filter(Appliance.id.in_(sorted(ids)))
 
 
-def _scope_appliance_query_adom(query, kind_column):
+def _scope_appliance_query_adom(query, kind_column, any_adom: bool = False):
     """Scope an Appliance query by device KIND: a concrete ADOM sees only the
     boxes of its own product; the FortiWeb ADOM also sees NULL/'' kinds
     (FortiWeb-era by construction); Global/workers see all.
@@ -514,6 +522,8 @@ def _scope_appliance_query_adom(query, kind_column):
     if p == UNRESOLVED:
         from sqlalchemy import false
         return query.filter(false())   # ADOM unknown → zero rows, not all rows
+    if any_adom:
+        p = GLOBAL
     allowed = restricted_adoms()
     if allowed is not None and p in concrete_products() and p not in allowed:
         from sqlalchemy import false

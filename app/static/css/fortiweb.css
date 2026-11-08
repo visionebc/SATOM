@@ -2365,6 +2365,16 @@ body:has(#fw-bookmarks):not(.bm-open) .fw-main { margin-right: 34px; }
   background: var(--fw-accent-light);
   outline: 1px dashed var(--fw-accent); outline-offset: -2px;
 }
+/* Drag-to-reorder: a 2px bar on the edge the row will land against. A shadow,
+   not a border, so the rows around it do not jump by 2px while dragging. */
+.bm-row.bm-drop-before { box-shadow: inset 0 2px 0 var(--fw-accent); }
+.bm-row.bm-drop-after { box-shadow: inset 0 -2px 0 var(--fw-accent); }
+/* "This one opens in another ADOM": the ADOM it switches the tab to. */
+.bm-adom {
+  flex: 0 0 auto; font-size: 10px; font-weight: 600; line-height: 1.4;
+  color: var(--fw-text-secondary); border: 1px solid var(--fw-border-light);
+  border-radius: 3px; padding: 0 4px;
+}
 
 .bm-d0 { padding-left: 8px; }
 .bm-d1 { padding-left: 21px; }

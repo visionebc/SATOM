@@ -181,7 +181,10 @@
   origAdd('click', function (e) {
     try {
       var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
-      var key = a && fwAdomSwitchKey(a.getAttribute('href'));
+      // data-adom-switch: a link that opens a page of ANOTHER ADOM through
+      // a server-side switch (a bookmark of another ADOM, /bookmarks/<id>/open).
+      var key = a && (fwAdomSwitchKey(a.getAttribute('href'))
+                      || a.getAttribute('data-adom-switch'));
       if (key) sessionStorage.setItem('fmAdom', key);
     } catch (err) {}
   }, true);

@@ -896,33 +896,76 @@
     var add = panel.querySelector('[data-bm-add]');
     if (add) add.addEventListener('click', openAdd);
 
-    // Rows drag from anywhere, but only FOLDERS accept a drop: the other roots
-    // are recomputed from the inventory on every render, so a drop there could
-    // not persist and the row would snap back with no explanation. Marking the
-    // valid targets (and only them) is that explanation.
-    panel.querySelectorAll('.bm-item[draggable="true"]').forEach(function (el) {
+    // Drag and drop. Three kinds of target, and only these:
+    //  * a heading that takes rows INTO it -- a folder, the Folders root,
+    //    Favourites ([data-bm-drop]): the row goes to the END of that list;
+    //  * a row of a HAND-ORDERED list -- Favourites, a folder, the Folders root
+    //    ([data-bm-container]): the upper half drops above it, the lower half
+    //    below it (drag-to-reorder, 2026-11-08);
+    //  * a folder heading that is also a row of a list: its top and bottom
+    //    quarters reorder, the middle drops into it.
+    // The inventory lens and the Shared tray are recomputed on every render,
+    // so they take no drop: the row would snap back with no explanation.
+    // Marking the valid targets (and only them) is that explanation.
+    function dragTok(el) {
+      return el.dataset.bmId ? 'b' + el.dataset.bmId : 'a' + el.dataset.bmAppliance;
+    }
+    panel.querySelectorAll('[draggable="true"]').forEach(function (el) {
       el.addEventListener('dragstart', function (ev) {
-        ev.dataTransfer.setData('text/plain',
-          el.dataset.bmId ? 'b' + el.dataset.bmId : 'a' + el.dataset.bmAppliance);
+        ev.stopPropagation();
+        ev.dataTransfer.setData('text/plain', dragTok(el));
+        ev.dataTransfer.effectAllowed = 'move';
       });
     });
-    panel.querySelectorAll('[data-bm-drop]').forEach(function (row) {
-      row.addEventListener('dragover', function (ev) {
-        ev.preventDefault(); row.classList.add('bm-dragover');
-      });
-      row.addEventListener('dragleave', function () { row.classList.remove('bm-dragover'); });
-      row.addEventListener('drop', function (ev) {
-        ev.preventDefault(); row.classList.remove('bm-dragover');
-        var tok = ev.dataTransfer.getData('text/plain');
-        if (!tok) return;
-        var target = row.dataset.bmDrop;
-        var data = (target === '0' || !target) ? {} : {parent_id: target};
-        if (tok.charAt(0) === 'a') {
-          data.appliance_id = tok.slice(1);
-          post(rail.dataset.bmAdoptUrl, data);
-        } else {
-          post('/bookmarks/' + tok.slice(1) + '/place', data);
+    function dropZone(row, ev) {
+      var r = row.getBoundingClientRect();
+      var y = (ev.clientY - r.top) / (r.height || 1);
+      var into = row.hasAttribute('data-bm-drop');
+      var sorts = row.hasAttribute('data-bm-container');
+      if (into && sorts) return y < 0.25 ? 'before' : (y > 0.75 ? 'after' : 'into');
+      if (sorts) return y < 0.5 ? 'before' : 'after';
+      return 'into';
+    }
+    function clearMarks(row) {
+      row.classList.remove('bm-dragover', 'bm-drop-before', 'bm-drop-after');
+    }
+    function adoptInto(tok, list) {
+      // A device of the lens has no bookmark yet: adopt it into that list.
+      var d = {appliance_id: tok.slice(1)};
+      if (list === 'fav') d.favorite = '1';
+      else if (list && list !== '0') d.parent_id = list;
+      post(rail.dataset.bmAdoptUrl, d);
+    }
+    function dropOn(tok, where, row) {
+      if (where === 'into') {
+        var list = row.dataset.bmDrop;
+        if (tok.charAt(0) === 'a') return adoptInto(tok, list);
+        if (list === 'fav') {
+          return post('/bookmarks/' + tok.slice(1) + '/move', {container: 'fav'});
         }
+        return post('/bookmarks/' + tok.slice(1) + '/place',
+                    (list === '0' || !list) ? {} : {parent_id: list});
+      }
+      if (tok.charAt(0) === 'a') return adoptInto(tok, row.dataset.bmContainer);
+      if (tok === 'b' + row.dataset.bmId) return;   // dropped on itself
+      var data = {container: row.dataset.bmContainer};
+      data[where] = row.dataset.bmId;
+      post('/bookmarks/' + tok.slice(1) + '/move', data);
+    }
+    panel.querySelectorAll('[data-bm-drop], [data-bm-container]').forEach(function (row) {
+      row.addEventListener('dragover', function (ev) {
+        ev.preventDefault();
+        var w = dropZone(row, ev);
+        clearMarks(row);
+        row.classList.add(w === 'into' ? 'bm-dragover' : 'bm-drop-' + w);
+      });
+      row.addEventListener('dragleave', function () { clearMarks(row); });
+      row.addEventListener('drop', function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        var w = dropZone(row, ev);
+        clearMarks(row);
+        var tok = ev.dataTransfer.getData('text/plain');
+        if (tok) dropOn(tok, w, row);
       });
     });
   }

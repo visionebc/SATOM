@@ -1611,7 +1611,9 @@ def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=(),
         run.outputs_json = json.dumps(_mask(c.outputs, secrets), default=str)
         run.vars_json = _capped(_mask(c.vars, secrets))
         db.session.commit()
-        if job_id and steps:
+        # The job log gets each step once, when it is over; the live
+        # "running" row and its progress ticks are for the run page only.
+        if job_id and steps and steps[-1].get("outcome") != "running":
             last = _mask(steps[-1], secrets)
             _job_step(job_id, min(95, int(100 * len(steps) / total)), last)
 

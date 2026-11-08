@@ -119,6 +119,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Migration `bmorder01` adds `bookmark_favorites.position`; existing stars
   keep their alphabetical order until you move one.
 
+### Fixed
+- **FortiWeb configuration restore now restores, and proves it.** The Restore
+  page posted the file to `maintenance.backuprestore`, which is the
+  partition/firmware *read* of the FortiWeb backup page: the box answered 200
+  with its partition table, applied nothing, and SATOM reported the restore as
+  done (found cloning a lab FortiWeb, which stayed at 0 server policies). The
+  restore now makes the calls the FortiWeb GUI makes, measured on 7.6.8: the
+  pre-restore backup is the box's own CLI backup (`config_backup`,
+  `maintenance.backupconfiguration?type=cli`) and the file goes to
+  `config_restore` (`maintenance.restoreconfiguration`, `file` + `encryption`
+  + `password`). The answer is read: only the "applying" acknowledgement
+  counts; an errcode, an HTTP error, an HA answer or a bare 200 is a failure.
+  A CLI dump captured over SSH (`show full-configuration`) is converted to the
+  device package format with the header of a backup the target writes at
+  restore time; an unrecognised file is sent only with its password. After the
+  reboot SATOM reads the configuration back in the format it sent and compares
+  it table by table: the audit log records `success` only when they match,
+  otherwise `unverified` with the tables that differ. A live restore of an HA
+  cluster member is refused before anything is sent (FortiWeb hands a cluster
+  restore to its HA configuration-update flow, which SATOM does not drive).
+  Verified live on 7.6.8 with a converted CLI dump (1,105 objects in 105
+  tables read back identical) and with a device backup (907 objects in 78
+  tables). New registry entries `config_backup` and `config_restore` (FortiWeb
+  baseline re-promoted).
+
 ## [4.11.14] - 2026-11-08
 
 ### Changed

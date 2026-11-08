@@ -2258,11 +2258,27 @@ This page is the missing third position: name the CA and keep the check on.
     configuration. Buttons you cannot use are not shown.
 - **Restore** (appliance detail): pick a vault row and apply (FortiWeb). It
   needs **Manage users** *and* **Restore backups** (`users.manage` +
-  `backups.restore`). Before a live restore a pre-restore safety backup is
-  pulled over the device **REST** API; if it cannot be taken the restore is
-  **aborted**, unless you tick *Restore without a pre-restore backup* (for a
-  device whose REST backup cannot work, e.g. a backup password is set) — that
-  choice is written to the audit log. For FortiADC the vault works
+  `backups.restore`). Before a live restore a pre-restore safety backup — the
+  device's own CLI backup — is pulled over the device **REST** API and kept in
+  the vault; if it cannot be taken the restore is **aborted**, unless you tick
+  *Restore without a pre-restore backup* (for a device whose REST backup
+  cannot work, e.g. a backup password is set) — that choice is written to the
+  audit log.
+  - What can be restored: a backup downloaded from the FortiWeb (`.zip`), a
+    vault row pulled from the device, or a CLI dump captured over SSH
+    (`show full-configuration`), which is converted to the device package
+    format first (it needs the pre-restore backup, which supplies the header).
+    Any other file is taken only as a password-protected backup, with its
+    password.
+  - The device must answer that it is applying the configuration; any other
+    answer is reported as a failure. SATOM then waits for the reboot, reads
+    the configuration back and compares it table by table. The result shows
+    the reboot, the read-back and every table that differs; the audit log
+    records `success` only when nothing differs, otherwise `unverified`.
+  - A device registered as an HA cluster (or a member) is refused: a
+    FortiWeb cluster takes a restore through its HA configuration-update
+    flow, which SATOM does not drive. Restore it from the FortiWeb GUI on the
+    primary unit. For FortiADC the vault works
   (pull/upload/download) but config *apply* has no REST transport — the page
   says so honestly.
 - **System Backup & Restore** (Settings → Source of Truth & Backup) backs up the **manager

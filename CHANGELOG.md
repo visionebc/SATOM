@@ -84,6 +84,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   (the plain link was a 404 there). Global never switches, and a link that
   leaves SATOM opens as it is. A profile confined to some ADOMs still sees
   nothing of the others, by panel or by id.
+- **Bookmarks: Favourites divided by ADOM.** Requested: show the bookmarks
+  (e.g. Architecture) divided by ADOM, only the ADOMs the user is allowed.
+  Favourites now has one group per ADOM holding a favourite (Global first,
+  then the ADOM registry's order); a profile confined to some ADOMs gets only
+  their groups. A menu star belongs to the ADOM it is made in again: the same
+  page starred in FortiWeb and in FortiADC is two favourites, each under its
+  ADOM and each opening there, and a menu lights only its own ADOM's stars
+  (the previous change had made one star light every menu and reuse the
+  other ADOM's row). Unstarring touches only this ADOM's star.
 - **Bookmarks: drag to reorder Favourites and folders.** Requested: inside
   Favourites a bookmark could not be moved above or below another. Every
   list you file by hand (Favourites, each folder, the Folders root) is now in

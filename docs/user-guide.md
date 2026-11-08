@@ -11494,6 +11494,14 @@ link would be a 404 in the console you are in.
   not on the panel and not by opening `/bookmarks/<id>/open` directly.
 - The inventory lens (the device tree) is still the inventory of the ADOM you
   are in.
+- **Favourites is divided by ADOM**: one group per ADOM that holds a
+  favourite (Global first, then the ADOMs in registry order), only the ADOMs
+  your profile may enter. A device goes under its product; a page under the
+  ADOM you starred it in.
+- A **menu star belongs to its ADOM**. Starring *Fleet › Architecture* in
+  FortiWeb and again in FortiADC gives two favourites, one per group, each
+  opening in its own ADOM; each menu lights only its own stars, and
+  unstarring in one ADOM leaves the other.
 
 ### 38.5 Your own order: drag to reorder
 

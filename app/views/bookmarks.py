@@ -283,12 +283,34 @@ def build_panel(q: str = '') -> dict:
     # ---- root: favourites -------------------------------------------------
     # Hand-ordered (drag a row above/below another), and a drop target: a
     # row dropped on the heading is starred at the end of the list.
+    #
+    # Divided by ADOM (2026-11-08): one group per ADOM that holds a favourite,
+    # Global first, then the ADOM registry's order. Only ADOMs the reader may
+    # enter can appear -- the rows already passed visible_bookmarks. Groups
+    # start collapsed like every other node (the open-set is the reader's).
+    # Inside a group the order is the reader's hand order of Favourites.
     fav_root = _node(ROOT_FAV, 'Favourites', icon='bi-star-fill',
                      droppable=True, drop_into=svc.FAV, manual=True)
+    adom_rank = {'': 0}
+    adom_name = {'': 'Global'}
+    for i, (k, name) in enumerate(product_scope.device_products(), start=1):
+        adom_rank[k] = i
+        adom_name[k] = name
+    fav_groups: dict[str, dict] = {}
     for it in items:
         if it['fav'] and it['bm'].kind != KIND_FOLDER:
-            fav_root['children'].append(
-                _node(f'{ROOT_FAV}|b{it["bm"].id}', it['label'],
+            adom = svc.adom_group(it['bm'])
+            if adom not in adom_rank:
+                adom = ''
+            grp = fav_groups.get(adom)
+            if grp is None:
+                grp = _node(f'{ROOT_FAV}|adom:{adom or "global"}',
+                            adom_name[adom], icon='bi-collection',
+                            manual=True, pos=adom_rank[adom])
+                fav_groups[adom] = grp
+                fav_root['children'].append(grp)
+            grp['children'].append(
+                _node(f'{grp["key"]}|b{it["bm"].id}', it['label'],
                       icon=_icon_for(it), kind='item', item=it,
                       sub=_sub_for(it), container=svc.FAV,
                       pos=fav_pos.get(it['bm'].id, 0)))

@@ -696,6 +696,11 @@ def home_adom(bm: Bookmark) -> str:
     return k if k in product_scope.concrete_products() else ""
 
 
+def adom_group(bm: Bookmark) -> str:
+    """The ADOM a bookmark is filed under in Favourites; '' = Global."""
+    return home_adom(bm)
+
+
 def internal_path(url) -> bool:
     """A page of THIS console (``/x``), not another site and not ``//host``."""
     s = (url or "").strip()
@@ -952,9 +957,28 @@ def _menu_url(raw) -> str:
     return safe
 
 
+def menu_stamp() -> str | None:
+    """The ADOM stamp a sidebar star made in THIS console carries ('' =
+    Global), or ``None`` when the ADOM cannot be resolved (then no star is
+    lit and none can be made)."""
+    try:
+        return product_scope.stamp()
+    except product_scope.ProductScopeUnresolved:
+        return None
+
+
+def _in_this_menu(bm: Bookmark, stamp: str | None) -> bool:
+    """A sidebar star belongs to the menu of the ADOM it was made in. The
+    same page starred in FortiWeb and in FortiADC is TWO favourites, each
+    filed under its ADOM in the panel and each opening in its ADOM
+    (2026-11-08: *"divided by ADOM"*). The panel stays general."""
+    return stamp is not None and (bm.product or "") == stamp
+
+
 def menu_favorite_urls(user, rows: Iterable[Bookmark] | None = None,
                        favs: set[int] | None = None) -> set[str]:
-    """The console pages *user* has starred — what lights the sidebar stars.
+    """The console pages *user* has starred IN THIS ADOM's menu — what lights
+    the sidebar stars.
 
     Read from the bookmarks themselves, never from a list of its own: a star
     taken off in the Bookmarks panel has to go dark in the menu too, and two
@@ -963,19 +987,21 @@ def menu_favorite_urls(user, rows: Iterable[Bookmark] | None = None,
     """
     rows = visible_bookmarks(user) if rows is None else rows
     favs = favorites(user) if favs is None else favs
+    stamp = menu_stamp()
     return {
         bm.url for bm in rows
         if bm.kind == KIND_LINK and bm.id in favs
-        and (bm.url or "").startswith("/")
+        and (bm.url or "").startswith("/") and _in_this_menu(bm, stamp)
     }
 
 
 def set_menu_favorite(user, url, label: str = "", favorite: bool = True) -> None:
     """Star or unstar a sidebar entry for *user*.
 
-    Starring reuses a link to the same page that *user* already sees — their
-    own first, a team one otherwise — and only creates a personal link when
-    there is none: a second star must not mint a second row.
+    Starring reuses a link to the same page, made in the same ADOM, that
+    *user* already sees — their own first, a team one otherwise — and only
+    creates a personal link when there is none: a second star must not mint a
+    second row. Unstarring touches only this ADOM's links too.
 
     Unstarring removes the star from every link to that page, and DELETES the
     personal one when it still sits at the root of the panel — that row
@@ -985,8 +1011,15 @@ def set_menu_favorite(user, url, label: str = "", favorite: bool = True) -> None
     both keep their row and lose only the star.
     """
     url = _menu_url(url)
+    stamp = menu_stamp()
+    if stamp is None:
+        raise BookmarkDenied("adom_unresolved",
+                             "the ADOM of this console could not be determined")
+    # Only the links of THIS ADOM's menu: reusing another ADOM's row would
+    # file the star under that ADOM and open the page there.
     links = [bm for bm in visible_bookmarks(user)
-             if bm.kind == KIND_LINK and bm.url == url]
+             if bm.kind == KIND_LINK and bm.url == url
+             and _in_this_menu(bm, stamp)]
     if favorite:
         own = next((b for b in links if b.scope == SCOPE_PERSONAL
                     and b.owner_user_id == user.id), None)

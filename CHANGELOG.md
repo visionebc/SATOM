@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.12] - 2026-11-08
+
 ### Added
 - **Web Server Manager: Remove and Reinstall for the satom-webctl agent
   (SA-0028).** Requested: a button to remove SATOM's agent or to reinstall

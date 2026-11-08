@@ -2648,7 +2648,7 @@ against what the devices say.
   full row per match — entry, every column, PTR name, backends with status,
   the AppID facts and their source — with tabs and line breaks inside a
   comment turned into spaces so a line never splits.
-  Since SA-0028 the results are **collapsed**: a line per entry (how it was
+  Since 4.11.12 (SA-0028) the results are **collapsed**: a line per entry (how it was
   looked up, its DNS answers, the number of matches) and one dense line per
   match — Gateway, Policy, **Service IP** (the policy's VIP), **Name**,
   Backends (pool, member count, the first members with their configured
@@ -6450,7 +6450,7 @@ stays.
   any source*. A cache that cannot be read shows *LB matching failed* and the
   DNS half still appears, as on the page. Actions: **Copy DNS** and **Copy
   LB** (the page's tab-separated text), **DNS Records**, and a CSV download of
-  each table. Since SA-0028 the *LB: match names to the fleet* step searches
+  each table. Since 4.11.12 (SA-0028) the *LB: match names to the fleet* step searches
   like the page's *Automatic* lookup (an IP in the address fields, an FQDN
   also by the addresses the *DNS* step resolved it to) and shows a server
   policy of a cluster once; its rows carry *Name*, *Matched on* and
@@ -11780,7 +11780,7 @@ in place. Everything the change's own page shows is on the flow, as stage 3:
 | **Action bar** | Run-gate verdict and reason, plus **Approve**, **Schedule**, **Mark notified**, **Edit** and **Cancel CR** — the buttons, not links to them. |
 | **Overview** | Action, risk, window in your timezone, the appliances, who asked and who approved, notification address and status, bound scheduled action. |
 | **Change document** | The formal 13-section document, viewable and downloadable in every configured language. |
-| **Affected services** | The **frozen** inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking `.xlsx` / `.csv` export. Since 4.11.11 (SA-0027) each policy also shows the AppID it is **bound** to and the catalog's visible columns — the catalog's answer now, labelled so; the frozen rows are not changed. Since SA-0028 the export offers **every AppID catalog column** — AppID, Customer, Label, Rate, Status and any column an import added, under the names given on the AppIDs page — as one group, *AppID catalog (current values, not frozen)*, instead of two hard-coded *(catalog now)* boxes. A tick per service picks which rows are exported: choose a catalog column and one of the values present (for example Customer = Acme), then **Select matching** / **Clear matching**, or **Select all** / **Select none**. |
+| **Affected services** | The **frozen** inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking `.xlsx` / `.csv` export. Since 4.11.11 (SA-0027) each policy also shows the AppID it is **bound** to and the catalog's visible columns — the catalog's answer now, labelled so; the frozen rows are not changed. Since 4.11.12 (SA-0028) the export offers **every AppID catalog column** — AppID, Customer, Label, Rate, Status and any column an import added, under the names given on the AppIDs page — as one group, *AppID catalog (current values, not frozen)*, instead of two hard-coded *(catalog now)* boxes. A tick per service picks which rows are exported: choose a catalog column and one of the values present (for example Customer = Acme), then **Select matching** / **Clear matching**, or **Select all** / **Select none**. |
 | **External change record** | Approval mode, change ticket, NetBox window, the integration log, and the button that queues `change.requested`. |
 | **Timeline** | Every recorded event on the change. |
 | **Maintenance notice** | The client-facing draft. |

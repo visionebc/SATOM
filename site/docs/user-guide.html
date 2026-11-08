@@ -2890,7 +2890,7 @@ against what the devices say.</p>
   full row per match — entry, every column, PTR name, backends with status,
   the AppID facts and their source — with tabs and line breaks inside a
   comment turned into spaces so a line never splits.
-  Since SA-0028 the results are <strong>collapsed</strong>: a line per entry (how it was
+  Since 4.11.12 (SA-0028) the results are <strong>collapsed</strong>: a line per entry (how it was
   looked up, its DNS answers, the number of matches) and one dense line per
   match — Gateway, Policy, <strong>Service IP</strong> (the policy's VIP), <strong>Name</strong>,
   Backends (pool, member count, the first members with their configured
@@ -7184,7 +7184,7 @@ stays.</p>
   any source</em>. A cache that cannot be read shows <em>LB matching failed</em> and the
   DNS half still appears, as on the page. Actions: <strong>Copy DNS</strong> and <strong>Copy
   LB</strong> (the page's tab-separated text), <strong>DNS Records</strong>, and a CSV download of
-  each table. Since SA-0028 the <em>LB: match names to the fleet</em> step searches
+  each table. Since 4.11.12 (SA-0028) the <em>LB: match names to the fleet</em> step searches
   like the page's <em>Automatic</em> lookup (an IP in the address fields, an FQDN
   also by the addresses the <em>DNS</em> step resolved it to) and shows a server
   policy of a cluster once; its rows carry <em>Name</em>, <em>Matched on</em> and
@@ -13211,7 +13211,7 @@ in place. Everything the change's own page shows is on the flow, as stage 3:</p>
 </tr>
 <tr>
 <td><strong>Affected services</strong></td>
-<td>The <strong>frozen</strong> inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking <code>.xlsx</code> / <code>.csv</code> export. Since 4.11.11 (SA-0027) each policy also shows the AppID it is <strong>bound</strong> to and the catalog's visible columns — the catalog's answer now, labelled so; the frozen rows are not changed. Since SA-0028 the export offers <strong>every AppID catalog column</strong> — AppID, Customer, Label, Rate, Status and any column an import added, under the names given on the AppIDs page — as one group, <em>AppID catalog (current values, not frozen)</em>, instead of two hard-coded <em>(catalog now)</em> boxes. A tick per service picks which rows are exported: choose a catalog column and one of the values present (for example Customer = Acme), then <strong>Select matching</strong> / <strong>Clear matching</strong>, or <strong>Select all</strong> / <strong>Select none</strong>.</td>
+<td>The <strong>frozen</strong> inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking <code>.xlsx</code> / <code>.csv</code> export. Since 4.11.11 (SA-0027) each policy also shows the AppID it is <strong>bound</strong> to and the catalog's visible columns — the catalog's answer now, labelled so; the frozen rows are not changed. Since 4.11.12 (SA-0028) the export offers <strong>every AppID catalog column</strong> — AppID, Customer, Label, Rate, Status and any column an import added, under the names given on the AppIDs page — as one group, <em>AppID catalog (current values, not frozen)</em>, instead of two hard-coded <em>(catalog now)</em> boxes. A tick per service picks which rows are exported: choose a catalog column and one of the values present (for example Customer = Acme), then <strong>Select matching</strong> / <strong>Clear matching</strong>, or <strong>Select all</strong> / <strong>Select none</strong>.</td>
 </tr>
 <tr>
 <td><strong>External change record</strong></td>

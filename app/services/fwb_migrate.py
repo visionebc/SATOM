@@ -52,6 +52,9 @@ IDENTITY_TABLES = frozenset({
     "global:system admin-certificate intermediate-ca-group",
     "global:system admin-certificate remote", "global:system firewall admin-policy",
     "global:system sso-admin",
+    # the dashboard is drawn per administrator (widget-table sys_admin_<n>_<domain>);
+    # a no-defaults backup prints it in global, a full dump per domain
+    "global:system dashboard-widget",
     # per domain: who administers it and how its dashboard looks
     "*:system admin", "*:system dashboard-widget",
 })

@@ -30213,3 +30213,6 @@ msgstr "Lo encontrado no tiene VIP: nada que buscar en DNS"
 
 msgid "No AppID: the policy is not bound in the AppID catalog and its comment names none"
 msgstr "Sin AppID: la policy no está vinculada en el catálogo de AppIDs y su comentario no nombra ninguno"
+
+msgid "Open the policy to edit it, in a new window"
+msgstr "Abrir la policy para editarla, en una ventana nueva"

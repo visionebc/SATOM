@@ -228,6 +228,62 @@
                   <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 dl-show-btn"
                           style="font-size:10px;" data-picks="{{ picks | tojson | forceescape }}">
                     <i class="bi bi-eye"></i> {{ _('Show') }}</button>
+                  {# SA-0029: Edit (a new window) and Delete on the entry's row; with
+                     several matches each one is a menu of them #}
+                  {% set edits = [] %}{% set dels = [] %}
+                  {% for m in r.matches %}
+                    {% if m['policy'] and m['_aid'] %}
+                      {% if m['_kind'] == 'fortiadc' %}
+                        {% set u = url_for('adc.use_device', id=m['_aid'], next=url_for('adc.object_detail', logical='load_balance_virtual_server', mkey=m['policy'])) %}
+                      {% else %}
+                        {% set u = url_for('workspace.policy_detail', appliance_id=m['_aid'], name=m['policy']) %}
+                      {% endif %}
+                      {% set _x = edits.append((m, u)) %}
+                    {% endif %}
+                    {% if can_decommission and m['_aid'] and m['policy'] and m['_kind'] in ('fortiweb', 'fortiadc') %}{% set _x = dels.append(m) %}{% endif %}
+                  {% endfor %}
+                  {% if edits|length == 1 %}
+                  <a href="{{ edits[0][1] }}" target="_blank" rel="noopener"
+                     class="btn btn-sm btn-outline-primary py-0 px-2 dl-edit" style="font-size:10px;"
+                     title="{{ _('Open the policy to edit it, in a new window') }}">
+                    <i class="bi bi-pencil"></i> {{ _('Edit') }}</a>
+                  {% elif edits %}
+                  <div class="btn-group">
+                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 dropdown-toggle"
+                            style="font-size:10px;" data-bs-toggle="dropdown" aria-expanded="false"
+                            data-bs-popper-config='{"strategy":"fixed"}'
+                            title="{{ _('Open the policy to edit it, in a new window') }}">
+                      <i class="bi bi-pencil"></i> {{ _('Edit') }}</button>
+                    <ul class="dropdown-menu dropdown-menu-end" style="font-size:12px;">
+                      {% for m, u in edits %}
+                      <li><a class="dropdown-item dl-edit" href="{{ u }}" target="_blank" rel="noopener">{{ m.gateway }} / {{ m['policy'] }}</a></li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                  {% endif %}
+                  {% if dels|length == 1 %}
+                  <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 dns-decom-btn"
+                          style="font-size:10px;"
+                          title="{{ _('Decommission: preview first, nothing is deleted until you confirm the plan') }}"
+                          data-aid="{{ dels[0]['_aid'] }}" data-policy="{{ dels[0]['policy'] }}"
+                          data-hostname="{{ r.resolved }}" data-gateway="{{ dels[0].gateway }}">
+                    <i class="bi bi-trash3"></i> {{ _('Delete') }}</button>
+                  {% elif dels %}
+                  <div class="btn-group">
+                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 dropdown-toggle"
+                            style="font-size:10px;" data-bs-toggle="dropdown" aria-expanded="false"
+                            data-bs-popper-config='{"strategy":"fixed"}'
+                            title="{{ _('Decommission: preview first, nothing is deleted until you confirm the plan') }}">
+                      <i class="bi bi-trash3"></i> {{ _('Delete') }}</button>
+                    <ul class="dropdown-menu dropdown-menu-end" style="font-size:12px;">
+                      {% for m in dels %}
+                      <li><button type="button" class="dropdown-item dns-decom-btn"
+                                  data-aid="{{ m['_aid'] }}" data-policy="{{ m['policy'] }}"
+                                  data-hostname="{{ r.resolved }}" data-gateway="{{ m.gateway }}">{{ m.gateway }} / {{ m['policy'] }}</button></li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                  {% endif %}
                   {% endif %}
                 </td>
                 {% endif %}
@@ -238,11 +294,11 @@
                   <table class="table fw-table table-sm mb-0 dl-lbtable" style="font-size:12px;">
                     <thead>
                       <tr>
+                        <th class="dl-actions">{{ _('Actions') }}</th>
                         <th>{{ _('Gateway') }}</th>
                         <th>{{ _('Server Policy / Virtual Server') }}</th>
                         <th>{{ _('Service IP / name') }}</th>
                         <th>{{ _('Backends') }}</th>
-                        <th class="dl-actions">{{ _('Actions') }}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -263,47 +319,11 @@
                         {% set ptr_names = (m['service_name'] or '').split(', ') | reject('equalto', '') | list %}
                         {% set names = ([m['_fwd_name']] if m['_fwd_name'] else []) + (ptr_names | reject('equalto', m['_fwd_name']) | list) %}
                         {% set spo = m['_spo_fqdn'] %}
-                        <td class="dl-nowrap" title="{{ m.product }} · {{ m.gateway }}">
-                          <button type="button" class="btn btn-sm btn-link p-0 me-1 dl-toggle" aria-expanded="false"
-                                  data-tpl="dlm-{{ ri }}-{{ mi }}" data-slot="dls-{{ ri }}-{{ mi }}"
-                                  title="{{ _('Details') }}"><i class="bi bi-chevron-right"></i></button>
-                          <span class="text-muted" style="font-size:10px;">{{ m.product }}</span> {{ m.gateway }}
-                          {% if c %}
-                          <br><span class="fw-badge fw-badge-info dl-cluster"
-                                title="{{ c.source }} · {{ _('Members') }}: {{ c.members|join(', ') }} · {{ _('Cached on') }}: {{ c.seen_on|join(', ') }}">
-                            {% if c.role == 'primary' %}{{ _('Cluster: %(name)s (primary %(node)s, %(n)s members)', name=c.name, node=c.node, n=c.count) }}
-                            {% elif c.role in ('vip', 'cluster') %}{{ _('Cluster: %(name)s (primary resolved by the cluster, %(n)s members)', name=c.name, n=c.count) }}
-                            {% else %}{{ _('Cluster: %(name)s (role unknown, showing %(node)s, %(n)s members)', name=c.name, node=c.node, n=c.count) }}{% endif %}</span>
-                          {% endif %}
-                        </td>
-                        <td class="dl-trunc" title="{{ m['policy'] }} ({{ m['status'] or 'unknown' }})">
-                          <span class="dl-dot me-1" style="background:{{ pcol }};"></span>{{ m['policy'] }}</td>
-                        <td class="dl-trunc dl-name" title="{{ m['service_ip'] or m['_vip_note'] }}{% if names %} — {{ names|join(', ') }}{% endif %}{% if m['_name_error'] %} — {{ m['_name_error'] }}{% endif %}">
-                          {% if m['service_ip'] %}<span class="font-monospace">{{ m['service_ip'] }}</span>
-                          {% else %}<span class="fw-badge fw-badge-secondary" title="{{ m['_vip_note'] }}">{{ _('no service IP') }}</span>{% endif %}
-                          {% if names %}<br><span class="text-muted">{{ names|join(', ') }}</span>
-                          {% elif m['service_ip'] %}
-                            {% if ns == 'no_ptr' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no PTR') }}</span>
-                            {% elif ns == 'error' %}<br><span class="fw-badge fw-badge-danger">{{ _('PTR error') }}</span>
-                            {% elif ns == 'no_resolver' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no resolver configured') }}</span>{% endif %}
-                          {% endif %}
-                          {% if spo and spo not in names %}<br><span class="text-muted" title="{{ _('From the server policy name (SPO Regex)') }}"><i class="bi bi-regex"></i> {{ spo }}{% if m['_spo_ips'] %} &rarr; <span class="font-monospace">{{ m['_spo_ips']|join(', ') }}</span>{% endif %}</span>{% endif %}
-                        </td>
-                        {% set bs = m['_backends'] or [] %}
-                        <td class="dl-nowrap" title="{% for b in bs %}{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %} ({{ b.status or 'unknown' }}){% if not loop.last %}; {% endif %}{% else %}{{ m['_backends_note'] or _('no backends in cache') }}{% endfor %}">
-                          {% if m['pool'] %}<span class="font-monospace">{{ m['pool'] }}</span>{% endif %}
-                          {% if bs %}
-                          <span class="text-muted">({{ bs|length }})</span>
-                          {% for b in bs[:2] %}<span class="font-monospace ms-1"><span class="dl-dot me-1" style="background:{{ st_colors.get((b.status or '')|lower, '#3D4550') }};"></span>{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %}</span>{% endfor %}{% if bs|length > 2 %} <span class="text-muted">+{{ bs|length - 2 }}</span>{% endif %}
-                          {% else %}
-                          <span class="text-muted fst-italic">{{ _('no members in cache') }}</span>
-                          {% endif %}
-                        </td>
                         <td class="dl-actions">
                           {% if pol_url %}
                           <a href="{{ pol_url }}" target="_blank" rel="noopener"
-                             class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:10px;"
-                             title="{{ _('Open the policy to edit it') }}{% if c %} ({{ m.gateway }}){% endif %}">
+                             class="btn btn-sm btn-outline-primary py-0 px-2 dl-edit" style="font-size:10px;"
+                             title="{{ _('Open the policy to edit it, in a new window') }}{% if c %} ({{ m.gateway }}){% endif %}">
                             <i class="bi bi-pencil"></i> {{ _('Edit') }}</a>
                           {% endif %}
                           {% if can_decommission and m['_aid'] and m['policy']
@@ -387,6 +407,42 @@
                               </tbody>
                             </table>
                           </template>
+                        </td>
+                        <td class="dl-nowrap" title="{{ m.product }} · {{ m.gateway }}">
+                          <button type="button" class="btn btn-sm btn-link p-0 me-1 dl-toggle" aria-expanded="false"
+                                  data-tpl="dlm-{{ ri }}-{{ mi }}" data-slot="dls-{{ ri }}-{{ mi }}"
+                                  title="{{ _('Details') }}"><i class="bi bi-chevron-right"></i></button>
+                          <span class="text-muted" style="font-size:10px;">{{ m.product }}</span> {{ m.gateway }}
+                          {% if c %}
+                          <br><span class="fw-badge fw-badge-info dl-cluster"
+                                title="{{ c.source }} · {{ _('Members') }}: {{ c.members|join(', ') }} · {{ _('Cached on') }}: {{ c.seen_on|join(', ') }}">
+                            {% if c.role == 'primary' %}{{ _('Cluster: %(name)s (primary %(node)s, %(n)s members)', name=c.name, node=c.node, n=c.count) }}
+                            {% elif c.role in ('vip', 'cluster') %}{{ _('Cluster: %(name)s (primary resolved by the cluster, %(n)s members)', name=c.name, n=c.count) }}
+                            {% else %}{{ _('Cluster: %(name)s (role unknown, showing %(node)s, %(n)s members)', name=c.name, node=c.node, n=c.count) }}{% endif %}</span>
+                          {% endif %}
+                        </td>
+                        <td class="dl-trunc" title="{{ m['policy'] }} ({{ m['status'] or 'unknown' }})">
+                          <span class="dl-dot me-1" style="background:{{ pcol }};"></span>{{ m['policy'] }}</td>
+                        <td class="dl-trunc dl-name" title="{{ m['service_ip'] or m['_vip_note'] }}{% if names %} — {{ names|join(', ') }}{% endif %}{% if m['_name_error'] %} — {{ m['_name_error'] }}{% endif %}">
+                          {% if m['service_ip'] %}<span class="font-monospace">{{ m['service_ip'] }}</span>
+                          {% else %}<span class="fw-badge fw-badge-secondary" title="{{ m['_vip_note'] }}">{{ _('no service IP') }}</span>{% endif %}
+                          {% if names %}<br><span class="text-muted">{{ names|join(', ') }}</span>
+                          {% elif m['service_ip'] %}
+                            {% if ns == 'no_ptr' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no PTR') }}</span>
+                            {% elif ns == 'error' %}<br><span class="fw-badge fw-badge-danger">{{ _('PTR error') }}</span>
+                            {% elif ns == 'no_resolver' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no resolver configured') }}</span>{% endif %}
+                          {% endif %}
+                          {% if spo and spo not in names %}<br><span class="text-muted" title="{{ _('From the server policy name (SPO Regex)') }}"><i class="bi bi-regex"></i> {{ spo }}{% if m['_spo_ips'] %} &rarr; <span class="font-monospace">{{ m['_spo_ips']|join(', ') }}</span>{% endif %}</span>{% endif %}
+                        </td>
+                        {% set bs = m['_backends'] or [] %}
+                        <td class="dl-nowrap" title="{% for b in bs %}{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %} ({{ b.status or 'unknown' }}){% if not loop.last %}; {% endif %}{% else %}{{ m['_backends_note'] or _('no backends in cache') }}{% endfor %}">
+                          {% if m['pool'] %}<span class="font-monospace">{{ m['pool'] }}</span>{% endif %}
+                          {% if bs %}
+                          <span class="text-muted">({{ bs|length }})</span>
+                          {% for b in bs[:2] %}<span class="font-monospace ms-1"><span class="dl-dot me-1" style="background:{{ st_colors.get((b.status or '')|lower, '#3D4550') }};"></span>{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %}</span>{% endfor %}{% if bs|length > 2 %} <span class="text-muted">+{{ bs|length - 2 }}</span>{% endif %}
+                          {% else %}
+                          <span class="text-muted fst-italic">{{ _('no members in cache') }}</span>
+                          {% endif %}
                         </td>
                       </tr>
                       <tr class="dl-detail" id="dls-{{ ri }}-{{ mi }}" hidden>
@@ -1264,6 +1320,15 @@
 
   document.querySelectorAll('.dns-decom-btn').forEach(function (b) {
     b.addEventListener('click', function () { loadPlan(b); });
+  });
+  // SA-0029: Edit opens the policy in a NEW WINDOW, not a tab of this one.
+  document.querySelectorAll('a.dl-edit').forEach(function (a) {
+    a.addEventListener('click', function (ev) {
+      if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button !== 0) return;
+      ev.preventDefault();
+      var w = Math.min(1500, screen.availWidth - 40), h = Math.min(950, screen.availHeight - 40);
+      window.open(a.href, '_blank', 'noopener,popup,width=' + w + ',height=' + h);
+    });
   });
   el('decomType').addEventListener('input', gate);
   el('decomAck').addEventListener('change', gate);

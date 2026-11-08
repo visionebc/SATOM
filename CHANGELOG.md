@@ -31,6 +31,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   (Expand and Show) have an **AppID** section with every column of the AppID
   catalog under the names set on the AppIDs page, and where the AppID came
   from, or a line saying the policy has none.
+- **DNS & LB Lookup: Edit and Delete on the entry's row, Edit in a new
+  window (SA-0029).** Reported: Delete and Edit were gone (they had moved into
+  Expand, in a column the horizontal scroll hid). They are back on the row
+  next to Expand and Show; an entry with several matches gets a menu of them
+  for each. **Edit opens the policy in a new window** (Ctrl/middle click
+  still opens a tab). Inside Expand, Actions is now the first column.
 
 ## [4.11.14] - 2026-11-08
 

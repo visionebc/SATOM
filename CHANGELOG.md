@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.11.13] - 2026-11-08
+
 ### Added
 - **Operations > Incidents: SATOM's own tickets, and a runbook that raises one
   at the end of its run (FA-0008).** Requested: the run should end by raising

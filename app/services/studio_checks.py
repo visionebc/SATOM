@@ -653,6 +653,13 @@ def _open_incident(node, ctx, P):
     value = {"ref": inc.ref, "id": inc.id, "status": inc.status, "url": "/incidents/%d" % inc.id}
     if not created:
         return "ok", value, "this run already opened %s (%s)" % (inc.ref, I.label(inc.status))
+    # Opened from the incidents page it is audited by the view; opened by a
+    # run it is audited here, with the run and the person who started it.
+    from .audit import log_action
+    log_action("incident.create", target=inc.ref,
+               extra={"source": "runbook", "run": int(ctx.run_id), "user": ctx.user or "",
+                      "app": getattr(app, "slug", "") or "", "severity": inc.severity,
+                      "status": inc.status})
     return "ok", value, "opened %s (%s)" % (inc.ref, what)
 
 

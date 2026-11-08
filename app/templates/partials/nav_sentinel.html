@@ -2,8 +2,9 @@
    Sentinel ▸ — what is NOT configuration (operator, 2026-11-01: "what is
    configured stays in Settings, the rest goes to Operations").
 
-   ONE definition, drawn by partials/nav_fleet.html right below Monitoring, so
-   it is in Operations of every device ADOM and in the Global block (which is
+   ONE definition, drawn by partials/nav_fleet.html right below Monitoring
+   from 2026-11-01 to 2026-11-09 (see the end of this note), so it was in
+   Operations of every device ADOM and in the Global block (which is
    Global's Operations) in the same commit.  Until 2026-11-01 the console was a
    single entry at the top of Global › Monitoring and the other surfaces were
    Settings → AI → Sentinel panes.
@@ -16,15 +17,25 @@
    Gated on sentinel_active() as the old entry was (operator, 2026-10-23: not
    configured = not in the menu); every page still answers by URL and
    Settings → Sentinel links to the overview and the console.
+
+   2026-11-09 (operator: "move Sentinel below Scout"): TOP LEVEL, right below
+   Scout — drawn by partials/nav_operations.html above the Operations group
+   in a device or placeholder ADOM (in its own context, like Scout), and
+   right after Scout at the head of the Global block in base.html. No longer
+   inside Operations. The console entry is labelled "Security Incidents"
+   (operator, same day), which also keeps it apart from Operations ›
+   Incidents (the local SAT-INC- tickets).
    ========================================================================= #}
 {% if sentinel_active() and (may_open('sentinel.index') or may_open('sentinel.overview')
                              or may_open('sentinel.blocklist') or may_open('sentinel.docs')) %}
+{% set _sn_own = product.key != 'global' %}
+{% if _sn_own %}<div class="fw-nav-context" data-nav-context="Sentinel"><div class="fw-nav-group-body">{% endif %}
 <div class="fw-nav-subgroup {{ 'open' if request.blueprint == 'sentinel' }}" data-nav-subgroup="Sentinel">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-shield-exclamation fw-nav-icon"></i><span>{{ _('Sentinel') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
     {% if may_open('sentinel.index') %}
     <a class="fw-nav-item {{ 'active' if request.endpoint in ('sentinel.index', 'sentinel.incident_view') else '' }}" href="{{ url_for('sentinel.index', _adom=product.key) }}">
-      <i class="bi bi-activity fw-nav-icon"></i><span>{{ _('Incidents console') }}</span></a>
+      <i class="bi bi-activity fw-nav-icon"></i><span>{{ _('Security Incidents') }}</span></a>
     {% endif %}
     {% if may_open('sentinel.overview') %}
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'sentinel.overview' else '' }}" href="{{ url_for('sentinel.overview', _adom=product.key) }}">
@@ -40,4 +51,5 @@
     {% endif %}
   </div>
 </div>
+{% if _sn_own %}</div></div>{% endif %}
 {% endif %}

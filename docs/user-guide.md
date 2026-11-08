@@ -4041,7 +4041,7 @@ manual §7).
 - **Signatures** (Web Application Firewall group, `protection.view`) — WAF
   signature category/severity overview with per-severity actions; deep editing
   through the object detail.
-- **API console** (sidebar → Operations → Automation → API → Registry & console, `registry.view`) — the
+- **API console** (sidebar → Administrator → API → Registry & console; Operations → Automation → API for a profile without *user management*; `registry.view`) — the
   registry-driven explorer: browse the ADC endpoint catalog as the GUI menu, run
   live GETs and gated writes against a chosen device, with history and
   syntax-highlighted responses. Writes are **dry-run by default**: without
@@ -4136,7 +4136,7 @@ the whole menu as a grid.
   that page instead. The others render the old read-only section page, capped
   at 500 rows with the truncation stated, with an explicit **"No endpoint
   bound."** state where no REST resource is behind the pane.
-- **API console** (sidebar → Operations → Automation → API → Registry & console, `registry.view`) — the
+- **API console** (sidebar → Administrator → API → Registry & console; Operations → Automation → API for a profile without *user management*; `registry.view`) — the
   registry-driven explorer over the FAC catalogue, with live GETs and gated
   writes against a chosen device (§30 covers the registry model behind all four
   consoles). Catalog rows can be disabled and restored on the page; re-pointing
@@ -4186,7 +4186,7 @@ can take them out of the menu.
   the rest of the page.
 - **Device Manager** — Authorize / Delete run in the FortiAnalyzer ADOM you
   type in the dialog (default `root`); the device list spans every FAZ ADOM.
-- **API console** (sidebar → Operations → Automation → API → Registry & console, `registry.view`) — same
+- **API console** (sidebar → Administrator → API → Registry & console; Operations → Automation → API for a profile without *user management*; `registry.view`) — same
   registry-driven explorer, JSON-RPC aware, with permission-gated writes that
   are **dry-run by default** (tick **Apply** to send). The status badge shows the
   device's JSON-RPC status code, not the transport's HTTP 200.
@@ -4239,7 +4239,7 @@ REST field is no longer offered as "CLI only".
 - **Not in GUI, but in CLI** is on every object, edit and Create New form
   (§7.3). A page or field measured as having no API is drawn read-only and
   marked **"No API on this build (GUI only)"**.
-- **API console** (sidebar → Operations → Automation → API → Registry & console, `registry.view`) — the
+- **API console** (sidebar → Administrator → API → Registry & console; Operations → Automation → API for a profile without *user management*; `registry.view`) — the
   FortiGate registry browsed as the FortiGate menu, and a live console. `GET`
   reads the `cmdb`, `monitor` and `log` trees. `POST`, `PUT` and `DELETE` are
   **dry-run by default** (tick **Apply** to send; `registry.execute_write`),
@@ -7203,14 +7203,15 @@ Every form in those panes returns to the pane it was fired from. The standalone
 URLs (`/settings/sentinel`, `/sentinel/context`, `/sentinel/policies`) are still
 there, rendered from the same files as the panes.
 
-**Everything else is Operations › Sentinel** — a sub-menu right below
-Monitoring, in the Operations group of every device ADOM and in the Global
-block, drawn only while Sentinel is configured (switched on and at least one
-FortiWeb to sweep):
+**Everything else is the Sentinel menu** — a top-level sub-menu right below
+Scout (above the Operations group in a device ADOM, right after Scout in the
+Global block), drawn only while Sentinel is configured (switched on and at
+least one FortiWeb to sweep). It sat in Operations, below Monitoring, until
+this change:
 
 | Entry | Page | What it holds |
 |---|---|---|
-| **Incidents console** | `/sentinel/` | Health tiles, the seven-day figures and the incident table. |
+| **Security Incidents** | `/sentinel/` | Health tiles, the seven-day figures and the incident table. |
 | **Overview** | `/sentinel/overview` | The health line, the log of recent decisions (refused proposals included; shown to holders of *config write*), the local CVE mirror with *Sync now* and *Add a CVE by hand*, the pipeline stage by stage, the score bands and the live weight table, and the ten demonstrations runnable against the real engine. |
 | **Border blocklist** | `/sentinel/blocklist` | The published feed's state, its audit mirror, listing an address, the live entries and their release, and what the border receives right now. The feed's settings stay in Settings → Sentinel. |
 | **Architecture** | `/sentinel/docs` | The reference document rendered from the live tables, including cards 13–15 on Scout and Path Diagnostics (§33.10). |
@@ -7246,7 +7247,7 @@ because the setting is meaningless without it. They are not repeated here:
 | **Hypervisors** | §21.1 — the Proxmox / ESXi endpoints provisioning may build on |
 | **Clone / Migrate** | §6 — dummy-VIP rewrite rules and the copy-WPP default |
 | **Appearance** | §19 — themes, tokens, logo and favicon, and which sidebar entries are hidden |
-| **Sentinel** | `Settings → AI → Sentinel → Settings` — every knob Sentinel is configured by, **rendered in the pane itself**. The same section is also served standalone at `/settings/sentinel` — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. **Context** and **Response policy** are panes beside it, rendered from the same files as `/sentinel/context` and `/sentinel/policies`. The incidents console, the overview (health, pipeline, weights, demo lab, CVE mirror, decision log), the border blocklist and the architecture are **Operations › Sentinel** pages, not Settings panes. Every element of the form — each knob, each group heading and each link out — carries a **?**; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes. |
+| **Sentinel** | `Settings → AI → Sentinel → Settings` — every knob Sentinel is configured by, **rendered in the pane itself**. The same section is also served standalone at `/settings/sentinel` — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. **Context** and **Response policy** are panes beside it, rendered from the same files as `/sentinel/context` and `/sentinel/policies`. The incidents console, the overview (health, pipeline, weights, demo lab, CVE mirror, decision log), the border blocklist and the architecture are pages of the top-level **Sentinel** menu (below Scout), not Settings panes. Every element of the form — each knob, each group heading and each link out — carries a **?**; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes. |
 
 The rest follow.
 
@@ -8769,7 +8770,7 @@ Operations → **Incidents** (every ADOM, right below Monitoring), or
 device that does not answer, a failover, a recovery. It has a reference
 (`SAT-INC-000001`), an appliance, a severity (P1-P4), a status (*open*, *in
 progress*, *waiting vendor*, *resolved*, *closed*) and an owner. Sentinel's
-security incidents (`INC-…`, Operations → Sentinel) are a different thing and
+security incidents (`INC-…`, Sentinel → Security Incidents) are a different thing and
 stay there.
 
 - **Who opens one.** A person (**New incident**), or a runbook through its
@@ -10014,7 +10015,7 @@ what fills the CLI columns of the Build compatibility page (§30.11).
 ### 30.11 Build compatibility: which fields exist on which build
 
 The same REST API version carries different fields on different firmware
-builds. **Build compatibility** (Automation → API in the sidebar;
+builds. **Build compatibility** (Administrator → API in the sidebar, Automation → API without *user management*;
 `/web/registry/build-compat/`; needs the registry edit permission) shows, per product, every object and field
 against the builds you pick, by channel. The full reference is
 [Build compatibility](build-compatibility.md).
@@ -10072,7 +10073,7 @@ From the console: `sudo satom execute apilib compat fortiweb 7.6.8 8.0.6` and
 When an appliance starts running a firmware build whose schema SATOM has never
 harvested, every administrator gets **one** bell notification for that product
 and build: *New build 8.0.7 on fweb-01: schema not harvested*. It links to
-**Schema builds** (Automation → API in the sidebar — under Operations in a device ADOM, in the Global block in Global;
+**Schema builds** (Administrator → API in the sidebar; without *user management*, Automation → API — under Operations in a device ADOM, in the Global block in Global;
 `/schema-builds/`; reading needs `registry.view`).
 
 The page has three parts:
@@ -10584,7 +10585,7 @@ These are planned, in this order, and are **not** available today:
 
 ### 33.10 How Scout and Path Diagnostics work — in Sentinel's architecture
 
-Sentinel's architecture document (**Operations › Sentinel › Architecture**,
+Sentinel's architecture document (**Sentinel › Architecture**,
 `/sentinel/docs`) ends with three cards on the two
 operations tools. A link under the page title jumps to them.
 

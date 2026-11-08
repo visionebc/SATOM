@@ -28,6 +28,7 @@
    (runbooks are Plugin Studio apps).
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
+{% from 'partials/_nav_api.html' import api_menu with context %}
 {% set _pk = product.key %}
 {# Device ADOMs draw every FortiWeb entry (FortiWeb is the reference menu,
    2026-10-11): live where the page works for this ADOM's devices, disabled
@@ -55,6 +56,12 @@
       <i class="bi bi-door-open fw-nav-icon"></i><span>{{ _('App sign-in') }}</span></a>
     {% endif %}
 {% endset %}
+
+{# API (operator, 2026-11-09: "put the API menu in Administrator"): the
+   registry & console of the ADOM's devices plus Schema builds and Build
+   compatibility, each with its own gate (partials/_nav_api.html). Profiles
+   without user_manage keep it in Automation / the standalone API group. #}
+{% set _s_api %}{{ api_menu(true, bare=true) }}{% endset %}
 
 {% set _s_devices %}
     {# Appliances: moved here from Fleet (2026-10-13); nav_fleet.html keeps it
@@ -175,6 +182,7 @@
   <div class="fw-nav-group-body">
     {% for s in nav_sections([
          (_('Access'), 'bi-person-lock', 'Access', _s_access),
+         ('API', 'bi-braces', 'API', _s_api),
          (_('Devices'), 'bi-hdd-rack', 'Devices', _s_devices),
          (_('Objects'), 'bi-tags', 'Objects', _s_objects),
          (_('System'), 'bi-gear', 'System', _s_system),

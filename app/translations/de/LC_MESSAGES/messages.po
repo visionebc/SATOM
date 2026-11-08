@@ -20692,8 +20692,8 @@ msgstr "Antwortrichtlinie"
 msgid "Border blocklist"
 msgstr "Grenz-Sperrliste"
 
-msgid "Incidents console"
-msgstr "Vorfallskonsole"
+msgid "Security Incidents"
+msgstr "Sicherheitsvorfälle"
 
 msgid "Scout — fault isolation"
 msgstr "Scout — Pfaddiagnose"

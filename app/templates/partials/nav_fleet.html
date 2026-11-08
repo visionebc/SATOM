@@ -55,14 +55,14 @@
 {% endif %}
 {% include 'partials/nav_monitoring.html' %}
 {# Incidents (SAT-INC-, operator 2026-11-08: a runbook "raises an incident,
-   a local ticket"): right below Monitoring, above Sentinel, whose incidents
-   are security incidents and stay in its own group. #}
+   a local ticket"): right below Monitoring. Sentinel's incidents are
+   security incidents and stay in its own menu. #}
 {% if may_open('incidents.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'incidents' else '' }}" href="{{ url_for('incidents.index', _adom=product.key) }}">
   <i class="bi bi-ticket-detailed fw-nav-icon"></i><span>{{ _('Incidents') }}</span></a>
 {% endif %}
-{# Sentinel ▸ right below Monitoring (operator, 2026-11-01). #}
-{% include 'partials/nav_sentinel.html' %}
+{# Sentinel ▸ sat here, below Incidents, from 2026-11-01 to 2026-11-09; it
+   is top level now, right below Scout (partials/nav_sentinel.html). #}
 {% if may_open('search.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
   <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>
@@ -108,7 +108,7 @@
    gets that API subgroup here in the Global block (and in a placeholder ADOM);
    a device ADOM draws it as the standalone API group instead
    (partials/nav_product_api.html), so it is never drawn twice. #}
-{% if not (current_user and current_user.can('config_write'))
+{% if not (current_user and (current_user.can('config_write') or current_user.can('user_manage')))
       and (_pk == 'global' or product.placeholder) %}
 {% from 'partials/_nav_api.html' import api_menu with context %}
 {{ api_menu(true) }}

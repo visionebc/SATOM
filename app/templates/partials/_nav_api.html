@@ -23,8 +23,14 @@
    ``_adom=product.key`` pins the ADOM on a HARD navigation, like every other
    Automation entry (tests/test_automation_adom_nav.py); the link lacked it
    from the move into Automation until 2026-10-14.
+
+   2026-11-09 (operator: "put the API menu in Administrator"): for user_manage
+   holders it is the API section of Administrator (partials/nav_admin.html
+   calls ``api_menu(true, bare=true)`` — the entries only; nav_sections draws
+   the toggle). Automation, the standalone group and the Global block keep it
+   only for profiles WITHOUT user_manage, so it is never drawn twice.
    ========================================================================= #}
-{% macro api_menu(nested) %}
+{% macro api_menu(nested, bare=false) %}
 {% set _api_ep = {'fortiweb': 'registry.index', 'fortiadc': 'adc_api.index',
                   'fortianalyzer': 'faz_api.index',
                   'fortiauthenticator': 'fac_api.index',
@@ -36,6 +42,13 @@
 {% set _show_sb = may_open('schema_builds.index') %}
 {% set _show_bc = may_open('build_compat.index') %}
 {% if _show_reg or _show_sb or _show_bc %}
+{% if bare %}
+    {% if _show_reg %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint in _reg_bps else '' }}" href="{{ url_for(_api_ep, _adom=product.key) }}">
+      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Registry & console') }}</span></a>
+    {% endif %}
+    {% include 'partials/nav_api_library.html' %}
+{% else %}
 {% if nested %}
 <div class="fw-nav-subgroup {{ 'open' if request.blueprint in _api_bps }}" data-nav-subgroup="API">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-braces fw-nav-icon" style="color:#0891b2;"></i><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
@@ -52,5 +65,6 @@
     {% include 'partials/nav_api_library.html' %}
   </div>
 </div>
+{% endif %}
 {% endif %}
 {% endmacro %}

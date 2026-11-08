@@ -168,7 +168,9 @@
 {# API (registry & console) — its own group until 2026-10-14, a subgroup
    here since (operator). registry.view still gates it (partials/_nav_api.html).
    Passed to nav_sorted() as ONE block, sorted under its "API" label. #}
-{% set _a_api %}{{ api_menu(true) }}{% endset %}
+{# Since 2026-11-09 (operator) a user_manage holder finds API in
+   Administrator (partials/nav_admin.html); it stays here for the rest. #}
+{% set _a_api %}{% if not current_user.can('user_manage') %}{{ api_menu(true) }}{% endif %}{% endset %}
 {# Global (operator, 2026-11-08): no Automation ▸ subgroup -- its entries sit
    in the Global block itself, at the level of Search, in the same sorted
    order and the same place (right above Plugins). Device and placeholder

@@ -20694,8 +20694,8 @@ msgstr "Politique de réponse"
 msgid "Border blocklist"
 msgstr "Liste de blocage en périphérie"
 
-msgid "Incidents console"
-msgstr "Console des incidents"
+msgid "Security Incidents"
+msgstr "Incidents de sécurité"
 
 msgid "Scout — fault isolation"
 msgstr "Scout — analyse du chemin"

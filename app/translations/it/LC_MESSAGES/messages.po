@@ -20729,8 +20729,8 @@ msgstr "Policy di risposta"
 msgid "Border blocklist"
 msgstr "Blocklist perimetrale"
 
-msgid "Incidents console"
-msgstr "Console degli incidenti"
+msgid "Security Incidents"
+msgstr "Incidenti di sicurezza"
 
 msgid "Scout — fault isolation"
 msgstr "Scout — diagnostica del percorso"

@@ -27,6 +27,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   adds `studio_apps.page_key`.
 
 ### Changed
+- **Sidebar: Sentinel below Scout, its console is "Security Incidents", API
+  in Administrator.** Requested: move Sentinel right below Scout in the main
+  menu, rename its incidents entry to Security Incidents, and put the API
+  menu in Administrator. Sentinel is a top-level sub-menu right below Scout
+  (above Operations in a device ADOM, after Scout in the Global block), no
+  longer inside Operations; its first entry, and the buttons that lead to it
+  from the Sentinel overview and Settings, read *Security Incidents* (it was
+  *Incidents console*), which also keeps it apart from Operations ›
+  Incidents. For a profile with *user management* API (Registry & console,
+  Schema builds, Build compatibility) is a section of Administrator and has
+  left Automation; a profile without it keeps API where it was (Automation,
+  or the standalone API group), so no page is lost and none is drawn twice.
 - **Sidebar: Global has no Automation subgroup; Automations is now Scheduler.**
   Requested: take the entries out of Global > Automation and put them at the
   level of Search, and call the menu Scheduler. In the Global ADOM, API,

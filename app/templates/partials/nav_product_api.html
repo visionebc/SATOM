@@ -15,6 +15,7 @@
    ========================================================================= #}
 {% from 'partials/_nav_api.html' import api_menu with context %}
 {% include 'partials/nav_fortiadc.html' %}
-{% if not (current_user and current_user.can('config_write')) %}
+{# Administrator holds API for user_manage since 2026-11-09 (operator). #}
+{% if not (current_user and (current_user.can('config_write') or current_user.can('user_manage'))) %}
 {{ api_menu(false) }}
 {% endif %}

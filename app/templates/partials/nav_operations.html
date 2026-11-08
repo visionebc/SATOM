@@ -50,12 +50,14 @@
 {% from 'partials/_nav_off.html' import nav_off %}
 {% if product.key != 'global' %}
 {% set _dev = not product.placeholder %}
-{% set _g_ops = request.blueprint in ['backups','import_backup','plugins','lua_studio','wiki','apps','sentinel'] %}
+{% set _g_ops = request.blueprint in ['backups','import_backup','plugins','lua_studio','wiki','apps'] %}
 {% set _m_bak = adom_menu('backups', product) %}
 {% set _m_imp = adom_menu('import_backup', product) %}
 {% set _m_tpl = adom_menu('templates', product) %}
 {# Scout: top level, right above Wiki (operator, 2026-10-31). #}
 {% include 'partials/nav_advisor.html' %}
+{# Sentinel: top level, right below Scout (operator, 2026-11-09). #}
+{% include 'partials/nav_sentinel.html' %}
 <div class="fw-nav-group{{ ' open' if _g_ops }}" data-nav-group="Operations">
   <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-tools fw-nav-section-icon" style="color:#94a3b8;"></i><span>{{ _('Operations') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">

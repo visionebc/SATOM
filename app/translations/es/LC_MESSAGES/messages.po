@@ -20728,8 +20728,8 @@ msgstr "Política de respuesta"
 msgid "Border blocklist"
 msgstr "Lista de bloqueo perimetral"
 
-msgid "Incidents console"
-msgstr "Consola de incidentes"
+msgid "Security Incidents"
+msgstr "Incidentes de seguridad"
 
 msgid "Scout — fault isolation"
 msgstr "Scout — diagnóstico de ruta"

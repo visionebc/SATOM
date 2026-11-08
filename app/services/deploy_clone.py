@@ -92,7 +92,10 @@ LEFT_BEHIND = {
         "monitor_sample", "monitor_rollup", "monitor_report",
         "sentinel_baseline", "sentinel_incident", "sentinel_incident_event",
         "sentinel_event", "sentinel_evidence", "sentinel_anomaly",
-        "sentinel_action", "sentinel_action_result", "sentinel_block_entry"),
+        "sentinel_action", "sentinel_action_result", "sentinel_block_entry",
+        # Operations > Incidents: name appliances and app runs by id.
+        "op_incidents", "op_incident_entries",
+        "op_vendor_tickets", "op_vendor_ticket_entries"),
 }
 LEFT_BEHIND_TABLES = frozenset(t for ts in LEFT_BEHIND.values() for t in ts)
 

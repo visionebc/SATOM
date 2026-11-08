@@ -199,6 +199,11 @@ PAGES: tuple[dict, ...] = (
        "respond breach suspicious spike who attacked",
        "Correlated incidents across every signal Sentinel collects, scored and "
        "banded by how far it is allowed to act on its own."),
+    _p("incidents.index", "Incidents", "monitoring",
+       "incident ticket outage down unreachable runbook recovery vendor tac l3 "
+       "case rma escalation history sat-inc",
+       "Operational incidents (SAT-INC-) opened by runbooks or by hand, with "
+       "their history and the vendor / L3 tickets that belong to them."),
     _p("sentinel.overview", "Sentinel Overview", "monitoring",
        "sentinel overview health pipeline how it works demo scenario "
        "simulation weights score bands cve mirror kev sync decisions refused "
@@ -745,7 +750,7 @@ EXCLUDED: dict[str, str] = {
     "monitor_reports.preview": "json feed", "monitoring.satom_data": "json feed",
     "monitoring.satom_history": "json feed",
     "service_monitor.data": "json feed", "notifications.unread": "json feed",
-    "sentinel.data": "json feed",
+    "sentinel.data": "json feed", "appids.comment_bindings": "json feed",
     "sentinel.blocklist_feed":
         "machine endpoint — the border blocklist as plain text, fetched by a "
         "FortiGate threat-feed connector with a token in the path. It answers "

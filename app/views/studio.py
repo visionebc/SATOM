@@ -901,6 +901,11 @@ def app_edit(slug):
     a = _app_or_404(slug)
     if a.kind == "script":  # its form, code and versions live in the script editor
         return redirect(url_for("script_library.edit", slug=a.script_slug))
+    if a.kind == "page":    # nothing to design: where it is drawn, the page it opens
+        from ..services import studio_pages as SP
+        return render_template("studio/app_page.html", a=a, page=SP.get(a.page_key),
+                               adoms=_adom_choices(), app_groups=SA.groups(),
+                               template=SA.is_template(a))
     ch = SA.choices()
     return render_template(
         "studio/app.html", a=a, problems=SA.problems(a), kinds=F.kinds(ch),

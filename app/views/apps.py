@@ -8,7 +8,7 @@ ticked. Both are answered by ``services.studio_apps``, never here.
 """
 from __future__ import annotations
 
-from flask import Blueprint, Response, abort, jsonify, render_template, request
+from flask import Blueprint, Response, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from ..extensions import db, limiter
@@ -41,8 +41,8 @@ def _usable_or_404(slug) -> StudioApp:
     a = SA.get(slug)
     if a is None or not SA.can_use(current_user, a):
         abort(404)
-    if a.kind == "script":  # a script app runs from the script's own page
-        abort(404)
+    if a.kind in ("script", "page"):  # a script app runs from the script's own page;
+        abort(404)                     # a page plugin has nothing to run (see page())
     if not a.enabled and not SA.is_author(current_user):
         abort(404)
     # ADOMs are where a console user meets the app; an Apps-only account has
@@ -75,6 +75,13 @@ def _run_or_404(rid) -> tuple[StudioAppRun, StudioApp]:
 @bp.route("/<slug>")
 @login_required
 def page(slug):
+    pg = SA.get(slug)
+    if pg is not None and pg.kind == "page":   # its SATOM page, under the page's permission
+        from ..services import studio_pages as SP
+        target = SP.get(pg.page_key)
+        if target is None or not pg.enabled or not SA.page_allowed(current_user, pg.page_key):
+            abort(404)
+        return redirect(url_for(target["endpoint"]))
     a = _usable_or_404(slug)
     if not a.published:
         return render_template("apps/page.html", a=a, fields=[], runs=[], unpublished=True)

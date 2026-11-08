@@ -51,6 +51,7 @@ from urllib.parse import quote, quote_plus
 from ..extensions import db
 from ..models_studio import StudioApp, StudioAppRun, StudioFolder, UserGroup, user_group_members
 from . import studio_flow as F
+from . import studio_pages as SP
 
 AUTHOR = "studio.script_library"
 FIELD_TYPES = ("text", "textarea", "number", "select", "checkbox", "password", "date",
@@ -808,6 +809,9 @@ def secret_problems(a: StudioApp) -> list[str]:
 
 
 def publish(a: StudioApp, note: str, by: str) -> int:
+    if a.kind == "page":
+        raise AppError("%s is a page plugin: there is nothing to publish -- its menu entry "
+                       "follows its ADOMs and whether it is enabled" % a.slug)
     errs = problems(a)
     if errs:
         raise AppError("not published: " + " · ".join(errs))
@@ -846,8 +850,10 @@ def delete(a: StudioApp) -> None:
 #: "flow": a form and a diagram, run here. "script": the entry of a Script
 #: Library script -- its code, form, versions and audience stay in
 #: data/scripts/<script_slug>, because the sandbox runner that executes it
-#: must never hold a database connection (services.script_library).
-KINDS = ("flow", "script")
+#: must never hold a database connection (services.script_library). "page":
+#: a plugin whose menu entry opens a SATOM page (services.studio_pages); it
+#: comes only from a package and has nothing to publish or run (2026-11-08).
+KINDS = ("flow", "script", "page")
 
 
 def script_app(script_slug: str) -> StudioApp | None:
@@ -942,6 +948,10 @@ def list_rows() -> list[dict]:
                      published=meta.get("published"), latest=max(vs) if vs else None,
                      missing=not meta, audience=meta.get("audience") or "admins",
                      edit_endpoint="script_library.edit", edit_slug=a.script_slug)
+        elif a.kind == "page":
+            page = SP.get(a.page_key)
+            r.update(name=a.name, description=a.description or "", published=None,
+                     latest=None, missing=page is None, audience="", page=page)
         else:
             r.update(name=a.name, description=a.description or "",
                      published=a.version if a.status == "published" else None,
@@ -1129,6 +1139,9 @@ def clone(a: StudioApp, new_slug: str, new_name: str, *, mode: str = "structure"
     from ..models_studio import StudioAppAsset, StudioDataStore, StudioRow
     if mode not in CLONE_MODES:
         raise AppError("mode is all, structure or shared")
+    if a.kind == "page":        # two entries opening the same page would be one page twice
+        raise AppError("%s is a page plugin: it opens a SATOM page, there is nothing to clone"
+                       % a.slug)
     new_slug = (new_slug or "").strip()
     if not _SLUG_RE.match(new_slug):
         raise AppError("Id: lowercase letters, digits, - and _, 2 to 48 characters.")
@@ -1337,6 +1350,18 @@ def can_use(user, a: StudioApp) -> bool:
     return app_signin.may_use_by_signin(user, a)
 
 
+def page_allowed(user, page_key) -> bool:
+    """Whether *user* passes the permission the route of a page plugin's page
+    asks (services.studio_pages): that, not the app's access list, decides
+    who sees the entry and who is sent on to the page."""
+    page = SP.get(page_key)
+    if page is None or user is None or not getattr(user, "is_authenticated", False):
+        return False
+    from flask import current_app
+    from .concept_map import required_permission, user_passes
+    return user_passes(user, required_permission(page["endpoint"], current_app))
+
+
 def shown_in(a: StudioApp, product_key: str) -> bool:
     """Drawn in this ADOM by its own ADOMs or by its folder's."""
     key = product_key or "global"
@@ -1351,7 +1376,10 @@ def menu(user, product_key: str) -> list[dict]:
     sidebar and the Plugins page: flow apps by their ADOMs and access list,
     script apps (Global only, like scripts always were) by the script's
     audience (script_schedules.can_run) and operations.scripts_run, the key
-    of their run page. ``endpoint`` / ``target`` build the link; ``group``
+    of their run page, page apps by their ADOMs and the permission of the
+    SATOM page they open (services.studio_pages; ``target`` is "" and
+    ``blueprint`` / ``not_active`` say when the entry is the current page).
+    ``endpoint`` / ``target`` build the link; ``group``
     is the menu group the sidebar files it under (:func:`grouped`)."""
     if user is None or not getattr(user, "is_authenticated", False):
         return []
@@ -1373,6 +1401,15 @@ def menu(user, product_key: str) -> list[dict]:
                             "description": meta.get("description") or "",
                             "icon": a.icon, "kind": "script", "group": a.menu_group or "",
                             "endpoint": "scripts.run_page", "target": a.script_slug})
+        elif a.kind == "page":
+            # the page's own permission, not the access list (studio_pages)
+            page = SP.get(a.page_key)
+            if page is not None and shown_in(a, product_key) and page_allowed(user, a.page_key):
+                out.append({"slug": a.slug, "name": a.name, "description": a.description or "",
+                            "icon": a.icon, "kind": "page", "group": a.menu_group or "",
+                            "endpoint": page["endpoint"], "target": "",
+                            "blueprint": page["blueprint"],
+                            "not_active": list(page.get("not_active") or ())})
         elif a.status == "published" and a.published and shown_in(a, product_key) \
                 and can_use(user, a):
             out.append({"slug": a.slug, "name": a.name, "description": a.description or "",
@@ -1388,6 +1425,8 @@ def _runnable_app(a: StudioApp) -> bool:
     if a.kind == "script":
         meta = script_meta(a)
         return bool(meta.get("published"))
+    if a.kind == "page":        # a console page: an Apps-only account has no console
+        return False
     return a.status == "published" and bool(a.published)
 
 
@@ -1518,6 +1557,9 @@ def start_run(a: StudioApp, *, user, product: str, raw_inputs, draft: bool = Fal
         raise AppError("%s is disabled" % a.slug)
     if a.kind == "script":
         raise AppError("%s is a script app: it runs from its own page" % a.slug)
+    if a.kind == "page":
+        raise AppError("%s is a page plugin: it opens a SATOM page and has nothing to run"
+                       % a.slug)
     d = definition(a, draft)
     _room_for_run(getattr(user, "username", ""))
     _prune_runs()

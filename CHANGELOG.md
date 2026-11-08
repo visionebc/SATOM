@@ -6,6 +6,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Plugin Studio: page plugins.** Requested: make DNS Lookup a plugin
+  without losing any function or any part of the view. A Plugin Studio app
+  form cannot draw that page, so an app package can now be a *page plugin*
+  (`app.kind: "page"`, `app.page: <id>`): its menu entry under Plugins opens a
+  SATOM page exactly as SATOM draws it. The page, its routes and its code stay
+  in SATOM. The plugin decides whether the entry is drawn (installed and
+  enabled) and where (its ADOMs and its folder's ADOMs). Who may open it is
+  the page's own permission, never the app's access list. The pages form a
+  closed list (`services/studio_pages.py`; today `dns-lookup`): a package
+  can never point an entry at another URL. A page package carries nothing
+  that runs (form, diagram, actions, design, images, data stores,
+  connections, APIs, scripts, automations, sign-in), and the import refuses
+  it otherwise (new rules `app.page` and `app.kind`; a page plugin and a flow
+  app never replace each other). It never runs, publishes or clones,
+  `/apps/<slug>` sends to the page, and an Apps-only account never gets it.
+  Plugin Studio lists it as *Page* with its own small editor (name, icon,
+  folder, ADOMs, the page it opens, export, delete). Migration `apppage01`
+  adds `studio_apps.page_key`.
+
 ### Changed
 - **DNS & LB Lookup: the main table is the DNS side only (SA-0029, second
   round).** Requested: the main table shows only the DNS results and the

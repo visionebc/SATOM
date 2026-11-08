@@ -279,8 +279,11 @@ class StudioApp(db.Model):
     #: "flow" (form + diagram, run here) or "script" (the entry of a Script
     #: Library script: the code, its form and its versions stay in
     #: data/scripts/<script_slug>, run by the sandbox runner). 2026-10-23.
+    #: "page": a plugin whose menu entry opens a SATOM page (``page_key``,
+    #: services.studio_pages), drawn as SATOM draws it; nothing runs. 2026-11-08.
     kind = db.Column(db.String(16), nullable=False, default="flow", server_default="flow")
     script_slug = db.Column(db.String(48), nullable=True)
+    page_key = db.Column(db.String(48), nullable=True)
     #: False = disabled: out of every menu and no run starts; nothing is lost.
     enabled = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
     #: The PUBLISHED snapshot ({version, fields, graph, actions, at, by, note})

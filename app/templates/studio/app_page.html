@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "studio/_folder_select.html" import folder_select %}
+{% block title %}{{ a.name }} — App{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ asset('css/icon_picker.css') }}">
+<script src="{{ asset('js/icon_picker.js') }}" nonce="{{ csp_nonce }}" defer></script>{% endblock %}
+{% block content %}
+{# Plugin Studio > Apps > a PAGE plugin (views.studio.app_edit, kind "page",
+   services.studio_pages, 2026-11-08). Its menu entry opens a SATOM page
+   drawn as SATOM draws it, so there is no form, diagram, design, test or
+   publish: only where the entry is drawn (ADOMs, folder), its name and icon,
+   the page it opens, export and delete. Who opens the page is the page's own
+   permission, not an access list. #}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='apps') }}">{{ _('Plugin Studio') }}</a> › {{ _('Apps') }}</div>
+    <h1 class="fw-page-title"><i class="bi {{ a.icon }} me-2 text-accent"></i><span id="ap-title">{{ a.name }}</span></h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><code>{{ a.slug }}</code> ·
+      <span class="fw-badge fw-badge-secondary"><i class="bi bi-window me-1"></i>{{ _('Page plugin') }}</span>
+      {% if a.pkg_version %}<span class="fw-badge fw-badge-secondary">{{ _('package') }} {{ a.pkg_version }}</span>{% endif %}
+      {% if a.enabled %}<span class="fw-badge fw-badge-success">{{ _('enabled') }}</span>{% else %}<span class="fw-badge fw-badge-warning">{{ _('disabled') }}</span>{% endif %}
+      <span id="ap-state" class="ms-2"></span></p>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='apps') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Plugin Studio') }}</a>
+    {% if page %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for(page.endpoint) }}"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Open the page') }}</a>{% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-xl-6"><div class="fw-card"><div class="fw-card-body row g-2" style="font-size:13px;">
+    <div class="col-md-8"><label class="form-label small" for="ap-name">{{ _('Name (the menu entry)') }}</label><input class="form-control form-control-sm" id="ap-name" value="{{ a.name }}" maxlength="120"></div>
+    <div class="col-md-4"><label class="form-label small" for="ap-icon">{{ _('Icon') }}</label><input class="form-control form-control-sm" id="ap-icon" value="{{ a.icon }}" maxlength="31" placeholder="bi-app-indicator" data-icon-picker="{{ url_for('studio.icons') }}"></div>
+    <div class="col-12"><label class="form-label small" for="ap-menu-group">{{ _('Folder') }}</label>
+      {{ folder_select('ap-menu-group', '', a.menu_group, app_groups) }}
+      <div class="form-text">{{ _('The submenu of Plugins it is drawn in; no folder = a plain entry of Plugins.') }}
+        {% set _fa = studio_folder_adoms(a) %}
+        {% if _fa %}<span class="d-block mt-1"><i class="bi bi-folder2 me-1"></i>{{ _('Its folder also gives it') }}: {{ _('ADOMs') }} {{ _('every ADOM') if '*' in _fa else (_fa|sort|join(', ')) }}.</span>{% endif %}
+        <a href="{{ url_for('studio.index', pane='folders') }}">{{ _('Manage folders') }}</a></div></div>
+    <div class="col-12"><label class="form-label small" for="ap-desc">{{ _('Description (shown to users)') }}</label><textarea class="form-control form-control-sm" id="ap-desc" rows="3" maxlength="2000">{{ a.description }}</textarea></div>
+    <div class="col-12"><label class="form-label small d-block">{{ _('Where it appears (Plugins of these ADOMs)') }}</label>
+      <div class="form-check form-check-inline"><input class="form-check-input ap-adom" type="checkbox" id="ap-adom-all" value="*" {{ 'checked' if '*' in a.adoms }}><label class="form-check-label" for="ap-adom-all"><strong>{{ _('Every ADOM') }}</strong></label></div>
+      {% for k, label in adoms %}
+      <div class="form-check form-check-inline"><input class="form-check-input ap-adom" type="checkbox" id="ap-adom-{{ k }}" value="{{ k }}" {{ 'checked' if k in a.adoms }}><label class="form-check-label" for="ap-adom-{{ k }}">{{ label }}</label></div>
+      {% endfor %}
+      <div class="form-text">{{ _('No ADOM ticked: the entry is drawn nowhere and the page still answers by its address.') }}</div></div>
+    <div class="col-12"><button type="button" class="btn btn-primary btn-sm" id="ap-save-settings"><i class="bi bi-save me-1"></i>{{ _('Save settings') }}</button></div>
+  </div></div></div>
+
+  <div class="col-xl-6">
+    <div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-window me-2 text-accent"></i>{{ _('The page it opens') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+      {% if page %}
+        <p class="mb-2"><strong>{{ page.name }}</strong> · <a href="{{ url_for(page.endpoint) }}"><code>{{ url_for(page.endpoint) }}</code></a></p>
+        <p class="text-muted mb-0" style="font-size:12px;">{{ _("The menu entry opens this SATOM page exactly as SATOM draws it. Who may open it is the page's own permission; this app only decides whether the entry is drawn (enabled) and where (its ADOMs and its folder's).") }}</p>
+      {% else %}
+        <div class="alert alert-warning py-2 mb-0" style="font-size:12px;">{{ _('This SATOM does not have the page %(p)s: the entry is drawn nowhere. Install the SATOM version the package asks for.', p=a.page_key) }}</div>
+      {% endif %}
+    </div></div>
+    <div class="fw-card"><div class="fw-card-body d-flex gap-2 align-items-center" style="font-size:13px;">
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.app_export', slug=a.slug) }}" title="{{ _('The app as a plugin package') }}"><i class="bi bi-box-arrow-down me-1"></i>{{ _('Export package') }}</a>
+      {% if template %}<span class="fw-badge fw-badge-info ms-auto">{{ _('Template') }}</span>
+      {% else %}<button type="button" class="btn btn-outline-danger btn-sm ms-auto" id="ap-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete app') }}</button>{% endif %}
+    </div></div>
+  </div>
+</div>
+
+<script type="application/json" id="ap-page-config">{{ {
+  'slug': a.slug,
+  'urls': {'settings': url_for('studio.app_settings', slug=a.slug), 'delete': url_for('studio.app_delete', slug=a.slug),
+           'back': url_for('studio.index', pane='apps')}
+}|tojson }}</script>
+<script src="{{ asset('js/studio_folder_select.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/studio_app_page.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

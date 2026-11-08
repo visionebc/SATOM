@@ -269,17 +269,17 @@
                 <td><a href="{{ url_for(r.edit_endpoint, slug=r.edit_slug) }}"><i class="bi {{ a.icon }} me-1"></i><strong>{{ r.name }}</strong></a>
                   {% if r.template %}<span class="fw-badge fw-badge-info ms-1" title="{{ _('Installed from Examples: it cannot be deleted') }}">{{ _('Template') }}</span>{% endif %}
                   <div class="text-muted" style="font-size:11px;"><code>{{ a.slug }}</code>{% if r.description %} · {{ r.description|truncate(80) }}{% endif %}</div></td>
-                <td>{% if r.kind == 'script' %}<span class="fw-badge fw-badge-secondary"><i class="bi bi-filetype-py me-1"></i>{{ _('Script') }}</span>{% else %}<span class="fw-badge fw-badge-secondary"><i class="bi bi-diagram-3 me-1"></i>{{ _('Flow') }}</span>{% endif %}</td>
+                <td>{% if r.kind == 'script' %}<span class="fw-badge fw-badge-secondary"><i class="bi bi-filetype-py me-1"></i>{{ _('Script') }}</span>{% elif r.kind == 'page' %}<span class="fw-badge fw-badge-secondary" title="{{ _('Opens the SATOM page %(p)s', p=r.page.name if r.page else a.page_key) }}"><i class="bi bi-window me-1"></i>{{ _('Page') }}</span>{% else %}<span class="fw-badge fw-badge-secondary"><i class="bi bi-diagram-3 me-1"></i>{{ _('Flow') }}</span>{% endif %}</td>
                 <td style="font-size:12px;">{% if r.group %}<i class="bi bi-folder2 me-1 text-muted"></i>{{ r.group }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
                 <td>{% if r.missing %}<span class="fw-badge fw-badge-danger">{{ _('script missing') }}</span>{% elif r.enabled %}<span class="fw-badge fw-badge-success">{{ _('enabled') }}</span>{% else %}<span class="fw-badge fw-badge-warning">{{ _('disabled') }}</span>{% endif %}</td>
-                <td>{% if r.published %}<span class="fw-badge fw-badge-success">v{{ r.published }}</span>{% elif r.latest %}<span class="fw-badge fw-badge-warning">v{{ r.latest }} {{ _('unpublished') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('not published') }}</span>{% endif %}</td>
+                <td>{% if r.kind == 'page' %}{% if r.missing %}<span class="fw-badge fw-badge-danger" title="{{ _('This SATOM does not have the page it opens') }}">{{ _('page missing') }}</span>{% else %}<span class="text-muted" style="font-size:12px;">{{ _('nothing to publish') }}</span>{% endif %}{% elif r.published %}<span class="fw-badge fw-badge-success">v{{ r.published }}</span>{% elif r.latest %}<span class="fw-badge fw-badge-warning">v{{ r.latest }} {{ _('unpublished') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('not published') }}</span>{% endif %}</td>
                 {% if r.kind == 'script' %}
                 <td style="font-size:12px;">Global</td>
                 <td style="font-size:12px;">{{ _('Operators') if r.audience == 'operators' else _('Administrators') }}</td>
                 {% else %}
                 {% set _fa = studio_folder_adoms(a) %}{% set _fg = studio_folder_groups(a) %}
                 <td style="font-size:12px;">{{ _('every ADOM') if '*' in a.adoms else (a.adoms|join(', ') or '—') }}{% if _fa %}<div class="text-muted" title="{{ _('Given by its folder') }}"><i class="bi bi-folder2 me-1"></i>+ {{ _('every ADOM') if '*' in _fa else (_fa|sort|join(', ')) }}</div>{% endif %}</td>
-                <td style="font-size:12px;">{{ a.access.groups|length }} {{ _('group(s)') }}, {{ a.access.users|length }} {{ _('person(s)') }}{% if _fg %}<div class="text-muted" title="{{ _('Given by its folder') }}"><i class="bi bi-folder2 me-1"></i>+ {{ _fg|length }} {{ _('group(s)') }}</div>{% endif %}</td>
+                <td style="font-size:12px;">{% if r.kind == 'page' %}<span class="text-muted">{{ _("the page's permission") }}</span>{% else %}{{ a.access.groups|length }} {{ _('group(s)') }}, {{ a.access.users|length }} {{ _('person(s)') }}{% endif %}{% if _fg and r.kind != 'page' %}<div class="text-muted" title="{{ _('Given by its folder') }}"><i class="bi bi-folder2 me-1"></i>+ {{ _fg|length }} {{ _('group(s)') }}</div>{% endif %}</td>
                 {% endif %}
                 <td style="font-size:13px;"><span class="text-nowrap">{{ a.updated_at.strftime('%Y-%m-%d %H:%M') if a.updated_at else '' }}</span> <span class="text-muted text-nowrap">· {{ a.updated_by }}</span></td>
                 <td class="actions-col"><div class="fw-row-actions">
@@ -295,15 +295,15 @@
                             title="{{ _('More actions') }}" aria-label="{{ _('More actions') }}"><i class="bi bi-three-dots"></i></button>
                     <ul class="dropdown-menu dropdown-menu-end">
                       <li><button type="button" class="dropdown-item" data-app-act="group" data-group="{{ r.group }}" title="{{ _('The folder: the submenu of Plugins the app is drawn in, and the ADOMs and user groups the folder hands to its apps') }}"><i class="bi bi-folder2"></i>{{ _('Set folder') }}</button></li>
-                      {% if not r.missing %}<li><button type="button" class="dropdown-item" data-app-act="clone" title="{{ _('A new draft app from this one: with its data or only its structure') }}"><i class="bi bi-copy"></i>{{ _('Clone') }}</button></li>{% endif %}
-                      <li><a class="dropdown-item" href="{{ url_for('studio.app_data', slug=a.slug) }}" title="{{ _('Download data: runs and data stores (zip)') }}"><i class="bi bi-database-down"></i>{{ _('Download data') }}</a></li>
+                      {% if not r.missing and r.kind != 'page' %}<li><button type="button" class="dropdown-item" data-app-act="clone" title="{{ _('A new draft app from this one: with its data or only its structure') }}"><i class="bi bi-copy"></i>{{ _('Clone') }}</button></li>{% endif %}
+                      {% if r.kind != 'page' %}<li><a class="dropdown-item" href="{{ url_for('studio.app_data', slug=a.slug) }}" title="{{ _('Download data: runs and data stores (zip)') }}"><i class="bi bi-database-down"></i>{{ _('Download data') }}</a></li>{% endif %}
                       {% if r.kind == 'script' %}
                       {% if not r.missing %}<li><a class="dropdown-item" href="{{ url_for('script_library.download', slug=a.script_slug) }}"><i class="bi bi-file-earmark-zip"></i>{{ _('Download the code') }}</a></li>{% endif %}
                       {% else %}
                       <li><a class="dropdown-item" href="{{ url_for('studio.app_export', slug=a.slug) }}"><i class="bi bi-box-arrow-up"></i>{{ _('Export app package') }}</a></li>
                       {% endif %}
                       <li><hr class="dropdown-divider"></li>
-                      <li><button type="button" class="dropdown-item text-warning" data-app-act="reset" title="{{ _('Reset: delete its data from the database (runs and the rows of the data stores only it uses)') }}"><i class="bi bi-arrow-counterclockwise"></i>{{ _('Reset') }}</button></li>
+                      {% if r.kind != 'page' %}<li><button type="button" class="dropdown-item text-warning" data-app-act="reset" title="{{ _('Reset: delete its data from the database (runs and the rows of the data stores only it uses)') }}"><i class="bi bi-arrow-counterclockwise"></i>{{ _('Reset') }}</button></li>{% endif %}
                       {% if not r.template %}
                       <li><button type="button" class="dropdown-item text-danger" data-app-act="delete"><i class="bi bi-trash"></i>{{ _('Delete') }}</button></li>
                       {% endif %}

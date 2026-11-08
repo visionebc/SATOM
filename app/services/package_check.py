@@ -91,6 +91,11 @@ RULES = (
     ("app.template", ALL, "A package never replaces or creates a template (Plugin Studio > "
      "Examples, ex-*): app, data store, connection or script."),
     ("app.script_app", ALL, "A package never replaces a script app."),
+    ("app.kind", ALL, "A page plugin package never replaces a flow app, nor a flow app package "
+     "a page plugin."),
+    ("app.page", ALL, "A page plugin (app.kind \"page\") opens a SATOM page of the closed list "
+     "(services.studio_pages) and carries nothing else: no form, diagram, actions, design, "
+     "image, data store, connection, API, script, automation or sign-in."),
     ("app.downgrade", WARNING, "A package older than the installed app needs Allow downgrade."),
     ("app.diagram", BUILDER, "The diagram has no problem (studio_flow.validate_graph), with the "
      "data stores, connections and scripts this server has plus those the package creates."),
@@ -588,10 +593,20 @@ def _app_rules(body, files: dict, target: dict | None, r: _Report, summary: dict
     if not SA._SLUG_RE.match(slug):
         r.add("app.definition", "app", "app id %r: lowercase letters, digits, - and _, 2 to 48 "
               "characters" % slug)
+    if spec.get("kind") not in (None, "", "page"):
+        r.add("app.definition", "app.kind", "kind %r: an app package holds a flow app (no "
+              "kind) or a page plugin (\"page\")" % spec.get("kind"))
+    if spec.get("kind") == "page":
+        _page_app_rules(body, files, spec, slug, target, ex_apps, r, summary,
+                        creates, keeps, secrets)
+        return
     if target is not None and slug in ex_apps:
         cur = ex_apps[slug] or {}
         if cur.get("kind") == "script":
             r.add("app.script_app", "app", "%s is a script app here: a package can never "
+                  "replace it" % slug)
+        if cur.get("kind") == "page":
+            r.add("app.kind", "app", "%s is a page plugin here: a flow app package can never "
                   "replace it" % slug)
         from . import plugin_package as P
         if summary and cur.get("pkg_version") and \
@@ -692,6 +707,48 @@ def _app_rules(body, files: dict, target: dict | None, r: _Report, summary: dict
     if summary is not None:
         creates += ["image %s" % n.split("/", 1)[1] for n in sorted(files)
                     if n.startswith("assets/")]
+        summary.update(creates=creates, keeps=keeps, needs_secrets=secrets)
+
+
+#: what a page plugin's app.json may hold besides "app" -- nothing that runs
+_PAGE_EMPTY = ("stores", "connections", "apis", "scripts", "automations", "signin")
+_PAGE_APP_KEYS = {"slug", "name", "icon", "description", "kind", "page", "group"}
+
+
+def _page_app_rules(body, files, spec, slug, target, ex_apps, r: _Report, summary,
+                    creates, keeps, secrets) -> None:
+    """A page plugin (services.studio_pages): it names a SATOM page of the
+    closed list and carries nothing else -- no form, diagram, actions,
+    design, image, store, connection, API, script, automation or sign-in."""
+    from . import studio_pages as SPG
+    why = SPG.problem(spec.get("page"))
+    if why:
+        r.add("app.page", "app.page", why)
+    extra = sorted(k for k in spec if k not in _PAGE_APP_KEYS and spec.get(k))
+    if extra:
+        r.add("app.page", "app", "a page plugin opens a SATOM page and carries nothing else: "
+              "remove %s" % ", ".join(extra))
+    for key in _PAGE_EMPTY:
+        if body.get(key):
+            r.add("app.page", key, "a page plugin carries no %s" % key)
+    if any(n.startswith("assets/") for n in files or {}):
+        r.add("app.page", "assets", "a page plugin carries no images")
+    if target is not None and slug in ex_apps:
+        cur = ex_apps[slug] or {}
+        if (cur.get("kind") or "flow") != "page":
+            r.add("app.kind", "app", "%s is a %s app here: a page plugin can never replace it"
+                  % (slug, cur.get("kind") or "flow"))
+        from . import plugin_package as P
+        if summary and cur.get("pkg_version") and \
+                P.version_tuple(summary["version"]) < P.version_tuple(cur["pkg_version"]):
+            r.add("app.downgrade", "app", "%s %s is installed and %s is older: the import needs "
+                  "Allow downgrade" % (slug, cur["pkg_version"], summary["version"]))
+        keeps.append("app %s: page, name and icon replaced; ADOMs, folder and on/off unchanged"
+                     % slug)
+    elif target is not None:
+        creates.append("app %s (page plugin: opens %s; drawn in no ADOM until you tick them)"
+                       % (slug, (SPG.get(spec.get("page")) or {}).get("name", spec.get("page"))))
+    if summary is not None:
         summary.update(creates=creates, keeps=keeps, needs_secrets=secrets)
 
 

@@ -15,6 +15,11 @@ carries ``app.json``::
      "automations": [{name, schedule_kind, schedule, inputs, description}],
      "signin":      {rules: [{connection, kind, ...}], profile, require_approval}}
 
+A PAGE PLUGIN (2026-11-08) is ``{"app": {slug, name, icon, description,
+"kind": "page", "page": <id>[, group]}}`` and nothing else: its menu entry
+opens the SATOM page ``<id>`` of :data:`studio_pages.PAGES`, drawn exactly as
+SATOM draws it (:func:`_install_page`).
+
 INSTALL RULES -- what an import may and may not overwrite
 ---------------------------------------------------------
 * **The app** is created, or its DRAFT replaced (form, diagram, actions).
@@ -149,6 +154,12 @@ def build_body(a) -> dict:
     """``app.json`` for app ``a`` -- secrets excluded by construction."""
     from . import studio_connections as SC
     from . import studio_store as SS
+    if a.kind == "page":        # the page it opens and nothing else (studio_pages)
+        body = {"app": {"slug": a.slug, "name": a.name, "icon": a.icon,
+                        "description": a.description, "kind": "page", "page": a.page_key}}
+        if a.menu_group:
+            body["app"]["group"] = a.menu_group
+        return body
     refs = _refs(a)
     scripts = _scripts(refs["scripts"])
     for sc in scripts:              # what a script calls travels with it
@@ -296,10 +307,16 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
     existing = SA.get(slug) if slug else None
     if existing is not None and existing.kind == "script":
         raise AppPackageError("%s is a script app here; an app package cannot replace it" % slug)
+    page = spec.get("kind") == "page"
+    if existing is not None and page != (existing.kind == "page"):
+        raise AppPackageError("%s is a %s app here; a %s package cannot replace it" % (
+            slug, existing.kind or "flow", "page" if page else "flow"))
     if existing is not None and existing.pkg_version and not allow_downgrade and \
             P.version_tuple(pk.version) < P.version_tuple(existing.pkg_version):
         raise AppPackageError("%s %s is installed and %s is older (tick Allow downgrade)"
                               % (slug, existing.pkg_version, pk.version))
+    if page:
+        return _install_page(pk, spec, existing, by)
     _server_refusal(body)
     created, kept, todo, warnings = [], [], [], []
     try:
@@ -436,3 +453,53 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
     todo += got["todo"]
     return {"app": a, "created": created, "kept": kept, "todo": todo, "warnings": warnings,
             "problems": SA.problems(a) if problems is not None else []}
+
+
+def _install_page(pk, spec: dict, existing, by: str) -> dict:
+    """A page plugin (``app.kind == "page"``, services.studio_pages): the app
+    row and the page it opens -- no form, diagram, store or connection
+    (``package_check`` refused a package carrying any). Like every app, it is
+    drawn in no ADOM until an administrator ticks them here."""
+    from ..extensions import db
+    from . import bootstrap_icons
+    from . import studio_apps as SA
+    from . import studio_pages as SP
+    slug = str(spec.get("slug") or "").strip()
+    why = SP.problem(spec.get("page"))
+    if why:
+        raise AppPackageError("the app package is refused: %s" % why)
+    created, kept, todo, warnings = [], [], [], []
+    try:
+        a = existing
+        if a is None:
+            a = SA.create(slug, spec.get("name") or slug, by)
+            a.kind, a.fields_json, a.graph_json = "page", "[]", "{}"
+            created.append("app %s (page plugin: opens %s)" % (slug, SP.get(spec["page"])["name"]))
+            if spec.get("group"):
+                try:
+                    SA.file_under(a, spec.get("group"), by)
+                except SA.AppError as exc:
+                    warnings.append("app %s: %s; it has no menu group here" % (slug, exc))
+        else:
+            kept.append("app %s: page, name and icon replaced; ADOMs, folder and on/off unchanged"
+                        % slug)
+        a.page_key = str(spec["page"]).strip()
+        a.name = (spec.get("name") or a.name)[:120]
+        a.description = str(spec.get("description") or "")[:2000]
+        here = a.icon if bootstrap_icons.is_known(a.icon) else "bi-app-indicator"
+        if spec.get("icon"):
+            here, why = bootstrap_icons.or_default(spec.get("icon"), here)
+            if why:
+                warnings.append("app %s: %s" % (slug, why))
+        a.icon = here
+        a.pkg_version = pk.version
+        a.pkg_signer = pk.signer or ""
+        a.updated_by = by
+        db.session.commit()
+    except SA.AppError as exc:
+        db.session.rollback()
+        raise AppPackageError("the app package could not be installed: %s" % exc) from None
+    if not a.adoms and not SA.folder_adoms(a):
+        todo.append("tick the ADOMs it is drawn in (Plugin Studio › Apps › %s › Settings)" % slug)
+    return {"app": a, "created": created, "kept": kept, "todo": todo, "warnings": warnings,
+            "problems": []}

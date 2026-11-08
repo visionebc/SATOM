@@ -52,7 +52,10 @@ def _clipboards(results, servers, columns, appid_cols=()):
 def index():
     servers = [s for s in dns_tool.dns_servers() if s.get("enabled", True)]
     # "appid" was an option until SA-0029: the AppID is always in the details.
-    opts = {"lb": True, "quick": False, "exact": False, "ttl": False}
+    # Quick LB, Exact match and Show TTL were options until SA-0029 (the
+    # operator: "Quick LB does not work, remove TTL and Exact match too"):
+    # the gateways are in Expand, matching is never exact, no TTL is shown.
+    opts = {"lb": True}
     # SA-0028: how each entry is looked up -- detected per entry (auto) or
     # forced: element (config text), ip (address fields), fqdn (resolve,
     # then the addresses). Applied here, on the server, never in the browser.
@@ -85,15 +88,15 @@ def index():
         entries = entries[:dns_tool.MAX_ENTRIES]
 
         lb_rows = []
-        if entries and (opts["lb"] or opts["quick"]):
+        if entries and opts["lb"]:
             try:
                 lb_rows = dns_tool.fleet_lb_rows()
             except Exception as exc:  # noqa: BLE001 — DNS half still renders
                 lb_error = str(exc)
 
         results, not_found = dns_tool.lookup(
-            entries, servers, lb_rows, mode=mode, exact=opts["exact"],
-            show_ttl=opts["ttl"], names=opts["lb"], spo_rules=dns_tool.spo_rules())
+            entries, servers, lb_rows, mode=mode, names=opts["lb"],
+            spo_rules=dns_tool.spo_rules())
         clip_dns, clip_lb = _clipboards(results, servers, dns_tool.COLUMNS,
                                         appid_cols)
 

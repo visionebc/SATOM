@@ -37,6 +37,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   next to Expand and Show; an entry with several matches gets a menu of them
   for each. **Edit opens the policy in a new window** (Ctrl/middle click
   still opens a tab). Inside Expand, Actions is now the first column.
+- **DNS & LB Lookup: Quick LB, Exact match and Show TTL removed (SA-0029).**
+  Requested: Quick LB does not work; remove Show TTL and Exact match too.
+  Options keeps *Show LB matches* only: the gateways are in Expand, matching
+  is by substring (an IP is still matched as a whole address), and DNS
+  answers carry no TTL. The Plugin Studio app *DNS & LB Lookup* keeps its own
+  options.
 
 ## [4.11.14] - 2026-11-08
 

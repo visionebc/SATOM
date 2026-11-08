@@ -47,14 +47,8 @@
           </select>
           <hr class="my-3" style="opacity:.15;">
           <label class="fw-form-label">{{ _('Options') }}</label>
-          <div class="form-check"><input class="form-check-input" type="checkbox" name="lb" id="optLb" {{ 'checked' if opts.lb }}>
+          <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="lb" id="optLb" {{ 'checked' if opts.lb }}>
             <label class="form-check-label" for="optLb" style="font-size:13px;">{{ _('Show LB matches') }}</label></div>
-          <div class="form-check"><input class="form-check-input" type="checkbox" name="quick" id="optQuick" {{ 'checked' if opts.quick }}>
-            <label class="form-check-label" for="optQuick" style="font-size:13px;">{{ _('Quick LB (gateway only)') }}</label></div>
-          <div class="form-check"><input class="form-check-input" type="checkbox" name="exact" id="optExact" {{ 'checked' if opts.exact }}>
-            <label class="form-check-label" for="optExact" style="font-size:13px;">{{ _('Exact match') }}</label></div>
-          <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="ttl" id="optTtl" {{ 'checked' if opts.ttl }}>
-            <label class="form-check-label" for="optTtl" style="font-size:13px;">{{ _('Show TTL') }}</label></div>
           <div class="d-flex gap-2">
             <a class="btn btn-outline-secondary btn-sm flex-fill" href="{{ url_for('dns_tool.index') }}">{{ _('Reset') }}</a>
             <button type="submit" class="btn btn-primary btn-sm flex-fill"><i class="bi bi-search me-1"></i>{{ _('Search') }}</button>
@@ -147,7 +141,7 @@
                             'ip': _('Searched in the address fields of every server policy: VIP, pool members and other address fields.'),
                             'fqdn': _('Resolved (A and AAAA) on every resolver; each address searched in the address fields, and the name in the configuration text.')} %}
         {% set lb_cols = 5 if opts.lb else 0 %}
-        {% set ncols = 1 + servers|length + (1 if opts.quick else 0) + (1 if opts.lb else 0) %}
+        {% set ncols = 1 + servers|length + (1 if opts.lb else 0) %}
         <div class="d-flex justify-content-end gap-2 px-3 py-2">
           {% if opts.lb %}
           <button type="button" class="btn btn-sm btn-fw-secondary" id="dlExpandAll">
@@ -162,7 +156,6 @@
               <tr>
                 <th class="dl-entry">{{ _('Entry') }}</th>
                 {% for s in servers %}<th>{{ s.name }}</th>{% endfor %}
-                {% if opts.quick %}<th>{{ _('Quick LB') }}</th>{% endif %}
                 {% if opts.lb %}<th class="dl-actions">{{ _('Actions') }}</th>{% endif %}
               </tr>
             </thead>
@@ -209,11 +202,6 @@
                   {% endfor %}
                 </td>
                 {% endfor %}
-                {% if opts.quick %}
-                <td>
-                  {% for gw in r.gateways %}<span class="fw-badge fw-badge-primary d-inline-block mb-1">{{ gw }}</span><br>{% else %}<span class="text-muted">—</span>{% endfor %}
-                </td>
-                {% endif %}
                 {% if opts.lb %}
                 <td class="dl-actions">
                   {% if r.matches %}

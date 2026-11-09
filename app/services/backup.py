@@ -290,7 +290,8 @@ def _hostname_of(sections: dict[str, list[str]]) -> str:
 
 def verify_restore(appliance, sent: bytes, *, progress=None,
                    expected: dict[str, int] | None = None, readback: str | None = None,
-                   hostname: str | None = None) -> dict[str, Any]:
+                   hostname: str | None = None,
+                   expected_names: dict[str, list[str]] | None = None) -> dict[str, Any]:
     """After an accepted restore: wait for the reboot, read the configuration
     back and compare it with what was sent, object for object.
 
@@ -304,7 +305,10 @@ def verify_restore(appliance, sent: bytes, *, progress=None,
 
     A migration passes ``expected`` (only the tables it copied, in the
     format its source had), ``readback`` (``"ssh"`` or ``"rest"``, that
-    format) and ``hostname`` (the target's own, which must survive)."""
+    format), ``hostname`` (the target's own, which must survive) and
+    ``expected_names`` -- for a table the migration MERGED into the target's,
+    the objects that must be there (its other objects are the target's, so
+    its count proves nothing)."""
     from . import upgrade as upg
     rec = upg.monitor_recovery(appliance, progress=progress,
                                down_timeout=240.0, up_timeout=900.0)
@@ -340,6 +344,16 @@ def verify_restore(appliance, sent: bytes, *, progress=None,
         return out
     out["objects"] = sum(expected.values())
     out["mismatches"] = pkg.profile_diff(expected, actual)
+    if expected_names:
+        from .fwb_migrate import names_by_table
+        have = names_by_table(after_sections)
+        for key, names in sorted(expected_names.items()):
+            out["objects"] += len(names)
+            missing = sorted(set(names) - have.get(key, set()))
+            if missing:
+                out["mismatches"].append(
+                    f"{key}: {len(missing)} of {len(names)} objects missing "
+                    f"({', '.join(missing[:5])}{', …' if len(missing) > 5 else ''})")
     if hostname is not None:
         got = _hostname_of(after_sections)
         out["hostname"] = got
@@ -350,7 +364,7 @@ def verify_restore(appliance, sent: bytes, *, progress=None,
     if not rec.get("went_down"):
         out["warning"] = "the appliance was never seen going down after the restore"
     out["message"] = (
-        f"verified: {out['objects']:,} objects in {len(expected)} configuration tables "
+        f"verified: {out['objects']:,} objects in {len(expected) + len(expected_names or {})} configuration tables "
         f"read back identical" if out["verified"] else
         f"the configuration read back differs in {len(out['mismatches'])} tables")
     return out

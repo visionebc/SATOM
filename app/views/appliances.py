@@ -2594,9 +2594,16 @@ def migrate_run(id):
     if analyze:
         domains = _migrate_default_map(inventory, tgt_domains)
         exclude, copy_global, dummy_on = set(), True, True
+        picks, only_picked = {}, set()
     else:
         domains = {k[5:]: v for k, v in request.form.items() if k.startswith('map__') and v}
-        exclude = set(request.form.getlist('excl'))
+        # per table: mode__<dom>:<table> = all | excl | pick (+ pick__<dom>:<table> names)
+        modes = {k[6:]: v for k, v in request.form.items() if k.startswith('mode__')}
+        exclude = {k for k, v in modes.items() if v == 'excl'} | set(request.form.getlist('excl'))
+        picks = {k: set(request.form.getlist('pick__' + k)) for k, v in modes.items()
+                 if v == 'pick'}
+        picks = {k: v for k, v in picks.items() if v}
+        only_picked = {k[6:] for k in request.form if k.startswith('only__')}
         copy_global = request.form.get('copy_global') == 'on'
         dummy_on = request.form.get('dummy') == 'on'
     cfg = clone_rules.config()
@@ -2606,7 +2613,7 @@ def migrate_run(id):
     try:
         payload, report = fwb_migrate.plan(data, tgt_backup, domains=domains,
                                            copy_global=copy_global, exclude=exclude,
-                                           dummy=dummy)
+                                           dummy=dummy, picks=picks, only_picked=only_picked)
     except (fwb_migrate.MigrationError, fwb_pkg.PackageError) as exc:
         plan_error = str(exc)
 
@@ -2614,6 +2621,8 @@ def migrate_run(id):
                backups=_migrate_source_backups(source), selected_backup=cb.id, backup=cb,
                dummy_rules=clone_rules.rules_summary(), inventory=inventory,
                tgt_domains=tgt_domains, domains=domains, exclude=exclude,
+               picks=picks, only_picked=only_picked,
+               entry_names=fwb_migrate.names_inventory(data),
                copy_global=copy_global, dummy_on=dummy_on, report=report,
                plan_error=plan_error, is_identity=fwb_migrate.is_identity,
                dry_run=dry_run, result=None, pre_backup=pre_backup)
@@ -2634,7 +2643,8 @@ def migrate_run(id):
         job_progress.step('Waiting for the reboot, then reading the configuration back', 45)
         check = backup_svc.verify_restore(
             target, payload, progress=lambda pct, msg: job_progress.step(msg, pct),
-            expected=report['copied'],
+            expected=report['expected_counts'],
+            expected_names=report['expected_names'],
             readback='ssh' if kind == fwb_pkg.KIND_CLI_DUMP else 'rest',
             hostname=backup_svc._hostname_of(fwb_pkg.package_sections(tgt_backup)))
         result['verify'] = check
@@ -2647,6 +2657,9 @@ def migrate_run(id):
                extra={'outcome': outcome, 'source': source.name, 'source_backup': cb.filename,
                       'pre_backup': pre_backup, 'domains': domains,
                       'excluded': sorted(exclude)[:50], 'copy_global': copy_global,
+                      'picked': {k: sorted(v)[:50] for k, v in picks.items()},
+                      'only_picked': sorted(only_picked),
+                      'dependencies': len(report['dependencies']),
                       'dummy_ips': len(report['dummy_ips']), 'objects': report['objects'],
                       'tables': len(report['copied']), 'dangling': len(report['dangling']),
                       'device_answer': result.get('message', '')[:300],

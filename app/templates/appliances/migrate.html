@@ -140,22 +140,43 @@
     </div>
     <div class="col-lg-7">
       <div class="card fw-card shadow-sm h-100">
-        <div class="card-header fw-card-header"><i class="bi bi-table me-1"></i>{{ _('Tables — tick to exclude') }}</div>
+        <div class="card-header fw-card-header"><i class="bi bi-table me-1"></i>{{ _('Tables') }}</div>
         <div class="card-body small">
+          <p class="text-muted mb-2">{{ _('Each table: copy it whole, exclude it (the target keeps its own), or pick objects — they are merged into the target\'s table together with everything they reference. Global tables are always merged: other ADOMs of the target use them too.') }}</p>
           {% for dom in inventory if dom == 'global' or dom in domains %}
           <details class="mb-2" {% if loop.first and dom != 'global' %}open{% endif %}>
             <summary><code>{{ dom }}</code>{% if dom != 'global' %} &rarr; <code>{{ domains[dom] }}</code>{% endif %} · {{ inventory[dom]|length }} {{ _('tables') }}</summary>
-            <div class="row row-cols-1 row-cols-md-2 g-0 mt-1">
-            {% for table, n in inventory[dom]|dictsort %}
-              <div class="col">
-              {% if is_identity(dom, table) %}
-                <span class="text-muted"><i class="bi bi-lock me-1"></i>{{ table }} <span class="fw-badge fw-badge-secondary">{{ _('target keeps its own') }}</span></span>
-              {% else %}
-                <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="excl" value="{{ dom }}:{{ table }}" {% if (dom ~ ':' ~ table) in exclude %}checked{% endif %}>{{ table }}{% if n %} <span class="text-muted">({{ n }})</span>{% endif %}</label>
-              {% endif %}
-              </div>
-            {% endfor %}
+            <div class="form-check my-1">
+              <input class="form-check-input" type="checkbox" name="only__{{ dom }}" id="only__{{ dom }}" {% if dom in only_picked %}checked{% endif %}>
+              <label class="form-check-label" for="only__{{ dom }}">{{ _('Copy only the objects I pick here, and what they need') }}</label>
             </div>
+            <table class="table table-sm fw-table mb-0"><tbody>
+            {% for table, n in inventory[dom]|dictsort %}
+              {% set key = dom ~ ':' ~ table %}
+              <tr>
+                <td>{{ table }}{% if n %} <span class="text-muted">({{ n }})</span>{% endif %}</td>
+                <td class="text-end" style="width:40%">
+                {% if is_identity(dom, table) %}
+                  <span class="fw-badge fw-badge-secondary"><i class="bi bi-lock me-1"></i>{{ _('target keeps its own') }}</span>
+                {% else %}
+                  <select class="form-select form-select-sm" name="mode__{{ key }}">
+                    <option value="all">{{ _('merge') if dom == 'global' and n else _('copy whole') }}</option>
+                    <option value="excl" {% if key in exclude %}selected{% endif %}>{{ _('exclude') }}</option>
+                    {% if n %}<option value="pick" {% if key in picks %}selected{% endif %}>{{ _('pick objects') }}</option>{% endif %}
+                  </select>
+                {% endif %}
+                </td>
+              </tr>
+              {% if n and not is_identity(dom, table) %}
+              <tr><td colspan="2" class="pt-0"><details><summary class="text-muted">{{ _('objects') }}{% if key in picks %} · {{ picks[key]|length }} {{ _('picked') }}{% endif %}</summary>
+                <div class="row row-cols-1 row-cols-md-2 g-0">
+                {% for name in entry_names[dom][table] %}
+                  <div class="col"><label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="pick__{{ key }}" value="{{ name }}" {% if name in picks.get(key, ()) %}checked{% endif %}>{{ name }}</label></div>
+                {% endfor %}
+                </div></details></td></tr>
+              {% endif %}
+            {% endfor %}
+            </tbody></table>
           </details>
           {% endfor %}
         </div>
@@ -177,6 +198,7 @@
       <span class="fw-badge fw-badge-primary">{{ '{:,}'.format(report.objects) }} {{ _('objects in') }} {{ report.copied|length }} {{ _('tables copied') }}</span>
       <span class="fw-badge fw-badge-secondary">{{ report.kept_from_target|length }} {{ _('tables kept from the target') }}</span>
       <span class="fw-badge fw-badge-secondary">{{ report.identity_kept|length }} {{ _('identity tables kept') }}</span>
+      {% if report.dependencies %}<span class="fw-badge fw-badge-info">{{ report.dependencies|length }} {{ _('dependencies') }}</span>{% endif %}
       {% if report.excluded %}<span class="fw-badge fw-badge-info">{{ report.excluded|length }} {{ _('excluded') }}</span>{% endif %}
       {% if report.dummy_ips %}<span class="fw-badge fw-badge-info">{{ report.dummy_ips|length }} {{ _('dummy IPs') }}</span>{% endif %}
       {% if report.dangling %}<span class="fw-badge fw-badge-danger">{{ report.dangling|length }} {{ _('broken references') }}</span>{% endif %}
@@ -195,6 +217,14 @@
       {% if report.untouched_domains %}{{ _('Target domains left as they are:') }} {% for d in report.untouched_domains %}<code>{{ d }}</code> {% endfor %}. {% endif %}
       {% if report.not_copied_source_domains %}{{ _('Source domains not copied:') }} {% for d in report.not_copied_source_domains %}<code>{{ d }}</code> {% endfor %}.{% endif %}
     </p>
+    {% endif %}
+    {% if report.dependencies %}
+    <details class="mb-2" open><summary>{{ _('Brought along because a picked object needs them') }} ({{ report.dependencies|length }})</summary>
+      <ul class="mb-0">{% for d in report.dependencies[:200] %}<li><code>{{ d }}</code></li>{% endfor %}</ul></details>
+    {% endif %}
+    {% if report.merged %}
+    <details class="mb-2"><summary>{{ _('Merged — the target\'s own objects kept in the same table') }} ({{ report.merged|length }})</summary>
+      <table class="table table-sm fw-table mb-0"><tbody>{% for k, n in report.merged|dictsort %}<tr><td><code>{{ k }}</code></td><td class="text-end">{{ n }} {{ _('kept') }}</td></tr>{% endfor %}</tbody></table></details>
     {% endif %}
     <details class="mb-2"><summary>{{ _('Copied') }} ({{ report.copied|length }})</summary>
       <table class="table table-sm fw-table mb-0"><tbody>{% for k, n in report.copied|dictsort %}<tr><td><code>{{ k }}</code></td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></details>

@@ -2281,6 +2281,29 @@ This page is the missing third position: name the CA and keep the check on.
     primary unit. For FortiADC the vault works
   (pull/upload/download) but config *apply* has no REST transport — the page
   says so honestly.
+- **Migrate into** (appliance detail, FortiWeb, `users.manage` +
+  `backups.restore`): copy another FortiWeb's configuration into this one.
+  Choose the source and one of its backups (or take a fresh one — over SSH
+  when an expired licence locks REST) and **Analyze**: nothing is sent.
+  - Map each source domain (`root`, or each ADOM) to a target domain or leave
+    it out; a box with ADOMs and one without can be mixed either way.
+  - Per table: copy whole, exclude, or pick objects. Picked objects are
+    merged into the target's table and bring along what they reference.
+    *Copy only the objects I pick here* limits a domain to the picks. Global
+    objects are merged, never replaced.
+  - The target always keeps its identity (hostname, interfaces, routes, DNS,
+    NTP, SNMP, HA, administrators, ADOM mode) and its management address.
+  - *Dummy virtual IPs* rewrites copied virtual IP addresses with the clone
+    rules, never onto an address the target keeps; a virtual IP another ADOM
+    of the target uses gets a separate copy.
+  - The report shows what is copied, kept, excluded, brought along, renamed,
+    broken references, conflicts, what a restore drops, and the capacity
+    after the migration. Over the device limit nothing can be sent; over the
+    admin limit only with *Exceed the admin limit* (audited).
+  - A live run (type the target name) backs up the target first, restores,
+    waits for the reboot and reads back both the copied tables and every
+    object of the target it did not touch; `appliance.migrate` records
+    `success` only when both match, otherwise `unverified`.
 - **System Backup & Restore** (Settings → Source of Truth & Backup) backs up the **manager
   itself**: a `pg_dump` of the database plus the reports tree in one bundle,
   with a verified restore path. **Create backup now** also pushes the bundle to

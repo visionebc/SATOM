@@ -7,6 +7,47 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Migrate into: copy another FortiWeb's configuration into this one.**
+  Requested: a backup from one device restored onto another that says what
+  it copied, to move a lot to a new machine at once; aware of ADOMs (from a
+  box with ADOMs to one without, and the other way round), dummy IPs as in
+  Clone, and the whole box with exceptions, only some ADOMs, or a mix.
+  Appliance page -> **Migrate into** (FortiWeb, administrators). Pick the
+  source and one of its backups (or take a fresh one: REST, SSH when an
+  expired VM licence locks REST), then **Analyze** (nothing is sent):
+  - **Domains**: each source domain (`root`, or one per ADOM) maps to a
+    target domain or is not copied; target domains nothing lands in are left
+    alone.
+  - **Tables**: copy whole, exclude (the target keeps its own), or pick
+    objects; picked objects are merged into the target's table together with
+    everything they reference (a server policy brings its virtual server,
+    pool, protection profile and its sub-policies, certificate, virtual IP).
+    "Only what I pick" per domain. Global objects are always merged, never
+    replaced: other ADOMs of the target use them.
+  - **Identity** is always the target's: hostname, interfaces, routes, DNS,
+    NTP, SNMP, HA, administrators, their certificates and login page, ADOM
+    mode. The new box keeps its management address.
+  - **ADOMs**: a global object's ADOM list (`set domains`) is translated
+    through the domain map, added to virtual IPs that come from a box without
+    ADOMs (a box with ADOMs drops them otherwise), removed on a box without.
+  - **Dummy IPs** with the clone rules, unique per migration and against the
+    addresses the target keeps (a repeat takes the next free address of
+    198.18.0.0/15). A virtual IP another ADOM of the target uses is never
+    moved: the copy gets its own (`<name>-<adom>`) and the copied objects
+    point at it; without dummies that is reported as a conflict.
+  - **Capacity after the migration**: over the device's limit nothing is
+    sent (it would drop objects); over the admin's limit only with
+    "Exceed the admin limit", recorded.
+  - The report lists what is copied, kept, excluded, picked and brought along,
+    rewritten addresses, broken references, and what a restore drops (XML
+    Schema / WSDL / gRPC IDL files).
+  A live run takes a backup of the target first (the base and the rollback
+  copy), restores, waits for the reboot and reads back: the copied tables in
+  the source's format, AND every object of the target it was not asked to
+  touch. The audit entry `appliance.migrate` says `success` only when both
+  match. Verified live on FortiWeb 7.6.8 lab boxes: a whole box (882 objects),
+  a box without ADOMs into an ADOM, an ADOM into a box without, one picked
+  policy with 42 dependencies, and a capacity refusal.
 - **Plugin Studio: an app can have its own view.** Requested: make
   everything of DNS Lookup a plugin -- the same view and every function --
   and make it possible to build this kind of plugin. A view is a page the
@@ -188,6 +229,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   keep their alphabetical order until you move one.
 
 ### Fixed
+- **Deleting a device no longer breaks SSH to the next one on its address.**
+  The SSH host-key pin of an address now goes with the last appliance that
+  dials it (it stays while another row, e.g. another ADOM of the box, still
+  does). Found when a new lab FortiWeb took a deleted one's address and every
+  SSH call was refused against the old key. Audited as
+  `appliance.ssh_pin_forget`.
 - **FortiWeb configuration restore now restores, and proves it.** The Restore
   page posted the file to `maintenance.backuprestore`, which is the
   partition/firmware *read* of the FortiWeb backup page: the box answered 200

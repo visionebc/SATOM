@@ -2617,6 +2617,16 @@ def migrate_run(id):
     except (fwb_migrate.MigrationError, fwb_pkg.PackageError) as exc:
         plan_error = str(exc)
 
+    cap_rows = []
+    if report is not None:
+        from ..services import capacity
+        try:
+            cap_rows = capacity.migration_check(target, fwb_migrate.inventory(payload))
+        except Exception as exc:
+            plan_error = f'Capacity could not be checked: {type(exc).__name__}: {exc}'
+            report = None
+    over_factory = [r for r in cap_rows if r['over_factory']]
+    over_cap = [r for r in cap_rows if r['over_cap'] and not r['over_factory']]
     ctx = dict(appliance=target, sources=sources, source=source,
                backups=_migrate_source_backups(source), selected_backup=cb.id, backup=cb,
                dummy_rules=clone_rules.rules_summary(), inventory=inventory,
@@ -2625,7 +2635,22 @@ def migrate_run(id):
                entry_names=fwb_migrate.names_inventory(data),
                copy_global=copy_global, dummy_on=dummy_on, report=report,
                plan_error=plan_error, is_identity=fwb_migrate.is_identity,
-               dry_run=dry_run, result=None, pre_backup=pre_backup)
+               dry_run=dry_run, result=None, pre_backup=pre_backup,
+               capacity_rows=cap_rows, over_factory=over_factory, over_cap=over_cap)
+    if not dry_run and report is not None and (
+            over_factory or (over_cap and request.form.get('over_cap_ok') != 'on')):
+        why = ('over the device limit' if over_factory else "over the admin's limit")
+        log_action('appliance.migrate', target=target.name,
+                   extra={'outcome': 'refused', 'source': source.name, 'reason': why,
+                          'capacity': [f"{r['label']}{' (' + r['domain'] + ')' if r['domain'] else ''}: "
+                                       f"{r['after']} > {r['factory'] if r['over_factory'] else r['cap']}"
+                                       for r in (over_factory or over_cap)]})
+        flash('Nothing was sent: ' + ('the migrated configuration holds more objects than '
+              f'{target.name} can take, and the device would drop some.' if over_factory else
+              f"the migrated configuration is over the admin's capacity limit on {target.name}. "
+              'Tick "Exceed the admin limit" to go ahead anyway (recorded in the audit log).'),
+              'danger')
+        return render_template('appliances/migrate.html', **ctx)
     if dry_run or report is None:
         if not dry_run:
             log_action('appliance.migrate', target=target.name,
@@ -2662,6 +2687,7 @@ def migrate_run(id):
                       'only_picked': sorted(only_picked),
                       'dependencies': len(report['dependencies']),
                       'renamed_vips': len(report['renamed_vips']),
+                      'over_admin_cap': [r['label'] for r in over_cap],
                       'conflicts': len(report['conflicts']),
                       'dummy_ips': len(report['dummy_ips']), 'objects': report['objects'],
                       'tables': len(report['copied']), 'dangling': len(report['dangling']),

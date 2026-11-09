@@ -131,6 +131,11 @@
           </div>
           <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(139,28,42,.05)">
             <p class="mb-2 text-danger"><i class="bi bi-exclamation-triangle me-1"></i>{{ _('A live migration reboots') }} {{ appliance.name }} {{ _('and replaces the copied tables.') }}</p>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="over_cap_ok" id="over_cap_ok">
+              <label class="form-check-label" for="over_cap_ok">{{ _('Exceed the admin limit') }}
+                <span class="text-muted d-block">{{ _('Only the admin\'s capacity limit, never the device\'s own. Recorded in the audit log.') }}</span></label>
+            </div>
             <label class="form-label">{{ _('Type the target name') }} <code>{{ appliance.name }}</code> {{ _('to authorise:') }}</label>
             <input class="form-control form-control-sm" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
           </div>
@@ -205,6 +210,16 @@
       {% if report.dangling %}<span class="fw-badge fw-badge-danger">{{ report.dangling|length }} {{ _('broken references') }}</span>{% endif %}
       {% if report.dropped_by_restore %}<span class="fw-badge fw-badge-warning">{{ report.dropped_by_restore|length }} {{ _('tables a restore drops') }}</span>{% endif %}
     </p>
+    {% if capacity_rows %}
+    <div class="fw-alert fw-alert-{{ 'danger' if over_factory else ('warning' if over_cap else 'success') }} mb-2">
+      <b>{{ _('Capacity after the migration') }}</b>
+      {% if over_factory %} — {{ _('more than the device can take: it would drop objects. Exclude or pick less.') }}{% elif over_cap %} — {{ _('over the admin\'s limit; tick "Exceed the admin limit" to go ahead.') }}{% endif %}
+      <table class="table table-sm fw-table mb-0 mt-1"><thead><tr><th>{{ _('Object') }}</th><th class="text-end">{{ _('After') }}</th><th class="text-end">{{ _('Admin limit') }}</th><th class="text-end">{{ _('Device limit') }}</th></tr></thead><tbody>
+      {% for r in capacity_rows %}<tr><td>{{ r.label }}{% if r.domain %} <code>{{ r.domain }}</code>{% endif %}</td>
+        <td class="text-end {% if r.over_factory %}text-danger fw-bold{% elif r.over_cap %}text-warning fw-bold{% endif %}">{{ r.after }}</td>
+        <td class="text-end">{{ r.cap if r.cap is not none else _('not set') }}</td><td class="text-end">{{ r.factory if r.factory is not none else _('unknown') }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    {% endif %}
     {% if report.conflicts %}
     <div class="fw-alert fw-alert-danger mb-2"><b>{{ _('Conflicts with the target') }}</b>
       <ul class="mb-0 mt-1">{% for c in report.conflicts[:50] %}<li>{{ c }}</li>{% endfor %}</ul></div>

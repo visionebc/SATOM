@@ -657,3 +657,36 @@ def seed_from_json() -> int:
             db.session.rollback()
             return 0
     return added
+
+
+def migration_check(appliance, counts: dict[str, dict[str, int]]) -> list[dict]:
+    """Capacity of a configuration that REPLACES the box's, not one that adds
+    to it: ``counts`` is ``{domain: {CLI table: entries}}`` of the package a
+    migration will restore (``fwb_migrate.inventory``), so the numbers are the
+    totals the box will hold afterwards.
+
+    One row per capped type and scope: an ``appliance`` limit is checked on
+    the sum over every domain (a FortiWeb counts it for the chassis), an
+    ``adom`` limit per domain. ``over_factory`` means the box itself will drop
+    objects (2026-11-09, fortiweb21: 51 server policies on a VM that takes 50,
+    one ADOM lost its last policy); ``over_cap`` means the admin's own limit.
+    A type with no known limit is still listed (``cap`` None), so a check that
+    could not be made reads as that, not as "fits"."""
+    rows: list[dict] = []
+    for otype, spec in object_types_ordered():
+        table = spec["cli"].replace(".", " ")
+        if spec.get("scope") == "adom":
+            scoped = [(d, c.get(table, 0)) for d, c in counts.items() if d != "global"]
+        else:
+            scoped = [(None, sum(c.get(table, 0) for c in counts.values()))]
+        if not any(n for _, n in scoped):
+            continue
+        h = headroom(appliance, otype)
+        fac = None if getattr(h, "contradicted", False) else h.factory
+        for dom, after in scoped:
+            rows.append({"type": otype, "label": spec.get("label", otype),
+                         "scope": spec.get("scope", "appliance"), "domain": dom,
+                         "after": after, "cap": h.effective_cap, "factory": fac,
+                         "over_factory": fac is not None and after > fac,
+                         "over_cap": h.effective_cap is not None and after > h.effective_cap})
+    return rows

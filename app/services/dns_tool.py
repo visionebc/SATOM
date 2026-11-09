@@ -1454,3 +1454,89 @@ def vip_dns(r: dict, ptr: dict, servers: list[dict]) -> None:
                     errs.append("%s %s %s" % (s["name"], ip, v))
         r["dns"][s["name"]] = vals
     r["dns_via"], r["vip_ips"], r["dns_errors"] = "vip", ips, sorted(set(errs))
+
+
+# --------------------------------------------------------------------------- #
+#  the page, as one call (2026-11-09)                                          #
+# --------------------------------------------------------------------------- #
+# The DNS & LB Lookup page (views.dns_tool.index) and its plugin (the
+# Plugin Studio step ``dns_lb_lookup`` + ``dns_page_context``, services.
+# studio_dns) draw the SAME thing because they call these two functions:
+# nothing of the search is decided twice.
+
+def appid_columns() -> list:
+    """The catalog's own column names (AppIDs page), so the AppID table of a
+    match reads like the catalog it comes from."""
+    from . import appids
+    try:
+        return [list(c) for c in appids.info_columns()]
+    except Exception:  # noqa: BLE001 -- no catalog yet: the AppID column alone
+        return [["app_id", "AppID"]]
+
+
+def clipboards(results, servers, appid_cols=()) -> tuple[str, str]:
+    """TSV exports mirroring the PHP tool's Copy DNS / Copy LB buttons.
+
+    Copy LB carries the FULL row (SA-0027): the entry it matched, every LB
+    column -- whole comment, PTR name, each backend with its status -- and the
+    AppID facts of the catalog (``lb_tsv_*``, shared with the lb_lookup step)."""
+    dns_lines = ["\t".join(["Entry"] + [s["name"] for s in servers])]
+    for r in results:
+        dns_lines.append("\t".join(
+            [r["entry"]] + ["; ".join(r["dns"].get(s["name"], [])) for s in servers]))
+    lb_lines = ["\t".join(lb_tsv_header(appid_cols))]
+    for r in results:
+        for m in r["matches"]:
+            lb_lines.append("\t".join(lb_tsv_line(r["entry"], m, appid_cols)))
+    return "\n".join(dns_lines), "\n".join(lb_lines)
+
+
+def page_context(user) -> dict:
+    """What the page shows before any search: the resolvers it asks, the
+    DNS backends, the SPO Regex rules, and what *user* may do there."""
+    from . import dns_providers
+
+    def can(perm):
+        return bool(user is not None and getattr(user, "can", None) and user.can(perm))
+    return {"servers": [s for s in dns_servers() if s.get("enabled", True)],
+            "appid_cols": appid_columns(), "columns": [list(c) for c in COLUMNS],
+            "dns_backends": [r.public() for r in dns_providers.enabled_backends("dns")],
+            "can_manage_records": can("user_manage"), "can_decommission": can("config_write"),
+            "can_edit_spo": can("user_manage"), "can_live_health": can("protection.view"),
+            "spo_rules": spo_rules(), "spo_rules_max": SPO_RULES_MAX}
+
+
+def _on(v) -> bool:
+    return v is True or str(v or "").strip().lower() in ("on", "yes", "true", "1")
+
+
+def search(form) -> dict:
+    """The page's search: *form* has entries, mode, lb, quick (the page's
+    form fields; a missing box is unticked). Must run where the person's
+    scope applies (a request, or studio_dns.as_operator): fleet_lb_rows reads
+    the ADOM's devices only."""
+    servers = [s for s in dns_servers() if s.get("enabled", True)]
+    appid_cols = appid_columns()
+    opts = {"lb": _on(form.get("lb")), "quick": _on(form.get("quick"))}
+    mode = str(form.get("mode") or "auto")
+    if mode not in MODES:
+        mode = "auto"
+    entries_raw = str(form.get("entries") or "")
+    entries = []
+    for line in entries_raw.splitlines():
+        e = clean_entry(line)
+        if e and e not in entries:
+            entries.append(e)
+    entries = entries[:MAX_ENTRIES]
+    lb_rows, lb_error = [], None
+    if entries and (opts["lb"] or opts["quick"]):
+        try:
+            lb_rows = fleet_lb_rows()
+        except Exception as exc:  # noqa: BLE001 -- the DNS half still renders
+            lb_error = str(exc)
+    results, not_found = lookup(entries, servers, lb_rows, mode=mode, names=opts["lb"],
+                                spo_rules=spo_rules())
+    clip_dns, clip_lb = clipboards(results, servers, appid_cols)
+    return {"searched": True, "opts": opts, "mode": mode, "entries_raw": entries_raw,
+            "results": results, "not_found": not_found, "clip_dns": clip_dns,
+            "clip_lb": clip_lb, "lb_error": lb_error}

@@ -43,22 +43,32 @@ steps answer for a person.
 from __future__ import annotations
 
 import contextlib
+import json
 
 from . import studio_flow as F
 
 GROUP = "satom"
 KIND_KEYS = ("dns_lookup", "lb_lookup", "dns_records", "dns_record_change",
-             "dns_decommission_plan", "dns_decommission_apply")
-WRITE_KINDS = ("dns_record_change", "dns_decommission_apply")
+             "dns_decommission_plan", "dns_decommission_apply",
+             # 2026-11-09: the page itself, as steps (its plugin's view)
+             "dns_page_context", "dns_lb_lookup", "lb_policy_health",
+             "spo_regex_test", "spo_regex_save")
+WRITE_KINDS = ("dns_record_change", "dns_decommission_apply", "spo_regex_save")
 DEVICE_KINDS = ("dns_decommission_apply",)
 DEFAULT_SAVE_AS = {"dns_lookup": "dns", "lb_lookup": "lb", "dns_records": "records",
                    "dns_record_change": "record", "dns_decommission_plan": "plan",
-                   "dns_decommission_apply": "decommission"}
-#: The permission of the page route each step stands for (views.dns_tool).
+                   "dns_decommission_apply": "decommission", "dns_page_context": "page",
+                   "dns_lb_lookup": "search", "lb_policy_health": "health",
+                   "spo_regex_test": "spo_test", "spo_regex_save": "spo"}
+#: The permission of the page route each step stands for (views.dns_tool;
+#: lb_policy_health: views.workspace.policy_health).
 PERMISSION = {"dns_lookup": "network.view", "lb_lookup": "network.view",
               "dns_records": "user_manage", "dns_record_change": "user_manage",
               "dns_decommission_plan": "config_write",
-              "dns_decommission_apply": "config_write"}
+              "dns_decommission_apply": "config_write",
+              "dns_page_context": "network.view", "dns_lb_lookup": "network.view",
+              "lb_policy_health": "protection.view", "spo_regex_test": "network.view",
+              "spo_regex_save": "user_manage"}
 RECORD_OPS = ("create", "update", "delete")
 #: What dig_lookup answers when a resolver gave nothing.
 NO_ANSWER = ("No result", "timeout", "error")
@@ -114,7 +124,52 @@ def kinds() -> list:
           "The records one DNS backend holds for a name (or a zone), with the backend's "
           "capabilities. Needs the user_manage permission, like the page's DNS Records.",
           [backend(), P("name", "Name", help="e.g. {{ form.name }}"),
-           P("zone", "Zone"), F._save_as("records")]),
+           P("zone", "Zone"),
+           flag("capabilities_only", "Capabilities only",
+                "Only what the backend can do (the page's dialog draws itself from it); "
+                "no record is listed."),
+           F._save_as("records")]),
+        K("dns_page_context", "DNS Lookup: the page's context", GROUP,
+          "What the DNS & LB Lookup page shows before a search, exactly as the page "
+          "computes it (dns_tool.page_context): servers (the enabled resolvers), "
+          "dns_backends, spo_rules and spo_rules_max, columns, appid_cols, and what the "
+          "person may do (can_manage_records, can_decommission, can_edit_spo, "
+          "can_live_health), plus resolvers_url. Reads only. Needs network.view.",
+          [F._save_as("page")]),
+        K("dns_lb_lookup", "DNS Lookup: search (the page's)", GROUP,
+          "The DNS & LB Lookup page's search, the same call the page makes "
+          "(dns_tool.search): each entry on every resolver and matched to this ADOM's "
+          "load-balancing cache by mode, with SPO Regex, the VIP's DNS, clusters and "
+          "AppIDs. Saves results, not_found, clip_dns, clip_lb (Copy DNS / Copy LB), "
+          "lb_error, opts, mode and entries_raw. Reads only. Needs network.view.",
+          [entries(),
+           P("mode", "Lookup", default="auto",
+             help="auto, element, ip or fqdn -- or {{ form.mode }}"),
+           flag("lb", "Show LB matches", "Match the entries to the LB cache."),
+           flag("quick", "Quick LB (gateway only)", "Add the Quick LB column."),
+           F._save_as("search")]),
+        K("lb_policy_health", "LB: live health of a server policy", GROUP,
+          "Ask a FortiWeb for each pool member's health of one server policy "
+          "(policystatus.detail) -- a DEVICE read, audited, as the page's Show > Check "
+          "live health and Workspace's topology card do. Saves ok, members (pool, ip, "
+          "port, health up/down/na, raw) and error; a refusal by the device is ok=false "
+          "with its reason, never all down. Needs protection.view.",
+          [appliance(), P("policy", "Server policy", required=True), F._save_as("health")]),
+        K("spo_regex_test", "SPO Regex: try the rules", GROUP,
+          "Turn server policy names into the FQDN they publish with the SPO Regex rules "
+          "(given, or the saved ones), as the page's SPO Regex dialog does. Saves results "
+          "(name, fqdn, rule, why). Nothing is stored. Needs network.view.",
+          [P("names", "Policy names", "textarea", True, help="One per line, or a JSON list."),
+           P("rules", "Rules (JSON)", "json",
+             help='Empty = the saved rules. [{"pattern": "...", "replace": "...", '
+                  '"dots": false, "enabled": true}]'),
+           F._save_as("spo_test")]),
+        K("spo_regex_save", "SPO Regex: save the rules", GROUP,
+          "Replace the console-wide SPO Regex rules (the page's dialog Save). Audited "
+          "like the page. Needs user_manage.",
+          [P("rules", "Rules (JSON)", "json", True,
+             help='[{"pattern": "...", "replace": "...", "dots": false, "enabled": true}]'),
+           F._save_as("spo")], writes=True),
         K("dns_record_change", "DNS records: create, change or delete", GROUP,
           "Write one record in a DNS backend. create needs a name and a value; update and "
           "delete need the record's id (from DNS records: list). Audited like the page. "
@@ -167,8 +222,8 @@ def need(ctx, kind: str) -> None:
 
 
 def run_product(ctx) -> str:
-    if not ctx.run_id:
-        return ""
+    if not ctx.run_id:      # an app view's context step: the ADOM it renders in
+        return getattr(ctx, "product", "") or ""
     from ..extensions import db
     from ..models_studio import StudioAppRun
     run = db.session.get(StudioAppRun, ctx.run_id)
@@ -416,6 +471,42 @@ def list_records(row, *, name: str = "", zone: str = "") -> dict:
             "records": [r.as_dict() for r in recs]}
 
 
+def capabilities(row) -> dict:
+    """What one backend can do -- the page's ``records/schema`` answer."""
+    from .dns_providers import ProviderError
+    try:
+        caps = row.instance().capabilities().as_dict()
+    except ProviderError as exc:
+        raise F.FlowError("%s: %s" % (row.name, exc)) from None
+    return {"backend": _backend_dict(row), "capabilities": caps}
+
+
+def _rules(node, ctx, *, required: bool) -> list:
+    """The SPO Regex rules a step was given (cleaned as the page's dialog
+    cleans them); none given = the saved ones, unless *required*."""
+    from . import dns_tool
+    param = str(F._p(node, "rules", "") or "")
+    raw = F.render(param, ctx.scope()) if param.strip() else ""
+    if isinstance(raw, str):
+        if not raw.strip():           # nothing given ("{{ form.rules }}" left empty)
+            if required:
+                raise F.FlowError("which rules? (rules: a JSON list)")
+            return dns_tool.spo_rules()
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raise F.FlowError("rules: not JSON") from None
+    if not isinstance(raw, list):
+        raise F.FlowError("rules: a JSON list of {pattern, replace, dots, enabled}")
+    if required:
+        return raw
+    return [c for c in (dns_tool._clean_rule(r) for r in raw) if c][:dns_tool.SPO_RULES_MAX]
+
+
+def _plain(value):
+    return json.loads(json.dumps(value, default=str))
+
+
 def record_of(raw) -> object:
     from .dns_providers import DnsRecord
     if not isinstance(raw, dict):
@@ -499,6 +590,10 @@ def rehearse(node: dict, ctx) -> tuple:
                       "record": rec.as_dict(), "rehearsal": True}, \
             "rehearsal: would %s %s %s %s in %s" % (op, rec.type, rec.name, rec.value or rec.id,
                                                    _s(node, ctx, "backend") or "the DNS backend")
+    if kind == "spo_regex_save":
+        rules = _rules(node, ctx, required=True)
+        return "ok", {"rules": rules, "rehearsal": True}, \
+            "rehearsal: would save %d SPO Regex rule(s)" % len(rules)
     return "ok", {"ok": True, "results": [], "summary": {"total": 0, "ok": 0, "failed": 0},
                   "rehearsal": True}, \
         "rehearsal: would decommission %s on appliance %s (plan %s)" % (
@@ -530,9 +625,79 @@ def run(node: dict, ctx) -> tuple:
             len(res["rows"]), len(entries), len(lb_rows), cut)
     if kind == "dns_records":
         with as_operator(ctx):
-            res = list_records(backend_row(_s(node, ctx, "backend")), name=_s(node, ctx, "name"),
-                               zone=_s(node, ctx, "zone"))
+            row = backend_row(_s(node, ctx, "backend"))
+            if _truthy(F.render(F._p(node, "capabilities_only", "no"), ctx.scope())):
+                res = capabilities(row)
+                return "ok", res, "%s: capabilities" % res["backend"]["name"]
+            res = list_records(row, name=_s(node, ctx, "name"), zone=_s(node, ctx, "zone"))
         return "ok", res, "%d record(s) in %s" % (len(res["records"]), res["backend"]["name"])
+    if kind == "dns_page_context":
+        from flask import url_for
+        from . import dns_tool
+        with as_operator(ctx):
+            res = dns_tool.page_context(ctx.user_obj)
+            res["resolvers_url"] = url_for("dns_tool.resolvers")
+        return "ok", res, "%d resolver(s), %d DNS backend(s), %d SPO Regex rule(s)" % (
+            len(res["servers"]), len(res["dns_backends"]), len(res["spo_rules"]))
+    if kind == "dns_lb_lookup":
+        from . import dns_tool
+        form = {"entries": F.render(F._p(node, "entries"), ctx.scope()),
+                "mode": _s(node, ctx, "mode", "auto") or "auto",
+                "lb": _truthy(F.render(F._p(node, "lb", "no"), ctx.scope())),
+                "quick": _truthy(F.render(F._p(node, "quick", "no"), ctx.scope()))}
+        if isinstance(form["entries"], (list, tuple)):
+            form["entries"] = "\n".join(str(x) for x in form["entries"])
+        with as_operator(ctx):
+            res = dns_tool.search(form)
+            # the page builds Edit's address with url_for; a view has none,
+            # so each match carries it (policy_url: the page's own rule)
+            for r in res["results"]:
+                for m in r.get("matches") or []:
+                    m["_edit_url"] = policy_url(m)
+        res = _plain(res)
+        n = sum(len(r.get("matches") or []) for r in res["results"])
+        return "ok", res, "%d entr%s, %d LB match(es)%s" % (
+            len(res["results"]), "y" if len(res["results"]) == 1 else "ies", n,
+            "; LB matching failed: %s" % res["lb_error"] if res.get("lb_error") else "")
+    if kind == "lb_policy_health":
+        from . import policy_health as PH
+        with as_operator(ctx):
+            a = visible_appliance(_s(node, ctx, "appliance"))
+            policy = _s(node, ctx, "policy")
+            if not policy:
+                raise F.FlowError("which server policy? (policy)")
+            try:
+                res = PH.probe(a, policy)
+            except PH.NotFortiWeb:
+                raise F.FlowError("live health is read from FortiWeb only; %s is a %s"
+                                  % (a.name, a.kind)) from None
+            except Exception as exc:  # noqa: BLE001 -- audited by the probe
+                raise F.FlowError("health probe failed: %s" % exc) from None
+        return "ok", res, ("%d member(s)" % len(res["members"]) if res["ok"]
+                           else "refused by the device: %s" % res["error"])
+    if kind == "spo_regex_test":
+        from . import dns_tool
+        raw = F.render(F._p(node, "names"), ctx.scope())
+        if isinstance(raw, str) and raw.strip().startswith("["):
+            try:
+                raw = json.loads(raw)
+            except ValueError:
+                pass
+        names = raw if isinstance(raw, list) else str(raw or "").splitlines()
+        names = [str(n).strip()[:dns_tool.SPO_NAME_MAX] for n in names if str(n).strip()][:50]
+        rules = _rules(node, ctx, required=False)
+        res = {"results": dns_tool.spo_test(names, rules)}
+        return "ok", res, "%d name(s), %d rule(s)" % (len(names), len(rules))
+    if kind == "spo_regex_save":
+        from . import dns_tool
+        from .audit import log_action
+        try:
+            saved = dns_tool.save_spo_rules(_rules(node, ctx, required=True))
+        except ValueError as exc:
+            raise F.FlowError(str(exc)) from None
+        log_action("dns_tool.spo_regex", target="dnstool.spo_regex",
+                   detail=json.dumps(saved)[:400], via="plugin studio")
+        return "ok", {"rules": saved}, "%d SPO Regex rule(s) saved" % len(saved)
     if kind == "dns_record_change":
         op = _s(node, ctx, "operation").lower()
         rec = record_of(F._json(node, ctx, "record", "Record"))

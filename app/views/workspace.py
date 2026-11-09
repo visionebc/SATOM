@@ -578,22 +578,6 @@ def policy_detail(appliance_id, name):
     )
 
 
-# Live backend-health mapping: healthCheckStatus enable=UP / disable=DOWN /
-# anything else (N/A) = no health check. Same authoritative field the team's
-# fortiweb_pool_health.py script keys on.
-_HC_UP = {'enable', 'enabled', 'up', 'ok'}
-_HC_DOWN = {'disable', 'disabled', 'down', 'dead'}
-
-
-def _hc_state(v):
-    v = str(v or '').strip().lower()
-    if v in _HC_UP:
-        return 'up'
-    if v in _HC_DOWN:
-        return 'down'
-    return 'na'
-
-
 @bp.route('/<int:appliance_id>/policy/<path:name>/health')
 @login_required
 @require_permission('protection.view')
@@ -603,30 +587,19 @@ def policy_health(appliance_id, name):
     OPT-IN from the topology card only — it is NOT part of the DB-first page
     render, so a license-locked / offline box never blocks the policy page. A
     device refusal is surfaced as ok=false with the reason."""
+    # One probe for Workspace, the DNS Lookup page and its plugin step
+    # (services.policy_health): it audits whichever way the read went.
+    from ..services import policy_health as PH
     appl = visible_appliance_or_404(appliance_id)
-    if appl.kind != 'fortiweb':
-        return jsonify(ok=False, error='FortiWeb-only', members=[]), 400
     try:
-        rows, err = FortiWebClient(appl).policy_health(name)
+        res = PH.probe(appl, name)
+    except PH.NotFortiWeb:
+        return jsonify(ok=False, error='FortiWeb-only', members=[]), 400
     except Exception as exc:  # noqa: BLE001
-        log_action('policy.health_probe', target=f'{appl.name}:{name}',
-                   appliance_id=appl.id, detail=f'failed: {exc}'[:400])
         return json_error(exc, 'Health probe failed', context='workspace.policy_health')
-    # A device read leaves a trace whichever way it went (Workspace topology
-    # card, DNS Lookup > Show > Check live health).
-    log_action('policy.health_probe', target=f'{appl.name}:{name}',
-               appliance_id=appl.id,
-               detail=(f'refused: {err}' if err else f'{len(rows or [])} member(s)')[:400])
-    if err:
-        return jsonify(ok=False, error=err, members=[])
-    members = [{
-        'pool': str(m.get('pool') or ''),
-        'ip': str(m.get('ipDomainName') or m.get('ip') or ''),
-        'port': str(m.get('port') or ''),
-        'health': _hc_state(m.get('healthCheckStatus')),
-        'raw': str(m.get('healthCheckStatus') or ''),
-    } for m in (rows or []) if isinstance(m, dict)]
-    return jsonify(ok=True, members=members)
+    if not res['ok']:
+        return jsonify(ok=False, error=res['error'], members=[])
+    return jsonify(ok=True, members=res['members'])
 
 
 #: GUI API lists FortiWeb's own selectors FILTER (its Omniselect source

@@ -26,7 +26,7 @@
 
 <ul class="nav nav-tabs mb-3" role="tablist">
   {% for id, icon, label in [('settings', 'bi-sliders', _('Settings')), ('form', 'bi-ui-checks', _('Form')), ('diagram', 'bi-diagram-3', _('Diagram')), ('design', 'bi-palette', _('Design')),
-                             ('actions', 'bi-lightning', _('Actions')), ('signin', 'bi-door-open', _('Sign-in')), ('test', 'bi-play-circle', _('Test')), ('publish', 'bi-rocket-takeoff', _('Publish'))] %}
+                             ('view', 'bi-code-square', _('View')), ('actions', 'bi-lightning', _('Actions')), ('signin', 'bi-door-open', _('Sign-in')), ('test', 'bi-play-circle', _('Test')), ('publish', 'bi-rocket-takeoff', _('Publish'))] %}
   <li class="nav-item"><button class="nav-link {{ 'active' if loop.first }}" id="ap-tabbtn-{{ id }}" data-bs-toggle="tab" data-bs-target="#ap-tab-{{ id }}" type="button"><i class="bi {{ icon }} me-1"></i>{{ label }}{% if id == 'signin' and policy.enabled %} <span class="fw-badge fw-badge-success ms-1">{{ _('on') }}</span>{% endif %}</button></li>
   {% endfor %}
 </ul>
@@ -66,6 +66,12 @@
             <div style="max-height:240px;overflow:auto;">
             {% for u in users %}<div class="form-check"><input class="form-check-input ap-user" type="checkbox" id="ap-u-{{ u.id }}" value="{{ u.id }}" {{ 'checked' if u.id in a.access.users }}><label class="form-check-label" for="ap-u-{{ u.id }}">{{ u.username }}</label></div>{% endfor %}</div></div>
         </div>
+        <label class="form-label small mt-2" for="ap-access-perm">{{ _('Also everyone holding this permission') }}</label>
+        <select class="form-select form-select-sm" id="ap-access-perm" style="max-width:420px;">
+          <option value="">{{ _('— nobody more —') }}</option>
+          {% for k, label in permission_choices %}<option value="{{ k }}" {{ 'selected' if a.access.permission == k }}>{{ label }} ({{ k }})</option>{% endfor %}
+        </select>
+        <div class="form-text">{{ _('A plugin of a SATOM page opens to who the page does: pick the page\'s permission (DNS Lookup: network.view). Each step still asks its own permission.') }}</div>
       </div></div></div>
     </div>
     <button type="button" class="btn btn-primary btn-sm mt-3" id="ap-save-settings"><i class="bi bi-save me-1"></i>{{ _('Save settings') }}</button>
@@ -191,6 +197,44 @@
     </div>
   </div>
 
+  {# ---------------------------------------------------------------- view #}
+  {# The app's own page (services.studio_view, 2026-11-09): a template, its
+     CSS and JavaScript, drawn in an isolated frame INSTEAD of the designed
+     page; the diagram stays its back end. Written by holders of
+     studio.plugin_studio; read here by every author: how the app is made. #}
+  <div class="tab-pane fade" id="ap-tab-view">
+    <div class="fw-card"><div class="fw-card-body" style="font-size:13px;">
+      <p class="text-muted mb-2" style="font-size:12px;">{{ _('A page you write instead of the designed one: a Jinja template, its CSS and JavaScript. It is drawn in an isolated frame and reaches SATOM only through window.SATOM: submit(inputs) runs this app and shows the page with its result (outputs.<key> in the template), call(app, inputs) runs this app or one listed in Uses and returns its outputs, open(url), navigate(url), copy(text), openApp(app, inputs). Every step still asks the permission of the person running it. Context steps run when the page opens, read only; their values are data.<key>. The template also has form, run, errors, adom, can(permission) and _().') }}</p>
+      {% if view_problems %}<div class="alert alert-warning py-2" style="font-size:12px;"><ul class="mb-0">{% for p in view_problems %}<li>{{ p }}</li>{% endfor %}</ul></div>{% endif %}
+      <div class="row g-2">
+        <div class="col-md-4"><label class="form-label small" for="ap-view-title">{{ _('Window title') }}</label>
+          <input class="form-control form-control-sm" id="ap-view-title" value="{{ view.title or '' }}" maxlength="160" {{ 'readonly' if not can_view }}></div>
+        <div class="col-md-4"><label class="form-label small" for="ap-view-crumb">{{ _('Breadcrumb') }}</label>
+          <input class="form-control form-control-sm" id="ap-view-crumb" value="{{ view.breadcrumb or '' }}" maxlength="160" {{ 'readonly' if not can_view }}></div>
+        <div class="col-md-4"><label class="form-label small" for="ap-view-uses">{{ _('Uses (other apps it may run, comma-separated)') }}</label>
+          <input class="form-control form-control-sm font-monospace" id="ap-view-uses" value="{{ (view.uses or [])|join(', ') }}" {{ 'readonly' if not can_view }}></div>
+        <div class="col-12"><label class="form-label small" for="ap-view-context">{{ _('Context steps (JSON: [{"key", "kind", "params"}], read only)') }}</label>
+          <textarea class="form-control form-control-sm font-monospace" id="ap-view-context" rows="3" style="font-size:12px;" {{ 'readonly' if not can_view }}>{{ (view.context or [])|tojson(indent=1) if view.context else '' }}</textarea></div>
+        <div class="col-12"><label class="form-label small" for="ap-view-jinja">{{ _('Template (Jinja)') }}</label>
+          <textarea class="form-control form-control-sm font-monospace" id="ap-view-jinja" rows="22" spellcheck="false" style="font-size:12px;white-space:pre;" {{ 'readonly' if not can_view }}>{{ view.jinja or '' }}</textarea></div>
+        <div class="col-lg-6"><label class="form-label small" for="ap-view-css">CSS</label>
+          <textarea class="form-control form-control-sm font-monospace" id="ap-view-css" rows="10" spellcheck="false" style="font-size:12px;white-space:pre;" {{ 'readonly' if not can_view }}>{{ view.css or '' }}</textarea></div>
+        <div class="col-lg-6"><label class="form-label small" for="ap-view-js">JavaScript</label>
+          <textarea class="form-control form-control-sm font-monospace" id="ap-view-js" rows="10" spellcheck="false" style="font-size:12px;white-space:pre;" {{ 'readonly' if not can_view }}>{{ view.js or '' }}</textarea></div>
+      </div>
+      <div class="d-flex gap-2 mt-2 align-items-center">
+        {% if can_view %}
+        <button type="button" class="btn btn-primary btn-sm" id="ap-save-view"><i class="bi bi-save me-1"></i>{{ _('Save view') }}</button>
+        {% if view.jinja %}<button type="button" class="btn btn-outline-danger btn-sm" id="ap-remove-view">{{ _('Remove the view (use the designed page)') }}</button>{% endif %}
+        {% else %}
+        <span class="text-muted small"><i class="bi bi-lock me-1"></i>{{ _('Read only: writing a view needs the Plugin Studio permission (studio.plugin_studio).') }}</span>
+        {% endif %}
+        {% if view.jinja and can_view %}<a class="btn btn-outline-secondary btn-sm ms-auto" target="_blank" rel="noopener" href="{{ url_for('studio.app_view_preview', slug=a.slug) }}"><i class="bi bi-eye me-1"></i>{{ _('Preview the saved draft') }}</a>{% endif %}
+        <span id="ap-view-msg" class="small"></span>
+      </div>
+    </div></div>
+  </div>
+
   {# ------------------------------------------------------------- actions #}
   <div class="tab-pane fade" id="ap-tab-actions">
     <div class="fw-card"><div class="fw-card-body" style="font-size:13px;">
@@ -281,7 +325,8 @@
            'delete': url_for('studio.app_delete', slug=a.slug), 'back': url_for('studio.index', pane='apps'),
            'analyze': url_for('studio.app_analyze', slug=a.slug), 'lastRun': url_for('studio.app_last_run', slug=a.slug),
            'simPlan': url_for('studio.app_simulate_plan', slug=a.slug),
-           'simCoverage': url_for('studio.app_simulate_coverage', slug=a.slug)}
+           'simCoverage': url_for('studio.app_simulate_coverage', slug=a.slug),
+           'view': url_for('studio.app_view', slug=a.slug)}
 }|tojson }}</script>
 <script src="{{ url_for('static', filename='js/process_editor.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/apps_run.js') }}" nonce="{{ csp_nonce }}"></script>

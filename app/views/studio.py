@@ -919,8 +919,68 @@ def app_edit(slug):
         assets=[_asset_json(a, r) for r in D.assets_of(a.id)],
         output_titles=D.output_titles(a.graph), automations=PA.linked(slug),
         automation_when=lambda r: PA.describe(r.schedule_kind, r.schedule_dict),
-        with_access=False,
+        with_access=False, permission_choices=_permission_choices(), view=a.view, can_view=current_user.can(_SV().VIEW_PERMISSION),
+        view_problems=_view_problems(a),
         **DCV.signin_context(a, directories_url=url_for("studio.index", pane="directories")))
+
+
+def _permission_choices() -> list:
+    from ..permissions import GRANULAR_PERMISSIONS
+    return [(p["key"], p["label"]) for p in GRANULAR_PERMISSIONS]
+
+
+def _SV():
+    from ..services import studio_view
+    return studio_view
+
+
+def _view_problems(a) -> list:
+    from ..services import studio_apps as SA
+    from ..services import studio_flow as F
+    SV = _SV()
+    try:
+        return SV.problems(SV.clean(a.view, kinds=F.kind_map(SA.choices())), app_slug=a.slug)
+    except SV.ViewError as exc:
+        return [str(exc)]
+
+
+@bp.route("/apps/<slug>/view", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_view(slug):
+    """Save the app's own view (services.studio_view). Author HTML and
+    JavaScript: the Plugin Studio permission, like Plugin Studio's views."""
+    from ..services import studio_apps as SA
+    SV = _SV()
+    if not current_user.can(SV.VIEW_PERMISSION):
+        return jsonify({"ok": False, "error": "writing a view needs the Plugin Studio "
+                                              "permission (%s)" % SV.VIEW_PERMISSION}), 403
+    a = _app_or_404(slug)
+    try:
+        clean = SA.save_view(a, (request.get_json(silent=True) or {}).get("view"),
+                             current_user.username)
+    except SA.AppError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    log_action("studio.app.view", target=slug,
+               extra={"view": bool(clean), "bytes": sum(len(clean.get(k) or "")
+                                                        for k in ("jinja", "css", "js"))})
+    return jsonify({"ok": True, "view": bool(clean), "problems": SA.problems(a)})
+
+
+@bp.route("/apps/<slug>/view-preview")
+@login_required
+@require_permission(LIBRARY)
+def app_view_preview(slug):
+    """The saved DRAFT view, framed as users will see it (its calls run the
+    published apps)."""
+    from . import apps as AV
+    SV = _SV()
+    if not current_user.can(SV.VIEW_PERMISSION):
+        abort(404)
+    a = _app_or_404(slug)
+    if a.kind != "flow" or not SV.has(a.view):
+        abort(404)
+    return AV._view_host(a, a.view, draft=True)
 
 
 @bp.route("/apps/<slug>/settings", methods=["POST"])

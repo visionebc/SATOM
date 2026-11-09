@@ -7,6 +7,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Plugin Studio: an app can have its own view.** Requested: make
+  everything of DNS Lookup a plugin -- the same view and every function --
+  and make it possible to build this kind of plugin. A view is a page the
+  author writes (a Jinja template, its CSS and JavaScript) in the app's new
+  *View* tab; the app's diagram stays its back end and its *Diagram* tab
+  shows how it is built. The view is drawn in an isolated frame (a sandbox
+  without same-origin, no connection anywhere) with SATOM's own stylesheets,
+  and reaches SATOM only through `window.SATOM`: run this app (`submit`) or
+  one the view lists in *Uses* (`call`), open or go to a SATOM page, copy,
+  open another app's form -- each step still asks the permission of the
+  person running it. *Context steps* (read only) run when the page opens.
+  Writing a view needs the Plugin Studio permission. The view travels in the
+  app package (`app.view`, new rule `app.view`) and is frozen by Publish.
+  Migration `appview01` adds `studio_apps.view_json`.
+- **Plugin Studio: an app can open to everyone holding a permission** (Settings
+  › *Also everyone holding this permission*), so a plugin of a SATOM page opens
+  to who the page does. A package may suggest it (`app.access_permission`),
+  applied only when the app is created.
+- **Plugin Studio steps that are the DNS & LB Lookup page:** *DNS Lookup: the
+  page's context*, *DNS Lookup: search (the page's)* -- the same call the page
+  makes, `dns_tool.search` --, *LB: live health of a server policy* (the probe
+  Workspace and the page use, audited), *SPO Regex: try the rules* and *SPO
+  Regex: save the rules*; *DNS records: list* can answer the backend's
+  capabilities only.
 - **Plugin Studio: page plugins.** Requested: make DNS Lookup a plugin
   without losing any function or any part of the view. A Plugin Studio app
   form cannot draw that page, so an app package can now be a *page plugin*
@@ -27,6 +51,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   adds `studio_apps.page_key`.
 
 ### Changed
+- **Plugin Studio: a step value or Output may hold 8 MiB** (was 1 MiB): the DNS &
+  LB Lookup plugin returns the page's whole result, and 1 MiB stopped a broad search
+  the page draws.
 - **Sidebar: Sentinel below Scout, its console is "Security Incidents", API
   in Administrator.** Requested: move Sentinel right below Scout in the main
   menu, rename its incidents entry to Security Incidents, and put the API

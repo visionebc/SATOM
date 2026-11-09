@@ -86,7 +86,10 @@ def page(slug):
     if not a.published:
         return render_template("apps/page.html", a=a, fields=[], runs=[], unpublished=True)
     from ..services import studio_design as D
+    from ..services import studio_view as SV
     pub = a.published
+    if SV.has(pub.get("view")):          # the app's own page (services.studio_view)
+        return _view_host(a, pub["view"], draft=False)
     fields = SA.form_view(pub.get("fields") or [])
     design = {}
     try:
@@ -99,6 +102,109 @@ def page(slug):
                            autorun=autorun(pub),
                            theme=design.get("theme") or {},
                            fields_by_name={f["name"]: f for f in fields}, all_runs=runs)
+
+
+# --------------------------------------------------------------------------- #
+#  an app's own view (services.studio_view)                                    #
+# --------------------------------------------------------------------------- #
+_HOST_RE = __import__("re").compile(r"^[A-Za-z0-9.-]+(?::\d{1,5})?$|^\[[0-9A-Fa-f:.]+\](?::\d{1,5})?$")
+
+
+def _origin() -> str:
+    """The console's own origin as the browser reached it: nginx says https
+    (X-Forwarded-Proto) and passes the Host it was asked for."""
+    scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+    scheme = scheme if scheme in ("http", "https") else request.scheme
+    host = request.host if _HOST_RE.match(request.host or "") else "localhost"
+    return "%s://%s" % (scheme, host)
+
+
+def _view_host(a: StudioApp, view: dict, *, draft: bool):
+    """The console page that frames the view: the crumb and title the view
+    names, the frame, and the bridge (static/js/apps_view_host.js)."""
+    from ..services import studio_view as SV
+    rid = request.args.get("run", type=int)
+    token = SV.new_token()
+    frame_url = url_for("apps.frame", slug=a.slug, **({"draft": 1} if draft else {}))
+    first = frame_url + ("&" if "?" in frame_url else "?") + \
+        ("run=%d&" % rid if rid else "") + "t=" + token
+    return render_template("apps/view.html", a=a, view=view, token=token, frame_src=first,
+                           cfg={"slug": a.slug, "uses": list(view.get("uses") or []),
+                                "token": token, "frameUrl": frame_url})
+
+
+@bp.route("/<slug>/frame")
+@login_required
+def frame(slug):
+    """The ISOLATED document of an app's view (services.studio_view): served
+    with its own policy for <iframe sandbox="allow-scripts allow-modals">.
+    ``?run=<id>`` draws it with that run of this app (who may see the run:
+    apps.run_status's rule); ``?draft=1`` the draft view, for its authors."""
+    from flask_login import current_user as cu
+    from ..services import studio_view as SV
+    from ..services import theme_service
+    a = SA.get(slug)
+    draft = request.args.get("draft") == "1"
+    if draft:
+        if a is None or a.kind != "flow" or not SA.is_author(cu) or not cu.can(SV.VIEW_PERMISSION):
+            abort(404)
+        view, fields = a.view, a.fields
+    else:
+        a = _usable_or_404(slug)
+        pub = a.published or {}
+        view, fields = pub.get("view") or {}, pub.get("fields") or []
+    if not SV.has(view):
+        abort(404)
+    token = request.args.get("t", "")
+    if not SV.TOKEN_RE.match(token):
+        abort(400)
+    run, outputs, form = None, {}, {}
+    rid = request.args.get("run", type=int)
+    if rid:
+        r, ra = _run_or_404(rid)
+        if ra.id != a.id:
+            abort(404)
+        for o in r.outputs:
+            if o.get("key") and o["key"] not in outputs:
+                outputs[o["key"]] = o.get("value")
+        form = r.inputs
+        run = {"id": r.id, "status": r.status, "error": r.error or "",
+               "url": url_for("apps.run_page", rid=r.id)}
+    else:
+        form = {f["name"]: f.get("default", "") for f in fields if f.get("name")}
+    product = _product_key()
+    data, errors = SV.load_context(view, user=cu, product=product)
+    html, _err = SV.render(view, form=form, outputs=outputs, run=run, data=data, errors=errors,
+                           user=cu, adom=product)
+    origin = _origin()
+    _css, ver = SV.kit()
+    kit_url = origin + url_for("apps.view_kit", version=ver)
+    bootstrap_url = origin + SV.BOOTSTRAP_JS
+    island = {"token": token, "slug": a.slug, "uses": list(view.get("uses") or []),
+              "form": form, "outputs": outputs, "run": run, "data": data, "errors": errors}
+    doc = SV.document(view, html, island, kit_url=kit_url, bootstrap_url=bootstrap_url,
+                      theme_css=theme_service.active_css())
+    resp = Response(doc, mimetype="text/html")
+    resp.headers["Content-Security-Policy"] = SV.csp(kit_url, bootstrap_url)
+    resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    return resp
+
+
+@bp.route("/view-kit/<version>.css")
+def view_kit(version):
+    """SATOM's own stylesheets for an app view's frame (fonts inlined).
+    PUBLIC on purpose: an opaque-origin frame sends no session cookie with
+    its subresources, and this is only vendored CSS -- what /static serves
+    to anyone. An old version answers with the current one."""
+    from ..services import studio_view as SV
+    css, ver = SV.kit()
+    resp = Response(css, mimetype="text/css")
+    resp.headers["Cache-Control"] = ("public, max-age=31536000, immutable" if version == ver
+                                     else "no-store")
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 
 def autorun(pub: dict) -> bool:

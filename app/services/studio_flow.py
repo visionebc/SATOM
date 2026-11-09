@@ -48,7 +48,10 @@ from jinja2.sandbox import ImmutableSandboxedEnvironment, SecurityError
 
 MAX_STEPS = 200
 RUN_TIMEOUT = 600
-MAX_VALUE_BYTES = 1024 * 1024
+#: One step value / Output. 8 MiB since 2026-11-09 (was 1 MiB): the DNS &
+#: LB Lookup page as a plugin returns the page's whole result (~1.4 KB per LB
+#: match measured on a1), and 1 MiB stopped a broad search the page draws.
+MAX_VALUE_BYTES = 8 * 1024 * 1024
 BRANCHES = (
     {"key": "always", "label": "always", "color": "#5E6C84"},
     {"key": "ok", "label": "ok", "color": "#15692A"},
@@ -604,6 +607,9 @@ class Ctx:
     #: The steps walked so far, the running one last (set by :func:`walk`):
     #: *Open incident* keeps them as the incident's summary.
     trail: list = field(default_factory=list)
+    #: The ADOM of a step run with no run row: an app view's context steps
+    #: (services.studio_view). A run's ADOM is its row's ``product``.
+    product: str = ""
 
     def scope(self) -> dict:
         s = dict(self.vars)
@@ -918,6 +924,12 @@ def _run_step(node: dict, ctx: Ctx):
     if kind in S.KIND_KEYS:
         return S.run(node, ctx)
     raise FlowError("unknown step kind %r" % kind)
+
+
+def run_single(node: dict, ctx: Ctx):
+    """One step outside a walk: ``(outcome, value, detail)``, a FlowError for
+    an error. An app view's context (services.studio_view) reads with it."""
+    return _run_step(node, ctx)
 
 
 def _api_request(node, ctx, c) -> tuple:

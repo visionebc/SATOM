@@ -1,0 +1,21 @@
+{% extends portal_layout or "base.html" %}
+{# A Plugin Studio app with its own VIEW (services.studio_view, views.apps
+   _view_host): the console draws the crumb and title the view names, and
+   the view itself in an isolated frame (sandbox without allow-same-origin)
+   that reaches SATOM only through the bridge (js/apps_view_host.js). #}
+{% block title %}{{ view.title or a.name }}{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ view.breadcrumb or a.name }}</span>
+</div>
+{% endblock %}
+{% block content %}
+<iframe id="app-view-frame" sandbox="allow-scripts allow-modals" src="{{ frame_src }}"
+        title="{{ view.title or a.name }}" referrerpolicy="no-referrer"
+        style="width:100%;height:70vh;border:0;display:block;background:transparent;"></iframe>
+<script type="application/json" id="app-view-config">{{ cfg|tojson }}</script>
+<script src="{{ asset('js/apps_run.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/apps_view_host.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

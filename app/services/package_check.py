@@ -41,6 +41,7 @@ import binascii
 import copy
 import hashlib
 import json
+import re
 
 POLICIES = ("builder", "import")
 #: Bumped when check()'s output shape changes.
@@ -96,6 +97,9 @@ RULES = (
     ("app.page", ALL, "A page plugin (app.kind \"page\") opens a SATOM page of the closed list "
      "(services.studio_pages) and carries nothing else: no form, diagram, actions, design, "
      "image, data store, connection, API, script, automation or sign-in."),
+    ("app.view", ALL, "The app's own view (app.view, services.studio_view) is well formed: "
+     "a template, CSS and JavaScript within their sizes, uses naming app ids, and context "
+     "steps that only read."),
     ("app.downgrade", WARNING, "A package older than the installed app needs Allow downgrade."),
     ("app.diagram", BUILDER, "The diagram has no problem (studio_flow.validate_graph), with the "
      "data stores, connections and scripts this server has plus those the package creates."),
@@ -649,6 +653,18 @@ def _app_rules(body, files: dict, target: dict | None, r: _Report, summary: dict
         design = D.clean(spec.get("design") or {})
     except D.DesignError as exc:
         r.add("app.definition", "app.design", "design: %s" % exc)
+    ap = spec.get("access_permission")
+    if ap not in (None, "") and not (isinstance(ap, str)
+                                     and re.match(r"^[a-z_]{2,32}(\.[a-z_]{2,32})?$", ap)):
+        r.add("app.definition", "app.access_permission",
+              "access_permission %r: a SATOM permission key such as network.view" % (ap,))
+    if spec.get("view"):
+        from . import studio_view as SV
+        try:
+            from . import studio_flow as F
+            SV.clean(spec.get("view"), kinds=F.kind_map(ch) if ch is not None else None)
+        except SV.ViewError as exc:
+            r.add("app.view", "app.view", str(exc))
     if target is not None and graph is not None:
         from . import studio_flow as F
         for p in F.validate_graph(graph, ch):

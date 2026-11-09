@@ -565,7 +565,7 @@
   });
 
   window.AppRun = { mount: mount, draw: draw, follow: follow, fill: fill, searchSelect: searchSelect,
-                    formValues: formValues };
+                    formValues: formValues, openApp: openApp };
 
   var cfgEl = document.getElementById('app-run-config');
   if (cfgEl) {

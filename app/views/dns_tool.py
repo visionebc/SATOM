@@ -28,100 +28,25 @@ from ..models import Permission, visible_appliance_or_404
 bp = Blueprint("dns_tool", __name__, url_prefix="/dns-lookup")
 
 
-def _clipboards(results, servers, columns, appid_cols=()):
-    """TSV exports mirroring the PHP tool's Copy DNS / Copy LB buttons.
-
-    Copy LB carries the FULL row (SA-0027): the entry it matched, every LB
-    column -- whole comment, PTR name, each backend with its status -- and the
-    AppID facts of the catalog. ``columns`` is kept for the DNS half's callers;
-    the LB half is ``dns_tool.lb_tsv_*``, shared with the lb_lookup step."""
-    dns_lines = ["\t".join(["Entry"] + [s["name"] for s in servers])]
-    for r in results:
-        dns_lines.append("\t".join(
-            [r["entry"]] + ["; ".join(r["dns"].get(s["name"], [])) for s in servers]))
-    lb_lines = ["\t".join(dns_tool.lb_tsv_header(appid_cols))]
-    for r in results:
-        for m in r["matches"]:
-            lb_lines.append("\t".join(dns_tool.lb_tsv_line(r["entry"], m, appid_cols)))
-    return "\n".join(dns_lines), "\n".join(lb_lines)
-
-
 @bp.route("/", methods=["GET", "POST"])
 @login_required
 @require_permission('network.view')
 def index():
-    servers = [s for s in dns_tool.dns_servers() if s.get("enabled", True)]
+    # The page and its plugin (Plugin Studio steps dns_page_context and
+    # dns_lb_lookup) are the same two calls: dns_tool.page_context / search.
     # "appid" was an option until SA-0029: the AppID is always in the details.
     # Exact match and Show TTL were options until SA-0029 (the operator
     # removed them): matching is never exact, no TTL is shown. Quick LB stays.
-    opts = {"lb": True, "quick": False}
     # SA-0028: how each entry is looked up -- detected per entry (auto) or
     # forced: element (config text), ip (address fields), fqdn (resolve,
     # then the addresses). Applied here, on the server, never in the browser.
-    mode = "auto"
-    entries_raw = ""
-    results = []
-    not_found = []
-    clip_dns = clip_lb = ""
-    searched = False
-    lb_error = None
-    # The catalog's own column names (AppIDs page), so the optional AppID
-    # columns of this table read like the catalog they come from.
-    try:
-        appid_cols = appids.info_columns()
-    except Exception:  # noqa: BLE001 — no catalog yet: the AppID column alone
-        appid_cols = [("app_id", "AppID")]
-
+    ctx = dns_tool.page_context(current_user)
+    ctx.update({"opts": {"lb": True, "quick": False}, "mode": "auto", "entries_raw": "",
+                "results": [], "not_found": [], "clip_dns": "", "clip_lb": "",
+                "searched": False, "lb_error": None})
     if request.method == "POST":
-        searched = True
-        opts = {k: bool(request.form.get(k)) for k in opts}
-        mode = request.form.get("mode") or "auto"
-        if mode not in dns_tool.MODES:
-            mode = "auto"
-        entries_raw = request.form.get("entries", "")
-        entries = []
-        for line in entries_raw.splitlines():
-            e = dns_tool.clean_entry(line)
-            if e and e not in entries:
-                entries.append(e)
-        entries = entries[:dns_tool.MAX_ENTRIES]
-
-        lb_rows = []
-        if entries and (opts["lb"] or opts["quick"]):
-            try:
-                lb_rows = dns_tool.fleet_lb_rows()
-            except Exception as exc:  # noqa: BLE001 — DNS half still renders
-                lb_error = str(exc)
-
-        results, not_found = dns_tool.lookup(
-            entries, servers, lb_rows, mode=mode, names=opts["lb"],
-            spo_rules=dns_tool.spo_rules())
-        clip_dns, clip_lb = _clipboards(results, servers, dns_tool.COLUMNS,
-                                        appid_cols)
-
-    return render_template(
-        "dns_lookup/index.html",
-        servers=servers,
-        columns=dns_tool.COLUMNS,
-        appid_cols=appid_cols,
-        results=results,
-        not_found=not_found,
-        opts=opts,
-        mode=mode,
-        entries_raw=entries_raw,
-        searched=searched,
-        clip_dns=clip_dns,
-        clip_lb=clip_lb,
-        lb_error=lb_error,
-        adom=session_product() or "global",
-        dns_backends=[r.public()
-                      for r in dns_providers.enabled_backends("dns")],
-        can_manage_records=current_user.can("user_manage"),
-        can_decommission=current_user.can("config_write"),
-        spo_rules=dns_tool.spo_rules(),
-        spo_rules_max=dns_tool.SPO_RULES_MAX,
-        can_edit_spo=current_user.can("user_manage"),
-    )
+        ctx.update(dns_tool.search(request.form))
+    return render_template("dns_lookup/index.html", adom=session_product() or "global", **ctx)
 
 
 # ------------------------------------------------------------- SPO Regex

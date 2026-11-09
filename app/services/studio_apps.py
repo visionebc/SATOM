@@ -719,7 +719,15 @@ def set_access(a: StudioApp, acc: dict) -> None:
         raise AppError("a group in the access list does not exist")
     if uids and User.query.filter(User.id.in_(uids)).count() != len(uids):
         raise AppError("a user in the access list does not exist")
-    a.access_json = json.dumps({"groups": gids, "users": uids})
+    perm = str(acc.get("permission") or "").strip()
+    if perm:
+        from ..permissions import COARSE_KEYS, is_valid_key
+        if not (is_valid_key(perm) or perm in COARSE_KEYS):
+            raise AppError("%r is not a SATOM permission" % perm)
+    out = {"groups": gids, "users": uids}
+    if perm:
+        out["permission"] = perm
+    a.access_json = json.dumps(out)
 
 
 def clean_graph(graph) -> dict:
@@ -791,7 +799,28 @@ def problems(a: StudioApp) -> list[str]:
     except D.DesignError as exc:
         errs.append("design: %s" % exc)
     errs += secret_problems(a)
+    from . import studio_view as SV
+    try:
+        errs += SV.problems(SV.clean(a.view, kinds=F.kind_map(ch)), app_slug=a.slug)
+    except SV.ViewError as exc:
+        errs.append("view: %s" % exc)
     return sorted(set(errs))
+
+
+def save_view(a: StudioApp, view, by: str) -> dict:
+    """Save the app's own view (services.studio_view; the route checks
+    studio_view.VIEW_PERMISSION). ``{}`` removes it: the designed page again."""
+    from . import studio_view as SV
+    if a.kind != "flow":
+        raise AppError("only a flow app has a view")
+    try:
+        clean = SV.clean(view, kinds=F.kind_map(choices()))
+    except SV.ViewError as exc:
+        raise AppError("view: %s" % exc) from None
+    a.view_json = json.dumps(clean)
+    a.updated_by = by
+    db.session.commit()
+    return clean
 
 
 def secret_problems(a: StudioApp) -> list[str]:
@@ -817,7 +846,8 @@ def publish(a: StudioApp, note: str, by: str) -> int:
         raise AppError("not published: " + " · ".join(errs))
     a.version = (a.version or 0) + 1
     a.published_json = json.dumps({"version": a.version, "fields": a.fields, "graph": a.graph,
-                                   "actions": a.actions, "design": a.design, "at": datetime.utcnow().isoformat(timespec="seconds"),
+                                   "actions": a.actions, "design": a.design, "view": a.view,
+                                   "at": datetime.utcnow().isoformat(timespec="seconds"),
                                    "by": by, "note": (note or "")[:200]})
     a.status = "published"
     a.published_at = datetime.utcnow()
@@ -1181,6 +1211,7 @@ def clone(a: StudioApp, new_slug: str, new_name: str, *, mode: str = "structure"
                       fields_json=json.dumps(fields),
                       graph_json=json.dumps({**graph, "nodes": nodes}),
                       actions_json=json.dumps(actions), design_json=a.design_json or "{}",
+                      view_json=a.view_json or "{}",
                       menu_group=a.menu_group or "", published_json="{}",
                       login_json="{}", enabled=True, created_by=by, updated_by=by)
         db.session.add(b)
@@ -1339,6 +1370,8 @@ def can_use(user, a: StudioApp) -> bool:
     acc = a.access
     if user.id in acc["users"]:
         return True
+    if acc.get("permission") and getattr(user, "can", None) and user.can(acc["permission"]):
+        return True                     # everyone holding the app's permission
     mine = group_ids_of(user)
     if mine & set(acc["groups"]):
         return True
@@ -1523,7 +1556,7 @@ def run_product(a: StudioApp, session_product: str) -> str:
 def definition(a: StudioApp, draft: bool) -> dict:
     if draft:
         return {"version": 0, "fields": a.fields, "graph": a.graph, "actions": a.actions,
-                "design": a.design}
+                "design": a.design, "view": a.view}
     pub = a.published
     if not pub:
         raise AppError("%s is not published" % a.slug)

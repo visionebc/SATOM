@@ -198,6 +198,11 @@ def build_body(a) -> dict:
             "stores": stores, "connections": conns, "apis": list(apis.values())}
     if a.menu_group:
         body["app"]["group"] = a.menu_group
+    from . import studio_view as SV
+    if SV.has(a.view):              # the app's own page (template, CSS, JS)
+        body["app"]["view"] = a.view
+    if a.access.get("permission"):  # suggested on create elsewhere (install)
+        body["app"]["access_permission"] = a.access["permission"]
     if scripts:
         body["scripts"] = scripts
     from . import plugin_automations as PA
@@ -266,14 +271,24 @@ def _server_refusal(body: dict) -> None:
                 "the app package could not be installed: action %s opens the app %s, "
                 "which this server does not have -- import its package first; nothing "
                 "was written" % (act.get("key"), other))
+    from . import studio_flow as F
+    from . import studio_view as SV
     try:
         SA.clean_fields(spec.get("fields") or [], ch)
         SA.clean_graph(spec.get("graph") or {})
         SA.clean_actions(spec.get("actions") or [], ch)
         D.clean(spec.get("design") or {})
-    except (SA.AppError, D.DesignError) as exc:
+        view = SV.clean(spec.get("view") or {}, kinds=F.kind_map(ch))
+    except (SA.AppError, D.DesignError, SV.ViewError) as exc:
         raise AppPackageError("the app package could not be installed: %s; nothing was "
                               "written" % exc) from None
+    slug = str(spec.get("slug") or "")
+    for other in view.get("uses") or []:
+        if other != slug and other not in ch["apps"]:
+            raise AppPackageError(
+                "the app package could not be installed: its view uses the app %s, which "
+                "this server does not have -- import its package first; nothing was "
+                "written" % other)
 
 
 def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
@@ -407,6 +422,16 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
                     SA.file_under(a, spec.get("group"), by)
                 except SA.AppError as exc:
                     warnings.append("app %s: %s; it has no menu group here" % (slug, exc))
+            if spec.get("access_permission"):
+                # Who opens it, on CREATE only (like the group): a plugin of a
+                # SATOM page opens to who the page does. Afterwards it is this
+                # server's, and a newer package never changes it.
+                try:
+                    SA.set_access(a, {"permission": spec.get("access_permission")})
+                    created.append("app %s: open to everyone holding %s"
+                                   % (slug, spec.get("access_permission")))
+                except SA.AppError as exc:
+                    warnings.append("app %s: %s; tick who may use it" % (slug, exc))
         else:
             kept.append("app %s: draft replaced, published version and access unchanged" % slug)
         a.name = (spec.get("name") or a.name)[:120]
@@ -433,6 +458,7 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
                                  graph=spec.get("graph") or {},
                                  actions=spec.get("actions") or [],
                                  design=spec.get("design") or {}, by=by)
+        SA.save_view(a, spec.get("view") or {}, by)
         from . import plugin_automations as PA
         autos, _bad = PA.clean_entries(body.get("automations"))   # preflight refused bad ones
         got = PA.install(slug, autos, by=by)

@@ -59,7 +59,8 @@
   $('ap-save-settings').addEventListener('click', function () {
     post(U.settings, {
       name: $('ap-name').value, icon: $('ap-icon').value, description: $('ap-desc').value,
-      group: $('ap-menu-group').value, adoms: checked('.ap-adom'), access: { groups: checked('.ap-group'), users: checked('.ap-user') }
+      group: $('ap-menu-group').value, adoms: checked('.ap-adom'), access: { groups: checked('.ap-group'), users: checked('.ap-user'),
+                 permission: $('ap-access-perm') ? $('ap-access-perm').value : '' }
     }).then(function () { $('ap-title').textContent = $('ap-name').value; state('Settings saved.'); })
       .catch(function (e) { state(e.message, true); });
   });
@@ -179,6 +180,31 @@
   $('ap-save-actions').addEventListener('click', function () {
     post(U.draft, { actions: actions }).then(function (d) { state('Actions saved.'); problems(d.problems); })
       .catch(function (e) { state(e.message, true); });
+  });
+
+  /* ── view (services/studio_view) ──────────────────────────────────── */
+  function viewMsg(text, bad) {
+    var m = $('ap-view-msg');
+    if (m) m.innerHTML = text ? '<span style="color:' + (bad ? '#8B1C2A' : '#15692A') + ';">' + esc(text) + '</span>' : '';
+  }
+  function saveView(view, done) {
+    post(U.view, { view: view }).then(function (d) { viewMsg(done); problems(d.problems); })
+      .catch(function (e) { viewMsg(e.message, true); });
+  }
+  if ($('ap-save-view')) $('ap-save-view').addEventListener('click', function () {
+    var ctx = $('ap-view-context').value.trim(), parsed = [];
+    if (ctx) {
+      try { parsed = JSON.parse(ctx); } catch (e) { viewMsg('Context steps: not JSON (' + e.message + ')', true); return; }
+    }
+    saveView({
+      title: $('ap-view-title').value, breadcrumb: $('ap-view-crumb').value,
+      uses: $('ap-view-uses').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
+      context: parsed, jinja: $('ap-view-jinja').value, css: $('ap-view-css').value, js: $('ap-view-js').value
+    }, 'View saved. Publish to show it to users.');
+  });
+  if ($('ap-remove-view')) $('ap-remove-view').addEventListener('click', function () {
+    if (!window.confirm('Remove the view? The app shows its designed page again (after Publish).')) return;
+    saveView({}, 'View removed. Publish to apply.');
   });
 
   /* ── test ─────────────────────────────────────────────────────────── */

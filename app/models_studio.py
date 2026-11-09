@@ -305,6 +305,16 @@ class StudioApp(db.Model):
     #: "" = none, a plain entry of Plugins. Not the user groups of ``access_json``.
     #: 2026-10-30.
     menu_group = db.Column(db.String(48), nullable=False, default="", server_default="")
+    #: The app's own VIEW (services.studio_view): {title, breadcrumb, jinja,
+    #: css, js, uses, context} -- a page the author writes, drawn in an
+    #: isolated frame instead of the designed page. "{}" = none. The DRAFT;
+    #: the published one is in ``published_json``. 2026-11-09.
+    view_json = db.Column(db.Text, nullable=False, default="{}", server_default="{}")
+
+    @property
+    def view(self) -> dict:
+        d = _loads(self.view_json, {})
+        return d if isinstance(d, dict) else {}
 
     @property
     def login(self) -> dict:
@@ -319,7 +329,10 @@ class StudioApp(db.Model):
     def access(self) -> dict:
         a = _loads(self.access_json, {})
         return {"groups": [int(x) for x in a.get("groups") or [] if str(x).isdigit()],
-                "users": [int(x) for x in a.get("users") or [] if str(x).isdigit()]}
+                "users": [int(x) for x in a.get("users") or [] if str(x).isdigit()],
+                # also everyone holding this SATOM permission ("" = nobody more);
+                # 2026-11-09, so a plugin of a page opens to who the page does
+                "permission": str(a.get("permission") or "")}
 
     @property
     def fields(self) -> list:

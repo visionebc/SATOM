@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [4.12.0] - 2026-11-09
+
 ### Added
 - **Migrate into: copy another FortiWeb's configuration into this one.**
   Requested: a backup from one device restored onto another that says what

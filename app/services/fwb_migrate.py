@@ -87,6 +87,11 @@ DROPPED_BY_RESTORE = frozenset({"waf xml-schema file", "waf xml-wsdl file",
 #: Global tables whose objects a box with ADOMs drops without ``set domains``.
 DOMAIN_SCOPED_GLOBAL = frozenset({"system vip"})
 
+#: Global tables a ``show full-configuration`` ALSO prints inside every domain
+#: (measured on 7.6.8: byte for byte the global one; a CLI backup never does).
+#: The domain copy is a view: never written, the object travels with global.
+GLOBAL_VIEWS = frozenset({"system vip"})
+
 _VIP_LINE = re.compile(r"^(\s*set vip )(\d{1,3}(?:\.\d{1,3}){3})(/\d{1,2})?\s*$")
 _EDIT = re.compile(r'^  edit "?([^"]*)"?\s*$')
 _DOMAINS = re.compile(r"^    set domains (.*)$")
@@ -209,7 +214,8 @@ def adom_mode(global_body: list[str]) -> bool:
 UNIQUE_DUMMY_NET = "198.18.0.0/15"
 
 
-def unique_dummy(rule: Callable[[str], str]) -> Callable[[str, str], str]:
+def unique_dummy(rule: Callable[[str], str],
+                 taken: set[str] | frozenset = frozenset()) -> Callable[[str, str], str]:
     """``rule`` (the fleet's clone rule), made unique per migration. A single
     policy clone may share the fallback address; a whole box cannot: the
     copy would carry tens of virtual IPs on one address. A repeat is replaced
@@ -217,9 +223,12 @@ def unique_dummy(rule: Callable[[str], str]) -> Callable[[str, str], str]:
 
     Stable per virtual IP: a FortiWeb dump lists the ``system vip`` table in
     ``global`` AND in every domain (byte for byte the same object, measured on
-    7.6.8), so one VIP must get one address wherever it is printed."""
+    7.6.8), so one VIP must get one address wherever it is printed.
+
+    ``taken``: addresses the target keeps (its own virtual IPs that the
+    migration does not replace) -- a dummy never lands on one of them."""
     import ipaddress
-    used: set[str] = set()
+    used: set[str] = set(taken)
     seen: dict[tuple[str, str], str] = {}
     free = (str(h) for h in ipaddress.IPv4Network(UNIQUE_DUMMY_NET).hosts())
 
@@ -255,17 +264,28 @@ def _dummy_vips(lines: list[str], transform, domain: str, log: list[dict]) -> li
     return out
 
 
+def _domains_of(lines: list[str] | None) -> list[str] | None:
+    for l in lines or []:
+        m = _DOMAINS.match(l)
+        if m:
+            return m.group(1).split()
+    return None
+
+
+def _vip_address(lines: list[str]) -> str:
+    for l in lines:
+        m = _VIP_LINE.match(l)
+        if m:
+            return m.group(2)
+    return ""
+
+
 def _fix_domains(entry: list[str], table: str, dmap: dict[str, str], tgt_adom: bool,
                  targets: list[str], existing: list[str] | None) -> list[str]:
     """ADOM membership of one copied GLOBAL object (see the module docstring).
     ``existing`` is the target's own entry of the same name, whose ADOMs are
     kept (a merge must not take a shared object away from another ADOM)."""
-    def _doms(lines):
-        for l in lines or []:
-            m = _DOMAINS.match(l)
-            if m:
-                return m.group(1).split()
-        return None
+    _doms = _domains_of
     src = _doms(entry)
     body = [l for l in entry if not _DOMAINS.match(l)]
     if not tgt_adom:
@@ -323,7 +343,6 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
     global); ``only_picked`` holds source domains (or ``global``) that copy
     only picks and what they need. ``dummy`` rewrites a VIP address (``None``
     = keep the real ones); it is made unique per migration."""
-    vip_dummy = unique_dummy(dummy) if dummy is not None else None
     src = pkg.package_sections(source)
     tgt_pkg = pkg.parse_package_text(pkg.package_text(target_backup))
     tgt = {s["domain"]: s["body"] for s in tgt_pkg["sections"]}
@@ -350,6 +369,22 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
     exclude = set(exclude)
     only_picked = set(only_picked)
 
+    # Virtual IPs the target already has. One that an ADOM this migration does
+    # not touch also uses is SHARED: it is kept as it is (only opened to the
+    # mapped ADOMs) -- replacing it would move a live object of another ADOM.
+    # The addresses the target keeps are never handed out as dummies.
+    tgt_vips = split_entries(dict(blocks(tgt.get("global", []))).get("system vip")
+                             or ["config system vip", "end"]) or {}
+    src_vip_names = set()
+    for d in active:
+        src_vip_names |= set((sents[d].get("system vip") or {}))
+    shared_vips = {n for n, e in tgt_vips.items()
+                   if tgt_adom and n in src_vip_names
+                   and set(_domains_of(e) or []) - set(targets)}
+    taken = {_vip_address(e) for n, e in tgt_vips.items()
+             if n not in src_vip_names or n in shared_vips} - {""}
+    vip_dummy = unique_dummy(dummy, taken) if dummy is not None else None
+
     picks = {k: set(v) for k, v in (picks or {}).items() if v}
     for key, names in picks.items():
         sdom, _, table = key.partition(":")
@@ -369,6 +404,8 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
 
     def mode(sdom: str, table: str) -> str:
         key = f"{sdom}:{table}"
+        if sdom != "global" and table in GLOBAL_VIEWS:
+            return "view"
         if is_identity(sdom, table):
             return "identity"
         if key in exclude:
@@ -413,7 +450,8 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
         "copy_global": copy_global, "target_adoms": tgt_adom,
         "copied": {}, "kept_from_target": {}, "identity_kept": [], "excluded": [],
         "picked": {k: sorted(v) for k, v in picks.items()}, "dependencies": deps,
-        "merged": {}, "dropped_by_restore": {}, "dummy_ips": [], "dangling": [],
+        "merged": {}, "shared_kept": [], "dropped_by_restore": {}, "dummy_ips": [],
+        "dangling": [],
         "expected_counts": {}, "expected_names": {},
         "untouched_domains": sorted(d for d in tgt if d != "global" and d not in dmap.values()),
         "not_copied_source_domains": sorted(d for d in src if d != "global" and d not in dmap),
@@ -460,6 +498,11 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
                 out = dict(tgt_ents)
                 for n in take_some:
                     ent = src_ents[n]
+                    if sdom == "global" and table == "system vip" and n in shared_vips:
+                        out[n] = _fix_domains(tgt_ents[n], table, {}, tgt_adom, targets,
+                                              tgt_ents[n])
+                        report["shared_kept"].append(f'{tkey} "{n}"')
+                        continue
                     if sdom == "global":
                         ent = _fix_domains(ent, table, dmap, tgt_adom, targets, tgt_ents.get(n))
                     ent = rewrite(sdom, tdom, table, ent)
@@ -517,5 +560,5 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
 
 
 __all__ = ["IDENTITY_TABLES", "DROPPED_BY_RESTORE", "DOMAIN_SCOPED_GLOBAL", "MigrationError",
-           "adom_mode", "blocks", "entries", "inventory", "is_identity", "names_by_table",
+           "GLOBAL_VIEWS", "adom_mode", "blocks", "entries", "inventory", "is_identity", "names_by_table",
            "names_inventory", "plan", "split_entries", "unique_dummy"]

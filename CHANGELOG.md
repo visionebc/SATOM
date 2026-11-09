@@ -61,7 +61,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   person running it. *Context steps* (read only) run when the page opens.
   Writing a view needs the Plugin Studio permission. The view travels in the
   app package (`app.view`, new rule `app.view`) and is frozen by Publish.
-  Migration `appview01` adds `studio_apps.view_json`.
+  An app the view uses runs wherever the view's app is drawn (no menu entry
+  of its own needed there). Migration `appview01` adds `studio_apps.view_json`.
 - **Plugin Studio: an app can open to everyone holding a permission** (Settings
   › *Also everyone holding this permission*), so a plugin of a SATOM page opens
   to who the page does. A package may suggest it (`app.access_permission`),
@@ -92,6 +93,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   adds `studio_apps.page_key`.
 
 ### Changed
+- **DNS Lookup: the Plugins entry is the plugin `dns-lb-lookup` 2.x, the page
+  itself.** Its own view is the page's template, its diagram the page's back end;
+  the DNS Records dialog runs `dns-records` 2.x and Delete runs `dns-decommission`
+  2.x, so a step added after *apply* there (a DDI call) runs on every Delete. It
+  opens to `network.view`, as the page. The page plugin `dns-lookup` of 2026-11-08
+  is retired; the page keeps answering at `/dns-lookup/`. A test compares the page
+  and the plugin line by line (`tests/test_dns_plugin_view.py`).
 - **Plugin Studio: a step value or Output may hold 8 MiB** (was 1 MiB): the DNS &
   LB Lookup plugin returns the page's whole result, and 1 MiB stopped a broad search
   the page draws.

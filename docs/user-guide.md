@@ -2756,12 +2756,15 @@ against what the devices say.
   are saved; everyone who can use the page sees and tries them, saving
   needs *Manage users* (like the resolvers) and is audited
   (`dns_tool.spo_regex`). Copy LB has a *SPO Regex FQDN* column.
-  The same tool also exists as **three Plugin Studio apps** — the plugins
-  `dns-lb-lookup`, `dns-records` and `dns-decommission` (§23.7, *Plugins:
-  DNS & LB Lookup*), under **Operations › Plugins** once imported: the
-  lookup, DNS Records and the decommission, with the same permissions and the
-  same ADOM scoping. The page stays; use whichever you prefer, or copy the
-  apps and change them.
+  **Since 2026-11-09 its menu entry is a plugin:** *DNS Lookup* under
+  **Plugins** is `dns-lb-lookup` 2.x (§23.7, *Plugins: DNS & LB Lookup*),
+  whose own **view** is this page's template — the same page, the same
+  dialogs, the same Copy texts — and whose **diagram** is its back end. The
+  Records dialog runs the plugin `dns-records`, Delete runs
+  `dns-decommission`: a step you add after *apply* in that app's diagram
+  (a DDI call, a ticket) runs on every Delete. Who may open it is
+  `network.view`, as for the page. There is no native menu entry any more;
+  the page keeps answering at `/dns-lookup/`.
 - **Where these live:** since 2026-10-31 Backend Reachability, Config Compare,
   Path Diagnostics, the **Transaction Tracer** (§37.3), the HTTP Observatory
   and **Diagnose Log Collection** (§27.1) are Plugin Studio apps under
@@ -6368,6 +6371,11 @@ a whole provisioning chain is one diagram whose failures the author routes:
 | *DNS records: create, change or delete* | Writes one record (`create` needs name and value; `update` / `delete` the record id). Audited like the page. Needs `user_manage` | — |
 | *Decommission: plan* | What retiring a service removes and keeps, with warnings, blockers and the plan's fingerprint (the page's planner; reads only). Only a FortiWeb or FortiADC of the run's ADOM. Needs `config_write` | — |
 | *Decommission: apply the plan* | Plans again and executes only with the fingerprint the person saw, when nothing blocks and every warning was acknowledged (an *Ask a person* step with *Must be acknowledged*). A failed apply keeps its per-step results readable on the error arrow (`{{ decommission.results }}`). Audited like the page. Needs `config_write` | — |
+| *DNS Lookup: the page's context* | What the DNS & LB Lookup page shows before a search, computed by the page's own function (`dns_tool.page_context`): `servers`, `dns_backends`, `spo_rules`, `columns`, `appid_cols`, what the person may do (`can_manage_records`, `can_decommission`, `can_edit_spo`, `can_live_health`) and `resolvers_url`. For an app view's *Context steps*. Needs `network.view` | — |
+| *DNS Lookup: search (the page's)* | The page's search itself (`dns_tool.search`, the call the page makes): `results`, `not_found`, `clip_dns` / `clip_lb` (Copy DNS / Copy LB), `lb_error`, `opts`, `mode`, `entries_raw`; each match also carries `_edit_url` (the page's Edit link). Needs `network.view` | — |
+| *LB: live health of a server policy* | Asks a FortiWeb for each pool member's health (`policystatus.detail`), the probe of Workspace and of the page's *Check live health* — a device read, audited. `ok`, `members` (`pool`, `ip`, `port`, `health` up / down / na, `raw`), `error`; a refusal is `ok = false` with the reason, never "all down". Needs `protection.view` | — |
+| *SPO Regex: try the rules* | The page's SPO Regex test: names (one per line or a JSON list) through the rules given (`[]` = no rule) or, when none is given, the saved ones. Nothing is stored. Needs `network.view` | — |
+| *SPO Regex: save the rules* | Replaces the console-wide SPO Regex rules, audited as the page (`dns_tool.spo_regex`). Needs `user_manage` | — |
 
 **Asking an API about each pool member.** *LB: match* → *DNS: look names up* with entries `{{ lb.members }}` (the PTR names) → *Call an API* with *For each* `{{ dns.ptr }}` and a path such as `/hosts/{{ item.hostname }}`. The answer is a table: the item's columns, then `Status`, `Answer` (after *Keep only*) and `Error`. Duplicates are asked once; one host that fails is a row with its error and the others are still asked; only every request failing takes the error arrow (the rows stay in the saved variable). More than 50 items is refused, never cut, and a run out of time stops asking and says how many were not asked. The credential is the HTTP connection's: the diagram never sees it.
 
@@ -6514,7 +6522,21 @@ each one — published apps appear under **Operations › Plugins**; give them t
 other users in each app's *Settings*. The page under Fleet › DNS Lookup
 stays.
 
-- **DNS & LB Lookup** (`dns-lb-lookup`): the page's form (names, *Show LB
+- **DNS Lookup** (`dns-lb-lookup` **2.x**, 2026-11-09, operator: "make
+  everything of DNS Lookup a plugin, the same view, every function"): the
+  page itself, as a plugin — its **view** is the page's template
+  (`plugins/dns-lb-lookup/view/page.html` in the generator, ported by
+  `port.py`), its diagram the page's back end (*search*, *live health*, *SPO
+  Regex try / save*), its context step *DNS Lookup: the page's context*. Menu
+  entry **DNS Lookup** under Plugins, opens to `network.view`. Its *DNS
+  Records* dialog runs `dns-records` 2.x (operation `schema` / `list` /
+  `create` / `update` / `delete`), *Delete* runs `dns-decommission` 2.x
+  (operation `plan`, then `apply` with the fingerprint and the
+  acknowledgement — **a step you add after *apply* runs on every Delete**).
+  A test in SATOM compares the page and the plugin line by line
+  (`tests/test_dns_plugin_view.py`). Version 1.0.0, below, was the
+  form-and-tables app.
+- **DNS & LB Lookup 1.0.0** (`dns-lb-lookup`): the page's form (names, *Show LB
   matches*, *Quick LB*, *Exact match*, *Show TTL*). Outputs: the DNS answers
   with a **Records** button on each name, the LB matches with **Open policy**
   and **Decommission** on each match, *Quick LB* (gateways) and *Not found in
@@ -6713,6 +6735,43 @@ activities of an appliance), as automatic as the steps allow:
 - An automation that starts a runbook (a trigger on an alert) waits for it
   before the alert run ends. A run whose worker stopped is shown as
   *interrupted* in the lists, without anybody having to open it.
+
+**An app's own view** (2026-11-09). When the designed page (*Design*) is
+not enough — rows that open into other rows, dialogs with a picker, an
+editor inside a dialog — an app can carry its **own page**, written in the
+**View** tab: a Jinja **template**, its **CSS** and its **JavaScript**. It
+replaces the designed page; the **diagram stays the back end** and shows how
+the app is built. Writing a view needs the *Plugin Studio* permission;
+every author can read it there.
+
+- **Where it runs.** In an isolated frame: a sandbox without same-origin, no
+  connection anywhere, SATOM's own stylesheets (Bootstrap, the icons,
+  fortiweb.css, the theme) so it looks like the console. Its template renders
+  in a sandbox with autoescape.
+- **What it can ask of SATOM** — only through `window.SATOM`:
+  `submit(inputs)` runs this app and draws the page again with that run
+  (`outputs.<key>` in the template, by the Output step's key); `call(app,
+  inputs)` runs this app or one listed in **Uses** and returns
+  `{status, error, outputs}`; `open(url)` / `navigate(url)` a SATOM page;
+  `copy(text)`; `openApp(app, inputs)`. A page's own script keeps working as
+  written: `window.open`, `navigator.clipboard.writeText`, a local link and a
+  `<form data-satom-submit>` go through the same calls. Every step still asks
+  the permission of the person running it, and every run is audited.
+- **Context steps** (JSON `[{"key", "kind", "params"}]`) run when the page
+  opens, as the person and in their ADOM, read only; their values are
+  `data.<key>`, a failure is `errors.<key>`. The template also has `form`,
+  `run`, `adom`, `can(permission)` and `_()`.
+- An app the view **uses** runs wherever the view's app is drawn, without a
+  menu entry of its own there. The view travels in the app package
+  (`app.view`, rule `app.view`; an import refuses a view that uses an app the
+  server does not have) and **Publish** freezes it with the rest. *Preview
+  the saved draft* opens it as users will see it.
+
+**Who may use it: a permission.** Besides the groups and people ticked, an
+app can open to **everyone holding a permission** (*Settings › Also everyone
+holding this permission*) — a plugin of a SATOM page opens to who the page
+does. A package may suggest it (`app.access_permission`); it is applied only
+when the app is created, never over this server's choice.
 
 ### 23.8 Examples
 

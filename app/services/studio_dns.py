@@ -244,8 +244,16 @@ def as_operator(ctx):
 def as_user(user, product: str):
     """Run the body as *user* in ADOM *product* ('' = their Global console):
     what the pages show that person there. Also used by a script's
-    ``satom.<op>()`` (``script_data``)."""
+    ``satom.<op>()`` (``script_data``).
+
+    *user* is unwrapped first: handed flask_login's ``current_user`` (a
+    LocalProxy, as an app view's context steps were, 2026-11-09), the inner
+    context's ``current_user`` would resolve to the proxy, which resolves to
+    itself -- RecursionError, a 500."""
     from flask import current_app, g
+    unwrap = getattr(user, "_get_current_object", None)
+    if callable(unwrap):
+        user = unwrap()
     with current_app.test_request_context("/"):
         saved = {k: g.pop(k, _MISSING) for k in _G_KEYS}
         g.product = product

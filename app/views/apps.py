@@ -153,9 +153,10 @@ def frame(slug):
     with its own policy for <iframe sandbox="allow-scripts allow-modals">.
     ``?run=<id>`` draws it with that run of this app (who may see the run:
     apps.run_status's rule); ``?draft=1`` the draft view, for its authors."""
-    from flask_login import current_user as cu
+    from flask_login import current_user
     from ..services import studio_view as SV
     from ..services import theme_service
+    cu = current_user._get_current_object()     # the User, never the proxy (studio_dns.as_user)
     a = SA.get(slug)
     draft = request.args.get("draft") == "1"
     if draft:

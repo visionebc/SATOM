@@ -386,37 +386,6 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
     exclude = set(exclude)
     only_picked = set(only_picked)
 
-    # Virtual IPs the target already has. One that an ADOM this migration does
-    # not touch also uses is SHARED: replacing it would move a live object of
-    # another ADOM. With dummies on, the copy gets its OWN virtual IP
-    # (<name>-<adom>, a dummy address) and the copied objects point at it --
-    # sharing the address would let a FortiWeb keep only one of the two server
-    # policies on it (measured on fortiweb21: adom_a lost lab-spo-007 when root
-    # got a policy on the same VIP). Without dummies the shared VIP is kept,
-    # opened to the mapped ADOMs, and reported as a conflict.
-    # The addresses the target keeps are never handed out as dummies.
-    tgt_vips = split_entries(dict(blocks(tgt.get("global", []))).get("system vip")
-                             or ["config system vip", "end"]) or {}
-    src_vip_names = set()
-    for d in active:
-        src_vip_names |= set((sents[d].get("system vip") or {}))
-    shared_vips = {n for n, e in tgt_vips.items()
-                   if tgt_adom and n in src_vip_names
-                   and set(_domains_of(e) or []) - set(targets)}
-    taken = {_vip_address(e) for n, e in tgt_vips.items()
-             if n not in src_vip_names or n in shared_vips} - {""}
-    vip_dummy = unique_dummy(dummy, taken) if dummy is not None else None
-    renamed: dict[str, str] = {}
-    if vip_dummy is not None:
-        used_names = set(tgt_vips) | src_vip_names
-        for n in sorted(shared_vips):
-            new, i = f"{n}-{targets[0]}"[:63], 1
-            while new in used_names:
-                i += 1
-                new = f"{n}-{targets[0]}-{i}"[:63]
-            used_names.add(new)
-            renamed[n] = new
-
     picks = {k: set(v) for k, v in (picks or {}).items() if v}
     for key, names in picks.items():
         sdom, _, table = key.partition(":")
@@ -476,6 +445,44 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
                     chosen.setdefault(dk, set()).add(tok)
                     deps.append(f'{dk} "{tok}" (needed by {key} "{name}")')
                     queue.append((dk, tok))
+
+    # Virtual IPs the target already has. One that an ADOM this migration does
+    # not touch also uses is SHARED: replacing it would move a live object of
+    # another ADOM. With dummies on, the copy gets its OWN virtual IP
+    # (<name>-<adom>, a dummy address) and the copied objects point at it --
+    # sharing the address would let a FortiWeb keep only one of the two server
+    # policies on it (measured on fortiweb21: adom_a lost lab-spo-007 when root
+    # got a policy on the same VIP). Without dummies the shared VIP is kept,
+    # opened to the mapped ADOMs, and reported as a conflict.
+    # The addresses the target keeps are never handed out as dummies.
+    tgt_vips = split_entries(dict(blocks(tgt.get("global", []))).get("system vip")
+                             or ["config system vip", "end"]) or {}
+    # Only the virtual IPs this migration WRITES count (global only: a domain's
+    # copy is a view). With "only what I pick" that is the picked ones and their
+    # dependencies -- the target's other VIPs stay, and so do their addresses.
+    src_vip_names: set[str] = set()
+    if "global" in active and "system vip" in sblocks["global"]:
+        vm = mode("global", "system vip")
+        if vm == "merge":
+            src_vip_names = set(sents["global"]["system vip"] or {})
+        elif vm in ("pick", "dep"):
+            src_vip_names = set(chosen.get("global:system vip", set()))
+    shared_vips = {n for n, e in tgt_vips.items()
+                   if tgt_adom and n in src_vip_names
+                   and set(_domains_of(e) or []) - set(targets)}
+    taken = {_vip_address(e) for n, e in tgt_vips.items()
+             if n not in src_vip_names or n in shared_vips} - {""}
+    vip_dummy = unique_dummy(dummy, taken) if dummy is not None else None
+    renamed: dict[str, str] = {}
+    if vip_dummy is not None:
+        used_names = set(tgt_vips) | src_vip_names
+        for n in sorted(shared_vips):
+            new, i = f"{n}-{targets[0]}"[:63], 1
+            while new in used_names:
+                i += 1
+                new = f"{n}-{targets[0]}-{i}"[:63]
+            used_names.add(new)
+            renamed[n] = new
 
     report: dict[str, Any] = {
         "domains": [{"source": s, "target": t} for s, t in dmap.items()],

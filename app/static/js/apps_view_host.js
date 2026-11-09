@@ -59,7 +59,11 @@
      person): the frame gets the outputs by key. */
   function runApp(slug, inputs) {
     if (allowed.indexOf(slug) < 0) return Promise.reject(new Error('this view does not use the app ' + slug));
-    return post('/apps/' + encodeURIComponent(slug) + '/run', { inputs: inputs || {} }).then(function (d) {
+    /* via: an app this view uses runs wherever the view's app is drawn
+       (views.apps._used_by_view_here checks it again) */
+    var body = { inputs: inputs || {} };
+    if (slug !== C.slug) body.via = C.slug;
+    return post('/apps/' + encodeURIComponent(slug) + '/run', body).then(function (d) {
       var n = 0;
       return new Promise(function (resolve, reject) {
         (function tick() {

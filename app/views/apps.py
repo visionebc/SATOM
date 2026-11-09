@@ -35,9 +35,21 @@ def _product_key() -> str:
     return get_product(getattr(g, "product", None) or session.get("product"))["key"]
 
 
-def _usable_or_404(slug) -> StudioApp:
+def _used_by_view_here(via, slug: str) -> bool:
+    """Whether app *via*'s published view uses *slug* and *via* is drawn in
+    this ADOM for this user: an app a view uses runs wherever that view's app
+    is drawn (DNS Lookup's Records and Delete dialogs, in every ADOM), without
+    a menu entry of its own there."""
+    v = SA.get(str(via or "")) if via else None
+    if v is None or v.kind != "flow" or not v.enabled or not SA.can_use(current_user, v):
+        return False
+    view = (v.published or {}).get("view") or {}
+    return slug in (view.get("uses") or []) and SA.shown_in(v, _product_key())
+
+
+def _usable_or_404(slug, via=None) -> StudioApp:
     """404, not 403, for an app the user may not use: its name is not theirs
-    to learn either."""
+    to learn either. *via*: the app whose view asks (_used_by_view_here)."""
     a = SA.get(slug)
     if a is None or not SA.can_use(current_user, a):
         abort(404)
@@ -47,7 +59,8 @@ def _usable_or_404(slug) -> StudioApp:
         abort(404)
     # ADOMs are where a console user meets the app; an Apps-only account has
     # no console and no ADOM switcher, so only the access check above applies.
-    in_adom = getattr(current_user, "is_apps_only", False) or SA.shown_in(a, _product_key())
+    in_adom = getattr(current_user, "is_apps_only", False) or SA.shown_in(a, _product_key()) \
+        or _used_by_view_here(via, a.slug)
     if not SA.is_author(current_user) and (a.status != "published" or not a.published
                                            or not in_adom):
         abort(404)
@@ -260,10 +273,11 @@ def asset(slug, sha):
 @login_required
 @limiter.limit("30 per minute")
 def run(slug):
-    a = _usable_or_404(slug)
+    body = request.get_json(silent=True) or {}
+    a = _usable_or_404(slug, via=body.get("via"))
     try:
         r = SA.start_run(a, user=current_user, product=_run_product(a),
-                         raw_inputs=(request.get_json(silent=True) or {}).get("inputs"))
+                         raw_inputs=body.get("inputs"))
     except SA.AppError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     log_action("studio.app.run", target=slug, extra={"run": r.id, "version": r.version})

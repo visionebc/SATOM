@@ -291,7 +291,8 @@ def _hostname_of(sections: dict[str, list[str]]) -> str:
 def verify_restore(appliance, sent: bytes, *, progress=None,
                    expected: dict[str, int] | None = None, readback: str | None = None,
                    hostname: str | None = None,
-                   expected_names: dict[str, list[str]] | None = None) -> dict[str, Any]:
+                   expected_names: dict[str, list[str]] | None = None,
+                   expected_kept: dict[str, list[str]] | None = None) -> dict[str, Any]:
     """After an accepted restore: wait for the reboot, read the configuration
     back and compare it with what was sent, object for object.
 
@@ -308,7 +309,11 @@ def verify_restore(appliance, sent: bytes, *, progress=None,
     format), ``hostname`` (the target's own, which must survive) and
     ``expected_names`` -- for a table the migration MERGED into the target's,
     the objects that must be there (its other objects are the target's, so
-    its count proves nothing)."""
+    its count proves nothing) -- and ``expected_kept``: the TARGET's own
+    objects the migration was not asked to touch, which must all still be
+    there (a FortiWeb can drop a live object of another ADOM to make room for
+    a copied one; 2026-11-09 on fortiweb21). Those are read from the target's
+    own format, a CLI backup over REST, whatever the copied tables use."""
     from . import upgrade as upg
     rec = upg.monitor_recovery(appliance, progress=progress,
                                down_timeout=240.0, up_timeout=900.0)
@@ -354,6 +359,22 @@ def verify_restore(appliance, sent: bytes, *, progress=None,
                 out["mismatches"].append(
                     f"{key}: {len(missing)} of {len(names)} objects missing "
                     f"({', '.join(missing[:5])}{', …' if len(missing) > 5 else ''})")
+    if expected_kept:
+        from .fwb_migrate import names_by_table
+        try:
+            rest_sections = (after_sections if readback == "rest" else
+                             pkg.package_sections(cli_backup(appliance.build_client(timeout=120))[0]))
+            have = names_by_table(rest_sections)
+            for key, names in sorted(expected_kept.items()):
+                lost = sorted(set(names) - have.get(key, set()))
+                if lost:
+                    out["mismatches"].append(
+                        f"{key}: {len(lost)} of the target's own objects lost "
+                        f"({', '.join(lost[:5])}{', …' if len(lost) > 5 else ''})")
+            out["kept_checked"] = sum(len(v) for v in expected_kept.values())
+        except Exception as exc:  # noqa: BLE001
+            out["mismatches"].append(f"the target's own objects could not be read back "
+                                     f"({type(exc).__name__}: {exc})"[:300])
     if hostname is not None:
         got = _hostname_of(after_sections)
         out["hostname"] = got

@@ -2645,6 +2645,7 @@ def migrate_run(id):
             target, payload, progress=lambda pct, msg: job_progress.step(msg, pct),
             expected=report['expected_counts'],
             expected_names=report['expected_names'],
+            expected_kept=report['expected_kept'],
             readback='ssh' if kind == fwb_pkg.KIND_CLI_DUMP else 'rest',
             hostname=backup_svc._hostname_of(fwb_pkg.package_sections(tgt_backup)))
         result['verify'] = check
@@ -2660,6 +2661,8 @@ def migrate_run(id):
                       'picked': {k: sorted(v)[:50] for k, v in picks.items()},
                       'only_picked': sorted(only_picked),
                       'dependencies': len(report['dependencies']),
+                      'renamed_vips': len(report['renamed_vips']),
+                      'conflicts': len(report['conflicts']),
                       'dummy_ips': len(report['dummy_ips']), 'objects': report['objects'],
                       'tables': len(report['copied']), 'dangling': len(report['dangling']),
                       'device_answer': result.get('message', '')[:300],

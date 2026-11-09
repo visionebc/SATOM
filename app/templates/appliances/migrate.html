@@ -82,7 +82,7 @@
       <dt class="col-sm-3">{{ _('Reboot') }}</dt><dd class="col-sm-9">{{ _('went down') if v.went_down else _('not seen going down') }} · {{ _('back online') if v.recovered else _('did not come back') }}{% if v.firmware_after %} ({{ v.firmware_after }}){% endif %} · {{ v.elapsed_s }} s</dd>
       <dt class="col-sm-3">{{ _('Read-back check') }}</dt><dd class="col-sm-9">
         <span class="fw-badge fw-badge-{{ 'success' if v.verified else 'danger' }}">{{ _('verified') if v.verified else _('not verified') }}</span>
-        {{ v.message }}{% if v.readback %} · {{ _('read with') }} {{ v.readback }}{% endif %}{% if v.hostname %} · {{ _('hostname') }} <code>{{ v.hostname }}</code>{% endif %}
+        {{ v.message }}{% if v.readback %} · {{ _('read with') }} {{ v.readback }}{% endif %}{% if v.hostname %} · {{ _('hostname') }} <code>{{ v.hostname }}</code>{% endif %}{% if v.kept_checked %} · {{ v.kept_checked }} {{ _('of the target\'s own objects checked') }}{% endif %}
         {% if v.warning %}<div class="text-warning">{{ v.warning }}</div>{% endif %}
         {% if v.mismatches %}<ul class="mb-0 mt-1">{% for m in v.mismatches[:40] %}<li><code>{{ m }}</code></li>{% endfor %}</ul>{% endif %}
       </dd>
@@ -201,9 +201,18 @@
       {% if report.dependencies %}<span class="fw-badge fw-badge-info">{{ report.dependencies|length }} {{ _('dependencies') }}</span>{% endif %}
       {% if report.excluded %}<span class="fw-badge fw-badge-info">{{ report.excluded|length }} {{ _('excluded') }}</span>{% endif %}
       {% if report.dummy_ips %}<span class="fw-badge fw-badge-info">{{ report.dummy_ips|length }} {{ _('dummy IPs') }}</span>{% endif %}
+      {% if report.conflicts %}<span class="fw-badge fw-badge-danger">{{ report.conflicts|length }} {{ _('conflicts') }}</span>{% endif %}
       {% if report.dangling %}<span class="fw-badge fw-badge-danger">{{ report.dangling|length }} {{ _('broken references') }}</span>{% endif %}
       {% if report.dropped_by_restore %}<span class="fw-badge fw-badge-warning">{{ report.dropped_by_restore|length }} {{ _('tables a restore drops') }}</span>{% endif %}
     </p>
+    {% if report.conflicts %}
+    <div class="fw-alert fw-alert-danger mb-2"><b>{{ _('Conflicts with the target') }}</b>
+      <ul class="mb-0 mt-1">{% for c in report.conflicts[:50] %}<li>{{ c }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if report.renamed_vips %}
+    <div class="fw-alert fw-alert-info mb-2"><b>{{ _('Virtual IPs copied under a new name') }}</b> — {{ _('the target already uses them in another ADOM; the copy gets its own (dummy address) and the copied objects point at it.') }}
+      <ul class="mb-0 mt-1">{% for r in report.renamed_vips[:50] %}<li><code>{{ r.vip }}</code> &rarr; <code>{{ r['as'] }}</code> ({{ _('used by') }} {{ r.used_by|join(', ') }})</li>{% endfor %}</ul></div>
+    {% endif %}
     {% if report.dangling %}
     <div class="fw-alert fw-alert-danger mb-2"><b>{{ _('Broken references') }}</b> — {{ _('copied objects that name an object the target will not have. Copy the table that holds it, or expect the device to refuse or drop the object.') }}
       <ul class="mb-0 mt-1">{% for d in report.dangling[:50] %}<li><code>{{ d }}</code></li>{% endfor %}</ul></div>

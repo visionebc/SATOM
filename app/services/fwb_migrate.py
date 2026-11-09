@@ -300,6 +300,23 @@ def _fix_domains(entry: list[str], table: str, dmap: dict[str, str], tgt_adom: b
     return body[:-1] + [f"    set domains {' '.join(sorted(want))} "] + body[-1:]
 
 
+_SET_VIP_REF = re.compile(r"^(\s*set vip )(\S+)\s*$")
+
+
+def _rename_vip_refs(lines: list[str], renamed: dict[str, str]) -> list[str]:
+    """``set vip <name>`` (a virtual server's vip-list) re-pointed to the
+    renamed copy of a shared virtual IP."""
+    if not renamed:
+        return lines
+    out = []
+    for line, c in zip(lines, pkg._continuations(lines)):
+        m = None if c else _SET_VIP_REF.match(line)
+        if m and m.group(2) in renamed:
+            line = f"{m.group(1)}{renamed[m.group(2)]}"
+        out.append(line)
+    return out
+
+
 def _ref_tokens(lines: list[str]) -> set[str]:
     """Names a copied object may reference: the unquoted values of its
     ``set`` lines (a quoted value is text -- a comment, a script)."""
@@ -370,8 +387,13 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
     only_picked = set(only_picked)
 
     # Virtual IPs the target already has. One that an ADOM this migration does
-    # not touch also uses is SHARED: it is kept as it is (only opened to the
-    # mapped ADOMs) -- replacing it would move a live object of another ADOM.
+    # not touch also uses is SHARED: replacing it would move a live object of
+    # another ADOM. With dummies on, the copy gets its OWN virtual IP
+    # (<name>-<adom>, a dummy address) and the copied objects point at it --
+    # sharing the address would let a FortiWeb keep only one of the two server
+    # policies on it (measured on fortiweb21: adom_a lost lab-spo-007 when root
+    # got a policy on the same VIP). Without dummies the shared VIP is kept,
+    # opened to the mapped ADOMs, and reported as a conflict.
     # The addresses the target keeps are never handed out as dummies.
     tgt_vips = split_entries(dict(blocks(tgt.get("global", []))).get("system vip")
                              or ["config system vip", "end"]) or {}
@@ -384,6 +406,16 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
     taken = {_vip_address(e) for n, e in tgt_vips.items()
              if n not in src_vip_names or n in shared_vips} - {""}
     vip_dummy = unique_dummy(dummy, taken) if dummy is not None else None
+    renamed: dict[str, str] = {}
+    if vip_dummy is not None:
+        used_names = set(tgt_vips) | src_vip_names
+        for n in sorted(shared_vips):
+            new, i = f"{n}-{targets[0]}"[:63], 1
+            while new in used_names:
+                i += 1
+                new = f"{n}-{targets[0]}-{i}"[:63]
+            used_names.add(new)
+            renamed[n] = new
 
     picks = {k: set(v) for k, v in (picks or {}).items() if v}
     for key, names in picks.items():
@@ -450,9 +482,9 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
         "copy_global": copy_global, "target_adoms": tgt_adom,
         "copied": {}, "kept_from_target": {}, "identity_kept": [], "excluded": [],
         "picked": {k: sorted(v) for k, v in picks.items()}, "dependencies": deps,
-        "merged": {}, "shared_kept": [], "dropped_by_restore": {}, "dummy_ips": [],
-        "dangling": [],
-        "expected_counts": {}, "expected_names": {},
+        "merged": {}, "shared_kept": [], "renamed_vips": [], "conflicts": [],
+        "dropped_by_restore": {}, "dummy_ips": [], "dangling": [],
+        "expected_counts": {}, "expected_names": {}, "expected_kept": {},
         "untouched_domains": sorted(d for d in tgt if d != "global" and d not in dmap.values()),
         "not_copied_source_domains": sorted(d for d in src if d != "global" and d not in dmap),
     }
@@ -462,7 +494,13 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
     def rewrite(sdom, tdom, table, lines):
         if vip_dummy is not None and table == "system vip":
             lines = _dummy_vips(lines, vip_dummy, tdom, report["dummy_ips"])
+        if sdom != "global":
+            lines = _rename_vip_refs(lines, renamed)
         return lines
+
+    def keep_names(tkey, names):
+        if names:
+            report["expected_kept"].setdefault(tkey, set()).update(names)
 
     for sdom, tdom in pairs:
         tbl = dict(merged[tdom])
@@ -496,34 +534,64 @@ def plan(source: bytes, target_backup: bytes, *, domains: dict[str, str],
                 if tgt_ents is None:
                     raise MigrationError(f"{tkey}: the target's table is a settings block")
                 out = dict(tgt_ents)
+                written_names = []
                 for n in take_some:
                     ent = src_ents[n]
                     if sdom == "global" and table == "system vip" and n in shared_vips:
+                        others = sorted(set(_domains_of(tgt_ents[n]) or []) - set(targets))
+                        if n in renamed:
+                            new_name = renamed[n]
+                            ent = [f'  edit "{new_name}"'] + ent[1:]
+                            ent = _fix_domains(ent, table, {}, tgt_adom, targets, None)
+                            ent = _dummy_vips(ent, vip_dummy, tdom, report["dummy_ips"])
+                            out[new_name] = ent
+                            written.setdefault(tdom, []).append((table, ent))
+                            written_names.append(new_name)
+                            report["renamed_vips"].append(
+                                {"vip": n, "as": new_name, "used_by": others})
+                            continue
                         out[n] = _fix_domains(tgt_ents[n], table, {}, tgt_adom, targets,
                                               tgt_ents[n])
                         report["shared_kept"].append(f'{tkey} "{n}"')
+                        report["conflicts"].append(
+                            f'{tkey} "{n}" is also used by {", ".join(others)}: the copied '
+                            f'objects and theirs share its address, and the device keeps only '
+                            f'one server policy per address and port. Turn dummy IPs on to '
+                            f'give the copy its own.')
+                        written_names.append(n)
                         continue
                     if sdom == "global":
                         ent = _fix_domains(ent, table, dmap, tgt_adom, targets, tgt_ents.get(n))
                     ent = rewrite(sdom, tdom, table, ent)
                     out[n] = ent
                     written.setdefault(tdom, []).append((table, ent))
+                    written_names.append(n)
                 head = (tgt_lines or sblocks[sdom][table])[0]
                 new.append((table, _join(head, list(out.values()))))
-                kept = len(set(tgt_ents) - set(take_some))
+                own = set(tgt_ents) - set(written_names)
+                keep_names(tkey, own)
                 if table in DROPPED_BY_RESTORE:
-                    report["dropped_by_restore"][tkey] = len(take_some)
+                    report["dropped_by_restore"][tkey] = len(written_names)
                 else:
-                    report["copied"][tkey] = len(take_some)
-                    report["expected_names"][tkey] = take_some
-                    if kept:
-                        report["merged"][tkey] = kept
+                    report["copied"][tkey] = len(written_names)
+                    report["expected_names"][tkey] = sorted(written_names)
+                    if own:
+                        report["merged"][tkey] = len(own)
             elif table in tbl:
                 new.append((table, tbl[table]))
                 n = len(entries(tbl[table]))
+                keep_names(tkey, entries(tbl[table]))
                 if n and m != "identity":
                     report["kept_from_target"][tkey] = n
         merged[tdom] = new
+
+    # Everything of the target that no pair touched must still be there.
+    touched = {t for _, t in pairs}
+    for tdom, bl in merged.items():
+        if tdom not in touched:
+            for table, lines in bl:
+                keep_names(f"{tdom}:{table}", entries(lines))
+    report["expected_kept"] = {k: sorted(v) for k, v in report["expected_kept"].items()}
 
     # References from what was written to source objects the target lacks.
     src_names = {d: {n for t in sents[d].values() if t for n in t} for d in active}

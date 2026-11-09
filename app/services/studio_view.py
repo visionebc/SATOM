@@ -166,8 +166,11 @@ def problems(view: dict, *, app_slug: str = "") -> list[str]:
 #  rendering                                                                   #
 # --------------------------------------------------------------------------- #
 def _tojson(value) -> Markup:
-    """``tojson`` as Flask's: safe inside a <script> and inside an attribute."""
+    """``tojson`` as Flask's: safe inside a <script> and inside an attribute,
+    and keys SORTED as Flask writes them -- a page ported to a view prints
+    the same text (the DNS Lookup comparison, 2026-11-09)."""
     from .plugin_frame import json_island
+    value = json.loads(json.dumps(value, sort_keys=True, default=str))
     return Markup(json_island(value).replace("'", "\\u0027"))
 
 

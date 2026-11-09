@@ -2471,13 +2471,52 @@ This page is the missing third position: name the CA and keep the check on.</p>
     configuration. Buttons you cannot use are not shown.</li>
 <li><strong>Restore</strong> (appliance detail): pick a vault row and apply (FortiWeb). It
   needs <strong>Manage users</strong> <em>and</em> <strong>Restore backups</strong> (<code>users.manage</code> +
-  <code>backups.restore</code>). Before a live restore a pre-restore safety backup is
-  pulled over the device <strong>REST</strong> API; if it cannot be taken the restore is
-  <strong>aborted</strong>, unless you tick <em>Restore without a pre-restore backup</em> (for a
-  device whose REST backup cannot work, e.g. a backup password is set) — that
-  choice is written to the audit log. For FortiADC the vault works
+  <code>backups.restore</code>). Before a live restore a pre-restore safety backup — the
+  device's own CLI backup — is pulled over the device <strong>REST</strong> API and kept in
+  the vault; if it cannot be taken the restore is <strong>aborted</strong>, unless you tick
+  <em>Restore without a pre-restore backup</em> (for a device whose REST backup
+  cannot work, e.g. a backup password is set) — that choice is written to the
+  audit log.</li>
+<li>What can be restored: a backup downloaded from the FortiWeb (<code>.zip</code>), a
+    vault row pulled from the device, or a CLI dump captured over SSH
+    (<code>show full-configuration</code>), which is converted to the device package
+    format first (it needs the pre-restore backup, which supplies the header).
+    Any other file is taken only as a password-protected backup, with its
+    password.</li>
+<li>The device must answer that it is applying the configuration; any other
+    answer is reported as a failure. SATOM then waits for the reboot, reads
+    the configuration back and compares it table by table. The result shows
+    the reboot, the read-back and every table that differs; the audit log
+    records <code>success</code> only when nothing differs, otherwise <code>unverified</code>.</li>
+<li>A device registered as an HA cluster (or a member) is refused: a
+    FortiWeb cluster takes a restore through its HA configuration-update
+    flow, which SATOM does not drive. Restore it from the FortiWeb GUI on the
+    primary unit. For FortiADC the vault works
   (pull/upload/download) but config <em>apply</em> has no REST transport — the page
   says so honestly.</li>
+<li><strong>Migrate into</strong> (appliance detail, FortiWeb, <code>users.manage</code> +
+  <code>backups.restore</code>): copy another FortiWeb's configuration into this one.
+  Choose the source and one of its backups (or take a fresh one — over SSH
+  when an expired licence locks REST) and <strong>Analyze</strong>: nothing is sent.</li>
+<li>Map each source domain (<code>root</code>, or each ADOM) to a target domain or leave
+    it out; a box with ADOMs and one without can be mixed either way.</li>
+<li>Per table: copy whole, exclude, or pick objects. Picked objects are
+    merged into the target's table and bring along what they reference.
+    <em>Copy only the objects I pick here</em> limits a domain to the picks. Global
+    objects are merged, never replaced.</li>
+<li>The target always keeps its identity (hostname, interfaces, routes, DNS,
+    NTP, SNMP, HA, administrators, ADOM mode) and its management address.</li>
+<li><em>Dummy virtual IPs</em> rewrites copied virtual IP addresses with the clone
+    rules, never onto an address the target keeps; a virtual IP another ADOM
+    of the target uses gets a separate copy.</li>
+<li>The report shows what is copied, kept, excluded, brought along, renamed,
+    broken references, conflicts, what a restore drops, and the capacity
+    after the migration. Over the device limit nothing can be sent; over the
+    admin limit only with <em>Exceed the admin limit</em> (audited).</li>
+<li>A live run (type the target name) backs up the target first, restores,
+    waits for the reboot and reads back both the copied tables and every
+    object of the target it did not touch; <code>appliance.migrate</code> records
+    <code>success</code> only when both match, otherwise <code>unverified</code>.</li>
 <li><strong>System Backup &amp; Restore</strong> (Settings → Source of Truth &amp; Backup) backs up the <strong>manager
   itself</strong>: a <code>pg_dump</code> of the database plus the reports tree in one bundle,
   with a verified restore path. <strong>Create backup now</strong> also pushes the bundle to
@@ -2883,9 +2922,9 @@ against what the devices say.</p>
   live health</strong>, which asks the FortiWeb for each backend's health-check
   state and leaves an audit row), <em>Edit</em> (opens the policy) and <em>Delete</em>
   (the decommission, preview first). Nothing long is drawn inline, so a long
-  comment no longer pushes the Entry column out of view. <strong>Show AppID
-  columns</strong> (Options) adds the AppID catalog's visible columns under the
-  names set on the AppIDs page; the AppID is the policy's <strong>binding</strong>, else
+  comment no longer pushes the Entry column out of view. The details
+  of each match have an <strong>AppID</strong> section (since 4.11.14 always, no option)
+  with the AppID catalog's columns under the names set on the AppIDs page; the AppID is the policy's <strong>binding</strong>, else
   the one its comment names (Analysis › AppID pattern). <strong>Copy LB</strong> is the
   full row per match — entry, every column, PTR name, backends with status,
   the AppID facts and their source — with tabs and line breaks inside a
@@ -2959,12 +2998,15 @@ against what the devices say.</p>
   are saved; everyone who can use the page sees and tries them, saving
   needs <em>Manage users</em> (like the resolvers) and is audited
   (<code>dns_tool.spo_regex</code>). Copy LB has a <em>SPO Regex FQDN</em> column.
-  The same tool also exists as <strong>three Plugin Studio apps</strong> — the plugins
-  <code>dns-lb-lookup</code>, <code>dns-records</code> and <code>dns-decommission</code> (§23.7, <em>Plugins:
-  DNS &amp; LB Lookup</em>), under <strong>Operations › Plugins</strong> once imported: the
-  lookup, DNS Records and the decommission, with the same permissions and the
-  same ADOM scoping. The page stays; use whichever you prefer, or copy the
-  apps and change them.
+  <strong>Since 2026-11-09 its menu entry is a plugin:</strong> <em>DNS Lookup</em> under
+  <strong>Plugins</strong> is <code>dns-lb-lookup</code> 2.x (§23.7, <em>Plugins: DNS &amp; LB Lookup</em>),
+  whose own <strong>view</strong> is this page's template — the same page, the same
+  dialogs, the same Copy texts — and whose <strong>diagram</strong> is its back end. The
+  Records dialog runs the plugin <code>dns-records</code>, Delete runs
+  <code>dns-decommission</code>: a step you add after <em>apply</em> in that app's diagram
+  (a DDI call, a ticket) runs on every Delete. Who may open it is
+  <code>network.view</code>, as for the page. There is no native menu entry any more;
+  the page keeps answering at <code>/dns-lookup/</code>.
 - <strong>Where these live:</strong> since 2026-10-31 Backend Reachability, Config Compare,
   Path Diagnostics, the <strong>Transaction Tracer</strong> (§37.3), the HTTP Observatory
   and <strong>Diagnose Log Collection</strong> (§27.1) are Plugin Studio apps under
@@ -4472,7 +4514,7 @@ manual §7).</p>
 <li><strong>Signatures</strong> (Web Application Firewall group, <code>protection.view</code>) — WAF
   signature category/severity overview with per-severity actions; deep editing
   through the object detail.</li>
-<li><strong>API console</strong> (sidebar → Operations → Automation → API → Registry &amp; console, <code>registry.view</code>) — the
+<li><strong>API console</strong> (sidebar → Administrator → API → Registry &amp; console; Operations → Automation → API for a profile without <em>user management</em>; <code>registry.view</code>) — the
   registry-driven explorer: browse the ADC endpoint catalog as the GUI menu, run
   live GETs and gated writes against a chosen device, with history and
   syntax-highlighted responses. Writes are <strong>dry-run by default</strong>: without
@@ -4565,7 +4607,7 @@ the whole menu as a grid.</p>
   that page instead. The others render the old read-only section page, capped
   at 500 rows with the truncation stated, with an explicit <strong>"No endpoint
   bound."</strong> state where no REST resource is behind the pane.</li>
-<li><strong>API console</strong> (sidebar → Operations → Automation → API → Registry &amp; console, <code>registry.view</code>) — the
+<li><strong>API console</strong> (sidebar → Administrator → API → Registry &amp; console; Operations → Automation → API for a profile without <em>user management</em>; <code>registry.view</code>) — the
   registry-driven explorer over the FAC catalogue, with live GETs and gated
   writes against a chosen device (§30 covers the registry model behind all four
   consoles). Catalog rows can be disabled and restored on the page; re-pointing
@@ -4635,7 +4677,7 @@ can take them out of the menu.</p>
   the rest of the page.</li>
 <li><strong>Device Manager</strong> — Authorize / Delete run in the FortiAnalyzer ADOM you
   type in the dialog (default <code>root</code>); the device list spans every FAZ ADOM.</li>
-<li><strong>API console</strong> (sidebar → Operations → Automation → API → Registry &amp; console, <code>registry.view</code>) — same
+<li><strong>API console</strong> (sidebar → Administrator → API → Registry &amp; console; Operations → Automation → API for a profile without <em>user management</em>; <code>registry.view</code>) — same
   registry-driven explorer, JSON-RPC aware, with permission-gated writes that
   are <strong>dry-run by default</strong> (tick <strong>Apply</strong> to send). The status badge shows the
   device's JSON-RPC status code, not the transport's HTTP 200.</li>
@@ -4686,7 +4728,7 @@ REST field is no longer offered as "CLI only".</p>
 <li><strong>Not in GUI, but in CLI</strong> is on every object, edit and Create New form
   (§7.3). A page or field measured as having no API is drawn read-only and
   marked <strong>"No API on this build (GUI only)"</strong>.</li>
-<li><strong>API console</strong> (sidebar → Operations → Automation → API → Registry &amp; console, <code>registry.view</code>) — the
+<li><strong>API console</strong> (sidebar → Administrator → API → Registry &amp; console; Operations → Automation → API for a profile without <em>user management</em>; <code>registry.view</code>) — the
   FortiGate registry browsed as the FortiGate menu, and a live console. <code>GET</code>
   reads the <code>cmdb</code>, <code>monitor</code> and <code>log</code> trees. <code>POST</code>, <code>PUT</code> and <code>DELETE</code> are
   <strong>dry-run by default</strong> (tick <strong>Apply</strong> to send; <code>registry.execute_write</code>),
@@ -7070,6 +7112,31 @@ a whole provisioning chain is one diagram whose failures the author routes:</p>
 <td>Plans again and executes only with the fingerprint the person saw, when nothing blocks and every warning was acknowledged (an <em>Ask a person</em> step with <em>Must be acknowledged</em>). A failed apply keeps its per-step results readable on the error arrow (<code>{{ decommission.results }}</code>). Audited like the page. Needs <code>config_write</code></td>
 <td>—</td>
 </tr>
+<tr>
+<td><em>DNS Lookup: the page's context</em></td>
+<td>What the DNS &amp; LB Lookup page shows before a search, computed by the page's own function (<code>dns_tool.page_context</code>): <code>servers</code>, <code>dns_backends</code>, <code>spo_rules</code>, <code>columns</code>, <code>appid_cols</code>, what the person may do (<code>can_manage_records</code>, <code>can_decommission</code>, <code>can_edit_spo</code>, <code>can_live_health</code>) and <code>resolvers_url</code>. For an app view's <em>Context steps</em>. Needs <code>network.view</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>DNS Lookup: search (the page's)</em></td>
+<td>The page's search itself (<code>dns_tool.search</code>, the call the page makes): <code>results</code>, <code>not_found</code>, <code>clip_dns</code> / <code>clip_lb</code> (Copy DNS / Copy LB), <code>lb_error</code>, <code>opts</code>, <code>mode</code>, <code>entries_raw</code>; each match also carries <code>_edit_url</code> (the page's Edit link). Needs <code>network.view</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>LB: live health of a server policy</em></td>
+<td>Asks a FortiWeb for each pool member's health (<code>policystatus.detail</code>), the probe of Workspace and of the page's <em>Check live health</em> — a device read, audited. <code>ok</code>, <code>members</code> (<code>pool</code>, <code>ip</code>, <code>port</code>, <code>health</code> up / down / na, <code>raw</code>), <code>error</code>; a refusal is <code>ok = false</code> with the reason, never "all down". Needs <code>protection.view</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>SPO Regex: try the rules</em></td>
+<td>The page's SPO Regex test: names (one per line or a JSON list) through the rules given (<code>[]</code> = no rule) or, when none is given, the saved ones. Nothing is stored. Needs <code>network.view</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>SPO Regex: save the rules</em></td>
+<td>Replaces the console-wide SPO Regex rules, audited as the page (<code>dns_tool.spo_regex</code>). Needs <code>user_manage</code></td>
+<td>—</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Asking an API about each pool member.</strong> <em>LB: match</em> → <em>DNS: look names up</em> with entries <code>{{ lb.members }}</code> (the PTR names) → <em>Call an API</em> with <em>For each</em> <code>{{ dns.ptr }}</code> and a path such as <code>/hosts/{{ item.hostname }}</code>. The answer is a table: the item's columns, then <code>Status</code>, <code>Answer</code> (after <em>Keep only</em>) and <code>Error</code>. Duplicates are asked once; one host that fails is a row with its error and the others are still asked; only every request failing takes the error arrow (the rows stay in the saved variable). More than 50 items is refused, never cut, and a run out of time stops asking and says how many were not asked. The credential is the HTTP connection's: the diagram never sees it.</p>
@@ -7209,7 +7276,21 @@ each one — published apps appear under <strong>Operations › Plugins</strong>
 other users in each app's <em>Settings</em>. The page under Fleet › DNS Lookup
 stays.</p>
 <ul>
-<li><strong>DNS &amp; LB Lookup</strong> (<code>dns-lb-lookup</code>): the page's form (names, <em>Show LB
+<li><strong>DNS Lookup</strong> (<code>dns-lb-lookup</code> <strong>2.x</strong>, 2026-11-09, operator: "make
+  everything of DNS Lookup a plugin, the same view, every function"): the
+  page itself, as a plugin — its <strong>view</strong> is the page's template
+  (<code>plugins/dns-lb-lookup/view/page.html</code> in the generator, ported by
+  <code>port.py</code>), its diagram the page's back end (<em>search</em>, <em>live health</em>, <em>SPO
+  Regex try / save</em>), its context step <em>DNS Lookup: the page's context</em>. Menu
+  entry <strong>DNS Lookup</strong> under Plugins, opens to <code>network.view</code>. Its <em>DNS
+  Records</em> dialog runs <code>dns-records</code> 2.x (operation <code>schema</code> / <code>list</code> /
+  <code>create</code> / <code>update</code> / <code>delete</code>), <em>Delete</em> runs <code>dns-decommission</code> 2.x
+  (operation <code>plan</code>, then <code>apply</code> with the fingerprint and the
+  acknowledgement — <strong>a step you add after <em>apply</em> runs on every Delete</strong>).
+  A test in SATOM compares the page and the plugin line by line
+  (<code>tests/test_dns_plugin_view.py</code>). Version 1.0.0, below, was the
+  form-and-tables app.</li>
+<li><strong>DNS &amp; LB Lookup 1.0.0</strong> (<code>dns-lb-lookup</code>): the page's form (names, <em>Show LB
   matches</em>, <em>Quick LB</em>, <em>Exact match</em>, <em>Show TTL</em>). Outputs: the DNS answers
   with a <strong>Records</strong> button on each name, the LB matches with <strong>Open policy</strong>
   and <strong>Decommission</strong> on each match, <em>Quick LB</em> (gateways) and <em>Not found in
@@ -7407,6 +7488,42 @@ activities of an appliance), as automatic as the steps allow:</p>
   before the alert run ends. A run whose worker stopped is shown as
   <em>interrupted</em> in the lists, without anybody having to open it.</li>
 </ul>
+<p><strong>An app's own view</strong> (2026-11-09). When the designed page (<em>Design</em>) is
+not enough — rows that open into other rows, dialogs with a picker, an
+editor inside a dialog — an app can carry its <strong>own page</strong>, written in the
+<strong>View</strong> tab: a Jinja <strong>template</strong>, its <strong>CSS</strong> and its <strong>JavaScript</strong>. It
+replaces the designed page; the <strong>diagram stays the back end</strong> and shows how
+the app is built. Writing a view needs the <em>Plugin Studio</em> permission;
+every author can read it there.</p>
+<ul>
+<li><strong>Where it runs.</strong> In an isolated frame: a sandbox without same-origin, no
+  connection anywhere, SATOM's own stylesheets (Bootstrap, the icons,
+  fortiweb.css, the theme) so it looks like the console. Its template renders
+  in a sandbox with autoescape.</li>
+<li><strong>What it can ask of SATOM</strong> — only through <code>window.SATOM</code>:
+  <code>submit(inputs)</code> runs this app and draws the page again with that run
+  (<code>outputs.&lt;key&gt;</code> in the template, by the Output step's key); <code>call(app,
+  inputs)</code> runs this app or one listed in <strong>Uses</strong> and returns
+  <code>{status, error, outputs}</code>; <code>open(url)</code> / <code>navigate(url)</code> a SATOM page;
+  <code>copy(text)</code>; <code>openApp(app, inputs)</code>. A page's own script keeps working as
+  written: <code>window.open</code>, <code>navigator.clipboard.writeText</code>, a local link and a
+  <code>&lt;form data-satom-submit&gt;</code> go through the same calls. Every step still asks
+  the permission of the person running it, and every run is audited.</li>
+<li><strong>Context steps</strong> (JSON <code>[{"key", "kind", "params"}]</code>) run when the page
+  opens, as the person and in their ADOM, read only; their values are
+  <code>data.&lt;key&gt;</code>, a failure is <code>errors.&lt;key&gt;</code>. The template also has <code>form</code>,
+  <code>run</code>, <code>adom</code>, <code>can(permission)</code> and <code>_()</code>.</li>
+<li>An app the view <strong>uses</strong> runs wherever the view's app is drawn, without a
+  menu entry of its own there. The view travels in the app package
+  (<code>app.view</code>, rule <code>app.view</code>; an import refuses a view that uses an app the
+  server does not have) and <strong>Publish</strong> freezes it with the rest. <em>Preview
+  the saved draft</em> opens it as users will see it.</li>
+</ul>
+<p><strong>Who may use it: a permission.</strong> Besides the groups and people ticked, an
+app can open to <strong>everyone holding a permission</strong> (<em>Settings › Also everyone
+holding this permission</em>) — a plugin of a SATOM page opens to who the page
+does. A package may suggest it (<code>app.access_permission</code>); it is applied only
+when the app is created, never over this server's choice.</p>
 <h3 id="238-examples">23.8 Examples</h3>
 <p><strong>Plugin Studio → Examples</strong> installs working examples of every Studio piece
 with one click. Ids start with <code>ex-</code>; installing creates only what is missing
@@ -7957,10 +8074,11 @@ cannot describe behaviour the table below it does not have.</p>
 <p>Every form in those panes returns to the pane it was fired from. The standalone
 URLs (<code>/settings/sentinel</code>, <code>/sentinel/context</code>, <code>/sentinel/policies</code>) are still
 there, rendered from the same files as the panes.</p>
-<p><strong>Everything else is Operations › Sentinel</strong> — a sub-menu right below
-Monitoring, in the Operations group of every device ADOM and in the Global
-block, drawn only while Sentinel is configured (switched on and at least one
-FortiWeb to sweep):</p>
+<p><strong>Everything else is the Sentinel menu</strong> — a top-level sub-menu right below
+Scout (above the Operations group in a device ADOM, right after Scout in the
+Global block), drawn only while Sentinel is configured (switched on and at
+least one FortiWeb to sweep). It sat in Operations, below Monitoring, until
+this change:</p>
 <table>
 <thead>
 <tr>
@@ -7971,7 +8089,7 @@ FortiWeb to sweep):</p>
 </thead>
 <tbody>
 <tr>
-<td><strong>Incidents console</strong></td>
+<td><strong>Security Incidents</strong></td>
 <td><code>/sentinel/</code></td>
 <td>Health tiles, the seven-day figures and the incident table.</td>
 </tr>
@@ -8045,7 +8163,7 @@ because the setting is meaningless without it. They are not repeated here:</p>
 </tr>
 <tr>
 <td><strong>Sentinel</strong></td>
-<td><code>Settings → AI → Sentinel → Settings</code> — every knob Sentinel is configured by, <strong>rendered in the pane itself</strong>. The same section is also served standalone at <code>/settings/sentinel</code> — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. <strong>Context</strong> and <strong>Response policy</strong> are panes beside it, rendered from the same files as <code>/sentinel/context</code> and <code>/sentinel/policies</code>. The incidents console, the overview (health, pipeline, weights, demo lab, CVE mirror, decision log), the border blocklist and the architecture are <strong>Operations › Sentinel</strong> pages, not Settings panes. Every element of the form — each knob, each group heading and each link out — carries a <strong>?</strong>; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes.</td>
+<td><code>Settings → AI → Sentinel → Settings</code> — every knob Sentinel is configured by, <strong>rendered in the pane itself</strong>. The same section is also served standalone at <code>/settings/sentinel</code> — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. <strong>Context</strong> and <strong>Response policy</strong> are panes beside it, rendered from the same files as <code>/sentinel/context</code> and <code>/sentinel/policies</code>. The incidents console, the overview (health, pipeline, weights, demo lab, CVE mirror, decision log), the border blocklist and the architecture are pages of the top-level <strong>Sentinel</strong> menu (below Scout), not Settings panes. Every element of the form — each knob, each group heading and each link out — carries a <strong>?</strong>; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes.</td>
 </tr>
 </tbody>
 </table>
@@ -9638,7 +9756,7 @@ a half-parsed snapshot that looks real is worse than no snapshot.</p>
 device that does not answer, a failover, a recovery. It has a reference
 (<code>SAT-INC-000001</code>), an appliance, a severity (P1-P4), a status (<em>open</em>, <em>in
 progress</em>, <em>waiting vendor</em>, <em>resolved</em>, <em>closed</em>) and an owner. Sentinel's
-security incidents (<code>INC-…</code>, Operations → Sentinel) are a different thing and
+security incidents (<code>INC-…</code>, Sentinel → Security Incidents) are a different thing and
 stay there.</p>
 <ul>
 <li><strong>Who opens one.</strong> A person (<strong>New incident</strong>), or a runbook through its
@@ -10935,7 +11053,7 @@ read-only on the box, runs as a device job and needs <code>appliances.apply</cod
 what fills the CLI columns of the Build compatibility page (§30.11).</p>
 <h3 id="3011-build-compatibility-which-fields-exist-on-which-build">30.11 Build compatibility: which fields exist on which build</h3>
 <p>The same REST API version carries different fields on different firmware
-builds. <strong>Build compatibility</strong> (Automation → API in the sidebar;
+builds. <strong>Build compatibility</strong> (Administrator → API in the sidebar, Automation → API without <em>user management</em>;
 <code>/web/registry/build-compat/</code>; needs the registry edit permission) shows, per product, every object and field
 against the builds you pick, by channel. The full reference is
 <a href="build-compatibility.html">Build compatibility</a>.</p>
@@ -11023,7 +11141,7 @@ before writing:</p>
 <p>When an appliance starts running a firmware build whose schema SATOM has never
 harvested, every administrator gets <strong>one</strong> bell notification for that product
 and build: <em>New build 8.0.7 on fweb-01: schema not harvested</em>. It links to
-<strong>Schema builds</strong> (Automation → API in the sidebar — under Operations in a device ADOM, in the Global block in Global;
+<strong>Schema builds</strong> (Administrator → API in the sidebar; without <em>user management</em>, Automation → API — under Operations in a device ADOM, in the Global block in Global;
 <code>/schema-builds/</code>; reading needs <code>registry.view</code>).</p>
 <p>The page has three parts:</p>
 <ul>
@@ -11827,7 +11945,7 @@ only one: even a fooled model has no write path (33.6).</p>
 </table>
 <hr>
 <h3 id="3310-how-scout-and-path-diagnostics-work--in-sentinels-architecture">33.10 How Scout and Path Diagnostics work — in Sentinel's architecture</h3>
-<p>Sentinel's architecture document (<strong>Operations › Sentinel › Architecture</strong>,
+<p>Sentinel's architecture document (<strong>Sentinel › Architecture</strong>,
 <code>/sentinel/docs</code>) ends with three cards on the two
 operations tools. A link under the page title jumps to them.</p>
 <ul>
@@ -12777,8 +12895,8 @@ without touching what everybody else sees.</p>
 <p>There are two scopes: <strong>personal</strong> and <strong>team</strong>. "Team" here means <em>everyone
 who operates this SATOM</em> — there is deliberately no roster to maintain.</p>
 <p><strong>Sharing a bookmark is not a way to hand somebody a device.</strong> The list you see
-is filtered by <strong>your</strong> permissions, never the sharer's: the ADOM stamp filter
-first, and then — for device bookmarks — the same visibility rule the inventory
+is filtered by <strong>your</strong> permissions, never the sharer's: the ADOMs your profile
+may enter first (§38.4), and then — for device bookmarks — the same visibility rule the inventory
 itself uses. A colleague who shares a FortiADC you may not operate has shared
 you nothing.</p>
 <p>Two consequences worth knowing before you file a hundred devices:</p>
@@ -12790,8 +12908,9 @@ you nothing.</p>
   changes what every operator sees without a traceable origin is an
   unattributable change to the console.</li>
 </ul>
-<p><strong>Favourite</strong> pins an entry to the top of your own panel; <strong>Hide</strong> removes it
-from your view without deleting it for anyone else. Both are per-user.</p>
+<p><strong>Favourite</strong> pins an entry to the Favourites list at the top of your own
+panel, in the order you arrange (§38.5); <strong>Hide</strong> removes it from your view
+without deleting it for anyone else. Both are per-user.</p>
 <h3 id="383-grouping-is-computed-not-stored">38.3 Grouping is computed, not stored</h3>
 <p>The panel groups by any of seven modes: <strong>folder</strong>, <strong>zone</strong>, <strong>line</strong>,
 <strong>department</strong>, <strong>segment</strong>, <strong>kind</strong> (the product) and <strong>tag</strong>.</p>
@@ -12803,7 +12922,87 @@ write</strong>. Change the inventory; the panel is already right.</p>
 that is not a device has no classification at all, and a device nobody has
 classified yet is a different situation. They are shown separately rather than
 both as "ungrouped".</p>
-<h3 id="381-when-the-rail-says-your-session-expired">38.1 When the rail says your session expired</h3>
+<h3 id="384-one-panel-for-every-adom">38.4 One panel for every ADOM</h3>
+<p>The panel reads <strong>ADOM → what is inside it → its classification</strong>:</p>
+<pre><code>Favourites                    every star, of every ADOM, in your own order
+Folders                       your folders (may mix ADOMs)
+Shared                        team bookmarks not filed yet
+FortiWeb                      each ADOM you may enter that holds anything
+├─ Links                       (Global first, then registry order):
+└─ Line › Zone › Department    its unstarred bookmarks not in a folder, and
+FortiADC                       its devices nested by YOUR grouping order
+└─ …                           (Profile → Bookmarks — grouping order)
+</code></pre>
+<p>Bookmarks are <strong>general</strong>, not per ADOM. The panel lists your bookmarks from
+every ADOM you may enter, whichever console you are in, and a menu page you
+starred stays starred in the other ADOMs too. (Until 2026-11-08 each ADOM had
+its own panel, and switching ADOM emptied it.)</p>
+<p>A bookmark still remembers where it belongs: a device belongs to its product,
+and a link to a console page belongs to the ADOM you created it in. A row whose
+page only exists in <strong>another</strong> ADOM shows that ADOM's name next to it (hover
+for <em>Opens in the … ADOM</em>). Clicking it switches <strong>this tab</strong> to that ADOM and
+then opens the page; other tabs keep their own ADOM. Without the switch the
+link would be a 404 in the console you are in.</p>
+<ul>
+<li>The <strong>Global</strong> console never switches: it already sees every device.</li>
+<li>A link that leaves SATOM (a wiki, a ticket queue) opens as it is.</li>
+<li>A profile confined to some ADOMs still sees <strong>nothing</strong> of the others —
+  not on the panel and not by opening <code>/bookmarks/&lt;id&gt;/open</code> directly.</li>
+<li>Every ADOM root carries its own device tree, so the devices of every ADOM
+  you may enter are listed, each under its ADOM. A device of another ADOM
+  switches the tab to it when opened, like a bookmark does.</li>
+<li><strong>Favourites is one list</strong>, not divided by ADOM: every star of every ADOM
+  your profile may enter, in your own order. A star of another ADOM shows
+  that ADOM's name and opens there.</li>
+<li>A <strong>menu star belongs to its ADOM</strong>. Starring <em>Fleet › Architecture</em> in
+  FortiWeb and again in FortiADC gives two favourites, each tagged and
+  opening in its own ADOM; each menu lights only its own stars, and
+  unstarring in one ADOM leaves the other.</li>
+</ul>
+<h3 id="385-your-own-order-drag-to-reorder">38.5 Your own order: drag to reorder</h3>
+<p>Every list you file by hand — <strong>Favourites</strong>, each <strong>folder</strong> and the
+<strong>Folders</strong> root — is in your own order. Drag a row and drop it:</p>
+<table>
+<thead>
+<tr>
+<th>Drop it on…</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>the <strong>upper half</strong> of a row</td>
+<td>it goes right <strong>above</strong> that row (a 2px bar on top shows it)</td>
+</tr>
+<tr>
+<td>the <strong>lower half</strong> of a row</td>
+<td>it goes right <strong>below</strong> that row (bar at the bottom)</td>
+</tr>
+<tr>
+<td>the <strong>middle</strong> of a folder heading</td>
+<td>it goes <strong>into</strong> that folder, at the end</td>
+</tr>
+<tr>
+<td>the <strong>Favourites</strong> heading</td>
+<td>it is starred, at the end of Favourites</td>
+</tr>
+</tbody>
+</table>
+<p>Folders can be dragged too: the top and bottom quarter of a folder heading
+reorder it among its neighbours; the middle files the dragged row inside it.
+A device from the inventory lens that has no bookmark yet becomes one where
+you drop it.</p>
+<ul>
+<li>A new star, and a row dropped on a folder heading, go to the <strong>end</strong> of the
+  list: nothing jumps to the top of an order you arranged.</li>
+<li>The order is <strong>yours alone</strong>, also on team bookmarks everybody starred.</li>
+<li>Lists nobody has reordered keep the old look (folders first, then by name).</li>
+<li>A folder cannot be a favourite, and cannot be dropped inside one of its own
+  sub-folders: both are refused with the reason.</li>
+<li>The Shared tray and the inventory lens are not hand-ordered: they are
+  recomputed on every render, so they take no drop.</li>
+</ul>
+<h3 id="386-when-the-rail-says-your-session-expired">38.6 When the rail says your session expired</h3>
 <p>The panel is kept alive across page changes rather than re-fetched on every
 click, which is why it holds its scroll position and its open folders while you
 move around the console. The cost of that is one thing worth knowing: the

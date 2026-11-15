@@ -1,0 +1,360 @@
+<!-- Reusable Users management panel — used by the standalone /users page AND
+     the Settings → Users tab. Needs `users` + `profiles` in context.
+     Read-only for `users.view`; every control needs `user_manage`. -->
+{% set _can_manage_users = current_user and current_user.can('user_manage') %}
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-people"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ users|length if users else 0 }}</div>
+        <div class="fw-stat-label">{{ _('Total Users') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-shield-fill"></i></div>
+      <div>
+        <div class="fw-stat-value">
+          {{ users|selectattr('is_admin_capable')|list|length if users else 0 }}
+        </div>
+        <div class="fw-stat-label" title="{{ _('Users who can manage both users and profiles') }}">{{ _('Admins') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-person-gear"></i></div>
+      <div>
+        <div class="fw-stat-value">
+          {{ users|selectattr('role','equalto','operator')|list|length if users else 0 }}
+        </div>
+        <div class="fw-stat-label">{{ _('Operators') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-success"><i class="bi bi-check-circle"></i></div>
+      <div>
+        <div class="fw-stat-value">
+          {{ users|selectattr('is_active')|list|length if users else 0 }}
+        </div>
+        <div class="fw-stat-label">{{ _('Active') }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="fw-toolbar d-flex align-items-center gap-2">
+  <div class="fw-search-box">
+    <i class="bi bi-search search-icon"></i>
+    <input type="text" id="userSearch" placeholder="{{ _('Search users…') }}">
+  </div>
+  <select class="form-select form-select-sm" style="width:auto;" id="roleFilter">
+    <option value="">{{ _('All Roles') }}</option>
+    <option value="admin">{{ _('Admin') }}</option>
+    <option value="operator">{{ _('Operator') }}</option>
+    <option value="readonly">{{ _('Read Only') }}</option>
+  </select>
+  {% if _can_manage_users %}
+  <button class="btn btn-fw-primary ms-auto" data-bs-toggle="modal" data-bs-target="#modalAddUser">
+    <i class="bi bi-person-plus me-1"></i>{{ _('Add User') }}
+  </button>
+  {% else %}
+  <span class="ms-auto text-muted" style="font-size:12px;"><i class="bi bi-eye me-1"></i>{{ _('Read-only view') }}</span>
+  {% endif %}
+</div>
+
+<!-- Users Table -->
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="usersTable">
+    <thead>
+      <tr>
+        <th>{{ _('Username') }}</th>
+        <th>{{ _('Profile') }}</th>
+        <th>{{ _('Created') }}</th>
+        <th>{{ _('Last Login') }}</th>
+        <th>{{ _('Status') }}</th>
+        {% if _can_manage_users %}<th class="actions-col">{{ _('Actions') }}</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% if users %}
+        {% for u in users %}
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <div class="fw-avatar" style="width:28px;height:28px;font-size:11px;border-radius:50%;background:#1D3452;color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                {{ u.username[0].upper() if u.username else '?' }}
+              </div>
+              <div>
+                <strong>{{ u.username }}</strong>
+                {% if u.auth_source == 'app' %}
+                  <span class="fw-badge fw-badge-secondary ms-1" title="{{ _('Made by an app\'s own sign-in; signs in only there, through its directory connection') }}"><i class="bi bi-door-open me-1"></i>APP</span>
+                {% elif u.auth_source and u.auth_source != 'local' %}
+                  <span class="fw-badge fw-badge-secondary ms-1" title="Imported from the {{ u.auth_source|upper }} directory"><i class="bi bi-diagram-3 me-1"></i>{{ u.auth_source|upper }}</span>
+                {% endif %}
+                {% if current_user and u.id == current_user.id %}
+                  <span class="fw-badge fw-badge-info ms-1">{{ _('You') }}</span>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="fw-badge fw-badge-{{ 'danger' if u.role == 'admin' else 'primary' if u.role == 'operator' else 'secondary' }}">
+              <i class="bi bi-person-badge me-1"></i>{{ u.profile.name if u.profile else u.role }}
+            </span>
+          </td>
+          <td style="font-size:13px;">
+            {{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}
+          </td>
+          <td style="font-size:13px;">
+            {{ u.last_login.strftime('%Y-%m-%d %H:%M') if u.last_login else 'Never' }}
+          </td>
+          <td>
+            {% if u.is_active %}
+              <span class="fw-status fw-status-online" style="font-size:12px;">
+                <span class="fw-status-dot"></span>{{ _('Active') }}
+              </span>
+            {% else %}
+              <span class="fw-status fw-status-offline" style="font-size:12px;">
+                <span class="fw-status-dot"></span>{{ _('Disabled') }}
+              </span>
+            {% endif %}
+            {% if u.locked_until or u.failed_logins %}
+              <span class="fw-badge fw-badge-warning ms-1" title="{{ _('Failed sign-ins') }}: {{ u.failed_logins or 0 }}">
+                <i class="bi bi-lock me-1"></i>{{ _('Locked') if u.locked_until else (u.failed_logins ~ ' ' ~ _('failed')) }}
+              </span>
+            {% endif %}
+          </td>
+          {% if _can_manage_users %}
+          <td class="actions-col">
+            {% if u.locked_until or u.failed_logins %}
+              <form method="POST" action="{{ url_for('users.unlock', id=u.id) }}" style="display:inline;"
+                    data-fw-confirm-form="Clear the sign-in lockout of '{{ u.username }}'?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" title="{{ _('Unlock') }}">
+                  <i class="bi bi-unlock"></i>
+                </button>
+              </form>
+            {% endif %}
+            {% if u.is_local %}
+              <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1"
+                      title="{{ _('Reset password') }}" data-js="reset-password"
+                      data-user-id="{{ u.id }}" data-username="{{ u.username }}">
+                <i class="bi bi-key"></i>
+              </button>
+            {% endif %}
+            {% if u.totp_enabled %}
+              <form method="POST" action="{{ url_for('users.clear_2fa', id=u.id) }}" style="display:inline;"
+                    data-fw-confirm-form="Clear two-factor authentication for '{{ u.username }}'? They will sign in with their password only until they enrol again.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Clear 2FA') }}">
+                  <i class="bi bi-phone"></i>
+                </button>
+              </form>
+            {% endif %}
+            {% if not (current_user and u.id == current_user.id) %}
+              <form method="POST" action="{{ url_for('users.toggle_active', id=u.id) }}" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit"
+                        class="btn btn-sm {{ 'btn-outline-warning' if u.is_active else 'btn-outline-success' }} btn-sm-icon me-1"
+                        title="{{ 'Disable' if u.is_active else 'Enable' }}">
+                  <i class="bi bi-{{ 'pause-circle' if u.is_active else 'play-circle' }}"></i>
+                </button>
+              </form>
+              <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
+                      title="{{ _('Change Profile') }}" data-js="change-profile"
+                      data-user-id="{{ u.id }}" data-username="{{ u.username }}"
+                      data-profile-id="{{ u.profile_id or '' }}">
+                <i class="bi bi-person-badge"></i>
+              </button>
+              <form method="POST" action="{{ url_for('users.delete', id=u.id) }}" style="display:inline;"
+                    data-fw-confirm-form="Permanently delete user '{{ u.username }}'? This cannot be undone.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="{{ _('Delete') }}">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            {% else %}
+              <span class="text-muted" style="font-size:12px;">{{ _('Current user') }}</span>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="{{ 6 if _can_manage_users else 5 }}">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-people"></i></div>
+              <div class="fw-empty-state-title">{{ _('No users found') }}</div>
+              {% if _can_manage_users %}
+              <div class="fw-empty-state-text">{{ _('Add the first user to grant access to SATOM.') }}</div>
+              <button class="btn btn-fw-primary mt-2" data-bs-toggle="modal" data-bs-target="#modalAddUser">
+                <i class="bi bi-person-plus me-1"></i>{{ _('Add User') }}
+              </button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% if _can_manage_users %}
+<!-- ADD USER MODAL -->
+<div class="modal fade fw-modal" id="modalAddUser" tabindex="-1" aria-labelledby="modalAddUserLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalAddUserLabel">
+          <i class="bi bi-person-plus me-2"></i>{{ _('Add User') }}
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('users.create') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('Username') }} <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="username" placeholder="{{ _('e.g. jsmith') }}" required autocomplete="off">
+          </div>
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('Password') }} <span class="text-danger">*</span></label>
+            <input type="password" class="form-control" name="password" placeholder="{{ _('At least 12 characters') }}" required minlength="12" maxlength="1024" autocomplete="new-password">
+          </div>
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('Confirm Password') }} <span class="text-danger">*</span></label>
+            <input type="password" class="form-control" name="confirm_password" placeholder="{{ _('Repeat password') }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('Profile') }}</label>
+            <select class="form-select" name="profile_id">
+              {% for p in profiles %}
+              <option value="{{ p.id }}" {{ 'selected' if p.name == 'readonly' }}>
+                {{ p.name }}{% if p.is_system %} — system{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="text-muted" style="font-size:11px;">
+              {{ _('Defines exactly what the user can do. Manage profiles under Settings → Access & Identity → Profiles.') }}
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary">
+            <i class="bi bi-person-plus me-1"></i>{{ _('Create User') }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- CHANGE PROFILE MODAL -->
+<div class="modal fade fw-modal" id="modalChangeProfile" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-person-badge me-2"></i>{{ _('Change Profile') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="formChangeProfile">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <p class="mb-3">{{ _('Assign a profile to') }} <strong id="profile-username"></strong>:</p>
+          <select class="form-select" name="profile_id" id="profile-select">
+            {% for p in profiles %}
+            <option value="{{ p.id }}">{{ p.name }}{% if p.is_system %} — system{% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary">{{ _('Save Profile') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- RESET PASSWORD MODAL -->
+<div class="modal fade fw-modal" id="modalResetPassword" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-key me-2"></i>{{ _('Reset password') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="formResetPassword">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <p class="mb-3">{{ _('New password for') }} <strong id="reset-username"></strong>:</p>
+          <input type="password" class="form-control mb-2" name="new_password" placeholder="{{ _('At least 12 characters') }}"
+                 required minlength="12" maxlength="1024" autocomplete="new-password">
+          <input type="password" class="form-control" name="confirm_password" placeholder="{{ _('Repeat password') }}"
+                 required autocomplete="new-password">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary">{{ _('Set password') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script nonce="{{ csp_nonce }}">
+function filterUsers(q) {
+  q = q.toLowerCase();
+  const role = document.getElementById('roleFilter').value.toLowerCase();
+  document.querySelectorAll('#usersTable tbody tr').forEach(function (row) {
+    const text    = row.textContent.toLowerCase();
+    const rowRole = row.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
+    const show    = text.includes(q) && (role === '' || rowRole.includes(role));
+    row.style.display = show ? '' : 'none';
+  });
+}
+
+function openProfileModal(userId, username, currentProfileId) {
+  document.getElementById('profile-username').textContent = username;
+  if (currentProfileId !== null && currentProfileId !== undefined) {
+    document.getElementById('profile-select').value = String(currentProfileId);
+  }
+  document.getElementById('formChangeProfile').action = '/users/' + userId + '/profile';
+  API.openModal('modalChangeProfile');
+}
+
+(function () {
+  var search = document.getElementById('userSearch');
+  if (search) { search.addEventListener('input', function (event) { filterUsers(this.value); }); }
+  var role = document.getElementById('roleFilter');
+  if (role) {
+    role.addEventListener('change', function (event) {
+      filterUsers(document.getElementById('userSearch').value);
+    });
+  }
+  document.querySelectorAll('[data-js="reset-password"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      document.getElementById('reset-username').textContent = this.dataset.username;
+      document.getElementById('formResetPassword').action = '/users/' + this.dataset.userId + '/reset-password';
+      API.openModal('modalResetPassword');
+    });
+  });
+  document.querySelectorAll('[data-js="change-profile"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      var pid = this.dataset.profileId;
+      openProfileModal(this.dataset.userId, this.dataset.username, pid === '' ? null : pid);
+    });
+  });
+})();
+</script>

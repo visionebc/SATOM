@@ -1,0 +1,578 @@
+"""Plugins — super-admin authored HTML/Jinja/JS views in a hard sandbox.
+
+Author a view/widget, preview it live in an isolated iframe, promote it through
+draft -> testing -> published. Published plugins appear under "Custom Views".
+Every render goes through ``plugin_sandbox.safe_render`` (immutable Jinja
+sandbox + curated read-only data), and the document is only ever served inside a
+``sandbox="allow-scripts"`` iframe WITHOUT allow-same-origin — an opaque origin
+that cannot touch the app's cookies, DOM or session.
+"""
+from __future__ import annotations
+
+import json
+from functools import wraps
+
+from flask import (Blueprint, render_template, request, redirect, url_for,
+                   flash, abort, jsonify, Response, make_response)
+from flask_babel import gettext as _
+from flask_login import login_required, current_user
+
+from ..extensions import db
+from ..models import Plugin, Permission
+from ..services import plugin_sandbox as sandbox
+from ..services import plugin_datasets as PD
+from ..services import plugin_examples as examples
+from ..services import plugin_package as pkgfmt
+from ..services import plugin_code
+from ..services import plugin_css
+from ..services import plugin_frame
+from ..services.audit import log_action
+from ..services.product_scope import stamp, scope_query
+
+bp = Blueprint("plugins", __name__, url_prefix="/plugins")
+
+
+def _examples_json() -> str:
+    """Serialize the example catalog for the editor's JSON island (neutralise
+    any ``</script>`` so it can sit safely inside a <script> tag)."""
+    return plugin_frame.json_island(examples.all_examples())
+
+
+def _dev_opts_json() -> str:
+    """Live appliance options (scoped to the current ADOM) for the editor's
+    device-selector builder, safe to embed in a <script> island."""
+    opts = sandbox._appliance_options(stamp())
+    return plugin_frame.json_island(opts)
+
+
+def _plugin_or_404(pid: int) -> Plugin:
+    """One plugin by id, in THIS ADOM only -- the list is scope_query'd, so a
+    by-id route that is not would serve another ADOM's plugin one URL away."""
+    return (scope_query(Plugin.query, Plugin.product)
+            .filter_by(id=pid).first_or_404())
+
+
+def superadmin_required(fn):
+    """Gate: authoring needs the granular ``studio.plugin_studio`` key (seeded
+    on the admin profile only; a custom profile may carry it too)."""
+    @wraps(fn)
+    @login_required
+    def wrapper(*a, **kw):
+        if not current_user.can("studio.plugin_studio"):
+            abort(403)
+        return fn(*a, **kw)
+    return wrapper
+
+
+@bp.route("/")
+@superadmin_required
+def index():
+    plugins = (scope_query(Plugin.query, Plugin.product)
+               .order_by(Plugin.updated_at.desc()).all())
+    from flask import current_app
+    return render_template("plugins/list.html", plugins=plugins,
+                           datasets=PD.picker(),
+                           code_plugins=plugin_code.overview(current_app))
+
+
+@bp.route("/new")
+@superadmin_required
+def new():
+    return render_template("plugins/editor.html", plugin=None,
+                           datasets=PD.picker(),
+                           examples_json=_examples_json(),
+                           params_json="[]",
+                           device_options_json=_dev_opts_json(),
+                           example_cats=examples.categories())
+
+
+@bp.route("/<int:pid>/edit")
+@superadmin_required
+def edit(pid):
+    plugin = _plugin_or_404(pid)
+    return render_template("plugins/editor.html", plugin=plugin,
+                           datasets=PD.picker(),
+                           examples_json=_examples_json(),
+                           params_json=plugin_frame.json_island(plugin.param_defs),
+                           device_options_json=_dev_opts_json(),
+                           example_cats=examples.categories(),
+                           css_findings=plugin_css.lint(plugin.css or ""))
+
+
+@bp.route("/save", methods=["POST"])
+@bp.route("/<int:pid>/save", methods=["POST"])
+@superadmin_required
+def save(pid=None):
+    f = request.form
+    name = (f.get("name") or "").strip()
+    if not name:
+        flash("A name is required.", "error")
+        return redirect(url_for("plugins.new"))
+    # An icon the font does not draw is replaced, not refused: refusing would
+    # throw away the unsaved body with the redirect.
+    from ..services import bootstrap_icons
+    icon, icon_note = bootstrap_icons.or_default((f.get("icon") or "bi-puzzle").strip()[:40],
+                                                 "bi-puzzle")
+    ds = f.getlist("datasets")
+    ds = PD.declarable(ds)  # entitlement filter: every source, this ADOM
+    if pid:
+        plugin = _plugin_or_404(pid)
+    else:
+        plugin = Plugin(created_by=current_user.username, product=stamp())
+        plugin.slug = _unique_slug(sandbox.slugify(name))
+        db.session.add(plugin)
+    plugin.name = name
+    plugin.kind = f.get("kind") if f.get("kind") in Plugin.KINDS else "view"
+    plugin.icon = icon
+    plugin.jinja = f.get("jinja") or ""
+    plugin.css = f.get("css") or ""
+    plugin.js = f.get("js") or ""
+    plugin.data_sources = json.dumps(ds)
+    plugin.params = json.dumps(sandbox.clean_param_defs(f.get("params")))
+    db.session.commit()
+    log_action("plugin.save", target=plugin.slug, extra={"id": plugin.id})
+    flash(f"Saved “{plugin.name}”.", "success")
+    if icon_note:
+        flash(icon_note[0].upper() + icon_note[1:] + ".", "warning")
+    return redirect(url_for("plugins.edit", pid=plugin.id))
+
+
+@bp.route("/<int:pid>/status", methods=["POST"])
+@superadmin_required
+def set_status(pid):
+    """Move a plugin through draft -> testing -> published with GATES.
+
+    * A plugin must reach ``testing`` before it can be ``published`` — you cannot
+      jump straight from draft to live.
+    * Publishing is refused if the saved body does not render cleanly (its
+      datasets load + the sandbox render returns no error), so a broken view can
+      never be promoted to every engineer's Custom Views.
+    * Demoting back to ``draft``/``testing`` is always allowed.
+    """
+    plugin = _plugin_or_404(pid)
+    new_status = request.form.get("status")
+    if new_status not in Plugin.STATUSES:
+        abort(400)
+
+    if new_status == "published":
+        if plugin.status != "testing":
+            flash("Move the view to “testing” and preview it before publishing.",
+                  "error")
+            return redirect(url_for("plugins.edit", pid=plugin.id))
+        data = PD.load_datasets(plugin.datasets)
+        params = sandbox.resolve_params(plugin.param_defs, {})
+        _html, err = sandbox.safe_render(plugin.jinja, data, params)
+        if err:
+            flash(f"Cannot publish — the view still has a render error: {err}",
+                  "error")
+            return redirect(url_for("plugins.edit", pid=plugin.id))
+
+    plugin.status = new_status
+    if new_status == "published":
+        from datetime import datetime
+        plugin.published_at = datetime.utcnow()
+    db.session.commit()
+    log_action("plugin.status", target=plugin.slug, extra={"status": new_status})
+    flash(f"“{plugin.name}” is now {new_status}.", "success")
+    return redirect(url_for("plugins.edit", pid=plugin.id))
+
+
+@bp.route("/<int:pid>/delete", methods=["POST"])
+@superadmin_required
+def delete(pid):
+    plugin = _plugin_or_404(pid)
+    slug = plugin.slug
+    db.session.delete(plugin)
+    db.session.commit()
+    log_action("plugin.delete", target=slug)
+    flash("Plugin deleted.", "success")
+    return redirect(url_for("plugins.index"))
+
+
+@bp.route("/<int:pid>/frame")
+@login_required
+def frame(pid):
+    """The ISOLATED document. Rendered sandboxed, served with a hardened CSP,
+    and meant to be embedded ONLY via <iframe sandbox="allow-scripts">.
+
+    A PUBLISHED plugin is viewable by any signed-in user (the whole point is
+    engineer efficiency); draft/testing stays with the authors -- holders of
+    ``studio.plugin_studio``, the same key that opens the editor."""
+    plugin = _plugin_or_404(pid)
+    if plugin.status != "published" and not current_user.can(
+            "studio.plugin_studio"):
+        abort(403)
+    live = request.args.get("live")  # unsaved-body preview from the editor
+    if live is not None and not current_user.can("studio.plugin_studio"):
+        abort(403)  # live-render of arbitrary source is an author-only tool
+    src = live if live is not None else plugin.jinja
+    keys = plugin.datasets
+    data = PD.load_datasets(keys)
+    params = sandbox.resolve_params(plugin.param_defs, request.args)
+    html, _err = sandbox.safe_render(src, data, params)
+    doc = _frame_document(plugin, html, data, params)
+    resp = make_response(doc)
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    # The plugin's own JS is inline user code; it is safe because the iframe is
+    # a sandboxed OPAQUE origin (no allow-same-origin) — it cannot reach the app.
+    # Images are data: only: `img-src https:` let plugin JS beacon the
+    # datasets it renders to any external host (an <img src> per row).
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+        "script-src 'unsafe-inline'; font-src data:; sandbox allow-scripts")
+    resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+    return resp
+
+
+@bp.route("/preview", methods=["POST"])
+@superadmin_required
+def preview():
+    """Render an UNSAVED body (live editor preview) and return the document."""
+    src = request.form.get("jinja") or ""
+    keys = PD.known(request.form.getlist("datasets"))
+    data = PD.load_datasets(keys)
+    pdefs = sandbox.clean_param_defs(request.form.get("params"))
+    params = sandbox.resolve_params(pdefs, request.form)
+    html, err = sandbox.safe_render(src, data, params)
+    css = request.form.get("css") or ""
+    js = request.form.get("js") or ""
+
+    class _P:  # lightweight shim so _frame_document works for unsaved content
+        name = "preview"
+        css = ""
+        js = ""
+    p = _P()
+    p.css, p.js = css, js
+    doc = _frame_document(p, html, data, params)
+    resp = make_response(doc)
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+        "script-src 'unsafe-inline'; font-src data:; sandbox allow-scripts")
+    return resp
+
+
+@bp.route("/gallery")
+@login_required
+def gallery():
+    """Published custom views, for every signed-in user (engineer consumption)."""
+    plugins = (scope_query(Plugin.query, Plugin.product)
+               .filter_by(status="published")
+               .order_by(Plugin.name).all())
+    return render_template("plugins/gallery.html", plugins=plugins)
+
+
+# --- Published render host (embeds the frame inside the app chrome) ----------
+@bp.route("/view/<slug>")
+@login_required
+def view(slug):
+    plugin = (scope_query(Plugin.query, Plugin.product)
+              .filter_by(slug=slug).first_or_404())
+    if plugin.status != "published" and not current_user.can(
+            "studio.plugin_studio"):
+        abort(403)  # testing/draft are author-only previews
+    param_defs = sandbox.param_options(plugin.param_defs, plugin.product)
+    initial = sandbox.resolve_params(plugin.param_defs, request.args)
+    return render_template("plugins/view.html", plugin=plugin,
+                           param_defs=param_defs, initial=initial)
+
+
+# --- Plugin packages (satom.plugin/1): import / export ----------------------
+# A package moves a plugin between servers WITHOUT an update package. Views
+# and widgets become ordinary Plugin Studio rows; code plugins (Vision EBC
+# signed only) are written to data/plugins/code/ and mount at /x/<slug>/ after
+# a restart; apps bring their stores, connections and API versions.
+#
+# Two steps (2026-10-25): the upload is checked and shown -- problems, what
+# it creates and keeps, where it lands, who signed it -- with a password box
+# for every connection it creates that needs a secret; Confirm installs it
+# through services.plugin_import, the code path /api/v1/builder/import uses
+# too. The bytes wait under the data directory (plugin_import.stage), bound to
+# the uploader, for one hour; never in the session cookie.
+def _import_back():
+    ref = request.referrer or ""
+    return ref if "/studio" in ref else url_for("plugins.index")
+
+
+@bp.route("/import", methods=["POST"])
+@superadmin_required
+def import_package():
+    from ..services import plugin_import as PI
+
+    from ..services import plugin_bundle as PB
+
+    # The upload form sends this with a progress bar (static/js/plugin_upload.js,
+    # FA-0017) and wants JSON back: where to go next, or why not.
+    wants_json = request.headers.get("X-SATOM-Upload") == "1"
+
+    def refuse(msg):
+        if wants_json:
+            return jsonify({"ok": False, "error": msg}), 400
+        flash(msg, "error")
+        return redirect(_import_back())
+
+    up = request.files.get("package")
+    if up is None or not up.filename:
+        return refuse(_("Choose a .satomplugin or .satombundle file to import."))
+    data = up.read(PB.MAX_BUNDLE + 1)
+    try:
+        if PB.is_bundle(data):          # several packages: one preview, one confirm
+            PI.read_bundle(data, up.filename)
+        else:
+            PI.read(data, stamp())
+    except PI.ImportRefused as exc:
+        return refuse(_("Import refused: %(why)s", why=str(exc)))
+    token = PI.stage(data, owner_id=current_user.id, product=stamp(), filename=up.filename,
+                     allow_downgrade=request.form.get("allow_downgrade") == "1")
+    nxt = url_for("plugins.import_preview", token=token)
+    if wants_json:
+        return jsonify({"ok": True, "next": nxt})
+    return redirect(nxt)
+
+
+def _staged_or_none(token):
+    from ..services import plugin_import as PI
+    got = PI.load(token, current_user.id)
+    if got is None:
+        flash(_("That upload is no longer waiting (it expires after one hour). "
+                "Upload the package again."), "error")
+    return got
+
+
+@bp.route("/import/<token>")
+@superadmin_required
+def import_preview(token):
+    from ..services import plugin_import as PI
+
+    got = _staged_or_none(token)
+    if got is None:
+        return redirect(url_for("plugins.index"))
+    data, meta = got
+    from ..services import plugin_bundle as PB
+    try:
+        if PB.is_bundle(data):
+            from ..services import studio_apps as SA
+            info = PI.inspect_bundle(data, user=current_user,
+                                     product=meta.get("product") or "", via="ui",
+                                     filename=meta.get("filename") or "")
+            return render_template("plugins/import_bundle_preview.html", info=info,
+                                   token=token, meta=meta, folders=SA.groups())
+        info = PI.inspect(data, user=current_user, product=meta.get("product") or "",
+                          via="ui")
+    except PI.ImportRefused as exc:
+        PI.discard(token)
+        flash(_("Import refused: %(why)s", why=str(exc)), "error")
+        return redirect(url_for("plugins.index"))
+    return render_template("plugins/import_preview.html", info=info, token=token,
+                           meta=meta)
+
+
+@bp.route("/import/<token>/confirm", methods=["POST"])
+@superadmin_required
+def import_confirm(token):
+    from ..services import plugin_import as PI
+
+    got = _staged_or_none(token)
+    if got is None:
+        return redirect(url_for("plugins.index"))
+    data, meta = got
+    PI.discard(token)  # one confirmation per upload, whatever its outcome
+    secrets = {k[len("secret_"):]: v for k, v in request.form.items()
+               if k.startswith("secret_") and v}
+    from ..services import plugin_bundle as PB
+    if PB.is_bundle(data):
+        return _confirm_bundle(data, meta, secrets)
+    try:
+        rep = PI.import_package(
+            data, user=current_user, product=meta.get("product") or "", via="ui",
+            allow_downgrade=bool(meta.get("allow_downgrade"))
+            or request.form.get("allow_downgrade") == "1",
+            secrets=secrets)
+    except PI.ImportRefused as exc:
+        msg = "; ".join(p["message"] for p in exc.problems[:8])
+        flash(_("Import refused: %(why)s", why=msg or str(exc)), "error")
+        return redirect(url_for("plugins.index"))
+    signed = (_("signed by %(who)s", who=rep["signer_label"]) if rep["signer"]
+              else _("unsigned"))
+    nothing = _("nothing")
+    if rep["kind"] == "app":
+        flash(_("Installed app “%(name)s” %(version)s (%(signed)s). Created: %(created)s. "
+                "Kept: %(kept)s. To do: %(todo)s.", name=rep["name"], version=rep["version"],
+                signed=signed, created=", ".join(rep["created"]) or nothing,
+                kept=", ".join(rep["kept"]) or nothing,
+                todo="; ".join(rep["todo"]) or nothing), "success")
+        return redirect(url_for("studio.app_edit", slug=rep["app_slug"]))
+    if rep["kind"] == "code":
+        flash(_("Installed code plugin “%(name)s” %(version)s (%(signed)s). It loads at "
+                "the next `satom execute restart-all`.", name=rep["name"],
+                version=rep["version"], signed=signed), "success")
+        return redirect(url_for("plugins.index") + "#code-plugins")
+    note = " ".join(w[:1].upper() + w[1:] + "." for w in rep["warnings"])
+    flash(_("%(what)s “%(name)s” %(version)s (%(signed)s) — status %(status)s.",
+            what=_("Updated") if rep.get("updated") else _("Imported"), name=rep["name"],
+            version=rep["version"], signed=signed, status=rep["lands_in"])
+          + (" " + note if note else ""), "warning" if note else "success")
+    return redirect(url_for("plugins.edit", pid=rep["plugin_id"]))
+
+
+#: The folder choice of the bundle preview that keeps each package's own.
+FOLDER_AS_PACKAGED = "__package__"
+
+
+def _confirm_bundle(data: bytes, meta: dict, secrets: dict):
+    from ..services import plugin_import as PI
+    pick = request.form.get("folder", FOLDER_AS_PACKAGED)
+    try:
+        rep = PI.import_bundle(
+            data, user=current_user, product=meta.get("product") or "", via="ui",
+            allow_downgrade=bool(meta.get("allow_downgrade"))
+            or request.form.get("allow_downgrade") == "1",
+            secrets=secrets, folder=None if pick == FOLDER_AS_PACKAGED else pick,
+            filename=meta.get("filename") or "")
+    except PI.ImportRefused as exc:
+        flash(_("Import refused: %(why)s", why=str(exc)), "error")
+        return redirect(url_for("studio.index", pane="apps"))
+    names = ", ".join("%s %s" % (r["name"], r["version"]) for r in rep["installed"])
+    flash(_("Bundle “%(name)s”: %(n)d plugin(s) installed%(list)s.", name=rep["name"],
+            n=len(rep["installed"]), list=(": " + names) if names else ""),
+          "success" if rep["installed"] else "warning")
+    if rep["filed"]:
+        flash(_("Filed under folder %(folder)s: %(apps)s.", folder=rep["folder"] or _("none"),
+                apps=", ".join(rep["filed"])), "success")
+    todo = ["%s: %s" % (r["slug"], t) for r in rep["installed"] for t in r.get("todo") or []]
+    if todo:
+        flash(_("To do: %(todo)s.", todo="; ".join(todo[:12])), "warning")
+    for r in rep["refused"]:
+        flash(_("Not installed: %(file)s — %(why)s", file=r["file"],
+                why="; ".join(p["message"] for p in r["problems"][:4])), "error")
+    return redirect(url_for("studio.index", pane="apps"))
+
+
+@bp.route("/import/<token>/cancel", methods=["POST"])
+@superadmin_required
+def import_cancel(token):
+    from ..services import plugin_import as PI
+
+    if PI.load(token, current_user.id) is not None:
+        PI.discard(token)
+    flash(_("Import cancelled; the upload was deleted."), "success")
+    return redirect(url_for("plugins.index"))
+
+
+# --- Trusted publishers (contract §8) ----------------------------------------
+# Ed25519 keys a super-admin registers, on top of the Vision EBC key pinned in
+# plugin_package.TRUSTED_KEYS: a SATOM Builder's publisher key, typically. A
+# publisher's signature makes a view or widget land in testing; it never makes
+# a code plugin acceptable (services.plugin_import). Disabled = not trusted.
+@bp.route("/publishers")
+@superadmin_required
+def publishers():
+    from ..services import plugin_publishers as PP
+    return render_template("plugins/publishers.html", publishers=PP.list_publishers(),
+                           vision_keys=sorted(pkgfmt.TRUSTED_KEYS),
+                           adom_choices=_adom_choices())
+
+
+def _adom_choices() -> list:
+    try:
+        from ..branding import live_products
+        return [str(k) for k in live_products("tokens")]
+    except Exception:  # noqa: BLE001 -- the page opens without the ADOM registry
+        return []
+
+
+@bp.route("/publishers", methods=["POST"])
+@superadmin_required
+def publisher_add():
+    from ..services import plugin_publishers as PP
+    try:
+        row, created = PP.add(request.form.get("label"), request.form.get("public_key"),
+                              current_user.username, request.form.getlist("adoms"))
+    except PP.PublisherError as exc:
+        flash(_("Publisher refused: %(why)s", why=str(exc)), "error")
+        return redirect(url_for("plugins.publishers"))
+    if created:
+        log_action("plugin.publisher.add", target=row.key_id,
+                   extra={"label": row.label, "adoms": row.adoms})
+        flash(_("Publisher “%(label)s” registered (key %(kid)s).", label=row.label,
+                kid=row.key_id[:16]), "success")
+    else:
+        flash(_("That key is already registered as “%(label)s”.", label=row.label), "warning")
+    return redirect(url_for("plugins.publishers"))
+
+
+@bp.route("/publishers/<key_id>/<action>", methods=["POST"])
+@superadmin_required
+def publisher_toggle(key_id, action):
+    from ..services import plugin_publishers as PP
+    if action not in ("enable", "disable"):
+        abort(404)
+    row = PP.get(key_id)
+    if row is None:
+        abort(404)
+    PP.set_enabled(row, action == "enable")
+    log_action("plugin.publisher.%s" % action, target=row.key_id, extra={"label": row.label})
+    flash(_("Publisher “%(label)s” %(state)s.", label=row.label,
+            state=_("enabled") if row.enabled else _("disabled")), "success")
+    return redirect(url_for("plugins.publishers"))
+
+
+@bp.route("/<int:pid>/export")
+@superadmin_required
+def export_package(pid):
+    from ..version import app_version
+
+    plugin = _plugin_or_404(pid)
+    try:
+        fname, data = pkgfmt.export_plugin(plugin, app_version())
+    except pkgfmt.PackageError as exc:
+        flash(f"Export failed: {exc}", "error")
+        return redirect(url_for("plugins.edit", pid=pid))
+    log_action("plugin.export", target=plugin.slug, extra={"id": plugin.id})
+    resp = make_response(data)
+    resp.headers["Content-Type"] = "application/zip"
+    resp.headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+@bp.route("/code/<slug>/<action>", methods=["POST"])
+@superadmin_required
+def code_action(slug, action):
+    if action not in ("enable", "disable", "remove"):
+        abort(404)
+    try:
+        if action == "remove":
+            plugin_code.remove(slug)
+        else:
+            plugin_code.set_enabled(slug, action == "enable")
+    except (pkgfmt.PackageError, OSError, ValueError) as exc:
+        flash(f"{action.capitalize()} failed: {exc}", "error")
+        return redirect(url_for("plugins.index") + "#code-plugins")
+    log_action(f"plugin.code.{action}", target=slug)
+    flash(f"Code plugin {slug}: {action}d. The change takes effect at the next "
+          f"`satom execute restart-all`.", "success")
+    return redirect(url_for("plugins.index") + "#code-plugins")
+
+
+def _unique_slug(base: str) -> str:
+    slug, n = base, 1
+    while Plugin.query.filter_by(slug=slug).first() is not None:
+        n += 1
+        slug = f"{base}-{n}"
+    return slug
+
+
+def _kit_css() -> str:
+    return plugin_frame.kit_css()
+
+
+def _frame_tokens_css() -> str:
+    return plugin_frame.tokens_css()
+
+
+def _frame_document(plugin, body_html: str, data: dict,
+                    params: dict | None = None) -> str:
+    """The plugin's document: ``services.plugin_frame`` (shared with the
+    Builder rehearsal and, through the rules pack, the SATOM Builder)."""
+    return plugin_frame.frame_document(plugin, body_html, data, params)

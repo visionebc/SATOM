@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Sentinel response policy{% endblock %}
+
+{#
+   Autonomy is configuration, and this is where it lives -- on its own
+   URL.  The document itself is sentinel/_policy_section.html, which the
+   Admin Console pane renders from the same file.  This page is the
+   wrapper and nothing else.
+#}
+{% block content %}
+{% include "sentinel/_policy_section.html" %}
+{% endblock %}

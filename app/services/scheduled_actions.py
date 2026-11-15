@@ -1,0 +1,2877 @@
+"""Catalog + headless executor for the Automation subsystem's Scheduled Actions.
+
+This is the SERVICE layer (no Flask views, no Qt) the desktop ``scheduled_actions``
+logic is ported onto. The web differences from the desktop are deliberate:
+
+  * persistence is plain SQLAlchemy (``db.session`` + the ORM models) instead of a
+    ``store`` abstraction;
+  * the in-process lock that guarded a desktop run is replaced by a **DB-claim
+    lease** (``scheduled_action.running_at``) so exactly one process — the
+    scheduler sidecar — fires a given action even across the gunicorn workers;
+  * ``scheduler.compute_next_run`` returns a ``datetime`` (UTC) here, which is
+    stored straight into the ``next_run`` DateTime column.
+
+The catalog keeps ONLY server-sensible actions. Read-/file-writers (backup,
+signature sync, a stats summary) run unattended; the box-mutating user-scope
+object ops go through :class:`FortiWebOps` (snapshot + ChangeHistory + audit, and
+they never raise on a dead device). ``upgrade_prep`` is a SAFE pre-upgrade
+snapshot (backup + health); a real firmware ``upgrade`` is gated by an approved
+Change Request inside its maintenance window (see :mod:`.change_requests`).
+
+Import side-effect-free: importing this module touches no DB and contacts no
+device.
+"""
+from __future__ import annotations
+
+import calendar
+import json
+import os
+import re
+import socket
+import traceback
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from urllib.parse import urlencode
+
+from sqlalchemy import text
+
+from ..models import (Appliance, ChangeRequest, ScheduledAction,
+                      ScheduledActionRun, db)
+from . import backup, object_refresh, scheduler
+from .fortiweb_ops import FortiWebOps
+from ..registry import loader as _loader
+
+
+def _configured_tz() -> str:
+    """IANA name for the wall-clock schedule kinds, read here and passed DOWN
+    into the pure schedule math (``services/scheduler`` stays DB-free)."""
+    from . import settings_store
+    try:
+        return settings_store.tz_name()
+    except Exception:  # noqa: BLE001 - a settings read must never strand a lease
+        return "UTC"
+
+# REST endpoints for the user-scope object ops (FortiWeb v2.0 cmdb).
+SERVER_POLICY_EP = "/api/v2.0/cmdb/server-policy/policy"
+SERVER_POOL_MEMBER_EP = "/api/v2.0/cmdb/server-policy/server-pool/pserver-list"
+
+# Custom REST action: the methods an admin may schedule, and the one URN we
+# refuse outright — the partition-boot op reboots the box EVEN ON GET (it
+# corrupted a device once), so it is never reachable from a custom call.
+_ALLOWED_METHODS = ("GET", "POST", "PUT", "DELETE")
+_DANGEROUS_URN_RE = re.compile(r"backuprestorefirmwareboot", re.I)
+
+# Bound the text we persist so a chatty device response can't bloat a DB row.
+_LOG_MAX = 8000
+_SUMMARY_MAX = 500
+
+
+# --------------------------------------------------------------------------- #
+#  Catalog                                                                      #
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class ActionSpec:
+    """One catalog entry: an automatable operation.
+
+    Fields (the contract the blueprints/UI build against):
+      key                  catalog key stored in ``ScheduledAction.action``
+      label                human label shown in the editor / history
+      scope                'admin' | 'user'
+      needs_targets        acts on appliances? (False = no device call)
+      single_target        exactly one device (the user-scope object ops)
+      danger               destructive / requires care (the UI flags it)
+      forced_schedule_kind lock the schedule to one kind ('' = any; upgrade='once')
+      products             appliance kinds this action fires against (target set)
+      summary              short English description (optional, for the UI)
+      requires_change_request  refuses to run unless bound to an approved CR
+    """
+
+    key: str
+    label: str
+    scope: str
+    needs_targets: bool = True
+    single_target: bool = False
+    danger: bool = False
+    forced_schedule_kind: str = ""
+    products: tuple[str, ...] = ("fortiweb",)
+    summary: str = ""
+    requires_change_request: bool = False
+
+
+@dataclass(frozen=True)
+class RebootTransport:
+    """How ONE product is rebooted, and where that knowledge came from.
+
+    A reboot URN is not guessable and a wrong guess is not a 404: on FortiWeb the
+    neighbouring maintenance op (``backuprestorefirmwareboot``) reboots the box
+    EVEN ON GET. So every entry records its provenance, and a product with no
+    entry is refused BY NAME rather than probed live on a production appliance.
+    """
+
+    endpoint: str
+    reason_key: str        # body key carrying the operator's reason ('' = no body)
+    reason_max: int
+    provenance: str
+
+
+REBOOT_TRANSPORT: dict[str, RebootTransport] = {
+    "fortiweb": RebootTransport(
+        "/api/v2.0/system/status.systemoperationreboot", "reason", 100,
+        "VERIFIED 2026-08-09 by reading fortiweb08's OWN GUI bundle "
+        "(main.js: REBOOT_URL = '/system/status.systemoperationreboot', posted "
+        "with {reason}, REASON_MAX_LENGTH=100) - not taken from documentation.",
+    ),
+    # fortiadc / fortianalyzer / fortiauthenticator: deliberately absent. Their
+    # reboot URN has NOT been verified against a live device of that product, and
+    # a guessed one aimed at a load balancer is an outage, not a failed call.
+}
+
+
+@dataclass(frozen=True)
+class FailoverTransport:
+    """How ONE product is told to hand the primary role over, and where that
+    knowledge came from.
+
+    There is NO REST call for this on either product, and that is a finding, not
+    an assumption. Verified 2026-09-08 against the live lab: fortiweb12's OWN
+    7.6.8 GUI bundle (``main.js`` + ``app.min.js``, downloaded off the box) routes
+    ``system/ha``, ``ha/node``, ``ha-topology`` and ``ha-disconnect`` and contains
+    ZERO failover call; FortiADC has no ``monitor/`` namespace at all. So this
+    action drives the product's CLI over the SSH console SATOM already owns.
+
+    Every entry also records the release its evidence starts at, because the
+    failure mode of getting that wrong is not a 404: it is a parse error sent to
+    a production cluster inside a maintenance window, discovered the next
+    morning. ``role_cmd`` is the product's READ-ONLY role read; an empty string
+    means "no CLI read has been verified for this product" and the caller falls
+    back to that product's REST ``ha_status`` instead of guessing a command.
+    """
+
+    set_cmd: str
+    unset_cmd: str
+    role_cmd: str
+    min_version: tuple[int, ...]
+    clears_on_reboot: bool
+    provenance: str
+
+
+FAILOVER_TRANSPORT: dict[str, FailoverTransport] = {
+    "fortiweb": FailoverTransport(
+        "execute ha failover set",
+        "execute ha failover unset",
+        "diagnose system ha status",
+        (8, 0, 0), True,
+        "Fortinet FortiWeb 8.0.x CLI reference 'ha failover' "
+        "({set|unset|status}) + admin guide 'Manual HA Failover Trigger Support "
+        "(8.0.0)'. The 7.6.0 CLI reference has NO such page and the live 7.6.8 "
+        "GUI bundle has no failover call, so 8.0.0 is where the evidence starts. "
+        "role_cmd verified live on fortiweb12 2026-09-08: the entire answer on a "
+        "standalone box is 'HA is disabled.'. Docs say the failover state is "
+        "cleared by a reboot or by dropping to Standalone mode.",
+    ),
+    "fortiadc": FailoverTransport(
+        "execute ha force failover-standby set",
+        "execute ha force failover-standby unset",
+        "",
+        (7, 6, 0), False,
+        "Fortinet FortiADC 7.6.0 and 7.6.1 CLI reference 'execute ha force "
+        "failover-standby' ({set|unset}, plus status). Releases older than 7.6.0 "
+        "were NOT checked, so the floor is where the EVIDENCE starts, not where "
+        "the command was introduced - a floor that is too high refuses a change; "
+        "one that is too low sends an unknown command to a load balancer. No CLI "
+        "role read has been verified against a live FortiADC, so role_cmd is "
+        "empty on purpose and the REST ha_status the client already implements "
+        "answers instead. Nothing documents this state clearing on reboot, so it "
+        "is treated as STICKY.",
+    ),
+    # fortianalyzer / fortiauthenticator: deliberately absent, same rule as
+    # REBOOT_TRANSPORT. Neither has had a failover command verified against a
+    # live device of that product, and this action's wrong answer is not a
+    # refused call - it is a cluster that hands over, or a node pinned out of
+    # election, at a time nobody was watching.
+}
+
+
+def _appliance_version(appliance) -> tuple[int, int, int] | None:
+    """The (major, minor, patch) the box is RUNNING, or None when unrecorded.
+
+    Reads the firmware string device_sync already stores
+    ('FortiWeb-KVM 7.6.8,build1128(GA.M),260602'). None is NOT "probably fine":
+    an unrecorded version is the absence of evidence, and the caller refuses on
+    it rather than sending a command that may not exist on the box.
+    """
+    text = str(getattr(appliance, "firmware", "") or "")
+    m = re.search(r"(?<![\d.])(\d+)\.(\d+)\.(\d+)(?![\d.])", text)
+    if m:
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    m = re.search(r"(?<![\d.])(\d+)\.(\d+)(?![\d.])", text)
+    return (int(m.group(1)), int(m.group(2)), 0) if m else None
+
+
+def _ha_role_vocabulary(text: str) -> dict:
+    """Translate ONE product's HA CLI wording into the vocabulary
+    ``ha.parse_ha_role`` already owns.
+
+    Deliberately NOT a second role parser. ``ha.parse_ha_role`` is the single
+    authority on which words mean primary/secondary/standalone -- including the
+    rule that a bare HA *mode* is 'unknown' and never 'primary' -- and a parallel
+    parser here would drift from it the first time either one is fixed.
+
+    Output that matches nothing yields the literal 'unrecognized', never an empty
+    dict: ``parse_ha_role({})`` answers 'standalone', so handing it an empty dict
+    would turn "the box said something we cannot read" into "the box has no HA" --
+    and 'standalone' is one of the two answers that let an unset through.
+    """
+    blob = " ".join((text or "").split())
+    if re.search(r"HA is disabled", blob, re.I):
+        return {"haStatus": "standalone"}
+    m = re.search(r"\b(master|primary|slave|secondary|standby|backup|standalone)\b",
+                  blob, re.I)
+    return {"haStatus": m.group(1).lower() if m else "unrecognized"}
+
+
+def _live_ha_role(appliance, transport) -> tuple[str, str]:
+    """``(role, evidence)`` read off the box RIGHT NOW, read-only.
+
+    Never raises: an unreachable box is 'unknown', which the caller treats as a
+    refusal for ``set`` and as no obstacle for ``unset``.
+    """
+    from . import ha as ha_svc
+
+    if transport.role_cmd:
+        try:
+            from . import ssh_ops
+            text = ssh_ops.run_command(appliance, transport.role_cmd, timeout=20.0)
+        except Exception as exc:  # noqa: BLE001 - a failed read is 'unknown'
+            return "unknown", f"{transport.role_cmd}: {type(exc).__name__}: {exc}"
+        return ha_svc.parse_ha_role(_ha_role_vocabulary(text)), text[:800]
+    return ha_svc.member_role(appliance), "role read over REST (client.ha_status)"
+
+
+# System automations: SATOM keeping its OWN data current (syncs, backups,
+# probes, signature/CVE/knowledge refreshes, the reads that feed its pages).
+# Administrator > System > System Automations, user_manage. Work that changes
+# the fleet is NOT here since 2026-10-14 (operator): it is in USER_ACTIONS.
+ADMIN_ACTIONS: list[ActionSpec] = [
+    ActionSpec(
+        "backup", "Config backup", "admin", needs_targets=True,
+        summary="Trigger an on-device local configuration backup of each target "
+                "appliance (services.backup).",
+    ),
+    ActionSpec(
+        "device_sync", "Sync device to local source of truth", "admin",
+        needs_targets=True,
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator", "fortigate"),
+        summary="Read each target FortiWeb/FortiADC/FortiAnalyzer/FortiAuthenticator/FortiGate's full config "
+                "(REST or JSON-RPC) and refresh the local Postgres "
+                "source-of-truth cache + per-device JSON backup "
+                "(services.device_sync). DB-first reads serve the UI from this. "
+                "Read-only against the box.",
+    ),
+    ActionSpec(
+        "device_inspect", "Sync device + push SoT off-box", "admin",
+        needs_targets=True,
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator", "fortigate"),
+        summary="Like Sync, plus UPLOAD the versioned SoT store's new blobs to "
+                "the external backup server (off-box versioned backup). Covers "
+                "FortiWeb, FortiADC, FortiAnalyzer, FortiAuthenticator and FortiGate. Use for the scheduled "
+                "off-box source-of-truth copy.",
+    ),
+    ActionSpec(
+        "deep_capture", "Deep capture (full policy/WPP tree)", "admin",
+        needs_targets=True,
+        summary="Walk each target FortiWeb's server policies + WPPs (by-parent "
+                "sub-tables, named rules) into the deep cache layer, so the "
+                "policy/WPP detail pages serve entirely from the DB "
+                "(services.device_sync.deep_snapshot_from_device). Read-only, "
+                "serial per box.",
+    ),
+    ActionSpec(
+        "signature_sync", "Collect signatures from the source now", "admin",
+        needs_targets=True,
+        summary="Read the whole signature catalog off the target and index it "
+                "(services.signature_index). The target must be the configured "
+                "signature source; any other device is refused, so the index "
+                "never records another box's database as a fleet change. "
+                "signature_check already collects daily when the version moves.",
+    ),
+    ActionSpec(
+        "signature_check", "Signatures — FortiGuard DB freshness + collect from the source",
+        "admin", needs_targets=False,
+        summary="Read the FortiGuard database versions of every FortiWeb (one REST "
+                "GET of system/config.fortiguard per box, `diagnose system update "
+                "info` over SSH as the fallback) and record when they last changed "
+                "(services.signature_freshness). When the signature source's DB "
+                "version is not the one the local index holds, read its whole "
+                "signature catalog and index it: a snapshot, the new / changed / "
+                "removed signatures and a notification to the administrators "
+                "(services.signature_index). The alert engine raises a device "
+                "finding for a signature DB older than alerts.signature_max_days "
+                "(default 7), an unreadable one, or no source configured. "
+                "Read-only; devices in maintenance are skipped. Daily.",
+    ),
+    ActionSpec(
+        "knowledge_fetch", "Knowledge packs — check the feed, download, import",
+        "admin", needs_targets=False,
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
+        summary="Read the knowledge feed (latest.json, setting knowledge.feed_url), "
+                "compare it with the newest imported knowledge pack and, by "
+                "knowledge.fetch_mode (off | notify | download | download_import, "
+                "default download_import), tell the administrators, download the "
+                "pack (size and sha256 checked) or import it — the signature is "
+                "verified by the import (services.knowledge_fetch). Primary only: "
+                "a standby skips with the reason. The only outbound connection is "
+                "to the feed and the pack it names. No device call. Daily.",
+    ),
+    ActionSpec(
+        "system_backup", "System backup (Postgres + JSON)", "admin",
+        needs_targets=False,
+        summary="Back up the whole instance: a Postgres pg_dump + the per-device "
+                "JSON tree, bundled to a downloadable archive (services.system_backup), "
+                "and (params.push_server, default on) uploaded to the external backup "
+                "server so the DB backup lives off-rack too. No device call.",
+    ),
+    ActionSpec(
+        "git_bundle", "Git repository backup (bundle) — retired", "admin",
+        needs_targets=False,
+        summary="RETIRED 2026-08-05: git no longer carries the device SoT "
+                "(services.sot_store does), so the scheduled bundle lost its "
+                "job. The handler still works for a manual run — a bundle of "
+                "the CODE repo remains a valid recovery artifact — but new "
+                "installs do not seed it and the checks do not require it.",
+    ),
+    ActionSpec(
+        "deep_monitor", "Deep monitors — probe sweep", "admin",
+        needs_targets=False,
+        summary="Run every enabled deep monitor whose interval has elapsed: "
+                "synthetic HTTPS against each watched server policy, the "
+                "interface IP/link fingerprint, and the proxyd process read "
+                "(services.deep_monitor). Schedule EVERY 3 MINUTES (the seed plan's "
+                "cadence) — the page "
+                "only shows samples this sweep records. Contacts appliances "
+                "read-only (HTTP GET + `diagnose system top`).",
+    ),
+    ActionSpec(
+        "artifact_refs", "WAF artifacts — refresh the policy→artifact index",
+        "admin", needs_targets=False,
+        summary="Walk each FortiWeb's server policies and record which "
+                "file-backed API-Protection objects (XML Schema, WSDL, gRPC "
+                "IDL, OpenAPI, JSON Schema, XML DTD, Lua) each one needs "
+                "(services.artifact_refs). Feeds the 'used by' column on "
+                "/artifacts/inventory. Read-only "
+                "against the box — it is the clone planner's SOURCE walk with "
+                "no destination. Bounded per run and oldest-first, so a large "
+                "fleet converges over successive runs; the remainder is "
+                "reported every time. A walk that fails never deletes an "
+                "edge. Daily is plenty.",
+    ),
+    ActionSpec(
+        "netbox_reconcile", "NetBox inventory - reconcile the device map",
+        "admin", needs_targets=False,
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
+        summary="Ask NetBox which of the still-unmapped appliances it already "
+                "documents - devices first, then virtual machines - and write "
+                "the ones it answers by name into the EXPLICIT device map "
+                "(services.netbox_client.reconcile), so the binding survives a "
+                "rename on either side. Bounded per run "
+                "(params.per_round, default 25) and lowest-id first, so a large "
+                "fleet converges over successive rounds and the remainder is "
+                "named every time. Read-only against NetBox: it creates nothing "
+                "there and never drops a mapping an operator wrote. A NetBox "
+                "that cannot be asked writes nothing and reports FAILED - "
+                "unknown is not 'absent'.",
+    ),
+    ActionSpec(
+        "apilib_harvest",
+        "API library — harvest appliances whose build has no evidence", "admin",
+        needs_targets=False,
+        products=("fortiweb", "fortiadc", "fortiauthenticator", "fortigate",
+                  "fortianalyzer"),
+        summary="Find every FortiWeb, FortiADC, FortiAuthenticator, FortiGate "
+                "and FortiAnalyzer whose running build has no healthy evidence "
+                "from its live source in the API library, and harvest it now, "
+                "one box at a time: a rediscovery sweep (FortiWeb/FortiADC), "
+                "the Tastypie schema read (FortiAuthenticator), the per-table "
+                "?action=schema read (FortiGate) or the per-object JSON-RPC "
+                "syntax walk (FortiAnalyzer) (services.apilib_harvest). The "
+                "safety net behind the firmware probe, which queues a harvest "
+                "the moment it sees a build change. Read-only against the "
+                "boxes; appliances in maintenance or with a harvest already "
+                "queued are skipped and named. A harvest that read nothing is "
+                "a named failure, never evidence. Daily is plenty.",
+    ),
+    ActionSpec(
+        "schema_harvest",
+        "API library — harvest the CLI schema of a target (tree + hidden fields)",
+        "admin", needs_targets=True,
+        products=("fortiweb", "fortiadc", "fortiauthenticator", "fortianalyzer"),
+        summary="For each target, read its build through BOTH channels into the "
+                "API library (services.schema_harvest): SSH `tree` (the whole "
+                "CLI schema: objects, fields, types, options, CLI ids) as "
+                "cli_tree evidence; `show full-configuration` (a fresh vault "
+                "dump of the same build when there is one) as cli_full evidence, "
+                "field NAMES only, hidden fields marked; and one REST GET per "
+                "tree object the library's REST evidence does not cover, "
+                "classified by response shape. Read-only against the box. "
+                "FortiADC: tree, dump and path rule verified; the REST probe "
+                "reads child tables by ?pkey= and never takes a child 404 for "
+                "absent. "
+                "FortiAuthenticator: Tastypie schema (the CLI help walk needs a "
+                "CLI password, run it from the Schema builds page); "
+                "FortiAnalyzer: JSON-RPC syntax read (verified adapter). "
+                "Weekly, or after an upgrade, is plenty.",
+    ),
+    ActionSpec(
+        "schema_watch",
+        "API library — watch for builds whose schema is not harvested", "admin",
+        needs_targets=False,
+        products=("fortiweb", "fortiadc", "fortiauthenticator", "fortianalyzer"),
+        summary="Find every appliance whose running build has no harvested "
+                "schema in the API library (cli_tree evidence; the JSON-RPC "
+                "syntax for FortiAnalyzer) and raise ONE bell notification per "
+                "product and build to the administrators, linking to the "
+                "Schema builds page where the harvest is one click "
+                "(services.schema_watch). Reads the library only; contacts no "
+                "device. The firmware probe does the same the moment it sees a "
+                "build; this is the safety net. Daily is plenty.",
+    ),
+    ActionSpec(
+        "metrics_scrape", "Fleet metrics — scrape to the local store", "admin",
+        needs_targets=False,
+        summary="Run every due scrape target (Monitoring → Collection): one "
+                "aggregated call per (device, collector) into the node's "
+                "VictoriaMetrics store (services.metrics_collect). Auto-"
+                "provisions targets for new appliances; devices in maintenance "
+                "are skipped. Schedule EVERY 3 MINUTES — each target then runs "
+                "at its own operator-set interval. Read-only against the box.",
+    ),
+    ActionSpec(
+        "wsm_schedules", "Web Server Manager — scheduled scripts", "admin",
+        needs_targets=False,
+        summary="Run the scripts the Web Server Manager schedules on managed Linux servers "
+                "(services.wsm.run_due): each due schedule signs in with its stored service "
+                "credential and runs its library script. A revoked, disabled or expired "
+                "credential parks the schedule as pending authentication and notifies the "
+                "administrators once. Created by itself with the first schedule; runs every "
+                "minute, cron expressions are evaluated in UTC.",
+    ),
+    ActionSpec(
+        "wsm_health", "Web Server Manager — server health", "admin",
+        needs_targets=False,
+        summary="Read memory, disks, load, processes and failed systemd units of every "
+                "managed Linux server whose interval has passed (services.server_health): "
+                "through its satom-webctl agent or over SSH with a shared credential that "
+                "keeps its secret -- the operator picks per server (Health > Settings). A "
+                "READ: no sudo, no write. Readings go to this node's metrics store; a server "
+                "that cannot be read writes satom_scrape_up 0 and, after two failures in a "
+                "row, rings the administrators. Each new problem rings once, recovery once. "
+                "Created by itself; runs every minute, each server keeps its own interval.",
+    ),
+    ActionSpec(
+        "webhost_cert_expiry", "Web hosts — certificate expiry check", "admin",
+        needs_targets=False,
+        summary="Ask every Plugin Studio server connection (servers prepared with "
+                "satom-webctl) for its certificates (certs.list, a read) and raise ONE "
+                "bell notification to the administrators per certificate and stage -- "
+                "30, 14 and 7 days left, expired -- for each certificate an enabled "
+                "virtual host serves (services.webhost_certs). A server that cannot be "
+                "read is a named failure, never 'no certificates'. Created by itself "
+                "with the first server connection. Daily is plenty.",
+    ),
+    ActionSpec(
+        "sentinel_sweep", "Sentinel — correlate and score", "admin",
+        needs_targets=False,
+        summary="The Sentinel hot path: read new attack-log entries from every "
+                "live FortiWeb, deduplicate by content, route them into "
+                "incidents, re-correlate every open incident against the "
+                "metrics store, score deterministically, propose actions and "
+                "expire TTLs. Reads devices (GUI-session attack log); devices "
+                "in maintenance are skipped. Schedule EVERY 3 MINUTES. Never "
+                "writes appliance configuration.",
+    ),
+    ActionSpec(
+        "sentinel_baseline", "Sentinel — recompute behavioural baselines",
+        "admin", needs_targets=False,
+        summary="Rebuild the median/MAD profile of every series, per "
+                "hour-of-week, from the node's own metrics store. Touches NO "
+                "appliance, so it is safe at any hour. Samples inside a frozen "
+                "maintenance window are dropped rather than learned. Schedule "
+                "NIGHTLY.",
+    ),
+    ActionSpec(
+        "sentinel_vuln_sync", "Sentinel — refresh the local CVE mirror",
+        "admin", needs_targets=False,
+        summary="Refresh sentinel_vuln from the configured source plus the "
+                "CISA KEV feed. THE ONLY Sentinel component that opens an "
+                "outbound connection, and it refuses to run unless "
+                "sentinel.vuln_sync_enabled is on — a live per-incident lookup "
+                "would hand a third party a real-time map of this fleet's "
+                "attack surface. Schedule DAILY.",
+    ),
+    ActionSpec(
+        "sentinel_feed_publish", "Sentinel — expire blocklist entries and "
+        "mirror the list", "admin", needs_targets=False,
+        summary="Flip blocklist rows whose TTL has passed to 'expired' and, "
+                "when a mirror repository is configured, commit and push the "
+                "rendered list as the audit copy. It does NOT make the feed "
+                "current: the endpoint renders from the database and filters "
+                "by expiry on every request, so a scheduler that stops costs "
+                "accurate bookkeeping, never an address served past its TTL. "
+                "Touches NO appliance and opens no connection unless a mirror "
+                "remote is set. Schedule EVERY 15 MINUTES.",
+    ),
+    ActionSpec(
+        "monitor_report", "Monitoring report — period summary", "admin",
+        needs_targets=False,
+        summary="Build and store the daily/weekly/monthly monitoring summary "
+                "from the rollup tables and optionally mail it "
+                "(services.monitor_reports). Set params.period to daily, "
+                "weekly or monthly; params.email=1 to send it. Schedule it "
+                "AFTER the period closes — daily at ~02:00, weekly Monday, "
+                "monthly on the 1st. params.push_server=1 also uploads the "
+                "summary (JSON + text) to the external backup server. Reads "
+                "stored samples and the local metrics store only: no device "
+                "call, so it works with every appliance off.",
+    ),
+    ActionSpec(
+        "stats", "Build statistics summary", "admin", needs_targets=False,
+        summary="Aggregate a fleet statistics summary. No device call.",
+    ),
+    ActionSpec(
+        "appid_import", "Import AppID catalog (nightly)", "admin",
+        needs_targets=False,
+        summary="Fetch the external AppID catalog configured in AppIDs → Nightly "
+                "source (a URL, reusing the saved column mapping) and import it "
+                "ADDITIVELY into the app_ids table — never deletes; a vanished "
+                "AppID is flagged stale (services.appids). No device call.",
+    ),
+    ActionSpec(
+        "appid_reconcile", "AppIDs - bind server policies from their comments",
+        "admin", needs_targets=False,
+        summary="Compare every FortiWeb server policy (local store, last sync: no "
+                "device call) with the AppID its comment names, using Analysis > "
+                "App ID pattern (services.appids.reconcile). A policy whose "
+                "comment names a catalog AppID and that has no binding yet is "
+                "bound; a saved binding is never moved. Policies it cannot settle "
+                "-- a different saved AppID, an AppID the catalog lacks, no AppID "
+                "in the comment -- ring the administrators once each, with a "
+                "link to the review list in AppIDs > Assign policies. Created "
+                "from the AppIDs page; daily is plenty.",
+    ),
+    ActionSpec(
+        "inventory_snapshot", "Record inventory snapshot (daily counts)",
+        "admin", needs_targets=False,
+        summary="Record today's fleet inventory counts (server policies, "
+                "backends, WPPs, certificates) from the local cache into the "
+                "metrics trend. No device call. Schedule DAILY so the Metrics "
+                "page can compare totals across dates.",
+    ),
+    ActionSpec(
+        "health_check", "Health check (system status)", "admin",
+        needs_targets=True,
+        summary="Read each target FortiWeb's system status over REST "
+                "(read-only) - a lightweight scheduled liveness/health probe.",
+    ),
+    ActionSpec(
+        "ha_check", "HA status check", "admin", needs_targets=True,
+        summary="Read each target's High-Availability member/role status "
+                "over REST (read-only).",
+    ),
+    ActionSpec(
+        "cert_scan", "Cert Manager — scan device certificates", "admin",
+        needs_targets=True,
+        summary="Read each target FortiWeb's certificate stores and cache the "
+                "decoded X.509 detail (expiry / issuer / SANs) + policy bindings "
+                "into the local DB (services.cert_manager.scan_device_certificates). "
+                "Read-only against the box; powers the Certificate Manager table. "
+                "Schedule DAILY.",
+    ),
+    ActionSpec(
+        "observatory_scan", "HTTP Observatory — grade published sites", "admin",
+        needs_targets=True, products=("fortiweb", "fortiadc"),
+        summary="Grade every site each target publishes (FortiWeb server "
+                "policies, FortiADC virtual servers) the way the MDN HTTP "
+                "Observatory does, from this node to the policy's VIP only, "
+                "and keep the result in Troubleshooting → HTTP Observatory "
+                "(services.observatory). A grade lower than the previous run "
+                "is named first in the summary. Reads the box and sends GET/"
+                "OPTIONS to its published sites; never writes configuration. "
+                "Schedule DAILY or WEEKLY.",
+    ),
+    ActionSpec(
+        "hsts_preload_refresh", "HTTP Observatory — refresh the HSTS preload list", "admin",
+        needs_targets=False,
+        summary="Download Chromium's HSTS preload list (the file the MDN HTTP "
+                "Observatory reads) into data/hsts-preload/, so a preloaded site "
+                "earns the same +5 it gets on mozilla.org "
+                "(services.hsts_preload). A failed download keeps the stored "
+                "list. One outbound HTTPS request; no device call. Schedule "
+                "WEEKLY.",
+    ),
+]
+
+# Operator automations: work on the fleet's services, scheduled for a chosen time
+# (Operations > Automation > Automations, config_write). The four Server-Policy
+# object ops MUTATE the box through FortiWebOps (snapshot + audit + change
+# history) and act on exactly ONE device (single_target).
+#
+# Since 2026-10-14 (operator) the device-level work an operator plans moved here
+# from the system catalog: upgrade prep, firmware upgrade, reboot, HA failover,
+# certificate renewal and lifecycle, custom REST. The dangerous ones declare
+# requires_change_request, so an operator SCHEDULES them and an administrator's
+# approved Change Request AUTHORIZES the fire (execute_and_record step 3, which
+# also checks the row is the change's own: change_requests.binding_ok).
+USER_ACTIONS: list[ActionSpec] = [
+    ActionSpec(
+        "policy_set_status", "Enable / disable a server policy", "user",
+        needs_targets=True, single_target=True,
+        summary="Turn a server policy on or off at a scheduled time - a cutover, "
+                "or a planned pause/restore.",
+    ),
+    ActionSpec(
+        "backend_set_status", "Enable / disable a backend (pool member)", "user",
+        needs_targets=True, single_target=True,
+        summary="Turn a back-end real server (a server-pool member) on or off - "
+                "drain a backend for maintenance or restore it on schedule.",
+    ),
+    ActionSpec(
+        "backend_set_config", "Change a backend's IP / port", "user",
+        needs_targets=True, single_target=True,
+        summary="Change a back-end real server's address and/or port (a server-"
+                "pool member) at a scheduled time - repoint or re-port a backend.",
+    ),
+    ActionSpec(
+        "swap_certificate", "Swap a server-policy certificate", "user",
+        needs_targets=True, single_target=True,
+        summary="Change the local certificate bound to a server policy at a "
+                "scheduled time (e.g. a certificate rotation).",
+    ),
+    ActionSpec(
+        "upgrade_prep", "Upgrade preparation (backup + health)", "user",
+        needs_targets=True, danger=True, products=("fortiweb", "fortiadc"),
+        summary="Pre-upgrade snapshot: a config backup AND a health read per "
+                "device, so a maintenance window starts from a known-good "
+                "baseline. Does NOT flash firmware.",
+    ),
+    ActionSpec(
+        "upgrade", "Firmware upgrade (FULL - flashes + reboots)", "user",
+        needs_targets=True, danger=True, forced_schedule_kind="once",
+        # The summary below has always CLAIMED this authorization, and
+        # _do_upgrade's docstring says it is "enforced upstream in
+        # execute_and_record". It was not: the unbound refusal in (3a) reads
+        # spec.requires_change_request, and this spec never declared it - so an
+        # upgrade action with no bound CR sailed through the gate. Harmless
+        # only because the executor is still a stub; the day the flash runbook
+        # lands, the missing flag would have been a destructive action running
+        # unapproved while three separate pieces of prose swore it could not.
+        # This is the same shape as upgrade_prep shipping destructive-and-
+        # ungated while the gate watched only 'upgrade'.
+        requires_change_request=True,
+        summary="Change-request bound firmware upgrade at a FIXED date/time, "
+                "authorized by an approved Change Request inside its "
+                "maintenance window (change_requests.cr_runnable). The "
+                "scheduled executor does NOT flash yet: each target is "
+                "reported 'not executed' and the change closes as failed. "
+                "Flash live from the appliance's firmware page inside the "
+                "window; that run closes the change.",
+    ),
+    ActionSpec(
+        "reboot", "Reboot the appliance (DESTRUCTIVE)", "user",
+        needs_targets=True, danger=True, forced_schedule_kind="once",
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
+        requires_change_request=True,
+        summary="Reboot each target appliance at a FIXED date/time. DESTRUCTIVE: "
+                "the box stops serving until it comes back. Runs ONLY bound to an "
+                "approved Change Request inside its maintenance window - it "
+                "refuses to fire unbound. The reboot URN is per product and is "
+                "sent only where it has been verified against that product's own "
+                "device; an unverified product is refused by name, never guessed.",
+    ),
+    ActionSpec(
+        "ha_failover", "HA failover - hand the primary role over (DISRUPTIVE)",
+        "user", needs_targets=True, single_target=True, danger=True,
+        forced_schedule_kind="once",
+        products=("fortiweb", "fortiadc"),
+        requires_change_request=True,
+        summary="Make ONE HA cluster hand the primary role to its peer at a FIXED "
+                "date/time (params.direction='set'), or give it back "
+                "(direction='unset'). DISRUPTIVE: every session on the outgoing "
+                "primary breaks. There is NO REST call for this on either product "
+                "- verified against FortiWeb's own GUI bundle - so it drives the "
+                "product's CLI over SSH, and only where that command has been "
+                "verified to exist on the firmware the box is RUNNING: a FortiWeb "
+                "below 8.0.0 is refused BY NAME with nothing sent. Runs ONLY bound "
+                "to an approved Change Request inside its window, and refuses to "
+                "fail over anything that is not reporting HA primary right now.",
+    ),
+    ActionSpec(
+        "cert_manager_server", "Cert Manager — rotate Server certs", "user",
+        needs_targets=True,
+        summary="Rotate SERVER-authentication certificates on each target: renew "
+                "those inside their renew window (signed by the configured CA and "
+                "deployed under a new name, or a CSR when another CA signs them), "
+                "swap renewals in on their swap date, take superseded ones off the "
+                "device after their removal window and purge their keys after the "
+                "retention window. This row's schedule is the swap window.",
+    ),
+    ActionSpec(
+        "cert_manager_clientserver", "Cert Manager — rotate Client+Server certs",
+        "user", needs_targets=True,
+        summary="Rotate CLIENT+SERVER (both EKU) certificates on each target: "
+                "renew → swap on the swap date → off the device → key purged, by "
+                "each certificate's windows. This row's schedule is the swap window.",
+    ),
+    ActionSpec(
+        "cert_manager_client", "Cert Manager — rotate Client certs", "user",
+        needs_targets=True,
+        summary="Rotate CLIENT-authentication certificates on each target: "
+                "renew → swap on the swap date → off the device → key purged, by "
+                "each certificate's windows. This row's schedule is the swap window.",
+    ),
+    ActionSpec(
+        "cert_lifecycle", "Cert Manager — lifecycle sweep (revoke + cleanup)",
+        "user", needs_targets=True, danger=True,
+        requires_change_request=True,
+        summary="Enforce the certificate lifecycle policy (Settings → Certificate "
+                "Manager): revoke superseded certs past the grace window at the CA "
+                "and DELETE revoked/superseded/expired unbound certificate material "
+                "off each target FortiWeb. Bindings are re-verified live and "
+                "fail-closed before any delete. Reports-only unless the policy's "
+                "'auto apply' is enabled.",
+    ),
+    ActionSpec(
+        "plugin_app", "Run a Plugin Studio app", "user", needs_targets=False,
+        products=("fortiweb", "fortigate", "fortiadc", "fortianalyzer", "fortiauthenticator"),
+        summary="Run the PUBLISHED version of a Plugin Studio app (a script app: its "
+                "script) on this schedule, as the user who saved the automation, with "
+                "the form values below -- e.g. every day, put the IP of every FortiWeb "
+                "in a FortiGate address group. An app package can bring its own "
+                "automations: they arrive switched off (services.plugin_automations).",
+    ),
+    ActionSpec(
+        "custom_rest", "Custom REST call", "user", needs_targets=True,
+        danger=True,
+        requires_change_request=True,
+        summary="Run ANY FortiWeb REST request you define (method + endpoint + "
+                "mkey + JSON body) against the targets. GET is a live read; "
+                "POST/PUT/DELETE go through the snapshot+audit+dry-run write "
+                "path. Build it in the Custom REST card on the form.",
+    ),
+]
+
+# key -> ActionSpec for both scopes.
+ALL_ACTIONS: dict[str, ActionSpec] = {
+    a.key: a for a in (*ADMIN_ACTIONS, *USER_ACTIONS)
+}
+
+
+def get_spec(key: str) -> ActionSpec | None:
+    """The :class:`ActionSpec` for ``key``, or ``None`` if it is not in the catalog."""
+    return ALL_ACTIONS.get(key)
+
+
+# --------------------------------------------------------------------------- #
+#  Single-action executor (one action vs one appliance)                         #
+# --------------------------------------------------------------------------- #
+def _do_inventory_snapshot(dry_run: bool = False) -> dict:
+    """Record today's fleet inventory counts into the metrics trend (no box)."""
+    from . import inventory_metrics
+    if dry_run:
+        totals = inventory_metrics.current_totals()
+        return {"ok": True,
+                "summary": "Inventory snapshot (preview): "
+                           + ", ".join("%s=%s" % (k, v) for k, v in totals.items()),
+                "log": ""}
+    res = inventory_metrics.record_snapshot()
+    t = res["totals"]
+    return {"ok": True,
+            "summary": ("Inventory snapshot %s: " % res["date"])
+                       + ", ".join("%s=%s" % (k, v) for k, v in t.items())
+                       + (" (%d devices)" % res["appliances"]),
+            "log": ""}
+
+
+def _do_artifact_refs(params: dict, dry_run: bool = False) -> dict:
+    """Refresh the derived policy→artifact index across the fleet.
+
+    Same ``ok`` contract as every other sweep here: ok = THE SWEEP RAN. One
+    unreachable appliance is a counted error, not a red action — and, more
+    importantly, its previously observed edges survive, because an outage must
+    never be able to report that a box's policies need no content.
+    """
+    from . import artifact_refs as ar
+    budget = params.get("budget")
+    budget = int(budget) if str(budget).isdigit() else ar.DEFAULT_BUDGET
+    if dry_run:
+        from ..models import Appliance
+        n = Appliance.query.filter_by(kind="fortiweb", maintenance=False).count()
+        return {"ok": True,
+                "summary": ("[dry-run] would walk up to %d polic%s on each of "
+                            "%d FortiWeb(s), oldest-scanned first."
+                            % (budget, "y" if budget == 1 else "ies", n)),
+                "log": ""}
+    res = ar.sweep(budget=budget)
+    return {"ok": True,
+            "summary": ("%(devices)d device(s), %(scanned)d polic(y/ies) walked, "
+                        "%(refs)d artifact edge(s), %(errors)d error(s)" % res)
+                       + (", %d still queued for the next run" % res["remaining"]
+                          if res.get("remaining") else ""),
+            "log": (res.get("log") or "")[:_LOG_MAX]}
+
+
+def _do_netbox_reconcile(params: dict, dry_run: bool = False) -> dict:
+    """Bind ONE round of still-unmapped appliances to the NetBox objects that
+    already document them.
+
+    ``ok`` contract: ok = THE ROUND RAN. An appliance NetBox does not document
+    is a NAMED remainder, not a red action - it is a fact about somebody else's
+    inventory, and a red row every night trains the operator to ignore this
+    action. A NetBox that could not be asked at all IS red: a disabled or
+    unreachable integration must never report a green sweep.
+    """
+    from . import netbox_client as netbox
+    per = netbox.clamp_per_round(params.get("per_round"))
+    res = netbox.reconcile(per_round=per, dry_run=dry_run)
+    if not res["checked"]:
+        return {"ok": False,
+                "summary": "NetBox was not asked: %s" % (res["error"] or "unknown"),
+                "log": (res.get("log") or "")[:_LOG_MAX]}
+    parts = ["%s%s %d of %d appliance(s) asked (round size %d)"
+             % ("[dry-run] " if dry_run else "",
+                "would map" if dry_run else "mapped",
+                len(res["mapped"]), res["scanned"], res["per_round"])]
+    if res["unresolved"]:
+        parts.append("NetBox documents no object named: %s"
+                     % ", ".join(sorted(res["unresolved"])))
+    if res["unknown"]:
+        parts.append("no answer for: %s" % ", ".join(sorted(res["unknown"])))
+    if res["remaining"]:
+        parts.append("%d still unmapped, next round takes them"
+                     % res["remaining"])
+    if not res["scanned"]:
+        parts = ["Nothing to do: every appliance already has an explicit "
+                 "NetBox mapping (%d)." % res["fleet"]]
+    return {"ok": True, "summary": " - ".join(parts),
+            "log": (res.get("log") or "")[:_LOG_MAX]}
+
+
+def _do_metrics_scrape(params: dict, dry_run: bool = False) -> dict:
+    """Sweep the fleet scrape targets into VictoriaMetrics. Same ``ok``
+    contract as the deep-monitor sweep: ok = THE SWEEP RAN; per-device
+    failures live on the target rows and in ``satom_scrape_up``."""
+    from . import metrics_collect as mc
+    if dry_run:
+        due = mc.due_targets()
+        return {"ok": True,
+                "summary": "[dry-run] %d scrape target(s) are due." % len(due),
+                "log": "\n".join("%s/%s" % (t.appliance.name, t.collector)
+                                 for t in due)[:4000]}
+    res = mc.sweep()
+    # The SATOM nodes' own CPU / memory / disk ride the same pass (SATOM
+    # health -> Resource history). node_metrics.record never raises, and a
+    # failed sample is named in the summary instead of hidden behind a green
+    # sweep.
+    from . import node_metrics
+    nm = node_metrics.record()
+    nodes_part = (", %d node sample(s)" % nm["nodes"] if nm["ok"]
+                  else ", node resources NOT recorded: %s" % (nm["detail"] or "?"))
+    return {"ok": True,
+            "summary": ("%(ok)d/%(targets)d target(s) ok, %(errors)d error(s), "
+                        "%(series)d series, %(ms)d ms"
+                        % res) + nodes_part
+                       + (", %d auto-provisioned" % res["created"]
+                          if res.get("created") else "")
+                       + (", baseline probes created for %s"
+                          % ", ".join(res["baselines"])
+                          if res.get("baselines") else ""),
+            "log": ""}
+
+
+def _do_schema_harvest(appliance, params: dict, dry_run: bool = False) -> dict:
+    """One target through both channels into the API library.
+
+    ``ok`` = a healthy ``cli_tree`` row was stored for the target's build (the
+    same contract as the harvest job: green only for healthy evidence).
+    """
+    if appliance is None:
+        return {"ok": False, "summary": "schema_harvest needs a target device.", "log": ""}
+    from . import schema_harvest as sh
+    if dry_run:
+        return {"ok": True,
+                "summary": "[dry-run] would read `tree` and `show full-configuration` "
+                           "of %s (%s %s) and probe the REST paths the library lacks"
+                           % (appliance.name, appliance.kind, appliance.fw_version or "?"),
+                "log": ""}
+    if appliance.kind in sh.SUPPORTED:
+        res = sh.harvest(appliance, probe=bool(params.get("probe", True)))
+    else:
+        # FortiAuthenticator (REST schema, plus the CLI walk when the appliance
+        # has a separate SSH password) and FortiAnalyzer (the per-object
+        # JSON-RPC syntax walk of services.apilib_faz, verified on faz02
+        # 7.6.7; a failed walk is stored unhealthy and answers not ok) go
+        # through their schema adapters.
+        from . import schema_adapters
+        res = schema_adapters.harvest(appliance)
+    import json as _json
+    # FortiAnalyzer's adapter reports its one evidence row under "schema".
+    keys = ("tree", "full", "probe", "channels") + (("schema",) if "schema" in res else ())
+    return {"ok": bool(res.get("ok")), "summary": res.get("msg") or "",
+            "log": _json.dumps({k: res.get(k) for k in keys},
+                               indent=1, default=str)[:_LOG_MAX]}
+
+
+def _do_webhost_cert_expiry(dry_run: bool = False) -> dict:
+    """Web host certificates about to expire: notify each stage once. ``ok`` is
+    False when a server could not be read (its certificates are unwatched)."""
+    from . import webhost_certs
+    r = webhost_certs.scan(notify=not dry_run)
+    lines = ["%s %s: %d day(s) left (%s), served by %s" % (
+        d["connection"], d["cert"], d["days_left"], d["stage"], ", ".join(d["hosts"][:5]))
+        for d in r["due"]] + ["ERROR %s" % e for e in r["errors"]]
+    return {"ok": not r["errors"],
+            "summary": ("%s%d server(s), %d certificate(s), %d due, %d newly notified%s"
+                        % ("[dry-run] " if dry_run else "", r["connections"], r["certs"],
+                           len(r["due"]), r["notified"],
+                           ", %d error(s)" % len(r["errors"]) if r["errors"] else "")),
+            "log": "\n".join(lines)[:_LOG_MAX]}
+
+
+def _do_wsm_health(dry_run: bool = False) -> dict:
+    """Server health readings due this minute. ``ok`` is False when a server
+    could not be read (its health is unknown, which is a finding)."""
+    from . import server_health
+    r = server_health.run_due(dry_run=dry_run)
+    return {"ok": not r["failed"],
+            "summary": ("%s%d server(s), %d read, %d not due, %d deferred, %d problem(s)%s"
+                        % ("[dry-run] " if dry_run else "", r["servers"], r["read"],
+                           r["skipped"], r["deferred"], r["problems"],
+                           ", %d unreadable" % len(r["failed"]) if r["failed"] else "")),
+            "log": "\n".join("ERROR %s" % f for f in r["failed"])[:_LOG_MAX]}
+
+
+def _do_wsm_schedules(dry_run: bool = False) -> dict:
+    """Web Server Manager schedules due this minute. ``ok`` is False when one
+    failed or waits for authentication (it is named in the log)."""
+    from . import wsm
+    r = wsm.run_due(dry_run=dry_run)
+    return {"ok": not (r["failed"] or r["pending"]),
+            "summary": ("%s%d due, %d ran, %d failed, %d waiting for authentication"
+                        % ("[dry-run] " if dry_run else "", r["due"], r["ran"], r["failed"],
+                           r["pending"])),
+            "log": "\n".join(r["lines"])[:_LOG_MAX]}
+
+
+def _do_schema_watch(dry_run: bool = False) -> dict:
+    """Builds with no harvested schema: notify once each (``ok`` = the round ran)."""
+    from . import schema_watch
+    pending = schema_watch.scan(notify=not dry_run)
+    lines = ["%s (%s %s)%s" % (p["appliance"], p["product"], p["version"],
+                               "" if p["live"] else " - pack import only") for p in pending]
+    fresh = sum(1 for p in pending if p.get("notified"))
+    return {"ok": True,
+            "summary": ("%s%d build(s) without a harvested schema, %d newly notified"
+                        % ("[dry-run] " if dry_run else "", len(pending), fresh)),
+            "log": "\n".join(lines)[:_LOG_MAX]}
+
+
+def _do_apilib_harvest(params: dict, dry_run: bool = False) -> dict:
+    """Harvest every appliance whose running build the API library has not
+    measured from its live source.
+
+    Same ``ok`` contract as the other fleet sweeps: ok = THE ROUND RAN. A box
+    that cannot be read is a named failure in the summary, not a red action —
+    a license-locked appliance stays unmeasured until it is fixed, and a row
+    that is red every day for that teaches the operator to stop reading it.
+    Runs the harvests inline and in order (the scheduler already runs off the
+    request path), so the run log says which box produced which evidence.
+    """
+    from ..models import Appliance
+    from . import apilib_harvest as ah
+
+    rows = (Appliance.query.filter(Appliance.kind.in_(sorted(ah.LIVE_SOURCE)))
+            .order_by(Appliance.id).all())
+    due, parked, queued = [], [], []
+    for ap in rows:
+        if not ah.needs_harvest(ap):
+            continue
+        if getattr(ap, "maintenance", False):
+            parked.append(ap.name)
+        elif ah.active_job(ap.id) is not None:
+            queued.append(ap.name)
+        else:
+            due.append(ap)
+    notes = []
+    if parked:
+        notes.append("in maintenance, skipped: " + ", ".join(parked))
+    if queued:
+        notes.append("harvest already queued: " + ", ".join(queued))
+    tail = ("; " + "; ".join(notes)) if notes else ""
+    if dry_run:
+        return {"ok": True,
+                "summary": "[dry-run] would harvest %d appliance(s) whose build "
+                           "has no evidence%s" % (len(due), tail),
+                "log": "\n".join("%s (%s %s)" % (ap.name, ap.kind, ap.fw_version or "?")
+                                 for ap in due)[:4000]}
+    if not due:
+        return {"ok": True,
+                "summary": "Nothing to harvest: every appliance's build has "
+                           "evidence%s" % tail,
+                "log": ""}
+    ids = [(ap.id, ap.name) for ap in due]
+    lines, good, failed = [], 0, []
+    for aid, name in ids:
+        res = ah.run(aid)
+        if res.get("ok"):
+            good += 1
+        else:
+            failed.append(name)
+        lines.append("[%s] %s: %s" % ("ok" if res.get("ok") else "FAIL", name,
+                                      res.get("msg") or ""))
+    summary = "%d/%d appliance(s) harvested" % (good, len(ids))
+    if failed:
+        summary += " (failed: %s)" % ", ".join(failed)
+    return {"ok": True, "summary": summary + tail, "log": "\n".join(lines)[:_LOG_MAX]}
+
+
+def _do_sentinel_sweep(params: dict, dry_run: bool = False) -> dict:
+    """Run the Sentinel hot path.
+
+    Same ``ok`` contract as every other sweep in this product: ok = THE SWEEP
+    RAN. Per-device failures ride in the log, not in the action's colour — an
+    action that goes permanently red because one appliance is unreachable
+    teaches operators to ignore the colour, which is worse than the outage.
+    """
+    from .sentinel import config as sn_config
+    from .sentinel import pipeline
+    if dry_run:
+        return {"ok": True,
+                "summary": ("[dry-run] Sentinel is %s; would read attack logs "
+                            "from every live FortiWeb and re-score open "
+                            "incidents."
+                            % ("ENABLED" if sn_config.get("enabled")
+                               else "DISABLED (sweep would return immediately)")),
+                "log": ""}
+    res = pipeline.sweep()
+    if res.get("skipped"):
+        return {"ok": True, "summary": "Sentinel is disabled in Settings — "
+                                       "nothing collected.", "log": ""}
+    log = "\n".join(
+        "%s: read=%s new=%s dup=%s %s %s"
+        % (r["device"], r["read"], r["new"], r["duplicate"], r["status"],
+           r["detail"])
+        for r in res["devices"])
+    return {"ok": True, "summary": res["detail"], "log": log[:4000]}
+
+
+def _do_sentinel_baseline(params: dict, dry_run: bool = False) -> dict:
+    """Recompute behavioural baselines. Reads the local store only."""
+    from .sentinel import baseline, pipeline
+    if dry_run:
+        cov = baseline.coverage()
+        return {"ok": True,
+                "summary": ("[dry-run] would recompute from the metrics store; "
+                            "currently %d/%d buckets usable"
+                            % (cov["usable"], cov["total"])),
+                "log": ""}
+    res = pipeline.recompute_baselines()
+    return {"ok": True, "summary": res["detail"],
+            "log": "\n".join(res.get("errors") or [])[:4000]}
+
+
+def _do_sentinel_vuln_sync(params: dict, dry_run: bool = False) -> dict:
+    """Refresh the CVE mirror. Refuses unless its own switch is on.
+
+    A refusal is reported as ``ok`` with the reason: the action DID run and the
+    configured answer is "do not go out". Marking that a failure would put a
+    permanent red row in the history of every installation that deliberately
+    keeps this node offline.
+    """
+    from .sentinel import vuln
+    if dry_run:
+        health = vuln.mirror_health()
+        return {"ok": True,
+                "summary": ("[dry-run] outbound sync %s; mirror holds %d CVE(s)"
+                            % ("ENABLED" if health["sync_enabled"] else "OFF",
+                               health["total"])),
+                "log": ""}
+    res = vuln.sync()
+    return {"ok": True,
+            "summary": res.get("detail") or res.get("reason", ""),
+            "log": "\n".join(res.get("errors") or [])[:4000]}
+
+
+def _do_sentinel_feed_publish(params: dict, dry_run: bool = False) -> dict:
+    """Expire due blocklist entries and, if configured, push the audit mirror.
+
+    Explicitly NOT what makes the feed current. The endpoint renders from the
+    database on every request and filters by ``expires_at``, so this job never
+    stands between an expiry and the border — that ordering is deliberate: a
+    published blocklist has no device-side timer, and making the TTL depend on
+    a scheduled job would mean a stopped scheduler turns every block
+    permanent. What this job does is bookkeeping (rows still reading
+    ``active`` after their expiry) and history (the git mirror).
+    """
+    from .sentinel import blocklist
+    if dry_run:
+        state = blocklist.feed_state()
+        return {"ok": True,
+                "summary": ("[dry-run] %d live entr(y/ies); feed is %s; "
+                            "mirror %s"
+                            % (state["live"],
+                               "published" if state["enabled"] else "off",
+                               "configured" if state["mirror"]["configured"]
+                               else "not configured")),
+                "log": ""}
+    res = blocklist.publish(actor="scheduler")
+    bits = ["%d live" % res["entries"]]
+    if res["expired"]:
+        bits.append("%d expired (%s)" % (len(res["expired"]),
+                                         ", ".join(res["expired"][:5])))
+    bits.append("mirror pushed" if res["mirrored"] else "mirror not pushed")
+    return {"ok": True, "summary": "; ".join(bits), "log": res["log"][:4000]}
+
+
+def _do_deep_monitor(params: dict, dry_run: bool = False) -> dict:
+    """Sweep the deep monitors (Monitoring -> Deep monitors). No writes."""
+    from . import deep_monitor as dm
+    if dry_run:
+        due = dm.due_probes()
+        return {"ok": True,
+                "summary": "[dry-run] %d deep monitor probe(s) are due." % len(due),
+                "log": "\n".join("%s (%s)" % (p.name, p.kind) for p in due)[:4000]}
+    force = bool(params.get("force"))
+    res = dm.sweep(force=force)
+    counts = ", ".join("%s %s" % (v, k) for k, v in sorted(res["counts"].items()))
+    # ``ok`` means THE SWEEP RAN — not "everything it found is healthy".
+    #
+    # It used to be ``worst in ("ok", "unknown")``, which had two costs. A
+    # legitimately critical finding (a policy with every backend down) became
+    # indistinguishable from a sweep that could not execute at all; and because
+    # such a finding persists until someone fixes the backend, the scheduled
+    # action sat permanently red, which is how an operator learns to stop
+    # reading it. Findings travel through the probe statuses, the Deep monitors
+    # page and the alert engine — all of which can say WHICH probe and WHY.
+    # A sweep that genuinely fails still raises, and ``run_action`` catches it.
+    unprobed = int(res.get("unprobed") or 0)
+    return {"ok": True,
+            "summary": "Deep monitors: %d probe(s) run in %s s - worst: %s%s%s"
+                       % (res["ran"], res.get("took_s", "?"), res["worst"],
+                          (" - " + counts) if counts else "",
+                          (" - %d NOT probed: the %d s sweep budget ran out"
+                           % (unprobed, res.get("budget_s", 0))) if unprobed else ""),
+            "log": "\n".join("%s: %s - %s" % (r["status"], r["probe"], r["detail"])
+                              for r in res["results"])[:4000]}
+
+
+def _do_monitor_report(params: dict, dry_run: bool = False) -> dict:
+    """Build (and optionally mail) one period summary. Reads stored rows only."""
+    from . import monitor_reports as mrep
+
+    period = str(params.get("period") or "daily").strip()
+    if period not in mrep.PERIODS:
+        return {"ok": False,
+                "summary": "Unknown period %r — use daily, weekly or monthly."
+                           % period,
+                "log": ""}
+    try:
+        offset = max(0, min(60, int(params.get("offset") or 1)))
+    except (TypeError, ValueError):
+        offset = 1
+    product = str(params.get("product") or "")
+    start, end = mrep.period_bounds(period, offset=offset)
+
+    if dry_run:
+        body = mrep.build(period, start=start, end=end, product=product)
+        t = body["totals"]
+        return {"ok": True,
+                "summary": "[dry-run] %s: %d probe(s), %d sample(s), health %s"
+                           % (mrep.period_title(period, start, end),
+                              t["probes"], t["samples"],
+                              "no data" if t["healthy_pct"] is None
+                              else "%.1f%%" % t["healthy_pct"]),
+                "log": mrep.render_text(body)[:4000]}
+
+    row = mrep.generate(period, product=product, start=start, end=end,
+                        by="scheduler")
+    t = row.to_dict()
+    parts = ["%s stored" % row.title,
+             "%d probe(s)" % row.probes_n,
+             "%d sample(s)" % row.samples_n,
+             ("health no data" if row.healthy_pct is None
+              else "health %.1f%%" % row.healthy_pct),
+             "worst %s" % row.worst_status,
+             "%d incident(s)" % row.incidents_n]
+
+    # A mail failure does NOT fail the action: the report is already stored and
+    # readable in the console. Reporting the whole run as failed would put the
+    # scheduled action into a permanent red state over an SMTP outage — and a
+    # check that is always red is a check the operator learns to skip.
+    if str(params.get("email") or "").lower() in ("1", "true", "yes", "on"):
+        res = mrep.email_report(row)
+        parts.append("email %s (%s)"
+                     % ("sent" if res["ok"] else "FAILED", res["detail"]))
+
+    # Off-box copy of the summary. Same contract as the mail: a failure is
+    # recorded, never fatal — the report is already stored locally.
+    if str(params.get("push_server") or "").lower() in ("1", "true", "yes", "on"):
+        res = mrep.push_to_backup_server(row)
+        parts.append("off-box %s (%s)"
+                     % ("ok" if res["ok"] else "FAILED", res["detail"]))
+
+    keep = params.get("keep")
+    if keep:
+        try:
+            n = mrep.prune(period, int(keep), product=product)
+            if n:
+                parts.append("pruned %d old" % n)
+        except (TypeError, ValueError):
+            pass
+
+    return {"ok": True, "summary": " - ".join(parts),
+            "log": mrep.render_text(row.body())[:4000]}
+
+
+def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> dict:
+    """Run ONE catalog action against ONE appliance (or ``None`` for a no-device
+    action such as ``stats``). Returns ``{"ok": bool, "summary": str, "log": str}``
+    and NEVER raises - every device call is wrapped so a dead box yields ok=False.
+
+    ``spec`` may be an :class:`ActionSpec` or a bare catalog key. ``dry_run`` skips
+    the device write (the FortiWebOps ops return a pure preview; the read/file
+    actions report what they would do).
+    """
+    params = dict(params or {})
+    key = getattr(spec, "key", None) or str(spec)
+    try:
+        if key == "backup":
+            return _do_backup(appliance, dry_run)
+        if key == "device_sync":
+            return _do_device_sync(appliance, params, dry_run, publish=False)
+        if key == "device_inspect":
+            return _do_device_sync(appliance, params, dry_run, publish=True)
+        if key == "deep_capture":
+            return _do_deep_capture(appliance, dry_run)
+        if key == "signature_sync":
+            return _do_signature_sync(appliance, dry_run)
+        if key == "signature_check":
+            from . import signature_freshness
+            return signature_freshness.run_check(
+                dry_run=dry_run,
+                refresh_catalog=str(params.get("refresh_catalog", "1")) not in ("0", "false"))
+        if key == "knowledge_fetch":
+            from . import knowledge_fetch
+            return knowledge_fetch.scheduled(dry_run=dry_run)
+        if key == "system_backup":
+            return _do_system_backup(params, dry_run)
+        if key == "git_bundle":
+            return _do_git_bundle(params, dry_run)
+        if key == "stats":
+            return _do_stats(dry_run)
+        if key == "appid_import":
+            return _do_appid_import(params, dry_run)
+        if key == "appid_reconcile":
+            return _do_appid_reconcile(dry_run)
+        if key == "inventory_snapshot":
+            return _do_inventory_snapshot(dry_run)
+        if key == "deep_monitor":
+            return _do_deep_monitor(params, dry_run)
+        if key == "metrics_scrape":
+            return _do_metrics_scrape(params, dry_run)
+        if key == "apilib_harvest":
+            return _do_apilib_harvest(params, dry_run)
+        if key == "schema_harvest":
+            return _do_schema_harvest(appliance, params, dry_run)
+        if key == "schema_watch":
+            return _do_schema_watch(dry_run)
+        if key == "webhost_cert_expiry":
+            return _do_webhost_cert_expiry(dry_run)
+        if key == "wsm_schedules":
+            return _do_wsm_schedules(dry_run)
+        if key == "wsm_health":
+            return _do_wsm_health(dry_run)
+        if key == "artifact_refs":
+            return _do_artifact_refs(params, dry_run)
+        if key == "netbox_reconcile":
+            return _do_netbox_reconcile(params, dry_run)
+        if key == "sentinel_sweep":
+            return _do_sentinel_sweep(params, dry_run)
+        if key == "sentinel_baseline":
+            return _do_sentinel_baseline(params, dry_run)
+        if key == "sentinel_vuln_sync":
+            return _do_sentinel_vuln_sync(params, dry_run)
+        if key == "sentinel_feed_publish":
+            return _do_sentinel_feed_publish(params, dry_run)
+        if key == "monitor_report":
+            return _do_monitor_report(params, dry_run)
+        if key == "upgrade_prep":
+            return _do_upgrade_prep(appliance, dry_run)
+        if key == "upgrade":
+            return _do_upgrade(appliance, params, dry_run)
+        if key == "reboot":
+            return _do_reboot(appliance, params, dry_run)
+        if key == "ha_failover":
+            return _do_ha_failover(appliance, params, dry_run)
+        if key == "health_check":
+            return _do_health_check(appliance, dry_run)
+        if key == "ha_check":
+            return _do_ha_check(appliance, dry_run)
+        if key == "cert_scan":
+            return _do_cert_scan(appliance, dry_run)
+        if key == "observatory_scan":
+            return _do_observatory_scan(appliance, dry_run)
+        if key == "hsts_preload_refresh":
+            from . import hsts_preload
+            return hsts_preload.scheduled_refresh(dry_run)
+        if key == "cert_lifecycle":
+            return _do_cert_lifecycle(appliance, dry_run)
+        if key.startswith("cert_manager_"):
+            return _do_cert_manager(key, appliance, params, dry_run)
+        if key == "custom_rest":
+            return _do_custom_rest(appliance, params, dry_run)
+        if key == "plugin_app":
+            from . import plugin_automations
+            return plugin_automations.run(params, dry_run)
+        if key in ("policy_set_status", "backend_set_status", "backend_set_config", "swap_certificate"):
+            return _do_user_op(key, appliance, params, dry_run)
+        return {"ok": False, "summary": f"No executor for {key!r}.", "log": ""}
+    except Exception as exc:  # noqa: BLE001 - run_action must never raise
+        return {
+            "ok": False,
+            "summary": f"{type(exc).__name__}: {exc}",
+            "log": traceback.format_exc()[:_LOG_MAX],
+        }
+
+
+def _do_observatory_scan(appliance, dry_run: bool) -> dict:
+    """Grade every published site of one target (services.observatory)."""
+    if appliance is None:
+        return {"ok": False, "summary": "observatory_scan needs a target device.", "log": ""}
+    from . import observatory
+    return observatory.scan_appliance(appliance, trigger="scheduled", username="system",
+                                      dry_run=dry_run)
+
+
+# --- admin read / file writers --------------------------------------------- #
+def _do_device_sync(appliance, params: dict, dry_run: bool, *, publish: bool) -> dict:
+    """Refresh the local source-of-truth cache (and JSON backup) from a device.
+    ``publish`` also commits the JSON to git. Read-only against the appliance."""
+    if appliance is None:
+        return {"ok": False, "summary": "device_sync needs a target device.", "log": ""}
+    if dry_run:
+        verb = "sync + git publish" if publish else "sync"
+        return {"ok": True,
+                "summary": f"[dry-run] would {verb} {appliance.name}.", "log": ""}
+    from . import device_sync as _ds
+    run = _ds.sync_device(appliance, publish=publish, trigger="scheduled")
+    ok = getattr(run, "status", "") == "ok"
+    if ok:
+        _refresh_firmware(appliance)
+        _refresh_gui_state(appliance)
+        _refresh_hardware(appliance)
+    return {"ok": ok,
+            "summary": f"{appliance.name}: {getattr(run, 'detail', '')}",
+            "log": getattr(run, "detail", "") or ""}
+
+
+#: How old the recorded firmware may get before the sync reads it again (one
+#: status call). An upgrade done on the box shows within this window.
+FIRMWARE_MAX_AGE_HOURS = 6
+
+
+def _refresh_firmware(appliance) -> None:
+    """Re-read the running firmware (``firmware_probe.refresh``) when it was
+    never attested or the attestation is older than FIRMWARE_MAX_AGE_HOURS.
+
+    Nothing on a schedule wrote ``firmware`` before: only a discovery run or
+    the API did. A device registered while its REST was licence-locked kept
+    the column empty, and every reader fell back to the operator-entered model
+    -- fortiweb19 said "FortiWeb-KVM 8.0.6" while running 7.6.8 build1128, so
+    its GUI pages were drawn with the 8.0.6 layout (2026-11-01). Best effort:
+    a failed read writes nothing (the probe's contract) and never fails the
+    sync."""
+    from datetime import datetime, timedelta
+    try:
+        at = getattr(appliance, "firmware_checked_at", None)
+        if appliance.firmware and at and \
+                at > datetime.utcnow() - timedelta(hours=FIRMWARE_MAX_AGE_HOURS):
+            return
+        from . import firmware_probe
+        firmware_probe.refresh(appliance)
+    except Exception:  # noqa: BLE001 — the sync result stands on its own
+        from ..extensions import db
+        db.session.rollback()
+
+
+#: Cache section holding only ``system/state`` (ingest replaces a whole
+#: section: sharing "System" would wipe the other system objects).
+GUI_STATE_SECTION = "System State"
+
+
+def _refresh_gui_state(appliance) -> None:
+    """Cache ``/api/v2.0/system/state`` (logical ``state``) on each good sync.
+
+    The FortiWeb GUI shows and hides fields on ``admin.visibility``, which is
+    the cmdb ``feature-visibility`` toggles PLUS facts the cmdb object does not
+    carry (``advanced-bot-protection``: false on an unlicensed VM, so the Web
+    Protection Profile dialog has no Advanced Bot Protection selector). The
+    sweep reads cmdb only; without this the GUI pages could not tell and drew
+    the selector as "conditional". One read; a refusal writes nothing."""
+    if (appliance.kind or "fortiweb") != "fortiweb":
+        return
+    try:
+        from ..clients.fortiweb import FortiWebClient
+        from . import device_store
+        raw = FortiWebClient(appliance, timeout=15.0).get("/api/v2.0/system/state").json()
+        res = raw.get("results", raw.get("resutls")) if isinstance(raw, dict) else None
+        if not isinstance(res, dict) or not isinstance(res.get("admin"), dict):
+            return
+        device_store.ingest_sections(appliance.id, {GUI_STATE_SECTION: {"state": [res]}},
+                                     source="live")
+        from ..extensions import db
+        db.session.commit()
+    except Exception:  # noqa: BLE001 — the sync result stands on its own
+        from ..extensions import db
+        db.session.rollback()
+
+
+#: How old a FortiWeb's hardware facts may get before the hourly sync rescans.
+HARDWARE_MAX_AGE_DAYS = 7
+
+
+def _refresh_hardware(appliance) -> None:
+    """Rescan a FortiWeb's vCPU / RAM over the read-only SSH channel when the
+    last scan is missing or older than a week. A FortiWeb-VM's factory capacity
+    limits are a rule on its memory (services.capacity.factory_for), so a VM
+    that was never scanned has no factory limit at all. Best effort: a failed
+    scan never fails the sync."""
+    if (appliance.kind or "fortiweb") != "fortiweb":
+        return
+    from datetime import datetime, timedelta
+    from ..models import DeviceHardware
+    try:
+        row = DeviceHardware.query.filter_by(appliance_id=appliance.id).first()
+        if row is not None and row.mem_total_mb and row.updated_at and \
+                row.updated_at > datetime.utcnow() - timedelta(days=HARDWARE_MAX_AGE_DAYS):
+            return
+        from . import hardware
+        hardware.scan_appliance(appliance)
+    except Exception:  # noqa: BLE001 — the sync result stands on its own
+        from ..extensions import db
+        db.session.rollback()
+
+
+def _do_deep_capture(appliance, dry_run: bool) -> dict:
+    """Refresh the device's DEEP cache layer (full per-policy/WPP tree) so the
+    detail pages serve from the DB. Read-only against the appliance; a failed
+    sweep never wipes the existing deep layer (guarded below)."""
+    if appliance is None:
+        return {"ok": False, "summary": "deep_capture needs a target device.", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"[dry-run] would deep-capture {appliance.name}.", "log": ""}
+    from . import device_sync as _ds
+    snapshot = _ds.deep_snapshot_from_device(appliance)
+    if not snapshot.get("total_objects"):
+        return {"ok": False,
+                "summary": f"{appliance.name}: deep sweep returned 0 objects — "
+                           "existing deep cache kept.", "log": ""}
+    res = _ds.persist_deep_snapshot(appliance, snapshot, trigger="scheduled")
+    n = sum(v.get("objects", 0) for v in res.values())
+    return {"ok": True,
+            "summary": f"{appliance.name}: {n} deep objects, {len(res)} sections.",
+            "log": ""}
+
+
+def _do_backup(appliance, dry_run: bool) -> dict:
+    if appliance is None:
+        return {"ok": False, "summary": "backup needs a target device.", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"[dry-run] would back up {appliance.name}.", "log": ""}
+    resp = backup.create_backup(appliance.build_client())
+    name = resp.get("name", "") if isinstance(resp, dict) else ""
+    tail = f" ({name})" if name else ""
+    return {"ok": True, "summary": f"Backup created on {appliance.name}{tail}.",
+            "log": json.dumps(resp)[:_LOG_MAX] if resp else ""}
+
+
+def _do_signature_sync(appliance, dry_run: bool) -> dict:
+    """Collect the signature catalog into the local index — ONLY from the
+    configured signature source. Indexing from any other box would record its
+    (possibly older) database as a transition of the fleet's index."""
+    from . import signature_index
+    if appliance is None:
+        return {"ok": False,
+                "summary": "signature_sync needs a target device.", "log": ""}
+    src = signature_index.source_appliance(appliance.kind or "fortiweb")
+    if src is None or src.id != appliance.id:
+        return {"ok": False,
+                "summary": (f"{appliance.name} is not the signature source "
+                            f"({src.name if src else 'none configured'}); set it on "
+                            f"the Signatures page or target the source."),
+                "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"[dry-run] would collect signatures from {appliance.name}.",
+                "log": ""}
+    res = signature_index.collect(appliance, taken_by="scheduled:signature_sync")
+    try:
+        signature_index.announce(res)
+    except Exception:  # noqa: BLE001 — the index is written; the bell is a courtesy
+        pass
+    return {"ok": True,
+            "summary": f"{appliance.name}: {signature_index.headline(res)}",
+            "log": f"snapshot {res.get('snapshot_id')}"}
+
+
+def _do_system_backup(params: dict, dry_run: bool) -> dict:
+    if dry_run:
+        return {"ok": True, "summary": "[dry-run] would back up Postgres + JSON.",
+                "log": ""}
+    from . import system_backup
+    params = params or {}
+    # default ON for scheduled runs so the nightly bundle always reaches the
+    # off-box server; a row may set push_server=false to opt out.
+    res = system_backup.create_backup(
+        include_reports=True,
+        publish_git=bool(params.get("publish_git")),
+        push_server=bool(params.get("push_server", True)),
+        label="scheduled")
+    return {"ok": res["ok"],
+            "summary": (f"Backup {res['name']} ({res['size']//1024} KB)"
+                        if res["ok"] else f"Backup failed: {res['detail']}"),
+            "log": res.get("detail", "")}
+
+
+def _do_git_bundle(params: dict, dry_run: bool) -> dict:
+    if dry_run:
+        return {"ok": True, "summary": "[dry-run] would bundle the git repo.",
+                "log": ""}
+    from . import git_backup
+    params = params or {}
+    res = git_backup.create_bundle(
+        label="scheduled",
+        push_server=params.get("push_server"),  # None → the saved default
+        by="scheduler")
+    return {"ok": res["ok"],
+            "summary": (f"Git bundle {res['name']} ({res['size'] // (1024 * 1024)} MB)"
+                        if res["ok"] else f"Git bundle failed: {res['detail']}"),
+            "log": res.get("detail", "")}
+
+
+def _do_stats(dry_run: bool) -> dict:
+    # The web has no offline statistics-site builder yet; this is the no-op
+    # summary the spec calls for (a placeholder for the desktop's stats site).
+    try:
+        count = Appliance.query.filter_by(kind="fortiweb").count()
+    except Exception:  # noqa: BLE001 - outside an app context / empty DB
+        count = 0
+    verb = "would summarise" if dry_run else "summarised"
+    return {"ok": True,
+            "summary": f"Statistics {verb} the fleet ({count} FortiWeb appliance(s)).",
+            "log": ""}
+
+
+def _do_appid_import(params: dict, dry_run: bool) -> dict:
+    """Nightly AppID catalog import — fetch the configured URL source, reuse the
+    saved column mapping, import ADDITIVELY. A manual-only source (no URL) is
+    reported as skipped, not a failure. Never deletes."""
+    from . import appids as _appids
+    product = str(params.get("product") or "fortiweb")
+    mapping = _appids.get_mapping(product)
+    source = mapping.get("source") or {}
+    if source.get("type") != "url" or not source.get("url"):
+        return {"ok": True,
+                "summary": "AppID import skipped — no external URL source is "
+                           "configured (upload is manual-only).", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"[dry-run] would fetch {source.get('url')} and import "
+                           "the AppID catalog additively.", "log": ""}
+    try:
+        filename, data = _appids.fetch_source(source)
+        table = _appids.parse_upload(filename, data)
+        records = _appids.apply_mapping(table, mapping)
+    except Exception as exc:  # noqa: BLE001 - report, never raise out of a run
+        return {"ok": False, "summary": f"AppID import failed: {exc}", "log": ""}
+    if not records:
+        return {"ok": False,
+                "summary": "AppID import: fetched source had no rows with an "
+                           "AppID — check the saved column mapping.", "log": ""}
+    res = _appids.import_records(records, product=product, source="import",
+                                 created_by="scheduler")
+    return {"ok": True, "summary": f"AppID import: {res.summary()}.",
+            "log": json.dumps(res.as_dict())[:_LOG_MAX]}
+
+
+def _do_appid_reconcile(dry_run: bool) -> dict:
+    """Bind policies from their comments; ring what needs a person.
+    ``ok`` = the round ran (an unresolved policy is work, not a failure)."""
+    from . import appids as _appids
+    res = _appids.reconcile(dry_run=dry_run)
+    c = res["counts"]
+    summary = ("%s%d FortiWeb(s), %d policies: %d bound from the comment, "
+               "%d need a decision (%d different, %d not in catalog, %d no AppID)"
+               "%s" % ("[dry-run] " if dry_run else "", res["devices"],
+                       res["policies"], res["saved"], res["unresolved"],
+                       c["differs"], c["not_in_catalog"], c["no_appid"],
+                       ", %d new rung" % res["new_unresolved"]
+                       if res["new_unresolved"] else ""))
+    log = "\n".join(res["saved_rows"] + ["FAILED " + f for f in res["failed"]])
+    return {"ok": not res["failed"], "summary": summary, "log": log[:_LOG_MAX]}
+
+
+def _do_upgrade_prep(appliance, dry_run: bool) -> dict:
+    """Pre-upgrade snapshot for ONE device — the SAME run the appliance page does.
+
+    This used to be a SECOND implementation of "upgrade prep": create_backup()
+    plus status_check(), with no permission check, no service baseline, no
+    affected-service inventory, no verdict and — the part that mattered — NO
+    ROW. views.appliances.upgrade_prep_run has always called upgrade.prepare()
+    and persisted an UpgradePrep.
+
+    Two things named the same producing different evidence is bad enough. The
+    trap was which of the two is MULTI-TARGET: this one. So the only way to
+    pre-flight a whole maintenance window was the only way that left nothing a
+    change request could cite, which is exactly why a bulk pre-upgrade could
+    not feed a change. It now delegates to prep_store.run_for.
+
+    ``ok`` still means THE SNAPSHOT RAN, not that it came back clean. Grading
+    the action by the verdict would newly fail every schedule whose devices
+    have a service already down before the window — and discovering that is
+    the single most valuable thing the pre-flight produces (prep_store.verdict
+    says the same thing for the same reason). The verdict goes in the summary,
+    where an operator reads it, not in a flag that pages someone.
+    """
+    if appliance is None:
+        return {"ok": False,
+                "summary": "upgrade_prep needs a target device.", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": (f"[dry-run] would snapshot {appliance.name} "
+                            "(backup + health + service baseline) and store it "
+                            "as citable evidence."),
+                "log": ""}
+    from .prep_store import run_for, verdict as _prep_verdict
+    lines: list[str] = []
+    # The backup is MANDATORY - if prepare() raises, run_action reports ok=False.
+    result, prep = run_for(appliance, created_by="scheduler")
+    if prep is not None:
+        ok, summary = bool(prep.ok), (prep.summary or "")
+        lines.append(f"stored as prep #{prep.id} "
+                     f"({len(prep.inventory_list)} affected published services)")
+    else:
+        # The run happened against a live device; only the row failed. Saying
+        # "stored" here would send somebody to look for evidence that is not
+        # there, hours later, inside the window.
+        ok, summary = _prep_verdict(result)
+        lines.append("RAN BUT NOT STORED - no citable evidence for a change request")
+    lines.append(json.dumps(result, default=str)[:2000])
+    return {"ok": True,
+            "summary": f"{appliance.name}: {summary or 'pre-upgrade snapshot ready'}"
+                       + ("" if ok else " [not clean]"),
+            "log": "\n".join(lines)[:_LOG_MAX]}
+
+
+def _do_reboot(appliance, params: dict, dry_run: bool) -> dict:
+    """Reboot ONE appliance over its product's verified reboot URN.
+
+    Refuses - by name, with the product in the message - for any product whose
+    URN is not in :data:`REBOOT_TRANSPORT`. Returning ok=False there is the whole
+    point: the alternative is sending a plausible-looking path to a live load
+    balancer to find out what it does.
+    """
+    if appliance is None:
+        return {"ok": False, "summary": "reboot needs a target device.", "log": ""}
+    name = getattr(appliance, "name", "device")
+    kind = (getattr(appliance, "kind", "") or "fortiweb").strip().lower()
+    transport = REBOOT_TRANSPORT.get(kind)
+    if transport is None:
+        return {
+            "ok": False,
+            "summary": (f"{name}: reboot is not implemented for {kind} - no reboot "
+                        "endpoint has been verified against a live device of this "
+                        "product. NOTHING was sent to the appliance."),
+            "log": f"no REBOOT_TRANSPORT entry for kind {kind!r}; "
+                   f"known: {', '.join(sorted(REBOOT_TRANSPORT))}",
+        }
+    reason = str(params.get("reason") or "").strip() or \
+        "Scheduled maintenance (SATOM change request)"
+    reason = reason[:transport.reason_max]
+    if dry_run:
+        return {
+            "ok": True,
+            "summary": (f"[dry-run] would POST {transport.endpoint} to {name} "
+                        f"({kind}) and REBOOT it. Nothing was sent."),
+            "log": f"reason={reason!r}",
+        }
+    client = appliance.build_client()
+    body = {transport.reason_key: reason} if transport.reason_key else None
+    resp = client.api_call("POST", transport.endpoint, body)
+    code = getattr(resp, "status_code", 0)
+    text = (getattr(resp, "text", "") or "")[:400]
+    if not (200 <= int(code or 0) < 300):
+        return {"ok": False,
+                "summary": f"{name}: reboot refused (HTTP {code}).",
+                "log": text}
+    # A 2xx means the box ACCEPTED the reboot, not that it came back. Recovery is
+    # watched by the change window's own post-checks; claiming "rebooted" here
+    # would report a state nobody observed.
+    return {
+        "ok": True,
+        "summary": (f"{name}: reboot accepted (HTTP {code}) - the appliance is "
+                    "going down now. Return to service is NOT confirmed by this "
+                    "call."),
+        "log": text,
+    }
+
+
+def _do_ha_failover(appliance, params: dict, dry_run: bool) -> dict:
+    """Hand the primary role over on ONE HA cluster, or give it back.
+
+    No REST call exists for this on either product (see :class:`FailoverTransport`),
+    so it runs the product's own CLI over the write-capable SSH console. That
+    console classifies ``execute ha`` as DISRUPTIVE and demands ``allow_disruptive``;
+    here the APPROVED CHANGE REQUEST is the record that a human was told what the
+    command does and said yes -- exactly what the typed confirmation records for an
+    interactive operator. The spec declares ``requires_change_request`` so the gate
+    in ``execute_and_record`` refuses to run it unbound.
+
+    The two directions do NOT fail the same way, and that asymmetry is the point:
+
+    * ``set`` refuses unless the node explicitly reports 'primary'. Failing over a
+      standby either does nothing (reported as success -- a lie) or pins the
+      standby out of election while the box you meant to drain keeps serving.
+    * ``unset`` refuses only when the node has no HA at all. A refused ``set``
+      costs a maintenance window; a refused ``unset`` leaves a node pinned out of
+      election -- the outage the failover existed to avoid, made permanent.
+    """
+    if appliance is None:
+        return {"ok": False, "summary": "ha_failover needs a target cluster.",
+                "log": ""}
+    direction = str(params.get("direction") or "set").strip().lower()
+    if direction not in ("set", "unset"):
+        return {"ok": False,
+                "summary": (f"ha_failover: unknown direction {direction!r} - use "
+                            "'set' (hand the primary role over) or 'unset' (give "
+                            "it back). NOTHING was sent."),
+                "log": ""}
+    name = getattr(appliance, "name", "device")
+    kind = (getattr(appliance, "kind", "") or "fortiweb").strip().lower()
+    transport = FAILOVER_TRANSPORT.get(kind)
+    if transport is None:
+        return {"ok": False,
+                "summary": (f"{name}: HA failover is not implemented for {kind} - "
+                            "no failover command has been verified against a live "
+                            "device of this product. NOTHING was sent."),
+                "log": (f"no FAILOVER_TRANSPORT entry for kind {kind!r}; known: "
+                        f"{', '.join(sorted(FAILOVER_TRANSPORT))}")}
+    # A cluster node 0 is a container, not a box. resolve_write_target is the ONE
+    # implementation of "which appliance does a write land on", and reusing it
+    # here keeps the failover aimed at the same node every other write reaches.
+    from . import ha as ha_svc
+    target = appliance
+    via_vip = False
+    if getattr(appliance, "is_cluster", False):
+        via_vip = (getattr(appliance, "ha_mode", "") or "").strip().lower() == "vip"
+        try:
+            target = ha_svc.resolve_write_target(appliance)
+        except Exception as exc:  # noqa: BLE001 - HAError and anything under it
+            return {"ok": False, "summary": f"{name}: {exc}", "log": ""}
+    tname = getattr(target, "name", name)
+
+    floor = ".".join(str(n) for n in transport.min_version)
+    # The firmware floor is checked on the box that RECEIVES the command, which
+    # is why the write target is resolved first. In per-node mode node 0 is a
+    # logical container with no host and no firmware string (models.chassis_key
+    # says so in as many words): checking it refused every per-node cluster as
+    # "no recorded firmware version", and a stale string left on node 0 would
+    # have cleared a floor the live primary does not meet.
+    running = _appliance_version(target)
+    if running is None:
+        return {"ok": False,
+                "summary": (f"{tname}: SATOM has no recorded firmware version, and "
+                            f"this command only exists from {kind} {floor}. Run "
+                            "'Sync device to local source of truth' against it "
+                            "first. NOTHING was sent."),
+                "log": f"firmware={getattr(target, 'firmware', None)!r}"}
+    if running < transport.min_version:
+        return {"ok": False,
+                "summary": (f"{tname}: {kind} "
+                            f"{'.'.join(str(n) for n in running)} has no failover "
+                            f"command - it exists from {floor}. NOTHING was sent."),
+                "log": transport.provenance}
+
+    role, evidence = _live_ha_role(target, transport)
+    if direction == "set" and role != "primary":
+        return {"ok": False,
+                "summary": (f"{tname}: refusing to fail over a node that reports "
+                            f"'{role}', not 'primary'. Failing over a standby "
+                            "either does nothing and reports success, or pins the "
+                            "standby out of election while the real primary keeps "
+                            "serving. NOTHING was sent."),
+                "log": evidence}
+    if direction == "unset" and role == "standalone":
+        return {"ok": False,
+                "summary": (f"{tname}: this node has no HA configured, so there is "
+                            "no forced failover to clear. NOTHING was sent."),
+                "log": evidence}
+
+    cmd = transport.set_cmd if direction == "set" else transport.unset_cmd
+    sticky = "" if transport.clears_on_reboot else (
+        " NOTE: on this product the state is sticky - the node stays OUT of HA "
+        "election until an 'unset' runs; a reboot does not clear it.")
+    if dry_run:
+        return {"ok": True,
+                "summary": (f"[dry-run] would send {cmd!r} to {tname} ({kind} "
+                            f"{'.'.join(str(n) for n in running)}) over SSH, which "
+                            f"reports '{role}' right now. Nothing was sent."
+                            + sticky),
+                "log": evidence}
+
+    from . import ssh_console
+    result = ssh_console.run_script(target, [cmd], allow_disruptive=True)
+    if result.error:
+        return {"ok": False,
+                "summary": f"{tname}: {result.error} NOTHING was sent.",
+                "log": result.transcript[:_LOG_MAX]}
+    row = result.rows[0] if result.rows else None
+    if row is None or row.status != "ok":
+        detail = f" ({row.detail})" if row is not None and row.detail else ""
+        return {"ok": False,
+                "summary": f"{tname}: the appliance refused {cmd!r}{detail}.",
+                "log": ((row.output if row is not None else result.transcript)
+                        or "")[:_LOG_MAX]}
+
+    # Reading the role back through a VIP describes whichever node is primary NOW
+    # - which after a successful failover is the PEER. It would report success
+    # whether or not anything happened, so it is not read at all.
+    if via_vip:
+        return {"ok": True,
+                "summary": (f"{tname}: {cmd!r} accepted. The role was NOT read "
+                            "back: this cluster is reached through its VIP, and "
+                            "the VIP now lands on whichever node holds primary, "
+                            "so a read here would describe a different box."
+                            + sticky),
+                "log": (row.output or "")[:_LOG_MAX]}
+    after, after_evidence = _live_ha_role(target, transport)
+    if direction == "set" and after == "primary":
+        return {"ok": False,
+                "summary": (f"{tname}: accepted {cmd!r}, but the node STILL reports "
+                            "primary - the role did not hand over."),
+                "log": f"{row.output}\n--- after ---\n{after_evidence}"[:_LOG_MAX]}
+    return {"ok": True,
+            "summary": (f"{tname}: {cmd!r} accepted; the node now reports "
+                        f"'{after}' (was '{role}')." + sticky),
+            "log": f"{row.output}\n--- after ---\n{after_evidence}"[:_LOG_MAX]}
+
+
+def _do_upgrade(appliance, params: dict, dry_run: bool) -> dict:
+    """Firmware upgrade - scheduled path. The FULL flash runbook (upload .out,
+    reboot, monitor recovery, validate services) runs only from the LIVE
+    firmware page (``views.appliances`` flash worker), which closes the change
+    request itself. This headless executor deliberately does NOT flash: it
+    reports every target as not executed, so a scheduled upgrade change closes
+    as failed and says why. Authorization (an approved Change Request inside
+    its window) is enforced upstream in :func:`execute_and_record` via
+    ``change_requests.cr_runnable``."""
+    who = getattr(appliance, "name", "device")
+    return {
+        "ok": False,
+        "summary": (f"Firmware upgrade for {who} is not executed by the headless "
+                    "service layer (no upgrade runbook); no firmware was flashed."),
+        "log": "stub: the upgrade runbook is not yet ported to the web service layer.",
+    }
+
+
+def resolve_endpoint(value: str, version: str = "") -> str:
+    """Map a registry friendly key OR a raw ``/api/...`` path to a concrete URN.
+
+    A key resolves for the target box's build ``version``
+    (``loader.resolve_for``; empty → the pure registry), because the picker
+    offers the FLEET catalog (``loader.get_all_endpoints``). Returns ``""``
+    when it resolves to neither, or the build does not serve it (so the
+    executor can refuse).
+    """
+    v = (value or "").strip()
+    if not v:
+        return ""
+    if v.startswith("/"):
+        return v
+    try:
+        return _loader.resolve_for("fortiweb", v, version)
+    except KeyError:
+        return ""
+
+
+def _do_health_check(appliance, dry_run: bool) -> dict:
+    if appliance is None:
+        return {"ok": False, "summary": "health_check needs a target device.", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"[dry-run] would read system status of {appliance.name}.",
+                "log": ""}
+    try:
+        status = appliance.build_client().status_check()
+        return {"ok": True, "summary": f"{appliance.name}: status read ok.",
+                "log": json.dumps(status)[:_LOG_MAX]}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False,
+                "summary": f"{appliance.name}: {type(exc).__name__}: {exc}", "log": ""}
+
+
+def _do_ha_check(appliance, dry_run: bool) -> dict:
+    if appliance is None:
+        return {"ok": False, "summary": "ha_check needs a target device.", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"[dry-run] would read HA status of {appliance.name}.",
+                "log": ""}
+    try:
+        ha = appliance.build_client().ha_status()
+        return {"ok": True, "summary": f"{appliance.name}: HA status read ok.",
+                "log": json.dumps(ha)[:_LOG_MAX]}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False,
+                "summary": f"{appliance.name}: {type(exc).__name__}: {exc}", "log": ""}
+
+
+def _do_cert_scan(appliance, dry_run: bool) -> dict:
+    """Scan ONE target's certificate stores and cache the decoded detail +
+    bindings into the DB (read-only against the box)."""
+    from . import cert_manager
+    if appliance is None:
+        return {"ok": False, "summary": "cert_scan needs a target device.", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"Would scan {appliance.name}'s certificate stores "
+                           "and cache X.509 detail + bindings.", "log": ""}
+    r = cert_manager.scan_device_certificates(appliance)
+    if not r.get("ok"):
+        return {"ok": False,
+                "summary": f"{appliance.name}: not scanned ({r.get('error')}).",
+                "log": ""}
+    return {"ok": True,
+            "summary": f"{appliance.name}: cached {r['scanned']} cert(s), "
+                       f"{r['detailed']} with X.509 detail.",
+            "log": ""}
+
+
+def _do_cert_lifecycle(appliance, dry_run: bool) -> dict:
+    """Enforce the certificate LIFECYCLE POLICY on one target: revoke superseded
+    certs past the grace window, delete due material off the box. Honors the
+    policy's ``auto_apply`` — when it is off the scheduled run is REPORT-ONLY
+    regardless of the action's own dry-run flag (safe default)."""
+    from . import cert_manager
+    from . import settings_store as _store
+    if appliance is None:
+        return {"ok": False, "summary": "cert_lifecycle needs a target device.",
+                "log": ""}
+    pol = _store.cert_lifecycle_policy()
+    effective_dry = dry_run or not pol.get("auto_apply")
+    res = cert_manager.run_lifecycle_sweep(
+        dry_run=effective_dry, appliance_id=appliance.id, actor="scheduler")
+    lines = res["revoked"] + res["deleted"] + res["skipped"]
+    mode = ("dry-run" if dry_run else
+            "report-only (auto_apply off)" if effective_dry else "applied")
+    return {"ok": True,
+            "summary": (f"{appliance.name}: lifecycle sweep [{mode}] — "
+                        f"{len(res['revoked'])} revoke, {len(res['deleted'])} "
+                        f"delete, {len(res['skipped'])} skipped."),
+            "log": "\n".join(lines)[:_LOG_MAX]}
+
+
+def _do_cert_manager(key: str, appliance, params: dict, dry_run: bool) -> dict:
+    """Rotate the certificates of ONE class on ONE target device.
+
+    Class is taken from the action key (cert_manager_<class>). One pass runs
+    every stage that is due (services.cert_manager.run_rotation): renew the
+    certificates inside their renew window (a CSR for those another CA signs),
+    swap in the renewals whose swap date has come, take superseded ones off
+    the device after their removal window (revoking them if their policy says
+    so) and purge the keys past their retention window. The schedule of this
+    row IS the maintenance window the swaps land in. NEVER raises."""
+    from . import cert_manager
+    from . import settings_store as _store
+    cls = key[len("cert_manager_"):]
+    if cls not in _store.CERT_CLASSES:
+        return {"ok": False, "summary": f"unknown certificate class {cls!r}.", "log": ""}
+    if appliance is None:
+        return {"ok": False, "summary": "cert manager needs a target device.", "log": ""}
+    res = cert_manager.run_rotation(dry_run=dry_run, appliance_id=appliance.id,
+                                    cert_class=cls, actor="scheduler")
+    stages = ("renewed", "swapped", "removed", "revoked", "archived")
+    lines = [f"[{k}] {x}" for k in stages for x in res[k]]
+    lines += [f"[notice] {x}" for x in res["notices"]]
+    lines += [f"[FAIL] {x}" for x in res["skipped"]]
+    counts = ", ".join(f"{len(res[k])} {k}" for k in stages if res[k]) or "nothing due"
+    prefix = "[dry-run] " if dry_run else ""
+    return {"ok": not res["skipped"],
+            "summary": f"{prefix}{appliance.name}: {cls} certs — {counts}"
+                       + (f", {len(res['skipped'])} failed" if res["skipped"] else "")
+                       + (f", {len(res['notices'])} need attention" if res["notices"] else "")
+                       + ".",
+            "log": "\n".join(lines)[:_LOG_MAX]}
+
+
+def _do_custom_rest(appliance, params: dict, dry_run: bool) -> dict:
+    """Run an admin-defined REST request against one device.
+
+    GET = a live read (never mutates). POST/PUT/DELETE go through FortiWebOps so
+    they get the same snapshot + ChangeHistory + audit + dry-run net as every
+    other write. The endpoint is a registry friendly key or a raw ``/api/...``
+    path; the partition-boot reboot URN is refused outright.
+    """
+    method = str(params.get("method") or "GET").strip().upper()
+    raw_ep = str(params.get("endpoint") or "").strip()
+    mkey = str(params.get("mkey") or "").strip() or None
+    label = str(params.get("label") or "").strip()
+    body = params.get("body")
+    if isinstance(body, str):
+        body = body.strip()
+        if body:
+            try:
+                body = json.loads(body)
+            except (ValueError, TypeError):
+                return {"ok": False,
+                        "summary": "custom REST body is not valid JSON.", "log": ""}
+        else:
+            body = None
+
+    if method not in _ALLOWED_METHODS:
+        return {"ok": False, "summary": f"method {method!r} not allowed.", "log": ""}
+    path = resolve_endpoint(raw_ep, _loader.version_of(appliance))
+    if not path:
+        return {"ok": False,
+                "summary": (f"could not resolve endpoint {raw_ep!r} "
+                            "(use a registry key or an /api/... path)."),
+                "log": ""}
+    if _DANGEROUS_URN_RE.search(path):
+        return {"ok": False,
+                "summary": "refused: that endpoint reboots the box even on GET.",
+                "log": ""}
+    from . import adc_ops as _adc_ops
+    _adc_hit = _adc_ops.side_effect_path(path)
+    if _adc_hit:
+        return {"ok": False,
+                "summary": (f"refused: FortiADC {_adc_hit} changes the appliance "
+                            "(reboot, shutdown, factory reset, partition swap, "
+                            "restore or image upload) even on GET; use its own page."),
+                "log": ""}
+    if appliance is None:
+        return {"ok": False, "summary": "custom REST needs a target device.", "log": ""}
+
+    desc = label or (f"{method} {path}" + (f"?mkey={mkey}" if mkey else ""))
+
+    if method == "GET":
+        full = path
+        if mkey:
+            full += ("&" if "?" in full else "?") + urlencode({"mkey": mkey})
+        if dry_run:
+            return {"ok": True,
+                    "summary": f"[dry-run] would GET {full} on {appliance.name}.",
+                    "log": ""}
+        try:
+            resp = appliance.build_client().api_call("GET", full)
+            code = getattr(resp, "status_code", 0)
+            ok = code < 400
+            try:
+                out = json.dumps(resp.json())[:_LOG_MAX]
+            except Exception:  # noqa: BLE001
+                out = (getattr(resp, "text", "") or "")[:_LOG_MAX]
+            return {"ok": ok,
+                    "summary": f"{desc} on {appliance.name}: HTTP {code}",
+                    "log": out}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False,
+                    "summary": f"{desc} on {appliance.name}: {type(exc).__name__}: {exc}",
+                    "log": ""}
+
+    # Writes: POST=create, PUT=update, DELETE=delete via FortiWebOps.
+    ops = FortiWebOps(appliance)
+    if method == "POST":
+        result = ops.create(path, body or {}, mkey=mkey, dry_run=dry_run)
+    elif method == "PUT":
+        result = ops.update(path, mkey, body or {}, dry_run=dry_run)
+    else:  # DELETE
+        result = ops.delete(path, mkey, dry_run=dry_run)
+
+    # Accepted is not applied: the re-read decides (object_refresh).
+    object_refresh.enforce(result)
+    ok = bool(result.get("ok"))
+    err = result.get("error") or ""
+    if dry_run:
+        summary = f"[dry-run] {desc} on {appliance.name} (preview)"
+    elif ok:
+        summary = f"{desc} on {appliance.name}" + _verify_suffix(result)
+    else:
+        summary = (f"{desc} on {appliance.name} - {err}" if err
+                   else f"{desc} on {appliance.name} - failed")
+    return {"ok": ok, "summary": summary,
+            "log": json.dumps(result.get("request") or {})[:_LOG_MAX]}
+
+
+def _verify_suffix(result) -> str:
+    """What the re-read said about a write that stands (a mismatch already
+    failed it via ``object_refresh.enforce``)."""
+    v = object_refresh.verdict_of(result)
+    if v == object_refresh.VERIFIED:
+        return " — verified on the device"
+    if v == object_refresh.UNVERIFIED:
+        return " — not verified on the device (re-read could not compare it)"
+    return ""
+
+
+# --- user-scope object ops (mutate the box via FortiWebOps) ----------------- #
+def _do_user_op(key: str, appliance, params: dict, dry_run: bool) -> dict:
+    if appliance is None:
+        return {"ok": False, "summary": f"{key} needs a target device.", "log": ""}
+    ops = FortiWebOps(appliance)
+    enabled = bool(params.get("enabled", True))
+    status_val = "enable" if enabled else "disable"
+    verb = "enable" if enabled else "disable"
+
+    if key == "policy_set_status":
+        policy = str(params.get("policy") or "").strip()
+        if not policy:
+            return {"ok": False, "summary": "no server policy selected.", "log": ""}
+        # FortiWeb takes a cmdb write as {"data": {...}}: the bare body answered
+        # HTTP 500 on fortiweb18 (8.0.6, 2026-10-12) — this action never landed.
+        result = ops.update(SERVER_POLICY_EP, policy,
+                            {"data": {"status": status_val}}, dry_run=dry_run)
+        label = f"{verb} server policy {policy} on {appliance.name}"
+    elif key == "backend_set_status":
+        pool = str(params.get("server_pool") or "").strip()
+        member = str(params.get("member") or "").strip()
+        if not pool or not member:
+            return {"ok": False, "summary": "set the server pool + member id.", "log": ""}
+        # FortiWeb addresses a pool member by parent ?mkey=<pool>&sub_mkey=<member>;
+        # FortiWebOps only appends a single mkey, so we pre-bake the full query and
+        # pass mkey=None (its _path leaves an endpoint that already has a query as-is).
+        endpoint = SERVER_POOL_MEMBER_EP + "?" + urlencode(
+            {"mkey": pool, "sub_mkey": member})
+        result = ops.update(endpoint, None, {"data": {"status": status_val}},
+                            dry_run=dry_run)
+        label = f"{verb} backend {member}@{pool} on {appliance.name}"
+    elif key == "backend_set_config":
+        pool = str(params.get("server_pool") or "").strip()
+        member = str(params.get("member") or "").strip()
+        if not pool or not member:
+            return {"ok": False, "summary": "set the server pool + member id.", "log": ""}
+        payload = {}
+        ip = str(params.get("ip") or params.get("host") or "").strip()
+        port = str(params.get("port") or "").strip()
+        if ip:
+            payload["ip"] = ip
+        if port:
+            payload["port"] = int(port) if port.isdigit() else port
+        if not payload:
+            return {"ok": False, "summary": "set a new ip and/or port.", "log": ""}
+        endpoint = SERVER_POOL_MEMBER_EP + "?" + urlencode(
+            {"mkey": pool, "sub_mkey": member})
+        result = ops.update(endpoint, None, {"data": payload}, dry_run=dry_run)
+        changed = ", ".join(f"{k}={v}" for k, v in payload.items())
+        label = f"backend {member}@{pool} -> {changed} on {appliance.name}"
+    else:  # swap_certificate
+        policy = str(params.get("policy") or "").strip()
+        cert = str(params.get("certificate") or "").strip()
+        if not policy or not cert:
+            return {"ok": False, "summary": "set the server policy + certificate.",
+                    "log": ""}
+        result = ops.update(SERVER_POLICY_EP, policy,
+                            {"data": {"certificate": cert}}, dry_run=dry_run)
+        label = f"certificate -> {cert} on policy {policy} ({appliance.name})"
+
+    object_refresh.enforce(result)
+    ok = bool(result.get("ok"))
+    err = result.get("error") or ""
+    prefix = "[dry-run] " if dry_run else ""
+    if dry_run:
+        summary = f"{prefix}{label} (preview)"
+    elif ok:
+        summary = label + _verify_suffix(result)
+    else:
+        summary = f"{label} - {err}" if err else f"{label} - failed"
+    out = {"ok": ok, "summary": summary,
+           "log": json.dumps(result.get("request") or {})[:_LOG_MAX]}
+    # The inverse, for a Process ``compensate`` step. ONLY the status flips:
+    # their inverse is the same action the other way and needs no previous
+    # value, so it is known on a preview as well (a rehearsed walk lists it;
+    # an armed walk replays it). A config change or a certificate swap would
+    # need the value the device held before, which this executor never read —
+    # so it records no inverse and compensate names the step as "cannot be
+    # undone by SATOM" instead of guessing an address to point a backend at.
+    if ok and key in ("policy_set_status", "backend_set_status"):
+        inverse = {k: v for k, v in params.items()
+                   if k in ("policy", "server_pool", "member")}
+        inverse["enabled"] = not enabled
+        out["undo"] = {"domain": "user_op", "action": key, "params": inverse}
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Run-and-record (the single fire path: sidecar tick + the page's "Run now")    #
+# --------------------------------------------------------------------------- #
+def execute_and_record(action_row, *, trigger: str = "schedule",
+                       visible_ids: set[int] | None = None):
+    """Claim, run, and persist one ``ScheduledAction`` fire.
+
+    1. **DB-claim dedupe** - an atomic ``UPDATE ... SET running_at=now WHERE id=:id
+       AND running_at IS NULL``. If it updates 0 rows the action is already running
+       (another process / a concurrent Run-now), so we return ``None``.
+    2. open a ``ScheduledActionRun`` (status 'running').
+    3. for ANY action bound to a Change Request, re-check
+       ``change_requests.cr_runnable`` at fire time; if not runnable -> 'skipped',
+       no device write, and the CR is left UNTOUCHED (a window that never opened
+       must not record a change that started).
+    4. run the action against each target (``targets_list``; ``[]`` = the whole
+       FortiWeb fleet; a no-target action runs once).
+    5. finalize the run, roll ``next_run`` ('once' -> ``None``), and ALWAYS clear
+       ``running_at`` (a ``finally`` lease release, even on error).
+    6. close the bound CR from the outcome ('ok' -> completed, anything else ->
+       failed) and mail the end-of-window notice - isolated so a bookkeeping or
+       SMTP failure can never roll back (5) nor strand the lease.
+
+    Returns the ``ScheduledActionRun`` row, or ``None`` if the claim was lost.
+    """
+    now = datetime.utcnow()
+
+    # (1) Atomic DB-claim lease - the cross-process replacement for the desktop lock.
+    claimed = db.session.execute(
+        text("UPDATE scheduled_action SET running_at = :now "
+             "WHERE id = :id AND running_at IS NULL"),
+        {"now": now, "id": action_row.id},
+    )
+    db.session.commit()
+    if claimed.rowcount == 0:
+        return None  # already running elsewhere
+
+    # (2) Open the history row immediately (visible to the UI while it runs).
+    # GUARDED, and that guard is the whole point: this INSERT is an ordinary
+    # database write, and the try/finally that releases the lease does not start
+    # until several statements below. On 2026-08-22 Postgres went away between
+    # the claim commit above and this commit; the exception escaped this function
+    # entirely, the sidecar's own `except` rolled back a transaction that no
+    # longer held anything, and the lease claimed one statement earlier was never
+    # cleared. due_actions() filters leased actions out, so actions 6, 7 and 23
+    # were skipped in silence for nine days. Anything that can raise between the
+    # claim and the finally MUST hand the lease back.
+    try:
+        run = ScheduledActionRun(
+            action_id=action_row.id, status="running", trigger=trigger,
+            started_at=now, summary="", log=claim_marker())
+        db.session.add(run)
+        db.session.commit()
+    except Exception:  # noqa: BLE001 - never strand the lease we just took
+        db.session.rollback()
+        release_lease(action_row.id)
+        raise
+
+    status = "failed"
+    summary = ""
+    log_lines: list[str] = []
+    # Bound-CR bookkeeping, initialised OUTSIDE the try so the closing block can
+    # still read them when the try dies on its very first statement.
+    cr_bound_id = None
+    cr_gated = False
+    # A rollout split into rounds is N actions bound to ONE change. Only the
+    # last round may close it on success; an earlier round that closed it made
+    # every later round refuse with "change request is completed".
+    try:
+        _p = action_row.params_dict
+        more_rounds = (_as_int(_p.get("round_index")) or 1) < (_as_int(_p.get("round_total")) or 1)
+    except Exception:  # noqa: BLE001 - a bad params blob is judged below
+        more_rounds = False
+    try:
+        spec = get_spec(action_row.action)
+        if spec is None:
+            status, summary = "failed", f"Unknown action {action_row.action!r}."
+            log_lines.append(summary)
+        else:
+            params = action_row.params_dict
+            gated = False
+            # (3) ANY action bound to a Change Request is authorized by that CR,
+            # not just 'upgrade'. The binding is written into the action params
+            # by change_requests.schedule_change_request, so honouring it for a
+            # single action name let every OTHER windowed change (config push,
+            # restore, reboot...) fire unapproved and outside its window - the
+            # exact thing the gate exists to stop.
+            cr_bound_id = _as_int(params.get("change_request_id"))
+            # (3a) A spec that declares requires_change_request is unrunnable
+            # unbound. The declaration lives on the SPEC, not in an action-name
+            # check here, so a newly registered dangerous action arrives gated
+            # instead of arriving free - which is how 'upgrade_prep' once shipped
+            # destructive and ungated while the gate watched only 'upgrade'.
+            if cr_bound_id is None and spec.requires_change_request:
+                status = "skipped"
+                summary = (f"{spec.label}: refused - this action runs only bound "
+                           "to an approved change request inside its window.")
+                log_lines.append(summary)
+                gated = True
+            if cr_bound_id is not None:
+                from . import change_requests  # local import: avoid any import cycle
+                cr = db.session.get(ChangeRequest, cr_bound_id)
+                ok, reason = change_requests.cr_runnable(cr)
+                if ok:
+                    # (3b) ...and the change authorizes THIS row. The binding is
+                    # a params key, and the operator surface edits params: a
+                    # reboot of every box, bound to someone else's approved
+                    # change, must not fire because that change is in its window.
+                    ok, reason = change_requests.binding_ok(cr, action_row)
+                if not ok:
+                    status = "skipped"
+                    summary = f"change request: {reason}"
+                    log_lines.append(summary)
+                    gated = True
+                    cr_gated = True
+                else:
+                    change_requests.start(cr, by=f"scheduler:{trigger}"[:64])
+            # (4) Run per target.
+            if not gated:
+                status, summary, log_lines = _run_targets(
+                    action_row, spec, params, trigger=trigger, run=run,
+                    visible_ids=visible_ids)
+    except Exception as exc:  # noqa: BLE001 - a run must never crash the sidecar
+        status = "failed"
+        summary = f"{type(exc).__name__}: {exc}"
+        log_lines = [traceback.format_exc()]
+    finally:
+        # (5) Finalize + ALWAYS release the lease.
+        try:
+            next_run = (
+                None if action_row.schedule_kind == "once"
+                else scheduler.compute_next_run(
+                    action_row.schedule_kind, action_row.schedule_dict,
+                    tz=_configured_tz())
+            )
+        except Exception:  # noqa: BLE001 - a bad spec must not strand the lease
+            next_run = None
+        try:
+            run.status = status
+            run.summary = (summary or "")[:_SUMMARY_MAX]
+            run.log = "\n".join(log_lines)[:_LOG_MAX]
+            run.finished_at = datetime.utcnow()
+            action_row.last_run = now
+            action_row.last_status = status
+            action_row.next_run = next_run
+            action_row.running_at = None
+            db.session.commit()
+        except Exception:  # noqa: BLE001
+            db.session.rollback()
+            # Last-ditch: clear the lease by id so the action is never stuck.
+            try:
+                db.session.execute(
+                    text("UPDATE scheduled_action SET running_at = NULL WHERE id = :id"),
+                    {"id": action_row.id})
+                db.session.commit()
+            except Exception:  # noqa: BLE001
+                db.session.rollback()
+    # (6) Close the bound CR from this run's outcome and mail the end-of-window
+    # notice. Isolated on purpose: a bookkeeping or SMTP failure here must never
+    # roll back the run row nor strand the lease - that is precisely how an
+    # over-long label once killed a WPP clone already written to the device.
+    # A round that is not the last and went well leaves the change open
+    # (in_progress) for the next round; a failed round still closes it as
+    # failed, so the remaining rounds refuse instead of flashing on.
+    if cr_bound_id is not None and not cr_gated and not (more_rounds and status == "ok"):
+        try:
+            from . import change_requests
+            # finish() now closes the NetBox window, dispatches the outcome
+            # hooks and mails the notice (cr_orchestrator.on_finish). The
+            # explicit notify_outcome call that used to live here would be a
+            # SECOND caller of the same step - and two callers of one step is
+            # how a product ends up with two implementations of it.
+            change_requests.finish(
+                cr_bound_id, status, by=f"scheduler:{trigger}"[:64],
+                summary=summary or status)
+        except Exception:  # noqa: BLE001 - notification must not re-grade a run
+            db.session.rollback()
+    return run
+
+
+def server_label() -> str:
+    """Where a no-device action (``needs_targets`` False) runs: this SATOM
+    server. "(no device)" told the operator what it was NOT, and an alert
+    reader took it for a lost appliance (SA-0020)."""
+    try:
+        return "SATOM server (%s)" % socket.gethostname()
+    except Exception:  # noqa: BLE001
+        return "SATOM server"
+
+
+def _progress_open(run, appliance, seq: int, total: int):
+    """Record that this device is being worked on NOW. Returns the row or None.
+
+    Committed BEFORE the device is touched, which is the whole point: a
+    sixty-appliance upgrade that only writes its log at the end is unobservable
+    for four hours and loses everything if the worker dies mid-window. See
+    :class:`app.models.ScheduledActionTarget`.
+
+    Best-effort by contract. A change already authorized for production must
+    not be aborted because a progress row would not insert — bookkeeping has no
+    veto over the work it is only describing.
+    """
+    if run is None:
+        return None
+    try:
+        from ..models import ScheduledActionTarget
+        row = ScheduledActionTarget(
+            run_id=run.id,
+            appliance_id=getattr(appliance, "id", None),
+            appliance=(getattr(appliance, "name", "") or server_label())[:128],
+            seq=seq, total=total, status="running",
+            started_at=datetime.utcnow())
+        db.session.add(row)
+        db.session.commit()
+        return row
+    except Exception:  # noqa: BLE001 - see docstring
+        db.session.rollback()
+        return None
+
+
+def _progress_close(row, ok: bool, summary: str) -> None:
+    """Stamp one device's outcome the moment it returns."""
+    if row is None:
+        return
+    try:
+        row.status = "ok" if ok else "failed"
+        row.summary = (summary or "")[:_SUMMARY_MAX]
+        row.finished_at = datetime.utcnow()
+        db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+
+
+def _run_targets(action_row, spec: ActionSpec, params: dict, *,
+                 trigger: str = "schedule", run=None,
+                 visible_ids: set[int] | None = None):
+    """Resolve the action's targets and run it against each; aggregate the outcome.
+
+    Returns ``(status, summary, log_lines)`` where status is one of
+    'ok' | 'failed' | 'skipped'.
+
+    An automatic run skips appliances in maintenance and, if that empties the
+    target set, reports **skipped** rather than failed — a parked box is not a
+    fault, and grading it as one pins the action permanently red.
+
+    ``run`` is the open history row; when given, per-device progress is
+    persisted as each device starts and finishes rather than accumulated in
+    memory and written once at the end.
+    """
+    targets = _resolve_targets(action_row, spec, trigger=trigger,
+                               visible_ids=visible_ids)
+    if spec.needs_targets and not targets:
+        parked = _parked_targets(action_row, spec) if trigger != "manual" else []
+        if parked:
+            names = ", ".join(sorted(parked))
+            return ("skipped", f"{spec.label}: all targets in maintenance ({names}).",
+                    [f"skipped: {names} are in maintenance"])
+        kinds = "/".join(spec.products) or "appliance"
+        return "skipped", f"No matching {kinds} appliance.", ["no targets resolved"]
+
+    ok_n = 0
+    total = 0
+    fails: list[str] = []
+    lines: list[str] = []
+    planned = len(targets)
+    last_summary = ""
+    # The row's id travels with the params so an executor that records
+    # provenance can name the action
+    # that fired it. Underscored: not an operator field, never validated.
+    params = dict(params)
+    params.setdefault("_action_id", action_row.id)
+    for appliance in targets:
+        name = getattr(appliance, "name", None) or server_label()
+        total += 1
+        progress = _progress_open(run, appliance, total, planned)
+        out = run_action(spec, appliance, params, dry_run=False)
+        last_summary = str(out.get("summary") or "")
+        _progress_close(progress, bool(out.get("ok")), out.get("summary", ""))
+        lines.extend(_log_lines(name, out))
+        if out.get("ok"):
+            ok_n += 1
+        else:
+            fails.append(name)
+
+    status = "ok" if (total and ok_n == total) else ("failed" if total else "skipped")
+    summary = f"{spec.label}: {ok_n}/{total} ok"
+    if not spec.needs_targets and total == 1 and last_summary:
+        # One run, no device: "0/1 ok (failed: (no device))" hid the only thing
+        # the history needs -- why. Say what the executor said.
+        summary = f"{spec.label}: {last_summary}"
+    parked = _parked_targets(action_row, spec) if trigger != "manual" else []
+    if parked:
+        summary += " (maintenance, skipped: " + ", ".join(sorted(parked)) + ")"
+    if fails and spec.needs_targets:
+        # A no-device run's summary already IS the failure; "(failed: SATOM
+        # server)" would only repeat it.
+        summary += " (failed: " + ", ".join(fails) + ")"
+    return status, summary, lines
+
+
+def _log_lines(name: str, out: dict) -> list[str]:
+    """The run-log lines for one target: ``[ok]/[FAIL] <where>: <what>`` and,
+    indented under it, the executor's detail -- unless it only repeats the
+    summary. Executors often prefix their summary with the device name and
+    return the summary again as the log, which printed every outcome twice
+    as ``fortiadc10: fortiadc10: …`` (SA-0020)."""
+    summary = str(out.get("summary") or "").strip()
+    msg = summary[len(name) + 2:] if summary.startswith(name + ": ") else summary
+    lines = ["[%s] %s: %s" % ("ok" if out.get("ok") else "FAIL", name, msg or "no summary")]
+    detail = str(out.get("log") or "").strip()
+    if detail and detail not in (summary, msg):
+        lines.extend("    " + ln for ln in detail.splitlines())
+    return lines
+
+
+def _resolve_targets(action_row, spec: ActionSpec, *,
+                     trigger: str = "schedule",
+                     visible_ids: set[int] | None = None) -> list:
+    """The appliances an action fires against.
+
+    A no-target action (``needs_targets`` False) runs exactly once (``[None]``).
+    Otherwise ``targets_list`` selects appliances by id, constrained to the
+    action's ``spec.products`` kinds; an empty list means the whole fleet of
+    those kinds. ``single_target`` actions take only the first.
+
+    ``visible_ids`` scopes the result to a particular operator's view: when it
+    is given (a non-admin Run-now, which fires with ``trigger="manual"`` and so
+    would otherwise reach maintenance boxes), devices outside that set are
+    dropped — and an empty ``targets_list`` therefore resolves to that
+    operator's visible fleet, NOT the whole fleet. ``None`` (the scheduler and
+    admins) keeps the fleet-wide behaviour maintenance mode depends on.
+    """
+    if not spec.needs_targets:
+        return [None]
+    kinds = list(spec.products) or ["fortiweb"]
+    ids = [v for v in (_as_int(t) for t in action_row.targets_list) if v is not None]
+    q = Appliance.query.filter(Appliance.kind.in_(kinds))
+    if ids:
+        q = q.filter(Appliance.id.in_(ids))
+    devices = q.all()
+    if visible_ids is not None:
+        devices = [d for d in devices if d.id in visible_ids]
+    if trigger != "manual":
+        # Maintenance suppressed alerts but not work: the hourly sweep kept
+        # hammering parked boxes and grading each as a failure, which pinned the
+        # action permanently 'failed'. A manual run still reaches them on purpose
+        # — you park a box precisely to work on it.
+        devices = [d for d in devices if not getattr(d, "maintenance", False)]
+    if spec.single_target:
+        devices = devices[:1]
+    return devices
+
+
+def _parked_targets(action_row, spec: ActionSpec) -> list[str]:
+    """Names of this action's in-maintenance appliances (for the run summary)."""
+    if not spec.needs_targets:
+        return []
+    kinds = list(spec.products) or ["fortiweb"]
+    ids = [v for v in (_as_int(t) for t in action_row.targets_list) if v is not None]
+    q = Appliance.query.filter(Appliance.kind.in_(kinds),
+                               Appliance.maintenance.is_(True))
+    if ids:
+        q = q.filter(Appliance.id.in_(ids))
+    return [a.name for a in q.all()]
+
+
+# --------------------------------------------------------------------------- #
+#  Due-now query (consumed by the scheduler sidecar)                            #
+# --------------------------------------------------------------------------- #
+#: How long a lease may be held before the reaper takes it back. The longest
+#: run ever recorded on this fleet is 5.5 minutes (action 6, deep_capture), so
+#: this is ~11x the worst observed case: a slow-but-alive run is never reaped
+#: out from under itself, while a dead one costs at most one hour instead of
+#: forever. Operator-tunable via the ``scheduler.lease_ttl_minutes`` setting.
+LEASE_TTL_MINUTES = 60
+
+
+def release_lease(action_id: int) -> bool:
+    """Clear ``running_at`` for one action on its own transaction.
+
+    Separate from any surrounding session state on purpose: every caller is
+    already handling a failure, so this must not depend on the broken
+    transaction it is cleaning up after. Returns True if the lease was cleared.
+    """
+    try:
+        db.session.execute(
+            text("UPDATE scheduled_action SET running_at = NULL WHERE id = :id"),
+            {"id": action_id})
+        db.session.commit()
+        return True
+    except Exception:  # noqa: BLE001 - best effort by definition
+        db.session.rollback()
+        return False
+
+
+def _lease_ttl_minutes() -> int:
+    try:
+        from ..models import AppSetting
+        raw = AppSetting.get("scheduler.lease_ttl_minutes")
+        val = int(str(raw).strip())
+        return val if val > 0 else LEASE_TTL_MINUTES
+    except Exception:  # noqa: BLE001 - a bad setting must not disable the reaper
+        return LEASE_TTL_MINUTES
+
+
+def reap_stale_leases(now: datetime | None = None,
+                      ttl_minutes: int | None = None) -> list[dict]:
+    """Release leases held past the TTL and close the runs they left open.
+
+    ``running_at`` is claimed with a COMMITTED update before any work starts, so
+    every way a fire can die without reaching its ``finally`` - SIGKILL, OOM, a
+    database that goes away, an exception in the window before the try block -
+    leaves the action leased. ``due_actions`` filters leased actions out, and
+    before this function existed nothing in the codebase ever put one back:
+    the failure mode was not "the action fails", it was "the action silently
+    stops existing". That is what happened on 2026-08-22 and it lasted nine
+    days.
+
+    Two repairs per reaped action, and the second matters as much as the first:
+
+    * the lease is cleared and ``next_run`` recomputed, so the action fires
+      again on its normal schedule;
+    * the run is recorded as a FAILED scheduled run - reusing the row the dead
+      fire left in 'running' if it got that far, writing one if it did not.
+      Without it the reap is invisible: ``_check_actions`` reads scheduled runs
+      to find broken automations, an action whose history simply skips nine
+      days looks idle rather than broken, and a recovery nobody can see is
+      indistinguishable from the outage continuing.
+
+    A second sweep closes history rows left 'running' by a fire whose lease
+    WAS freed. The last-ditch branch of ``execute_and_record``'s ``finally``
+    clears ``running_at`` with a bare UPDATE *after* the rollback has already
+    discarded the status write it was meant to accompany, so the action itself
+    recovers while its run row says 'running' forever. Two such rows (actions
+    15 and 21) had been open since the same 2026-08-22 outage. Phase 1 cannot
+    reach them: it iterates leased actions, and these are not leased. An
+    unfinished row is not cosmetic - it is the row ``_check_actions`` reads to
+    decide whether an automation is broken, and 'running' is neither outcome.
+
+    Returns one dict per repair, tagged ``kind`` ('lease' or 'orphan-run');
+    an empty list is the normal case.
+    """
+    now = now or datetime.utcnow()
+    ttl = int(ttl_minutes if ttl_minutes is not None else _lease_ttl_minutes())
+    ttl = max(1, ttl)
+    cutoff = now - timedelta(minutes=ttl)
+    stale = (ScheduledAction.query
+             .filter(ScheduledAction.running_at.isnot(None),
+                     ScheduledAction.running_at < cutoff)
+             .all())
+
+    reaped: list[dict] = []
+    for action in stale:
+        held = action.running_at
+        held_min = int((now - held).total_seconds() // 60)
+        summary = (
+            "Lease reaped: the run claimed at %s UTC never released it "
+            "(%d min held > %d min TTL). The process died before it could "
+            "record an outcome; the action was skipped by the scheduler for "
+            "the whole time it stayed leased."
+            % (held.strftime("%Y-%m-%d %H:%M"), held_min, ttl))
+
+        open_runs = (ScheduledActionRun.query
+                     .filter(ScheduledActionRun.action_id == action.id,
+                             ScheduledActionRun.status == "running")
+                     .all())
+        for r in open_runs:
+            r.status = "failed"
+            r.summary = summary[:_SUMMARY_MAX]
+            r.finished_at = now
+        if not open_runs:
+            # The claim committed but the history INSERT never did - the exact
+            # window that stranded 6/7/23. Record the gap anyway; trigger stays
+            # 'schedule' because a scheduled fire is what died here, and it is
+            # the only trigger _check_actions counts.
+            db.session.add(ScheduledActionRun(
+                action_id=action.id, status="failed", trigger="schedule",
+                started_at=held, finished_at=now,
+                summary=summary[:_SUMMARY_MAX], log=""))
+
+        try:
+            next_run = (None if action.schedule_kind == "once"
+                        else scheduler.compute_next_run(
+                            action.schedule_kind, action.schedule_dict, now,
+                            tz=_configured_tz()))
+        except Exception:  # noqa: BLE001 - a bad spec must not re-strand the lease
+            next_run = None
+
+        action.running_at = None
+        action.last_run = held
+        action.last_status = "failed"
+        action.next_run = next_run
+        reaped.append({
+            "kind": "lease",
+            "id": action.id,
+            "name": action.name,
+            "action": action.action,
+            "held_since": held.isoformat(timespec="seconds"),
+            "held_minutes": held_min,
+            "next_run": next_run.isoformat(timespec="seconds") if next_run else None,
+            "closed_runs": len(open_runs),
+        })
+
+    reaped.extend(_close_orphan_runs(now, cutoff))
+    if not reaped:
+        return []
+    try:
+        db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+        # Bookkeeping is optional; freeing the leases is not.
+        for r in reaped:
+            if r["kind"] == "lease":
+                release_lease(r["id"])
+    return reaped
+
+
+#: Written into ``run.log`` when a fire opens its row (the final log replaces
+#: it). It names the process holding the lease, so the reaper can tell a run
+#: that is still going from one whose process is gone.
+_CLAIM_RE = re.compile(r"^\[claimed by (\S+) pid (\d+)\]")
+
+
+def claim_marker() -> str:
+    return "[claimed by %s pid %d]" % (socket.gethostname(), os.getpid())
+
+
+def reap_dead_owner_leases(now: datetime | None = None, *, host: str | None = None,
+                           start_of=None) -> list[dict]:
+    """Release at once the leases whose process, on THIS host, has ended.
+
+    ``systemctl restart satom-scheduler`` during a run (every deploy does it)
+    waits 90 s and then SIGKILLs the fire before its ``finally``: the lease
+    stayed taken for the full :data:`LEASE_TTL_MINUTES`. On 2026-10-13 a deploy
+    at 12:3x stopped the deep-monitor sweep until the TTL reaper. A run row's
+    claim marker names host and pid; when that pid is gone, or now belongs to
+    a process younger than the claim, the owner is dead and waiting is pointless.
+
+    Rows of another host (an HA peer), rows without a marker (opened before the
+    marker existed) and owners that are alive are left to the TTL reaper.
+    """
+    from .code_freshness import CLOCK_SLACK_S, proc_start_epoch
+    now = now or datetime.utcnow()
+    host = host or socket.gethostname()
+    start_of = start_of or proc_start_epoch
+    out = []
+    for action in (ScheduledAction.query
+                   .filter(ScheduledAction.running_at.isnot(None)).all()):
+        run_row = (ScheduledActionRun.query
+                   .filter(ScheduledActionRun.action_id == action.id,
+                           ScheduledActionRun.status == "running")
+                   .order_by(ScheduledActionRun.id.desc()).first())
+        m = _CLAIM_RE.match((run_row.log or "") if run_row else "")
+        if not m or m.group(1) != host:
+            continue
+        pid = int(m.group(2))
+        claimed = calendar.timegm(run_row.started_at.utctimetuple())
+        started = start_of(pid)
+        if started is not None and started <= claimed + CLOCK_SLACK_S:
+            continue  # the process that claimed it is still running
+        held = action.running_at
+        run_row.status = "failed"
+        run_row.finished_at = now
+        run_row.summary = (
+            "Interrupted: pid %d on %s, which ran this, ended before the run "
+            "finished (usually a restart during a deploy). The lease was "
+            "released at once instead of after %d min."
+            % (pid, host, _lease_ttl_minutes()))[:_SUMMARY_MAX]
+        try:
+            next_run = (None if action.schedule_kind == "once"
+                        else scheduler.compute_next_run(
+                            action.schedule_kind, action.schedule_dict, now,
+                            tz=_configured_tz()))
+        except Exception:  # noqa: BLE001 - a bad spec must not re-strand the lease
+            next_run = None
+        action.running_at = None
+        action.last_run = held
+        action.last_status = "failed"
+        action.next_run = next_run
+        out.append({"kind": "dead-owner", "id": action.id, "name": action.name,
+                    "action": action.action, "run_id": run_row.id, "pid": pid,
+                    "held_since": held.isoformat(timespec="seconds"),
+                    "held_minutes": int((now - held).total_seconds() // 60),
+                    "next_run": next_run.isoformat(timespec="seconds") if next_run else None,
+                    "closed_runs": 1})
+    if not out:
+        return []
+    try:
+        db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+        for r in out:
+            release_lease(r["id"])
+    return out
+
+
+def _close_orphan_runs(now: datetime, cutoff: datetime) -> list[dict]:
+    """Close 'running' history rows whose action holds no lease (see above).
+
+    Gated on BOTH conditions - the action is unleased AND the row is older than
+    the TTL. Either one alone would be a race: a live fire holds its lease, but
+    reading the lease and the row are two statements, and a row younger than
+    the TTL may simply be a run that started between them.
+    """
+    rows = (db.session.query(ScheduledActionRun, ScheduledAction)
+            .join(ScheduledAction,
+                  ScheduledActionRun.action_id == ScheduledAction.id)
+            .filter(ScheduledActionRun.status == "running",
+                    ScheduledActionRun.started_at < cutoff,
+                    ScheduledAction.running_at.is_(None))
+            .all())
+    out = []
+    for run_row, action in rows:
+        age = int((now - run_row.started_at).total_seconds() // 60)
+        run_row.status = "failed"
+        run_row.finished_at = now
+        run_row.summary = (
+            "Never finished: the run opened at %s UTC was still marked "
+            "'running' %d min later while its action held no lease. The "
+            "process died after opening the row and the outcome was never "
+            "written."
+            % (run_row.started_at.strftime("%Y-%m-%d %H:%M"), age))[:_SUMMARY_MAX]
+        out.append({"kind": "orphan-run", "id": action.id, "name": action.name,
+                    "action": action.action, "run_id": run_row.id,
+                    "held_since": run_row.started_at.isoformat(timespec="seconds"),
+                    "held_minutes": age, "next_run": None, "closed_runs": 1})
+    return out
+
+
+def due_actions(now: datetime | None = None) -> list[ScheduledAction]:
+    """Enabled actions whose ``next_run`` has arrived and that are NOT already
+    leased (``running_at IS NULL``) - i.e. ready to fire right now."""
+    now = now or datetime.utcnow()
+    return (ScheduledAction.query
+            .filter(ScheduledAction.enabled.is_(True),
+                    ScheduledAction.next_run.isnot(None),
+                    ScheduledAction.next_run <= now,
+                    ScheduledAction.running_at.is_(None))
+            .all())
+
+
+# --------------------------------------------------------------------------- #
+#  Small helpers                                                                #
+# --------------------------------------------------------------------------- #
+def _as_int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+__all__ = [
+    "ActionSpec",
+    "ADMIN_ACTIONS",
+    "USER_ACTIONS",
+    "ALL_ACTIONS",
+    "get_spec",
+    "run_action",
+    "execute_and_record",
+    "due_actions",
+    "release_lease",
+    "reap_stale_leases",
+    "LEASE_TTL_MINUTES",
+    "SERVER_POLICY_EP",
+    "SERVER_POOL_MEMBER_EP",
+]

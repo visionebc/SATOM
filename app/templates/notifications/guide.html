@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications — Troubleshooting guide{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('notifications.index') }}">{{ _('Notifications') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Troubleshooting guide') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-journal-text me-2 text-accent"></i>{{ _('Troubleshooting guide') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('The notifications SATOM raises most often: what each one means, why it usually fires and how to resolve it.') }}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('notifications.index') }}" class="btn btn-fw-outline btn-sm">
+      <i class="bi bi-bell me-1"></i>{{ _('Back to notifications') }}
+    </a>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-funnel me-2"></i>{{ _('Filters') }}</span>
+    <a href="{{ url_for('notifications.guide_page') }}" class="btn btn-sm btn-secondary">
+      <i class="bi bi-x-lg me-1"></i>{{ _('Clear') }}
+    </a>
+  </div>
+  <div class="fw-card-body">
+    <form method="GET" action="{{ url_for('notifications.guide_page') }}" class="row g-3 align-items-end" id="guideFilters">
+      <div class="col-md-7">
+        <label class="fw-form-label">{{ _('Search') }}</label>
+        <input type="text" name="q" class="form-control form-control-sm" value="{{ q }}"
+               placeholder="{{ _('Paste a notification title or a phrase, e.g. no write of its own') }}">
+      </div>
+      <div class="col-md-3">
+        <label class="fw-form-label">{{ _('Category') }}</label>
+        <select name="category" class="form-select form-select-sm" data-js="autosubmit">
+          <option value="">{{ _('All categories') }}</option>
+          {% for k, label in categories %}
+          <option value="{{ k }}" {{ 'selected' if category == k }}>{{ _(label) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-fw-primary btn-sm w-100"><i class="bi bi-search me-1"></i>{{ _('Apply') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="text-muted mb-2" style="font-size:13px;">
+  <strong>{{ entries|length }}</strong> {{ _('entries') }} · {{ _('"Last 30 days" counts the notifications of that kind you received.') }}
+</div>
+
+{% for e in entries %}
+<div class="fw-card mb-2 guide-entry" id="{{ e.slug }}">
+  <button type="button" class="guide-head" data-js="guide-toggle" aria-expanded="false">
+    <i class="bi bi-chevron-right guide-caret"></i>
+    <span class="guide-title">{{ e.title }}</span>
+    <span class="fw-badge fw-badge-secondary">{{ _(category_label(e.category)) }}</span>
+    {% set c = counts.get(e.slug) %}
+    {% if c %}
+    <a class="fw-badge fw-badge-primary guide-count" title="{{ _('Show them on the Notifications page') }}"
+       href="{{ url_for('notifications.index', category=e.category) }}">{{ c }} {{ _('in the last 30 days') }}</a>
+    {% endif %}
+  </button>
+  <div class="guide-body">
+    <div class="guide-example"><span class="guide-k">{{ _('Example') }}</span> <span class="mono">{{ e.example }}</span></div>
+    <div class="guide-k">{{ _('What it means') }}</div>
+    <p>{{ e.meaning }}</p>
+    <div class="guide-k">{{ _('Common causes') }}</div>
+    <ul>{% for x in e.causes %}<li>{{ x }}</li>{% endfor %}</ul>
+    <div class="guide-k">{{ _('What to do') }}</div>
+    <ol>{% for x in e.steps %}<li>{{ x }}</li>{% endfor %}</ol>
+    {% if e.links %}
+    <div class="guide-k">{{ _('Related pages') }}</div>
+    <div>{% for label, href in e.links %}<a class="btn btn-sm btn-outline-secondary me-1 mb-1" href="{{ href }}">{{ _(label) }}</a>{% endfor %}</div>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="fw-card"><div class="fw-card-body">
+  <div class="fw-empty-state">
+    <div class="fw-empty-state-icon"><i class="bi bi-journal-x"></i></div>
+    <div class="fw-empty-state-title">{{ _('No guide entry matches') }}</div>
+    <div class="fw-empty-state-text">{{ _('Try a shorter phrase, or clear the category.') }}</div>
+  </div>
+</div></div>
+{% endfor %}
+
+<style nonce="{{ csp_nonce }}">
+.guide-head { display:flex; align-items:center; gap:10px; width:100%; padding:12px 16px; background:none; border:0;
+  text-align:left; color:var(--fw-text-primary); cursor:pointer; }
+.guide-head:hover { background:var(--fw-content-bg); }
+.guide-title { font-weight:600; font-size:13.5px; flex:1 1 auto; }
+.guide-caret { transition:transform .15s ease; color:var(--fw-text-secondary); }
+.guide-entry.open .guide-caret { transform:rotate(90deg); }
+.guide-count { text-decoration:none; }
+.guide-body { display:none; padding:4px 18px 14px 42px; font-size:13px; line-height:1.55; }
+.guide-entry.open .guide-body { display:block; }
+.guide-body ul, .guide-body ol { padding-left:18px; }
+.guide-k { text-transform:uppercase; letter-spacing:.04em; font-size:10.5px; color:var(--fw-text-secondary); margin:10px 0 3px; }
+.guide-example { margin:4px 0 6px; font-size:12.5px; }
+.guide-example .guide-k { display:inline; margin:0 6px 0 0; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  function toggle(card, open) {
+    card.classList.toggle('open', open);
+    card.querySelector('[data-js="guide-toggle"]').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  document.querySelectorAll('.guide-entry [data-js="guide-toggle"]').forEach(function (b) {
+    b.addEventListener('click', function (ev) {
+      if (ev.target.closest('a')) return;   // the count badge is a link of its own
+      var card = this.closest('.guide-entry');
+      toggle(card, !card.classList.contains('open'));
+    });
+  });
+  document.querySelectorAll('#guideFilters [data-js="autosubmit"]').forEach(function (s) {
+    s.addEventListener('change', function () { this.form.submit(); });
+  });
+  // A search, a single result or a #slug link opens the entries straight away.
+  var cards = document.querySelectorAll('.guide-entry');
+  var q = new URLSearchParams(window.location.search).get('q');
+  if (q || cards.length === 1) cards.forEach(function (c) { toggle(c, true); });
+  if (window.location.hash) {
+    var t = document.getElementById(window.location.hash.slice(1));
+    if (t && t.classList.contains('guide-entry')) { toggle(t, true); t.scrollIntoView({block: 'start'}); }
+  }
+})();
+</script>
+{% endblock %}

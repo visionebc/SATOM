@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, empty_state, filter_box, ago %}
+{% block title %}Diagrams{% endblock %}
+{% block content %}
+{% call page_header('Diagrams', 'Draw a service path or import one, then bind elements to sources to see them live', 'diagram-3') %}
+  <a class="btn btn-sm btn-outline-primary" href="#import"><i class="bi bi-upload" aria-hidden="true"></i> Import</a>
+  <a class="btn btn-sm btn-primary" href="#new"><i class="bi bi-plus-lg" aria-hidden="true"></i> New diagram</a>
+{% endcall %}
+<div class="row g-3">
+  <div class="col-xl-8">
+    {% if diagrams %}
+    <div class="obs-toolbar">{{ filter_box('diagram-grid', 'Filter diagrams…') }}</div>
+    <div class="obs-card-grid obs-card-grid-lg" id="diagram-grid">
+      {% for d in diagrams %}
+      <article class="obs-diag-card fw-card" data-filter-item>
+        <a href="{{ url_for('diagrams.edit', did=d.id) }}" class="obs-diag-link" aria-label="Open {{ d.name }}">
+          <svg class="obs-thumb" data-layout='{{ d.layout|tojson }}' aria-hidden="true"></svg>
+        </a>
+        <div class="obs-diag-body">
+          <a class="obs-diag-name" href="{{ url_for('diagrams.edit', did=d.id) }}">{{ d.name }}</a>
+          <span class="obs-diag-meta">{{ d.layout.nodes|length }} elements · {{ d.layout.edges|length }} links ·
+            {{ d.layout.nodes|selectattr('source_id')|list|length }} bound · {{ d.origin }}</span>
+          <span class="obs-diag-meta">Updated {{ ago(d.updated_at) }}</span>
+        </div>
+        <div class="obs-diag-actions">
+          <a class="obs-icon-btn" href="{{ url_for('diagrams.export', did=d.id) }}" aria-label="Export {{ d.name }} as JSON" title="Export JSON"><i class="bi bi-download" aria-hidden="true"></i></a>
+          <form method="post" action="{{ url_for('diagrams.delete', did=d.id) }}" class="obs-confirm" data-confirm="Delete the diagram “{{ d.name }}”? This cannot be undone.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="obs-icon-btn obs-icon-danger" aria-label="Delete {{ d.name }}" title="Delete"><i class="bi bi-trash" aria-hidden="true"></i></button>
+          </form>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="fw-card">{{ empty_state('diagram-3', 'No diagrams yet', 'Create one on the right, or import a draw.io, Mermaid or SATOM Architecture file.') }}</div>
+    {% endif %}
+  </div>
+
+  <div class="col-xl-4">
+    <section class="fw-card mb-3" id="new" aria-labelledby="h-new">
+      <div class="fw-card-header"><h2 class="fw-card-title h6 mb-0" id="h-new"><i class="bi bi-pencil-square me-1" aria-hidden="true"></i>New diagram</h2></div>
+      <div class="fw-card-body">
+        <form method="post" action="{{ url_for('diagrams.new') }}" class="obs-busy-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="form-label small fw-semibold" for="new-name">Name</label>
+          <input class="form-control form-control-sm mb-2" id="new-name" name="name" placeholder="e.g. Online banking path" required>
+          <button class="btn btn-sm btn-primary w-100"><span class="obs-btn-label">Create and open the editor</span></button>
+        </form>
+      </div>
+    </section>
+    <section class="fw-card" id="import" aria-labelledby="h-imp">
+      <div class="fw-card-header"><h2 class="fw-card-title h6 mb-0" id="h-imp"><i class="bi bi-upload me-1" aria-hidden="true"></i>Import</h2></div>
+      <div class="fw-card-body">
+        <form method="post" action="{{ url_for('diagrams.import_file') }}" enctype="multipart/form-data" class="obs-busy-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="form-label small fw-semibold" for="imp-name">Name <span class="text-muted fw-normal">(optional)</span></label>
+          <input class="form-control form-control-sm mb-2" id="imp-name" name="name">
+          <ul class="nav nav-tabs obs-tabs-sm" role="tablist">
+            <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#imp-file" type="button" role="tab" aria-controls="imp-file" aria-selected="true">File</button></li>
+            <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#imp-paste" type="button" role="tab" aria-controls="imp-paste" aria-selected="false">Paste Mermaid</button></li>
+          </ul>
+          <div class="tab-content pt-2">
+            <div class="tab-pane fade show active" id="imp-file" role="tabpanel">
+              <label class="obs-drop" for="imp-input">
+                <i class="bi bi-cloud-arrow-up" aria-hidden="true"></i>
+                <span class="obs-drop-text">Drop a file here or <u>choose one</u></span>
+                <span class="small text-muted">.drawio · .mmd · SATOM .json — up to 8 MB</span>
+                <input id="imp-input" class="visually-hidden" type="file" name="file" accept=".drawio,.xml,.mmd,.mermaid,.json">
+              </label>
+            </div>
+            <div class="tab-pane fade" id="imp-paste" role="tabpanel">
+              <label class="visually-hidden" for="imp-text">Mermaid flowchart</label>
+              <textarea class="form-control form-control-sm font-monospace" id="imp-text" name="text" rows="6" placeholder="flowchart LR&#10;  U[Users] --> FGT[FortiGate] --> FWB[FortiWeb 192.0.2.82] --> APP[(App servers)]"></textarea>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-primary w-100 mt-2"><span class="obs-btn-label">Import</span></button>
+          <p class="small text-muted mt-2 mb-0">Shapes whose type cannot be told are imported as <em>Other host</em> and listed so you can retype them.</p>
+        </form>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

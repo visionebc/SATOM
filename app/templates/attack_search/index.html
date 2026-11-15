@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}Search Attack ID{% endblock %}
+
+{#- The derived Web Protection Profile cell. ONE macro, used by the matches
+    table and the "recent entries" fallback, because the fallback exists to
+    stand in for the table it replaces — two renderings would let it describe
+    the appliance differently from the table it is standing in for.
+    ``shared`` is a warning, not decoration: it is the state that turns saving
+    an exception into cloning a profile and re-binding a Server Policy. -#}
+{% macro wpp_cell(c) -%}
+  {%- set c = c or {} -%}
+  <td style="word-break:break-word;" title="{{ c.detail or '' }}">
+    {%- if c.state == 'shared' %}
+      <span class="fw-badge fw-badge-warning">{{ c.wpp }}</span>
+      <div class="text-muted" style="font-size:11px;">shared with {{ c.shared_with|join(', ') }}</div>
+    {%- elif c.state == 'exclusive' %}
+      <span class="fw-badge fw-badge-success">{{ c.wpp }}</span>
+    {%- elif c.state == 'unknown' %}
+      <span class="fw-badge fw-badge-secondary">{{ _('unknown') }}</span>
+    {%- elif c.state == 'missing' %}
+      <span class="fw-badge fw-badge-danger">{{ _('policy not on device') }}</span>
+    {%- else %}
+      <span class="text-muted">—</span>
+    {%- endif %}
+  </td>
+{%- endmacro %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>WAF</span>
+  <span class="separator">/</span>
+  <span>{{ _('Search Attack ID') }}</span>
+  {% if appliance %}
+    <span class="separator">/</span>
+    <span>{{ appliance.name }}</span>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-search me-2 text-accent"></i>{{ _('Search Attack ID') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Paste the reference shown on the WAF block page
+      (<code>id-&lt;device&gt;-&lt;number&gt;</code>) to pull up the attack-log entry
+      that produced it. Click a row for the full entry.
+    </p>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-body">
+    {# Aligned from the TOP, not the bottom. `align-items-end` pinned each
+       column's LAST element to a common baseline, and the Attack ID column ends
+       in a help line the other two do not have — so its input sat one line
+       higher than the appliance picker while its label sat one line higher than
+       "Appliance". Aligning the tops lines up both labels and both controls,
+       and lets the help text hang below where it belongs. The button carries a
+       blank label of its own so it lands on the control row rather than the
+       label row (only where the row is actually horizontal). #}
+    <form method="get" action="{{ url_for('attack_search.index') }}" class="row g-2 align-items-start">
+      <div class="col-lg-7">
+        <label class="form-label" for="q">{{ _('Attack ID') }}</label>
+        <input type="text" class="form-control" id="q" name="q" value="{{ query }}"
+               placeholder="{{ _('id-fortiweb08-000000004117') }}" autocomplete="off" autofocus>
+        <div class="form-text">
+          {{ _('The bare MSG ID also works; leading zeros are optional.') }}
+        </div>
+      </div>
+      <div class="col-lg-3">
+        <label class="form-label" for="appliance_id">{{ _('Appliance') }}</label>
+        <select class="form-select" id="appliance_id" name="appliance_id">
+          <option value="">{{ _('From the ID') }}</option>
+          {% for a in appliances %}
+          <option value="{{ a.id }}" {{ 'selected' if explicit_id == a.id|string }}>{{ a.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-lg-2">
+        <span class="form-label d-none d-lg-block" aria-hidden="true">&nbsp;</span>
+        <button type="submit" class="btn btn-primary w-100">
+          <i class="bi bi-search me-1"></i>{{ _('Search') }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if error %}
+<div class="alert alert-danger"><i class="bi bi-exclamation-octagon me-1"></i>{{ error }}</div>
+{% endif %}
+{% if warning %}
+<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-1"></i>{{ warning }}</div>
+{% endif %}
+
+{% if rows is not none and not error %}
+  <div class="fw-card mb-3">
+    <div class="fw-card-body">
+      <span class="fw-badge fw-badge-info">MSG ID {{ ref.msg_id }}</span>
+      <span class="fw-badge fw-badge-secondary">{{ appliance.name }}</span>
+      {% if rows %}
+        <span class="fw-badge fw-badge-success">{{ rows|length }} match{{ '' if rows|length == 1 else 'es' }}</span>
+      {% else %}
+        <span class="fw-badge fw-badge-warning">{{ _('no match') }}</span>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
+
+{% if rows %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-shield-exclamation me-1"></i>{{ _('Matching attack-log entries') }}</span>
+    <span class="text-muted" style="font-size:12px;">{{ _('Click a row to open the full entry') }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table fw-table table-sm mb-0" id="atk-results">
+      <thead>
+        <tr>
+          {% for key, label in table_columns %}<th>{{ label }}</th>{% endfor %}
+          <th style="width:1%"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        {% set ridx = loop.index0 %}
+        <tr class="atk-row" data-atk-index="{{ ridx }}" style="cursor:pointer;">
+          {% for key, label in table_columns %}
+            {% set val = row.get(key) %}
+            {% if key == wpp_field %}
+              {# Derived: the value is not in the row, it is the binding the
+                 appliance holds right now. #}
+              {{ wpp_cell(row_wpps[ridx]) }}
+            {% elif key == 'action' %}
+              <td><span class="fw-badge {{ 'fw-badge-danger' if 'Deny' in (val or '') else 'fw-badge-warning' }}">{{ val or '—' }}</span></td>
+            {% elif key == time_field %}
+              {# The raw field is Unix epoch seconds. Rendered as-is it was a
+                 ten-digit number in a column headed "Date/Time". #}
+              <td style="white-space:nowrap;">{{ row_times[ridx] or '—' }}</td>
+            {% else %}
+              <td style="word-break:break-word;">{{ val if val not in (None, '', 'N/A') else '—' }}</td>
+            {% endif %}
+          {% endfor %}
+          <td class="text-end">
+            <button type="button" class="btn btn-sm btn-fw-outline atk-open"
+                    data-atk-index="{{ ridx }}" title="{{ _('Open details') }}">
+              <i class="bi bi-box-arrow-in-right"></i>
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if rows is not none and not rows and not error %}
+<div class="fw-card">
+  <div class="fw-card-header"><i class="bi bi-clock-history me-1"></i>Most recent entries on {{ appliance.name }}</div>
+  <div class="fw-card-body">
+    {% if recent %}
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('The feed is working — these are the newest rows this appliance holds. If the ID you searched is older than these, it has aged out of the log.') }}
+    </p>
+    <div class="table-responsive">
+      <table class="table fw-table table-sm mb-0">
+        <thead><tr>{% for key, label in table_columns %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for r in recent %}
+          {% set ridx = loop.index0 %}
+          <tr>
+            {% for key, label in table_columns %}
+              {% set val = r.get(key) %}
+              {% if key == wpp_field %}
+                {{ wpp_cell(recent_wpps[ridx]) }}
+              {% elif key == 'msg_id' %}
+                <td><a href="{{ url_for('attack_search.index', q=val, appliance_id=appliance.id) }}">{{ val }}</a></td>
+              {% elif key == time_field %}
+                <td style="white-space:nowrap;">{{ recent_times[ridx] or '—' }}</td>
+              {% else %}
+                <td style="word-break:break-word;">{{ val if val not in (None, '', 'N/A') else '—' }}</td>
+              {% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">{{ _('This appliance holds no attack-log entries at all.') }}</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# The panel renders its VALUES from the rows already on the page: the detail
+   view needs no second round-trip, and what the operator inspects is exactly
+   what the table was built from.
+
+   Every endpoint below deliberately does the opposite — it is sent only the
+   appliance id and the MSG ID, and re-reads the entry off the device. A browser
+   that could post the row could fabricate an attack and have a rule carved out
+   from it. Routes are emitted here rather than built in JS so a blueprint
+   rename breaks the page loudly at render time instead of producing 404s at
+   click time. #}
+{% if rows %}
+<script type="application/json" id="atk-rows-data">{{ rows|tojson }}</script>
+<script type="application/json" id="atk-page-data">{{ {
+  'appliance_id': appliance.id,
+  'appliance_name': appliance.name,
+  'row_times': row_times,
+  'time_field': time_field,
+  'ai_enabled': ai_enabled,
+  'primary_fields': primary_fields,
+  'analyze_url': url_for('attack_search.analyze'),
+  'field_intel_url': url_for('attack_search.field_intel'),
+  'ask_field_url': url_for('attack_search.ask_field'),
+  'options_url': url_for('attack_search.carveout_options'),
+  'build_url': url_for('attack_search.build_carveout'),
+  'carveout_url': url_for('attack_search.save_carveout'),
+  'proposal_apply_url': url_for('attack_search.apply_proposal', pid=999999)
+                        |replace('999999', '__PID__'),
+  'proposal_dismiss_url': url_for('attack_search.dismiss_proposal', pid=999999)
+                          |replace('999999', '__PID__'),
+  'targets_url': url_for('attack_search.inject_targets', exc_id=999999)
+                 |replace('999999', '__ID__'),
+  'insert_url': url_for('attack_search.insert_exception', exc_id=999999)
+                |replace('999999', '__ID__'),
+}|tojson }}</script>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/attack_drawer.js') }}"></script>
+{% endblock %}

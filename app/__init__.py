@@ -1,0 +1,3729 @@
+"""Flask application factory."""
+from __future__ import annotations
+
+import ipaddress
+import logging
+import os
+from datetime import datetime
+
+import click
+from flask import Flask, g, request
+
+from .config import get_config
+from .services import langs as _langs
+from .services import ui_locale as _ui_locale
+from .extensions import babel, csrf, db, limiter, login_manager, migrate
+
+
+from .extensions import real_client_ip as _client_ip  # single source of truth
+
+
+def _ip_allowed(ip: str, whitelist: list) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    if addr.is_loopback:
+        return True  # never lock out local/curl access
+    for row in whitelist:
+        try:
+            if addr in ipaddress.ip_network((row or {}).get("ip", ""), strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def widen_plan(tables, live_widths):
+    """Return [(table, column, want)] for VARCHAR columns narrower than the model.
+
+    Pure so the decision can be tested with data instead of a live database.
+    ``tables`` is SQLAlchemy metadata's sorted_tables; ``live_widths`` maps
+    ``table -> {column: length_or_None}`` as reported by the database.
+
+    Only ever widens.  Narrowing can truncate committed rows, so a model that
+    shrinks is deliberately ignored — a schema that is wider than declared is
+    harmless, a schema that is narrower than the data is not recoverable.
+    A column absent from ``live_widths`` is left to :func:`_ensure_columns`;
+    guessing here would emit DDL for a column that does not exist yet.
+    """
+    from sqlalchemy.types import String
+
+    plan = []
+    for table in tables:
+        live = live_widths.get(table.name)
+        if live is None:
+            continue
+        for col in table.columns:
+            if not isinstance(col.type, String):
+                continue
+            want = getattr(col.type, 'length', None)
+            if not want:
+                continue
+            have = live.get(col.name)
+            if have is None or have >= want:
+                continue
+            plan.append((table.name, col.name, want))
+    return plan
+
+
+#: Blueprints that are page CHROME: ``base.html`` renders them into EVERY
+#: page of EVERY ADOM, so the product gate must never refuse them. They are
+#: listed HERE, once, and not inside the three per-ADOM allowlists, because
+#: those three hand-kept copies are how this defect recurs — between them they
+#: have now forgotten ``docs``, ``change_requests``, ``scheduled_actions``,
+#: ``advisor``, ``adom_assets`` and finally the bookmarks rail, whose own
+#: ``GET /bookmarks/panel`` was answered with a redirect to the ADOM home in
+#: the ADC/FAZ/FAC consoles. The rail could only report that as a dead
+#: session (2026-08-30).
+#:
+#: Reachable is NOT visible: every row these blueprints serve still goes
+#: through ``product_scope``/``visible_appliances``, so a console reaches its
+#: own rail and sees only its own devices. Nothing whose ROWS are not scoped
+#: that way belongs in this set.
+#:
+#: ``wiki`` (2026-10-16) is drawn at the top of Operations in every device
+#: ADOM and of the Global block, and its rows are scoped by
+#: services/wiki_access.py (ADOM confinement included) on every route.
+CHROME_BPS = frozenset({'bookmarks', 'wiki'})
+
+
+#: Endpoints that may be framed by SATOM itself (X-Frame-Options SAMEORIGIN):
+#: the device-layout dialogs the "Edit entry" pencil stacks over a dialog, and
+#: Signature Details, which slides in over Edit Signature Policy.
+_SAME_ORIGIN_FRAMES = ("workspace.fwgui_", "workspace.gui_", "web_protection.signature_policy")
+
+
+def create_app(config_override: object | None = None) -> Flask:
+    app = Flask(__name__, instance_relative_config=False)
+
+    # -- configuration ----------------------------------------------------
+    app.config.from_object(get_config())
+    if config_override is not None:
+        app.config.from_object(config_override)
+    # Production refuses an ephemeral (per-process) FERNET_KEY or SECRET_KEY;
+    # development warns once. Before any extension, job or session uses them.
+    from .config import enforce_startup_keys
+    enforce_startup_keys()
+
+    # propagate FERNET_KEY into environment so models.py can pick it up
+    if app.config.get("FERNET_KEY"):
+        os.environ.setdefault("FERNET_KEY", app.config["FERNET_KEY"])
+
+    # -- extensions -------------------------------------------------------
+    db.init_app(app)
+    # Background threads (sweeps, jobs, the scheduler) dial devices with no app
+    # context; the trust store needs this to read its CAs there.
+    from .services import trust_store as _trust_store
+    _trust_store.init_app(app)
+    migrate.init_app(app, db)
+    login_manager.init_app(app)
+    csrf.init_app(app)
+    limiter.init_app(app)
+
+    # Chrome language. The selector lives in a service so it can be
+    # tested without a live Babel, and it degrades to the default
+    # rather than raising — it runs on every request, error pages
+    # included.
+    app.config.setdefault("BABEL_DEFAULT_LOCALE", _langs.DEFAULT)
+    app.config.setdefault("BABEL_DEFAULT_TIMEZONE", "UTC")
+    babel.init_app(app, locale_selector=_ui_locale.resolve)
+
+    login_manager.login_view = "auth.login"
+    login_manager.login_message = "Please log in to access this page."
+    login_manager.login_message_category = "warning"
+
+    @login_manager.user_loader
+    def load_user(user_id: str):
+        from .auth import session_epoch as _epoch
+        from .models import User
+        # The id alone does not identify an account across a clone import:
+        # the users table is replaced underneath the sessions.
+        if not _epoch.session_is_current():
+            return None
+        return db.session.get(User, int(user_id))
+
+    from .auth import session_epoch as _session_epoch
+    _session_epoch.init_app(app)
+
+    # Idle session lock (Settings -> General -> Session Lock). Registered
+    # before every other before_request gate so a locked session reaches none.
+    from .auth import session_lock as _session_lock
+    _session_lock.init_app(app)
+
+    # Apps-only accounts (Profiles > Type: Apps only, and the accounts an
+    # app's sign-in makes) reach their apps and nothing else. Deny by default,
+    # right after the idle lock and before every ADOM / device gate.
+    from .services import apps_only as _apps_only
+    _apps_only.init_app(app)
+
+    # -- blueprints -------------------------------------------------------
+    _register_blueprints(app)
+
+    # Signed code plugins (data/plugins/code/, see services.plugin_code):
+    # verified and mounted at /x/<slug>/ now; a broken one is skipped.
+    from .services import plugin_code as _plugin_code
+    _plugin_code.load_all(app)
+
+    @app.route('/')
+    def index():
+        """The GLOBAL ADOM — fleet-wide dashboard spanning FortiWeb + FortiADC.
+        Visiting '/' always enters Global (like FortiManager's Global ADOM)."""
+        from flask import redirect, url_for, session
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return redirect(url_for('auth.login'))
+        session['product'] = 'global'
+        session.permanent = True
+        from .views.global_home import dashboard
+        return dashboard()
+
+    @app.route('/web/')
+    def fortiweb_home():
+        """FortiWeb ADOM entry — the old '/' fortiweb landing, now at /web/."""
+        from flask import redirect, url_for, session
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return redirect(url_for('auth.login'))
+        session['product'] = 'fortiweb'
+        session.permanent = True
+        from .services import device_context
+        if device_context.current_appliance() is not None:
+            return redirect(url_for('workspace.index'))
+        return redirect(url_for('architecture.index'))
+
+    # -- service worker (root scope) — powers resilient background uploads
+    #    (Background Fetch API): the transfer is owned by the browser, so it
+    #    survives navigation / refresh / tab close. Served at '/' so its scope
+    #    is the whole app; no auth (the script is not sensitive) and exempt from
+    #    the product/access gates below so registration never gets a redirect.
+    @app.route('/sw.js')
+    def service_worker():
+        from flask import Response
+        sw_path = os.path.join(app.static_folder, 'js', 'sw.js')
+        try:
+            with open(sw_path, 'r', encoding='utf-8') as fh:
+                body = fh.read()
+        except OSError:
+            return ('', 404)
+        resp = Response(body, mimetype='application/javascript')
+        resp.headers['Service-Worker-Allowed'] = '/'
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+
+    # -- shared worker — owns firmware upload TRANSFERS so they survive a
+    #    full-page navigation. A SharedWorker persists across same-origin page
+    #    loads, so an XHR upload started inside it keeps going when the user
+    #    changes page (unlike an in-page XHR, which the navigation aborts). It
+    #    broadcasts progress to whatever page is open and answers a "query" so a
+    #    freshly-loaded page reconnects to the in-flight transfer. Same-origin
+    #    JS, gate-exempt like the service worker so it always loads.
+    @app.route('/upload-worker.js')
+    def upload_worker():
+        from flask import Response
+        w_path = os.path.join(app.static_folder, 'js', 'upload-worker.js')
+        try:
+            with open(w_path, 'r', encoding='utf-8') as fh:
+                body = fh.read()
+        except OSError:
+            return ('', 404)
+        resp = Response(body, mimetype='application/javascript')
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+
+    # -- diagnostic breadcrumb sink (temporary). GET so it never trips CSRF;
+    #    the page + upload worker ping it at each decision point so the server
+    #    log shows EXACTLY which transfer path ran and whether it survived a
+    #    navigation. Logs only (no storage), capped, gate-exempt.
+    @app.route('/_updiag')
+    def updiag():
+        from flask import Response
+        from flask_login import current_user
+        try:
+            if not current_user.is_authenticated:
+                return Response('', status=204)  # never log unauthenticated input
+            who = getattr(current_user, 'username', '') or '-'
+            args = dict(request.args)
+            app.logger.warning('UPDIAG user=%s ip=%s %s', who, _client_ip(),
+                               str(args)[:400])
+        except Exception:
+            pass
+        return Response('', status=204)
+
+    # -- product selection gate ------------------------------------------
+    # PER-TAB ADOM (2026-07-07): the ADOM a request runs in is resolved PER
+    # REQUEST into ``g.product`` — URL scope > X-ADOM header (each browser
+    # tab's sessionStorage, sent by turbo-boot.js/main.js) > ``_adom`` form
+    # field (native form posts can't carry headers) > session cookie. The
+    # session is only the DEFAULT for header-less full loads / brand-new
+    # tabs; NAVIGATION NEVER MUTATES IT anymore (the old ADOM-jump wrote
+    # session['product'], so switching ADOM in one tab flipped every other
+    # tab). Only the explicit switches (product.enter / product.set_product
+    # and the '/' + '/web/' homes) still write the session.
+    #: The measured-GUI routes shared by FortiWeb, FortiGate and
+    #: FortiAuthenticator (views.workspace, services.gui_products).
+    _GUI_ENGINE_EPS = frozenset({
+        'workspace.fwgui_index', 'workspace.fwgui_list', 'workspace.fwgui_refresh',
+        'workspace.fwgui_object', 'workspace.fwgui_new', 'workspace.fwgui_save'})
+
+    def _gui_engine_kind(ep):
+        """'fortigate' / 'fortiauthenticator' / 'fortiadc' / 'fortianalyzer'
+        when ``ep`` is a measured-GUI page of such a device (its
+        ``appliance_id``), else None. FortiWeb pages keep the FortiWeb gating
+        exactly as before."""
+        if ep not in _GUI_ENGINE_EPS:
+            return None
+        aid = (request.view_args or {}).get('appliance_id')
+        if not aid:
+            return None
+        try:
+            from .models import Appliance as _ApplGx
+            from .extensions import db as _dbgx
+            kind = _dbgx.session.query(_ApplGx.kind).filter_by(id=int(aid)).scalar()
+        except Exception:  # noqa: BLE001 -- unknown device: the usual gate
+            return None
+        return kind if kind in ('fortigate', 'fortiauthenticator', 'fortiadc',
+                                'fortianalyzer') else None
+
+    @app.before_request
+    def _product_gate():
+        from flask import g, session, redirect, url_for, flash, jsonify
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return None
+        ep = request.endpoint or ''
+        bp_name = ep.split('.', 1)[0]
+        from .branding import PRODUCTS as _BRAND_PRODUCTS
+        from .services import product_scope as _pscope
+        valid = tuple(_BRAND_PRODUCTS.keys())
+        sess_prod = session.get('product')
+        _allowed = _pscope.restricted_adoms()
+        if sess_prod in valid and not _pscope.adom_allowed(sess_prod, _allowed):
+            # The profile was narrowed while this session sat in an ADOM it no
+            # longer grants. Without the reset every header-less request would
+            # resolve to that ADOM and bounce below, forever.
+            sess_prod = None
+        if sess_prod not in valid:
+            # No product chosen yet (fresh login / deep link) — default to the
+            # Global ADOM instead of bouncing to the selector: every page is
+            # reachable from Global and the ADOM switcher is one click away.
+            session['product'] = sess_prod = 'global'
+            session.permanent = True
+        # NOTE: 'classification' is a Global-ADOM admin page (2026-07-07) and
+        # 'templates'/'naming'/'capacity' are product-aware shared pages
+        # linked from BOTH product ADOMs — none of them are URL-scoped.
+        fortiweb_scoped = {
+            'workspace', 'objedit', 'regex_lab', 'server_objects',
+            'web_protection', 'exceptions', 'attack_search', 'logs',
+            'import_backup', 'section_config', 'section_catalog',
+            'signatures', 'structure',
+            'segments',
+            # Line profiles feed the FortiWeb line wizard, which reads them
+            # under the device's product. Opened from the Global menu they
+            # were filed under 'global' and the wizard never saw them.
+            'line_profiles',
+            # 'scheduled_actions' left this set on 2026-08-10, for the
+            # reason 'change_requests' left it the day before: pinning
+            # it to the FortiWeb ADOM meant the FortiADC/FAZ/FAC
+            # consoles bounced off the page entirely, and the Global
+            # console was re-pinned to 'fortiweb' by this very branch —
+            # so Global's automation calendar was FortiWeb's, wearing
+            # Global's chrome. Rows are scoped instead
+            # (ScheduledAction.product, list AND by-id), and the action
+            # catalog is filtered by spec.products per ADOM.
+            # 'change_requests' left this set on 2026-08-09. Pinning it to the
+            # FortiWeb ADOM meant a change window could only ever name a
+            # FortiWeb: the FortiADC/FAZ/FAC consoles bounced off the page, and
+            # even the Global console was re-pinned to 'fortiweb' by this very
+            # branch, so its device picker showed FortiWebs only. A maintenance
+            # window is a property of the DEVICE. Rows are scoped instead — a
+            # CR is visible in an ADOM when it names a device that ADOM can see
+            # (views.change_requests._cr_in_scope), by-id routes included.
+            'provisioning', 'registry', 'api_explorer',
+            # 'backups' left this set on 2026-10-03: the vault is per DEVICE
+            # (FortiADC rows have one too), and pinning it to FortiWeb made
+            # "View Backups" on a FortiADC from Global a 404. Rows are scoped
+            # by visible_appliance_or_404 + require_device_scope instead.
+        }
+        hdr = (request.headers.get('X-ADOM') or '').strip().lower()
+        # Explicit per-navigation ADOM pin via query string. Hard links /
+        # non-Turbo navigations cannot send the X-ADOM header, so a shared
+        # non-URL-scoped page (e.g. Firmware reached from the FAZ menu) would
+        # fall back to the session cookie (often 'global') and lose its ADOM.
+        # A '?_adom=<product>' on the link makes the scope deterministic.
+        _qadom = (request.args.get('_adom') or '').strip().lower()
+        if _qadom in valid:
+            hdr = _qadom
+        if hdr not in valid and request.method == 'POST' \
+                and request.mimetype == 'application/x-www-form-urlencoded':
+            # Native (non-Turbo) form posts carry the tab's ADOM as a hidden
+            # field. urlencoded only — parsing multipart here would consume
+            # the stream of large uploads before the view sees it.
+            hdr = (request.form.get('_adom') or '').strip().lower()
+        eff = hdr if hdr in valid else sess_prod
+        if ep == 'index':
+            eff = 'global'
+        elif ep == 'fortiweb_home':
+            eff = 'fortiweb'
+        elif eff == 'global':
+            # The Global ADOM sees EVERYTHING (both products). Opening a
+            # product-scoped page is an ADOM jump for THIS TAB ONLY
+            # (FortiManager-style); a concrete ADOM still bounces off the
+            # other product's pages (the fortiadc branch below).
+            if bp_name in fortiweb_scoped:
+                eff = 'fortiweb'
+            elif bp_name in ('adc', 'adc_api'):
+                eff = 'fortiadc'
+        elif eff == 'fortiweb' and bp_name in ('adc', 'adc_api'):
+            # Entering the ADC area is always an explicit ADOM jump.
+            eff = 'fortiadc'
+        if bp_name in ('faz', 'faz_api'):
+            # Entering the FortiAnalyzer area is always an explicit ADOM jump.
+            eff = 'fortianalyzer'
+        if bp_name in ('fac', 'fac_api'):
+            # Same for FortiAuthenticator.
+            eff = 'fortiauthenticator'
+        if bp_name in ('fgt', 'fgt_api'):
+            # And for FortiGate.
+            eff = 'fortigate'
+        if bp_name == 'wsm':
+            # The Web Server Manager lives in the ADOM(s) it is switched on in
+            # (capability ``webserver``, 2026-11-07; Linux by default): opening
+            # it is an ADOM jump, like the FAZ / FAC / FGT areas, so its menu
+            # is that ADOM's. Switched off everywhere, the view 404s.
+            from .services.wsm import module_adoms as _wsm_adoms
+            _wa = _wsm_adoms()
+            if _wa and eff not in _wa:
+                eff = _wa[0]
+        _gx_kind = _gui_engine_kind(ep)
+        if _gx_kind:
+            # The measured-GUI pages (workspace.fwgui_*) of a FortiGate, a
+            # FortiAuthenticator, a FortiADC or a FortiAnalyzer are that
+            # product's pages: opening one is an ADOM jump to the device's own
+            # product, like its fgt / fac / adc / faz area.
+            eff = _gx_kind
+        if not _pscope.adom_allowed(eff, _allowed) and not (
+                ep.startswith('auth.') or ep in ('static', 'healthz')):
+            # ADOM confinement (profile → ADOMs). The filters in
+            # services.product_scope already return zero rows for an ADOM
+            # outside the set; this turns the empty page into a clear refusal.
+            g.product = 'global'
+            msg = ('Your profile does not include the %s ADOM.'
+                   % _BRAND_PRODUCTS.get(eff, {}).get('name', eff))
+            if request.is_json or request.accept_mimetypes.best == 'application/json' \
+                    or request.path.startswith('/api/'):
+                return jsonify({'ok': False, 'error': msg}), 403
+            flash(msg, 'warning')
+            return redirect(url_for('index'))
+        g.product = eff
+        always = {
+            'static', 'index', 'fortiweb_home', 'service_worker',
+            'upload_worker', 'updiag', 'healthz', 'healthz_primary',
+            'healthz_backups', 'healthz_cert_renewals', 'healthz_reconciler',
+            'product.select', 'product.set_product', 'product.switch',
+            'product.enter', 'product.fortiadc_home',
+            'product.placeholder_home',
+            # The published manual: the same static pages for every ADOM and
+            # for anonymous visitors, so there is nothing to scope.
+            'manual.home', 'manual.page',
+        }
+        if ep in always or bp_name in CHROME_BPS or ep.startswith('auth.') or _gx_kind:
+            return None
+        # A page the device-ADOM menu draws LIVE for this product (the
+        # FortiWeb-reference table, services/adom_menu.py) is reachable here
+        # whatever the hand-kept sets below say: menu and gate share one rule.
+        from .services import adom_menu as _adom_menu
+        if _adom_menu.gate_allows(bp_name, eff):
+            return None
+        if eff == 'fortiadc':
+            # FortiADC sessions get the ADC area + the product-neutral shared
+            # pages (fleet admin, audit, jobs, notifications, own profile) +
+            # the fleet-wide sections that are product-neutral or ADC-aware:
+            # the ADC API console (adc_api), Certificate Manager, and
+            # the DB browser. 'cert_manager'/'database' are product-scoped;
+            # 'adc_api' is the ADC-scoped API hub. RBAC still gates each write.
+            adc_bps = {'concept_map', 'adc', 'adc_api', 'appliances', 'settings', 'audit',
+                       'jobs', 'notifications', 'profiles', 'users',
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'directory_connections', 'apps_portal', 'locks',
+                       # 'advisor' and 'adom_assets' are rendered into EVERY
+                       # ADOM's sidebar by partials/nav_advisor.html and
+                       # partials/nav_adom_assets.html. Both were missing from
+                       # the three per-ADOM allowlists, so in the ADC/FAZ/FAC
+                       # consoles those two live-looking entries REDIRECTED to
+                       # the ADOM home — the exact defect 'scheduled_actions'
+                       # had on 2026-08-10 and 'change_requests' the day
+                       # before. tests/test_adom_menu_reachability.py now
+                       # walks every rendered sidebar link in every ADOM, so
+                       # the next entry added to a shared partial cannot
+                       # repeat it. ('docs' left this set: that blueprint was
+                       # deleted on 2026-08-02 and the string had been
+                       # allowing nothing ever since.)
+                       'advisor', 'adom_assets', 'console',
+                       # Scout walks a FortiADC virtual server as well
+                       # as a FortiWeb server policy, and the ADC Fleet
+                       # group draws the entry. Allowing it here is what
+                       # stops that click landing on /adc/ — the defect
+                       # 'calendar_plan' shipped with on 2026-09-08.
+                       'scout',
+                       # Calendar, same story, and it shipped broken here:
+                       # partials/nav_calendar.html is included in the Global,
+                       # FortiWeb and FortiADC menus, but 'calendar_plan' was
+                       # only ever reachable in the first two. An ADC operator
+                       # saw the entry and the click landed on /adc/ — a live
+                       # link that goes nowhere, which reads as broken rather
+                       # than absent. Since 2026-10-11 every ADOM draws ONE
+                       # Fleet group (partials/nav_fleet.html), so Scout and
+                       # Calendar are in faz_bps / fac_bps / fgt_bps too.
+                       'calendar_plan',
+                       # Change Types is an Administration page, mirrored
+                       # into every ADOM for the same reason Change Requests
+                       # was: the form it configures is offered in every
+                       # console, so pinning its editor to one ADOM would let
+                       # four consoles use wording they cannot see or correct.
+                       'cr_types',
+                       # Triggers (Administrator) and their implementation
+                       # (Automations > On a trigger): drawn in every ADOM's
+                       # Automation menu.
+                       'triggers', 'event_automations',
+                       # Firmware (the image vault) is reachable through
+                       # services/adom_menu.py since 2026-10-11: the FortiADC
+                       # upgrade on the appliance page flashes vault images
+                       # (897aa0ea), so the vault is needed here.
+                       'device_provision',
+                       # Scheduled Actions is mirrored into every ADOM
+                       # (2026-08-10). Rows carry ScheduledAction.product
+                       # and the catalog is cut to the actions whose
+                       # spec.products includes this ADOM, so a console
+                       # can only schedule work it can also see.
+                       'scheduled_actions',
+                       # Custom Views: Plugin Studio + Lua Studio are
+                       # product-scoped (records stamped per ADOM), so the
+                       # ADC ADOM reaches them and sees only its own.
+                       'plugins', 'lua_studio',
+                       # Product-scoped Fleet pages mirrored into the ADC ADOM
+                       # (visible_appliances / product_scope keep them ADC-only).
+                       # Monitoring, Metrics and Deep monitors are mirrored into
+                       # every ADOM as of 2026-07-28 (reversing the 2026-07-07
+                       # Global-only restructure): all three already scope their
+                       # rows through visible_appliances(), so an ADOM sees only
+                       # its own devices and probes, and anything added from the
+                       # Global ADOM for a device of this product shows up here
+                       # automatically. Certificate Manager stays Global-only.
+                       'architecture', 'netarch', 'metrics', 'search', 'analysis',
+                       'fleet_objects', 'dns_tool',
+                       'monitoring', 'deep_monitor', 'service_monitor',
+                       'monitor_analytics', 'monitor_reports',
+                       'metrics_admin',
+                       # Backup vault (per-appliance; the ADC transport is the
+                       # SSH config dump — services/backup.py kind branch).
+                       'backups',
+                       # Product-aware admin pages shared with FortiWeb.
+                       # Release Notes: product-scoped harvester/browser
+                       # (corpus filtered by g.product); reached from the
+                       # ADC ADOM top-banner modal (2026-07-12).
+                       'release_notes',
+                       'templates', 'naming', 'capacity', 'api_tokens', 'api_v1',
+                       # API library pages (2.13): Build compatibility is
+                       # drawn at the foot of EVERY sidebar and Schema builds
+                       # in each device ADOM's API group, but 2.13.0 shipped
+                       # them in no allowlist — the click bounced to the ADOM
+                       # home (tests/test_adom_menu_reachability.py).
+                       'schema_builds', 'build_compat',
+                       'change_requests', 'upgrade_flow', 'migration_report',
+                       # Operations > Incidents (SAT-INC-, 2026-11-08) is drawn
+                       # by partials/nav_fleet.html in EVERY ADOM, but shipped
+                       # in no per-ADOM set: the click bounced to the ADOM home
+                       # (tests/test_adom_menu_reachability.py). Rows are
+                       # scoped by services/incidents.visible_query
+                       # (visible_appliances), so a console sees only the
+                       # incidents of its own devices and the unattached ones.
+                       'incidents'}
+            adc_eps = {'product.fortiadc_home'}
+            if bp_name not in adc_bps and ep not in adc_eps:
+                return redirect(url_for('adc.index'))
+        if eff == 'fortianalyzer':
+            # FortiAnalyzer sessions get the FAZ area + the product-neutral
+            # shared pages + the product-scoped Fleet/Administration pages
+            # (Firmware, Network segment, Appliances, Audit). The Device
+            # Manager / Log View / Reports ... sections are faz-blueprint
+            # pages over the live JSON-RPC API. RBAC still gates each write.
+            faz_bps = {'concept_map', 'faz', 'faz_api', 'appliances', 'settings', 'audit', 'jobs',
+                       'notifications', 'profiles', 'users',
+                       'advisor', 'adom_assets', 'console',   # see the adc_bps note
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'directory_connections', 'apps_portal', 'locks', 'firmware', 'segments',
+                       'device_provision',
+                       # Change Types is an Administration page, mirrored
+                       # into every ADOM for the same reason Change Requests
+                       # was: the form it configures is offered in every
+                       # console, so pinning its editor to one ADOM would let
+                       # four consoles use wording they cannot see or correct.
+                       'cr_types',
+                       # Triggers (Administrator) and their implementation
+                       # (Automations > On a trigger): drawn in every ADOM's
+                       # Automation menu.
+                       'triggers', 'event_automations',
+                       # Scheduled Actions is mirrored into every ADOM
+                       # (2026-08-10). Rows carry ScheduledAction.product
+                       # and the catalog is cut to the actions whose
+                       # spec.products includes this ADOM, so a console
+                       # can only schedule work it can also see.
+                       'scheduled_actions',
+                       # Scout + Calendar: drawn by the shared Fleet group
+                       # (partials/nav_fleet.html) in every ADOM.
+                       'scout', 'calendar_plan',
+                       'architecture', 'netarch', 'metrics', 'search', 'analysis',
+                       'fleet_objects', 'dns_tool', 'backups',
+                       # Mirrored per-ADOM monitoring (2026-07-28) — see the
+                       # ADC note above; scoping is by device kind.
+                       'monitoring', 'deep_monitor', 'service_monitor',
+                       'monitor_analytics', 'monitor_reports',
+                       'metrics_admin',
+                       'release_notes', 'templates', 'naming', 'capacity',
+                       'api_tokens', 'api_explorer', 'api_v1',
+                       # API library pages (2.13): Build compatibility is
+                       # drawn at the foot of EVERY sidebar and Schema builds
+                       # in each device ADOM's API group, but 2.13.0 shipped
+                       # them in no allowlist — the click bounced to the ADOM
+                       # home (tests/test_adom_menu_reachability.py).
+                       'schema_builds', 'build_compat',
+                       'change_requests',
+                       'incidents',   # see the adc_bps note
+                       'plugins', 'lua_studio'}
+            if bp_name not in faz_bps:
+                return redirect(url_for('faz.index'))
+        elif eff == 'fortiauthenticator':
+            # Shared pages + the product-scoped Fleet/Administration pages.
+            # The Authentication/Certificate/Logging sections are fac-blueprint
+            # pages. RBAC still gates each write.
+            fac_bps = {'concept_map', 'fac', 'fac_api', 'appliances', 'settings', 'audit', 'jobs',
+                       'notifications', 'profiles', 'users',
+                       'advisor', 'adom_assets', 'console',   # see the adc_bps note
+                       # NOT firmware / backups (2026-10-03): the FAC
+                       # sidebar offers neither, the seeded cap_firmware is
+                       # False and services/backup.py has no
+                       # FortiAuthenticator transport — both were URL-only.
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'directory_connections', 'apps_portal', 'locks', 'segments',
+                       'device_provision',
+                       # Change Types is an Administration page, mirrored
+                       # into every ADOM for the same reason Change Requests
+                       # was: the form it configures is offered in every
+                       # console, so pinning its editor to one ADOM would let
+                       # four consoles use wording they cannot see or correct.
+                       'cr_types',
+                       # Triggers (Administrator) and their implementation
+                       # (Automations > On a trigger): drawn in every ADOM's
+                       # Automation menu.
+                       'triggers', 'event_automations',
+                       # Scheduled Actions is mirrored into every ADOM
+                       # (2026-08-10). Rows carry ScheduledAction.product
+                       # and the catalog is cut to the actions whose
+                       # spec.products includes this ADOM, so a console
+                       # can only schedule work it can also see.
+                       'scheduled_actions',
+                       'scout', 'calendar_plan',   # see the faz_bps note
+                       'architecture', 'netarch', 'metrics', 'search', 'analysis',
+                       'fleet_objects', 'dns_tool',
+                       # Mirrored per-ADOM monitoring (2026-07-28) — scoping is
+                       # by device kind, so a FAC session sees only FAC boxes.
+                       'monitoring', 'deep_monitor', 'service_monitor',
+                       'monitor_analytics', 'monitor_reports',
+                       'metrics_admin',
+                       'templates', 'capacity',
+                       'api_tokens', 'api_v1',
+                       # Release Notes: product-scoped (corpus filtered by
+                       # g.product); FortiAuthenticator release notes are
+                       # harvested since 2026-10-07.
+                       'release_notes',
+                       # NOT lua_studio: FortiAuthenticator has no scripting
+                       # object (its endpoint baseline declares
+                       # none) and LuaScript.TARGETS therefore cannot list it.
+                       # Letting the ADOM reach the studio only produced an
+                       # editor with zero valid targets.
+                       # API library pages (2.13): Build compatibility is
+                       # drawn at the foot of EVERY sidebar and Schema builds
+                       # in each device ADOM's API group, but 2.13.0 shipped
+                       # them in no allowlist — the click bounced to the ADOM
+                       # home (tests/test_adom_menu_reachability.py).
+                       'schema_builds', 'build_compat',
+                       'change_requests',
+                       'incidents',   # see the adc_bps note
+                       'plugins'}
+            if bp_name not in fac_bps:
+                return redirect(url_for('fac.index'))
+        elif eff == 'fortigate':
+            # BASE ADOM (2026-10-07): the read-only fgt area + the shared,
+            # product-scoped Fleet/Administration pages its sidebar draws.
+            # NOT firmware / backups / templates / lua_studio: no transport
+            # exists for a FortiGate in any of them, and a page the sidebar
+            # does not offer is a gate widened for nobody (see adc_bps).
+            fgt_bps = {'concept_map', 'fgt', 'fgt_api', 'appliances', 'settings', 'audit',
+                       'jobs', 'notifications', 'profiles', 'users',
+                       'advisor', 'adom_assets', 'console',   # see the adc_bps note
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'directory_connections', 'apps_portal', 'locks', 'segments', 'device_provision',
+                       'cr_types', 'process', 'scheduled_actions', 'triggers', 'event_automations',
+                       'scout', 'calendar_plan',   # see the faz_bps note
+                       'architecture', 'netarch', 'metrics', 'search', 'analysis',
+                       'fleet_objects', 'dns_tool',
+                       'monitoring', 'deep_monitor', 'service_monitor',
+                       'monitor_analytics', 'monitor_reports',
+                       'metrics_admin',
+                       'api_tokens', 'api_v1',
+                       # FortiGate release notes are harvested since 2.13.
+                       'release_notes',
+                       # API library pages (2.13): Build compatibility is
+                       # drawn at the foot of EVERY sidebar and Schema builds
+                       # in each device ADOM's API group, but 2.13.0 shipped
+                       # them in no allowlist — the click bounced to the ADOM
+                       # home (tests/test_adom_menu_reachability.py).
+                       'schema_builds', 'build_compat',
+                       'change_requests',
+                       'incidents'}   # see the adc_bps note
+            if bp_name not in fgt_bps:
+                return redirect(url_for('fgt.index'))
+        return None
+
+    # -- access control gate (IP whitelist + allowed users) --------------
+    # Lockout-safe by design: empty lists = no restriction, loopback always
+    # allowed, admins are NEVER restricted (so a typo can't lock out the people
+    # who manage this), and auth/static endpoints stay reachable.
+    @app.before_request
+    def _access_gate():
+        from flask import abort
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return None
+        ep = request.endpoint or ''
+        if ep in ('static', 'service_worker', 'upload_worker', 'updiag') \
+                or ep.startswith('auth.'):
+            return None
+        from .models import Permission
+        if current_user.can(Permission.USER_MANAGE):
+            return None  # admins are exempt
+        from .services import settings_store as _store
+        # An UNREADABLE allowlist is not an empty one. Both lists decode to []
+        # on a parse failure, and [] is the most permissive value here — a
+        # restored backup, a replica mid-write or a hand-edited psql row would
+        # otherwise admit every non-admin from every source IP, silently,
+        # because the ACCESS_DENY lines below are the only telemetry there is.
+        # Refuse to serve instead: 503, not 403 — this is the service being
+        # unable to evaluate the policy, not the user failing it. Admins
+        # returned above, so whoever must fix the row can still reach the UI.
+        _cfg_err = _store.access_config_error()
+        if _cfg_err:
+            app.logger.error('ACCESS_DENY reason=access_config_unreadable '
+                             'user=%s ip=%s endpoint=%s detail=%s',
+                             current_user.username, _client_ip(), ep, _cfg_err)
+            abort(503)
+        # The per-username allowlist that used to sit here is GONE. It was a
+        # fourth gate behind the directory group filter, the approval gate and
+        # the profile, and it decided nothing they did not - while going stale
+        # on every import: a user could be imported, approved and enabled and
+        # still take a blanket 403 whose only trace was the log line below.
+        # What remains is the IP whitelist, which answers a question no other
+        # gate does: WHERE a session may come from.
+        wl = _store.ip_whitelist()
+        if wl and not _ip_allowed(_client_ip(), wl):
+            app.logger.warning('ACCESS_DENY reason=ip_not_whitelisted user=%s '
+                               'ip=%s endpoint=%s', current_user.username,
+                               _client_ip(), ep)
+            abort(403)
+        return None
+
+    # -- device-first gate: per-device pages need a selected device ------
+    @app.before_request
+    def _device_gate():
+        from flask import g, session, redirect, url_for
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return None
+        if getattr(g, 'product', session.get('product')) != 'fortiweb':
+            return None
+        ep = request.endpoint or ''
+        # Pure-metadata JSON endpoints need no device context — gating them
+        # only breaks the forms (and tests) that fetch field specs.
+        if ep in ('exceptions.type_fields', 'exceptions.signature_lookup'):
+            return None
+        bp_name = ep.split('.', 1)[0]
+        device_bps = {'workspace', 'spo_wizard', 'server_objects', 'web_protection',
+                      'exceptions', 'backups'}
+        if bp_name not in device_bps:
+            return None
+        from .services import device_context
+        va = request.view_args or {}
+        did = va.get('appliance_id', va.get('id'))
+        if did is not None:
+            try:
+                device_context.set_current(did)
+            except Exception:
+                pass
+            return None
+        if device_context.current_appliance() is None:
+            return redirect(url_for('architecture.index'))
+        return None
+
+    # -- template globals -------------------------------------------------
+    # Cache-busting for app-owned static: ?v=<mtime> so a deploy invalidates
+    # the edge /static/ proxy cache (which otherwise serves stale JS/CSS).
+    @app.template_global()
+    def asset(filename):
+        import os as _os
+        from flask import url_for
+        try:
+            _v = int(_os.path.getmtime(_os.path.join(app.static_folder, filename)))
+        except OSError:
+            _v = 0
+        return url_for('static', filename=filename) + ('?v=%d' % _v)
+
+    # Device menu label: (device, adom). One definition, because two authors
+    # of the same split is how a name and its ADOM drift apart.
+    @app.template_global()
+    def appliance_name_parts(appl):
+        from .models import appliance_name_parts as _p
+        return _p(appl) if appl is not None else ("", "")
+
+    # Device-wide verbs (firmware, backup vault, console) belong to the
+    # chassis, not to one ADOM of it. The template asks these two, never
+    # re-derives them: a page that decides on its own which row is "the
+    # device" is a page that can disagree with the route that enforces it.
+    @app.template_global()
+    def owns_device_scope(appl):
+        from .models import owns_device_scope as _o
+        return bool(appl is not None and _o(appl))
+
+    # The edit-lease key of an object, spelled as every writer checks it
+    # (lock_service.keys_for): an editor that names its lease differently
+    # holds a lease no write ever meets.
+    @app.template_global()
+    def lease_key(collection, name):
+        from .services.objform import collection_of
+        return "%s:%s" % (collection_of(collection or ""), name or "")
+
+    @app.template_global()
+    def adom_menu(key, product):
+        """Device-ADOM sidebar entry state: ``.on`` / ``.reason`` /
+        ``.endpoint`` (services/adom_menu.py)."""
+        from .services.adom_menu import state
+        return state(key, product)
+
+    @app.template_global()
+    def studio_apps_menu(product_key):
+        """Enabled, published Plugin Studio apps -- flow and script apps alike
+        since 2026-10-23 -- the current user may open in this ADOM
+        (services.studio_apps.menu), once per request."""
+        from flask import g as _g
+        from flask_login import current_user
+        cache = getattr(_g, "_studio_apps_menu", None)
+        if cache is None:
+            cache = _g._studio_apps_menu = {}
+        if product_key not in cache:
+            try:
+                from .services.studio_apps import menu
+                cache[product_key] = menu(current_user, product_key)
+            except Exception:  # noqa: BLE001 -- a menu must never 500 the page
+                cache[product_key] = []
+        return cache[product_key]
+
+    @app.template_global()
+    def studio_apps_grouped(items):
+        """The menu entries of studio_apps_menu() by menu group: a submenu of
+        Plugins per group, then the entries without one (services.studio_apps.grouped)."""
+        from .services.studio_apps import grouped
+        return grouped(items or [])
+
+    @app.template_global()
+    def studio_folder_adoms(a):
+        """The ADOMs an app's folder hands it (Plugin Studio > Apps)."""
+        from .services.studio_apps import folder_adoms
+        return folder_adoms(a)
+
+    @app.template_global()
+    def studio_folder_groups(a):
+        """The user group ids an app's folder hands it (Plugin Studio > Apps)."""
+        from .services.studio_apps import folder_groups
+        return folder_groups(a)
+
+    @app.template_global()
+    def global_all_plugins_entry(product_key):
+        """Whether Global > Plugins (partials/nav_global_apps.html) draws the
+        "All plugins" entry for this user: the gate it had inside Automation
+        until 2026-10-23 (config_write, which Automation needs, and the
+        Plugins page's key). Plugins now follows Automation instead of
+        living in it (operator), with the same audience."""
+        from flask_login import current_user
+        return bool(product_key == "global" and current_user and current_user.is_authenticated
+                    and current_user.can("config_write") and may_open("scripts.index"))
+
+    @app.template_global()
+    def wsm_modules(slug=None):
+        """The Web Server Manager's modules for its ADOM's menu: on a server the
+        user reaches only some sites of, only the site pages (device scope)."""
+        from flask_login import current_user
+        from .services import wsm as _W
+        if slug and _W.site_scope(current_user, slug) is not None:
+            return {k: v for k, v in _W.MODULES.items() if k in _W.SITE_PAGES}
+        return _W.MODULES
+
+    @app.template_global()
+    def may_open(endpoint):
+        """Whether the current user passes *endpoint*'s require_permission.
+
+        Sidebar entries ask this instead of repeating the key by hand: the
+        stamp the route enforces is the only source, so a link can no longer
+        be offered to a profile the page then answers 403 to. Endpoints with
+        no stamp (login-only, or gated in the body) stay visible."""
+        from flask_login import current_user
+        from .services.concept_map import required_permission, user_passes
+        return user_passes(current_user, required_permission(endpoint, app))
+
+    @app.template_global()
+    def sentinel_active():
+        """Whether Monitoring > Sentinel is offered: Sentinel is CONFIGURED.
+
+        That is the master switch ``sentinel.enabled`` (Settings > Sentinel)
+        AND at least one FortiWeb this session can see that is not retired
+        (host ``*.invalid``): the FortiWeb attack log is the only thing the
+        sweep ingests, so without one the console can only ever be empty.
+        Unconfigured, the entry goes (operator, 2026-10-23, "if it is not
+        configured it should disappear from the menu"); Settings > Sentinel
+        stays, and the routes still answer by URL. A FortiWeb in maintenance
+        still counts: maintenance is temporary, and the entry must not blink.
+        Read once per request; an unreadable setting keeps the entry."""
+        from flask import g as _g
+        cached = getattr(_g, "_sentinel_active", None)
+        if cached is None:
+            try:
+                from .services.sentinel import config as _sn_config
+                cached = bool(_sn_config.get("enabled"))
+                if cached:
+                    from .models import Appliance, visible_appliances
+                    cached = visible_appliances().filter(
+                        Appliance.kind == "fortiweb",
+                        ~Appliance.host.like("%.invalid")).first() is not None
+            except Exception:  # noqa: BLE001 -- a menu must never 500 the page
+                cached = True
+            _g._sentinel_active = cached
+        return cached
+
+    @app.template_global()
+    def hypervisor_on():
+        """Whether Device Provisioning is offered: a hypervisor is REGISTERED.
+
+        At least one enabled row in Settings > Hypervisors
+        (hypervisors.any_configured). Without one the page could only offer
+        its config_only mode, and the operator registers existing machines in
+        Appliances and configures them in System Provisioning instead
+        (operator, 2026-10-24), so the entry goes. Configuration, not
+        reachability: no render probes a hypervisor. The route still answers
+        by URL. Read once per request."""
+        from flask import g as _g
+        cached = getattr(_g, "_hypervisor_on", None)
+        if cached is None:
+            from .services.hypervisors import any_configured
+            cached = _g._hypervisor_on = any_configured()
+        return cached
+
+    @app.template_global()
+    def device_scope_owner(appl):
+        """The sibling that DOES carry those verbs, for a pointer link.
+
+        ``None`` when *appl* already owns them, and also when the owning row
+        is in maintenance and this user may not see it — linking to a row the
+        next click 404s on is worse than showing no link at all."""
+        if appl is None:
+            return None
+        from flask_login import current_user
+        from .models import chassis_device_row, can_view_maintenance
+        owner = chassis_device_row(appl)
+        if owner is None or owner.id == appl.id:
+            return None
+        if getattr(owner, "maintenance", False) and not can_view_maintenance(current_user):
+            return None
+        return owner
+
+    @app.context_processor
+    def _inject_branding():
+        from flask import session
+        from flask_login import current_user
+        from .branding import get_product, PRODUCTS
+        from .services import settings_store as _store
+        from .services import user_settings_store as _ustore
+        from flask import g as _g
+        from .services.product_scope import adom_allowed as _pscope_allowed
+        prod = get_product(getattr(_g, 'product', None) or session.get('product'))
+        try:
+            # Per-user banner (DB-backed) for a logged-in user; global/default
+            # otherwise. No cookie is involved.
+            if getattr(current_user, 'is_authenticated', False):
+                _bg = _ustore.banner_bg(current_user.id, prod['key'])
+            else:
+                _bg = _store.banner_bg(prod['key'])
+        except Exception:
+            _bg = '#162940'
+        # The selected appliance drives BOTH the device-scoped nav leaves and the
+        # feature-visibility gate below, so it is resolved before the menus are
+        # built (it used to be resolved after them, when nothing upstream needed
+        # it). One resolution, one query — not one per consumer.
+        try:
+            from .services import device_context as _dc
+            _cur_appl = _dc.current_appliance()
+            if _cur_appl is None:
+                # Display-only fallback: a single-device product (FortiADC,
+                # FortiAnalyzer, FortiAuthenticator) shows its sole device in
+                # the topbar/menu without a manual pick. Views still resolve
+                # their own device context via device_context.
+                # The ADOM key IS the appliance kind, so this is derived from
+                # the registry — the old literal map left every ADOM added
+                # later without the fallback. FortiWeb is excluded on purpose:
+                # it is the multi-device product and owns an explicit picker.
+                from .services.product_scope import (session_product,
+                                                     concrete_products,
+                                                     FORTIWEB)
+                from .models import Appliance as _ApplFB
+                _p = session_product()
+                _kfb = _p if (_p != FORTIWEB and _p in concrete_products()) else None
+                if _kfb:
+                    _cands = _ApplFB.query.filter_by(kind=_kfb).all()
+                    if len(_cands) == 1:
+                        _cur_appl = _cands[0]
+        except Exception:
+            _cur_appl = None
+        # FortiWeb hides a whole menu branch for every `system feature-visibility`
+        # toggle left `disable` (all 19 are disable on a stock 7.6.8 unit). Mirror
+        # that here so the sidebar cannot offer pages the appliance's own GUI does
+        # not have. Unknown device / unsynced cache → EMPTY set → the menu is
+        # exactly what it was before gating existed.
+        try:
+            from .services import feature_visibility as _fv
+            _fv_hidden = _fv.hidden_logicals(getattr(_cur_appl, 'id', None))
+        except Exception:
+            _fv_hidden = frozenset()
+        try:
+            from flask_login import current_user as _cu
+            from .models import Template as _Tpl
+            if getattr(_cu, 'is_authenticated', False) and _cu.can('user_manage'):
+                _pending = _Tpl.query.filter_by(status=_Tpl.STATUS_PENDING).count()
+            else:
+                _pending = 0
+        except Exception:
+            _pending = 0
+        # --- bug-report counts for the top-bar bell ---
+        _open_reports = 0
+        _my_resolved = 0
+        _bug_notify = False
+        try:
+            from flask_login import current_user as _cu2
+            if getattr(_cu2, "is_authenticated", False):
+                from .services import bug_reports as _br
+                if _cu2.can("user_manage"):
+                    _bug_notify = _br.is_opted_in(_cu2.id)
+                    # In-app badge/inbox is available to every admin;
+                    # the opt-in flag governs EMAIL delivery only.
+                    _open_reports = _br.open_count()
+                _my_resolved = _br.unseen_resolved_count(_cu2.id)
+        except Exception:
+            _open_reports = 0
+            _my_resolved = 0
+            _bug_notify = False
+        # --- unread notifications for the top-bar bell (the bell's ONLY count) ---
+        _unread_notif = 0
+        _notif_preview = []
+        try:
+            from flask_login import current_user as _cu3
+            if getattr(_cu3, "is_authenticated", False):
+                from .services import notifications as _notify
+                _unread_notif = _notify.unread_count(_cu3.id)
+                _notif_preview = _notify.recent(_cu3.id, limit=8)
+        except Exception:
+            _unread_notif = 0
+            _notif_preview = []
+        # FortiAnalyzer curated menu (services.faz_menu): drawn only while the
+        # unit has no measured GUI layout (partials/nav_fortianalyzer.html).
+        try:
+            if prod.get("key") == "fortianalyzer":
+                from .services import faz_menu as _fazm
+                _faz_nav = _fazm.menu()
+            else:
+                _faz_nav = ()
+        except Exception:
+            _faz_nav = ()
+        # FortiGate / FortiAuthenticator / FortiADC / FortiAnalyzer: the
+        # device's own menu tree from its measured GUI layouts
+        # (services.gui_pages, like the FortiWeb group) -- the only device
+        # menu of the first three ADOMs (the hand-made adc_menu groups left the
+        # FortiADC sidebar 2026-10-11); FortiAnalyzer keeps faz_menu as the
+        # fallback while no layout exists.
+        # The device is the page's own on a GUI
+        # page, else the ADOM's current one.
+        _gx_appl, _gx_nav = None, []
+        try:
+            if prod.get("key") in ("fortigate", "fortiauthenticator", "fortiadc",
+                                   "fortianalyzer"):
+                _gx_appl = _cur_appl
+                _vaid = (request.view_args or {}).get('appliance_id')
+                if (request.endpoint or '').startswith('workspace.fwgui') and _vaid:
+                    from .models import Appliance as _ApplNav
+                    _a = db.session.get(_ApplNav, int(_vaid))
+                    if _a is not None and _a.kind == prod.get("key"):
+                        _gx_appl = _a
+                if _gx_appl is not None and _gx_appl.kind == prod.get("key"):
+                    from .services import gui_pages as _gp2
+                    _gx_nav = _gp2.nav_for(_gx_appl)
+                else:
+                    _gx_appl = None
+        except Exception:
+            _gx_appl, _gx_nav = None, []
+        try:
+            _env_mode = _store.env_mode()
+        except Exception:
+            _env_mode = 'development'
+        try:
+            from .services import self_update as _su
+            _ha_mode = _su.ha_mode()
+            _node_role = _su.node_role()
+            _node_name = _su.this_node_name()
+        except Exception:
+            _ha_mode, _node_role, _node_name = 'standalone', 'unknown', ''
+        return {
+            'product': prod,
+            'products': PRODUCTS,
+            # base.html reads the ADOM registry under its OWN name: a view that
+            # passes `products=` (a list of its own) used to shadow it and the
+            # Global ADOM sidebar raised UndefinedError (Naming 2.11, Build
+            # compatibility 2.13). tests/test_adom_registry_name.py.
+            # Confined profiles see only their own ADOMs in the switcher; the
+            # gate refuses the others anyway (services.product_scope).
+            'adom_registry': {k: v for k, v in PRODUCTS.items()
+                              if _pscope_allowed(k)},
+            'env_mode': _env_mode,
+            'ha_mode': _ha_mode,
+            'node_role': _node_role,
+            'node_name': _node_name,
+            'faz_nav': _faz_nav,
+            'gx_appliance': _gx_appl,
+            'gx_nav': _gx_nav,
+            'current_appliance': _cur_appl,
+            'banner_bg': _bg,
+            'now': datetime.utcnow(),
+            'hidden_features': sorted(_fv_hidden),
+            'pending_template_count': _pending,
+            'open_report_count': _open_reports,
+            'bug_reports_notify': _bug_notify,
+            'my_resolved_unseen_count': _my_resolved,
+            'unread_notification_count': _unread_notif,
+            'notification_preview': _notif_preview,
+        }
+
+    # -- sidebar accordion: derive the open section from the markup ------
+    # See app/nav_state.py. The blueprint lists in base.html could not state
+    # which section holds a page without being kept in sync by hand, and had
+    # already drifted for five blueprints.
+    @app.template_filter('nav_autoopen')
+    def _nav_autoopen(html):  # noqa: ANN001
+        from .nav_hide import apply as _hide
+        from .nav_state import autoopen
+        return autoopen(_hide(str(html)))
+
+    # -- sidebar: Administrator sections, sorted by their RENDERED labels so
+    # the order is alphabetical in every console language (app/nav_sections.py).
+    @app.template_global('nav_sections')
+    def _nav_sections(specs):  # noqa: ANN001
+        from .nav_sections import sections
+        return sections(specs)
+
+    # -- sidebar: Automation's entries, alphabetical the same way (2026-10-23).
+    @app.template_global('nav_sorted')
+    def _nav_sorted(html, *blocks):  # noqa: ANN001
+        from .nav_sections import sorted_entries
+        return sorted_entries(html, *blocks)
+
+    # -- sidebar: the device's own menu (FortiWeb, FortiGate, ...) is open
+    # unless the operator closed it. main.js keeps the closed names in the
+    # fw_nav_dev_closed cookie (not localStorage) so the server paints the
+    # right state with no fold-then-unfold on every page load (2026-10-14).
+    def _nav_device_open(name):  # noqa: ANN001
+        from urllib.parse import unquote
+        raw = unquote(request.cookies.get('fw_nav_dev_closed', '') or '')
+        return str(name) not in raw.split('|')
+    app.jinja_env.globals['nav_device_open'] = _nav_device_open
+    # view / widget / app, explained where a kind is chosen (_plugin_kinds.html)
+    from .services import plugin_package as _pkg
+    app.jinja_env.globals['plugin_kind_order'] = _pkg.KIND_ORDER
+    app.jinja_env.globals['plugin_kind_guide'] = _pkg.KIND_GUIDE
+    app.jinja_env.globals['plugin_kind_rule'] = _pkg.KIND_RULE
+
+    # -- timezone-aware timestamp filter ---------------------------------
+    @app.template_filter('localtime')
+    def _localtime(dt, fmt='%Y-%m-%d %H:%M:%S'):
+        # Single conversion path: delegate to settings_store.to_local so the
+        # filter and every server-side formatter (git_service/monitoring) share
+        # one timezone source (general.timezone in app_settings).
+        from .services import settings_store as _store
+        return _store.to_local(dt, fmt)
+
+    # -- self-healing CSRF errors ----------------------------------------
+    # A stale/expired login (or any) form submitted with an old token used to
+    # dead-end on a raw 400 "CSRF tokens do not match". Instead, flash a hint
+    # and bounce back to the same form page, which re-renders a fresh token so
+    # the resubmit succeeds. (2026-06-27)
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def _handle_csrf_error(exc):  # noqa: ANN001
+        from flask import flash, redirect, request, url_for, jsonify, current_app
+        from .extensions import INSECURE_TRANSPORT_HINT, insecure_session_transport
+        # JSON/XHR callers (the editor save/inject fetch calls) must get a JSON
+        # error, not a 302 redirect they can't parse (which silently aborts the
+        # save). Browsers carry the token via the global fetch wrapper; this is
+        # the defense-in-depth so a miss surfaces loudly. (2026-06-28)
+        wants_json = (request.is_json
+                      or "application/json" in (request.headers.get("Accept") or "")
+                      or request.headers.get("X-Requested-With") == "XMLHttpRequest")
+        # A CSRF failure has two entirely different causes, and only one of
+        # them is the user's. When the app is served over plain HTTP with
+        # SESSION_COOKIE_SECURE on, the browser withholds the cookie from
+        # EVERY request: there is never a token to match and no password can
+        # be accepted. Telling that operator "your session expired" sends
+        # them off to retype a CORRECT password forever, which is exactly
+        # what satom-node-1-dock did on 2026-08-31.
+        insecure = insecure_session_transport()
+        if insecure:
+            current_app.logger.error(
+                "CSRF rejection on a plain-HTTP request while "
+                "SESSION_COOKIE_SECURE is enabled: %s", INSECURE_TRANSPORT_HINT
+            )
+        if wants_json:
+            return jsonify(ok=False, error=(
+                INSECURE_TRANSPORT_HINT if insecure
+                else "CSRF token missing or expired \u2014 reload the page and retry")), 400
+        flash(INSECURE_TRANSPORT_HINT if insecure
+              else "Your session expired or the form was stale \u2014 please try again.", "warning")
+        ref = request.referrer or ""
+        if ref.startswith(request.host_url):
+            return redirect(ref)
+        return redirect(url_for("auth.login"))
+
+    # -- security headers -------------------------------------------------
+    # CSP hardening (2026-07-03, round 2): every inline <script> AND <style>
+    # block in the templates carries nonce="{{ csp_nonce }}".
+    #  * script-src-attr is 'none' — the ~163 inline on*= handlers were
+    #    refactored into addEventListener bindings inside nonced script blocks
+    #    (data-js/data-* hooks, delegation for Jinja loops); JS-generated
+    #    markup no longer emits handler attributes either (lock.js, audit,
+    #    api_explorer, settings, segments, exceptions detect).
+    #  * script-src drops 'unsafe-inline' and carries the nonce as the
+    #    legacy fallback for browsers without -elem/-attr support.
+    #  * style-src-elem is nonce-gated, so an INJECTED <style> is refused;
+    #    dynamic injectors stamp the meta[name=csp-nonce] (turbo.min.js does
+    #    natively, jobs.js patched, and the two fragment re-executors —
+    #    base.html device picker + section_config editor — re-nonce style
+    #    elements alongside scripts).
+    #  * style-src-attr stays 'unsafe-inline': ~827 style="..." attributes
+    #    remain in the templates; converting them to classes is a separate
+    #    incremental round. The plain style-src line is the legacy fallback.
+    import secrets as _secrets
+
+    @app.before_request
+    def _csp_nonce():
+        # STABLE per session, NOT per request. CSP is enforced from the ORIGINAL
+        # document response HEADER and is immutable for that document's lifetime.
+        # Turbo Drive navigations are fetch+swap: the active document (and the
+        # nonce its header enforces) never changes, yet Turbo re-inserts each
+        # fetched page's inline <script>/<style> carrying THAT response nonce. A
+        # per-request nonce therefore never matches the enforced one after any
+        # Turbo visit -> every inline script/style is CSP-blocked until a full
+        # refresh. Pinning the nonce to the session makes every response (full
+        # load + Turbo fetch) share the one nonce enforced on first load.
+        from flask import session
+        nonce = session.get("_csp_nonce")
+        if not nonce:
+            nonce = _secrets.token_urlsafe(16)
+            session["_csp_nonce"] = nonce
+        g.csp_nonce = nonce
+
+    @app.context_processor
+    def _inject_version():
+        """The running version, from the repo-root VERSION file.
+
+        Templates must never carry a version literal -- see app/version.py
+        for why (the footer said v1.0 through four releases).
+        """
+        from .version import app_version
+        return {"app_version": app_version()}
+
+    @app.context_processor
+    def _inject_knowledge_freshness():
+        """``knowledge_freshness()`` for the pages that read pack knowledge
+        (release notes, Scout, migration report). A callable, so a page that
+        never shows the line never reads the import log."""
+        from app.services.knowledge_fetch import freshness
+        return {"knowledge_freshness": freshness}
+
+    @app.context_processor
+    def _inject_docs_url():
+        """The node's own copy of the published manual first, the public site
+        when this tree lacks the page. One resolver, one definition."""
+        from app.services.doc_publication import local_url
+        return {"docs_url": local_url}
+
+    @app.context_processor
+    def _inject_user_lang():
+        """The signed-in user's language preference, or "" when they have none.
+
+        Read here so the top bar can show the current choice next to the entry
+        that changes it. An anonymous request, a missing table (fresh install
+        mid-migration) or a broken row must never take down every page that
+        extends base.html, so this degrades to "" rather than raising.
+        """
+        from flask_login import current_user
+        from .services import user_settings_store as _ustore
+        try:
+            if getattr(current_user, "is_authenticated", False):
+                return {"user_lang": _ustore.language(current_user.id)}
+        except Exception:  # noqa: BLE001 - chrome must not break on a preference
+            pass
+        return {"user_lang": ""}
+
+    @app.context_processor
+    def _inject_calendar_on():
+        """Whether THIS user wants the Calendar shown. Default: yes.
+
+        Resolved once per request rather than inside the nav partial: the Fleet
+        menu is included in three branches of base.html, so reading the
+        preference there would be three identical queries on every page in the
+        product.
+
+        Degrades to True. An anonymous request, a missing table or a broken row
+        must not hide a page nobody switched off -- and must never take down
+        every template that extends base.html.
+        """
+        from flask_login import current_user
+        from .services import user_settings_store as _ustore
+        try:
+            if getattr(current_user, "is_authenticated", False):
+                return {"calendar_on": _ustore.calendar_enabled(current_user.id)}
+        except Exception:  # noqa: BLE001 - chrome must not break on a preference
+            pass
+        return {"calendar_on": True}
+
+    @app.context_processor
+    def _inject_scout_on():
+        """Whether Scout is switched on, for the chrome.
+
+        Resolved once per request for the same reason as calendar_on: the
+        Troubleshooting menu is included in more than one branch of base.html.
+        Degrades to True — a settings read that fails must not withdraw a
+        troubleshooting tool.
+        """
+        from .services import scout_config as _sc
+        try:
+            return {"scout_on": _sc.enabled()}
+        except Exception:  # noqa: BLE001 - chrome must not break on a setting
+            return {"scout_on": True}
+
+    @app.context_processor
+    def _inject_advisor_on():
+        """Whether Scout (the AI assistant, blueprint ``advisor``) is
+        configured, for the chrome: unconfigured, it is not drawn at all
+        (operator, 2026-10-23), whatever Settings › Appearance says.
+
+        Only for a user who may use it, so anonymous pages and users without
+        ``advisor.use`` never read the provider list. Degrades to True like
+        scout_on: a settings read that fails must not withdraw a page.
+        """
+        from flask_login import current_user
+        if not getattr(current_user, "is_authenticated", False):
+            return {"advisor_on": False}
+        from .services import advisor as _adv
+        try:
+            return {"advisor_on": current_user.can("advisor.use") and _adv.configured()}
+        except Exception:  # noqa: BLE001 - chrome must not break on a setting
+            return {"advisor_on": True}
+
+    @app.context_processor
+    def _inject_ui_lang():
+        """The language the page is ACTUALLY rendered in.
+
+        Distinct from ``user_lang``, which is what the user asked for: the two
+        differ for an anonymous visitor, for a user with no preference, and for
+        one whose language an administrator has withdrawn. ``<html lang>`` has
+        to carry the rendered one -- a screen reader pronounces the page in the
+        language the attribute claims, so declaring the stored preference (or a
+        hardcoded "en") mispronounces every translated page rather than failing
+        visibly.
+        """
+        try:
+            return {"ui_lang": _ui_locale.resolve()}
+        except Exception:  # noqa: BLE001 - chrome must not break on a locale
+            return {"ui_lang": _langs.DEFAULT}
+
+    # FortiWeb's menu in the sidebar (services.gui_pages): globals, so every
+    # view renders it without passing anything.
+    from .services import gui_pages as _gui_pages
+    app.jinja_env.globals["fwgui_nav_for"] = _gui_pages.nav_for
+    app.jinja_env.globals["fwgui_contains"] = _gui_pages.contains
+
+    # The Regex Lab ".*" button: the SAME field rule as the classic forms
+    # (waf_specs.REGEX_KEYS), and the same context (the collection's kind).
+    def _fw_regex_ctx(key, coll=""):
+        from .services import objform as _objform, waf_specs as _waf_specs
+        bare = str(key or "").rsplit("#", 1)[-1]
+        if bare not in _waf_specs.REGEX_KEYS:
+            return None
+        return _objform.object_kind(coll) if coll else ""
+    app.jinja_env.globals["fw_regex_ctx"] = _fw_regex_ctx
+
+    @app.context_processor
+    def _inject_csp_nonce():
+        return {"csp_nonce": getattr(g, "csp_nonce", "")}
+
+    @app.context_processor
+    def _inject_sentinel_hint():
+        """The "?" prose, reachable from any template without a view passing it.
+
+        A GLOBAL rather than a key each view adds to its own context, and that
+        is the whole point. Every Sentinel section renders on two surfaces --
+        the standalone page and the Settings pane -- through the same partial,
+        driven by two different view functions. A context key threaded by one
+        and forgotten by the other is precisely how ``/settings/`` began
+        answering 500 when the edge group landed, and how the pane and the page
+        drifted before that. A global cannot be forgotten by half the callers.
+
+        Import is local so a broken sentinel module cannot take down every
+        template in the product at start-up.
+        """
+        from app.services.sentinel import config as _sn_config
+        return {"sn_hint": _sn_config.hint_for}
+
+    @app.context_processor
+    def _inject_theme():
+        """Active UI theme (Settings -> Appearance): the ``:root`` override
+        block plus optional brand overrides.
+
+        Emitted as a nonced <style> in base.html rather than a stylesheet file
+        because it is per-install DB state, not an asset: a file would have to
+        be regenerated on every node after every edit and would drift on the
+        standby, whose Postgres is a read-only replica.
+
+        Failure here degrades to the shipped stylesheet; theming must never be
+        able to take a page down.
+        """
+        try:
+            from .services import theme_service as _theme
+            t = _theme.active_theme()
+        except Exception:
+            return {"theme_css": "", "theme_logo_url": "",
+                    "theme_favicon_url": "", "theme_name": ""}
+        from flask import url_for as _url_for
+        logo = favicon = ""
+        try:
+            if t.get("logo"):
+                logo = _url_for("settings.theme_asset", theme_id=t["id"],
+                                kind="logo")
+            if t.get("favicon"):
+                favicon = _url_for("settings.theme_asset", theme_id=t["id"],
+                                   kind="favicon")
+        except Exception:
+            logo = favicon = ""
+        return {"theme_css": t.get("css", ""), "theme_logo_url": logo,
+                "theme_favicon_url": favicon, "theme_name": t.get("name", "")}
+
+    @app.route('/favicon.ico')
+    def favicon_ico():
+        """Serve the bare-root favicon the browser requests implicitly.
+
+        Browsers ask for /favicon.ico regardless of any <link rel="icon"> tag
+        and cache the ANSWER — a 404 included — so a missing route is exactly
+        why a stale icon survives a rebrand. The active theme's favicon wins;
+        the shipped product mark is the fallback, so a fresh install with no
+        theme asset still gets the product icon and never a vendor logo.
+        """
+        from flask import redirect as _redirect, url_for as _url_for
+        from flask import send_from_directory as _send
+        try:
+            from .services import theme_service as _theme
+            t = _theme.active_theme()
+            if t.get("favicon"):
+                return _redirect(_url_for("settings.theme_asset",
+                                          theme_id=t["id"], kind="favicon"))
+        except Exception:
+            pass
+        return _send(os.path.join(app.root_path, "static", "img"),
+                     "favicon.ico", max_age=300)
+
+    @app.after_request
+    def set_security_headers(response):
+        # Plugin frame route (views/plugins.py) sets SAMEORIGIN so it can be
+        # embedded in its own sandboxed iframe; don't clobber it with DENY.
+        # The device-layout dialogs open inside SATOM's own stacked panel
+        # (the "Edit entry" pencil, objedit_drawer.js FWDrawer.openFrame):
+        # same origin only, never a third-party frame.
+        if "X-Frame-Options" not in response.headers and \
+                (request.endpoint or "").startswith(_SAME_ORIGIN_FRAMES):
+            response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        if "X-Frame-Options" not in response.headers:
+            response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # HSTS: the app is only ever served over TLS in production (the session
+        # cookie is already Secure). Browsers ignore this header when it arrives
+        # over plain HTTP, so sending it unconditionally is safe for local runs.
+        # Scoped to THIS host only: no includeSubDomains / preload, because that
+        # would force HTTPS on every other *.visionebc.{com,mx} fleet service,
+        # some of which are reached over plain HTTP.
+        if "Strict-Transport-Security" not in response.headers:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
+        nonce = getattr(g, "csp_nonce", "")
+        # Plugin sandbox routes (views/plugins.py: frame()/preview()) set their
+        # own relaxed CSP for author-supplied HTML/CSS/JS inside a sandboxed
+        # iframe. Don't clobber it with the app-wide strict/nonce-based policy.
+        if "Content-Security-Policy" not in response.headers:
+            # No third-party origin anywhere: every script, stylesheet and font
+            # is vendored under static/vendor/ (offline installs, see
+            # docs/engineering.md §9.1). tests/test_offline_assets.py pins it.
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                f"script-src 'self' 'nonce-{nonce}'; "
+                f"script-src-elem 'self' 'nonce-{nonce}'; "
+                "script-src-attr 'none'; "
+                "style-src 'self' 'unsafe-inline'; "
+                f"style-src-elem 'self' 'nonce-{nonce}'; "
+                "style-src-attr 'unsafe-inline'; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' data:;"
+            )
+        # Never serve authenticated HTML (e.g. the nav menu) from a stale
+        # browser cache after a deploy. Static assets stay cacheable.
+        if response.mimetype == "text/html":
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+    # -- centralised logging + global error handlers ---------------------
+    from .errors import (configure_logging, register_error_handlers,
+                         register_selftest_routes)
+    configure_logging(app)
+    register_error_handlers(app)
+    register_selftest_routes(app)
+
+    # -- health probes ---------------------------------------------------
+    # Status-only callers (the self-update runner, installers, satom CLI, an
+    # LB) need nothing but the status code, and every probe below answers
+    # without a session. The DETAIL (revision, host stats, DB summary, cert
+    # and journal contents, bundle names) is only for the peer node, which
+    # always calls through node_security.peer_get and therefore carries the
+    # HMAC request signature (X-SATOM-Node-Ts/-Sig). Anyone else -- including a node with no
+    # identity key configured (verify_request() is None: there is no peer to
+    # serve) -- gets the status alone.
+    def _peer_authenticated():
+        try:
+            from flask import request as _rq
+            from .services import node_security as _nsec
+            return _nsec.verify_request(_rq)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _peer_only():
+        from flask import jsonify
+        return jsonify({'ok': False, 'error': 'peer authentication required'}), 403
+
+    def _host_limits():
+        # The node's effective host thresholds (Settings > Thresholds, with
+        # the shipped defaults for anything unset): numbers only, so the
+        # unauthenticated probe can carry them. The operator CLI reads them
+        # here instead of keeping its own copy -- `satom get system health`
+        # warned the disk at a fixed 80/90 while the console graded 80/92.
+        try:
+            from .services import host_health as _hh
+            return {k: float(v) for k, v in _hh.limits().items() if v is not None}
+        except Exception:  # noqa: BLE001 - a limit is never worth a 500 here
+            return None
+
+    @app.route('/healthz')
+    def healthz():
+        from flask import jsonify
+        peer_auth = _peer_authenticated()
+        if peer_auth is not True:
+            # preflight reads peer_authenticated from here; keep it.
+            return jsonify({'ok': True, 'peer_authenticated': peer_auth,
+                            'limits': _host_limits()}), 200
+        rev = {}
+        try:
+            from .services import self_update as _su
+            rev = _su.current_revision()
+        except Exception:
+            pass
+        db_state = None
+        try:
+            from .services import cluster as _cluster
+            db_state = _cluster.db_summary()
+        except Exception:
+            pass
+        host = None
+        try:
+            from .services import system_health as _sh
+            host = _sh.host_stats()
+        except Exception:
+            pass
+        return jsonify({'ok': True, 'revision': rev.get('short'),
+                        'sha': rev.get('sha'), 'branch': rev.get('branch'),
+                        'db': db_state, 'host': host, 'limits': _host_limits(),
+                        'peer_authenticated': peer_auth}), 200
+
+    # -- primary-aware probe (for a load balancer health check) -----------
+    # Returns 200 ONLY when the local Postgres is the PRIMARY. A standby
+    # answers 503 so the LB keeps it out of rotation; after promotion
+    # (pg_is_in_recovery() -> false) it flips to 200 and the LB routes to it.
+    # The DB error text (host, user, database) is shown to the peer only.
+    @app.route('/healthz/primary')
+    def healthz_primary():
+        from flask import jsonify
+        from sqlalchemy import text
+        try:
+            in_recovery = db.session.execute(
+                text('SELECT pg_is_in_recovery()')).scalar()
+        except Exception as exc:
+            db.session.rollback()
+            body = {'ok': False, 'role': 'unknown'}
+            if _peer_authenticated() is True:
+                body['error'] = str(exc)
+            return jsonify(body), 503
+        if in_recovery:
+            return jsonify({'ok': False, 'role': 'standby'}), 503
+        return jsonify({'ok': True, 'role': 'primary'}), 200
+
+    # -- off-box backup inventory probe (peer only) -----------------------
+    # The PEER's System Backup page calls this to render a side-by-side
+    # local-vs-backup-server comparison without any SSH between nodes.
+    # Exposes only bundle names/sizes/dates + vault entry count — no content.
+    # This node's own page reads system_backup.local_inventory() directly.
+    @app.route('/healthz/backups')
+    def healthz_backups():
+        from flask import jsonify
+        if _peer_authenticated() is not True:
+            return _peer_only()
+        try:
+            from .services import system_backup as _sb
+            inv = _sb.local_inventory()
+            return jsonify({'ok': True, 'bundles': inv['bundles'],
+                            'vault': inv['vault']}), 200
+        except Exception as exc:
+            return jsonify({'ok': False, 'error': str(exc)}), 500
+
+    # -- reconciler probe (same pattern as /healthz/backups) --------------
+    # THIS node's own reconciler tick, so the PRIMARY can say whether the
+    # standby is fetching from it -- the standby's Postgres is read-only and
+    # its data/ is overwritten by the datasync, so asking it is the only way
+    # to learn its real state. Publishes reconciler.PUBLIC_FIELDS plus short
+    # shas and a redacted one-line error, to the authenticated peer only.
+    @app.route('/healthz/reconciler')
+    def healthz_reconciler():
+        from flask import jsonify
+        if _peer_authenticated() is not True:
+            return _peer_only()
+        try:
+            from .services import reconciler as _rec
+            return jsonify({'ok': True, 'reconciler': _rec.public_status()}), 200
+        except Exception as exc:  # noqa: BLE001
+            return jsonify({'ok': False, 'error': type(exc).__name__}), 500
+
+    # -- renewal-journal probe (same pattern as /healthz/backups) ---------
+    # The PEER's Renewals page calls this so one page shows BOTH nodes without
+    # any SSH between them. The journal is node-local on purpose: a standby's
+    # Postgres is read-only and data/ is wiped by the rsync --delete datasync,
+    # so the node that fails to renew could not otherwise record that failure.
+    # This node's own column is read locally (cert_renew_log.local_view).
+    @app.route('/healthz/cert-renewals')
+    def healthz_cert_renewals():
+        from flask import jsonify, request as _rq
+        if _peer_authenticated() is not True:
+            return _peer_only()
+        try:
+            from .services import cert_renew_log as _jrn
+            from .services import cert_service as _cs
+            limit = min(int(_rq.args.get('limit', 100) or 100), 400)
+            cert = {}
+            try:
+                cur = _cs.current()
+                cert = {k: cur.get(k) for k in
+                        ('source', 'days_left', 'not_after', 'subject', 'hostname',
+                         'installed_at', 'can_issue_internal')}
+                cert['renew_mode'] = _cs.renew_mode()
+            except Exception as exc:  # noqa: BLE001
+                cert = {'error': str(exc)}
+            return jsonify({'ok': True, 'cert': cert,
+                            'summary': _jrn.summary(),
+                            'runs': _jrn.history(limit=limit)}), 200
+        except Exception as exc:  # noqa: BLE001
+            return jsonify({'ok': False, 'error': str(exc)}), 500
+
+    # -- CLI commands -----------------------------------------------------
+    @app.cli.command('cert-renew')
+    def cert_renew_cmd():
+        """Auto-renew the node's CA-issued service cert if within threshold.
+        Invoked by the satom-cert-renew.timer. No-op for imported/bootstrap certs."""
+        from .services import cert_service as _cs
+        from .services import cert_renew_log as _jrn
+        try:
+            res = _cs.renew_if_needed(by='timer')
+            print('cert-renew:', res)
+        except Exception as exc:  # noqa: BLE001
+            # renew_if_needed journals its own failures; this catches anything
+            # that blew up BEFORE it could (import error, unreadable pki/, ...)
+            # so the Renewals page never shows a silent gap for a night.
+            _jrn.record(_jrn.CH_TIMER, _jrn.OK_ERROR, 'nightly cert-renew aborted',
+                        error='%s: %s' % (type(exc).__name__, exc), by='timer')
+            print('cert-renew error:', exc)
+        # Imported certs (e.g. the fleet wildcard) don't re-mint here; if the
+        # operator chose the 'autopull' renewal mode, fetch+install the renewed
+        # cert from the configured source in the SAME nightly pass.
+        try:
+            if _cs.renew_mode() == 'autopull':
+                print('cert-autopull:', _cs.autopull(by='timer'))
+        except Exception as exc:  # noqa: BLE001
+            _jrn.record(_jrn.CH_TIMER, _jrn.OK_ERROR, 'nightly cert-autopull aborted',
+                        error='%s: %s' % (type(exc).__name__, exc), by='timer')
+            print('cert-autopull error:', exc)
+
+        # [SATOM-SHARED-CERT] The served cert is the one PKI artefact both
+        # nodes legitimately share: a fleet wildcard covers every node name, is
+        # renewed OFF these nodes, and until now was copied to each one by
+        # hand. Hand-copying is why the pair drifts -- and the wildcard on this
+        # estate expires without any automatic path to replace it.
+        #
+        # Publish then install, in that order and on EVERY node: publish puts
+        # this node's served cert into data/pki-shared/ (which the datasync
+        # carries), install picks up a cert a peer published. Running both
+        # everywhere is self-correcting rather than role-gated -- the standby
+        # pulls data/ from the primary with --delete, so the primary's copy is
+        # authoritative within one sync interval no matter who wrote last.
+        #
+        # Both calls are gated inside cert_service on source == "imported" and
+        # on the cert actually covering this node's served names. A CA-ISSUED
+        # cert is per-node by construction (its SAN is this node's hostname),
+        # and sharing one would hand every node a certificate that names
+        # somebody else -- the same class of bug as sharing the node leaf.
+        try:
+            pub = _cs.publish_shared_cert()
+            if pub.get('published'):
+                print('cert-share publish:', pub.get('reason', 'ok'))
+            ins = _cs.install_shared_cert()
+            if ins.get('installed'):
+                print('cert-share install:', ins.get('reason', 'ok'))
+        except Exception as exc:  # noqa: BLE001
+            # Never let cert sharing break the nightly pass that renews the
+            # node's OWN certificate -- that one is load-bearing, this is
+            # convenience. But say so: a share that silently stops working
+            # leaves the pair drifting with both nodes reporting healthy.
+            _jrn.record(_jrn.CH_TIMER, _jrn.OK_ERROR, 'nightly cert-share aborted',
+                        error='%s: %s' % (type(exc).__name__, exc), by='timer')
+            print('cert-share error:', exc)
+
+        # [SATOM-RENEW-ARCHIVE] Pull the peer's renewal journal into a
+        # primary-owned archive under data/.
+        #
+        # The journal is node-local for a reason that has not changed: the
+        # standby's database is a read-only replica, so the node that fails to
+        # renew is exactly the node that cannot write a row about its own
+        # failure, and data/ is no good for the standby either because the
+        # datasync pulls it with --delete. What that leaves is a journal with
+        # no copy anywhere -- and on this estate the usual consolation ("the
+        # other node still has it") is false, because both nodes and the
+        # external backup host share a hypervisor.
+        #
+        # Direction is what makes this work: the standby pulls data/ FROM the
+        # primary, so a file the PRIMARY writes propagates instead of being
+        # deleted. archive_refresh() is inert on a standby by design.
+        #
+        # Wired here rather than left to a page render: an archive that only
+        # updates when somebody opens the Renewals page is an archive that is
+        # empty on the day the node it protects is gone.
+        try:
+            arch = _jrn.archive_refresh()
+            if arch:
+                print('cert-renew archive:', arch)
+        except Exception as exc:  # noqa: BLE001
+            print('cert-renew archive error:', exc)
+
+    @app.cli.command('cert-autopull')
+    def cert_autopull_cmd():
+        """Force a one-off autopull of the imported cert from the configured
+        source (ignores the mode gate). For testing the 'autopull' renewal path."""
+        from .services import cert_service as _cs
+        try:
+            print('cert-autopull:', _cs.autopull(by='manual', force=True))
+        except Exception as exc:  # noqa: BLE001
+            print('cert-autopull error:', exc)
+
+    @app.cli.command('alerts-run')
+    @click.option('--dry-run', is_flag=True, help='Evaluate only; send nothing.')
+    @click.option('--force', is_flag=True, help='Ignore the per-alert cooldown.')
+    def alerts_run_cmd(dry_run, force):
+        """Evaluate the proactive health checks and dispatch new alerts by email +
+        in-app bell. Invoked by satom-alerts.timer; runs on every node."""
+        from .services import alerts as _al
+        try:
+            res = _al.run(force=force, dry_run=dry_run)
+            print('alerts-run:', res)
+            # An alert can start automations (a recovery runbook). They run
+            # on job threads of THIS process, which exits next: wait for them,
+            # or they die mid-walk and stay "running" (2026-11-07).
+            from .services import jobs as _jobs
+            from .services import studio_flow as _sf
+            left = _jobs.wait_background(_sf.RUN_TIMEOUT + 30)
+            if left:
+                print('alerts-run: %d automation job(s) still running at exit, '
+                      'closed as interrupted by the next sweep: %s'
+                      % (len(left), ', '.join(left)))
+            # A run that found something and reached NOBODY exits non-zero, so
+            # the timer's unit goes ``failed`` and the operator sees it in
+            # systemctl and on the Monitoring page. Silent delivery failure is
+            # how "Relay access denied" survived for weeks behind a summary
+            # line that said the alerts had been dispatched.
+            if res.get("fresh") and not res.get("channels"):
+                print('alerts-run: DELIVERED NOTHING —',
+                      '; '.join(res.get('delivery_failed') or ['unknown']))
+                raise SystemExit(1)
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            print('alerts-run error:', exc)
+
+    @app.cli.command('preflight')
+    @click.option('--label', default='', help='Free-text label for the snapshot.')
+    @click.option('--out', default=None, help='Write the snapshot JSON here '
+                  '(default: data/flight/last-preflight.json).')
+    def preflight_cmd(label, out):
+        """Capture a health baseline BEFORE a risky change (upgrade / restore).
+        Saves it so 'postflight' can diff against it."""
+        from .services import preflight as _pf
+        import json as _json
+        snap = _pf.snapshot(label or 'preflight')
+        path = _pf.save(snap, out)
+        print('preflight saved:', path)
+        print(_json.dumps({'health': snap['health'], 'git': snap['git'].get('head'),
+                           'devices': {k: v.get('reachable') for k, v in snap['devices'].items()}
+                           if isinstance(snap['devices'], dict) and 'error' not in snap['devices']
+                           else snap['devices']}, indent=2))
+
+    @app.cli.command('postflight')
+    @click.option('--baseline', default=None, help='Baseline snapshot path '
+                  '(default: the last preflight).')
+    @click.option('--label', default='', help='Free-text label for the after-snapshot.')
+    def postflight_cmd(baseline, label):
+        """Capture a health snapshot AFTER a risky change and diff it against the
+        preflight baseline. Exits non-zero if a regression is detected."""
+        from .services import preflight as _pf
+        import json as _json, sys as _sys
+        try:
+            before = _pf.load(baseline)
+        except Exception as exc:  # noqa: BLE001
+            print('postflight: cannot load baseline:', exc)
+            _sys.exit(2)
+        after = _pf.snapshot(label or 'postflight')
+        verdict = _pf.compare(before, after)
+        print(_json.dumps(verdict, indent=2))
+        if not verdict['passed']:
+            print('POSTFLIGHT FAILED — regressions detected.')
+            _sys.exit(1)
+        print('postflight OK — no regressions.')
+
+    @app.cli.command('canary-restore')
+    @click.option('--device', required=True, help='Appliance name (e.g. fw7).')
+    @click.option('--apply', 'do_apply', is_flag=True, default=False,
+                  help='ACTUALLY upload+apply (DESTRUCTIVE — device reboots). '
+                       'Omit for a safe dry-run.')
+    @click.option('--method', default='ssh',
+                  help='Safety-backup capture transport: ssh|rest|auto (default ssh — '
+                       'plaintext, diffable).')
+    def canary_restore_cmd(device, do_apply, method):
+        """Config-restore canary, wrapped in the preflight/postflight harness.
+
+        SAFE steps (always run): preflight snapshot → capture a FRESH on-box
+        backup (the rollback artifact) → restore DRY-RUN (resolves the endpoint,
+        sends nothing). With --apply it additionally uploads that SAME just-taken
+        config back (a neutral re-apply) and the box reboots; then it waits for
+        the device to return and runs a postflight comparison.
+
+        The default (no --apply) is non-destructive end-to-end. Fire --apply only
+        in a maintenance window: the multipart field name is still unconfirmed and
+        a real restore reboots the appliance."""
+        import sys as _sys, time as _time, socket as _socket
+        from .services import preflight as _pf, backup as _bk
+        from .models import Appliance
+        appl = Appliance.query.filter_by(name=device).first()
+        if not appl:
+            print('canary: no appliance named %r' % device); _sys.exit(2)
+
+        pre = _pf.snapshot('canary-%s' % device)
+        _pf.save(pre)
+        devs = pre.get('devices') or {}
+        reachable = devs.get(device, {}).get('reachable') if isinstance(devs, dict) else None
+        print('preflight: %s reachable=%s | health_ok=%s' % (
+            device, reachable, pre.get('health', {}).get('ok')))
+        if not reachable:
+            print('canary: %s is not reachable — aborting before any change.' % device)
+            _sys.exit(1)
+
+        cb = _bk.fetch_device_backup_auto(appl, created_by='canary', method=method)
+        print('safety backup (ROLLBACK ARTIFACT): %s (%s bytes)' % (
+            cb.stored_path, getattr(cb, 'size_bytes', '?')))
+        with open(cb.stored_path, 'rb') as fh:
+            data = fh.read()
+
+        client = appl.build_client(timeout=60)
+        plan = _bk.restore(client, data, cb.filename, dry_run=not do_apply)
+        print('restore plan: dry_run=%s endpoint=%s size=%s ok=%s' % (
+            plan.get('dry_run'), plan.get('endpoint'), plan.get('size'), plan.get('ok')))
+        print('  ' + str(plan.get('message', '')))
+
+        if not do_apply:
+            print('DRY-RUN complete — nothing was sent. To fire for real (device '
+                  'REBOOTS), re-run in a maintenance window with --apply.')
+            return
+
+        # ---- destructive path (maintenance window only) ----
+        print('APPLY: uploaded — device is applying config and rebooting. '
+              'Waiting for it to return...')
+        host, port = appl.host, int(appl.port or 443)
+        deadline = _time.time() + 600
+        back = False
+        while _time.time() < deadline:
+            try:
+                with _socket.create_connection((host, port), timeout=5):
+                    back = True
+                    break
+            except Exception:  # noqa: BLE001
+                _time.sleep(10)
+        if not back:
+            print('canary: %s did NOT return within 600s — restore the rollback '
+                  'artifact from the console: %s' % (device, cb.stored_path))
+            _sys.exit(1)
+        _time.sleep(15)  # let services settle past TCP-up
+        post = _pf.snapshot('canary-%s-after' % device)
+        verdict = _pf.compare(pre, post)
+        print('postflight passed=%s' % verdict['passed'])
+        for r in verdict['regressions']:
+            print('  REGRESSION:', r)
+        print('rollback artifact retained at %s' % cb.stored_path)
+        _sys.exit(0 if verdict['passed'] else 1)
+
+    # ``flask apilib ...`` — the API library's operator commands.
+    from .cli_apilib import apilib_cli
+    app.cli.add_command(apilib_cli)
+    # ``flask knowledge ...`` — knowledge packs from the feed (satom CLI backend).
+    from .cli_knowledge import knowledge_cli
+    app.cli.add_command(knowledge_cli)
+    # ``flask naming discover`` — Naming Discovery (backend of `satom get device naming`).
+    from .cli_naming import naming_cli
+    app.cli.add_command(naming_cli)
+    # ``flask not-in-gui inventory`` — backend of `satom get device not-in-gui`.
+    from .cli_not_in_gui import not_in_gui_cli
+    app.cli.add_command(not_in_gui_cli)
+
+    @app.cli.command('create-db')
+    def create_db_cmd():
+        """Initialise database tables and seed the first admin user.
+
+        The admin's password is $SATOM_ADMIN_PASSWORD or, when unset, a random
+        one written to a 0600 file whose path is printed (never the password).
+        """
+        db.create_all()
+        from .models import User
+        if User.query.count() == 0:
+            path = _seed_admin()
+            if User.query.count() == 0:
+                raise click.ClickException(
+                    'no admin user was created — see the error logged above')
+            if path:
+                print('Admin user created: admin — generated password in %s' % path)
+            else:
+                print('Admin user created: admin — password from $%s' % ADMIN_PASSWORD_ENV)
+        else:
+            print('Database already contains users — skipping seed.')
+
+    def _ensure_widths():
+        """Widen VARCHAR columns that the models grew after the table existed.
+
+        ``db.create_all()`` never ALTERs an existing table, and
+        :func:`_ensure_columns` only ADDs — so a column whose model declaration
+        grew (``String(16)`` -> ``String(32)``) stays narrow forever on an
+        installation that predates the change.  That is not cosmetic: the ADOM
+        key ``fortiauthenticator`` is 18 characters, so the first row written
+        for the fourth product fails with ``StringDataRightTruncation`` on a
+        column the model believes is wide enough.  The failures land late — an
+        audit row, an alert, an API token — long after the operator registered
+        the appliance and concluded it worked.
+
+        Derived from the model metadata rather than a hand-written list, so a
+        future widening needs no second edit here.  **Only ever widens**:
+        narrowing can truncate real data, so a model that shrinks is ignored.
+        Widening a ``varchar`` in PostgreSQL is a catalog-only change (no table
+        rewrite) and replicates to the standby through WAL like any other DDL.
+        SQLite does not enforce ``VARCHAR`` length at all, so it is skipped.
+        """
+        from sqlalchemy import inspect, text
+
+        # SQLite does not enforce VARCHAR length, so there is nothing to widen
+        # and ALTER COLUMN TYPE is not supported there either.
+        if db.engine.dialect.name == 'sqlite':
+            return
+        insp = inspect(db.engine)
+        live_widths = {}
+        try:
+            for name in insp.get_table_names():
+                live_widths[name] = {
+                    c['name']: getattr(c.get('type'), 'length', None)
+                    for c in insp.get_columns(name)
+                }
+        except Exception:  # noqa: BLE001 — never block boot on a migration
+            return
+
+        for table, col, want in widen_plan(db.metadata.sorted_tables,
+                                           live_widths):
+            try:
+                db.session.execute(text(
+                    'ALTER TABLE %s ALTER COLUMN %s TYPE VARCHAR(%d)'
+                    % (table, col, want)))
+                db.session.commit()
+            except Exception:  # noqa: BLE001
+                db.session.rollback()
+
+    def _ensure_columns():
+        """Idempotently add columns introduced after a table already existed.
+
+        ``db.create_all()`` never ALTERs existing tables, so a new column on a
+        pre-existing table (e.g. ``templates.exceptions``) must be added here.
+        Safe on every boot — a column that is already present is a no-op.
+        """
+        from sqlalchemy import inspect, text
+        adds = {
+            # --- edit lease per editor tab (2026-11-04, migration leasetok01) ---
+            'resource_locks': [('owner_token', 'VARCHAR(64)')],
+            # --- Wiki article description (2026-10-16, migration wiki02) ---
+            'wiki_articles': [
+                ('summary', "VARCHAR(300) DEFAULT '' NOT NULL"),
+                # --- drafts + versions (2026-10-16, migration wiki03) ---
+                ('draft_data', "TEXT"),
+                ('draft_rev', "INTEGER DEFAULT 0 NOT NULL"),
+                ('draft_saved_at', "TIMESTAMP"),
+                ('draft_user_id', "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+            ],
+            'wiki_revisions': [
+                ('summary', "VARCHAR(300) DEFAULT '' NOT NULL"),
+            ],
+            # --- ADOM confinement per profile (2026-10-15) ---
+            # '' = every ADOM, which is what every existing profile grants.
+            'profiles': [
+                ('adoms', "TEXT DEFAULT '' NOT NULL"),
+                # --- Apps-only profiles (2026-10-30, migration appscope01) ---
+                ('kind', "VARCHAR(16) DEFAULT 'console' NOT NULL"),
+            ],
+            # --- artifact -> Web Protection Profile attribution (2026-08-25) ---
+            # NULLABLE, NO DEFAULT, NO BACKFILL. NULL means "nobody attributed
+            # this edge", which is what every row derived before today truly is.
+            # A DEFAULT '' would have silently re-labelled all of them as
+            # "bound on the server policy itself" — a claim the walk never made.
+            'waf_artifact_ref': [
+                ('wpp_mkey', 'VARCHAR(255)'),
+            ],
+            # --- API library: CLI channel metadata (apilib05_cli_channel) ---
+            # NULLABLE, no backfill: a fact folded before the column existed
+            # came from a REST source, which carries no channel metadata.
+            'api_lib_endpoint_fact': [
+                ('attrs', 'JSON'),
+            ],
+            'api_lib_field_fact': [
+                ('attrs', 'JSON'),
+            ],
+            # --- API packs 3.0: who wrote a rename (apipack06_knowledge_lanes) ---
+            # Every row that exists before the column is an operator's map.
+            'api_lib_field_map': [
+                ('status', "VARCHAR(16) DEFAULT 'active' NOT NULL"),
+                ('origin', "VARCHAR(128) DEFAULT 'local' NOT NULL"),
+            ],
+            # --- SoT: which ADOM, and whether the payload is still here ---
+            # product DEFAULTS to '' rather than a family: a version recorded
+            # before the column existed was not filed under FortiWeb, it was
+            # not filed at all, and sot_store.backfill_products() resolves it
+            # from the same authority record() uses. evacuated_at is NULL for
+            # every existing row, which is true — nothing has left yet.
+            'sot_version': [
+                ('product', "VARCHAR(32) DEFAULT ''"),
+                ('evacuated_at', 'TIMESTAMP'),
+            ],
+            # --- IPAM reservation handle + pool (2026-08-27) ---
+            # Nullable, no backfill. A run that predates these columns took its
+            # address before SATOM could record a handle, so NULL is the true
+            # answer: rollback must not pretend it can release it.
+            'provision_runs': [
+                ('ip_ref', 'VARCHAR(128)'),
+                ('ip_pool', 'VARCHAR(128)'),
+                # --- which backend acted (2026-08-28) ---
+                # NULLABLE, NO DEFAULT, NO BACKFILL. A run that predates these
+                # took its address from the one provider there was, so NULL is
+                # the true answer: rollback re-resolves and says so, rather
+                # than claiming a backend id nobody recorded.
+                ('ip_backend_id', 'INTEGER'),
+                ('dns_backend_id', 'INTEGER'),
+                # --- baseline at profile_applied (2026-10-27) ---
+                # '' / NULL on older runs is the truth: they were created
+                # without a classification and never pushed a baseline.
+                ('zone', "VARCHAR(128) DEFAULT ''"),
+                ('line', "VARCHAR(128) DEFAULT ''"),
+                ('department', "VARCHAR(128) DEFAULT ''"),
+                ('baseline_id', 'INTEGER'),
+                ('baseline_job_id', "VARCHAR(64) DEFAULT ''"),
+            ],
+            'templates': [
+                ('exceptions', 'TEXT'),
+                ('status', "VARCHAR(16) DEFAULT 'pending'"),
+                ('reject_reason', 'TEXT'),
+                ('reviewed_by', 'VARCHAR(64)'),
+                ('reviewed_at', 'DATETIME'),
+                ('product', "VARCHAR(32) DEFAULT 'fortiweb'"),
+                # --- firmware / API stamp (services.template_compat) ---
+                # source_firmware DEFAULTS to '' and provenance to 'legacy':
+                # a row saved before the stamp existed was authored against
+                # SOME build, and nobody wrote down which. '' says exactly
+                # that; any version filled in here would be invented.
+                ('source_firmware', "VARCHAR(32) DEFAULT ''"),
+                ('api_version', "VARCHAR(16) DEFAULT ''"),
+                ('source_appliance_id', 'INTEGER'),
+                ('source_appliance', "VARCHAR(128) DEFAULT ''"),
+                ('provenance', "VARCHAR(16) DEFAULT 'legacy'"),
+                ('compat_check', 'TEXT'),
+                ('validated_builds', 'TEXT'),
+                ('adapted_from_id', 'INTEGER'),
+                # NULLABLE, no backfill: no template decided a new field
+                # before the decision existed.
+                ('field_decisions', 'TEXT'),
+            ],
+            # Advisor per-message telemetry. NULLABLE with NO default on
+            # purpose: every row that predates the feature keeps NULL, which
+            # reads as "never measured" rather than a fabricated 0 ms / 0
+            # tokens for exchanges the product never timed.
+            'advisor_messages': [
+                ('duration_ms', 'INTEGER'),
+                ('prompt_tokens', 'INTEGER'),
+                ('completion_tokens', 'INTEGER'),
+                ('stopped', 'BOOLEAN DEFAULT FALSE'),
+            ],
+            'users': [
+                ('profile_id', 'INTEGER'),
+                ('auth_source', "VARCHAR(16) DEFAULT 'local'"),
+                ('totp_secret', 'VARCHAR(512)'),
+                ('totp_enabled', 'BOOLEAN DEFAULT FALSE'),
+                ('recovery_email', 'VARCHAR(256)'),
+                ('backup_codes', 'TEXT'),
+                ('totp_last_step', 'INTEGER'),
+                ('failed_logins', 'INTEGER DEFAULT 0'),
+                ('locked_until', 'TIMESTAMP'),
+                # --- app accounts pinned to a directory connection (appscope01) ---
+                ('login_connection_id', 'INTEGER'),
+            ],
+            # Install-vs-upgrade split (see models_firmware.FirmwareImage).
+            # Additive with a default, so every pre-existing row keeps meaning
+            # exactly what it meant: an upgrade image.
+            'firmware_images': [
+                ('image_kind', "VARCHAR(16) DEFAULT 'upgrade'"),
+                ('hypervisor', "VARCHAR(16) DEFAULT ''"),
+            ],
+            'appliances': [
+                # --- the chassis serial, read off the status call (2026-08-30) ---
+                # NULLABLE, NO DEFAULT, NO BACKFILL. NULL means "never
+                # observed"; a DEFAULT '' would claim every pre-existing device
+                # was asked and answered nothing — the attestation lie
+                # firmware_probe refuses to tell about firmware_checked_at.
+                # Merged into THIS entry rather than added as a second
+                # 'appliances' key: a repeated key collapses silently and every
+                # column under the earlier copy is never added. That is exactly
+                # what happened on the first attempt at this change.
+                ('serial', 'VARCHAR(64)'),
+                ('serial_checked_at', 'TIMESTAMP'),
+                ('hw_type', "VARCHAR(16) DEFAULT 'unknown'"),
+                ('model', 'VARCHAR(128)'),
+                ('datasheet_filename', 'VARCHAR(256)'),
+                ('firmware', 'VARCHAR(64)'),
+                # NULLABLE with NO default: every row predating the live
+                # firmware check reads as "never verified", which is the truth.
+                # A default of now() would have backdated an attestation onto
+                # 10 devices nobody ever probed.
+                ('firmware_checked_at', 'TIMESTAMP'),
+                ('maintenance', 'BOOLEAN DEFAULT FALSE'),
+                # --- the name the device calls itself (2026-08-27) ---
+                # Nullable, no backfill, NO DEFAULT. NULL means "never
+                # observed", which is the truth for every row predating the
+                # probe. A DEFAULT '' would be the same value the probe writes
+                # for a device that answered without one (FortiAuthenticator's
+                # status payload carries no hostname at all) — two different
+                # facts under one value, indistinguishable afterwards.
+                ('device_hostname', 'VARCHAR(255)'),
+                ('device_hostname_at', 'TIMESTAMP'),
+                # --- separate CLI login (2026-10-09) ---
+                # NULL = SSH uses the API credential, which is what every row
+                # predating the column did.
+                ('ssh_password_enc', 'TEXT'),
+                # --- separate CLI user (2026-10-14) ---
+                # NULL = SSH logs in as ``username``, which is what every row
+                # predating the column did. A FortiGate registered with a REST
+                # api-user needs an admin login here to open SSH at all.
+                ('ssh_username', 'VARCHAR(64)'),
+            ],
+            # Interface PURPOSE (2026-08-17). Additive with a default of
+            # 'unspecified' so every port documented before the field reads as
+            # NOT DECLARED — which is the truth. Backfilling a guess (e.g.
+            # "the port holding the management IP must be management") would
+            # hand the clone/migrate gate a declaration no human ever made.
+            'appliance_interfaces': [
+                ('role', "VARCHAR(32) DEFAULT 'unspecified'"),
+                ('segment', 'VARCHAR(128)'),
+            ],
+            'managed_certificate': [
+                ('superseded_at', 'TIMESTAMP'),
+                ('revoked_at', 'TIMESTAMP'),
+                # --- origin + per-cert rotation windows (certrot01) ---
+                # Every row that predates these was signed by the configured
+                # CA with a SATOM-made key, so those two defaults are true.
+                # The windows stay NULL = "the class / policy default", which
+                # is what those rows always followed.
+                ('origin', "VARCHAR(16) DEFAULT 'signer' NOT NULL"),
+                ('key_origin', "VARCHAR(16) DEFAULT 'satom' NOT NULL"),
+                ('auto_renew', 'BOOLEAN DEFAULT TRUE NOT NULL'),
+                ('renew_before_days', 'INTEGER'),
+                ('swap_after_days', 'INTEGER'),
+                ('remove_after_days', 'INTEGER'),
+                ('retain_days', 'INTEGER'),
+                ('revoke_superseded', 'BOOLEAN'),
+                ('swap_due_at', 'TIMESTAMP'),
+                ('swapped_at', 'TIMESTAMP'),
+                ('removed_at', 'TIMESTAMP'),
+                ('archived_at', 'TIMESTAMP'),
+                # --- certificate providers (spoflow01) ---
+                ('provider', "VARCHAR(64) DEFAULT ''"),
+            ],
+            'wpp_exceptions': [
+                ('stale', 'BOOLEAN DEFAULT FALSE'),
+                ('stale_reason', 'TEXT'),
+                # --- identity + fleet library link (2026-08-27) ---
+                # Appended to the EXISTING key on purpose. A second
+                # 'wpp_exceptions' entry lower in this literal is not a merge:
+                # Python keeps the last one and the earlier columns are never
+                # added — no error, no log line, and the first save 500s on a
+                # column the model says exists. That is exactly what happened
+                # while writing this; tests/test_schema_migration_keys.py is
+                # the guard, and it reads the SOURCE because by the time this
+                # dict is built the duplicates have already collapsed.
+                # NULLABLE, NO DEFAULT, NO BACKFILL: a carve-out authored
+                # before the versioner has no history and belongs to no
+                # library item.
+                ('lineage', 'VARCHAR(40)'),
+                ('library_uid', 'VARCHAR(40)'),
+                # --- firmware / API stamp (services.exception_compat) ---
+                # DEFAULT '' and NO BACKFILL: a carve-out authored before the
+                # stamp was written against SOME build and nobody recorded
+                # which; the appliance's build today may not be that one.
+                ('source_firmware', "VARCHAR(32) DEFAULT ''"),
+                ('api_version', "VARCHAR(16) DEFAULT ''"),
+            ],
+            'exception_library': [
+                ('source_firmware', "VARCHAR(32) DEFAULT ''"),
+                ('api_version', "VARCHAR(16) DEFAULT ''"),
+            ],
+            # --- the chassis a row's artefacts belong to (2026-08-30) ---
+            # DEFAULT '' and NOT backfilled here: "" means "not established
+            # yet", which DeviceIdentity.chassis reads as "its own chassis".
+            # A DEFAULT of the slug is impossible in one ALTER anyway, and
+            # device_identity.reconcile() is the one writer that may go and
+            # ASK (appliance row first, the device's own snapshot second).
+            'device_identity': [
+                ('chassis_slug', "VARCHAR(128) DEFAULT ''"),
+                ('adom', "VARCHAR(64) DEFAULT ''"),
+            ],
+            # --- product/ADOM separation (2026-07-07) ---
+            'audit_logs': [
+                ('product', "VARCHAR(32) DEFAULT ''"),
+            ],
+            'notifications': [
+                ('product', "VARCHAR(32) DEFAULT ''"),
+            ],
+            'baselines': [
+                ('product', "VARCHAR(32) DEFAULT 'fortiweb'"),
+            ],
+            'scheduled_action': [
+                ('product', "VARCHAR(32) DEFAULT 'fortiweb'"),
+            ],
+            'db_reports': [
+                ('builtin', 'BOOLEAN DEFAULT FALSE'),
+            ],
+            # --- Plugin Studio input parameters (selectors) ---
+            'plugins': [
+                ('params', "TEXT DEFAULT '[]'"),
+            ],
+            # --- Plugin Studio app packages (spoflow01) ---
+            'studio_apps': [
+                ('pkg_version', 'VARCHAR(32)'),
+                ('pkg_signer', 'VARCHAR(64)'),
+                # --- every plugin is an app (appkind01) ---
+                ('kind', "VARCHAR(16) DEFAULT 'flow'"),
+                ('script_slug', 'VARCHAR(48)'),
+                ('enabled', 'BOOLEAN DEFAULT TRUE'),
+                # --- app designer (appdesign01) ---
+                ('design_json', "TEXT DEFAULT '{}'"),
+                # --- the app's own sign-in (appscope01) ---
+                ('login_json', "TEXT DEFAULT '{}'"),
+            ],
+            # --- Analytics: dashboard variables (one board, whole fleet) ---
+            'monitor_dashboard': [
+                ('variables', "TEXT DEFAULT ''"),
+            ],
+            # --- Deep monitors: box CPU / memory split out of the proxyd probe ---
+            'monitor_panel': [
+                ('vm_expr', 'VARCHAR(500)'),
+                ('vm_legend', 'VARCHAR(120)'),
+                ('vm_unit', 'VARCHAR(24)'),
+            ],
+            'monitor_probe': [
+                ('warn_pct', 'INTEGER DEFAULT 80'),
+                ('crit_pct', 'INTEGER DEFAULT 95'),
+                # --- REST monitor API probes (sessions / throughput) ---
+                ('warn_num', 'DOUBLE PRECISION DEFAULT 0'),
+                ('crit_num', 'DOUBLE PRECISION DEFAULT 0'),
+                # --- targeted, expiring suppression (2026-08-06) ---
+                ('suppress_until', 'TIMESTAMP'),
+                ('suppress_reason', "VARCHAR(200) DEFAULT ''"),
+            ],
+            # --- AppID-scoped API tokens (Phase 2 enforcement) ---
+            'api_tokens': [
+                ('capabilities', "TEXT DEFAULT '[]'"),
+                ('app_ids', "TEXT DEFAULT '[]'"),
+            ],
+            # --- the version a pre-flight was run TOWARDS (2026-09-21) ---
+            # NULLABLE, NO DEFAULT, NO BACKFILL. A run stored before this
+            # column was taken without anybody declaring a destination, and a
+            # DEFAULT '' would be indistinguishable from the value a future
+            # writer stores for "asked and answered nothing" -- two different
+            # facts under one value, which is the attestation lie the
+            # 'appliances' entry above refuses to tell about firmware.
+            'upgrade_prep': [
+                ('target_version', 'VARCHAR(32)'),
+            ],
+            # Change-request end-of-window notification (2026-08-09). NULLABLE
+            # with no default: a CR created before the feature reads as "never
+            # notified" rather than claiming a send that never happened.
+            'change_request': [
+                ('notify_to', 'TEXT'),
+                # The change-type wording frozen at approval (2026-08-10).
+                # NULL on every pre-existing row on purpose: those changes were
+                # signed against the only wording that ever existed for them,
+                # so rendering them live is not a drift, it is the truth.
+                ('doc_profile', 'TEXT'),
+                ('final_notified_at', 'TIMESTAMP'),
+                # --- cross-system orchestration (NetBox window + CRQ hooks) ---
+                # approval_mode defaults to 'manual' so a CR that predates the
+                # feature is NOT retroactively gated on an external approver it
+                # never had - that would strand every existing change request.
+                ('approval_mode', "VARCHAR(16) DEFAULT 'manual'"),
+                ('external_approved_at', 'TIMESTAMP'),
+                ('external_approved_by', 'VARCHAR(64)'),
+                ('crq_ref', 'VARCHAR(128)'),
+                ('crq_url', 'VARCHAR(512)'),
+                ('mw_ref', 'VARCHAR(512)'),
+                ('mw_state', "VARCHAR(16) DEFAULT 'none'"),
+                ('integration_log', 'TEXT'),
+                # --- formal change document + frozen evidence (2026-08-09) ---
+                # ref/owner/doc_lang are NULLABLE with no backfill: a CR raised
+                # before the document existed has no change-id of record, and
+                # inventing one now would print a reference nobody can look up.
+                ('ref', 'VARCHAR(32)'),
+                ('owner', 'VARCHAR(64)'),
+                ('doc_lang', "VARCHAR(8) DEFAULT 'en'"),
+                ('inventory_at', 'TIMESTAMP'),
+                ('prep_id', 'INTEGER'),
+                # --- batched rollouts: one wave = one change (2026-08-11) ---
+                # Nullable with no backfill. A change raised before waves
+                # existed is not "wave 0 of 0" — it is not part of a batched
+                # rollout at all, and a zero would render as a wave that never
+                # ran.
+                ('wave_group', 'VARCHAR(40)'),
+                ('wave_index', 'INTEGER'),
+                ('wave_total', 'INTEGER'),
+            ],
+        }
+        # NOTE: a repeated key in the literal above is a SILENT loss — Python
+        # keeps the last one and every column under the earlier copy is never
+        # added. No error, no log line; the feature just 500s on a column the
+        # model says exists. Caught for real on 2026-08-11 when the wave columns
+        # were appended under a second 'change_request' key. It cannot be
+        # guarded from here (by the time this line runs the duplicates have
+        # already collapsed), so the guard reads the SOURCE:
+        # tests/test_schema_migration_keys.py.
+        insp = inspect(db.engine)
+        added: set[tuple[str, str]] = set()
+        for table, cols in adds.items():
+            try:
+                if not insp.has_table(table):
+                    continue
+                existing = {c['name'] for c in insp.get_columns(table)}
+                for col, ddl in cols:
+                    if col not in existing:
+                        db.session.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'))
+                        db.session.commit()
+                        added.add((table, col))
+            except Exception:  # noqa: BLE001 — never block boot on a migration
+                db.session.rollback()
+
+        # When the approval column is first introduced, existing templates
+        # predate the workflow (admin-authored) -> treat them as APPROVED so the
+        # fleet keeps working; new saves still default to 'pending'.
+        if ('users', 'auth_source') in added:
+            try:
+                db.session.execute(text(
+                    "UPDATE users SET auth_source='local' "
+                    "WHERE auth_source IS NULL OR auth_source=''"))
+                db.session.commit()
+            except Exception:  # noqa: BLE001
+                db.session.rollback()
+
+        if ('templates', 'status') in added:
+            try:
+                db.session.execute(text(
+                    "UPDATE templates SET status='approved' "
+                    "WHERE status IS NULL OR status='' OR status='pending'"))
+                db.session.commit()
+            except Exception:  # noqa: BLE001
+                db.session.rollback()
+
+        # --- artifact refs: the edge key gains the profile (2026-08-25) ---
+        # One artifact reached through TWO profiles is two rows. Under the old
+        # 4-column unique key the second insert violated the constraint and the
+        # walk lost it, so a content-routing policy under-reported precisely the
+        # profiles that make it hard to migrate. Best-effort; never blocks boot.
+        #
+        # Every step below runs on EVERY create_app() -- each timer tick of
+        # every CLI -- so in steady state it must issue NO DDL: even an
+        # ``ALTER TABLE ... DROP CONSTRAINT IF EXISTS`` that drops nothing
+        # takes an ACCESS EXCLUSIVE lock and waits in the lock queue, and
+        # every reader of the table waits behind it (a1, 2026-10-25: a
+        # request holding a read lock + these ALTERs = the table unreadable
+        # for 20 minutes). Look first, change only what is still old.
+        def _unique_cols(table, name):
+            for u in insp.get_unique_constraints(table):
+                if u.get('name') == name:
+                    return list(u.get('column_names') or [])
+            return None
+
+        def _has_unique(table, name):
+            return _unique_cols(table, name) is not None
+
+        def _has_index(table, name):
+            return any(i.get('name') == name for i in insp.get_indexes(table))
+        try:
+            if insp.has_table('waf_artifact_ref'):
+                # Only the OLD 4-column key is dropped: the model declares the
+                # new 5-column one under the same name, so a fresh database
+                # has it (and SQLite could not drop it anyway).
+                edge = _unique_cols('waf_artifact_ref', 'uq_waf_artifact_ref_edge')
+                if edge is not None and 'wpp_mkey' not in edge:
+                    db.session.execute(text(
+                        'ALTER TABLE waf_artifact_ref '
+                        'DROP CONSTRAINT IF EXISTS uq_waf_artifact_ref_edge'))
+                if not _has_index('waf_artifact_ref', 'ix_waf_artifact_ref_edge'):
+                    db.session.execute(text(
+                        'CREATE UNIQUE INDEX IF NOT EXISTS ix_waf_artifact_ref_edge '
+                        'ON waf_artifact_ref '
+                        '(appliance_id, policy_mkey, kind, name, wpp_mkey)'))
+                db.session.commit()
+        except Exception:  # noqa: BLE001 — never block boot on a migration
+            db.session.rollback()
+
+        # --- AppID goes GLOBAL (cross-product) 2026-07-09 ---
+        # The catalog was keyed (product, app_id) with product='fortiweb'. AppIDs
+        # now span FortiWeb + FortiADC, so the key is app_id alone and product is
+        # the constant 'global'. Drop the old composite unique, collapse product,
+        # add a name-only unique INDEX (distinct name so a fresh DB's model-level
+        # UniqueConstraint never clashes). Best-effort; never blocks boot.
+        try:
+            if insp.has_table('app_ids'):
+                if _has_unique('app_ids', 'uq_appid_product_key'):
+                    db.session.execute(text(
+                        'ALTER TABLE app_ids DROP CONSTRAINT IF EXISTS uq_appid_product_key'))
+                db.session.execute(text(
+                    "UPDATE app_ids SET product='global' WHERE product <> 'global'"))
+                if not _has_index('app_ids', 'ix_appid_uq'):
+                    db.session.execute(text(
+                        'CREATE UNIQUE INDEX IF NOT EXISTS ix_appid_uq ON app_ids (app_id)'))
+                db.session.commit()
+        except Exception:  # noqa: BLE001 — never block boot on a migration
+            db.session.rollback()
+
+
+    def _relax_probe_thresholds():
+        """Let a probe say "inherit", and hand the never-chosen rows back.
+
+        Two steps, both one-shot and both guarded, because they are the only
+        migration in this file that CHANGES EXISTING DATA.
+
+        1. ``warn_ms`` / ``tls_warn_days`` / ``stale_after_h`` were NOT NULL, so
+           the column could not express "inherit" at all. (``warn_pct`` and the
+           two ``*_num`` columns were already nullable in the database even
+           though the model claimed otherwise.)
+
+        2. Every probe created before 2026-08-06 was stamped with the discovery
+           literal. Blanking a column that still holds EXACTLY that literal
+           hands the row back to the scope default -- which is seeded to the
+           same number, so behaviour is unchanged on the day of the migration
+           and tunable from then on. A column holding anything else is a value
+           somebody chose and is left alone; in particular a ``0`` means "never
+           page me for this level" and inheriting over it would start paging.
+
+        Guarded by a marker setting: without it, an operator who later sets a
+        threshold back to exactly 80 would have it silently blanked on the next
+        boot.
+        """
+        from sqlalchemy import inspect, text
+        from .models import AppSetting, db as _db
+
+        MARK = "thresholds.inherit_migrated"
+        insp = inspect(_db.engine)
+        if not insp.has_table("monitor_probe"):
+            return
+        # Only a column still NOT NULL: this runs on every create_app(), and
+        # an ALTER that changes nothing still takes an ACCESS EXCLUSIVE lock
+        # (see _ensure_columns).
+        nullable = {c['name']: c.get('nullable', True)
+                    for c in insp.get_columns("monitor_probe")}
+        for col in ("warn_ms", "tls_warn_days", "stale_after_h"):
+            if nullable.get(col, True):
+                continue
+            try:
+                _db.session.execute(text(
+                    "ALTER TABLE monitor_probe ALTER COLUMN %s DROP NOT NULL" % col))
+                _db.session.commit()
+            except Exception:  # noqa: BLE001 -- SQLite has no DROP NOT NULL
+                _db.session.rollback()
+        try:
+            if AppSetting.get(MARK, "") == "1":
+                return
+        except Exception:  # noqa: BLE001
+            return
+        # (column, historical literal, kinds it applies to or None for all)
+        plan = [
+            ("warn_pct", "80", None), ("crit_pct", "95", None),
+            ("warn_ms", "2000", None), ("tls_warn_days", "21", None),
+            ("stale_after_h", "6", None),
+            ("warn_num", "0", "NOT IN ('licence','tokens')"),
+            ("crit_num", "0", "NOT IN ('licence','tokens')"),
+            ("warn_num", "80", "IN ('licence','tokens')"),
+            ("crit_num", "95", "IN ('licence','tokens')"),
+        ]
+        blanked = 0
+        for col, lit, kinds in plan:
+            try:
+                sql = ("UPDATE monitor_probe SET %s = NULL WHERE %s = %s"
+                       % (col, col, lit))
+                if kinds:
+                    sql += " AND kind %s" % kinds
+                res = _db.session.execute(text(sql))
+                blanked += int(res.rowcount or 0)
+                _db.session.commit()
+            except Exception:  # noqa: BLE001 -- never block boot on a migration
+                _db.session.rollback()
+        try:
+            AppSetting.set(MARK, "1")
+            _db.session.commit()
+            app.logger.info("thresholds: %d probe threshold(s) handed back to "
+                            "scope inheritance", blanked)
+        except Exception:  # noqa: BLE001
+            _db.session.rollback()
+
+    def _ensure_indexes():
+        """Create covering indexes on foreign-key columns that lack one.
+
+        A FK with no index makes every join/lookup on it a sequential scan and
+        makes the parent row's DELETE take a full-table lock scan — both bite as
+        audit_log / change_history grow. ``CREATE INDEX IF NOT EXISTS`` is safe
+        and idempotent on every boot (Postgres + SQLite)."""
+        from sqlalchemy import inspect, text
+        wanted = {
+            'ix_audit_logs_user_id': ('audit_logs', 'user_id'),
+            'ix_change_history_appliance_id': ('change_history', 'appliance_id'),
+            'ix_bug_reports_resolved_by_id': ('bug_reports', 'resolved_by_id'),
+        }
+        try:
+            insp = inspect(db.engine)
+            tables = set(insp.get_table_names())
+            for ixname, (table, col) in wanted.items():
+                if table not in tables:
+                    continue
+                cols = {c['name'] for c in insp.get_columns(table)}
+                if col not in cols:
+                    continue
+                if any(i.get('name') == ixname for i in insp.get_indexes(table)):
+                    continue        # steady state: no DDL (see _ensure_columns)
+                db.session.execute(text(
+                    f'CREATE INDEX IF NOT EXISTS {ixname} ON {table} ({col})'))
+            db.session.commit()
+        except Exception:  # noqa: BLE001 — never block boot on an index
+            db.session.rollback()
+
+    # -- database & seed --------------------------------------------------
+    # Skippable so Alembic migration commands (and CI that manages its own
+    # schema) can import the app without create_all racing the migration.
+    # A ``flask db ...`` command skips it on its own (SA-0021): see
+    # :func:`is_schema_command`.
+    if not os.environ.get("FORTINET_SKIP_DB_BOOTSTRAP") and not is_schema_command():
+        with app.app_context():
+            # Imported for its side effect: db.create_all() only creates tables
+            # whose model class has been imported.
+            from . import models_theme  # noqa: F401
+            from . import models_analytics  # noqa: F401
+            from . import models_sot  # noqa: F401
+            # Factory catalog (predefined WPPs per firmware + API). Without
+            # this import create_all() never makes ``factory_catalog`` and
+            # the deep pass quietly walks every predefined profile forever.
+            from . import models_factory  # noqa: F401
+            # Ledger of corroborated object disappearances. Without this
+            # import create_all() never makes ``object_absences`` and the
+            # first sweep after an upgrade 500s on a table the model says
+            # exists.
+            from . import models_lifecycle  # noqa: F401
+            from . import models_metrics  # noqa: F401
+            from . import models_trust  # noqa: F401
+            # Provisioning tables (hypervisor targets + run state machine).
+            # Imported for its side effect: without this the models are dead
+            # code, create_all() never makes the tables, and the feature 500s
+            # the first time an operator opens it.
+            from . import models_provision  # noqa: F401
+            # DNS/IPAM backends. Same reason as the line above: without this
+            # import create_all() never makes ``dns_backends`` and every DNS
+            # or IPAM operation refuses on a table the model says exists.
+            from . import models_dnsbackend  # noqa: F401
+            from . import models_advisor  # noqa: F401
+            # Web Server Manager (credentials, audit, scripts, schedules):
+            # without this import create_all() never makes the wsm_* tables.
+            from . import models_wsm  # noqa: F401
+            # Operations > Incidents (SAT-INC-): without this import
+            # create_all() never makes the op_incident* tables.
+            from . import models_incidents  # noqa: F401
+            # Path Diagnostics saved reports: without this import
+            # create_all() never makes ``path_diag_reports``.
+            from . import models_pathdiag  # noqa: F401
+            # Translation catalogue + the ledger of what producing
+            # it cost. Without this import create_all() never makes
+            # the tables and the first save 500s.
+            from . import models_i18n  # noqa: F401
+            from . import models_cr_types  # noqa: F401
+            # Triggers + event automations (the orchestrator). Without
+            # this import create_all() never makes the four tables and
+            # every alert evaluation that looks for a trigger errors.
+            from . import models_triggers  # noqa: F401
+            # Bookmarks panel (bookmarks + per-user placement/favourites).
+            # Without this import create_all() never makes the tables and
+            # the first render of the side panel 500s.
+            from . import models_bookmarks  # noqa: F401
+            # Diagnostic batteries (per-ADOM pick) + per-build discovery
+            # catalogs. Without this import create_all() never makes the
+            # tables and the first open of Administrator → Diagnostic
+            # Battery 500s.
+            from . import models_diag  # noqa: F401
+            # WAF artifact store index (the bytes FortiWeb will not give
+            # back). Without this import create_all() never makes the
+            # table and the first clone of a file-backed object 500s.
+            from . import models_artifacts  # noqa: F401
+            # The derived policy→artifact index that makes a migration
+            # answerable before a destination is chosen. Without this
+            # import create_all() never makes the two tables and the
+            # first render of /artifacts/inventory 500s.
+            from . import models_artifact_refs  # noqa: F401
+            # SATOM Sentinel — security correlation, incidents, response
+            # policy and the local vulnerability mirror. Without this import
+            # create_all() never makes the tables and the first render of
+            # /sentinel 500s.
+            from . import models_sentinel  # noqa: F401
+            # Carve-out identity (fleet library) and the append-only version
+            # history behind rollback/restore. Without this import
+            # create_all() never makes the tables and the first save on
+            # /exceptions 500s on a table the model says exists.
+            from . import models_exceptions  # noqa: F401
+            # Who a device IS and who it WAS — the record that outlives
+            # de-registration, because everything else hanging off
+            # appliances.id is ON DELETE CASCADE. Without this import
+            # create_all() never makes device_identity and every page that
+            # names the owner of an old backup 500s.
+            from . import models_identity  # noqa: F401
+            # API library (versioned evidence of what each build serves).
+            # Without this import create_all() never makes the api_lib_*
+            # tables and the first backfill 500s.
+            from . import models_apilib  # noqa: F401
+            # Knowledge from signed packs (signature metadata). Without this
+            # import create_all() never makes knowledge_signature_meta and the
+            # first signature-meta import fails on a missing table.
+            from . import models_knowledge  # noqa: F401
+            # The local signature index (snapshots read from the signature
+            # source device). Without this import create_all() never makes the
+            # signature_* tables and the first collection fails on them.
+            from . import models_signatures  # noqa: F401
+            # Template <-> device bindings. Without this import create_all()
+            # never makes template_bindings and the template lock, the apply
+            # and the upgrade pre-flight fail on the first lookup.
+            from . import models_tpl_binding  # noqa: F401
+            # Operations > Automation > Mass Deploy history + the rollout
+            # scope of a template family (services.template_bindings).
+            from . import models_mass_deploy  # noqa: F401
+            # Factory capacity limits from the packs (services.capacity).
+            # Without this import create_all() never makes capacity_factory and
+            # the first capacity-limits import fails on a missing table.
+            from . import models_capacity  # noqa: F401
+            # Fleet -> Architecture drawings. Without this import create_all()
+            # never makes arch_diagrams and the page fails on its first query.
+            from . import models_netarch  # noqa: F401
+            # Troubleshooting -> HTTP Observatory scan history and applied
+            # fixes. Without this import create_all() never makes
+            # observatory_scans / observatory_fixes and the first scan (or
+            # the first fix's revert record) fails to store.
+            from . import models_observatory  # noqa: F401
+            # Operations -> Wiki. Without this import create_all() never
+            # makes the wiki_* tables and the first article fails to store.
+            from . import models_wiki  # noqa: F401
+            # Administrator > Studio > Python Studio: data stores, connections,
+            # apps and their runs, user groups. Without this import
+            # create_all() never makes the studio_* tables.
+            from . import models_studio  # noqa: F401
+            # Sentinel's two collectors (http_status, infra) join the
+            # fleet collection registry here so the scheduler sidecar — which
+            # never imports a view — provisions and runs them like any other.
+            try:
+                from .services.sentinel import collectors as _sn_collectors
+                _sn_collectors.register()
+            except Exception:  # noqa: BLE001 — never block app start on this
+                logging.getLogger(__name__).warning(
+                    "Sentinel collectors could not be registered", exc_info=True)
+            # One worker at a time from here to the log settings: the four
+            # gunicorn workers boot in parallel and raced each other on a new
+            # table's CREATE TABLE (see app/boot_lock.py).
+            from . import boot_lock as _boot_lock
+            # End any transaction an earlier boot step left open: a worker
+            # WAITING here must not hold table locks the lock holder's
+            # ALTER TABLE needs.
+            try:
+                db.session.commit()
+            except Exception:  # noqa: BLE001
+                db.session.rollback()
+            _boot_held = _boot_lock.acquire(db.engine)
+            db.create_all()
+            _ensure_columns()
+            # After the additive pass: a column that already existed may be
+            # narrower than the model now declares (see _ensure_widths).
+            _ensure_widths()
+            _relax_probe_thresholds()
+            _ensure_indexes()
+            # [SATOM-CONSOLE-RO-ROLE] Keep the database console's read-only
+            # role in step with the schema just created/extended: SELECT on
+            # every table except the credential ones. Postgres only, no DDL in
+            # steady state, never fatal -- a console that cannot switch roles
+            # refuses queries, it does not block the boot.
+            try:
+                from .services import dbintrospect as _dbi
+                _cr = _dbi.ensure_console_role()
+                if not _cr.get("ok"):
+                    app.logger.warning(
+                        'database console role %s not ready (the console will '
+                        'refuse queries): %s', _dbi.CONSOLE_ROLE,
+                        _cr.get("detail"))
+                elif _cr.get("created") or _cr.get("granted") or _cr.get("revoked"):
+                    app.logger.info(
+                        'database console role %s synced: created=%s granted=%s '
+                        'revoked=%s', _dbi.CONSOLE_ROLE, _cr.get("created"),
+                        _cr.get("granted")[:20], _cr.get("revoked")[:20])
+            except Exception:  # noqa: BLE001 - never block boot on this
+                app.logger.warning('database console role sync skipped',
+                                   exc_info=True)
+            _seed_profiles()
+            _seed_admin()
+            _assign_missing_profiles()
+            _seed_registry()
+            _seed_acme_providers()
+            # One-shot: fold the old ``dnsrecords.*`` AppSetting singleton
+            # into a dns_backends row. Idempotent, guarded by its own flag,
+            # and never fatal — a boot that cannot migrate must still serve
+            # the page where the operator can configure it by hand.
+            try:
+                from .services.dns_providers import store as _dnsb_store
+                _dnsb_store.migrate_singleton()
+            except Exception:  # noqa: BLE001
+                app.logger.warning('DNS backend migration skipped',
+                                   exc_info=True)
+            # Line profiles once saved from the Global menu were filed under
+            # 'global' and never read by the wizard; move them to FortiWeb.
+            try:
+                from .services import line_profiles as _lp
+                _lp.adopt_global_profiles()
+            except Exception:  # noqa: BLE001 - never block boot on this
+                db.session.rollback()
+                app.logger.warning('line profile re-filing skipped',
+                                   exc_info=True)
+            # A stored allowlist from before the feature was removed is no
+            # longer enforced. Say so once, loudly: an install that relied on
+            # it just got wider and silence would be the only warning.
+            try:
+                from .services import settings_store as _ss
+                _stale = _ss.stale_allowed_users()
+                if _stale:
+                    app.logger.warning(
+                        'ACCESS: %d stored allowed-user(s) (%s) are NO LONGER '
+                        'ENFORCED - the per-username allowlist was removed. '
+                        'Use profiles / the directory group filter instead; '
+                        'clear the leftover list in Settings -> Access Control.',
+                        len(_stale), ', '.join(_stale[:10]))
+            except Exception:  # noqa: BLE001 - a notice must never block boot
+                pass
+            _seed_adoms()
+            _seed_themes()
+            _seed_analytics_boards()
+            _seed_capacity()
+            if not app.config.get("TESTING"):
+                _seed_reports()
+                _seed_cr_types()
+            # Settings -> General -> Log Levels / Log Format, applied to the
+            # application log file at boot (and again on every save).
+            from .errors import apply_log_settings
+            apply_log_settings()
+            _boot_lock.release(_boot_held)
+
+    # -- orphaned background jobs ------------------------------------------
+    # A restart kills job worker threads without touching their state files,
+    # leaving forever-"running" ghosts in the Job Manager. Sweep them to a
+    # terminal error at boot (idempotent; any booting worker may run it).
+    if not app.config.get("TESTING"):
+        try:
+            from .services import jobs as _jobsvc
+            swept = _jobsvc.sweep_orphans()
+            if swept:
+                app.logger.warning("swept %d orphaned background job(s): %s",
+                                   len(swept), [j["id"] for j in swept])
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("orphaned-job sweep failed")
+        # The rediscovery sweep keeps its own progress FILE (it predates the
+        # job ledger), so the sweep above cannot see it: a restart left every
+        # in-flight sweep reading "running" forever -- appliance 4 sat at 71 %
+        # from 2026-07-03 to 2026-09-15 because nothing ever corrected the file.
+        # Same pid/host rules, and the peer's files (pulled here every 5 min by
+        # satom-ha-datasync) are never judged.
+        try:
+            from .services import rediscovery as _redisc
+            stale = _redisc.reconcile_stale_runs()
+            if stale:
+                app.logger.warning(
+                    "marked %d interrupted rediscovery sweep(s): %s", len(stale),
+                    [s.get("appliance") for s in stale])
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("stale rediscovery reconcile failed")
+        # hostguard: a reboot empties /run and the kernel's nftables table
+        # with it. When the runner has not reported since boot, publish the
+        # managed servers once so satom-hostguard.path reloads the drop rules
+        # (services/hostguard.py). A no-op when it already ran.
+        try:
+            from .services import hostguard as _hg
+            with app.app_context():
+                _hg.boot_publish()
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("hostguard boot publish failed")
+        # Web hosts: a node whose server connections were trusted before the
+        # certificate expiry check existed gets it now; ensure_scheduled never
+        # touches a row that exists (an administrator's edits stay).
+        try:
+            from .services import webhost_certs as _whc
+            with app.app_context():
+                if _whc.connections():
+                    _whc.ensure_scheduled()
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("web host certificate check seed failed")
+        # Server health (Web Server Manager): a node with managed servers gets
+        # the every-minute reading; ensure_scheduled never touches a row that
+        # exists. Each server's own Health > Settings decides how, or off.
+        try:
+            from .services import server_health as _sh
+            from .services import wsm as _wsm_h
+            with app.app_context():
+                # no module_active() here: at boot the ADOM registry may still
+                # be its fallback (no Linux ADOM) -- run_due() checks it per run
+                if _wsm_h.servers():
+                    _sh.ensure_scheduled()
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("server health seed failed")
+        # Backfill the per-BUILD snapshot archive. Until 2026-09-16 a sweep
+        # wrote one file per appliance and overwrote it every run, so the first
+        # sweep after a firmware upgrade DESTROYED the evidence backing the
+        # previous version — silently, because nothing compares the two. This
+        # is additive and idempotent: it never deletes and never overwrites a
+        # version's own file with a different version's.
+        try:
+            from .services import rediscovery as _redisc2
+            filed = _redisc2.migrate_version_archive()
+            if filed:
+                app.logger.info(
+                    "filed %d sweep snapshot(s) under their firmware version: %s",
+                    len(filed), ["%s@%s" % (f.get("device"), f.get("version"))
+                                 for f in filed])
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("version archive backfill failed")
+
+    # -- legacy URL compatibility: the FortiWeb area moved under /web/ ------
+    # (2026-07-07 ADOM split). Old deep-links, hardcoded JS fetches and the
+    # test suite keep working: the WSGI layer transparently rewrites the old
+    # top-level paths onto the /web prefix (no redirect, same endpoints).
+    _legacy_web = (
+        '/workspace', '/objedit', '/regex-lab', '/server-objects',
+        '/web-protection', '/exceptions', '/backups', '/logs',
+        '/import-backup', '/configuration', '/section-catalog', '/templates',
+        '/signatures', '/structure', '/classification', '/segments',
+        '/naming', '/scheduled-actions', '/change-requests', '/provisioning',
+        '/firmware', '/release-notes', '/capacity', '/registry',
+        '/api-explorer',
+    )
+    _inner_wsgi = app.wsgi_app
+
+    def _legacy_web_rewrite(environ, start_response):
+        path = environ.get('PATH_INFO', '') or ''
+        for pref in _legacy_web:
+            if path == pref or path.startswith(pref + '/'):
+                environ['PATH_INFO'] = '/web' + path
+                break
+        return _inner_wsgi(environ, start_response)
+
+    app.wsgi_app = _legacy_web_rewrite
+
+    # Every POST that acts on a device runs as a background job with visible
+    # progress (services/device_jobs). Last, so every route is registered.
+    from .services import device_jobs
+    device_jobs.install(app)
+
+    # hostguard: a managed server is refused even when it comes through a
+    # reverse proxy (services/hostguard.py). Installed LAST so that it runs
+    # FIRST: every other hook that inserts itself at the front is in by now.
+    from .services import hostguard as _hg_gate
+    _hg_gate.install_http_gate(app)
+
+    return app
+
+
+def _register_blueprints(app: Flask) -> None:
+    """Import and register all blueprints. Missing blueprint modules are
+    skipped with a warning so the core app still starts during scaffolding."""
+    import importlib
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    blueprints = [
+        ("app.auth", "bp"),
+        ("app.views.product", "bp"),
+        ("app.views.adc", "bp"),
+        ("app.views.adc_api", "bp"),
+        ("app.views.faz", "bp"),
+        ("app.views.faz_api", "bp"),
+        ("app.views.fac", "bp"),
+        ("app.views.fac_api", "bp"),
+        ("app.views.fgt", "bp"),
+        ("app.views.fgt_api", "bp"),
+        ("app.views.appliances", "bp"),
+        ("app.views.firmware", "bp"),
+        ("app.views.jobs", "bp"),
+        ("app.views.notifications", "bp"),
+        ("app.views.release_notes", "bp"),
+        ("app.views.workspace", "bp"),
+        ("app.views.objedit", "bp"),
+        ("app.views.regex_lab", "bp"),
+        ("app.views.cert_inspect", "bp"),
+        ("app.views.fp_triage", "bp"),
+        ("app.views.txn_trace", "bp"),
+        ("app.views.observatory", "bp"),
+        ("app.views.wiki", "bp"),
+        ("app.views.manual", "bp"),
+        ("app.views.server_objects", "bp"),
+        ("app.views.web_protection", "bp"),
+        ("app.views.exceptions", "bp"),
+        ("app.views.attack_search", "bp"),
+        ("app.views.architecture", "bp"),
+        ("app.views.netarch", "bp"),
+        ("app.views.line_profiles", "bp"),
+        ("app.views.spo_wizard", "bp"),
+        ("app.views.analysis", "bp"),
+        ("app.views.backups", "bp"),
+        ("app.views.logs", "bp"),
+        ("app.views.search", "bp"),
+        ("app.views.concept_map", "bp"),
+        ("app.views.dns_tool", "bp"),
+        ("app.views.reach_batch", "bp"),
+        ("app.views.scout", "bp"),
+        ("app.views.config_compare", "bp"),
+        ("app.views.calendar", "bp"),
+        ("app.views.console", "bp"),
+        ("app.views.users", "bp"),
+        ("app.views.profiles", "bp"),
+        ("app.views.metrics", "bp"),
+        ("app.views.monitoring", "bp"),
+        ("app.views.deep_monitor", "bp"),
+        ("app.views.service_monitor", "bp"),
+        ("app.views.monitor_analytics", "bp"),
+        ("app.views.monitor_reports", "bp"),
+        ("app.views.metrics_admin", "bp"),
+        ("app.views.cr_types", "bp"),
+        # Administrator > Change Management > Triggers (the condition) and
+        # Automation > Automations > On a trigger (its implementation).
+        ("app.views.triggers", "bp"),
+        ("app.views.event_automations", "bp"),
+        ("app.views.capacity", "bp"),
+        # Administrator → Diagnostic Battery. NOT /web-prefixed: it works on
+        # the active ADOM (every device ADOM, plus a summary in Global).
+        ("app.views.diag_battery", "bp"),
+        ("app.views.audit", "bp"),
+        ("app.views.registry", "bp"),
+        ("app.views.apilib_fieldmap", "bp"),
+        ("app.views.build_compat", "bp"),
+
+
+        ("app.views.schema_builds", "bp"),
+        ("app.views.api_explorer", "bp"),
+        ("app.views.templates", "bp"),
+        ("app.views.factory_catalog", "bp"),
+        ("app.views.signatures", "bp"),
+        ("app.views.fleet_objects", "bp"),
+        ("app.views.waf", "bp"),
+        ("app.views.import_backup", "bp"),
+        ("app.views.structure", "bp"),
+        ("app.views.classification", "bp"),
+        ("app.views.segments", "bp"),
+        ("app.views.naming", "bp"),
+        ("app.views.scheduled_actions", "bp"),
+        # Second surface out of the SAME module (see its docstring):
+        # user-scope Automations. ``web_prefixed`` is keyed by module
+        # path, so this one picks up the /web ADOM prefix too.
+        ("app.views.scheduled_actions", "user_bp"),
+        ("app.views.cert_manager", "bp"),
+        ("app.views.mass_deploy", "bp"),
+        ("app.views.change_requests", "bp"),
+        ("app.views.upgrade_flow", "bp"),
+        ("app.views.migration_report", "bp"),
+        ("app.views.provisioning", "bp"),
+        ("app.views.device_provision", "bp"),
+        ("app.views.section_config", "bp"),
+        ("app.views.section_catalog", "bp"),
+        ("app.views.settings", "bp"),
+        ("app.views.integrations", "bp"),
+        ("app.views.reports", "bp"),
+        ("app.views.locks", "bp"),
+        ("app.views.database", "bp"),
+        ("app.views.script_library", "bp"),
+        ("app.views.studio", "bp"),
+        ("app.views.apps", "bp"),
+        ("app.views.user_groups", "bp"),
+        # App-scoped access (2026-10-30): Directory connections, App sign-in
+        # (Administrator > Access) and the /a/ portal of Apps-only accounts.
+        ("app.views.directory_connections", "bp"),
+        ("app.views.apps_portal", "bp"),
+        ("app.views.scripts", "bp"),
+        ("app.views.system_backup", "bp"),
+        ("app.views.self_update", "bp"),
+        ("app.views.container_ops", "bp"),
+        ("app.views.ha", "bp"),
+        ("app.views.plugins", "bp"),
+        ("app.views.lua_studio", "bp"),
+        ("app.api", "bp"),
+        ("app.api_v1", "bp"),
+        ("app.views.api_tokens", "bp"),
+        ("app.views.appids", "bp"),
+        ("app.views.advisor", "bp"),
+        ("app.views.bookmarks", "bp"),
+        ("app.views.artifacts", "bp"),
+        ("app.views.sentinel", "bp"),
+        # Per-ADOM "what this ADOM holds" — backups on the server, SoT
+        # history, firmware, identity. NOT /web-prefixed: it is scoped by the
+        # current ADOM, and every ADOM including global renders it.
+        ("app.views.adom_assets", "bp"),
+        # Observability (lab, 2026-11-05): the satom-observability views over
+        # SATOM's own data at /observability/. Read-only, no menu entry, no
+        # schema -- removing the trial is this line plus its own files.
+        ("app.views.observability_lab", "bp"),
+        # Web Server Manager (Linux ADOM): /webserver/
+        ("app.views.wsm", "bp"),
+        # Operations > Incidents (SAT-INC-, 2026-11-08): /incidents/. Not
+        # /web-prefixed: every ADOM draws it, scoped by the appliances the
+        # ADOM sees.
+        ("app.views.incidents", "bp"),
+    ]
+
+    # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).
+    # url_for() picks the prefix up automatically; legacy top-level paths are
+    # rewritten by the WSGI shim in create_app so old links/tests keep working.
+    web_prefixed = {
+        "app.views.workspace", "app.views.objedit", "app.views.regex_lab",
+        "app.views.server_objects", "app.views.web_protection",
+        "app.views.exceptions", "app.views.backups", "app.views.logs",
+        "app.views.import_backup", "app.views.section_config",
+        "app.views.section_catalog", "app.views.templates",
+        "app.views.factory_catalog",
+        "app.views.signatures", "app.views.structure",
+        "app.views.classification", "app.views.segments", "app.views.naming",
+        "app.views.line_profiles", "app.views.spo_wizard",
+        "app.views.scheduled_actions", "app.views.event_automations",
+        "app.views.change_requests",
+        "app.views.upgrade_flow",
+        "app.views.migration_report",
+        "app.views.provisioning", "app.views.firmware",
+        "app.views.release_notes", "app.views.capacity",
+        "app.views.registry", "app.views.api_explorer",
+        "app.views.apilib_fieldmap", "app.views.build_compat",
+        "app.views.appids", "app.views.mass_deploy",
+    }
+    for module_path, attr in blueprints:
+        try:
+            module = importlib.import_module(module_path)
+            bp = getattr(module, attr)
+            if module_path in web_prefixed:
+                app.register_blueprint(bp, url_prefix='/web' + (bp.url_prefix or ''))
+            else:
+                app.register_blueprint(bp)
+        except ModuleNotFoundError:
+            logger.debug("Blueprint module %r not found — skipping.", module_path)
+        except AttributeError:
+            logger.warning(
+                "Blueprint attribute %r not found in %r — skipping.",
+                attr,
+                module_path,
+            )
+
+
+def _seed_profiles() -> None:
+    """Upsert the three system profiles. Their permission sets are re-synced
+    from code on every boot so adding a new granular key automatically extends
+    the admin (and, where applicable, operator/readonly) system profiles."""
+    from . import permissions as perm
+    from .models import Profile
+
+    try:
+        for name, keys in perm.SYSTEM_PROFILES.items():
+            p = Profile.query.filter_by(name=name).first()
+            if p is None:
+                p = Profile(name=name, is_system=True)
+                db.session.add(p)
+            p.is_system = True
+            p.description = perm.SYSTEM_PROFILE_META.get(name, "")
+            p.permission_set = set(keys)
+        db.session.commit()
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+
+def _seed_reports() -> None:
+    """Insert-only seed of the curated builtin reports (never overwrites an
+    existing builtin; operator clones survive). Never blocks boot."""
+    import logging
+    try:
+        from .services import report_builder
+        created = report_builder.seed_builtin_reports()
+        if created:
+            logging.getLogger(__name__).info(
+                "Report seed: %d builtin reports imported", created)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+def _seed_cr_types() -> None:
+    """Seed the documentary change types the product ships, once each (an
+    administrator who deletes one keeps it deleted). Never blocks boot."""
+    import logging
+    try:
+        from .services import cr_types
+        created = cr_types.seed_defaults()
+        if created:
+            logging.getLogger(__name__).info(
+                "Change types seed: %d documentary type(s) created", created)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+def _seed_capacity() -> None:
+    """Insert-only seed of published capacity limits from capacity_seed.json
+    (admin edits are never touched; see services.capacity.seed_from_json)."""
+    import logging
+    try:
+        from .services import capacity
+        added = capacity.seed_from_json()
+        if added:
+            logging.getLogger(__name__).info(
+                "Capacity seed: %d limit rows imported", added)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+def _assign_missing_profiles() -> None:
+    """Give every user that still has no profile the system profile matching
+    their legacy ``role`` (one-time migration; new users get a profile at
+    creation time)."""
+    from . import permissions as perm
+    from .models import Profile, User
+
+    try:
+        by_name = {p.name: p for p in Profile.query.filter_by(is_system=True).all()}
+        changed = False
+        for u in User.query.filter(User.profile_id.is_(None)).all():
+            target = by_name.get(perm.role_to_profile_name(u.role))
+            if target is not None:
+                u.profile_id = target.id
+                changed = True
+        if changed:
+            db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+
+
+#: ``flask`` options that take a value, so the word after them is not the command.
+_FLASK_VALUE_OPTIONS = ("--app", "-A", "--env-file", "-e")
+
+
+def is_schema_command(argv: list[str] | None = None) -> bool:
+    """True when this process is ``flask db ...`` (``python -m flask db ...``).
+
+    Alembic owns the schema there, so the boot bootstrap must not run: its
+    seeds read the models (``User.query.first()`` joins ``profiles``), and the
+    models already declare the columns the pending migrations are about to
+    add. On a node one release behind, that query died with "column
+    profiles.device_scope does not exist" before Alembic ever ran, and the
+    update rolled back (SA-0021, 4.11.4 -> 4.11.6).
+
+    ``satom execute restart-all`` and ``install.sh`` already set
+    ``FORTINET_SKIP_DB_BOOTSTRAP``; the update runner of every release up to
+    4.11.6 and the container entrypoint do not, and the runner that applies an
+    update is the one already installed -- so the decision lives here, in the
+    code the package brings, not in ``deploy/``.
+    """
+    import sys
+
+    argv = sys.argv if argv is None else argv
+    if not argv or os.path.basename(argv[0]) not in ("flask", "__main__.py"):
+        return False
+    args, i = list(argv[1:]), 0
+    while i < len(args) and args[i].startswith("-"):
+        i += 2 if args[i] in _FLASK_VALUE_OPTIONS else 1
+    return i < len(args) and args[i] == "db"
+
+
+#: Operator-supplied password for the FIRST admin (installers pass it through).
+ADMIN_PASSWORD_ENV = "SATOM_ADMIN_PASSWORD"
+#: Where a GENERATED first-admin password is written (mode 0600).
+ADMIN_PASSWORD_FILE_ENV = "SATOM_ADMIN_PASSWORD_FILE"
+ADMIN_PASSWORD_FILENAME = "initial-admin-password"
+
+
+def admin_password_file() -> str:
+    """Path of the generated first-admin password: $SATOM_ADMIN_PASSWORD_FILE,
+    else ``initial-admin-password`` in the install dir (the app root)."""
+    return (os.environ.get(ADMIN_PASSWORD_FILE_ENV)
+            or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            ADMIN_PASSWORD_FILENAME))
+
+
+def _seed_admin() -> str | None:
+    """Create the first admin user if the users table is empty.
+
+    There is no default password. The product used to ship one literal, which
+    made every fresh install's admin a published credential. Now the password
+    is the operator's ($SATOM_ADMIN_PASSWORD) or, when none is given, a random
+    one written ONLY to a 0600 file (see :func:`admin_password_file`) --
+    never to a log. An existing admin is never touched.
+
+    Returns the file's path when a password was generated, else None. If the
+    file cannot be written no admin is created at all: an admin whose password
+    nobody can read is a locked door, and the next start retries.
+    """
+    import secrets
+
+    from .models import Role, User
+    from sqlalchemy.exc import IntegrityError
+
+    if User.query.first() is not None:
+        return None
+
+    log = logging.getLogger(__name__)
+    password = os.environ.get(ADMIN_PASSWORD_ENV) or ""
+    path = tmp = None
+    if not password:
+        password = secrets.token_urlsafe(18)
+        path = admin_password_file()
+        # Written to a private temp name first and moved into place only by
+        # the worker whose INSERT won: gunicorn workers seed concurrently, and
+        # a loser overwriting the file would leave it holding a password that
+        # was never set.
+        tmp = "%s.%d.tmp" % (path, os.getpid())
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as fh:
+                fh.write(password + "\n")
+        except OSError as exc:
+            log.error("No admin user was created: the generated password could "
+                      "not be stored in %s (%s). Set %s, or make that location "
+                      "writable, and restart.", path, exc, ADMIN_PASSWORD_ENV)
+            return None
+
+    admin = User(
+        username="admin",
+        role=Role.admin.value,
+        created_at=datetime.utcnow(),
+        is_active=True,
+    )
+    admin.set_password(password)
+    db.session.add(admin)
+    won = False
+    try:
+        db.session.commit()
+        won = True
+    except IntegrityError:
+        db.session.rollback()  # Another worker seeded first — that's fine
+    finally:
+        if tmp and not won:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    if not won or path is None:
+        return None
+    os.replace(tmp, path)
+    os.chmod(path, 0o600)
+    log.warning("Admin user 'admin' created with a generated password, stored in "
+                "%s (mode 0600). Change it after first login, then delete the file.",
+                path)
+    return path
+
+
+def _seed_acme_providers() -> None:
+    """Insert-only seed of the ACME DNS-01 provider catalog from the
+    git-tracked ``acme_providers.yaml``. Operator edits (renamed env vars,
+    custom providers, disabled rows) are never overwritten — same contract as
+    the endpoint registry."""
+    import logging
+
+    try:
+        from .services import acme_providers
+        added = acme_providers.seed_from_yaml()
+        if added:
+            logging.getLogger(__name__).info(
+                "ACME seed: %d DNS providers imported from acme_providers.yaml",
+                added)
+        # The catalog is only useful if every `flag` is a code the installed
+        # client implements; repair the rows we shipped with a stale one.
+        repaired = acme_providers.repair_stale_flags()
+        if repaired:
+            logging.getLogger(__name__).warning(
+                "ACME seed: repaired %d provider flag(s) the client rejects",
+                repaired)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+def _seed_adoms() -> None:
+    """Insert-only seed of the ADOM registry (``adoms`` table) from the
+    canonical defaults in ``branding._FALLBACK``. Operator edits are never
+    touched (seed is keyed by ADOM ``key``); see ``branding.seed_defaults``."""
+    import logging
+    try:
+        from .branding import seed_defaults
+        added = seed_defaults()
+        if added:
+            logging.getLogger(__name__).info(
+                "ADOM seed: %d ADOMs imported into the registry", added)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+def _seed_analytics_boards() -> None:
+    """Reconcile the built-in analytics boards from code.
+
+    RECONCILED, not insert-only — the opposite of the theme seed, and for a
+    reason worth stating. A built-in board carries no operator intent to
+    preserve: the UI refuses to edit or delete one, so any difference between
+    the row and the code is drift, not a decision. Reconciling means a board
+    improved in a release reaches installations that already have it, instead
+    of freezing at whatever shipped first. Operator-authored boards (``builtin``
+    false) are never touched.
+
+    The panels use RULE selection rather than probe ids so a fresh install with
+    no probes yet still gets working boards: the rules resolve to nothing today
+    and to every matching probe the moment Discover creates them.
+    """
+    from .models import db
+    from .models_analytics import MonitorDashboard, MonitorPanel
+
+    boards = [
+        {
+            # The ONLY board that works at fleet scale. Rule panels enumerate
+            # probe rows; at 100 devices x 750 policies there are no probe rows
+            # to enumerate — the metrics store holds those series and answers
+            # by SELECTOR. topk() bounds every panel to what a chart can show.
+            "slug": "fleet-metrics", "title": "Fleet metrics (store)",
+            "position": 5, "product": "",
+            "description": "Selector-driven view of the local metrics store — "
+                           "scales to the whole fleet because nothing here "
+                           "enumerates series by hand.",
+            "default_range": "24h",
+            "mode": "metricsql",
+            # Only metrics EVERY product with a box collector reports. The
+            # throughput and per-policy panels moved to the FortiWeb board on
+            # 2026-08-06: a built-in seeded with product "" is visible in every
+            # ADOM, so an identity ADOM was rendering four panels whose series
+            # its devices can never emit — empty charts that read as "quiet",
+            # not as "not applicable".
+            "panels": [
+                {"title": "CPU used — all devices", "viz": "line", "width": 6,
+                 "vm_expr": "satom_box_cpu_pct", "vm_unit": "%",
+                 "vm_legend": "device", "show_band": False},
+                {"title": "Memory used — all devices", "viz": "line", "width": 6,
+                 "vm_expr": "satom_box_mem_pct", "vm_unit": "%",
+                 "vm_legend": "device", "show_band": False},
+                {"title": "Collectors failing", "viz": "line", "width": 12,
+                 "vm_expr": "sum by (collector) (satom_scrape_up == 0)",
+                 "vm_unit": "targets", "vm_legend": "collector",
+                 "show_band": False},
+            ],
+        },
+        {
+            # The panels that left fleet-metrics. Product-scoped, so they show
+            # up in the FortiWeb ADOM and nowhere else.
+            "slug": "fortiweb-traffic-store",
+            "title": "Traffic & policies (store)", "position": 6,
+            "product": "fortiweb",
+            "description": "Throughput and per-policy load read by SELECTOR "
+                           "from the metrics store — the only shape that "
+                           "survives a fleet with hundreds of policies.",
+            "default_range": "24h",
+            "mode": "metricsql",
+            "panels": [
+                {"title": "Device throughput", "viz": "area", "width": 12,
+                 "vm_expr": 'satom_total_throughput_bps{kind="fortiweb"}',
+                 "vm_unit": "bit/s", "vm_legend": "device", "show_band": False},
+                {"title": "Busiest policies (top 10 by conn/s)", "viz": "line",
+                 "width": 12,
+                 "vm_expr": 'topk(10, satom_policy_conn_per_sec{kind="fortiweb"})',
+                 "vm_unit": "conn/s", "show_band": False},
+                {"title": "Policies with every backend down", "viz": "line",
+                 "width": 12,
+                 "vm_expr": 'sum by (device) (satom_policy_up{kind="fortiweb"} == 0)',
+                 "vm_unit": "policies", "vm_legend": "device",
+                 "show_band": False},
+            ],
+        },
+        {
+            # FortiAuthenticator's equivalent of a traffic board. An identity
+            # unit has no throughput to plot; what it runs out of is
+            # ENTITLEMENT, and that cliff is invisible on a CPU chart.
+            "slug": "fac-entitlement", "title": "Entitlement & tokens",
+            "position": 7, "product": "fortiauthenticator",
+            "description": "Licence headroom and FortiToken pools — the "
+                           "ceilings this product actually hits.",
+            "default_range": "7d",
+            "mode": "metricsql",
+            "panels": [
+                {"title": "Licence consumed", "viz": "line", "width": 6,
+                 "vm_expr": "satom_fac_licence_pct", "vm_unit": "%",
+                 "vm_legend": "resource", "show_band": False},
+                {"title": "Licence seats free", "viz": "line", "width": 6,
+                 "vm_expr": "satom_fac_licence_total - satom_fac_licence_used",
+                 "vm_unit": "seats", "vm_legend": "resource",
+                 "show_band": False},
+                {"title": "FortiToken pool consumed", "viz": "line", "width": 6,
+                 "vm_expr": "satom_fac_token_pct", "vm_unit": "%",
+                 "vm_legend": "pool", "show_band": False},
+                {"title": "HA peer present", "viz": "line", "width": 6,
+                 "vm_expr": "satom_fac_ha_peer", "vm_unit": "peer",
+                 "vm_legend": "device", "show_band": False},
+                {"title": "Collectors failing", "viz": "line", "width": 12,
+                 "vm_expr": 'sum by (collector) (satom_scrape_up{kind="fortiauthenticator"} == 0)',
+                 "vm_unit": "targets", "vm_legend": "collector",
+                 "show_band": False},
+            ],
+        },
+        {
+            # Rule-driven and cross-product: CPU/memory probes exist
+            # on every product that has a box, and probe visibility is
+            # already ADOM-scoped, so this board is correct anywhere.
+            "slug": "fleet-overview", "title": "Fleet overview", "position": 10, "product": "",
+            "description": "Processor, memory and availability across every "
+                           "monitored appliance.",
+            "default_range": "24h",
+            "panels": [
+                {"title": "CPU used", "viz": "line", "rule_kind": "cpu",
+                 "width": 6, "show_band": True},
+                {"title": "Memory used", "viz": "line", "rule_kind": "memory",
+                 "width": 6, "show_band": True},
+                {"title": "Availability by probe", "viz": "heatmap",
+                 "rule_kind": "cpu", "width": 12, "height": 240},
+                {"title": "Peak CPU", "viz": "stat", "rule_kind": "cpu",
+                 "stat_func": "max", "width": 4, "height": 190,
+                 "compare_prev": True},
+                {"title": "Peak memory", "viz": "stat", "rule_kind": "memory",
+                 "stat_func": "max", "width": 4, "height": 190,
+                 "compare_prev": True},
+                {"title": "Healthy %", "viz": "stat", "rule_kind": "cpu",
+                 "stat_func": "healthy_pct", "width": 4, "height": 190,
+                 "compare_prev": True},
+            ],
+        },
+        {
+            # FortiWeb-only: throughput, per-policy sessions and HTTP
+            # transactions all come from the FortiWeb monitor API.
+            "slug": "traffic", "title": "Traffic & sessions", "position": 20, "product": "fortiweb",
+            "description": "Throughput, concurrent sessions and HTTP "
+                           "transactions read from the appliance monitor API.",
+            "default_range": "24h",
+            "panels": [
+                {"title": "Throughput", "viz": "area", "rule_kind": "throughput",
+                 "width": 12, "show_band": True, "show_v2": True},
+                {"title": "Sessions per policy", "viz": "line",
+                 "rule_kind": "policy_sessions", "width": 6},
+                {"title": "Box sessions", "viz": "line", "rule_kind": "sessions",
+                 "width": 6},
+                {"title": "HTTP transactions", "viz": "bar",
+                 "rule_kind": "transactions", "width": 12, "height": 240},
+            ],
+        },
+        {
+            # FortiWeb-only: proxyd has no counterpart on any other
+            # product (no REST endpoint anywhere exposes process
+            # state) and interface drift reads the FortiWeb harvest.
+            "slug": "service-health", "title": "Service health", "position": 30, "product": "fortiweb",
+            "description": "Synthetic response time, the proxyd daemon and "
+                           "interface drift.",
+            "default_range": "7d",
+            "panels": [
+                {"title": "Response time", "viz": "line", "rule_kind": "https",
+                 "width": 8, "show_band": True},
+                {"title": "Slowest response", "viz": "stat", "rule_kind": "https",
+                 "stat_func": "max", "width": 4, "height": 190},
+                {"title": "proxyd memory", "viz": "line", "rule_kind": "proxyd",
+                 "width": 6, "show_v2": True},
+                {"title": "Interface drift", "viz": "status",
+                 "rule_kind": "interface", "width": 6, "height": 220},
+                {"title": "Probe summary", "viz": "table", "rule_kind": "https",
+                 "width": 12, "height": 260},
+            ],
+        },
+        {
+            # Rule-driven counterpart of fac-entitlement: reads the licence and
+            # token PROBES, so it carries their thresholds and their graded
+            # verdict rather than a raw series.
+            "slug": "fac-identity", "title": "Identity health", "position": 40,
+            "product": "fortiauthenticator",
+            "description": "Licence and FortiToken probes, with the thresholds "
+                           "the operator set on them.",
+            "default_range": "7d",
+            "panels": [
+                {"title": "Licence consumed", "viz": "line",
+                 "rule_kind": "licence", "width": 6, "show_band": True},
+                {"title": "FortiToken pools", "viz": "line",
+                 "rule_kind": "tokens", "width": 6, "show_band": True},
+                {"title": "Peak licence use", "viz": "stat",
+                 "rule_kind": "licence", "stat_func": "max", "width": 4,
+                 "height": 190, "compare_prev": True},
+                {"title": "Processor", "viz": "line", "rule_kind": "cpu",
+                 "width": 4, "height": 190},
+                {"title": "Memory", "viz": "line", "rule_kind": "memory",
+                 "width": 4, "height": 190},
+                {"title": "Probe summary", "viz": "table",
+                 "rule_kind": "licence", "width": 12, "height": 260},
+            ],
+        },
+        {
+            # ONE board for every device in the fleet. The device moves out of
+            # the panels and into a picker, so fifty appliances are fifty
+            # SELECTIONS rather than fifty boards to build and keep in step.
+            # Every panel is store-backed and filtered by $device.
+            "slug": "device-drilldown", "title": "Device drill-down",
+            "position": 7, "product": "",
+            "description": "Everything the store knows about ONE appliance. "
+                           "Pick the device above — the board is the same for "
+                           "all of them, so a newly onboarded appliance needs "
+                           "no new board.",
+            "default_range": "24h",
+            "mode": "metricsql",
+            "variables": [
+                {"name": "device", "label": "Device", "label_key": "device"},
+            ],
+            "panels": [
+                {"title": "CPU used", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_box_cpu_pct{device=~"$device"}',
+                 "vm_unit": "%", "vm_legend": "device", "show_band": False},
+                {"title": "Memory used", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_box_mem_pct{device=~"$device"}',
+                 "vm_unit": "%", "vm_legend": "device", "show_band": False},
+                {"title": "Concurrent sessions", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_box_sessions{device=~"$device"}',
+                 "vm_unit": "sessions", "vm_legend": "device",
+                 "show_band": False},
+                {"title": "New connections / s", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_box_conn_per_sec{device=~"$device"}',
+                 "vm_unit": "conn/s", "vm_legend": "device",
+                 "show_band": False},
+                {"title": "Interfaces down", "viz": "line", "width": 6,
+                 "vm_expr": 'sum by (device) (satom_iface_up{device=~"$device"} == 0)',
+                 "vm_unit": "ports", "vm_legend": "device", "show_band": False},
+                {"title": "Published services", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_policy_count{device=~"$device"}',
+                 "vm_unit": "services", "vm_legend": "device",
+                 "show_band": False},
+                # Absence is not health: a collector that stops answering has
+                # to be visible on the device's own board, not only on Fleet.
+                {"title": "Collectors failing", "viz": "line", "width": 12,
+                 "vm_expr": 'sum by (collector) (satom_scrape_up{device=~"$device"} == 0)',
+                 "vm_unit": "collectors", "vm_legend": "collector",
+                 "show_band": False, "height": 220},
+            ],
+        },
+        {
+            # The per-service view, and the reason variables CHAIN: $policy is
+            # enumerated with a match that already references $device, so the
+            # policy picker offers only services that exist on the selected
+            # appliance instead of every policy in the fleet.
+            "slug": "service-drilldown", "title": "Service drill-down",
+            "position": 8, "product": "",
+            "description": "One published service — FortiWeb server policy or "
+                           "FortiADC virtual server. The policy picker is "
+                           "scoped to the device picked above. RTT, app "
+                           "response and throughput are per-policy FortiWeb "
+                           "readings; FortiADC publishes those only per "
+                           "device (satom_adc_*), not per virtual server.",
+            "default_range": "24h",
+            "mode": "metricsql",
+            "variables": [
+                {"name": "device", "label": "Device", "label_key": "device",
+                 "match": 'satom_policy_up'},
+                {"name": "policy", "label": "Service", "label_key": "policy",
+                 "match": 'satom_policy_up{device=~"$device"}'},
+            ],
+            "panels": [
+                {"title": "Service up", "viz": "status", "width": 12,
+                 "height": 200,
+                 "vm_expr": 'satom_policy_up{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "up", "vm_legend": "policy", "show_band": False},
+                {"title": "Sessions", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_policy_sessions{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "sessions", "vm_legend": "policy",
+                 "show_band": False},
+                {"title": "Connections / s", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_policy_conn_per_sec{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "conn/s", "vm_legend": "policy",
+                 "show_band": False},
+                {"title": "Client RTT", "viz": "line", "width": 4,
+                 "vm_expr": 'satom_policy_client_rtt_ms{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "ms", "vm_legend": "policy", "show_band": False},
+                {"title": "Server RTT", "viz": "line", "width": 4,
+                 "vm_expr": 'satom_policy_server_rtt_ms{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "ms", "vm_legend": "policy", "show_band": False},
+                {"title": "App response", "viz": "line", "width": 4,
+                 "vm_expr": 'satom_policy_app_response_ms{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "ms", "vm_legend": "policy", "show_band": False},
+                {"title": "Throughput", "viz": "area", "width": 12,
+                 "vm_expr": 'satom_policy_throughput_bps{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "bps", "vm_legend": "policy", "show_band": False},
+            ],
+        },
+    ]
+
+    changed = False
+    for spec in boards:
+        panels = spec.pop("panels")
+        mode = spec.pop("mode", "rule")
+        # Variables are stored as JSON text. Dumping through the parser (rather
+        # than json.dumps on the literal) means a malformed built-in definition
+        # is caught here, at boot, instead of rendering a picker that changes
+        # nothing.
+        from .services.dashboard_vars import dump as _dump_vars
+        spec["variables"] = _dump_vars(spec.pop("variables", []))
+        board = MonitorDashboard.query.filter_by(slug=spec["slug"]).first()
+        if board is None:
+            board = MonitorDashboard(slug=spec["slug"], builtin=True, product="")
+            db.session.add(board)
+            changed = True
+        elif not board.builtin:
+            # An operator board took this slug. Theirs wins; the built-in is
+            # simply not reconciled rather than silently overwritten.
+            continue
+        for key, val in spec.items():
+            if getattr(board, key, None) != val:
+                setattr(board, key, val)
+                changed = True
+        board.builtin = True
+        db.session.flush()
+
+        # Panels are replaced wholesale. Diffing them would need a stable
+        # identity a built-in panel does not have (its title is the only
+        # candidate and titles change between releases), and the board is
+        # read-only anyway, so there is nothing an operator could lose.
+        existing = list(board.panels)
+        want = [dict(pos=i * 10, **p) for i, p in enumerate(panels)]
+        if len(existing) != len(want) or _panels_differ(existing, want):
+            for old in existing:
+                db.session.delete(old)
+            db.session.flush()
+            for item in want:
+                item = dict(item)
+                pos = item.pop("pos")
+                db.session.add(MonitorPanel(
+                    dashboard_id=board.id, position=pos,
+                    select_mode=mode, **item))
+            changed = True
+    if changed:
+        db.session.commit()
+
+
+def _panels_differ(existing, want) -> bool:
+    """True when a built-in board's panels no longer match the code."""
+    for old, new in zip(existing, want):
+        for key, val in new.items():
+            if key == "pos":
+                continue
+            if getattr(old, key, None) != val:
+                return True
+    return False
+
+
+def _seed_themes() -> None:
+    """Insert-only seed of the built-in UI themes (``ui_themes`` table).
+
+    Operator-created themes are never touched (seed is keyed by ``slug``), and
+    the built-ins cannot be edited or deleted — they are the recovery path when
+    a custom palette makes the console unreadable.
+    """
+    import logging
+    try:
+        from .services.theme_service import seed_defaults
+        added = seed_defaults()
+        if added:
+            logging.getLogger(__name__).info(
+                "Theme seed: %d built-in themes imported", added)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+def _seed_registry() -> None:
+    """Seed the endpoint registry from each product's endpoint baseline.
+
+    The shipped baselines (``app/registry/baselines/<product>.json``, sealed,
+    pinned to a firmware build) are inserted if the database lacks them, and
+    the registry is reconciled to the active baseline once per promotion. Rows
+    an operator edited or disabled are never touched; see
+    ``services.api_baseline``. This replaced the insert-only sync from the four
+    hand-written ``endpoints*.yaml`` files.
+    """
+    import logging
+
+    try:
+        from .services import api_baseline
+        applied = api_baseline.boot()
+        for product, res in applied.items():
+            logging.getLogger(__name__).info(
+                "Endpoint baseline applied to the %s registry: %s", product, res)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()

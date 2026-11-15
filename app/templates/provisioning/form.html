@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% import "partials/_template_compat.html" as tcx with context %}
+
+{% block title %}{{ 'Edit' if template_id else 'New' }} System Profile — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('provisioning.index') }}">{{ _('System Provisioning') }}</a>
+  <span class="separator">/</span>
+  <span>{{ 'Edit profile' if template_id else 'New profile' }}</span>
+</div>
+{% endblock %}
+
+{# ----------------------------------------------------------------------- #}
+{# Repeatable provisioning-element row (mirrors the desktop's element list). #}
+{# ``idx`` is the row index; ``row`` is None for the JS clone template (the   #}
+{# hidden <script nonce="{{ csp_nonce }}"> below) and a dict for server-rendered rows.               #}
+{# The Item picker offers EVERY config (cmdb) object grouped by GUI section   #}
+{# (optgroups) — pick the intent, set singleton/mkey, type the values.        #}
+{# ----------------------------------------------------------------------- #}
+{% macro render_row(idx, row, grouped_specs, spec_keys) %}
+<div class="prov-row mb-2" style="border:1px solid rgba(148,163,184,.25); border-radius:8px; padding:14px;">
+  <input type="hidden" name="rows" value="{{ idx }}">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-6">
+      <label class="fw-form-label">{{ _('Element') }}</label>
+      <select class="form-select prov-key" name="key_{{ idx }}">
+        <option value="">{{ _('— select a configuration object —') }}</option>
+        {% for section, slist in grouped_specs.items() %}
+        <optgroup label="{{ section }}">
+          {% for s in slist %}
+          <option value="{{ s.key }}"
+                  data-singleton="{{ '1' if s.singleton else '0' }}"
+                  data-sensitive="{{ '1' if s.sensitive else '0' }}"
+                  title="{{ s.note }}"
+                  {{ 'selected' if row and row.key == s.key else '' }}>{{ s.label }}{% if s.sensitive %} (secret){% endif %}</option>
+          {% endfor %}
+        </optgroup>
+        {% endfor %}
+        {% if row and row.key and row.key not in spec_keys %}
+        <option value="{{ row.key }}" selected>{{ row.key }} (not in registry)</option>
+        {% endif %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="fw-form-label">{{ _('mkey') }} <span class="text-muted">{{ _('(optional)') }}</span></label>
+      <input type="text" class="form-control" name="mkey_{{ idx }}"
+             value="{{ row.mkey if row else '' }}" placeholder="{{ _('key of object to update') }}" autocomplete="off">
+    </div>
+    <div class="col-md-2">
+      <label class="fw-form-label d-block">{{ _('Singleton') }}</label>
+      <div class="form-check mt-1">
+        <input class="form-check-input prov-singleton" type="checkbox" name="singleton_{{ idx }}"
+               {{ 'checked' if row and row.singleton else '' }}>
+      </div>
+    </div>
+    <div class="col-md-1 text-end">
+      <div class="btn-group-vertical btn-group-sm" role="group">
+        <button type="button" class="btn btn-outline-secondary btn-sm-icon" title="{{ _('Move up') }}"
+                data-js="row-up"><i class="bi bi-arrow-up"></i></button>
+        <button type="button" class="btn btn-outline-secondary btn-sm-icon" title="{{ _('Move down') }}"
+                data-js="row-down"><i class="bi bi-arrow-down"></i></button>
+        <button type="button" class="btn btn-outline-danger btn-sm-icon" title="{{ _('Remove element') }}"
+                data-js="row-remove"><i class="bi bi-trash"></i></button>
+      </div>
+    </div>
+  </div>
+  {# Values — the object's payload, typed as JSON (singleton = PUT whole object). #}
+  <div class="mt-2">
+    <label class="fw-form-label">{{ _('Values') }} <span class="text-muted">{{ _('(JSON — the fields to push)') }}</span></label>
+    <textarea class="form-control prov-data" name="data_{{ idx }}" rows="5" spellcheck="false"
+              placeholder='{ "hostname": "fw-test" }'
+              style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{{ row.data if row else '{}' }}</textarea>
+    <div class="form-text prov-note"></div>
+  </div>
+</div>
+{% endmacro %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ 'Edit' if template_id else 'New' }} system profile</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('An ordered list of provisioning elements — each maps a configuration object (any section) to a JSON payload. Add / reorder / remove elements, then save as a versioned profile and apply to one device or the fleet (dry-run → canary). Secret fields (passwords, shared secrets) are stripped on save and are not pushed by a deployment; set them on each device afterwards.') }}</p>
+  </div>
+  <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
+</div>
+
+<form method="POST"
+      action="{{ url_for('provisioning.edit', template_id=template_id) if template_id else url_for('provisioning.new') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="fw-card mb-3">
+    <div class="fw-card-header"><span class="fw-card-title">{{ _('Profile') }}</span></div>
+    <div class="fw-card-body">
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" name="name" value="{{ profile_name }}"
+                 placeholder="{{ _('e.g. fortiweb-baseline') }}" required autocomplete="off">
+        </div>
+        <div class="col-md-6">
+          {{ tcx.firmware_select(firmware_choices, source_firmware, required=not source_firmware) }}
+        </div>
+      </div>
+      <div class="fw-alert fw-alert-info d-flex align-items-center gap-2 mb-3" style="font-size:13px;">
+        <i class="bi bi-info-circle"></i>
+        <span>{{ _('Set a scope to restrict this profile to a specific zone, line, or department. Leave blank to apply to any.') }}</span>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="fw-form-label">{{ _('Zone') }}</label>
+          <select class="form-select" name="scope_zone">
+            <option value="">{{ _('— Any zone —') }}</option>
+            {% for z in zones %}<option value="{{ z }}" {{ 'selected' if scope.get('zone') == z else '' }}>{{ z }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="fw-form-label">{{ _('Line') }}</label>
+          <select class="form-select" name="scope_line">
+            <option value="">{{ _('— Any line —') }}</option>
+            {% for l in lines %}<option value="{{ l }}" {{ 'selected' if scope.get('line') == l else '' }}>{{ l }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="fw-form-label">{{ _('Department') }}</label>
+          <select class="form-select" name="scope_department">
+            <option value="">{{ _('— Any department —') }}</option>
+            {% for d in departments %}<option value="{{ d }}" {{ 'selected' if scope.get('department') == d else '' }}>{{ d }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fw-card mb-3">
+    <div class="fw-card-header d-flex justify-content-between align-items-center">
+      <span class="fw-card-title">{{ _('Provisioning elements') }}</span>
+      <button type="button" class="btn btn-sm btn-fw-outline" data-js="add-row"><i class="bi bi-plus-lg me-1"></i>{{ _('Add element') }}</button>
+    </div>
+    <div class="fw-card-body">
+      {% if not spec_keys %}
+      <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3" style="font-size:13px;">
+        <i class="bi bi-exclamation-triangle"></i>
+        <span>{{ _('No configuration objects are available from the registry yet. Load the registry / connect an appliance, then reload this page.') }}</span>
+      </div>
+      {% endif %}
+      <div id="rows" data-next-index="{{ rows|length }}">
+        {% for row in rows %}{{ render_row(loop.index0, row, grouped_specs, spec_keys) }}{% endfor %}
+      </div>
+      <div id="emptyRows" class="text-muted" style="font-size:13px; {{ 'display:none;' if rows else '' }}">
+        {{ _('No elements yet — click') }} <strong>{{ _('Add element') }}</strong> {{ _('to begin.') }}
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save profile') }}</button>
+    <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}">{{ _('Cancel') }}</a>
+  </div>
+</form>
+
+<!-- Clone source for new rows (rendered with __IDX__ placeholders) -->
+<script nonce="{{ csp_nonce }}" type="text/template" id="rowTpl">{{ render_row('__IDX__', None, grouped_specs, spec_keys) }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+function syncEmpty() {
+  var any = document.querySelectorAll('#rows .prov-row').length > 0;
+  document.getElementById('emptyRows').style.display = any ? 'none' : '';
+}
+function addRow() {
+  var box = document.getElementById('rows');
+  var n = parseInt(box.getAttribute('data-next-index') || '0', 10);
+  box.setAttribute('data-next-index', n + 1);
+  var html = document.getElementById('rowTpl').innerHTML.replace(/__IDX__/g, n);
+  var tmp = document.createElement('div'); tmp.innerHTML = html.trim();
+  box.appendChild(tmp.firstElementChild); syncEmpty();
+}
+function removeRow(btn) { var r = btn.closest('.prov-row'); if (r) { r.remove(); } syncEmpty(); }
+function moveRow(btn, dir) {
+  var r = btn.closest('.prov-row'); if (!r) { return; }
+  if (dir < 0 && r.previousElementSibling) {
+    r.parentNode.insertBefore(r, r.previousElementSibling);
+  } else if (dir > 0 && r.nextElementSibling) {
+    r.parentNode.insertBefore(r.nextElementSibling, r);
+  }
+}
+// Picking an element sets the sensible singleton default + a per-row hint.
+function onKeyChange(sel) {
+  var opt = sel.options[sel.selectedIndex]; if (!opt) { return; }
+  var row = sel.closest('.prov-row'); if (!row) { return; }
+  var sw = row.querySelector('.prov-singleton');
+  var flag = opt.getAttribute('data-singleton');
+  if (sw && flag !== null) { sw.checked = (flag === '1'); }
+  var note = row.querySelector('.prov-note');
+  if (note) {
+    var bits = [];
+    if (flag === '1') { bits.push('singleton — PUT the whole object (no mkey)'); }
+    else { bits.push('collection — creates a new object, or set mkey to update'); }
+    if (opt.getAttribute('data-sensitive') === '1') {
+      bits.push('⚠ secret — do not type the secret here; it is stripped on save and not pushed, so set it on each device afterwards');
+    }
+    note.textContent = bits.join('  ·  ');
+  }
+}
+document.addEventListener('DOMContentLoaded', function () {
+  syncEmpty();
+  if (!document.querySelectorAll('#rows .prov-row').length) { addRow(); }
+});
+(function () {
+  var addBtn = document.querySelector('[data-js="add-row"]');
+  if (addBtn) { addBtn.addEventListener('click', function (event) { addRow(); }); }
+  var box = document.getElementById('rows');
+  if (!box) { return; }
+  // Rows are added/cloned dynamically — delegate so new rows are covered too.
+  box.addEventListener('change', function (event) {
+    var sel = event.target.closest('.prov-key');
+    if (sel) { onKeyChange(sel); }
+  });
+  box.addEventListener('click', function (event) {
+    var btn = event.target.closest('[data-js]');
+    if (!btn) { return; }
+    if (btn.dataset.js === 'row-up') { moveRow(btn, -1); }
+    else if (btn.dataset.js === 'row-down') { moveRow(btn, 1); }
+    else if (btn.dataset.js === 'row-remove') { removeRow(btn); }
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,100 @@
+{#  Publish one article to Confluence (views/wiki.confluence_*; script
+    js/wiki_confluence.js). One dialog per page; each Confluence button
+    (macro below, on the list's cards and on the article page) fills it for
+    its article. The user picks the connection (only when there are
+    several), the space, and the parent page: the space's tree, or a search
+    by title. The credential scan and the audience question are asked here
+    and again by the server. Without JavaScript nothing opens; the button
+    only shows to whoever may publish (wiki_confluence.can_publish).      #}
+{% macro confluence_button(article, pages=0) %}
+<button type="button" class="btn btn-sm btn-outline-secondary wiki-cf-btn" data-bs-toggle="modal" data-bs-target="#wiki-cf-modal"
+        data-cf-title="{{ article.title }}"
+        data-cf-state="{{ url_for('wiki.confluence_state', article_id=article.id) }}"
+        data-cf-spaces="{{ url_for('wiki.confluence_spaces', article_id=article.id) }}"
+        data-cf-pages="{{ url_for('wiki.confluence_pages', article_id=article.id) }}"
+        data-cf-publish="{{ url_for('wiki.confluence_publish', article_id=article.id) }}"
+        title="{{ _('Publish this article to Confluence') }}"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Confluence') }}{% if pages %} <span class="fw-badge fw-badge-success ms-1">{{ pages }}</span>{% endif %}</button>
+{% endmacro %}
+
+{% macro confluence_modal(next_url) %}
+<div class="modal fade fw-modal" id="wiki-cf-modal" tabindex="-1" aria-labelledby="wiki-cf-title" aria-hidden="true"
+     data-cf-modal
+     data-t-loading="{{ _('Loading…') }}"
+     data-t-pick-space="{{ _('Pick a space…') }}"
+     data-t-top="{{ _('Top level of the space') }}"
+     data-t-empty="{{ _('No pages under this one.') }}"
+     data-t-nohits="{{ _('No page of this space matches.') }}"
+     data-t-current="{{ _('up to date') }}"
+     data-t-holds="{{ _('holds version {n}, current is {m}') }}"
+     data-t-forget="{{ _('Forget') }}"
+     data-t-forget-confirm="{{ _('Stop updating this page? It stays in Confluence.') }}"
+     data-t-page="{{ _('page {id}') }}"
+     data-t-finding="{{ _('{kind} on line {line}') }}"
+     data-t-publish="{{ _('Publish version {n}') }}"
+     data-t-update="{{ _('Update to version {n}') }}"
+     data-t-expand="{{ _('Show the pages under it') }}">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <form class="modal-content" method="post" action="" data-cf-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <input type="hidden" name="parent" value="" data-cf-parent>
+      <div class="modal-header">
+        <h5 class="modal-title" id="wiki-cf-title"><i class="bi bi-box-arrow-up-right me-2 text-accent"></i>{{ _('Publish to Confluence') }}: <span data-cf-name></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <div class="text-muted small" data-cf-loading>{{ _('Loading…') }}</div>
+        <div class="alert alert-danger py-2 small d-none" role="alert" data-cf-error></div>
+
+        <section class="mb-3 d-none" data-cf-links>
+          <h6 class="mb-1">{{ _('Already in Confluence') }}</h6>
+          <ul class="list-unstyled small mb-0" data-cf-link-list></ul>
+        </section>
+
+        <div class="wiki-draft-note mb-3 d-none" role="alert" data-cf-findings>
+          <i class="bi bi-shield-exclamation me-1"></i>{{ _('This article looks like it holds credentials; it will not be published until they are removed:') }}
+          <ul class="mb-0" data-cf-finding-list></ul>
+        </div>
+
+        <div class="row g-2 d-none" data-cf-pickers>
+          <div class="col-md-5 d-none" data-cf-conn-wrap>
+            <label class="form-label small mb-1" for="cf-conn">{{ _('Connection') }}</label>
+            <select class="form-select form-select-sm" id="cf-conn" name="connection" data-cf-conn></select>
+          </div>
+          <div class="col">
+            <label class="form-label small mb-1" for="cf-space">{{ _('Space') }}</label>
+            <input class="form-control form-control-sm mb-1" type="search" data-cf-space-filter
+                   placeholder="{{ _('Filter the spaces') }}" aria-label="{{ _('Filter the spaces') }}">
+            <select class="form-select form-select-sm" id="cf-space" name="space" data-cf-space required></select>
+          </div>
+        </div>
+
+        <div class="mt-3 d-none" data-cf-parent-wrap>
+          <label class="form-label small mb-1" for="cf-search">{{ _('Parent page') }}</label>
+          <div class="small mb-2 d-none" data-cf-update-note><i class="bi bi-info-circle me-1"></i>{{ _('This article already has a page in this space: publishing updates that page where it is.') }}</div>
+          <div data-cf-picker>
+            <input class="form-control form-control-sm mb-2" type="search" id="cf-search" data-cf-search
+                   placeholder="{{ _('Search the pages of this space') }}" autocomplete="off">
+            <div class="wiki-cf-tree" role="tree" data-cf-tree></div>
+            <div class="small mt-2">{{ _('New page goes under') }}: <strong data-cf-picked>{{ _('Top level of the space') }}</strong></div>
+          </div>
+        </div>
+
+        <div class="form-check mt-3 d-none" data-cf-ack-wrap>
+          <input class="form-check-input" type="checkbox" name="acknowledge" value="1" id="cf-ack" data-cf-ack>
+          <label class="form-check-label small" for="cf-ack">{{ _('This article is not for everyone in SATOM. The readers of that Confluence space may read it.') }}</label>
+        </div>
+        <div class="form-check mt-1 d-none" data-cf-override-wrap>
+          <input class="form-check-input" type="checkbox" name="override_scan" value="1" id="cf-override" data-cf-override>
+          <label class="form-check-label small" for="cf-override">{{ _('I checked: these are not credentials (moderator, audited)') }}</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="form-text me-auto" style="font-size:11px;">{{ _('The published version goes, never a draft. An edit made in Confluence is replaced on the next publication.') }}</div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button class="btn btn-fw-primary btn-sm" data-cf-submit disabled>{{ _('Publish') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endmacro %}

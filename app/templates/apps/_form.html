@@ -1,0 +1,10 @@
+{# The form of a Plugin Studio app (services.studio_apps.form_view). `prefix`
+   keeps ids unique when the editor's Test tab and a page share a document.
+   Values are read by static/js/apps_run.js (name = field name). #}
+{% set prefix = prefix|default('f-') %}
+{% from "apps/_field.html" import field %}
+{% for f in fields %}
+{{ field(f, prefix) }}
+{% else %}
+<p class="text-muted small">{{ _('This app has no form: press Run.') }}</p>
+{% endfor %}

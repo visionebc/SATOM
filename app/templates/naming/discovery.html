@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+
+{% block title %}Naming — Discovery{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Naming') }}</span>
+  <span class="separator">/</span>
+  <span>{{ product_label }}</span>
+</div>
+{% endblock %}
+
+{% macro pct(n, d) %}{{ ((100 * n / d) | round(0) | int) if d else 0 }}{% endmacro %}
+
+{% macro follow_badge(n, d) %}
+{% set p = (100 * n / d) if d else 0 %}
+<span class="fw-badge fw-badge-nowrap {{ 'fw-badge-success' if p >= 90 else ('fw-badge-warning' if p >= 60 else 'fw-badge-danger') }}">{{ n }}/{{ d }} · {{ pct(n, d) }}%</span>
+{% endmacro %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-tag me-2 text-accent"></i>{{ _('Naming') }} — {{ product_label }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Discovery reads the configuration SATOM already holds for each device (no device call) and shows the convention behind the names that are there, per object type: the pattern, how many objects follow it, and why each exception does not.') }}
+      {{ _('A part of a name becomes a token when it matches a field of the same object on most objects') }}
+      (<code>{port}</code>, <code>{proto}</code>, <code>{adom}</code>, …); <code>{name}</code> {{ _('is the free part — the site identifier the naming scheme fills in.') }}
+      {{ _('Vendor objects are counted apart and never used to infer anything.') }}
+    </p>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-0" style="border-bottom:1px solid var(--fw-border);">
+  <li class="nav-item"><a class="nav-link" href="{{ url_for('naming.index', product=current_product) }}"><i class="bi bi-pencil-square me-1"></i>{{ _('Scheme') }}</a></li>
+  <li class="nav-item"><a class="nav-link active" href="{{ url_for('naming.discovery', product=current_product) }}"><i class="bi bi-search me-1"></i>{{ _('Discovery') }}</a></li>
+</ul>
+
+<div class="fw-card" style="border-top-left-radius:0;">
+  <div class="fw-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <form method="GET" action="{{ url_for('naming.discovery') }}" class="d-flex align-items-center gap-2 flex-wrap" id="nd-pick">
+      <input type="hidden" name="product" value="{{ current_product }}">
+      <label class="fw-form-label mb-0" for="nd-appliance" style="font-size:12px;">{{ _('Device') }}</label>
+      <select id="nd-appliance" name="appliance" class="form-select fw-form-control form-select-sm" style="width:auto;">
+        {% for a in fleet %}
+        <option value="{{ a.id }}" {{ 'selected' if selected and selected.id == a.id else '' }}>{{ a.name }}</option>
+        {% endfor %}
+        {% if fleet|length > 1 or not selected %}
+        <option value="all" {{ 'selected' if not selected else '' }}>{{ _('All devices (fleet view)') }}</option>
+        {% endif %}
+      </select>
+      {% if selected %}
+      <div class="form-check form-switch mb-0 ms-2">
+        <input class="form-check-input" type="checkbox" id="nd-factory" name="factory" value="1" {{ 'checked' if show_factory else '' }}>
+        <label class="form-check-label" for="nd-factory" style="font-size:12px;">{{ _('Show object types with vendor objects only') }}</label>
+      </div>
+      {% endif %}
+    </form>
+    <div class="d-flex align-items-center gap-2">
+      {% if selected %}
+      <form method="POST" action="{{ url_for('naming.discovery_sync') }}" class="mb-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="product" value="{{ current_product }}">
+        <input type="hidden" name="appliance" value="{{ selected.id }}">
+        <div class="btn-group btn-group-sm">
+          <button type="submit" class="btn btn-outline-secondary" title="{{ _('Runs as a background job. Checks SATOM’s cache first: when it is current, nothing is read from the device; when it is stale, the device is swept (read-only).') }}"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Sync device') }}</button>
+          <button type="submit" name="force" value="1" class="btn btn-outline-secondary" title="{{ _('Runs as a background job: a read-only sweep of the device now, even when SATOM’s cache is current (for changes made on the device since the last sweep).') }}"><i class="bi bi-hdd-network me-1"></i>{{ _('Read the device now') }}</button>
+        </div>
+      </form>
+      {% endif %}
+      {% if fleet %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('naming.discovery_csv', product=current_product, appliance=(selected.id if selected else 'all')) }}"><i class="bi bi-filetype-csv me-1"></i>{{ _('Export CSV') }}</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="fw-card-body">
+  {% if not fleet %}
+    <div class="alert alert-secondary mb-0" style="font-size:12.5px;">
+      <i class="bi bi-info-circle me-1"></i>{{ _('No %(p)s device is registered, so there are no names to read.', p=product_label) }}
+    </div>
+
+  {% elif analysis and analysis.missing %}
+    <div class="alert alert-warning mb-0" style="font-size:12.5px;">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      {{ _('SATOM holds no configuration tree for %(d)s yet. Use “Sync device” to read it (read-only), then come back.', d=analysis.device) }}
+    </div>
+
+  {% elif analysis %}
+    {% set named = analysis.tables | selectattr('user') | list %}
+    <div class="d-flex flex-wrap gap-3 mb-3" style="font-size:12.5px;">
+      <span><strong>{{ named|length }}</strong> {{ _('object types with team objects') }}</span>
+      <span><strong>{{ analysis.user_objects }}</strong> {{ _('team objects') }}</span>
+      <span class="text-muted"><strong>{{ analysis.factory_objects }}</strong> {{ _('vendor objects excluded') }}</span>
+      {% if analysis.generated_at %}<span class="text-muted">{{ _('Configuration read') }} {{ analysis.generated_at[:16] | replace('T', ' ') }} UTC</span>{% endif %}
+      {% if cache %}
+      <span id="nd-cache" class="text-muted"><i class="bi bi-database me-1"></i>{{ _('Source: SATOM’s cache') }}{% if cache.as_of %} — {{ _('last sweep') }} {{ cache.as_of.strftime('%Y-%m-%d %H:%M') }} UTC{% if cache.trigger %} ({{ cache.trigger }}){% endif %}{% endif %}</span>
+      {% if cache.stale %}<span class="fw-badge fw-badge-warning" title="{{ cache.reason }}">{{ _('stale') }}: {{ cache.reason }}</span>{% endif %}
+      {% endif %}
+    </div>
+
+    <div class="fw-table-wrapper">
+    <table class="table table-sm fw-table mb-0" id="nd-table">
+      <thead><tr>
+        <th>{{ _('Object type') }}</th>
+        <th>{{ _('Convention found') }}</th>
+        <th>{{ _('Follow it') }}</th>
+        <th>{{ _('Naming scheme') }}</th>
+        <th>{{ _('Shares {name} with') }}</th>
+        <th class="text-end">{{ _('Vendor') }}</th>
+        <th class="actions-col"></th>
+      </tr></thead>
+      <tbody>
+      {% for t in analysis.tables %}
+      {% if t.user or show_factory %}
+      <tr>
+        <td>
+          <div>{{ t.label }}</div>
+          <div class="text-muted" style="font-size:11px;">{{ t.section }} · <code>{{ t.table }}</code></div>
+        </td>
+        <td>
+          {% if t.main %}
+            <code>{{ t.main }}</code>
+            {% for v in t.patterns[1:] %}<div class="text-muted" style="font-size:11px;">{{ _('variant') }} <code>{{ v.pattern }}</code> · {{ v.count }}</div>{% endfor %}
+            {% if t.separator or t.case %}<div class="text-muted" style="font-size:11px;">{% if t.separator %}{{ _('separator') }} “{{ t.separator }}”{% endif %}{% if t.case %} · {{ t.case }}{% endif %}</div>{% endif %}
+          {% elif t.status == 'few' %}<span class="text-muted">{{ _('one object — too few to infer a convention') }}</span>
+          {% elif t.status == 'numeric' %}<span class="text-muted">{{ _('keyed by number — no name to read') }}</span>
+          {% elif t.status == 'no_convention' %}<span class="fw-badge fw-badge-warning">{{ _('no shared structure') }}</span>
+          {% elif t.status == 'factory_only' %}<span class="text-muted">{{ _('vendor objects only') }}</span>
+          {% endif %}
+        </td>
+        <td>{% if t.main %}{{ follow_badge(t.conform, t.user) }}{% elif t.user %}<span class="text-muted">—</span>{% endif %}</td>
+        <td style="font-size:12px;">
+          {% if t.scheme %}
+            <div><code>{{ t.scheme.pattern }}</code> {{ follow_badge(t.scheme.conform, t.scheme.total) }}
+              {% if not t.scheme_set %}<span class="text-muted">({{ _('default') }})</span>{% endif %}</div>
+          {% else %}<span class="text-muted">{{ _('none set') }}</span>{% endif %}
+        </td>
+        <td style="font-size:12px;">
+          {% for l in t.linked or [] %}<div><code>{{ l.table }}</code> {{ l.matched }}/{{ l.total }}</div>{% else %}<span class="text-muted">—</span>{% endfor %}
+        </td>
+        <td class="text-end" style="font-size:12px;" title="{% for r, n in t.factory_reasons.items() %}{{ n }} × {{ r }}&#10;{% endfor %}">{{ t.factory or '' }}</td>
+        <td class="text-end actions-col"><div class="fw-row-actions">
+          {% if t.main %}
+          <form method="POST" action="{{ url_for('naming.discovery_adopt') }}" class="d-inline mb-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="product" value="{{ current_product }}">
+            <input type="hidden" name="appliance" value="{{ selected.id }}">
+            <input type="hidden" name="table" value="{{ t.table }}">
+            <input type="hidden" name="pattern" value="{{ t.main }}">
+            {% if t.can_adopt %}
+            <button type="submit" class="btn btn-sm btn-outline-secondary" title="{{ _('Write this pattern into the naming scheme entry of this object type; every device of the product is checked against it.') }}">{{ _('Adopt') }}</button>
+            {% elif t.adopt_why %}
+            <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="{{ t.adopt_why }}">{{ _('Adopt') }}</button>
+            {% else %}
+            <span class="fw-badge fw-badge-success me-1" title="{{ _('The naming scheme already has this pattern.') }}">{{ _('in scheme') }}</span>
+            {% endif %}
+          </form>
+          {% endif %}
+          {% if t.user %}
+          <button type="button" class="btn btn-sm btn-outline-secondary nd-adapt-toggle" data-target="nd-adapt-{{ loop.index }}" title="{{ _('Start from this pattern, change what you need, check it live against the names, then save it to the naming scheme.') }}">{{ _('Adopt & adapt') }}</button>
+          {% endif %}
+          {% if t.scheme_set %}
+          <form method="POST" action="{{ url_for('naming.discovery_adopt') }}" class="d-inline mb-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="product" value="{{ current_product }}">
+            <input type="hidden" name="appliance" value="{{ selected.id }}">
+            <input type="hidden" name="table" value="{{ t.table }}">
+            <button type="submit" name="action" value="forget" class="btn btn-sm btn-link text-muted p-0 ms-1" title="{{ _('Clear the naming scheme pattern of this object type') }}"><i class="bi bi-x-circle"></i></button>
+          </form>
+          {% endif %}
+        </div></td>
+      </tr>
+      {% if t.user %}
+      <tr class="nd-adapt d-none" id="nd-adapt-{{ loop.index }}">
+        <td colspan="7" style="border-top:0; background:var(--fw-content-bg);">
+          <form method="POST" action="{{ url_for('naming.discovery_adopt') }}" class="mb-0 d-flex align-items-center gap-2 flex-wrap">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="product" value="{{ current_product }}">
+            <input type="hidden" name="appliance" value="{{ selected.id }}">
+            <input type="hidden" name="table" value="{{ t.table }}">
+            <input type="hidden" name="adapted" value="1">
+            <label class="fw-form-label mb-0" style="font-size:12px;">{{ t.label }} — {{ _('pattern') }}</label>
+            <input type="text" name="pattern" class="form-control form-control-sm fw-form-control nd-adapt-input" style="max-width:340px;"
+                   value="{{ t.adapt_seed }}" data-derives="{{ '1' if t.derives else '0' }}"
+                   data-allowed="{{ t.allowed | tojson | forceescape }}" data-free="{{ t.free | tojson | forceescape }}"
+                   data-names="{{ t.names | tojson | forceescape }}">
+            <span class="nd-adapt-check" style="font-size:12px;"></span>
+            <button type="submit" class="btn btn-sm btn-fw-primary ms-auto"><i class="bi bi-check-lg me-1"></i>{{ _('Save to scheme') }}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary nd-adapt-toggle" data-target="nd-adapt-{{ loop.index }}">{{ _('Cancel') }}</button>
+            <div class="w-100 text-muted" style="font-size:11.5px;">
+              {{ _('Tokens:') }} <code>{name}</code> {{ _('free part') }} · <code>{num}</code>/<code>{port}</code> {{ _('digits') }} · <code>{proto}</code> {{ _('protocol word') }} · {{ _('any other') }} <code>{x}</code> {{ _('one part without a separator') }}.
+              {% if t.derives %}<strong>{{ _('SATOM builds names from this entry: only {name} is filled in.') }}</strong>{% endif %}
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% endif %}
+      {% if t.exceptions or t.names %}
+      <tr class="nd-detail">
+        <td colspan="7" style="border-top:0; padding-top:0;">
+          <details>
+            <summary class="text-muted" style="font-size:12px; cursor:pointer;">
+              {% if t.exceptions %}{{ t.exceptions|length }} {{ _('exception(s)') }} · {% endif %}{{ t.user }} {{ _('names') }}
+              {% if t.scheme and t.scheme.misses %} · {{ t.scheme.misses|length }} {{ _('break the naming scheme') }}{% endif %}
+            </summary>
+            {% if t.exceptions %}
+            <table class="table table-sm mb-2 mt-1" style="font-size:12px; max-width:900px;">
+              <tbody>
+              {% for e in t.exceptions %}<tr><td style="width:40%;"><code>{{ e.name }}</code></td><td>{{ e.reason }}</td></tr>{% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
+            {% if t.scheme and t.scheme.misses %}
+            <div style="font-size:12px;" class="mb-1"><strong>{{ _('Break the naming scheme:') }}</strong>
+              {% for n in t.scheme.misses %}<code class="me-2">{{ n }}</code>{% endfor %}</div>
+            {% endif %}
+            {% if t.adopt_why %}<div class="text-muted mb-1" style="font-size:11.5px;">{{ _('Adopt as found is not possible:') }} {{ t.adopt_why }}. {{ _('Use “Adopt & adapt”.') }}</div>{% endif %}
+            <div class="text-muted" style="font-size:11.5px;">{% for n in t.names %}<code class="me-2">{{ n }}</code>{% endfor %}</div>
+          </details>
+        </td>
+      </tr>
+      {% endif %}
+      {% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if factory_source %}<p class="text-muted mt-2 mb-0" style="font-size:11.5px;">{{ _('Vendor objects: the device flag first, then the factory-name list measured on') }} {{ factory_source }}.</p>{% endif %}
+
+  {% elif fleet_rows is not none %}
+    {% if missing %}
+    <div class="alert alert-warning py-2" style="font-size:12.5px;">
+      <i class="bi bi-exclamation-triangle me-1"></i>{{ _('No configuration tree yet for:') }} {{ missing | join(', ') }}. {{ _('Pick the device and use “Sync device”.') }}
+    </div>
+    {% endif %}
+    <div class="fw-table-wrapper">
+    <table class="table table-sm fw-table mb-0" id="nd-fleet">
+      <thead><tr>
+        <th>{{ _('Object type') }}</th>
+        <th>{{ _('Most devices use') }}</th>
+        <th>{{ _('Per device') }}</th>
+        <th>{{ _('Naming scheme') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for r in fleet_rows %}
+      <tr>
+        <td><div>{{ r.label }}</div><div class="text-muted" style="font-size:11px;">{{ r.section }} · <code>{{ r.table }}</code></div></td>
+        <td><code>{{ r.consensus }}</code>
+          {% if r.single %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('one device only') }}</span>
+          {% elif r.agree %}<span class="fw-badge fw-badge-success ms-1">{{ _('all agree') }}</span>
+          {% else %}<span class="fw-badge fw-badge-warning ms-1">{{ _('devices differ') }}</span>{% endif %}</td>
+        <td style="font-size:12px;">
+          {% for d in r.devices %}<div><a href="{{ url_for('naming.discovery', product=current_product, appliance=(fleet | selectattr('name', 'equalto', d.device) | map(attribute='id') | first)) }}">{{ d.device }}</a>
+            <code class="{{ '' if d.main == r.consensus else 'text-danger' }}">{{ d.main }}</code> · {{ d.conform }}/{{ d.user }}</div>{% endfor %}
+        </td>
+        <td>{% if r.scheme %}<code class="{{ '' if r.scheme == r.consensus else 'text-danger' }}">{{ r.scheme }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted">{{ _('No object type with a convention on any device yet.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/naming_pattern.js') }}" nonce="{{ csp_nonce }}"></script>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var form = document.getElementById('nd-pick');
+  if (form) {
+    form.querySelectorAll('select, input[type=checkbox]').forEach(function (el) {
+      el.addEventListener('change', function (event) { form.submit(); });
+    });
+  }
+  var NP = window.NamingPattern, PROTO = {{ proto_words | tojson }};
+  function check(inp) {
+    var out = inp.parentNode.querySelector('.nd-adapt-check');
+    var pat = inp.value.trim();
+    var allowed = JSON.parse(inp.getAttribute('data-allowed') || 'null');
+    var warn = (pat && inp.getAttribute('data-derives') === '1') ? NP.derivesProblem(pat, allowed || false) : '';
+    var r = pat ? NP.check(pat, JSON.parse(inp.getAttribute('data-names') || '[]'), PROTO,
+                           JSON.parse(inp.getAttribute('data-free') || '[]')) : null;
+    var save = inp.form.querySelector('button[type=submit]');
+    save.disabled = !!warn || !r;
+    inp.classList.toggle('is-invalid', !!warn || (pat && !r));
+    if (warn) { out.textContent = warn; out.className = 'nd-adapt-check text-danger'; return; }
+    if (!r) { out.textContent = pat ? 'invalid pattern' : 'type a pattern'; out.className = 'nd-adapt-check text-muted'; return; }
+    out.textContent = r.conform + '/' + r.total + ' names follow'
+      + (r.misses.length ? ' — not: ' + r.misses.slice(0, 4).join(', ') + (r.misses.length > 4 ? ' …' : '') : '');
+    out.className = 'nd-adapt-check ' + (r.conform === r.total ? 'text-success' : 'text-muted');
+  }
+  document.querySelectorAll('.nd-adapt-input').forEach(function (inp) {
+    inp.addEventListener('input', function (event) { check(inp); });
+  });
+  document.querySelectorAll('.nd-adapt-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      var row = document.getElementById(btn.getAttribute('data-target'));
+      row.classList.toggle('d-none');
+      var inp = row.querySelector('.nd-adapt-input');
+      if (!row.classList.contains('d-none')) { check(inp); inp.focus(); }
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,4236 @@
+#!/usr/bin/env python3
+"""Privileged self-update runner (runs as ROOT).
+
+Triggered by ``satom-updater.path`` whenever
+``data/update-requests/`` becomes non-empty. It performs the actual, privileged
+update the unprivileged web worker cannot: git checkout of the app code, pip
+install of the Python deps, ``flask db upgrade``, refreshing the unit files and
+restarting the service — with an AUTOMATIC ROLLBACK to the previous commit if
+the post-restart health check fails.
+
+Because it runs in its OWN service (not the gunicorn worker), restarting the
+web app does not kill the update mid-flight. It is DB-free: progress is written
+to a status JSON the web UI polls.
+
+Scope: git app code + pip requirements + migrations. OS packages ONLY from
+the curated ``_SYSPKG`` table (install, never remove) -- see syspkg_install --
+and from ``_SYSPKG_UPGRADE`` (upgrade what is ALREADY installed, never install
+or remove) -- see _syspkg_upgrade.
+"""
+import glob
+import json
+import os
+import re
+import secrets
+import socket
+import shutil
+import stat
+import subprocess
+import sys
+import time
+import tempfile
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+
+APP = Path(os.environ.get("FM_APP_DIR", "/opt/satom"))
+REQ = APP / "data" / "update-requests"
+STA = APP / "data" / "update-status"
+VENV = APP / "venv" / "bin"
+SERVICE = "satom.service"
+SCHED = "satom-scheduler.service"
+RECONCILER = "satom-reconciler.service"
+
+# [SATOM-RUNNER-INPUT] The queue is written by the service account, so every
+# request value that reaches a file name or a git command line is re-checked
+# here, as root. UID_RE is a COPY of app/services/self_update.py's UID_RE
+# ([SATOM-UID-SAFE]) -- copied, not imported: [SATOM-RUNNER-NO-APP-IMPORT].
+UID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$")
+_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+# A file name the runner itself writes (never a path).
+_FILE_NAME_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]{0,200}$")
+
+# [SATOM-RELEASE-TRUST] A second, OPT-IN safeguard lives further down (see
+# _release_trust / _resolve_release / _staged_deploy_dir): when a ROOT-OWNED
+# release-signature anchor is installed, the systemd units root installs and
+# the install-*.sh scripts root runs are taken from a root-only staging copy of
+# the newest SIGNED release instead of the service-account-owned deploy/. An
+# unsigned target whose deploy/ differs from that release still updates the app
+# (it runs as the service account anyway) but the root-side refresh is HELD --
+# a warning, not a failure, so HA keeps converging. With no anchor (today's
+# default on every node) the behaviour is byte-for-byte unchanged.
+
+
+def _valid_ref(value):
+    return (isinstance(value, str) and bool(_REF_RE.fullmatch(value))
+            and ".." not in value)
+
+
+def _valid_target(value):
+    return isinstance(value, str) and (bool(_SHA_RE.fullmatch(value))
+                                       or _valid_ref(value))
+
+
+def _log(msg):
+    """One line to the journal (stderr of satom-updater.service)."""
+    print("satom-updater: %s" % msg, file=sys.stderr, flush=True)
+
+
+def _read_request(req_path):
+    """The request JSON, read without following a link planted in the queue."""
+    fd = os.open(str(req_path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "r", encoding="utf-8") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise ValueError("%s is not a regular file" % req_path)
+        return json.loads(fh.read())
+
+
+def _open_dir_nofollow(dirpath):
+    """O_DIRECTORY fd of ``dirpath``, never through a symlink below APP.
+
+    Everything under APP belongs to the service account, so each component
+    below APP is opened relative to its parent with O_NOFOLLOW (created when
+    missing): a planted ``data/update-status -> /etc`` -- or ``data -> /`` --
+    makes this fail instead of steering a root write. APP itself is trusted
+    (its parent is root-owned). A directory outside APP (only in tests) gets
+    the O_NOFOLLOW check on its last component.
+    """
+    dirpath = Path(dirpath)
+    try:
+        rel = dirpath.relative_to(APP)
+        fd = os.open(str(APP), os.O_RDONLY | os.O_DIRECTORY)
+    except ValueError:
+        dirpath.parent.mkdir(parents=True, exist_ok=True)
+        rel = Path(dirpath.name)
+        fd = os.open(str(dirpath.parent), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in rel.parts:
+            if part in (".", ".."):
+                raise ValueError("refusing a '%s' path component" % part)
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            try:
+                nfd = os.open(part, flags, dir_fd=fd)
+            except FileNotFoundError:
+                os.mkdir(part, 0o755, dir_fd=fd)
+                nfd = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = nfd
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _write_nofollow(dirpath, name, text):
+    """[SATOM-RUNNER-NOFOLLOW] Write ``dirpath/name`` as root, safely.
+
+    Every file the runner writes sits in a directory the service account
+    owns. A plain ``write_text`` follows whatever that account left at the
+    name (``x.json -> /etc/profile.d/zz.sh``) -- a root write of content the
+    request influences. Instead: the directory is reached without links, the
+    content goes to a fresh O_EXCL|O_NOFOLLOW temp file, and an atomic rename
+    replaces the NAME (a link at the name is replaced, never followed; a hard
+    link's other names are untouched). The file is handed to the service
+    account, as the in-place write used to leave it.
+    """
+    if not isinstance(name, str) or not _FILE_NAME_RE.fullmatch(name):
+        raise ValueError("refusing to write a file named %r" % (name,))
+    dfd = _open_dir_nofollow(dirpath)
+    tmp = ".%s.%s.tmp" % (name, secrets.token_hex(6))
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o644, dir_fd=dfd)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                os.fchmod(fh.fileno(), 0o644)
+                ids = _app_ids()
+                if ids:
+                    os.fchown(fh.fileno(), ids[0], ids[1])
+                fh.write(text)
+            os.replace(tmp, name, src_dir_fd=dfd, dst_dir_fd=dfd)
+        except BaseException:
+            try:
+                os.unlink(tmp, dir_fd=dfd)
+            except OSError:
+                pass
+            raise
+    finally:
+        os.close(dfd)
+
+
+def _app_ids():
+    """(uid, gid) of the service account when running as root, else None."""
+    if not APP_USER or APP_USER == "root" or os.geteuid() != 0:
+        return None
+    try:
+        import pwd
+        pw = pwd.getpwnam(APP_USER)
+        return pw.pw_uid, pw.pw_gid
+    except KeyError:
+        return None
+
+
+def _link_below(base, rel):
+    """True when ``base/rel`` cannot be used as root: an absolute or ``..``
+    path, or an existing component (below ``base``) that is a symlink."""
+    rel = Path(rel)
+    if rel.is_absolute() or ".." in rel.parts:
+        return True
+    cur = Path(base)
+    for part in rel.parts:
+        cur = cur / part
+        try:
+            if stat.S_ISLNK(os.lstat(cur).st_mode):
+                return True
+        except FileNotFoundError:
+            return False
+        except OSError:
+            return True
+    return False
+
+
+#: Seconds past systemd's own deadlines the runner waits for a restart.
+RESTART_MARGIN_S = 30
+#: Used when systemd gives no stop deadline (unreadable, or "infinity").
+RESTART_FALLBACK_S = 600
+_SYSTEMD_SPAN_RE = re.compile(r"(\d+(?:\.\d+)?)(us|ms|s|min|h)(?![a-z])")
+_SYSTEMD_SPAN_UNIT = {"us": 1e-6, "ms": 1e-3, "s": 1.0, "min": 60.0, "h": 3600.0}
+
+
+def _systemd_seconds(text):
+    """A systemd time span as ``systemctl show`` prints it ('1min 30s',
+    '90s', '500ms') in seconds; None when empty, 'infinity' or unparsable."""
+    t = (text or "").strip().replace(" ", "")
+    if not t or t == "infinity":
+        return None
+    pos, total = 0, 0.0
+    for m in _SYSTEMD_SPAN_RE.finditer(t):
+        if m.start() != pos:
+            return None
+        total += float(m.group(1)) * _SYSTEMD_SPAN_UNIT[m.group(2)]
+        pos = m.end()
+    return total if pos == len(t) and pos else None
+
+
+def restart_budget(unit):
+    """How long ``systemctl restart <unit>`` may legitimately block: the
+    unit's stop deadline plus its start deadline plus a margin."""
+    stop = _systemd_seconds(_svc_prop(unit, "TimeoutStopUSec"))
+    if stop is None:
+        return RESTART_FALLBACK_S
+    start = _systemd_seconds(_svc_prop(unit, "TimeoutStartUSec")) or 0.0
+    return int(stop + start + RESTART_MARGIN_S)
+
+
+def restart_unit(unit):
+    """``systemctl restart`` that waits as long as systemd itself may take.
+
+    SA-0013: SIGTERM makes the scheduler finish the due actions it is running
+    before it exits (a firmware upgrade or a device write must not be cut in
+    half), so its stop lasts as long as that pass -- 2 to 46 s measured on
+    satom-node-1 on 2026-11-05, longer on an install with slower devices.
+    systemd allows it TimeoutStopSec (90 s by default) before SIGKILL; this
+    runner allowed 60 s and treated the overrun as a failed update, rolling
+    4.11.0 back on a node whose restart was simply still under way. The wait
+    is now derived from the unit, and an overrun says what was happening.
+    """
+    budget = restart_budget(unit)
+    try:
+        return subprocess.run(["systemctl", "restart", unit],
+                              capture_output=True, text=True, timeout=budget)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            "%s did not finish restarting within %d s (systemd's stop and "
+            "start deadlines plus %d s); a scheduler stop waits for the "
+            "scheduled actions it is running" % (unit, budget, RESTART_MARGIN_S))
+
+
+def restart_reconciler():
+    """Restart the reconciler loop IF it is running (``try-restart``).
+
+    It is a long-running process that imports the app's modules once, so a
+    code update that does not restart it leaves it running the previous
+    release indefinitely. On 2026-10-11 satom-node-2's reconciler had been up
+    since 11:00Z while its tree was at a commit from 23:55Z. Restarting it in
+    the same places as the scheduler keeps "the code on disk" and "the code
+    that reconciles" the same thing. ``try-restart`` leaves a stopped or
+    disabled reconciler alone. Never fails the update.
+    """
+    try:
+        subprocess.run(["systemctl", "try-restart", RECONCILER],
+                       timeout=restart_budget(RECONCILER))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _app_user_from_tree():
+    """Owner of the app tree = service account. Single source of truth: an env
+    var (FM_APP_USER) gets forgotten when a new node is installed, the
+    directory's owner does not. Returns 'root' on a non-deprivileged install."""
+    try:
+        import pwd
+        return pwd.getpwuid(APP.stat().st_uid).pw_name
+    except Exception:
+        return "root"
+
+
+APP_USER = os.environ.get("FM_APP_USER") or _app_user_from_tree()
+HEALTH_URL = os.environ.get("FM_HEALTH_URL", "http://127.0.0.1:8000/healthz")
+HEALTH_TIMEOUT = int(os.environ.get("FM_HEALTH_TIMEOUT", "90"))
+
+
+def _unit_templates():
+    """Every unit template deploy/ ships, READ FROM THE DIRECTORY.
+
+    This used to be a hand-written list of six names while deploy/ shipped
+    ten: satom-alerts.{service,timer} and satom-cert-renew.{service,timer} were
+    NEVER refreshed, so the installed copy kept declaring User=fortinet — an
+    account that no longer exists on the node. They only started because the
+    drop-in masked it, and nothing replicates that drop-in: a
+    `systemctl revert` (or a node restored from an older image) turns the
+    certificate renewal into status=217/USER, silently, which is exactly what
+    the cert.renew_failed signal exists to prevent.
+
+    A hand-written list IS a copy of the directory listing, and copies rot:
+    deriving it is the only way the next unit added to deploy/ does not repeat
+    this without anyone noticing.
+
+    CAREFUL — refreshing a unit's FILE is NOT arming it. `systemctl enable` is
+    never called here, so the node's enabled/disabled state is kept exactly as
+    it is. And only what deploy/ ships is included: that is why
+    satom-ha-datasync.* (written inline by the installer, and only in cluster
+    mode) and satom-git-publish.* (RETIRED on 2026-08-05) are left out.
+    """
+    return _units_in(APP / "deploy")
+
+
+def _units_in(deploy_dir):
+    names = set()
+    for pat in ("*.service", "*.timer", "*.path"):
+        try:
+            names.update(p.name for p in Path(deploy_dir).glob(pat))
+        except OSError:
+            pass
+    return tuple(sorted(names))
+
+
+UNIT_FILES = _unit_templates()
+
+# Units that may exist INSTALLED on a node but are not deploy/ templates: the
+# installer writes satom-ha-datasync.{service,timer} inline (only in cluster
+# mode) and satom-git-publish.* was retired on 2026-08-05. They are neither
+# distributed nor armed from here; they are listed only so the service-account
+# drop-in keeps covering them IF they are installed — without it, a legacy
+# unit that still declares a non-existent user dies with status=217/USER.
+LEGACY_NONROOT_UNITS = (
+    "satom-ha-datasync.service",
+    "satom-git-publish.service",
+)
+
+# Units that MUST run as the service account. satom-updater.{service,path} is
+# deliberately left out: it IS the privileged runner. Derived for the same
+# reason as UNIT_FILES: the templates declare User=root and every update
+# re-copies them, so a new template forgotten here would go back to root on
+# the next update without anything warning about it.
+NONROOT_UNITS = tuple(sorted(
+    ({u for u in UNIT_FILES if u.endswith(".service")}
+     - {"satom-updater.service"})
+    | set(LEGACY_NONROOT_UNITS)))
+
+UNIT_DROPIN = """# Generated by SATOM (installer / migrate-deprivilege.sh / self_update_runner).
+# Lives in a drop-in rather than in the unit because the deploy/ templates
+# declare User=root and every update re-copies them: the drop-in survives that.
+# Do NOT edit by hand.
+[Service]
+User=%s
+Group=%s
+"""
+
+
+def _nonroot_units(names):
+    return tuple(sorted(({u for u in names if u.endswith(".service")}
+                         - {"satom-updater.service"}) | set(LEGACY_NONROOT_UNITS)))
+
+
+def enforce_unit_user(user, names=None):
+    """Pin User=/Group= via drop-in on the unprivileged units.
+
+    ``names``: the unit list of the deploy/ actually being installed. Without
+    it the import-time list is used, which predates the update's checkout.
+    """
+    if not user or user == "root":
+        return
+    for unit in (NONROOT_UNITS if names is None else _nonroot_units(names)):
+        p = SYSTEMD_DIR / unit
+        if not p.exists():
+            continue
+        d = Path(str(p) + ".d")
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "10-app-user.conf").write_text(UNIT_DROPIN % (user, user))
+        except OSError:
+            pass
+
+
+SYSTEMD_DIR = Path("/etc/systemd/system")
+# Units this runner has armed itself, so a late arm happens at most once and an
+# operator who disables one afterwards keeps it disabled. Root-owned, outside
+# the app tree.
+ARMED_REGISTRY = Path("/var/lib/satom-runner/armed-units.json")
+# Units that reached nodes INSTALLED BUT NOT ARMED: introduced while the
+# previous runner (which never enabled anything) was still the one applying
+# updates, so the current runner saw them as "already installed". Armed once.
+_LATE_ARM = ("satom-scripts.path",)
+
+
+def _armed_registry():
+    try:
+        data = json.loads(ARMED_REGISTRY.read_text())
+        return set(data) if isinstance(data, list) else set()
+    except (OSError, ValueError):
+        return set()
+
+
+def _remember_armed(units):
+    if not units:
+        return
+    try:
+        ARMED_REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(str(ARMED_REGISTRY.parent), 0o700)
+        ARMED_REGISTRY.write_text(json.dumps(sorted(_armed_registry() | set(units))))
+    except OSError:
+        pass
+
+
+def refresh_units(deploy_dir, st=None):
+    """Copy every unit template of ``deploy_dir``, pin the service account,
+    reload systemd, and ARM what arrived for the first time.
+
+    The list is read from ``deploy_dir`` NOW, not from the import-time
+    ``UNIT_FILES``: this process imported before the update's checkout, so a
+    unit introduced by this very update was otherwise skipped until the next
+    one, and its .service missed the User= drop-in.
+
+    Arming: a ``.path`` or ``.timer`` with no installed copy before this call
+    is ``enable --now``-ed once -- exactly what the installer does for every
+    one of them. A unit that was already installed keeps the enabled state the
+    operator gave it; this never enables or disables anything else.
+    """
+    names = _units_in(deploy_dir)
+    fresh = []
+    for unit in names:
+        src = Path(deploy_dir) / unit
+        if not src.exists():
+            continue
+        dst = SYSTEMD_DIR / unit
+        is_new = not dst.exists()
+        subprocess.run(["cp", str(src), str(dst)])
+        if is_new and unit.endswith((".path", ".timer")):
+            fresh.append(unit)
+    enforce_unit_user(APP_USER, names)
+    subprocess.run(["systemctl", "daemon-reload"])
+    done = _armed_registry()
+    late = [u for u in _LATE_ARM if u in names and u not in fresh and u not in done
+            and (SYSTEMD_DIR / u).exists()]
+    armed = []
+    for unit in fresh + late:
+        p = subprocess.run(["systemctl", "enable", "--now", unit],
+                           capture_output=True, text=True, timeout=60)
+        if p.returncode == 0:
+            armed.append(unit)
+        if st is not None:
+            st.step("arm %s unit %s" % ("new" if unit in fresh else "late", unit),
+                    p.returncode == 0, (p.stderr or p.stdout or "enabled").strip()[-300:])
+    _remember_armed(armed)
+    return names, fresh + late
+
+
+# ── [SATOM-RELEASE-TRUST] opt-in release-signature enforcement ─────────────
+# The update paths below copy systemd units out of deploy/ and run
+# deploy/install-*.sh AS ROOT. deploy/ lives in the app tree the SERVICE
+# ACCOUNT owns, so without a trust anchor that account can commit a malicious
+# unit/script, point an update's target at that commit, and have root run it.
+# Enforcement is OPT-IN and FAIL-SAFE: with no anchor the paths behave exactly
+# as before; installing a root-owned anchor switches it on. The resolution
+# itself (root-only mirror, signature walk, staging) lives in release_trust.py,
+# shared with the root operator CLI -- see its docstring for why root never
+# runs git inside the service account's repository.
+TRUST_ANCHOR = Path("/etc/satom/release-trust.allowed_signers")
+_TRUST_PUB_FALLBACK = Path("/etc/satom/release-trust.pub")
+RELEASE_MIRROR = Path("/var/lib/satom-release/mirror.git")
+
+
+def _release_trust():
+    """The root-owned release trust anchor, or None when enforcement is OFF.
+
+    None is the DEFAULT on every current node (no anchor installed) and means
+    the update behaves exactly as before. An anchor only counts when it is a
+    regular file, owned by root (st_uid == 0) and non-empty: a half-written or
+    non-root file is ignored rather than allowed to WEAKEN the check into
+    passing. The ``.allowed_signers`` (ssh allowed-signers) form is preferred;
+    ``.pub`` (a single key) is accepted as a fallback -- whichever exists."""
+    for p in (TRUST_ANCHOR, _TRUST_PUB_FALLBACK):
+        try:
+            ss = os.stat(p)
+        except OSError:
+            continue
+        if stat.S_ISREG(ss.st_mode) and ss.st_uid == 0 and ss.st_size > 0:
+            return p
+    return None
+
+
+def _root_only_stage(prefix="satom-rel-"):
+    """A fresh 0700 directory root owns, under /run (tmpfs) when present else
+    /var/lib. The caller removes it once it is done with the staged copy."""
+    base = (Path("/run") if os.path.isdir("/run") and os.access("/run", os.W_OK)
+            else Path(tempfile.gettempdir()) if os.geteuid() != 0
+            else Path("/var/lib"))
+    d = Path(tempfile.mkdtemp(prefix=prefix, dir=str(base)))
+    os.chmod(d, 0o700)
+    return d
+
+
+def _load_release_trust():
+    """release_trust.py from the ROOT-OWNED place this runner lives in, or None.
+
+    Same discipline as _load_update_package(): a sibling of this file (the
+    root-owned copy install-runner.sh installs), never APP/deploy. The second
+    candidate only exists in a source checkout (the runner run from deploy/,
+    where the module lives in the CLI package) -- i.e. the tests."""
+    import importlib.util
+    here = Path(__file__).resolve().parent
+    for path in (here / "release_trust.py", here / "satom_cli" / "release_trust.py"):
+        if path.is_file():
+            spec = importlib.util.spec_from_file_location("satom_release_trust", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    return None
+
+
+def _resolve_release(target_sha, trust, st):
+    """Where root-side content comes from for ``target_sha``; records the step.
+
+    Returns ``{"mode": "signed"|"pinned"|"held", "signed": sha|None, ...}``.
+    Never raises and never refuses the update: anything that prevents a trust
+    decision (helper missing, mirror unusable, fetch failed) HOLDS the
+    root-side refresh -- the units and root-owned copies already installed keep
+    running -- because a hardening must not stop HA from converging."""
+    def _held(detail):
+        st.step("root-side refresh held", True, "WARNING: " + detail, warn=True)
+        return {"mode": "held", "signed": None, "detail": detail}
+
+    if not isinstance(target_sha, str) or not _SHA_RE.fullmatch(target_sha) \
+            or len(target_sha) != 40:
+        return _held("cannot resolve the target commit (%r); root-side refresh "
+                     "held" % (target_sha,))
+    rt = _load_release_trust()
+    if rt is None:
+        return _held("release_trust.py is not installed next to the runner "
+                     "(%s); root-side refresh held -- run 'satom execute "
+                     "reinstall runner'" % Path(__file__).resolve().parent)
+    st.begin("verify release signature")
+    try:
+        res = rt.resolve(APP, target_sha, trust, app_user=APP_USER,
+                         mirror=RELEASE_MIRROR)
+    except Exception as exc:  # noqa: BLE001 -- fail safe: hold, never escalate
+        return _held("release signature could not be checked (%s); root-side "
+                     "refresh held" % str(exc)[:300])
+    if res["mode"] == "held":
+        return _held(res["detail"])
+    st.step("verify release signature", True, res["detail"])
+    return res
+
+
+def _staged_deploy_dir(verified_sha):
+    """Root-only staging dir holding deploy/ at ``verified_sha``, or None when
+    enforcement is OFF (the caller then uses APP/deploy unchanged).
+
+    ``git archive <sha> deploy | tar -x`` from the ROOT-ONLY release mirror
+    into a 0700 dir root owns: the bytes come from objects whose ids root
+    recomputed, at the verified commit -- never from the service-account-owned
+    worktree or object store, and never through that repository's config."""
+    if _release_trust() is None:
+        return None
+    rt = _load_release_trust()
+    if rt is None:
+        raise RuntimeError("release_trust.py is not installed next to the runner")
+    stage = _root_only_stage()
+    try:
+        rt.stage_deploy(verified_sha, stage, mirror=RELEASE_MIRROR)
+    except BaseException:
+        import shutil as _sh
+        _sh.rmtree(stage, ignore_errors=True)
+        raise
+    return stage
+
+
+def now():
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def run(cmd, timeout=600, user=None, cwd=None, env=None):
+    if user:
+        cmd = ["runuser", "-u", user, "--"] + cmd
+    return subprocess.run(cmd, capture_output=True, text=True,
+                          timeout=timeout, cwd=cwd, env=env)
+
+
+def git(*a, timeout=600):
+    return run(["git", "-C", str(APP), "-c", "safe.directory=%s" % APP, *a],
+               timeout=timeout, user=APP_USER)
+
+
+def pg_in_recovery():
+    """True when local Postgres is a hot standby (read-only replica).
+
+    On the HA standby the app cannot run (create_all/_ensure_columns write on
+    boot) and migrations must NOT run (the schema arrives via streaming
+    replication from the primary), so the update path diverges: code + deps +
+    unit files only, validated by an import smoke instead of an HTTP health
+    check. Promotion is what turns this node into a serving primary."""
+    try:
+        r = subprocess.run(
+            ["runuser", "-u", "postgres", "--", "psql", "-tAc",
+             "select pg_is_in_recovery()"],
+            capture_output=True, text=True, timeout=15)
+        return r.stdout.strip() == "t"
+    except Exception:
+        return False
+
+
+def import_smoke_ok():
+    """Standby validation: the new code imports cleanly (no create_app, which
+    would write to the read-only replica). Proves syntax/import health."""
+    try:
+        r = run([str(VENV / "python"), "-c", "import app"],
+                timeout=60, user=APP_USER, cwd=str(APP))
+        return r.returncode == 0, (r.stderr or r.stdout)
+    except Exception as e:
+        return False, str(e)
+
+
+#: Child program for :func:`db_smoke_ok`. Reads the app's own URI from .env
+#: (never passed on argv or in the environment) and runs SELECT 1 through
+#: SQLAlchemy, i.e. through the same driver the app will load.
+_DB_SMOKE = r"""
+import re, sys
+uri = ""
+for line in open(".env", encoding="utf-8"):
+    if line.startswith("SQLALCHEMY_DATABASE_URI="):
+        uri = line.split("=", 1)[1].strip().strip('"').strip("'")
+if not uri:
+    sys.exit("no SQLALCHEMY_DATABASE_URI in .env")
+import sqlalchemy as sa
+eng = sa.create_engine(uri, pool_pre_ping=False)
+with eng.connect() as c:
+    assert c.execute(sa.text("SELECT 1")).scalar() == 1
+eng.dispose()
+"""
+
+
+def db_smoke_ok():
+    """The new code can actually TALK to Postgres: one connection, SELECT 1.
+
+    An import smoke cannot see a driver that imports and then breaks on the
+    first connect. That is not hypothetical: psycopg 3.3.6 with
+    psycopg-binary 3.3.4 imported fine and every connection raised TypeError
+    (wait_c() got an unexpected keyword 'timeout'), which took both nodes
+    down. Read-only, so it is safe on the standby too."""
+    try:
+        r = run([str(VENV / "python"), "-c", _DB_SMOKE],
+                timeout=60, user=APP_USER, cwd=str(APP))
+        return r.returncode == 0, (r.stderr or r.stdout)
+    except Exception as e:
+        return False, str(e)
+
+
+def _peer_host():
+    """The OTHER HA node's host from ha_nodes.json (failover-agnostic)."""
+    try:
+        raw = _load_update_package().read_small_nofollow(APP / "data" / "ha_nodes.json")
+        nodes = json.loads((raw or b"[]").decode("utf-8"))
+        me = os.environ.get("FM_NODE_NAME") or socket.gethostname()
+        for n in nodes:
+            if n.get("name") != me and n.get("host"):
+                return n["host"]
+    except Exception:
+        pass
+    return None
+
+
+def _read_root_env():
+    """APP/.env as text when it is a regular file owned by root and writable by
+    nobody else, reached without following a link; else None. It is
+    root:<account> 0640, but it sits in the account's directory: a link there
+    would make root read any KEY=value file, and a file the account wrote is not
+    root's configuration."""
+    try:
+        fd = os.open(str(APP / ".env"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+    with os.fdopen(fd, "rb") as fh:
+        st_ = os.fstat(fh.fileno())
+        if (not stat.S_ISREG(st_.st_mode) or st_.st_uid != 0
+                or st_.st_mode & (stat.S_IWGRP | stat.S_IWOTH)):
+            return None
+        return fh.read(1024 * 1024).decode("utf-8", "replace")
+
+
+def _env_db_creds():
+    """(user, password, dbname) from the .env SQLALCHEMY_DATABASE_URI."""
+    try:
+        for line in (_read_root_env() or "").splitlines():
+            if line.startswith("SQLALCHEMY_DATABASE_URI="):
+                uri = line.split("=", 1)[1].strip().strip('"').strip("'")
+                m = re.search(r"://([^:]+):([^@]+)@[^/]+/([A-Za-z0-9_]+)", uri)
+                if m:
+                    return m.group(1), m.group(2), m.group(3)
+    except Exception:
+        pass
+    return None
+
+
+def mark_validated_on_primary(sha, node):
+    """After a STANDBY validates a target revision, write the staged-rollout
+    'validated' marker into the PRIMARY's (read-write) Postgres so the primary's
+    update button unlocks (services.self_update.can_apply_to_primary reads
+    ha.update.validated). The standby's own DB is read-only, hence the cross-node
+    write to the peer discovered from ha_nodes.json."""
+    host = _peer_host()
+    creds = _env_db_creds()
+    if not host or not creds:
+        return False, "no peer host or db creds (ha_nodes.json / .env)"
+    user, pw, dbname = creds
+    payload = json.dumps({"target": sha, "node": node, "at": now()})
+    lit = "'" + payload.replace("'", "''") + "'"
+    sql = ("INSERT INTO app_settings(key,value,updated_at) VALUES "
+           "('ha.update.validated', %s, now()) "
+           "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now();" % lit)
+    env = dict(os.environ, PGPASSWORD=pw)
+    try:
+        r = subprocess.run(["psql", "-h", host, "-p", "5432", "-U", user, "-d", dbname,
+                            "-v", "ON_ERROR_STOP=1", "-c", sql],
+                           capture_output=True, text=True, timeout=30, env=env)
+        return r.returncode == 0, (r.stderr or r.stdout)
+    except Exception as e:
+        return False, str(e)
+
+
+def health_ok(timeout=HEALTH_TIMEOUT):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(HEALTH_URL, timeout=5) as r:
+                if getattr(r, "status", r.getcode()) == 200:
+                    return True
+        except Exception:
+            pass
+        time.sleep(3)
+    return False
+
+
+def flight(kind, label):
+    """Run 'flask preflight' / 'flask postflight' as the app user and return
+    (ok, detail). BEST-EFFORT and NON-FATAL: these are the before/after health
+    snapshots wrapped around the upgrade. The authoritative rollback gate stays
+    health_ok(); a postflight regression is surfaced in the update log (and by
+    the alert engine on its next tick), it does not itself trigger a rollback,
+    because a device blip can be unrelated to the code change."""
+    try:
+        env = dict(os.environ, FLASK_APP="wsgi.py")
+        args = [str(VENV / "flask"), kind]
+        if label:
+            args += ["--label", label]
+        p = run(args, timeout=90, user=APP_USER, cwd=str(APP), env=env)
+        detail = (p.stdout or "")[-400:] or (p.stderr or "")[-400:]
+        return p.returncode == 0, detail
+    except Exception as exc:  # noqa: BLE001
+        return False, "flight(%s) error: %s" % (kind, exc)
+
+
+def compile_catalogues(st, label="pybabel compile (language catalogues)"):
+    """Rebuild the compiled language catalogues from the .po now in the tree.
+
+    The .mo files are DERIVED and travel neither in the repository nor in an
+    update package (whose app.tar.gz is a ``git archive``), so EVERY path that
+    replaces the code tree -- a git update, an offline package, and the
+    rollback of either -- has to run this, or the node keeps serving the
+    catalogue of another revision: new strings fall back to English, and a
+    msgid that changed keeps the old translation.
+
+    Never aborts: an old catalogue is worse than a new one, but both beat a
+    reverted update. A failure is recorded as a failed step and the caller
+    carries on.
+    """
+    st.begin(label)
+    try:
+        pb = run([str(VENV / "pybabel"), "compile", "-d",
+                  str(APP / "app" / "translations")], timeout=300, user=APP_USER)
+        st.step(label, pb.returncode == 0, pb.stderr)
+    except Exception as exc:  # noqa: BLE001 -- best effort by design
+        st.step(label, False, str(exc)[:300])
+
+
+def import_shipped_api_pack(st):
+    """Import the API library pack the new release carries (api-packs/).
+
+    Before this, an update brought the new pack onto the disk and left the
+    library on the old one until someone pressed Import -- which nothing
+    prompted them to do. The import only ADDS (items this node measured or
+    already holds are skipped), so repeating it on every update is harmless.
+
+    Primary only (the caller checks): a standby's Postgres is read-only and its
+    library arrives by replication. NON-FATAL by design: the code update has
+    already passed its health gate, and API knowledge missing for a while is
+    not a reason to roll a healthy node back. ``SATOM_API_PACK_AUTO=0`` turns
+    it off. Runs through the operator CLI, which imports as the service
+    account every shipped pack this node has not imported yet: the newest
+    API pack (schema /2 lane ``api_pack``, or a 2.x release pack), then the
+    newest knowledge pack (``satom-apipack-kb-*``, built by satom-harvester).
+    A /2 pack is verified with the lane keys the NEW code tree ships
+    (``deploy/pack-keys/<lane>/``), so this step needs no key installed
+    beforehand and has no ordering dependency on the trust store; a 2.x pack
+    still verifies with the update trust store.
+    """
+    if os.environ.get("SATOM_API_PACK_AUTO", "1").strip() == "0":
+        st.step("import shipped API pack", True, "skipped (SATOM_API_PACK_AUTO=0)")
+        return
+    if not any((APP / "api-packs").glob("satom-apipack-*.tar.gz")):
+        st.step("import shipped API pack", True, "skipped (this release ships no pack)")
+        return
+    cli = "/usr/local/sbin/satom"
+    st.begin("import shipped API pack")
+    try:
+        p = subprocess.run([cli, "execute", "apipack", "import", "shipped", "--yes"],
+                           capture_output=True, text=True, timeout=1800)
+        out = (p.stdout or p.stderr or "").strip()
+        ok = p.returncode == 0
+        detail = out[-300:] if ok else (
+            "%s -- the update itself is fine; retry with: "
+            "sudo %s execute apipack import shipped --yes" % (out[-250:], cli))
+    except Exception as exc:  # noqa: BLE001
+        ok, detail = False, "%s -- retry with: sudo %s execute apipack import shipped --yes" % (
+            str(exc)[:200], cli)
+    st.step("import shipped API pack", ok, detail)
+
+
+def tighten_data_dir(st):
+    """[SATOM-DATA-PERMS] Close data/ to every account but the service account.
+
+    Runs the operator CLI's ``execute repair data --yes`` -- the same code an
+    operator runs by hand, from the root-owned copy refreshed just before this
+    call -- so a node installed before the fix converges on its next update
+    instead of waiting for someone to read `satom diagnose data`. It only
+    narrows modes (data/ 0750, the vault and bundle trees 0700/0600) and is a
+    no-op on a clean node. NON-FATAL: an exposed directory is a finding, not a
+    reason to roll a healthy update back.
+    """
+    cli = "/usr/local/sbin/satom"
+    st.begin("data/ permissions")
+    try:
+        p = subprocess.run([cli, "execute", "repair", "data", "--yes"],
+                           capture_output=True, text=True, timeout=300)
+        out = (p.stdout or p.stderr or "").strip()
+        ok = p.returncode == 0
+        detail = out[-300:] if ok else (
+            "%s -- the update itself is fine; retry with: "
+            "sudo %s execute repair data --yes" % (out[-250:], cli))
+    except Exception as exc:  # noqa: BLE001
+        ok, detail = False, "%s -- retry with: sudo %s execute repair data --yes" % (
+            str(exc)[:200], cli)
+    st.step("data/ permissions", ok, detail)
+
+
+def converge_nginx(st):
+    """[SATOM-API-LIMITS] Bring the vhost to the shape the installer now emits.
+
+    Runs ``satom execute repair nginx --yes`` (from the root-owned CLI copy
+    refreshed just before): adds the /api/v1 connection and rate limits to a
+    vhost built by an older installer, and the Host header fix. The CLI runs
+    ``nginx -t`` and restores every file on failure, so this can only leave
+    the old, working configuration. NON-FATAL, like tighten_data_dir.
+    """
+    cli = "/usr/local/sbin/satom"
+    st.begin("nginx vhost")
+    try:
+        p = subprocess.run([cli, "execute", "repair", "nginx", "--yes"],
+                           capture_output=True, text=True, timeout=120)
+        out = (p.stdout or p.stderr or "").strip()
+        ok = p.returncode == 0
+        detail = out[-300:] if ok else (
+            "%s -- the update itself is fine; retry with: "
+            "sudo %s execute repair nginx --yes" % (out[-250:], cli))
+    except Exception as exc:  # noqa: BLE001
+        ok, detail = False, "%s -- retry with: sudo %s execute repair nginx --yes" % (
+            str(exc)[:200], cli)
+    st.step("nginx vhost", ok, detail)
+
+
+def route_audit_ok():
+    """Every ``url_for()`` endpoint written in a template exists in the url_map.
+
+    Neither existing gate can see this class of failure: ``import app`` only
+    proves the modules parse, and ``/healthz`` renders no template. A template
+    naming an endpoint that is not registered raises BuildError -- HTTP 500 --
+    at request time, on the page, for a user.
+
+    Returns (status, detail) where status is "ok", "missing" or "unmeasured".
+    "unmeasured" is deliberately NOT "ok": a check that could not run has found
+    nothing, which is not the same as having found nothing wrong.
+    """
+    try:
+        r = run([str(VENV / "python"), "-m", "app.services.route_audit"],
+                timeout=180, user=APP_USER, cwd=str(APP))
+        out = (r.stdout or "")
+        detail = (out + (r.stderr or "")).strip()
+        # Read the OUTPUT, not just the return code. A non-zero rc from a
+        # failure to even start the check (runuser denied, venv missing,
+        # import error) is indistinguishable from a real finding by rc alone,
+        # and reporting 'the templates are broken' for 'the check could not
+        # run' would roll a healthy update back. Only the audit's own markers
+        # promote a result out of "unmeasured".
+        if r.returncode == 0 and out.startswith("templates="):
+            return "ok", detail
+        if r.returncode == 1 and "MISSING " in out:
+            return "missing", detail
+        return "unmeasured", detail
+    except Exception as exc:  # noqa: BLE001
+        return "unmeasured", str(exc)
+
+
+def restart_and_validate(st, is_standby, app_was_active, label):
+    """Restart what was ACTUALLY running, then prove the new code serves.
+
+    The standby branch used to be 'never restart the app -- it cannot run on a
+    read-only replica'. That premise was false on a standby that serves
+    traffic: on 2026-08-17 satom-node-2 was enabled, active and published, so
+    the code on disk advanced while the workers kept the previous url_map.
+    Every authenticated page returned 500 for ~15 hours and the update still
+    reported SUCCESS -- because ``import app`` runs in a FRESH interpreter (it
+    is green precisely when the running workers are stale) and ``/healthz``
+    renders no template (blind to a BuildError by construction).
+
+    So: ask systemd what state the node was in, restore that state, and
+    validate with the strongest check that state allows.
+    """
+    st.begin("restart services")
+    restart_unit(SCHED)
+    restart_reconciler()
+    if app_was_active:
+        restart_unit(SERVICE)
+        st.step("restart services", True, "%s + scheduler%s"
+                % (SERVICE, " (standby serving traffic)" if is_standby else ""))
+        st.begin("health check")
+        if not health_ok():
+            raise RuntimeError("health check did not return 200 within %ds"
+                               % HEALTH_TIMEOUT)
+        st.step("health check", True, "200 OK on %s" % label)
+    else:
+        ok, detail = import_smoke_ok()
+        if not ok:
+            raise RuntimeError("import smoke failed: %s" % detail[:300])
+        st.step("restart services", True,
+                "scheduler only (%s was not running before the update)" % SERVICE)
+        st.step("import smoke", True, "new code imports on %s" % label)
+
+    st.begin("route audit")
+    status, detail = route_audit_ok()
+    if status == "missing":
+        raise RuntimeError("route audit: template references an endpoint that "
+                           "does not exist: %s" % detail[:400])
+    st.step("route audit", status == "ok", detail[:300] if detail else status)
+
+
+def preserve_local_commits(target, snapshot, st):
+    """Park commits that exist here but not on *target* under ``refs/backup/``
+    before a destructive reset, plus any uncommitted worktree state.
+
+    Returns True when something was preserved, None when there was nothing to
+    preserve, and False when preservation was needed but FAILED **or could not
+    be evaluated** (the caller aborts the update in that case).
+
+    That second clause is the fix of 2026-08-07. A ``git rev-list`` that FAILED
+    (bad ref, a held index.lock, a timeout, a safe.directory refusal) left
+    ``n == 0``, which is byte-for-byte the same answer as "there is nothing
+    here to preserve": this returned None, ``None is not False``, and the
+    caller walked straight into ``git reset --hard``. docs/safeguards.md
+    promises that a guard which cannot do its job aborts the operation — and a
+    guard that cannot even determine whether it was NEEDED has not done its
+    job. Same for ``git status``: a failure yielded empty output and therefore
+    ``dirty = False``, declaring uncommitted work absent.
+
+    Uncommitted changes go through ``git stash create``, which builds a commit
+    object without touching the index or the worktree — so this guard has zero
+    effect on the update path that follows."""
+    c = git("rev-list", "--count", "%s..HEAD" % target, timeout=60)
+    if c.returncode != 0:
+        st.step("count local commits", False,
+                "git rev-list failed (rc=%d) — cannot tell whether there is "
+                "anything to preserve: %s"
+                % (c.returncode, (c.stderr or "")[:200]))
+        return False
+    try:
+        n = int((c.stdout or "0").strip() or 0)
+    except ValueError:
+        st.step("count local commits", False,
+                "git rev-list returned an uncountable answer: %r"
+                % ((c.stdout or "")[:200],))
+        return False
+    # --untracked-files=no ON PURPOSE. `git reset --hard` does not touch
+    # untracked files, so they never needed parking -- and `git stash create`
+    # does not include them either, so it returns empty and this step reported
+    # FAIL on every run where the only local state was untracked. A guard that
+    # always complains is a guard operators learn to scroll past.
+    s = git("status", "--porcelain", "--untracked-files=no", timeout=60)
+    if s.returncode != 0:
+        st.step("detect uncommitted changes", False,
+                "git status failed (rc=%d) — cannot tell whether the worktree "
+                "is dirty: %s" % (s.returncode, (s.stderr or "")[:200]))
+        return False
+    dirty = bool((s.stdout or "").strip())
+    if not n and not dirty:
+        return None
+
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    ok = True
+    if n:
+        ref = "refs/backup/pre-reset-%s" % stamp
+        u = git("update-ref", ref, snapshot, timeout=60)
+        ok = ok and u.returncode == 0
+        st.step("preserve %d local commit(s)" % n, u.returncode == 0,
+                ("%s → %s (recover: git log %s)" % (ref, snapshot[:12], ref))
+                if u.returncode == 0 else (u.stderr or "update-ref failed"))
+    if dirty:
+        s = git("stash", "create", "pre-reset %s" % stamp, timeout=120)
+        sha = (s.stdout or "").strip()
+        if s.returncode == 0 and sha:
+            ref = "refs/backup/pre-reset-%s-dirty" % stamp
+            u = git("update-ref", ref, sha, timeout=60)
+            st.step("preserve uncommitted changes", u.returncode == 0,
+                    "%s → %s" % (ref, sha[:12]) if u.returncode == 0
+                    else (u.stderr or "update-ref failed"))
+            # A dirty worktree is normal here (device_sync rewrites reports/
+            # between publishes) and is regenerated on the next sync, so a
+            # failure to stash it is reported but does NOT abort the update.
+        else:
+            st.step("preserve uncommitted changes", False,
+                    "git stash create failed: %s" % (s.stderr or "")[:200])
+    return ok
+
+
+class Status:
+    def __init__(self, uid, req):
+        # The id becomes a file name root writes. Refusing here (ValueError,
+        # main() drops the request) covers every handler, present and future.
+        if not isinstance(uid, str) or not UID_RE.fullmatch(uid):
+            raise ValueError("refusing request id %r" % (uid,))
+        self.name = uid + ".json"
+        self.p = STA / self.name
+        self.d = {
+            "id": uid, "state": "running", "steps": [],
+            "target": req.get("target"), "branch": req.get("branch"),
+            "requested_by": req.get("requested_by"),
+            "node": req.get("node"), "role": req.get("role"),
+            "origin": req.get("origin", "manual"),
+            "started_at": now(), "updated_at": now(),
+        }
+        self.flush()
+
+    def begin(self, name):
+        """Announce the step that is RUNNING now, before it ends.
+
+        Steps are only appended when they finish, and the slow ones (database
+        backup, offline pip install, migrations, restart) take minutes. Without
+        this the console and the CLI showed nothing new for that whole time and
+        an operator could not tell a working update from a hung one. The next
+        step() or finish() clears it.
+        """
+        self.d["current"] = {"name": name, "since": now()}
+        self.d["updated_at"] = now()
+        self.flush()
+
+    def step(self, name, ok=True, detail="", warn=False):
+        self.d.pop("current", None)
+        rec = {"name": name, "ok": bool(ok),
+               "detail": (detail or "").strip()[-500:], "at": now()}
+        if warn:
+            # A NON-FATAL condition the operator must see (e.g. the root-side
+            # refresh held by [SATOM-RELEASE-TRUST]). ok stays True so nothing
+            # that reads "ok" treats the update as failed or backs off.
+            rec["warn"] = True
+            self.d.setdefault("warnings", []).append(name)
+        self.d["steps"].append(rec)
+        self.d["updated_at"] = now()
+        self.flush()
+
+    def finish(self, state, **extra):
+        self.d.pop("current", None)
+        self.d["state"] = state
+        self.d.update(extra)
+        self.d["updated_at"] = now()
+        self.flush()
+
+    def flush(self):
+        _write_nofollow(STA, self.name, json.dumps(self.d, indent=2))
+
+
+def process(req_path):
+    req = _read_request(req_path)
+    uid = req["id"]
+    st = Status(uid, req)
+    # Dequeue immediately so the .path unit does not re-trigger us in a loop.
+    try:
+        os.remove(req_path)
+    except OSError:
+        pass
+
+    # Both reach git as arguments: a leading '-' is an option, '..' a range.
+    branch = req.get("branch", "main")
+    target = req.get("target") or ("origin/%s" % branch)
+    if not _valid_ref(branch) or not _valid_target(target):
+        bad = "refusing branch %r / target %r" % (branch, target)
+        st.step("validate request", False, bad)
+        st.finish("failed", error=bad)
+        return
+
+    # The package index for the dependency step (Settings -> General -> Update
+    # sources), checked before anything is touched.
+    try:
+        pip_env, where, secret = _pip_index_env(req)
+    except ValueError as e:
+        st.step("package index", False, str(e))
+        st.finish("failed", error="bad package index")
+        return
+    if req.get("do_pip", True):
+        problem = req.get("index_problem")
+        note = problem or req.get("index_note")
+        st.step("package index", True,
+                str(note)[:300] if isinstance(note, str) and note else where,
+                warn=isinstance(problem, str) and bool(problem))
+
+    snapshot = git("rev-parse", "HEAD").stdout.strip()
+    st.step("snapshot current commit", True, snapshot[:12])
+
+    # HA role: explicit request wins; else detect from the local DB. A standby
+    # updates code-only (no migration, no app restart, import-smoke validation).
+    role = req.get("role") or ("standby" if pg_in_recovery() else "primary")
+    is_standby = (role == "standby")
+    # Snapshot what the node is ACTUALLY doing, before anything is touched.
+    # The restart step restores this state instead of the state the role
+    # implies -- see restart_and_validate().
+    app_was_active = _svc_active(SERVICE) == "active"
+    st.step("ha role", True, role)
+
+    # PRE-FLIGHT: health baseline before we touch anything (primary only — the
+    # standby never restarts the app, so there is no health delta to catch).
+    if not is_standby:
+        pok, pdetail = flight("preflight", "upgrade-%s" % snapshot[:12])
+        st.step("preflight (before)", pok, pdetail)
+
+    try:
+        st.begin("git fetch origin %s" % branch)
+        f = git("fetch", "origin", branch)
+        st.step("git fetch origin %s" % branch, f.returncode == 0, f.stderr)
+        if f.returncode != 0:
+            raise RuntimeError("git fetch failed")
+
+        # ── SAFETY GUARD before the reset ────────────────────────────────
+        # `reset --hard <target>` rewrites this checkout to the remote tip.
+        # Anything committed here and NOT on the remote becomes unreachable
+        # and is eventually gc'd. That is not a theoretical case: local code
+        # commits (hotfixes, another session's work) can exist with nothing
+        # to push to while Gitea is unreachable, and the
+        # reconciler in AUTO mode can fire this path on its own the moment
+        # Gitea comes back. Park those commits on a permanent ref first —
+        # refs are never pruned, `git log <ref>` recovers them, and the git
+        # bundles (data/git-bundles, created with --all) carry them off-box.
+        # If the parking fails we ABORT: losing history silently is worse
+        # than a deferred update.
+        preserved = preserve_local_commits(target, snapshot, st)
+        if preserved is False:
+            raise RuntimeError("refusing to reset: local commits could not be "
+                               "preserved")
+
+        st.begin("checkout %s" % target[:20])
+        r = git("reset", "--hard", target)
+        st.step("checkout %s" % target[:20], r.returncode == 0, r.stderr)
+        if r.returncode != 0:
+            raise RuntimeError("checkout/reset failed")
+        # keep the local branch pointer on the branch tip when we tracked it
+        git("checkout", "-B", branch, target)
+
+        if req.get("do_pip", True):
+            st.begin("pip install -r requirements.txt")
+            p = run([str(VENV / "pip"), "install", "-q", "-r",
+                     str(APP / "requirements.txt")], timeout=900, user=APP_USER,
+                    env=pip_env)
+            st.step("pip install -r requirements.txt", p.returncode == 0,
+                    _redact(p.stderr, secret))
+            if p.returncode != 0:
+                raise RuntimeError("pip install failed")
+
+        # The .mo files are DERIVED and no longer travel in the repo, so an
+        # update that brings new .po files leaves the interface in English
+        # until they are recompiled. Outside the do_pip block on purpose: a
+        # code-only update also brings catalogues.
+        compile_catalogues(st)
+
+        # Migrations run on the PRIMARY only; on a standby the schema arrives
+        # via streaming replication, and `flask db upgrade` would fail on the
+        # read-only replica.
+        if req.get("do_migrate", True) and not is_standby:
+            env = dict(os.environ, FLASK_APP="wsgi.py")
+            st.begin("flask db upgrade")
+            m = run([str(VENV / "flask"), "db", "upgrade"], timeout=600,
+                    user=APP_USER, cwd=str(APP), env=env)
+            # [SATOM-ALEMBIC-STAMP] Fatal. This step used to be best-effort on
+            # the theory that boot-time create_all()/_ensure_columns() is the
+            # real schema step -- but those only ADD. A migration that
+            # transforms data has nowhere else to run, and on every installed
+            # node (no alembic_version) the first revision died, the error was
+            # logged as a warning, and the update finished green having
+            # migrated nothing. Every migration is idempotent now
+            # (app.migration_guard), so a failure here is a real one.
+            st.step("flask db upgrade", m.returncode == 0,
+                    (m.stderr or m.stdout))
+            if m.returncode != 0:
+                raise RuntimeError(MIGRATION_FAILED)
+        elif is_standby:
+            st.step("flask db upgrade", True, "skipped (standby; schema via replication)")
+
+        # Refresh unit files and re-run the installers. [SATOM-RELEASE-TRUST]
+        # By default (no root trust anchor) deploy_dir is APP/deploy and this is
+        # byte-for-byte the historical path. With an anchor present, deploy/ is
+        # STAGED into a root-only dir from the newest SIGNED release (the target
+        # itself, or its signed ancestor when deploy/ is byte-identical), so the
+        # service account cannot choose a unit or an install-*.sh root runs.
+        # When deploy/ has unsigned changes the app update above stands and
+        # only this root-side refresh is HELD (a warning, not a failure).
+        trust = _release_trust()
+        stage_root = None
+        hold_root_side = False
+        if trust is None:
+            st.step("release signature enforcement", True,
+                    "OFF (no root trust anchor at %s)" % TRUST_ANCHOR)
+            deploy_dir = APP / "deploy"
+            script_env = None
+        else:
+            target_sha = git("rev-parse", "HEAD").stdout.strip()
+            rel = _resolve_release(target_sha, trust, st)
+            deploy_dir = None
+            script_env = None
+            if rel["mode"] != "held":
+                try:
+                    stage_root = _staged_deploy_dir(rel["signed"])
+                except Exception as exc:  # noqa: BLE001 -- fail safe: hold
+                    stage_root = None
+                    st.step("root-side refresh held", True,
+                            "WARNING: staging signed release %s failed (%s); "
+                            "root-side refresh held"
+                            % (rel["signed"][:12], str(exc)[:200]), warn=True)
+                if stage_root is not None:
+                    deploy_dir = stage_root / "deploy"
+                    # The install scripts read FM_APP_DIR to aim their drop-ins
+                    # at the real app, and SATOM_DEPLOY_SRC to take what they
+                    # install from the STAGED copy, never from APP/deploy.
+                    script_env = dict(os.environ, FM_APP_DIR=str(APP),
+                                      SATOM_DEPLOY_SRC=str(deploy_dir))
+                    st.step("stage verified release", True,
+                            "%s from %s" % (deploy_dir, rel["signed"][:12]))
+            hold_root_side = deploy_dir is None
+            st.d["release_trust"] = rel["mode"] if not hold_root_side else "held"
+        try:
+            # Refresh unit files (they may have changed in the update) and pin
+            # the service account AGAIN: the deploy/ templates declare
+            # User=root, so the copy would downgrade the privilege model on
+            # every update were it not for the drop-in. refresh_units also
+            # arms a .path/.timer this update introduces.
+            if hold_root_side:
+                enforce_unit_user(APP_USER)
+                subprocess.run(["systemctl", "daemon-reload"])
+            else:
+                refresh_units(deploy_dir, st)
+            # Refresh the ROOT-OWNED copies that live OUTSIDE the app tree: the
+            # operator CLI, the update runner, and the /usr/local/sbin helper
+            # scripts (install-runner.sh installs those last -- see
+            # [SATOM-SBIN-ROOT-COPY]). They are outside on purpose (a sudo/root
+            # target writable by the service account is a root escalation), which
+            # means a code update does NOT reach them -- so they must be
+            # re-installed here or they silently age behind the app. That is not
+            # hypothetical: /usr/local/sbin/satom-ha-datasync.sh sat 11 days and
+            # two bug-fixes behind git because its only installer was a one-shot
+            # migration, and the replicator reported SUCCESS while replicating
+            # nothing.
+            try:
+                for _script, _label in (("install-cli.sh", "operator CLI"),
+                                        ("install-runner.sh",
+                                         "update runner + /usr/local/sbin helpers"),
+                                        ("install-metrics-store.sh",
+                                         "metrics store"),
+                                        # [SATOM-CONSOLE-RO-ROLE] primary only;
+                                        # skips itself on a standby.
+                                        ("install-console-role.sh",
+                                         "database console role")):
+                    if hold_root_side:
+                        break
+                    _p = deploy_dir / _script
+                    if _p.exists():
+                        st.begin("refresh %s" % _label)
+                        cr = subprocess.run(["bash", str(_p)], capture_output=True,
+                                            text=True, timeout=180, env=script_env)
+                        st.step("refresh %s" % _label, cr.returncode == 0,
+                                (cr.stdout or cr.stderr or "").strip()[:200])
+            except Exception as exc:  # noqa: BLE001
+                # Never fail an update because the console tool did not refresh.
+                st.step("refresh operator CLI", False, str(exc)[:200])
+        finally:
+            if stage_root is not None:
+                import shutil as _sh
+                _sh.rmtree(stage_root, ignore_errors=True)
+        # After the CLI refresh: the verb it runs ships with this release.
+        tighten_data_dir(st)
+        converge_nginx(st)
+
+        new = git("rev-parse", "HEAD").stdout.strip()
+        restart_and_validate(st, is_standby, app_was_active,
+                             "revision %s" % new[:12])
+
+        if is_standby:
+            # Unlock the primary: write the validated marker into the PRIMARY's
+            # read-write DB (our own replica is read-only). Best-effort — a failed
+            # marker write doesn't fail the standby update, but it IS the seguro.
+            mok, mdetail = mark_validated_on_primary(new, req.get("node") or socket.gethostname())
+            st.step("mark validated on primary", mok,
+                    "primary update unlocked for %s" % new[:12] if mok else mdetail[:200])
+            st.finish("success", result_sha=new, rolled_back=False, standby=True,
+                      validated_on_primary=mok)
+            return
+        import_shipped_api_pack(st)
+        # POST-FLIGHT: compare the after-state against the preflight baseline.
+        # Non-fatal: the health gate above already passed; this surfaces device /
+        # replication / cert deltas the bare health check can't see.
+        fok, fdetail = flight("postflight", "upgrade-%s" % new[:12])
+        st.step("postflight (after)", fok,
+                fdetail if fok else "REGRESSION vs preflight — review: %s" % fdetail)
+        st.finish("success", result_sha=new, rolled_back=False, postflight_ok=fok)
+        return
+
+    except Exception as e:
+        st.step("ERROR", False, str(e))
+        # ---------------- rollback to the snapshot ----------------
+        try:
+            st.begin("rollback to %s" % snapshot[:12])
+            git("reset", "--hard", snapshot)
+            if req.get("do_pip", True):
+                run([str(VENV / "pip"), "install", "-q", "-r",
+                     str(APP / "requirements.txt")], timeout=900, user=APP_USER,
+                    env=pip_env)
+            # The update already compiled the NEW .po; put back the catalogue
+            # of the code that runs again.
+            compile_catalogues(st, "pybabel compile (rolled-back catalogues)")
+            restart_unit(SCHED)
+            restart_reconciler()
+            if not app_was_active:
+                ok, _ = import_smoke_ok()
+            else:
+                restart_unit(SERVICE)
+                ok = health_ok()
+            st.step("rollback to %s" % snapshot[:12], ok,
+                    "recovered" if ok else "STILL UNHEALTHY after rollback")
+            st.finish("failed", result_sha=snapshot, rolled_back=True,
+                      recovered=ok, error=str(e))
+        except Exception as e2:
+            st.finish("failed", rolled_back=True, recovered=False,
+                      error="%s ; rollback error: %s" % (e, e2))
+
+
+_PKG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_VER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+!_-]*$")
+
+
+def _pip_allowlist():
+    """The curated set of libraries the card shows — the ONLY packages this
+    runner will touch. Loaded from the app's own system_info._LIBRARIES so the
+    allowlist has exactly one source of truth; a hardcoded fallback guarantees
+    the runner still refuses arbitrary names if the import ever fails."""
+    fallback = {
+        "Flask", "Werkzeug", "Jinja2", "SQLAlchemy", "Flask-SQLAlchemy",
+        "Flask-Login", "Flask-WTF", "Flask-Limiter", "psycopg", "gunicorn",
+        "paramiko", "httpx", "cryptography", "requests", "PyYAML",
+    }
+    # [SATOM-RUNNER-NO-APP-IMPORT] Deliberately NOT imported from
+    # app.services.system_info. That import executes the application package
+    # -- as root, from a tree the service account owns -- which is the same
+    # escalation install-runner.sh exists to close. The list below is asserted
+    # equal to system_info._LIBRARIES by tests/test_update_package.py, so the
+    # two cannot drift.
+    return fallback
+
+
+def _installed_version(pkg):
+    """Currently-installed version of pkg in the venv, or '' if absent."""
+    r = run([str(VENV / "python"), "-c",
+             "import importlib.metadata as m,sys;"
+             "sys.stdout.write(m.version(sys.argv[1]))", pkg],
+            timeout=30, user=APP_USER, cwd=str(APP))
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def _pip_install(spec, env=None):
+    """pip install a single pinned spec (pkg==ver) as the app user. ``env``
+    (from :func:`_pip_index_env`) points pip at the configured index."""
+    return run([str(VENV / "pip"), "install", "-q", spec],
+               timeout=900, user=APP_USER, env=env)
+
+
+#: A package index the request may name: https, a host, an optional port and a
+#: path. No userinfo (credentials arrive in their own fields), no query, no
+#: whitespace -- this value ends up in pip's environment.
+_INDEX_URL_RE = re.compile(r"^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%+/-]*)?$")
+_CRED_BAD = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _pip_index_env(req):
+    """``(env, where, secret)`` for a pip change.
+
+    No ``index_url`` in the request: ``(None, "pip default ...", "")`` -- pip uses
+    its own configuration, as before. Otherwise the index (Settings -> General ->
+    Update sources) goes to pip as ``PIP_INDEX_URL``, with the user and token
+    percent-encoded into it. Through the ENVIRONMENT, never argv: a process's
+    command line is readable by every local user, its environment only by its
+    owner and root. ``where`` names the index without the credentials, for the
+    status log; ``secret`` is what :func:`_redact` must remove from any output.
+    Raises ``ValueError`` on anything malformed: a request the web side did not
+    validate is refused here, not handed to pip.
+    """
+    from urllib.parse import quote
+    url = (req.get("index_url") or "").strip()
+    if not url:
+        return None, "pip default (pypi.org unless pip.conf names another index)", ""
+    if not _INDEX_URL_RE.match(url) or len(url) > 500:
+        raise ValueError("refusing package index URL %r" % url)
+    user = req.get("index_user") or ""
+    token = req.get("index_token") or ""
+    if not isinstance(user, str) or not isinstance(token, str):
+        raise ValueError("refusing malformed index credentials")
+    if user or token:
+        if (not user or not token or ":" in user or len(user) > 128
+                or len(token) > 1024 or _CRED_BAD.search(user + token)):
+            raise ValueError("refusing malformed index credentials")
+        full = "https://%s:%s@%s" % (quote(user, safe=""), quote(token, safe=""),
+                                     url[len("https://"):])
+        where = "%s (as %s)" % (url, user)
+    else:
+        full, where = url, url
+    env = dict(os.environ)
+    env["PIP_INDEX_URL"] = full
+    # The index may sit behind the company CA (Settings -> Trust store). The
+    # request carries a flag, never a path: the bundle is read from the one
+    # place the app writes it, and only when that is a plain file (SA-0003).
+    if req.get("index_ca_bundle") is True:
+        bundle = APP / "pki" / "trust" / "ca-bundle.pem"
+        try:
+            plain = stat.S_ISREG(os.lstat(str(bundle)).st_mode)
+        except OSError:
+            plain = False
+        if plain:
+            env["PIP_CERT"] = str(bundle)
+            where += " (verified against the trust store)"
+    return env, where, token
+
+
+def _redact(text, secret):
+    """``text`` with the token (raw and percent-encoded) masked."""
+    if not text or not secret:
+        return text
+    from urllib.parse import quote
+    for s in {secret, quote(secret, safe="")}:
+        if s:
+            text = text.replace(s, "****")
+    return text
+
+
+def _record_lib_version(pkg, previous, current, action, by):
+    """Persist the per-node rollback point for pkg so the card can offer a
+    'Rollback to <previous>' button. One file per package under
+    data/lib-versions/ (per-node, because the venv is per-node)."""
+    if not isinstance(pkg, str) or not _PKG_RE.fullmatch(pkg):
+        raise ValueError("refusing package name %r" % (pkg,))
+    _write_nofollow(APP / "data" / "lib-versions", pkg + ".json", json.dumps({
+        "package": pkg, "previous": previous, "current": current,
+        "action": action, "by": by, "at": now()}, indent=2))
+
+
+_EXTRAS_RE = r"(\[\s*[A-Za-z0-9][A-Za-z0-9._,\s-]*\])?"
+
+
+def _read_requirements():
+    """requirements.txt lines, read without following a planted link."""
+    # O_NOFOLLOW: a requirements.txt -> /etc/shadow link must not be read
+    # by root and written back as a file the service account owns.
+    fd = os.open(str(APP / "requirements.txt"),
+                 os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "r", encoding="utf-8") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise ValueError("not a regular file")
+        return fh.read().splitlines()
+
+
+def _req_line_re(pkg):
+    return re.compile(r"^\s*%s\s*%s\s*([<>=!~].*)?$" % (re.escape(pkg), _EXTRAS_RE),
+                      re.IGNORECASE)
+
+
+def _req_extras(pkg):
+    """The extras requirements.txt pins pkg with ("[binary]" for psycopg), or ''.
+
+    Installing the bare name drops them: upgrading psycopg alone to 3.3.6 left
+    psycopg-binary at 3.3.4, whose C wait_c() rejects the new timeout= keyword,
+    and every worker died on its first connection (2026-10-15)."""
+    try:
+        lines = _read_requirements()
+    except Exception:
+        return ""
+    name_re = _req_line_re(pkg)
+    for ln in lines:
+        if ln.lstrip().startswith("#"):
+            continue
+        m = name_re.match(ln)
+        if m and m.group(1):
+            return re.sub(r"\s+", "", m.group(1))
+    return ""
+
+
+def _bump_requirements(pkg, version):
+    """Rewrite pkg's pin in requirements.txt to ==version (so the next code
+    update's `pip install -r` does not silently revert this change). Matches
+    the package line case-insensitively on the distribution name. Returns
+    (changed, detail)."""
+    if not (isinstance(pkg, str) and _PKG_RE.fullmatch(pkg)
+            and isinstance(version, str) and _VER_RE.fullmatch(version)):
+        return False, "refusing %r==%r" % (pkg, version)
+    try:
+        lines = _read_requirements()
+    except Exception as e:
+        return False, "read failed: %s" % e
+    name_re = _req_line_re(pkg)
+    out, hit = [], False
+    for ln in lines:
+        m = name_re.match(ln)
+        if m and not ln.lstrip().startswith("#"):
+            # keep the extras: "psycopg[binary]==x" must not become "psycopg==x"
+            out.append("%s%s==%s" % (pkg, re.sub(r"\s+", "", m.group(1) or ""), version))
+            hit = True
+        else:
+            out.append(ln)
+    if not hit:
+        out.append("%s==%s" % (pkg, version))
+    try:
+        _write_nofollow(APP, "requirements.txt", "\n".join(out) + "\n")
+    except (OSError, ValueError) as e:
+        return False, "write failed: %s" % e
+    return True, ("updated pin" if hit else "added pin")
+
+
+def _git_commit_push_requirements(pkg, version, by):
+    """Commit + push the requirements.txt bump on the PRIMARY only (single git
+    writer). Non-fatal: a push failure (conflict/offline) leaves the lib
+    installed and the pin committed locally — reported as a warning step."""
+    git("add", "requirements.txt")
+    msg = "chore(deps): pin %s==%s via Libraries GUI (by %s)" % (pkg, version, by)
+    c = git("commit", "-m", msg)
+    if c.returncode != 0:
+        # nothing to commit (pin already matched) is fine
+        return True, (c.stdout or c.stderr or "nothing to commit").strip()[-200:]
+    p = git("push", "origin", "HEAD", timeout=120)
+    return (p.returncode == 0), (p.stderr or p.stdout or "").strip()[-200:]
+
+
+def _is_direct_requirement(pkg):
+    try:
+        lines = _read_requirements()
+    except Exception:  # noqa: BLE001
+        return False
+    rx = _req_line_re(pkg)
+    return any(rx.match(ln) and not ln.lstrip().startswith("#") for ln in lines)
+
+
+def pip_change(req_path):
+    """Per-package pip upgrade/rollback (root-triggered, curated-only).
+
+    The unprivileged web worker only ENQUEUES a JSON request; this handler does
+    the privileged install. It is strictly bounded: the package MUST be in the
+    curated allowlist and both names are regex-validated, so a forged request
+    can never turn this into 'pip install <arbitrary>'. Records the prior
+    version for a one-click rollback, auto-reverts on a failed health/import
+    check, and (on the primary) bumps requirements.txt so the change survives
+    the next code update."""
+    req = _read_request(req_path)
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)  # dequeue so the .path unit stops re-firing
+    except OSError:
+        pass
+
+    pkg = (req.get("package") or "").strip()
+    version = (req.get("version") or "").strip()
+    action = req.get("action") or "upgrade"
+    by = req.get("requested_by") or "?"
+    bump = bool(req.get("bump_requirements", True))
+    st.d["package"] = pkg
+    st.d["action"] = action
+    st.flush()
+
+    # ---- hard guardrails (defense in depth; the web side validates too) ----
+    # Libraries: the curated allowlist. Installed software ("scope":
+    # "installed"): any distribution ALREADY in this venv -- an upgrade can
+    # move what is there, never bring in a name that is not.
+    scope = req.get("scope") or "curated"
+    if not _PKG_RE.match(pkg) or (
+            pkg not in _pip_allowlist() if scope != "installed"
+            else not _installed_version(pkg)):
+        st.step("validate package", False, "%r not in curated allowlist" % pkg
+                if scope != "installed" else "%r is not installed in this venv" % pkg)
+        st.finish("failed", error="package not allowed")
+        return
+    if not _VER_RE.match(version):
+        st.step("validate version", False, "%r is not a valid version" % version)
+        st.finish("failed", error="bad version")
+        return
+    st.step("validate", True, "%s -> %s (%s)" % (pkg, version, action))
+
+    role = req.get("role") or ("standby" if pg_in_recovery() else "primary")
+    is_standby = (role == "standby")
+    app_was_active = _svc_active(SERVICE) == "active"
+    previous = _installed_version(pkg)
+    st.step("snapshot installed version", True, "%s==%s" % (pkg, previous or "(absent)"))
+    if previous == version:
+        st.step("noop", True, "already at %s" % version)
+        _record_lib_version(pkg, previous, version, action, by)
+        st.finish("success", package=pkg, previous_version=previous,
+                  new_version=version, rolled_back=False)
+        return
+
+    try:
+        pip_env, where, secret = _pip_index_env(req)
+    except ValueError as e:
+        st.step("package index", False, str(e))
+        st.finish("failed", error="bad package index")
+        return
+    # Where the bytes come from, in the job log: an operator asking "where did
+    # this version come from?" reads it here.
+    st.step("package index", True, where)
+
+    # [SATOM-ROLLBACK-FIRST] A full copy of the venv before pip touches it:
+    # pip moves dependencies too, and an index (or an offline node) may not
+    # serve the old version back. No copy, no change.
+    point = None
+    try:
+        point = _rb_create(uid, "python", "%s %s → %s" % (pkg, previous or "?", version),
+                           by, {"package": pkg, "from": previous, "to": version})
+        st.begin("save rollback copy")
+        files = _rb_save_venv(point)
+        _rb_mark(point, "ready", files=files)
+        st.step("save rollback copy", True, "full copy of the venv in %s" % point)
+    except Exception as exc:  # noqa: BLE001 -- fail closed: nothing changed yet
+        if point is not None:
+            _rb_discard(point)
+        st.step("save rollback copy", False, str(exc)[:300])
+        st.finish("failed", error="no rollback copy could be saved, so nothing was "
+                  "changed: %s" % str(exc)[:200])
+        return
+    st.d["rollback_point"] = point.name
+
+    extras = _req_extras(pkg)
+    direct = bool(extras) or _is_direct_requirement(pkg)
+    try:
+        p = _pip_install("%s%s==%s" % (pkg, extras, version), env=pip_env)
+        st.step("pip install %s%s==%s" % (pkg, extras, version), p.returncode == 0,
+                _redact(p.stderr or p.stdout, secret))
+        if p.returncode != 0:
+            raise RuntimeError("pip install failed")
+
+        ok, detail = import_smoke_ok()
+        st.step("import smoke", ok, "app imports with new %s" % pkg if ok else detail[:300])
+        if not ok:
+            raise RuntimeError("import smoke failed: %s" % detail[:200])
+        ok, detail = db_smoke_ok()
+        st.step("database smoke", ok,
+                "SELECT 1 through the new %s" % pkg if ok else detail[-300:])
+        if not ok:
+            raise RuntimeError("database smoke failed: %s" % detail[-200:])
+
+        # Reload the running workers so the new lib is actually loaded.
+        restart_and_validate(st, is_standby, app_was_active,
+                             "%s==%s" % (pkg, version))
+
+        _record_lib_version(pkg, previous, version, action, by)
+        _rb_mark(point, "applied")
+        _rb_prune()
+
+        # Keep requirements.txt honest so the next code update doesn't revert us
+        # (primary only — single git writer). Non-fatal. A transitive package
+        # (Installed software) is not pinned: requirements.txt lists what the
+        # product asks for, and the next update does not downgrade it.
+        if bump and scope == "installed" and not direct:
+            st.step("bump requirements.txt", True,
+                    "skipped (%s is a dependency of a dependency, not pinned)" % pkg)
+        elif bump and role == "primary":
+            ch, d1 = _bump_requirements(pkg, version)
+            st.step("bump requirements.txt", ch, d1)
+            gok, d2 = _git_commit_push_requirements(pkg, version, by)
+            st.step("commit + push requirements.txt", gok,
+                    d2 if gok else "installed OK but push failed: %s" % d2)
+        elif bump:
+            st.step("bump requirements.txt", True, "skipped on standby (primary is the git writer)")
+
+        st.finish("success", package=pkg, previous_version=previous,
+                  new_version=version, rolled_back=False)
+        return
+
+    except Exception as e:
+        st.step("ERROR", False, _redact(str(e), secret))
+        # ---- auto-rollback: the venv copy saved above ----
+        ok, detail = _rb_restore(point, st)
+        if ok:
+            st.finish("failed", package=pkg, previous_version=previous,
+                      new_version=previous, rolled_back=True, recovered=True,
+                      error=_redact(str(e), secret))
+            return
+        # The copy could not be put back: fall back to reinstalling the old
+        # version from the index (the historical way back).
+        try:
+            if previous:
+                rb = _pip_install("%s%s==%s" % (pkg, extras, previous), env=pip_env)
+                restart_unit(SERVICE)
+                restart_unit(SCHED)
+                ok = health_ok()
+                st.step("rollback to %s==%s" % (pkg, previous),
+                        rb.returncode == 0 and ok,
+                        "recovered" if ok else "STILL UNHEALTHY after rollback")
+            else:
+                st.step("rollback", False, "no previous version recorded — cannot auto-revert")
+                ok = False
+            st.finish("failed", package=pkg, previous_version=previous,
+                      new_version=previous, rolled_back=True, recovered=ok,
+                      error=_redact(str(e), secret))
+        except Exception as e2:
+            st.finish("failed", package=pkg, rolled_back=True, recovered=False,
+                      error=_redact("%s ; rollback error: %s" % (e, e2), secret))
+
+
+
+# ---------------------------------------------------------------------------
+# offline update packages (kind: "package")
+# ---------------------------------------------------------------------------
+# What the operator reads when a migration fails. The rollback restores code and
+# dependencies; it cannot un-run DDL, so say so and say where the way back is.
+MIGRATION_FAILED = (
+    "flask db upgrade failed -- the update is rolled back (code and Python "
+    "dependencies). The DATABASE is not rolled back: if the migration got part "
+    "of the way, restore the newest bundle from 'satom get backup list' "
+    "with 'satom execute restore db <bundle> --yes' before retrying.")
+
+UPLOADS = APP / "data" / "update-uploads"
+TRUST_DIR = os.environ.get("SATOM_TRUST_DIR", "/etc/satom/update-keys")
+RUNNER_LIB = "/usr/local/lib/satom-runner"
+
+
+def _load_update_package():
+    """Load the signature verifier that sits NEXT TO THIS FILE.
+
+    Deliberately a sibling and not ``APP/deploy``: when this runner is properly
+    installed both live in the root-owned copy, so the verifier is exactly as
+    trustworthy as the code that calls it. Loading the verifier from the app
+    tree while running hardened would reintroduce the escalation the hardening
+    removes.
+    """
+    import importlib.util
+    path = Path(__file__).resolve().parent / "update_package.py"
+    spec = importlib.util.spec_from_file_location("satom_update_package", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def runner_integrity_problem():
+    """Why this runner must not be trusted to verify a package, or None.
+
+    [SATOM-RUNNER-ROOT-COPY] Running as root out of a directory the service
+    account can write means the account can choose the code root executes.
+    Signature verification performed by that code proves nothing. The git
+    update path keeps working (it is gated by the remote, not by us), but an
+    uploaded package is refused until ``install-runner.sh`` has been run.
+    """
+    here = Path(__file__).resolve().parent
+    try:
+        up = _load_update_package()
+    except Exception as exc:  # noqa: BLE001
+        return "cannot load the signature verifier: %s" % exc
+    problem = up.root_owned_problem(here, "*.py")
+    if problem:
+        return ("%s — run 'bash %s/deploy/install-runner.sh' as root to install "
+                "the hardened copy" % (problem, APP))
+    return None
+
+
+ADOPT_IDENTITY = ("-c", "user.name=SATOM", "-c", "user.email=satom@localhost")
+
+
+def adopt_tree():
+    """(ok, detail). Make an application tree that is not a git checkout into one.
+
+    [SATOM-ADOPT-TREE] An offline install extracts the bundle's app.tar.gz:
+    there is no .git. Every step of a package apply leans on git -- the
+    snapshot it rolls back to, parking local commits, the list of files the new
+    revision dropped, the commit that records what is deployed -- so on every
+    offline-installed node before 2.5.0 the first package was refused at
+    "count local commits" and nothing could ever be applied.
+
+    One commit of the tree as it stands is the right baseline: the tree IS the
+    release archive. On a fresh offline install `git add -A` (honouring the
+    shipped .gitignore, which keeps data/, venv/, .env, pki/ and the other
+    node-local paths out) selects exactly the archive's files, no more. A
+    no-op on a checkout.
+    """
+    if (APP / ".git").exists():
+        return True, "already a git checkout"
+    for args in (("init", "-q"), ("add", "-A"),
+                 ADOPT_IDENTITY + ("commit", "-q", "-m",
+                  "baseline: SATOM %s as installed (adopted for package updates)"
+                  % (_current_version() or "?"))):
+        r = git(*args, timeout=300)
+        if r.returncode != 0:
+            return False, "git %s failed: %s" % (args[-1] if args[0] == "-c" else args[0],
+                                                 (r.stderr or r.stdout or "")[-300:])
+    n = len((git("ls-files", timeout=120).stdout or "").splitlines())
+    return True, "baseline commit of %d tracked file(s)" % n
+
+
+def _new_untracked(before):
+    """Untracked, non-ignored paths that appeared since ``before``.
+
+    Rollback removes only these. A blanket ``git clean -fd`` would also delete
+    untracked files that predate the update and have nothing to do with it —
+    destroying an operator's work to undo ours.
+    """
+    out = git("ls-files", "--others", "--exclude-standard", timeout=120).stdout or ""
+    now = {ln.strip() for ln in out.splitlines() if ln.strip()}
+    return sorted(now - before)
+
+
+def _untracked_set():
+    out = git("ls-files", "--others", "--exclude-standard", timeout=120).stdout or ""
+    return {ln.strip() for ln in out.splitlines() if ln.strip()}
+
+
+def _chown_tree():
+    """Give the extracted tree back to the service account.
+
+    Root wrote these files, and a root-owned app tree is the exact state in
+    which enforce_unit_user() stops writing the User= drop-in — the next update
+    would silently put the web app back to running as root.
+
+    ``.env`` stays root:<account> 0640. The tree-wide chown re-owns it too, so
+    it is opened (O_NOFOLLOW) BEFORE the chown and that same inode is re-sealed
+    afterwards through the descriptor -- only when it was root's to begin with:
+    a .env the account wrote is never adopted as root's.
+    """
+    if not APP_USER or APP_USER == "root":
+        return True, "running un-deprivileged; nothing to hand back"
+    env_fd, env_was_roots = None, False
+    try:
+        env_fd = os.open(str(APP / ".env"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        st_ = os.fstat(env_fd)
+        env_was_roots = stat.S_ISREG(st_.st_mode) and st_.st_uid == 0
+    except OSError:
+        pass
+    try:
+        # -h: a link in the tree is re-owned itself, never the file it names.
+        r = subprocess.run(["chown", "-R", "-h", "%s:%s" % (APP_USER, APP_USER), str(APP)],
+                           capture_output=True, text=True, timeout=300)
+        if env_fd is not None and env_was_roots:
+            try:
+                import grp
+                os.fchown(env_fd, 0, grp.getgrnam(APP_USER).gr_gid)
+                os.fchmod(env_fd, 0o640)
+            except (OSError, KeyError):
+                pass
+    finally:
+        if env_fd is not None:
+            os.close(env_fd)
+    return r.returncode == 0, (r.stderr or "tree owned by %s" % APP_USER)[:200]
+
+
+def _current_version():
+    """APP/VERSION, read without following a link and only when it holds a
+    version: the status file the account reads, and a git commit message,
+    repeat it."""
+    try:
+        return _load_update_package().read_version_file(APP / "VERSION")
+    except Exception:  # noqa: BLE001 -- an unreadable version is no version
+        return ""
+
+
+def _venv_tag():
+    r = run([str(VENV / "python"), "-c",
+             "import sys;print('cp%d%d' % sys.version_info[:2])"],
+            timeout=30, user=APP_USER)
+    return (r.stdout or "").strip()
+
+
+PIP_DRY_RUN_SINCE = (22, 2)
+_PIP_MISSING_RES = (
+    re.compile(r"No matching distribution found for ([^\s;]+)"),
+    re.compile(r"Could not find a version that satisfies the requirement ([^\s;]+)"),
+)
+_REQ_MEMBERS = ("requirements.txt", "./requirements.txt")
+
+
+def _as_app():
+    """Writes INSIDE the app tree are done AS the service account: it owns every
+    directory there and can swap any entry for a link between a root check and
+    a root write. Whatever it then makes the write do, it could do itself."""
+    return bool(APP_USER) and APP_USER != "root" and os.geteuid() == 0
+
+
+def _run_bytes(cmd, data, timeout=1800, cwd="/"):
+    """``cmd`` AS THE SERVICE ACCOUNT, with ``data`` (bytes) on stdin."""
+    return subprocess.run(["runuser", "-u", APP_USER, "--"] + list(cmd), input=data,
+                          capture_output=True, timeout=timeout, cwd=cwd)
+
+
+def install_tree(up, app_tar):
+    """Lay the verified app.tar.gz over the tree. Root validates it (no link,
+    device, absolute or '..' path, size ceiling) and keeps the file list; the
+    service account extracts it into its own tree."""
+    if not _as_app():
+        return up.extract_app_tree(app_tar, APP)
+    written = up.app_tree_files(app_tar)
+    data = Path(app_tar).read_bytes()
+    # /1 hands over the package's app.tar.gz; /2 an uncompressed app.tar that
+    # root assembled and verified (up.materialize_app).
+    flag = "-xzf" if data[:2] == b"\x1f\x8b" else "-xf"
+    r = _run_bytes(["tar", flag, "-", "-C", str(APP), "--no-same-owner"], data)
+    if r.returncode != 0:
+        raise RuntimeError("extracting the application tree as %s failed: %s"
+                           % (APP_USER, (r.stderr or b"").decode("utf-8", "replace")[-300:]))
+    return written
+
+
+def remove_in_tree(rels):
+    """Remove these tree-relative FILES (never directories) -- as the account."""
+    rels = [r for r in rels if r and not r.startswith("/") and ".." not in Path(r).parts]
+    if not rels:
+        return
+    if _as_app():
+        for i in range(0, len(rels), 200):
+            _run_bytes(["rm", "-f", "--"] + rels[i:i + 200], b"", timeout=300, cwd=str(APP))
+        return
+    for rel in rels:
+        if _link_below(APP, Path(rel).parent):
+            continue
+        target = APP / rel
+        try:
+            if target.is_file() or target.is_symlink():
+                target.unlink()
+        except OSError:
+            pass
+
+
+def _make_wheelhouse(pkg_dir, up, app_tar=None):
+    """Root-owned, world-READABLE copy of the package's wheels plus the NEW
+    requirements.txt (read straight out of the verified app.tar.gz).
+
+    pip runs as the service account, and the staging directory is 0700 root on
+    purpose (the account must not be able to swap a verified file). So pip
+    could never read ``pkg_dir/wheels`` -- an apply that needed a new wheel
+    failed at step 7, after the tree was already replaced. Root owns every
+    entry here and nothing is writable by the account, so readable is enough.
+    """
+    import shutil
+    import tarfile
+    house = Path(tempfile.mkdtemp(prefix="satom-wheels-", dir="/var/tmp"))
+    os.chmod(house, 0o755)
+    wdir = house / "wheels"
+    wdir.mkdir()
+    os.chmod(wdir, 0o755)
+    for w in sorted((Path(pkg_dir) / "wheels").glob("*.whl")):
+        if not w.is_file() or w.is_symlink():
+            continue
+        shutil.copyfile(w, wdir / w.name)
+        os.chmod(wdir / w.name, 0o644)
+    req = None
+    with tarfile.open(app_tar or (Path(pkg_dir) / "app.tar.gz"), "r:*") as tf:
+        for name in _REQ_MEMBERS:
+            try:
+                m = tf.getmember(name)
+            except KeyError:
+                continue
+            if m.isfile() and m.size < 1024 * 1024:
+                req = tf.extractfile(m).read()
+            break
+    if req is None:
+        raise up.PackageError("the application tree has no requirements.txt")
+    (house / "requirements.txt").write_bytes(req)
+    os.chmod(house / "requirements.txt", 0o644)
+    return house
+
+
+def _pip_dry_run_ok():
+    """(supported, 'pip X.Y'): `pip install --dry-run` exists since 22.2."""
+    r = run([str(VENV / "python"), "-m", "pip", "--version"], timeout=60,
+            user=APP_USER)
+    m = re.search(r"pip (\d+)\.(\d+)", r.stdout or "")
+    if not m:
+        return False, "pip (version unknown)"
+    return (int(m.group(1)), int(m.group(2))) >= PIP_DRY_RUN_SINCE, m.group(0)
+
+
+def dependency_preflight(st, wheelhouse, manifest, cur):
+    """Refuse, before anything changes, a package whose requirements this
+    node's venv cannot meet from what is installed plus what is shipped."""
+    st.begin("dependency preflight")
+    shipped = len(list((Path(wheelhouse) / "wheels").glob("*.whl")))
+    mode = manifest.get("wheels_mode") or "full"
+    supported, pipv = _pip_dry_run_ok()
+    if not supported:
+        st.step("dependency preflight", True,
+                "skipped: %s has no --dry-run (22.2+); %s package, %d wheel(s)"
+                % (pipv, mode, shipped))
+        return
+    p = run([str(VENV / "pip"), "install", "--dry-run", "--quiet", "--no-index",
+             "--find-links", str(Path(wheelhouse) / "wheels"),
+             "-r", str(Path(wheelhouse) / "requirements.txt")],
+            timeout=600, user=APP_USER)
+    if p.returncode == 0:
+        st.step("dependency preflight", True,
+                "every requirement is installed or shipped (%s package, %d wheel(s))"
+                % (mode, shipped))
+        return
+    out = (p.stderr or "") + "\n" + (p.stdout or "")
+    missing = sorted({m.group(1) for rx in _PIP_MISSING_RES for m in rx.finditer(out)})
+    msg = ("dependencies cannot be met offline: %s neither installed in this venv "
+           "nor shipped in the package (%s, %d wheel(s)). Nothing was changed. "
+           "Apply an earlier full update package or one built with a "
+           "min_from_version at or below %s, then retry"
+           % (", ".join(missing) or "(see pip output)", mode, shipped, cur))
+    st.step("dependency preflight", False,
+            msg if missing else (msg + " | " + out.strip()[-300:]))
+    raise RuntimeError(msg)
+
+
+def package_change(req_path):
+    """Apply a SIGNED OFFLINE UPDATE PACKAGE uploaded through the web console.
+
+    The web worker only staged a file and wrote this request. Everything that
+    decides whether the package is trustworthy happens HERE, as root, against a
+    trust store the worker cannot write:
+
+        hardened?  ->  signature  ->  every hash  ->  version rules  ->  apply
+
+    and the order is not cosmetic. A writable runner makes the signature
+    meaningless; an unverified manifest makes the hashes meaningless; unchecked
+    version rules let a valid-but-wrong package through. Each stage only makes
+    sense once the previous one passed.
+    """
+    req = _read_request(req_path)
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)
+    except OSError:
+        pass
+
+    st.d["kind"] = "package"
+    st.d["package"] = req.get("package")
+    st.flush()
+
+    import shutil
+    import tempfile
+
+    up = None
+    stage = None
+    wheelhouse = None
+    ok_adopt, adopt_detail = adopt_tree()
+    if adopt_detail != "already a git checkout" or not ok_adopt:
+        st.step("adopt the installed tree into git", ok_adopt, adopt_detail)
+    if not ok_adopt:
+        st.finish("failed", package=req.get("package"), rolled_back=False,
+                  error="the application tree is not a git checkout and could "
+                        "not be adopted: %s" % adopt_detail)
+        return
+    snapshot = git("rev-parse", "HEAD").stdout.strip()
+    untracked_before = _untracked_set()
+    freeze = None
+    role = req.get("role") or ("standby" if pg_in_recovery() else "primary")
+    is_standby = (role == "standby")
+    # Snapshot what the node is ACTUALLY doing, before anything is touched.
+    # The restart step restores this state instead of the state the role
+    # implies -- see restart_and_validate().
+    app_was_active = _svc_active(SERVICE) == "active"
+
+    try:
+        # -- 0. is this runner allowed to make a trust decision at all? ------
+        problem = runner_integrity_problem()
+        if problem:
+            st.step("runner integrity", False, problem)
+            raise RuntimeError("refusing to verify a package from a runner the "
+                               "service account can rewrite")
+        st.step("runner integrity", True,
+                "running root-owned from %s" % Path(__file__).resolve().parent)
+        up = _load_update_package()
+
+        # -- 1. resolve the package from a NAME, never a path ---------------
+        name = (req.get("package") or "").strip()
+        if not up.PKG_NAME_RE.match(name):
+            raise RuntimeError("%r is not an acceptable package name" % name)
+        pkg_file = UPLOADS / name
+        if not pkg_file.is_file() or pkg_file.is_symlink():
+            raise RuntimeError("%s is not staged on this node" % name)
+        st.step("locate package", True, "%s (%d bytes)"
+                % (name, pkg_file.lstat().st_size))
+
+        # -- 2. extract ONCE into root-only space ---------------------------
+        # The staging directory is writable by the service account, so anything
+        # verified in place could be swapped afterwards. Copying into a
+        # root-only temp collapses read-verify-use into a single read.
+        stage = Path(tempfile.mkdtemp(prefix="satom-pkg-", dir="/var/tmp"))
+        os.chmod(stage, 0o700)
+        st.begin("extract to root-only staging")
+        # Copied ONCE through a descriptor (no link, a regular file) and the
+        # copy is what gets extracted: the upload dir is the account's.
+        ufd = up.open_dir_nofollow(APP, UPLOADS.relative_to(APP).parts)
+        try:
+            with up.open_file_nofollow(ufd, name) as src_, \
+                    open(stage / "package.tar.gz", "wb") as out_:
+                shutil.copyfileobj(src_, out_, 1 << 20)
+        finally:
+            os.close(ufd)
+        pkg_dir = up.extract_package(stage / "package.tar.gz", stage / "pkg")
+        st.step("extract to root-only staging", True, str(stage))
+
+        # -- 3. signature + integrity ---------------------------------------
+        st.begin("verify signature")
+        verified = up.verify_package(pkg_dir, TRUST_DIR)
+        manifest = verified["manifest"]
+        key = verified["key"]
+        st.step("verify signature", True, "signed by %s (%s)"
+                % (key["fingerprint"], key["comment"] or key["name"]))
+        st.step("verify %d file hash(es)" % len(manifest.get("files") or {}),
+                True, "every file matches the signed manifest")
+
+        # -- 4. version rules ------------------------------------------------
+        cur = _current_version()
+        new = str(manifest.get("version") or "")
+        st.d["target"] = new
+        cmp_ = up.compare_versions(new, cur)
+        if cmp_ < 0 and not req.get("allow_downgrade"):
+            raise RuntimeError("package %s is OLDER than the installed %s and "
+                               "the request did not allow a downgrade" % (new, cur))
+        min_from = str(manifest.get("min_from_version") or "")
+        if min_from and up.compare_versions(cur, min_from) < 0:
+            raise RuntimeError("package requires %s or newer; this node runs %s. "
+                               "Apply an earlier update package whose minimum "
+                               "version this node meets first, then this one"
+                               % (min_from, cur))
+        tags = list(manifest.get("python_tags") or [])
+        mine = _venv_tag()
+        if tags and "*" not in tags and mine and mine not in tags:
+            raise RuntimeError("package carries wheels for %s; this venv is %s"
+                               % (", ".join(tags), mine))
+        kind = up.package_kind(manifest)
+        st.d["package_kind"] = kind
+        st.step("version rules", True, "%s -> %s%s%s"
+                % (cur, new, " (DOWNGRADE, explicitly allowed)" if cmp_ < 0 else "",
+                   " (delta from %s)" % manifest.get("from_version")
+                   if kind == "delta" else ""))
+
+        # -- 4a. the complete application tree, assembled and verified ONCE.
+        # /1: the package's app.tar.gz. /2: a plain app.tar in root-only
+        # staging, every file hashed against the signed app_tree; a delta
+        # reads the files it does not carry from this tree and refuses the
+        # package when any of them differs -- before anything is touched.
+        st.begin("assemble application tree")
+        app_tar = up.materialize_app(pkg_dir, manifest, stage, app_dir=APP,
+                                     current_version=cur)
+        st.step("assemble application tree", True,
+                "%s package, %s" % (kind, "app.tar.gz as shipped"
+                                    if app_tar.name == "app.tar.gz" else
+                                    "%d file(s) verified against the signed tree"
+                                    % len(manifest.get("app_tree") or {})))
+
+        # -- 4b. can the dependencies be met? Decided BEFORE anything changes.
+        # A package may ship only the wheels a supported node could be missing
+        # (select_wheels in update_package.py), so "is every requirement either
+        # installed or shipped?" is now a real question. Asked after step 6 it
+        # used to cost a replaced tree and a rollback.
+        wheelhouse = _make_wheelhouse(pkg_dir, up, app_tar)
+        dependency_preflight(st, wheelhouse, manifest, cur)
+
+        # -- 5. backup BEFORE anything is replaced ---------------------------
+        # A downgrade does not reverse migrations, so the database dump is the
+        # only honest way back. If it cannot be taken, do not proceed.
+        if req.get("do_backup", True) and not is_standby:
+            st.begin("database backup")
+            b = subprocess.run(["/usr/local/sbin/satom", "execute", "backup", "db"],
+                               capture_output=True, text=True, timeout=1200)
+            ok = b.returncode == 0
+            st.step("database backup", ok,
+                    (b.stdout or b.stderr or "").strip()[-300:])
+            if not ok:
+                raise RuntimeError("database backup failed; refusing to replace "
+                                   "code without a way back")
+        elif is_standby:
+            st.step("database backup", True,
+                    "skipped (standby; its database is a replica of the primary)")
+
+        # In the root-owned, world-readable wheelhouse: the rollback below runs
+        # `pip install -r` AS the service account, which cannot read /root.
+        freeze = Path(wheelhouse) / ("venv-freeze-pre-package-%s.txt"
+                                     % datetime.utcnow().strftime("%Y%m%d-%H%M%S"))
+        st.begin("freeze current dependencies")
+        fr = run([str(VENV / "pip"), "freeze"], timeout=180, user=APP_USER)
+        if fr.returncode == 0:
+            freeze.write_text(fr.stdout)
+            os.chmod(freeze, 0o644)
+            st.step("freeze current dependencies", True, str(freeze))
+        else:
+            freeze = None
+            st.step("freeze current dependencies", False,
+                    "pip freeze failed; a dependency rollback will not be possible")
+
+        # -- 6. park anything local, then lay the tree down ------------------
+        preserved = preserve_local_commits(snapshot, snapshot, st)
+        if preserved is False:
+            raise RuntimeError("refusing to replace the tree: local commits "
+                               "could not be preserved")
+
+        # [SATOM-PKG-DELETIONS]
+        tracked_now = {ln.strip() for ln in
+                          (git("ls-files", timeout=120).stdout or "").splitlines()
+                          if ln.strip()}
+        st.begin("install application tree")
+        written = install_tree(up, app_tar)
+        st.step("install application tree", True, "%d file(s) from %s"
+                % (len(written), name))
+
+        # Laying a tarball over a checkout adds and overwrites; it never
+        # deletes. Without this, a module removed in the new revision stays on
+        # disk and keeps importing -- an update that silently half-applies.
+        # app_tar comes from `git archive` (or holds exactly its files, /2),
+        # so its member list IS the complete tracked set of the target revision; anything tracked here
+        # and absent there was deleted upstream. Only TRACKED paths are
+        # considered, so data/, pki/ and .env cannot be caught by this.
+        stale = sorted(tracked_now - set(written))
+        # The tracked list comes from a .git the service account owns: the
+        # files are removed BY that account, so a planted link gains it nothing.
+        remove_in_tree(stale)
+        if stale:
+            st.step("remove %d file(s) the new revision dropped" % len(stale),
+                    True, ", ".join(stale[:8]))
+        cok, cdetail = _chown_tree()
+        st.step("restore tree ownership", cok, cdetail)
+
+        # -- 7. dependencies, strictly offline -------------------------------
+        # From the wheelhouse, not from pkg_dir: pip runs as the service
+        # account, which cannot traverse the 0700 root-only staging directory.
+        wheels = wheelhouse / "wheels"
+        st.begin("pip install (offline, from the package)")
+        p = run([str(VENV / "pip"), "install", "-q", "--no-index",
+                 "--find-links", str(wheels), "-r", str(APP / "requirements.txt")],
+                timeout=1800, user=APP_USER)
+        st.step("pip install (offline, from the package)", p.returncode == 0,
+                (p.stderr or p.stdout or "")[-400:])
+        if p.returncode != 0:
+            raise RuntimeError("offline pip install failed")
+
+        # app.tar.gz is a `git archive`: it brings the new .po and no .mo, so
+        # without this the node goes on serving the previous release's
+        # catalogue.
+        compile_catalogues(st)
+
+        # -- 8. migrations (primary only) ------------------------------------
+        if not is_standby:
+            env = dict(os.environ, FLASK_APP="wsgi.py")
+            st.begin("flask db upgrade")
+            m = run([str(VENV / "flask"), "db", "upgrade"], timeout=600,
+                    user=APP_USER, cwd=str(APP), env=env)
+            # [SATOM-ALEMBIC-STAMP] Fatal, same reason as the git path.
+            st.step("flask db upgrade", m.returncode == 0,
+                    (m.stderr or m.stdout or "")[-300:])
+            if m.returncode != 0:
+                raise RuntimeError(MIGRATION_FAILED)
+        else:
+            st.step("flask db upgrade", True,
+                    "skipped (standby; schema arrives by replication)")
+
+        # -- 9. units, CLI and the runner itself -----------------------------
+        # [SATOM-RELEASE-TRUST] With a root trust anchor present, run the units
+        # and install-*.sh from a root-only copy of the ALREADY-VERIFIED package
+        # (its Ed25519 signature and per-file hashes were checked at step 3),
+        # not from the service-account-owned APP/deploy that was just
+        # overwritten -- so a post-verification edit cannot change what root
+        # runs. With no anchor (today's default) this is byte-for-byte unchanged.
+        trust = _release_trust()
+        stage_root = None
+        if trust is None:
+            st.step("release signature enforcement", True,
+                    "OFF (no root trust anchor at %s)" % TRUST_ANCHOR)
+            deploy_dir = APP / "deploy"
+            script_env = None
+        else:
+            stage_root = _root_only_stage()
+            up.extract_app_tree(app_tar, stage_root)
+            deploy_dir = stage_root / "deploy"
+            # SATOM_DEPLOY_SRC: the scripts copy what they install (CLI package,
+            # runner, sbin helpers) from the staged copy too, not APP/deploy.
+            script_env = dict(os.environ, FM_APP_DIR=str(APP),
+                              SATOM_DEPLOY_SRC=str(deploy_dir))
+            st.step("stage verified release scripts", True, str(deploy_dir))
+        try:
+            refresh_units(deploy_dir, st)
+            # install-runner.sh also re-installs the /usr/local/sbin helper
+            # scripts ([SATOM-SBIN-ROOT-COPY]); they live outside the tree and no
+            # code update reaches them otherwise.
+            for script, label in (("install-cli.sh", "operator CLI"),
+                                  ("install-runner.sh",
+                                   "update runner + /usr/local/sbin helpers"),
+                                  ("install-metrics-store.sh", "metrics store"),
+                                  ("install-console-role.sh",
+                                   "database console role")):
+                sp = deploy_dir / script
+                if sp.exists():
+                    st.begin("refresh %s" % label)
+                    cr = subprocess.run(["bash", str(sp)], capture_output=True,
+                                        text=True, timeout=180, env=script_env)
+                    st.step("refresh %s" % label, cr.returncode == 0,
+                            (cr.stdout or cr.stderr or "").strip()[-200:])
+        finally:
+            if stage_root is not None:
+                import shutil as _sh
+                _sh.rmtree(stage_root, ignore_errors=True)
+        tighten_data_dir(st)
+        converge_nginx(st)
+
+        # -- 10. restart and prove it works ----------------------------------
+        restart_and_validate(st, is_standby, app_was_active,
+                             "version %s" % new)
+
+        # -- 11. record what is deployed -------------------------------------
+        # Without a commit the tree stays permanently dirty, `satom diagnose
+        # git` reports drift for ever, and the reconciler in AUTO mode would
+        # reset the package away on its next pass. Committing as the service
+        # account (never root: root-owned objects in .git break git-publish).
+        # Stage exactly what this package touched. `git add -A` would also
+        # commit whatever else happened to be uncommitted in the tree --
+        # another session's work in progress, attributed to this apply. That
+        # is not hypothetical: the first live apply swept 4553 lines of an
+        # unrelated feature branch into its own commit.
+        paths = sorted(set(written) | set(stale))
+        for _i in range(0, len(paths), 200):
+            git("add", "--", *paths[_i:_i + 200], timeout=120)
+        c = git("commit", "-m",
+                "apply update package %s (%s) by %s"
+                % (new, (manifest.get("commit") or "")[:12],
+                   req.get("requested_by") or "?"))
+        st.step("record deployed revision", True,
+                (c.stdout or c.stderr or "nothing to commit").strip()[-200:])
+
+        if not is_standby:
+            import_shipped_api_pack(st)
+
+        st.finish("success", package=name, applied_version=new,
+                  previous_version=cur, rolled_back=False,
+                  signed_by=key["fingerprint"],
+                  downgrade=bool(cmp_ < 0))
+        return
+
+    except Exception as e:  # noqa: BLE001
+        st.step("ERROR", False, str(e)[:400])
+        try:
+            st.begin("rollback to %s" % snapshot[:12])
+            git("reset", "--hard", snapshot)
+            stray = _new_untracked(untracked_before)
+            remove_in_tree(stray)
+            if stray:
+                st.step("remove %d file(s) the package added" % len(stray), True,
+                        ", ".join(stray[:8]))
+            if freeze and freeze.exists():
+                run([str(VENV / "pip"), "install", "-q", "-r", str(freeze)],
+                    timeout=1800, user=APP_USER)
+            _chown_tree()
+            compile_catalogues(st, "pybabel compile (rolled-back catalogues)")
+            restart_unit(SCHED)
+            restart_reconciler()
+            if not app_was_active:
+                ok, _ = import_smoke_ok()
+            else:
+                restart_unit(SERVICE)
+                ok = health_ok()
+            st.step("rollback to %s" % snapshot[:12], ok,
+                    "recovered" if ok else "STILL UNHEALTHY after rollback")
+            st.finish("failed", result_sha=snapshot, rolled_back=True,
+                      recovered=ok, error=str(e)[:400])
+        except Exception as e2:  # noqa: BLE001
+            st.finish("failed", rolled_back=True, recovered=False,
+                      error="%s ; rollback error: %s" % (e, e2))
+    finally:
+        if stage:
+            import shutil as _sh
+            _sh.rmtree(stage, ignore_errors=True)
+        if wheelhouse:
+            import shutil as _sh
+            _sh.rmtree(wheelhouse, ignore_errors=True)
+
+
+PROMOTE_SCRIPT = Path("/usr/local/sbin/satom-promote.sh")
+
+
+def _root_owned_script_problem(path):
+    """Why root must not execute ``path``, or None (same rule as the runner's
+    own copy: a regular file, root-owned, not group/world-writable, all the
+    way up the parent chain)."""
+    try:
+        if not stat.S_ISREG(os.lstat(path).st_mode):
+            return "%s is not a regular file" % path
+    except OSError as exc:
+        return "%s is not installed (%s)" % (path, exc.strerror or exc)
+    try:
+        return _load_update_package().root_owned_problem(path)
+    except Exception as exc:  # noqa: BLE001
+        return "cannot check %s: %s" % (path, exc)
+
+
+def promote(req_path):
+    """Guarded failover handler (root): promote this node's Postgres standby and
+    bring the app up via the root-owned /usr/local/sbin/satom-promote.sh.
+    Enqueued by the web UI after a typed-hostname confirmation; never
+    auto-invoked."""
+    req = _read_request(req_path)
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)  # dequeue so the .path unit stops re-firing
+    except OSError:
+        pass
+    if not pg_in_recovery():
+        st.step("precheck", False,
+                "local Postgres is NOT a standby (already primary?) — refusing")
+        st.finish("failed", error="not a standby")
+        return
+    # The ROOT-OWNED copy install-runner.sh installs ([SATOM-SBIN-ROOT-COPY]),
+    # never deploy/satom-promote.sh: the service account can rewrite that one,
+    # and this runs it as root. No fallback to the tree copy.
+    script = PROMOTE_SCRIPT
+    problem = _root_owned_script_problem(script)
+    if problem:
+        st.step("promote script", False,
+                "%s -- refusing to run the copy in the app tree; install the "
+                "root-owned one with 'bash %s/deploy/install-runner.sh' as root"
+                % (problem, APP))
+        st.finish("failed", error="root-owned %s is not usable: %s"
+                  % (script, problem))
+        return
+    st.step("promote standby -> primary", True,
+            "running satom-promote.sh (pg promote + start app)")
+    try:
+        r = subprocess.run(["bash", str(script)], capture_output=True,
+                           text=True, timeout=300)
+    except Exception as e:
+        st.step("satom-promote.sh", False, str(e))
+        st.finish("failed", error=str(e)[:300])
+        return
+    tail = ((r.stdout or "") + (r.stderr or "")).strip()[-500:]
+    ok = (r.returncode == 0) and (not pg_in_recovery())
+    st.step("satom-promote.sh exit %d" % r.returncode, ok, tail)
+    if ok and health_ok():
+        st.step("health check", True, "this node is now the read-write PRIMARY")
+        st.finish("success", rolled_back=False, promoted=True)
+    else:
+        st.finish("failed", rolled_back=False,
+                  error=(r.stderr or "promotion did not complete")[-300:])
+
+
+# ---------------------------------------------------------------------------
+# systemd service control (kind: "service")   [SATOM-SERVICE-CONTROL]
+# ---------------------------------------------------------------------------
+# The unprivileged web worker cannot run systemctl and must not be granted it:
+# a generic `sudo systemctl` reaches every unit on the box, so it IS root, just
+# spelled differently. It enqueues a request; this applies it.
+#
+# The allowlist is duplicated from app/services/service_control.py ON PURPOSE.
+# Importing that module would execute the Flask package as root out of a tree
+# the service account can write -- the exact escalation the curated pip
+# allowlist was moved out of. tests/test_service_control.py fails if the two
+# copies drift, which is what keeps a duplicate honest.
+_SVC_UNIT_RE = re.compile(r"^[A-Za-z0-9@:._-]+\.(service|timer|path)$")
+_SVC_ACTIONS = ("start", "stop", "restart", "reload")
+
+# Denied even if a future edit lists them: satom-updater IS this runner.
+# Stopping it means no later request can ever be processed -- including the one
+# that would start it again -- so the button would brick its own escalation
+# path while reporting success. Restarting it kills the operation in flight.
+_SVC_FORBIDDEN = ("satom-updater.service", "satom-updater.path")
+
+_SERVICE_POLICY = {
+    "satom.service": ("restart",),
+    "satom-scheduler.service": ("start", "stop", "restart"),
+    "satom-reconciler.service": ("start", "stop", "restart"),
+    "satom-metrics.service": ("start", "stop", "restart"),
+    "satom-alerts.timer": ("start", "stop", "restart"),
+    "satom-cert-renew.timer": ("start", "stop", "restart"),
+    "satom-ha-datasync.timer": ("start", "stop", "restart"),
+    "nginx.service": ("start", "restart", "reload"),
+    "postgresql.service": ("restart",),
+    # The HA link repair (app/services/ha_link.py). Restart only: a stopped
+    # logind refuses every new login on the box, the operator's included.
+    "systemd-logind.service": ("restart",),
+}
+
+# Units only a PRIMARY may act on, re-checked here against this node's own
+# Postgres rather than trusted from the request's "role" field (which the web
+# side writes and a forged request can write too). logind is listed because
+# the repair exists for the primary's side of the standby's git fetch; on a
+# standby nothing fetches from it, so a restart there fixes nothing and is
+# refused rather than "succeeding".
+_SVC_PRIMARY_ONLY = ("systemd-logind.service",)
+
+
+def _svc_node_role():
+    """'primary' | 'standby' | 'unknown' from this node's Postgres.
+
+    Tri-state on purpose. ``pg_in_recovery()`` answers False when it cannot
+    ask, which is the right default for the update path and the wrong one for
+    a guard: "could not tell" must refuse, not pass as primary.
+    """
+    try:
+        r = subprocess.run(
+            ["runuser", "-u", "postgres", "--", "psql", "-tAc",
+             "select pg_is_in_recovery()"],
+            capture_output=True, text=True, timeout=15)
+    except Exception:  # noqa: BLE001
+        return "unknown"
+    v = (r.stdout or "").strip()
+    return "standby" if v == "t" else "primary" if v == "f" else "unknown"
+
+# Units whose action can take the console down. Anything else is verified by
+# its own state alone -- running health_ok() after stopping the alert timer
+# would pass trivially and teach nobody anything.
+_SVC_HEALTH_CRITICAL = ("satom.service", "nginx.service", "postgresql.service")
+
+
+def _svc_prop(unit, prop):
+    try:
+        r = subprocess.run(["systemctl", "show", "-p", prop, "--value", unit],
+                           capture_output=True, text=True, timeout=10)
+        return (r.stdout or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _svc_active(unit):
+    return _svc_prop(unit, "ActiveState") or "unknown"
+
+
+def front_ok(timeout=25):
+    """The TLS front answers on :443.
+
+    health_ok() talks to gunicorn on :8000 directly, so it stays GREEN with
+    nginx down -- nginx is the one unit whose failure the existing check cannot
+    see. Certificate validity is irrelevant here (a node may serve an internal
+    CA leaf), so the handshake is deliberately unverified: this asks 'is the
+    front answering', not 'is the front trusted'.
+    """
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen("https://127.0.0.1/healthz",
+                                        timeout=5, context=ctx) as r:
+                if getattr(r, "status", r.getcode()) == 200:
+                    return True
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(3)
+    return False
+
+
+def service_action(req_path):
+    """Apply an allowlisted start/stop/restart (root-triggered, table-bounded).
+
+    Validates unit AND action against the table above before touching systemd,
+    so a forged request can never become `systemctl <anything> <anything>`.
+    Verifies the unit actually reached the state that was asked for -- a
+    systemctl exit code of 0 means 'the job was accepted', not 'the daemon came
+    up', and a service that exits three seconds later would otherwise be
+    reported as a success.
+    """
+    req = _read_request(req_path)
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)  # dequeue so the .path unit stops re-firing
+    except OSError:
+        pass
+
+    unit = (req.get("unit") or "").strip()
+    action = (req.get("action") or "").strip().lower()
+    st.d["unit"] = unit
+    st.d["action"] = action
+    st.d["kind"] = "service"
+    st.flush()
+
+    # ---- hard guardrails (defence in depth; the web side validates too) ----
+    if unit in _SVC_FORBIDDEN:
+        st.step("validate unit", False,
+                "%s is the privileged runner itself and is never controllable "
+                "from the console" % unit)
+        st.finish("failed", error="unit forbidden")
+        return
+    if not _SVC_UNIT_RE.match(unit) or unit not in _SERVICE_POLICY:
+        st.step("validate unit", False, "%r is not an allowlisted unit" % unit)
+        st.finish("failed", error="unit not allowed")
+        return
+    if action not in _SVC_ACTIONS or action not in _SERVICE_POLICY[unit]:
+        st.step("validate action", False,
+                "%r is not permitted on %s (allowed: %s)"
+                % (action, unit, ", ".join(_SERVICE_POLICY[unit])))
+        st.finish("failed", error="action not allowed")
+        return
+    if unit in _SVC_PRIMARY_ONLY:
+        role = _svc_node_role()
+        if role != "primary":
+            st.step("validate role", False,
+                    "%s is acted on only on the PRIMARY; this node is %s"
+                    % (unit, role))
+            st.finish("failed", error="primary only")
+            return
+    if _svc_prop(unit, "LoadState") == "not-found":
+        st.step("validate unit", False, "%s is not installed on this node" % unit)
+        st.finish("failed", error="unit not installed")
+        return
+    st.step("validate", True, "%s %s (requested by %s)"
+            % (action, unit, req.get("requested_by") or "?"))
+
+    before = _svc_active(unit)
+    st.step("state before", True, "%s is %s" % (unit, before))
+
+    if unit == "nginx.service" and action in ("reload", "restart"):
+        # A reload with a broken config is accepted by systemd and silently
+        # ignored by nginx; a restart with one takes the front down. Either
+        # way the config is tested first. This is also the certificate
+        # activation path when the host's sudo policy refuses the
+        # /etc/sudoers.d/satom allowlist (cert_service._reload_nginx).
+        try:
+            t = subprocess.run(["nginx", "-t"], capture_output=True, text=True,
+                               timeout=60)
+            tok, tdetail = t.returncode == 0, (t.stderr or t.stdout or "")
+        except Exception as e:  # noqa: BLE001
+            tok, tdetail = False, str(e)
+        st.step("nginx -t", tok, tdetail.strip()[-400:])
+        if not tok:
+            st.finish("failed", unit=unit, action=action, state_before=before,
+                      state_after=before, error="nginx -t failed")
+            return
+
+    try:
+        p = subprocess.run(["systemctl", action, unit],
+                           capture_output=True, text=True, timeout=180)
+        detail = (p.stderr or p.stdout or "").strip()[-400:]
+        st.step("systemctl %s %s" % (action, unit), p.returncode == 0,
+                detail or "accepted")
+        if p.returncode != 0:
+            raise RuntimeError("systemctl exited %s: %s" % (p.returncode, detail))
+
+        # systemd returns as soon as the job is queued; give a restarted daemon
+        # a moment to either settle or die before believing its state.
+        time.sleep(2)
+        after = _svc_active(unit)
+        if action == "stop":
+            reached = after not in ("active", "activating")
+        else:
+            reached = after in ("active", "activating")
+        st.step("state after", reached, "%s is %s" % (unit, after))
+        if not reached:
+            raise RuntimeError("%s is %s after %s" % (unit, after, action))
+
+        # ---- did the console survive it? ----
+        if unit in _SVC_HEALTH_CRITICAL:
+            ok = health_ok()
+            st.step("app health check", ok,
+                    "healthz 200" if ok else
+                    "healthz did not answer 200 within %ds" % HEALTH_TIMEOUT)
+            if not ok and unit == "postgresql.service":
+                # A recycled cluster leaves the app holding dead pooled
+                # connections. Bouncing the workers is the actual fix and it is
+                # cheap; leaving it would hand the operator a 500 they did not
+                # ask for and no obvious cause.
+                restart_unit(SERVICE)
+                ok = health_ok()
+                st.step("recycle app connection pool", ok,
+                        "restarted %s after the database bounce" % SERVICE)
+            if not ok:
+                raise RuntimeError("the app is not answering after %s %s"
+                                   % (action, unit))
+            if unit == "nginx.service":
+                fok = front_ok()
+                st.step("TLS front check", fok,
+                        "https://127.0.0.1/healthz 200" if fok else
+                        "the front did not answer on :443")
+                if not fok:
+                    raise RuntimeError("nginx is running but not serving")
+
+        st.finish("success", unit=unit, action=action,
+                  state_before=before, state_after=after)
+        return
+
+    except Exception as e:  # noqa: BLE001
+        st.step("ERROR", False, str(e))
+        st.finish("failed", unit=unit, action=action, state_before=before,
+                  state_after=_svc_active(unit), error=str(e))
+
+
+# Settings -> Node TLS -> Postgres SSL. The web process runs as the service
+# account and cannot become the postgres OS user, so the ALTER SYSTEM is done
+# here, as root, after re-validating the two values against the SAME rules as
+# app/services/pg_ssl.py (this module must not import the app package).
+_PG_PROTOCOLS = ("TLSv1.2", "TLSv1.3")
+_PG_CIPHER_RE = re.compile(r"^[A-Za-z0-9:+!_,@=\- ]{1,255}$")
+
+
+def pg_ssl_apply(req_path):
+    """Apply ssl_min_protocol_version / ssl_ciphers on the local Postgres."""
+    req = _read_request(req_path)
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)  # dequeue so the .path unit stops re-firing
+    except OSError:
+        pass
+    st.d["kind"] = "pg_ssl"
+    proto = (req.get("min_protocol") or "").strip()
+    ciphers = (req.get("ciphers") or "").strip()
+    if proto not in _PG_PROTOCOLS or (ciphers and not _PG_CIPHER_RE.match(ciphers)):
+        st.step("validate", False, "refused: protocol %r / cipher string" % proto)
+        st.finish("failed", error="invalid Postgres SSL policy")
+        return
+    st.step("validate", True, "min %s, ciphers %s (requested by %s)"
+            % (proto, ciphers or "(unchanged)", req.get("requested_by") or "?"))
+    stmts = ["ALTER SYSTEM SET ssl_min_protocol_version = '%s';" % proto]
+    if ciphers:
+        stmts.append("ALTER SYSTEM SET ssl_ciphers = '%s';" % ciphers)
+    stmts.append("SELECT pg_reload_conf();")
+    fd, path = tempfile.mkstemp(suffix=".sql", dir="/tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write("\n".join(stmts) + "\n")
+        os.chmod(path, 0o644)
+        r = subprocess.run(["runuser", "-u", "postgres", "--", "psql",
+                            "-v", "ON_ERROR_STOP=1", "-f", path],
+                           capture_output=True, text=True, timeout=60)
+        ok = r.returncode == 0
+        st.step("ALTER SYSTEM + reload", ok, (r.stderr or r.stdout or "").strip()[-400:])
+        if ok:
+            st.finish("success", min_protocol=proto, ciphers=ciphers)
+        else:
+            st.finish("failed", error="psql exited %s" % r.returncode)
+    except Exception as e:  # noqa: BLE001
+        st.step("ERROR", False, str(e))
+        st.finish("failed", error=str(e))
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _reject(rp, req, reason):
+    """Dequeue a request the runner will not act on, and say why: in the
+    journal always, in its status file when its id is one we can write."""
+    _log("rejected request %s: %s" % (os.path.basename(rp), reason))
+    try:
+        os.remove(rp)
+    except OSError:
+        pass
+    uid = req.get("id") if isinstance(req, dict) else None
+    if isinstance(uid, str) and UID_RE.fullmatch(uid):
+        try:
+            st = Status(uid, req)
+            st.step("validate request", False, reason)
+            st.finish("failed", error=reason)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# Every kind this runner executes. A request without a kind is a code update
+# (app/services/self_update.request_update() writes none); any OTHER kind is
+# refused -- it used to fall through to the git reset + root scripts path.
+# ---------------------------------------------------------------------------
+# curated OS packages (kind: "syspkg") -- Settings > General > System packages
+# ---------------------------------------------------------------------------
+# [SATOM-RUNNER-NO-APP-IMPORT] A COPY of app/services/system_packages.PACKAGES
+# (keys + binary), asserted equal by tests/test_system_packages.py. The web
+# side only ever sends a KEY; the distro package name comes from here, so a
+# forged request cannot name a package, a flag or a version.
+_SYSPKG = {
+    "bubblewrap": {"binary": "bwrap",
+                   "names": {"apt": "bubblewrap", "dnf": "bubblewrap",
+                             "yum": "bubblewrap", "zypper": "bubblewrap",
+                             "pacman": "bubblewrap"}},
+}
+_SYSPKG_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]{0,63}$")
+
+
+def _pkg_manager():
+    import shutil
+    for m in ("apt-get", "dnf", "yum", "zypper", "pacman"):
+        if shutil.which(m):
+            return "apt" if m == "apt-get" else m
+    return ""
+
+
+def _pkg_install_cmd(mgr, name):
+    return {
+        "apt": ["apt-get", "install", "-y", "-q", "--no-install-recommends", name],
+        "dnf": ["dnf", "install", "-y", "-q", name],
+        "yum": ["yum", "install", "-y", "-q", name],
+        "zypper": ["zypper", "--non-interactive", "--quiet", "install", name],
+        "pacman": ["pacman", "-S", "--noconfirm", "--needed", name],
+    }[mgr]
+
+
+# [SATOM-RUNNER-NO-APP-IMPORT] A COPY of app/services/sandbox.root_dirs_argv,
+# asserted equal by tests/test_sandbox_root_dirs.py. Mirrors the host's /bin,
+# /sbin, /lib, /lib64: symlinks on a usr-merged host, real directories on
+# SLES/Leap 15, where /lib64 holds the ELF loader (SA-0002).
+_ROOT_DIRS = ("bin", "sbin", "lib", "lib64")
+
+
+def _root_dirs_argv(root="/"):
+    out = []
+    for name in _ROOT_DIRS:
+        host = os.path.join(root, name)
+        if os.path.islink(host):
+            out += ["--symlink", os.readlink(host), "/" + name]
+        elif os.path.isdir(host):
+            out += ["--ro-bind", host, "/" + name]
+    return out
+
+
+def _bwrap_works_for_app_user():
+    """bubblewrap installed is not bubblewrap usable: the app user must be
+    allowed to create namespaces. Same flags the product's jail uses."""
+    p = run(["bwrap", "--unshare-all", "--die-with-parent",
+             "--ro-bind", "/usr", "/usr"] + _root_dirs_argv()
+            + ["--proc", "/proc", "--dev", "/dev", "/usr/bin/true"],
+            timeout=30, user=APP_USER, cwd="/")
+    return p.returncode == 0, (p.stderr or p.stdout or "").strip()
+
+
+def syspkg_install(req_path):
+    """Install ONE curated OS package on this node (root, table-bounded)."""
+    import shutil
+    req = _read_request(req_path)
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)  # dequeue so the .path unit stops re-firing
+    except OSError:
+        pass
+    key = req.get("package")
+    key = key.strip() if isinstance(key, str) else ""
+    action = req.get("action") or "install"
+    st.d["kind"] = "syspkg"
+    st.d["package"] = key
+    st.d["action"] = action if action in ("install", "upgrade", "check") else "install"
+    st.flush()
+
+    # Upgrade and check have their own table (every Installed software
+    # component but the kernel); install keeps the short curated one.
+    if action == "check":
+        _syspkg_check(st, req)
+        return
+    if action == "upgrade":
+        _syspkg_upgrade(st, key)
+        return
+
+    if not _SYSPKG_KEY_RE.match(key) or key not in _SYSPKG:
+        st.step("validate package", False, "%r is not a curated system package" % key)
+        st.finish("failed", error="package not allowed")
+        return
+    if (req.get("action") or "install") != "install":
+        st.step("validate action", False, "only 'install' is supported")
+        st.finish("failed", error="action not allowed")
+        return
+    spec = _SYSPKG[key]
+    mgr = _pkg_manager()
+    if not mgr:
+        st.step("package manager", False, "no apt-get/dnf/yum/zypper/pacman found")
+        st.finish("failed", error="unsupported distribution")
+        return
+    st.step("validate", True, "%s via %s" % (key, mgr))
+
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    if shutil.which(spec["binary"]):
+        st.step("already installed", True, shutil.which(spec["binary"]))
+    else:
+        if mgr == "apt":
+            st.begin("apt-get update")
+            u = run(["apt-get", "update", "-q"], timeout=600, env=env)
+            # A stale mirror list is a warning: the install below may still
+            # succeed from the cached index, and its own result is what counts.
+            st.step("apt-get update", True, (u.stderr or u.stdout)[-300:],
+                    warn=u.returncode != 0)
+        cmd = _pkg_install_cmd(mgr, spec["names"][mgr])
+        st.begin(" ".join(cmd))
+        p = run(cmd, timeout=900, env=env)
+        st.step(" ".join(cmd), p.returncode == 0, (p.stderr or p.stdout)[-500:])
+        if p.returncode != 0 or not shutil.which(spec["binary"]):
+            st.finish("failed", error="install failed" if p.returncode != 0
+                      else "%s still not on PATH" % spec["binary"])
+            return
+        st.step("binary present", True, shutil.which(spec["binary"]))
+
+    if key == "bubblewrap":
+        ok, detail = _bwrap_works_for_app_user()
+        st.step("sandbox works for %s" % APP_USER, ok,
+                detail or "namespaces created and torn down")
+        if not ok:
+            st.finish("failed", error="installed, but %s cannot create namespaces: %s"
+                      % (APP_USER, detail[:200]))
+            return
+    st.finish("success", package=key)
+
+
+# ---------------------------------------------------------------------------
+# OS package UPGRADE and update CHECK (kind "syspkg", action "upgrade"|"check")
+# -- Settings > General > Installed software
+# ---------------------------------------------------------------------------
+# [SATOM-RUNNER-NO-APP-IMPORT] Keys are a COPY of
+# app/services/system_packages.UPGRADABLE (asserted equal by
+# tests/test_system_package_upgrade.py, and equal to every Installed software
+# component except the kernel, which belongs to the host). The web side sends
+# a KEY; the package NAMES are globs per package manager, resolved here
+# against what is INSTALLED, so an upgrade can never install something new.
+# "after" = what must happen once the packages changed:
+#   app     -- the interpreter or the TLS library the app maps: restart the
+#              SATOM units and prove the new process serves (same check as a
+#              code update)
+#   nginx   -- config test, restart (a reload keeps the old libssl), health
+#   health  -- the package's own postinst restarted a service SATOM needs
+#   bwrap   -- the sandbox must still work for the app user
+#   release -- not a distro package: the version the SIGNED release pins
+_SYSPKG_UPGRADE = {
+    "python": {"after": "app", "names": {
+        "apt": ["python3", "python3.[0-9]*", "libpython3.[0-9]*"],
+        "dnf": ["python3.11", "python3.11-libs", "python3"],
+        "yum": ["python3.11", "python3.11-libs", "python3"],
+        "zypper": ["python311", "python311-base", "libpython3_11*"]}},
+    "postgresql": {"after": "health", "names": {
+        "apt": ["postgresql-[0-9]*"],
+        "dnf": ["postgresql-server", "postgresql*-server"],
+        "yum": ["postgresql-server", "postgresql*-server"],
+        "zypper": ["postgresql*-server"]}},
+    "postgresql-client": {"after": None, "names": {
+        "apt": ["postgresql-client-[0-9]*"],
+        "dnf": ["postgresql", "postgresql[0-9][0-9]"],
+        "yum": ["postgresql", "postgresql[0-9][0-9]"],
+        "zypper": ["postgresql", "postgresql[0-9][0-9]"]}},
+    "nginx": {"after": "nginx", "names": {
+        "apt": ["nginx", "nginx-common", "libnginx-mod-*"],
+        "dnf": ["nginx", "nginx-core", "nginx-filesystem"],
+        "yum": ["nginx", "nginx-filesystem"],
+        "zypper": ["nginx"]}},
+    "victoria-metrics": {"after": "release", "names": {}},
+    "redis": {"after": "health", "names": {
+        "apt": ["redis-server", "redis-tools"],
+        "dnf": ["redis", "redis7"], "yum": ["redis"],
+        "zypper": ["redis", "redis7"]}},
+    "openssl": {"after": None, "names": {
+        "apt": ["openssl"], "dnf": ["openssl"], "yum": ["openssl"],
+        "zypper": ["openssl", "openssl-3"]}},
+    "openssl-python": {"after": "app", "names": {
+        "apt": ["libssl3*"], "dnf": ["openssl-libs"], "yum": ["openssl-libs"],
+        "zypper": ["libopenssl3"]}},
+    "ca-certificates": {"after": None, "names": {
+        "apt": ["ca-certificates"], "dnf": ["ca-certificates"],
+        "yum": ["ca-certificates"],
+        "zypper": ["ca-certificates", "ca-certificates-mozilla"]}},
+    "openssh": {"after": None, "names": {
+        "apt": ["openssh-client", "openssh-server", "openssh-sftp-server"],
+        "dnf": ["openssh", "openssh-clients", "openssh-server"],
+        "yum": ["openssh", "openssh-clients", "openssh-server"],
+        "zypper": ["openssh", "openssh-clients", "openssh-server", "openssh-common"]}},
+    "git": {"after": None, "names": {
+        "apt": ["git", "git-man"], "dnf": ["git", "git-core"],
+        "yum": ["git", "git-core"], "zypper": ["git", "git-core"]}},
+    "rsync": {"after": None, "names": {
+        "apt": ["rsync"], "dnf": ["rsync"], "yum": ["rsync"], "zypper": ["rsync"]}},
+    "curl": {"after": None, "names": {
+        "apt": ["curl", "libcurl4*"], "dnf": ["curl", "curl-minimal", "libcurl", "libcurl-minimal"],
+        "yum": ["curl", "libcurl"], "zypper": ["curl", "libcurl4"]}},
+    "sudo": {"after": None, "names": {
+        "apt": ["sudo"], "dnf": ["sudo"], "yum": ["sudo"], "zypper": ["sudo"]}},
+    "bubblewrap": {"after": "bwrap", "names": {
+        "apt": ["bubblewrap"], "dnf": ["bubblewrap"], "yum": ["bubblewrap"],
+        "zypper": ["bubblewrap"]}},
+    "lua": {"after": None, "names": {
+        "apt": ["lua5.4", "liblua5.4-*", "lua5.3"], "dnf": ["lua", "lua-libs"],
+        "yum": ["lua", "lua-libs"], "zypper": ["lua54", "liblua5_4*"]}},
+    "systemd": {"after": None, "names": {
+        "apt": ["systemd", "systemd-sysv", "libsystemd0", "libudev1", "udev"],
+        "dnf": ["systemd", "systemd-libs", "systemd-pam", "systemd-udev"],
+        "yum": ["systemd", "systemd-libs"],
+        "zypper": ["systemd", "libsystemd0", "libudev1", "udev"]}},
+}
+_PKG_FAMILY = {"apt": "deb", "dnf": "rpm", "yum": "rpm", "zypper": "rpm"}
+
+
+def _installed_matching(mgr, globs):
+    """{name: version} of the INSTALLED packages matching any glob."""
+    import fnmatch
+    if not globs:
+        return {}
+    if _PKG_FAMILY.get(mgr) == "deb":
+        p = run(["dpkg-query", "-W", "-f=${db:Status-Abbrev}|${Package}|${Version}\n"]
+                + list(globs), timeout=60)
+        rows = [ln.split("|") for ln in (p.stdout or "").splitlines()]
+        found = {r[1]: r[2] for r in rows if len(r) == 3 and r[0].startswith("ii")}
+    else:
+        p = run(["rpm", "-qa", "--qf", "%{NAME}|%{VERSION}-%{RELEASE}\n"] + list(globs),
+                timeout=60)
+        rows = [ln.split("|") for ln in (p.stdout or "").splitlines()]
+        found = {r[0]: r[1] for r in rows if len(r) == 2}
+    # dpkg/rpm already matched; re-check so a tool quirk cannot widen the set
+    return {n: v for n, v in found.items() if n and v
+            and any(fnmatch.fnmatchcase(n, g) for g in globs)}
+
+
+def _pkg_refresh_cmd(mgr):
+    return {"apt": ["apt-get", "update", "-q"],
+            "dnf": ["dnf", "makecache", "-q"],
+            "yum": ["yum", "makecache", "-q"],
+            "zypper": ["zypper", "--non-interactive", "--quiet", "refresh"]}[mgr]
+
+
+def _pkg_upgrade_cmd(mgr, names):
+    """Upgrade ONLY installed packages, never install a new one, keep the
+    local config files (a node's nginx.conf is SATOM's, not the vendor's)."""
+    names = sorted(names)
+    return {
+        "apt": ["apt-get", "install", "-y", "-q", "--only-upgrade",
+                "-o", "Dpkg::Options::=--force-confdef",
+                "-o", "Dpkg::Options::=--force-confold"] + names,
+        "dnf": ["dnf", "upgrade", "-y", "-q"] + names,
+        "yum": ["yum", "update", "-y", "-q"] + names,
+        "zypper": ["zypper", "--non-interactive", "--quiet", "update"] + names,
+    }[mgr]
+
+
+def _parse_apt_policy(out):
+    """{name: (installed, candidate)} from ``apt-cache policy n1 n2 ...``."""
+    res, cur, inst = {}, None, None
+    for line in (out or "").splitlines():
+        if line and not line.startswith(" ") and line.rstrip().endswith(":"):
+            cur, inst = line.rstrip()[:-1], None
+            continue
+        s = line.strip()
+        if cur and s.startswith("Installed:"):
+            inst = s.split(":", 1)[1].strip()
+        elif cur and s.startswith("Candidate:"):
+            res[cur] = (inst or "", s.split(":", 1)[1].strip())
+    return res
+
+
+def _parse_dnf_upgrades(out, names):
+    """{name: candidate} from ``dnf -q list --upgrades`` (name.arch ver repo)."""
+    res = {}
+    for line in (out or "").splitlines():
+        parts = line.split()
+        if len(parts) < 2 or "." not in parts[0]:
+            continue
+        name = parts[0].rsplit(".", 1)[0]
+        if name in names:
+            res[name] = parts[1]
+    return res
+
+
+def _parse_zypper_updates(xml_text, names):
+    """{name: candidate} from ``zypper --xmlout list-updates``."""
+    import xml.etree.ElementTree as ET
+    res = {}
+    try:
+        root = ET.fromstring(xml_text or "")
+    except ET.ParseError:
+        return res
+    for u in root.iter("update"):
+        n = u.get("name")
+        if n in names and u.get("kind", "package") == "package":
+            res[n] = u.get("edition") or ""
+    return res
+
+
+def _candidates(mgr, installed):
+    """{name: candidate} for the installed names that have a newer version."""
+    names = sorted(installed)
+    if not names:
+        return {}
+    if mgr == "apt":
+        p = run(["apt-cache", "policy"] + names, timeout=120)
+        pol = _parse_apt_policy(p.stdout)
+        return {n: c for n, (i, c) in pol.items()
+                if n in installed and c and c != "(none)" and c != i}
+    if mgr in ("dnf", "yum"):
+        p = run((["dnf", "-q", "list", "--upgrades"] if mgr == "dnf"
+                 else ["yum", "-q", "list", "updates"]) + names, timeout=300)
+        return _parse_dnf_upgrades(p.stdout, set(names))
+    if mgr == "zypper":
+        p = run(["zypper", "--non-interactive", "--xmlout", "list-updates"], timeout=300)
+        return _parse_zypper_updates(p.stdout, set(names))
+    return {}
+
+
+def _vm_pin():
+    """VM_VERSION of the release on disk ('' when unknown)."""
+    try:
+        raw = _load_update_package().read_small_nofollow(APP / "deploy" / "metrics-store.env")
+        for line in (raw or b"").decode("utf-8", "replace").splitlines():
+            m = re.match(r'^\s*VM_VERSION="?([0-9][0-9A-Za-z.+-]*)"?\s*$', line)
+            if m:
+                return m.group(1)
+    except OSError:
+        pass
+    return ""
+
+
+def _vm_installed():
+    p = run(["/usr/local/bin/victoria-metrics", "-version"], timeout=20) \
+        if os.path.exists("/usr/local/bin/victoria-metrics") else None
+    m = re.search(r"v(\d+(?:\.\d+)+)", (p.stdout or p.stderr) if p else "")
+    return m.group(1) if m else ""
+
+
+def _syspkg_check(st, req=None):
+    """Refresh the package index (root) and record, per component, which
+    installed packages have a newer version. Changes no package."""
+    mgr = _pkg_manager()
+    st.d["available"] = {}
+    st.d["package_manager"] = mgr or "none"
+    if mgr == "pacman":
+        st.step("package manager", False, "Arch Linux does not support upgrading "
+                "single packages (partial upgrades); run 'pacman -Syu' on the host")
+        st.finish("failed", error="partial upgrades are not supported on Arch Linux")
+        return
+    if mgr not in _PKG_FAMILY:
+        st.step("package manager", False, "no apt-get/dnf/yum/zypper found")
+        st.finish("failed", error="unsupported distribution")
+        return
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    cmd = _pkg_refresh_cmd(mgr)
+    st.begin(" ".join(cmd))
+    u = run(cmd, timeout=600, env=env)
+    # Offline / mirror down: the check is still answered from the cached
+    # index, and SAYS so -- it never reports "up to date" as if it had looked.
+    st.d["index_refreshed"] = u.returncode == 0
+    st.step(" ".join(cmd), True, ((u.stderr or u.stdout) or "")[-300:],
+            warn=u.returncode != 0)
+    st.begin("compare installed with available")
+    avail = {}
+    for key, spec in _SYSPKG_UPGRADE.items():
+        if spec["after"] == "release":
+            pin, have = _vm_pin(), _vm_installed()
+            avail[key] = {"packages": {"victoria-metrics": {"installed": have,
+                                                            "candidate": pin}},
+                          "upgradable": bool(pin and have and pin != have),
+                          "source": "release pin"}
+            continue
+        installed = _installed_matching(mgr, spec["names"].get(mgr) or [])
+        newer = _candidates(mgr, installed)
+        avail[key] = {"packages": {n: {"installed": installed[n],
+                                       "candidate": newer.get(n, "")}
+                                   for n in sorted(installed)},
+                      "upgradable": bool(newer)}
+    st.d["available"] = avail
+    # Python: every package of the venv, against the configured index (as
+    # the app user, like every pip call). A failure says so; it is never an
+    # empty "nothing to upgrade".
+    st.begin("pip list --outdated")
+    try:
+        if (req or {}).get("pip_index_problem"):
+            raise ValueError("the package index in Update sources cannot be used: %s"
+                             % str(req["pip_index_problem"])[:200])
+        pip_env, where, secret = _pip_index_env(req or {})
+        pp = run([str(_venv_dir() / "bin" / "pip"), "list", "--outdated",
+                  "--format", "json", "--disable-pip-version-check"],
+                 timeout=600, user=APP_USER, env=pip_env)
+        rows = json.loads(pp.stdout or "[]") if pp.returncode == 0 else None
+    except Exception as exc:  # noqa: BLE001
+        rows, where, secret, pp = None, "?", "", None
+        st.d["python_error"] = str(exc)[:200]
+    if rows is None:
+        err = st.d.get("python_error") or _redact(
+            ((pp.stderr or pp.stdout) if pp else "") or "", secret)[-200:]
+        st.d["python_error"] = err
+        st.step("pip list --outdated", True, "could not ask the index (%s): %s"
+                % (where, err), warn=True)
+    else:
+        st.d["python_available"] = {r["name"]: r.get("latest_version", "")
+                                    for r in rows if isinstance(r, dict) and r.get("name")}
+        st.step("pip list --outdated", True, "%d Python package(s) with a newer "
+                "version on %s" % (len(st.d["python_available"]), where))
+    n = sum(1 for v in avail.values() if v["upgradable"])
+    st.step("compare installed with available", True,
+            "%d component(s) with an update%s" % (
+                n, "" if st.d["index_refreshed"]
+                else " (package index NOT refreshed: answered from the cached index)"))
+    st.finish("success", checked_at=now())
+
+
+def _after_upgrade(st, after):
+    """Restart / verify what the changed packages require. Raises on failure."""
+    if after == "app":
+        is_standby = pg_in_recovery()
+        restart_and_validate(st, is_standby, _svc_active(SERVICE) == "active",
+                             "the upgraded runtime")
+    elif after == "nginx":
+        st.begin("nginx -t")
+        t = run(["nginx", "-t"], timeout=60)
+        st.step("nginx -t", t.returncode == 0, (t.stderr or t.stdout)[-300:])
+        if t.returncode != 0:
+            raise RuntimeError("nginx configuration test failed after the upgrade")
+        if _svc_active("nginx.service") == "active":
+            st.begin("restart nginx")
+            subprocess.run(["systemctl", "restart", "nginx.service"], timeout=120)
+            st.step("restart nginx", _svc_active("nginx.service") == "active",
+                    "restarted (a reload keeps the old binary and libraries)")
+        if _svc_active(SERVICE) == "active":
+            st.begin("health check")
+            if not health_ok():
+                raise RuntimeError("health check did not return 200 within %ds"
+                                   % HEALTH_TIMEOUT)
+            st.step("health check", True, "200 OK through nginx")
+    elif after == "health":
+        if _svc_active(SERVICE) == "active":
+            st.begin("health check")
+            if not health_ok():
+                raise RuntimeError("health check did not return 200 within %ds"
+                                   % HEALTH_TIMEOUT)
+            st.step("health check", True, "200 OK after the service restarted")
+    elif after == "bwrap":
+        ok, detail = _bwrap_works_for_app_user()
+        st.step("sandbox works for %s" % APP_USER, ok,
+                detail or "namespaces created and torn down")
+        if not ok:
+            raise RuntimeError("upgraded, but %s cannot create namespaces: %s"
+                               % (APP_USER, detail[:200]))
+
+
+def _stale_library_units():
+    """Units whose processes still map a library the upgrade replaced."""
+    units = set()
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open("/proc/%s/maps" % pid, encoding="utf-8", errors="replace") as fh:
+                if not any(".so" in ln and ln.rstrip().endswith("(deleted)") for ln in fh):
+                    continue
+            with open("/proc/%s/cgroup" % pid, encoding="utf-8", errors="replace") as fh:
+                for ln in fh:
+                    m = re.search(r"/([^/]+\.service)\s*$", ln)
+                    if m:
+                        units.add(m.group(1))
+        except OSError:
+            continue
+    return sorted(units)
+
+
+def _syspkg_release_component(st, key):
+    """VictoriaMetrics: (re)install the version the newest SIGNED release
+    pins, with the same staging a code update uses -- never a download of
+    'the latest' from the internet, which would bypass the pinned sha256."""
+    trust = _release_trust()
+    stage_root = None
+    try:
+        if trust is None:
+            deploy_dir, env = APP / "deploy", None
+            st.step("release signature enforcement", True,
+                    "OFF (no root trust anchor at %s)" % TRUST_ANCHOR)
+        else:
+            target = git("rev-parse", "HEAD").stdout.strip()
+            rel = _resolve_release(target, trust, st)
+            if rel["mode"] == "held":
+                st.finish("failed", error="the root-side refresh is held (deploy/ "
+                          "has unsigned changes): sign the release first")
+                return
+            stage_root = _staged_deploy_dir(rel["signed"])
+            deploy_dir = stage_root / "deploy"
+            env = dict(os.environ, FM_APP_DIR=str(APP), SATOM_DEPLOY_SRC=str(deploy_dir))
+        before = _vm_installed()
+        st.begin("install-metrics-store.sh")
+        p = subprocess.run(["bash", str(deploy_dir / "install-metrics-store.sh")],
+                           capture_output=True, text=True, timeout=600, env=env)
+        st.step("install-metrics-store.sh", p.returncode == 0,
+                (p.stdout or p.stderr or "").strip()[-400:])
+        after = _vm_installed()
+        st.step("versions", True, "victoria-metrics %s → %s" % (before or "?", after or "?"))
+        if p.returncode != 0:
+            st.finish("failed", error="install-metrics-store.sh exited %s" % p.returncode)
+            return
+        st.finish("success", package=key)
+    finally:
+        if stage_root is not None:
+            import shutil as _sh
+            _sh.rmtree(stage_root, ignore_errors=True)
+
+
+def _syspkg_upgrade(st, key):
+    """Upgrade the INSTALLED packages of ONE component to the newest version
+    the node's repositories offer, with the node's own package manager."""
+    if not _SYSPKG_KEY_RE.match(key) or key not in _SYSPKG_UPGRADE:
+        st.step("validate package", False,
+                "%r is not an upgradable component (the kernel belongs to the host)" % key)
+        st.finish("failed", error="package not allowed")
+        return
+    spec = _SYSPKG_UPGRADE[key]
+    if spec["after"] == "release":
+        _syspkg_release_component(st, key)
+        return
+    mgr = _pkg_manager()
+    if mgr == "pacman":
+        st.step("package manager", False, "Arch Linux does not support upgrading "
+                "single packages (partial upgrades); run 'pacman -Syu' on the host")
+        st.finish("failed", error="partial upgrades are not supported on Arch Linux")
+        return
+    if mgr not in _PKG_FAMILY:
+        st.step("package manager", False, "no apt-get/dnf/yum/zypper found")
+        st.finish("failed", error="unsupported distribution")
+        return
+    before = _installed_matching(mgr, spec["names"].get(mgr) or [])
+    if not before:
+        st.step("installed packages", False, "%s is not installed on this node" % key)
+        st.finish("failed", error="not installed on this node")
+        return
+    st.step("validate", True, "%s via %s: %s" % (key, mgr, ", ".join(sorted(before))))
+
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    cmd = _pkg_refresh_cmd(mgr)
+    st.begin(" ".join(cmd))
+    u = run(cmd, timeout=600, env=env)
+    st.step(" ".join(cmd), True, ((u.stderr or u.stdout) or "")[-300:],
+            warn=u.returncode != 0)
+
+    # [SATOM-ROLLBACK-FIRST] What the transaction will replace, and a copy of
+    # every one of those packages AT ITS CURRENT VERSION, before anything
+    # changes. No copy, no upgrade: a repository that has moved on (Debian
+    # security keeps only the newest) must not turn a failed upgrade into a
+    # node nobody can put back.
+    st.begin("simulate the upgrade")
+    try:
+        changes, added = _pkg_simulate(mgr, before, env)
+    except RollbackUnavailable as exc:
+        st.step("simulate the upgrade", False, str(exc))
+        st.finish("failed", error="cannot tell what the upgrade would change; "
+                  "nothing was changed")
+        return
+    if not changes:
+        st.step("simulate the upgrade", True,
+                "already the newest version the repositories offer")
+        st.d["changed"] = []
+        st.finish("success", package=key)
+        return
+    st.step("simulate the upgrade", True, "; ".join(
+        "%s %s → %s" % (n, o, nw) for n, (o, nw) in sorted(changes.items()))
+        + ("; new: %s" % ", ".join(added) if added else ""))
+    point = None
+    try:
+        point = _rb_create(st.d["id"], "os", "%s (%s)" % (key, mgr),
+                           st.d.get("requested_by") or "?",
+                           {"component": key, "manager": mgr,
+                            "packages": {n: {"from": o, "to": nw}
+                                         for n, (o, nw) in changes.items()},
+                            "added": added})
+        st.begin("save rollback copy")
+        files = _rb_save_os(point, mgr, {n: o for n, (o, _nw) in changes.items()}, env)
+        _rb_mark(point, "ready", files=files)
+        st.step("save rollback copy", True, "%d package(s) at their current version in %s"
+                % (len(files), point))
+    except Exception as exc:  # noqa: BLE001 -- fail closed: nothing changed yet
+        if point is not None:
+            _rb_discard(point)
+        st.step("save rollback copy", False, str(exc)[:400])
+        st.finish("failed", error="no rollback copy could be saved, so nothing was "
+                  "changed: %s" % str(exc)[:200])
+        return
+    st.d["rollback_point"] = point.name
+
+    cmd = _pkg_upgrade_cmd(mgr, before)
+    st.begin(" ".join(cmd))
+    p = run(cmd, timeout=1500, env=env)
+    st.step(" ".join(cmd), p.returncode == 0, ((p.stderr or p.stdout) or "")[-500:])
+    after = _installed_matching(mgr, spec["names"].get(mgr) or [])
+    changed = ["%s %s → %s" % (n, before[n], after.get(n, "removed?"))
+               for n in sorted(before) if after.get(n) != before[n]]
+    st.d["changed"] = changed
+    st.step("versions", True, "; ".join(changed) if changed
+            else "already the newest version the repositories offer")
+    failure = None
+    if p.returncode != 0:
+        failure = "%s exited %s" % (cmd[0], p.returncode)
+    elif changed:
+        try:
+            _after_upgrade(st, spec["after"])
+        except Exception as exc:  # noqa: BLE001
+            failure = str(exc)[:300]
+    if failure:
+        # Automatic way back: the copy saved above, the same restore the
+        # console and 'satom execute rollback apply' run.
+        ok, detail = _rb_restore(point, st)
+        st.finish("failed", error=failure, rolled_back=True, recovered=ok,
+                  rollback_detail=detail)
+        return
+    _rb_mark(point, "applied")
+    if changed:
+        stale = _stale_library_units()
+        if stale:
+            st.step("services on replaced libraries", True,
+                    "still running the old copy until restarted: %s" % ", ".join(stale),
+                    warn=True)
+    _rb_prune()
+    st.finish("success", package=key)
+
+
+# ---------------------------------------------------------------------------
+# Rollback points -- Installed software, Libraries, 'satom execute rollback'
+# ---------------------------------------------------------------------------
+# One directory per change under RB_DIR (root, 0700, node-local: never under
+# data/, which the standby pulls from the primary). A point holds what the
+# change REPLACED, saved before it ran:
+#   kind "os"     -- pkgs/: the exact packages at their previous version
+#   kind "python" -- venv/: a full copy of the virtual environment, plus the
+#                    requirements.txt of that moment
+# Restoring needs neither the network nor the web application nor the venv:
+# the operator CLI loads THIS file (the root-owned, signed copy) with the
+# system Python and calls rollback_apply(). The web reads only the index
+# below, which carries no path a request could use.
+RB_DIR = Path(os.environ.get("SATOM_ROLLBACK_DIR", "/var/lib/satom-rollback"))
+RB_INDEX = "_rollback-points.idx"
+_RB_KEEP = {"os": 10, "python": 3}
+_ZYPP_CACHE = "/var/cache/zypp/packages"
+
+
+class RollbackUnavailable(RuntimeError):
+    """A way back could not be secured; the change must not run."""
+
+
+def _rb_root():
+    RB_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(RB_DIR, 0o700)
+    return RB_DIR
+
+
+def _rb_point_dir(point_id):
+    if not isinstance(point_id, str) or not UID_RE.fullmatch(point_id):
+        raise ValueError("refusing rollback point id %r" % (point_id,))
+    d = _rb_root() / point_id
+    if not (d / "manifest.json").is_file() or d.is_symlink():
+        raise ValueError("no rollback point %s on this node" % point_id)
+    return d
+
+
+def _rb_manifest(d):
+    return json.loads((d / "manifest.json").read_text())
+
+
+def _rb_save_manifest(d, man):
+    tmp = d / (".manifest.%s.tmp" % secrets.token_hex(4))
+    tmp.write_text(json.dumps(man, indent=2))
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, d / "manifest.json")
+    _rb_publish()
+
+
+def _rb_create(uid, kind, label, by, extra):
+    if not UID_RE.fullmatch(uid or ""):
+        raise ValueError("refusing rollback point id %r" % (uid,))
+    d = _rb_root() / uid
+    d.mkdir(mode=0o700)
+    man = dict(extra, id=uid, kind=kind, label=label, by=by,
+               node=socket.gethostname(), created_at=now(), state="preparing")
+    _rb_save_manifest(d, man)
+    return d
+
+
+def _rb_mark(d, state, **extra):
+    man = _rb_manifest(d)
+    man.update(extra, state=state, updated_at=now())
+    _rb_save_manifest(d, man)
+
+
+def _rb_discard(d):
+    import shutil as _sh
+    _sh.rmtree(d, ignore_errors=True)
+    _rb_publish()
+
+
+def rollback_points():
+    """Every point on this node, newest first (manifests, no file paths)."""
+    out = []
+    try:
+        dirs = sorted((p for p in RB_DIR.iterdir() if p.is_dir() and not p.is_symlink()),
+                      reverse=True)
+    except OSError:
+        return out
+    for d in dirs:
+        try:
+            man = _rb_manifest(d)
+        except (OSError, ValueError):
+            continue
+        man.pop("files", None)
+        out.append(man)
+    return out
+
+
+def _rb_publish():
+    """The index the web reads (update-status/ is node-local, never synced)."""
+    try:
+        _write_nofollow(STA, RB_INDEX, json.dumps(
+            {"updated_at": now(), "points": rollback_points()}, indent=2))
+    except Exception:  # noqa: BLE001 -- the index is a view; the points are the truth
+        pass
+
+
+def _rb_prune():
+    """Keep the newest N points per kind; a point being prepared is kept."""
+    import shutil as _sh
+    seen = {}
+    for man in rollback_points():
+        k = man.get("kind")
+        if man.get("state") == "preparing":
+            continue
+        seen[k] = seen.get(k, 0) + 1
+        if seen[k] > _RB_KEEP.get(k, 5):
+            _sh.rmtree(RB_DIR / man["id"], ignore_errors=True)
+    _rb_publish()
+
+
+# ---- what an OS upgrade would change ---------------------------------------
+_APT_INST_OLD = re.compile(r"^Inst (\S+) \[([^\]]+)\] \((\S+) ")
+_APT_INST_NEW = re.compile(r"^Inst (\S+) \((\S+) ")
+_RPM_ARCHES = {"x86_64", "noarch", "aarch64", "i686", "ppc64le", "s390x"}
+
+
+def _parse_apt_simulation(out):
+    """({name: (old, new)}, [newly installed]) from ``apt-get -s``."""
+    changes, added = {}, []
+    for line in (out or "").splitlines():
+        m = _APT_INST_OLD.match(line)
+        if m:
+            changes[m.group(1)] = (m.group(2), m.group(3))
+            continue
+        m = _APT_INST_NEW.match(line)
+        if m:
+            added.append(m.group(1))
+    return changes, added
+
+
+def _parse_dnf_simulation(out):
+    """{name: new} for 'Upgrading' rows and [installed] for new packages,
+    from ``dnf upgrade --assumeno``'s transaction table."""
+    upgrading, added, section = {}, [], ""
+    for line in (out or "").splitlines():
+        s = line.strip()
+        if s.endswith(":") and not line.startswith("  "):
+            section = s[:-1].lower()
+            continue
+        parts = s.split()
+        if len(parts) >= 4 and parts[1] in _RPM_ARCHES:
+            if section.startswith("upgrading"):
+                upgrading[parts[0]] = parts[2]
+            elif section.startswith("installing"):
+                added.append(parts[0])
+    return upgrading, added
+
+
+def _parse_zypper_simulation(xml_text):
+    """({name: (old, new)}, [new]) from ``zypper --xmlout update --dry-run``."""
+    import xml.etree.ElementTree as ET
+    changes, added = {}, []
+    try:
+        root = ET.fromstring(xml_text or "")
+    except ET.ParseError:
+        raise RollbackUnavailable("zypper's dry run could not be read")
+    for sect in root.iter():
+        if sect.tag not in ("to-upgrade", "to-install"):
+            continue
+        for s in sect.iter("solvable"):
+            if s.get("kind", "package") != "package" or not s.get("name"):
+                continue
+            if sect.tag == "to-upgrade":
+                changes[s.get("name")] = (s.get("edition-old") or "", s.get("edition") or "")
+            else:
+                added.append(s.get("name"))
+    return changes, added
+
+
+def _pkg_simulate(mgr, before, env):
+    """What upgrading ``before`` would replace: {name: (old, new)}, [new]."""
+    names = sorted(before)
+    if mgr == "apt":
+        p = run(["apt" + "-get", "-s", "install", "--only-upgrade"] + names,
+                timeout=300, env=env)
+        if p.returncode != 0:
+            raise RollbackUnavailable("apt simulation failed: %s"
+                                      % (p.stderr or p.stdout)[-200:])
+        return _parse_apt_simulation(p.stdout)
+    if mgr in ("dnf", "yum"):
+        p = run([mgr, "upgrade", "--assumeno"] + names, timeout=300, env=env)
+        upgrading, added = _parse_dnf_simulation(p.stdout)
+        installed = _installed_matching(mgr, sorted(upgrading)) if upgrading else {}
+        missing = [n for n in upgrading if n not in installed]
+        if missing:
+            raise RollbackUnavailable("cannot read the installed version of %s"
+                                      % ", ".join(missing))
+        return {n: (installed[n], v) for n, v in upgrading.items()}, added
+    if mgr == "zypper":
+        p = run(["zypper", "--non-interactive", "--xmlout", "update", "--dry-run"] + names,
+                timeout=300, env=env)
+        return _parse_zypper_simulation(p.stdout)
+    raise RollbackUnavailable("no simulation for %s" % mgr)
+
+
+def _deb_version(path):
+    p = run(["dpkg-deb", "-f", str(path), "Package", "Version"], timeout=60)
+    f = dict(ln.split(": ", 1) for ln in (p.stdout or "").splitlines() if ": " in ln)
+    return f.get("Package", ""), f.get("Version", "")
+
+
+def _rpm_version(path):
+    p = run(["rpm", "-qp", "--qf", "%{NAME}|%{VERSION}-%{RELEASE}", str(path)], timeout=60)
+    parts = (p.stdout or "").split("|")
+    return (parts[0], parts[1]) if len(parts) == 2 else ("", "")
+
+
+def _rb_save_os(point, mgr, olds, env):
+    """Save every package in ``olds`` ({name: version}) at that version.
+    Returns the file names; raises RollbackUnavailable on any gap."""
+    import glob as _glob
+    import shutil as _sh
+    pkgs = point / "pkgs"
+    pkgs.mkdir(mode=0o700, exist_ok=True)
+    saved = []
+    for name, ver in sorted(olds.items()):
+        got = None
+        if mgr == "apt":
+            # The repository first; dpkg-repack (rebuilds the INSTALLED files)
+            # when the mirror no longer carries that version.
+            run(["apt" + "-get", "download", "%s=%s" % (name, ver)],
+                timeout=300, env=env, cwd=str(pkgs))
+            for f in _glob.glob(str(pkgs / ("%s_*.deb" % name))):
+                if _deb_version(f) == (name, ver):
+                    got = f
+            if not got and _sh.which("dpkg-repack"):
+                run(["dpkg-repack", name], timeout=300, cwd=str(pkgs))
+                for f in _glob.glob(str(pkgs / ("%s_*.deb" % name))):
+                    if _deb_version(f) == (name, ver):
+                        got = f
+        elif mgr in ("dnf", "yum"):
+            tool = ["dnf", "download"] if mgr == "dnf" or _sh.which("dnf") else \
+                (["yumdownloader"] if _sh.which("yumdownloader") else None)
+            if tool:
+                run(tool + ["--destdir", str(pkgs), "%s-%s" % (name, ver)],
+                    timeout=300, env=env)
+            for f in _glob.glob(str(pkgs / ("%s-*.rpm" % name))):
+                if _rpm_version(f) == (name, ver):
+                    got = f
+        elif mgr == "zypper":
+            run(["zypper", "--non-interactive", "download", "%s=%s" % (name, ver)],
+                timeout=300, env=env)
+            for f in _glob.glob(os.path.join(_ZYPP_CACHE, "*", "*", "%s-*.rpm" % name)):
+                if _rpm_version(f) == (name, ver):
+                    dest = pkgs / os.path.basename(f)
+                    _sh.copy2(f, dest)
+                    got = str(dest)
+        if not got:
+            raise RollbackUnavailable(
+                "%s %s is no longer offered by the repositories%s" % (
+                    name, ver, " and dpkg-repack is not installed (install it from "
+                    "System packages to rebuild it from this node)" if mgr == "apt" else ""))
+        saved.append(os.path.basename(got))
+    return saved
+
+
+def _rb_restore_os(d, man, st):
+    files = [str(d / "pkgs" / f) for f in man.get("files") or []]
+    if not files:
+        return False, "the point holds no package"
+    mgr = man.get("manager")
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    if mgr == "apt":
+        cmd = ["apt" + "-get", "install", "-y", "-q", "--allow-downgrades",
+               "-o", "Dpkg::Options::=--force-confdef",
+               "-o", "Dpkg::Options::=--force-confold"] + files
+    elif mgr == "zypper":
+        cmd = ["zypper", "--non-interactive", "install", "--oldpackage"] + files
+    else:
+        cmd = ["rpm", "-Uvh", "--oldpackage"] + files
+    st.begin("reinstall the saved packages")
+    p = run(cmd, timeout=1500, env=env)
+    st.step("reinstall the saved packages", p.returncode == 0,
+            ((p.stderr or p.stdout) or "")[-400:])
+    if p.returncode != 0:
+        return False, "%s exited %s" % (cmd[0], p.returncode)
+    want = {n: v["from"] for n, v in (man.get("packages") or {}).items()}
+    now_ = _installed_matching(mgr, sorted(want)) if mgr in _PKG_FAMILY else {}
+    wrong = ["%s is %s, expected %s" % (n, now_.get(n, "absent"), v)
+             for n, v in want.items() if now_.get(n) != v]
+    st.step("versions restored", not wrong, "; ".join(wrong) if wrong else
+            ", ".join("%s %s" % kv for kv in sorted(want.items())))
+    if wrong:
+        return False, "; ".join(wrong)
+    after = (_SYSPKG_UPGRADE.get(man.get("component")) or {}).get("after")
+    try:
+        _after_upgrade(st, after)
+    except Exception as exc:  # noqa: BLE001
+        return False, "restored, but %s" % str(exc)[:200]
+    if man.get("added"):
+        st.step("packages the upgrade added", True, "left installed (nothing older "
+                "depends on them): %s" % ", ".join(man["added"]), warn=True)
+    return True, "restored %d package(s)" % len(files)
+
+
+# ---- Python: a full copy of the venv -----------------------------------------
+def _venv_dir():
+    return APP / "venv"
+
+
+def _rb_save_venv(point):
+    """Copy the whole venv (owner, modes, links kept) and requirements.txt."""
+    src = _venv_dir()
+    if not (src / "bin" / "python").exists():
+        raise RollbackUnavailable("no virtual environment at %s" % src)
+    # The restore swaps directories with rename(2), staged INSIDE the point
+    # (root, 0700): nothing root writes ever passes through a path the
+    # service account controls. That needs one filesystem; refuse NOW rather
+    # than save a copy that could not be put back.
+    if os.stat(str(point)).st_dev != os.stat(str(APP)).st_dev:
+        raise RollbackUnavailable("different filesystems (%s, %s): the venv copy "
+                                  "could not be swapped back atomically" % (RB_DIR, APP))
+    free = os.statvfs(str(point)).f_bavail * os.statvfs(str(point)).f_frsize
+    du = run(["du", "-sb", str(src)], timeout=300)
+    try:
+        need = int((du.stdout or "0").split()[0])
+    except (ValueError, IndexError):
+        need = 0
+    if need and free < need * 2:
+        raise RollbackUnavailable("not enough disk for a copy of the venv "
+                                  "(%d MB needed, %d MB free)" % (need * 2 >> 20, free >> 20))
+    p = subprocess.run(["cp", "-a", str(src), str(point / "venv")],
+                       capture_output=True, text=True, timeout=900)
+    if p.returncode != 0:
+        raise RollbackUnavailable("copying the venv failed: %s" % (p.stderr or "")[-200:])
+    try:
+        (point / "requirements.txt").write_text("\n".join(_read_requirements()) + "\n")
+    except Exception:  # noqa: BLE001 -- the venv copy is the part that matters
+        pass
+    return ["venv/"]
+
+
+def _rb_restore_python(d, man, st):
+    import shutil as _sh
+    snap = d / "venv"
+    if not (snap / "bin" / "python").exists():
+        return False, "the point holds no venv copy"
+    live = _venv_dir()
+    # [SATOM-RUNNER-NOFOLLOW] Both working directories live in the point
+    # (root, 0700). A name under the app tree could be pre-planted by the
+    # service account as a link, and cp -a as root would write through it.
+    stage = d / "restore-stage"
+    aside = d / "replaced-venv"
+    _sh.rmtree(stage, ignore_errors=True)
+    st.begin("restore the venv copy")
+    p = subprocess.run(["cp", "-a", str(snap), str(stage)],
+                       capture_output=True, text=True, timeout=900)
+    if p.returncode != 0:
+        st.step("restore the venv copy", False, (p.stderr or "")[-300:])
+        return False, "copying the saved venv back failed"
+    _sh.rmtree(aside, ignore_errors=True)
+    if live.exists() or live.is_symlink():
+        os.rename(live, aside)
+    os.rename(stage, live)
+    st.step("restore the venv copy", True, "venv from %s (the replaced one is kept at "
+            "%s until the restore is healthy)" % (man.get("created_at"), aside))
+    req = d / "requirements.txt"
+    if req.is_file():
+        try:
+            _write_nofollow(APP, "requirements.txt", req.read_text())
+            st.step("restore requirements.txt", True, "pins of %s" % man.get("created_at"))
+        except Exception as exc:  # noqa: BLE001
+            st.step("restore requirements.txt", False, str(exc)[:200])
+    try:
+        restart_and_validate(st, pg_in_recovery(), _svc_active(SERVICE) == "active",
+                             "the restored venv")
+    except Exception as exc:  # noqa: BLE001
+        return False, "venv restored, but %s (the replaced venv is at %s)" % (
+            str(exc)[:200], aside)
+    _sh.rmtree(aside, ignore_errors=True)
+    return True, "venv restored to %s" % man.get("created_at")
+
+
+def _rb_restore(d, st):
+    """Put one point back. Returns (ok, detail); never raises."""
+    try:
+        man = _rb_manifest(d)
+        if man.get("state") not in ("ready", "applied", "restored", "restore-failed"):
+            return False, "point %s is %s, not restorable" % (d.name, man.get("state"))
+        fn = _rb_restore_python if man.get("kind") == "python" else _rb_restore_os
+        ok, detail = fn(d, man, st)
+    except Exception as exc:  # noqa: BLE001
+        ok, detail = False, str(exc)[:300]
+    try:
+        _rb_mark(d, "restored" if ok else "restore-failed", restore_detail=detail,
+                 restored_at=now())
+    except Exception:  # noqa: BLE001
+        pass
+    st.step("rollback", ok, detail)
+    return ok, detail
+
+
+def rollback_apply(point_id, req=None):
+    """Restore one point and record it as a status file. Used by the queued
+    request (kind "rollback") and by 'satom execute rollback apply'."""
+    d = _rb_point_dir(point_id)
+    # A queued request is followed by its id (the console's job watches that
+    # status file); the CLI gets a fresh one.
+    uid = (req or {}).get("id") if UID_RE.fullmatch(str((req or {}).get("id") or "")) \
+        else "rb-%s-%s" % (datetime.utcnow().strftime("%Y%m%d-%H%M%S"), secrets.token_hex(3))
+    st = Status(uid, dict(req or {}, origin=(req or {}).get("origin") or "cli"))
+    st.d.update(kind="rollback", point=point_id, label=_rb_manifest(d).get("label"))
+    st.flush()
+    ok, detail = _rb_restore(d, st)
+    st.finish("success" if ok else "failed", recovered=ok,
+              **({} if ok else {"error": detail}))
+    return ok, detail, uid
+
+
+def rollback_job(req_path):
+    """kind "rollback": the console asked to put a point back."""
+    req = _read_request(req_path)
+    try:
+        os.remove(req_path)
+    except OSError:
+        pass
+    point = req.get("point")
+    try:
+        rollback_apply(point if isinstance(point, str) else "", req)
+    except ValueError as exc:
+        uid = req.get("id") or Path(req_path).stem
+        st = Status(uid, req)
+        st.d.update(kind="rollback", point=str(point)[:80])
+        st.step("validate rollback point", False, str(exc))
+        st.finish("failed", error=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# deploy clone (kind: "clone") -- Settings > Source of Truth & Backup
+# ---------------------------------------------------------------------------
+# [SATOM-RUNNER-NO-APP-IMPORT] The console queues; this runs the INSTALLED CLI
+# ('satom execute clone export|import --yes'), which is root-owned and comes
+# from the last signed deploy/ -- the same code an operator runs by hand. An
+# import has to stop satom.service, the worker that queued it, which is why it
+# cannot run anywhere but here.
+#
+# The passphrase is taken out of the request and the request file is deleted
+# before anything else; it reaches the CLI in its environment, and no step,
+# detail or field of the status file ever carries it.
+_CLONE_ACTIONS = ("export", "import")
+_CLONE_NAME_RE = re.compile(r"^satom-clone-[A-Za-z0-9._-]+\.tar\.gz$")
+_CLONE_MIN_PASSPHRASE = 16
+#: Below satom-updater.service's TimeoutStartSec (1800): a CLI killed by
+#: systemd mid-import would leave the console stopped with nobody to restart it.
+_CLONE_TIMEOUT = 1500
+#: What the CLI import stops; started again here if the CLI itself is killed.
+_CLONE_UNITS = ("satom.service", "satom-scheduler.service", "satom-reconciler.service")
+
+
+def _clone_cli():
+    import shutil
+    for c in (shutil.which("satom"), "/usr/local/sbin/satom"):
+        if c and os.path.isfile(c):
+            st = os.stat(c)
+            # root-owned and not writable by anyone else: the CLI is what root
+            # runs here, so a copy the service account can edit is refused.
+            if st.st_uid == 0 and not st.st_mode & 0o022:
+                return c
+    return ""
+
+
+def clone_job(req_path):
+    """Export or import a deploy clone for the console (root, CLI-bounded)."""
+    req = _read_request(req_path)
+    uid = req.get("id") or Path(req_path).stem
+    passphrase = req.pop("passphrase", None)
+    try:
+        os.remove(req_path)  # dequeue -- and the only copy of the passphrase on disk
+    except OSError:
+        pass
+    st = Status(uid, req)
+    action = req.get("action")
+    action = action if isinstance(action, str) else ""
+    st.d["kind"] = "clone"
+    st.d["action"] = action
+    st.flush()
+
+    if action not in _CLONE_ACTIONS:
+        st.step("validate action", False, "%r is not a clone action" % action)
+        st.finish("failed", error="action not allowed")
+        return
+    if not isinstance(passphrase, str) or len(passphrase) < _CLONE_MIN_PASSPHRASE \
+            or any(c in passphrase for c in "\x00\r\n"):
+        st.step("validate passphrase", False, "missing or malformed")
+        st.finish("failed", error="passphrase refused")
+        return
+    path = None
+    if action == "import":
+        name = req.get("bundle")
+        if not isinstance(name, str) or not _CLONE_NAME_RE.match(name):
+            st.step("validate bundle", False, "%r is not a clone bundle name" % (name,))
+            st.finish("failed", error="bundle refused")
+            return
+        path = APP / "data" / "clone-imports" / name
+        try:
+            import stat as _stat
+            ok = _stat.S_ISREG(os.lstat(path).st_mode)
+        except OSError:
+            ok = False
+        if not ok:
+            st.step("validate bundle", False, "%s is not a regular file in the import inbox"
+                    % name)
+            st.finish("failed", error="bundle missing")
+            return
+        st.d["target"] = name
+    role = _svc_node_role()
+    if role != "primary":
+        st.step("validate role", False, "clones run on the PRIMARY; this node is %s" % role)
+        st.finish("failed", error="primary only")
+        return
+    cli = _clone_cli()
+    if not cli:
+        st.step("satom CLI", False, "no root-owned satom CLI on this node; "
+                "reinstall it with 'sudo bash %s/deploy/install-cli.sh'" % APP)
+        st.finish("failed", error="CLI missing")
+        return
+    st.step("validate", True, "%s requested by %s" % (action, req.get("requested_by") or "?"))
+
+    cmd = [cli, "--json", "execute", "clone", action]
+    if path is not None:
+        cmd.append(str(path))
+    cmd.append("--yes")
+    env = dict(os.environ, SATOM_CLONE_PASSPHRASE=passphrase)
+    passphrase = None
+    st.begin("satom execute clone %s" % action)
+    try:
+        p = run(cmd, timeout=_CLONE_TIMEOUT, env=env)
+    except subprocess.TimeoutExpired:
+        env = None
+        st.step("satom execute clone %s" % action, False,
+                "no result after %d s; the CLI was stopped" % _CLONE_TIMEOUT)
+        if action == "import":
+            for unit in _CLONE_UNITS:
+                r = run(["systemctl", "start", unit], timeout=180)
+                st.step("start %s" % unit, r.returncode == 0, (r.stderr or "")[-200:])
+            st.step("GET /healthz", health_ok(), "")
+        st.finish("failed", error="timed out -- run it from a shell with "
+                  "'sudo satom execute clone %s'" % action)
+        return
+    env = None
+    try:
+        out = json.loads(p.stdout or "")
+    except ValueError:
+        out = None
+    if not isinstance(out, dict):
+        st.step("satom execute clone %s" % action, False,
+                ((p.stderr or "") + (p.stdout or ""))[-400:] or "no output")
+        st.finish("failed", error="the CLI gave no result")
+        return
+    ok = out.get("status") in ("ok", "warn") and p.returncode == 0
+    data = out.get("data") if isinstance(out.get("data"), dict) else {}
+    if action == "export":
+        # Only the machine fields: the CLI's text sections are not copied for
+        # an export, so nothing it prints can land in this file.
+        if ok:
+            rk = data.get("rekey") if isinstance(data.get("rekey"), dict) else {}
+            st.step("bundle written", True, "%s (%s bytes, %s tables, %s rows, %s secrets "
+                    "re-encrypted)" % (data.get("name"), data.get("size"), data.get("tables"),
+                                       data.get("rows"), rk.get("rekeyed", 0)))
+            if rk.get("vaulted"):
+                st.step("external vault", True, "%s secret(s) live in the external vault; "
+                        "the target reaches them through the same vault configuration"
+                        % rk["vaulted"], warn=True)
+            st.finish("success", bundle=data.get("name"), size=data.get("size"))
+        else:
+            st.step("export", False, " ".join(str(n) for n in out.get("notes") or [])[-400:]
+                    or str(out.get("title") or ""))
+            st.finish("failed", error=str(out.get("title") or "export failed"))
+        return
+    for sec in out.get("sections") or []:
+        if not isinstance(sec, dict):
+            continue
+        if sec.get("kind") == "lines":
+            # e.g. "secrets this node cannot open" -- names, never values
+            st.step(str(sec.get("heading")), False,
+                    "; ".join(str(x) for x in sec.get("body") or []))
+            continue
+        if sec.get("kind") != "rows":
+            continue
+        for row in sec.get("body") or []:
+            if isinstance(row, (list, tuple)) and len(row) == 2:
+                st.step("%s: %s" % (sec.get("heading"), row[0]), True, str(row[1]))
+    for note in out.get("notes") or []:
+        st.step("note", True, str(note))
+    if ok:
+        st.finish("success", bundle=req.get("bundle"))
+    else:
+        st.finish("failed", error=str(out.get("title") or "import failed"))
+
+
+
+# ── [SATOM-HOSTGUARD] a managed server never opens a connection TO SATOM ────
+# The app (services/hostguard.py) writes the addresses of the servers Plugin
+# Studio manages to data/hostguard/desired.json; satom-hostguard.path starts
+# this runner when the file changes. That file is written by the SERVICE
+# ACCOUNT, so everything in it is checked here: at most HOSTGUARD_MAX real
+# unicast addresses, and never this node, the HA peer, the default gateway,
+# the trusted proxies or the name servers -- blocking one of those would cut
+# SATOM off, not protect it. The rules live in their own table, replaced in
+# one nft transaction, and only drop NEW connections: replies to the SSH
+# sessions SATOM opens are established traffic and pass. What was applied is
+# reported in /run/satom-hostguard.json (/run is emptied by a reboot, exactly
+# when the kernel table goes too; the app publishes again then).
+HOSTGUARD_DESIRED = APP / "data" / "hostguard" / "desired.json"
+HOSTGUARD_STATUS = Path(os.environ.get("SATOM_HOSTGUARD_STATUS", "/run/satom-hostguard.json"))
+HOSTGUARD_TABLE = "satom_hostguard"
+HOSTGUARD_MAX = 4096
+HOSTGUARD_MAX_BYTES = 1024 * 1024
+
+
+def _hg_cmd(argv, timeout=15):
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _hg_plain(ip):
+    import ipaddress
+    try:
+        addr = ipaddress.ip_address(str(ip).split("%", 1)[0].strip())
+    except ValueError:
+        return None
+    mapped = getattr(addr, "ipv4_mapped", None)
+    return mapped or addr
+
+
+def _hg_never_block():
+    """{address: why} -- what a hostguard rule may never cover."""
+    out = {}
+    p = _hg_cmd(["ip", "-j", "addr"])
+    try:
+        for iface in json.loads(p.stdout) if p and p.returncode == 0 else []:
+            for a in iface.get("addr_info") or []:
+                ip = _hg_plain(a.get("local"))
+                if ip is not None:
+                    out[str(ip)] = "an address of this node"
+    except (ValueError, TypeError, AttributeError):
+        pass
+    for fam in ("-4", "-6"):
+        p = _hg_cmd(["ip", "-j", fam, "route", "show", "default"])
+        try:
+            for r in json.loads(p.stdout) if p and p.returncode == 0 else []:
+                ip = _hg_plain(r.get("gateway"))
+                if ip is not None:
+                    out.setdefault(str(ip), "the default gateway")
+        except (ValueError, TypeError, AttributeError):
+            pass
+    try:
+        nodes = json.loads((APP / "data" / "ha_nodes.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        nodes = []
+    for n in nodes if isinstance(nodes, list) else []:
+        host = str((n or {}).get("host") or "").strip() if isinstance(n, dict) else ""
+        try:
+            infos = socket.getaddrinfo(host, None) if host else []
+        except (OSError, UnicodeError):
+            infos = []
+        for info in infos:
+            ip = _hg_plain(info[4][0])
+            if ip is not None:
+                out.setdefault(str(ip), "a SATOM HA node")
+    try:
+        env = (APP / ".env").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        env = ""
+    for line in env.splitlines():
+        if line.strip().startswith("TRUSTED_PROXIES="):
+            for part in line.split("=", 1)[1].strip().strip("'\"").split(","):
+                ip = _hg_plain(part.split("/", 1)[0])
+                if ip is not None:
+                    out.setdefault(str(ip), "a trusted proxy (TRUSTED_PROXIES)")
+    try:
+        for line in Path("/etc/resolv.conf").read_text().splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] == "nameserver":
+                ip = _hg_plain(parts[1])
+                if ip is not None:
+                    out.setdefault(str(ip), "a name server of this node")
+    except OSError:
+        pass
+    return out
+
+
+def _hg_desired():
+    """The addresses asked for, read without following a link the service
+    account may have planted; [] when there is no file."""
+    try:
+        fd = os.open(str(HOSTGUARD_DESIRED), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return []
+    with os.fdopen(fd, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise ValueError("desired.json is not a regular file")
+        raw = fh.read(HOSTGUARD_MAX_BYTES + 1)
+    if len(raw) > HOSTGUARD_MAX_BYTES:
+        raise ValueError("desired.json is larger than 1 MiB")
+    body = json.loads(raw.decode("utf-8"))
+    addrs = body.get("addresses") if isinstance(body, dict) else None
+    if not isinstance(addrs, list):
+        raise ValueError("desired.json has no address list")
+    return addrs[:HOSTGUARD_MAX]
+
+
+def hostguard_plan(addresses, never):
+    """(v4, v6, excluded) -- pure, for the tests."""
+    v4, v6, excluded = [], [], []
+    for raw in addresses:
+        ip = _hg_plain(raw) if isinstance(raw, str) else None
+        if ip is None:
+            excluded.append({"ip": str(raw)[:64], "why": "not an IP address"})
+            continue
+        why = never.get(str(ip))
+        if not why:
+            if ip.is_loopback or ip.is_link_local or ip.is_multicast or \
+                    ip.is_unspecified or ip.is_reserved:
+                why = "not a unicast host address"
+        if why:
+            excluded.append({"ip": str(ip), "why": why})
+            continue
+        bucket = v4 if ip.version == 4 else v6
+        if str(ip) not in bucket:
+            bucket.append(str(ip))
+    return sorted(v4), sorted(v6), excluded
+
+
+def hostguard_ruleset(v4, v6):
+    """The nft script: drop the table if any, recreate it when there is
+    something to block. One transaction: never a moment without the rules."""
+    lines = ["table inet %s" % HOSTGUARD_TABLE, "delete table inet %s" % HOSTGUARD_TABLE]
+    if not v4 and not v6:
+        return "\n".join(lines) + "\n"
+    lines.append("table inet %s {" % HOSTGUARD_TABLE)
+    lines.append("  set managed4 { type ipv4_addr;%s }"
+                 % (" elements = { %s };" % ", ".join(v4) if v4 else ""))
+    lines.append("  set managed6 { type ipv6_addr;%s }"
+                 % (" elements = { %s };" % ", ".join(v6) if v6 else ""))
+    lines.append("  chain input {")
+    lines.append("    type filter hook input priority -5; policy accept;")
+    lines.append("    ct state established,related accept")
+    lines.append("    ip saddr @managed4 counter drop")
+    lines.append("    ip6 saddr @managed6 counter drop")
+    lines.append("  }")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def _hg_status(body):
+    try:
+        fd, tmp = tempfile.mkstemp(prefix=".satom-hostguard-", dir=str(HOSTGUARD_STATUS.parent))
+        with os.fdopen(fd, "w") as fh:
+            json.dump(body, fh, sort_keys=True)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, str(HOSTGUARD_STATUS))
+    except OSError as exc:
+        _log("hostguard: cannot write the status: %s" % exc)
+
+
+def hostguard_reconcile():
+    """Load data/hostguard/desired.json into the kernel. Never raises."""
+    at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    try:
+        wanted = _hg_desired()
+        v4, v6, excluded = hostguard_plan(wanted, _hg_never_block())
+        nft = shutil.which("nft") or "/usr/sbin/nft"
+        p = subprocess.run([nft, "-f", "-"], input=hostguard_ruleset(v4, v6),
+                           capture_output=True, text=True, timeout=30)
+        if p.returncode != 0:
+            raise RuntimeError("nft refused the ruleset: %s" % (p.stderr or "").strip()[-300:])
+        _hg_status({"ok": True, "applied": v4 + v6, "excluded": excluded, "at": at,
+                    "table": HOSTGUARD_TABLE, "detail": ""})
+        if wanted or excluded:
+            _log("hostguard: %d address(es) blocked, %d excluded" % (len(v4 + v6), len(excluded)))
+    except Exception as exc:  # noqa: BLE001 -- an update must still run
+        _hg_status({"ok": False, "applied": [], "excluded": [], "at": at,
+                    "table": HOSTGUARD_TABLE, "detail": str(exc)[:300]})
+        _log("hostguard: %s" % exc)
+
+_HANDLERS = {
+    "": "process",
+    "clone": "clone_job",
+    "promote": "promote",
+    "pip": "pip_change",
+    "package": "package_change",
+    "service": "service_action",
+    "pg_ssl": "pg_ssl_apply",
+    "syspkg": "syspkg_install",
+    "rollback": "rollback_job",
+}
+
+
+def main():
+    # satom-hostguard.path starts this runner too (data/hostguard/desired.json
+    # changed); it is cheap and idempotent, so it runs on every activation.
+    hostguard_reconcile()
+    for rp in sorted(glob.glob(str(REQ / "*.json"))):
+        try:
+            try:
+                req = _read_request(rp)
+            except Exception as exc:  # noqa: BLE001
+                _reject(rp, None, "unreadable request: %s" % exc)
+                continue
+            if not isinstance(req, dict):
+                _reject(rp, None, "a request must be a JSON object")
+                continue
+            kind = req.get("kind")
+            if kind is None:
+                kind = ""
+            handler = _HANDLERS.get(kind) if isinstance(kind, str) else None
+            if handler is None:
+                _reject(rp, req, "unknown request kind %r" % (kind,))
+                continue
+            globals()[handler](rp)
+        except Exception as exc:  # noqa: BLE001
+            _log("dropped request %s: %s" % (os.path.basename(rp), exc))
+            try:
+                os.remove(rp)  # never crash-loop on a malformed request
+            except OSError:
+                pass
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,1268 @@
+{% extends "base.html" %}
+{% set _t = view.title.get('new' if (is_new or (row_ctx and row_ctx.new)) else 'edit') or view.title.get('edit') or '' %}
+{% set _gxl = gx.label if gx is defined and gx else 'FortiWeb' %}
+{% set _fwp = not (gp and gp.product and gp.product != 'fortiweb') %}
+{#- The edit lease this dialog holds (lock.js), named as every writer checks
+    it: the top object -- a row falls under its object's lease, except a
+    FortiGate/FortiAuthenticator/FortiADC row that is an object of its own.
+    None for a Create New form (nothing to overwrite yet). -#}
+{% set _lease_key = '' %}
+{% if can_edit and not is_new and not (row_ctx and row_ctx.new) %}
+  {% if not gp %}{% set _lease_key = lease_key('server-policy/policy', name) %}
+  {% elif row_ctx and row_ctx.collection and not _fwp %}{% set _lease_key = lease_key(row_ctx.collection, row_ctx.sub_id) %}
+  {% elif row_ctx and not _fwp %}{% set _lease_key = lease_key(gp.collection, row_ctx.parent or gp.name or name) %}
+  {% else %}{% set _lease_key = lease_key(gp.collection, gp.name or name) %}{% endif %}
+  {% if _lease_key.endswith(':') %}{% set _lease_key = '' %}{% endif %}
+{% endif %}
+{# the object a row / sub-dialog URL names: a settings form has no name and is
+   addressed as "~" (FortiGate / FortiAuthenticator) #}
+{% set _oname = name or ('~' if gp and gp.form and not _fwp else '') %}
+{# where Back / Cancel / a saved row go (top level: the content and the
+   scripts blocks both read it) #}
+{% if gp %}
+  {% if view.key != main and name %}{% set back = url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=name, v=gp.v) %}
+  {% else %}{% set back = url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=gp.v) %}{% endif %}
+{% elif view.key != main and name %}{% set back = url_for('workspace.gui_policy', appliance_id=appliance.id, name=name) %}
+{% else %}{% set back = url_for('workspace.gui_list', appliance_id=appliance.id) %}{% endif %}
+{% block title %}{{ _t }}{% if name %} — {{ name }}{% endif %}{% endblock %}
+{# FortiWeb draws a dialog in the content pane: title bar, sections, footer bar. #}
+{# SATOM frame around FortiWeb's dialog: breadcrumb + page header + card.
+   Server Policy (not gp) has its own routes; a generic page (gp) shows its
+   FortiWeb menu path. #}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  {% if gp %}
+  {% set _mp = tpl.menu_path or [gp.page] %}
+  <a href="{{ url_for('workspace.fwgui_index', appliance_id=appliance.id) }}">{{ _gxl }}</a>
+  {% for p in _mp[:-1] %}<span class="separator">/</span><span>{{ p }}</span>{% endfor %}
+  <span class="separator">/</span><a href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=gp.v) }}">{{ _mp[-1] }}</a>
+  {% else %}
+  <span>{{ _('Policy') }}</span><span class="separator">/</span>
+  <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ appliance.name }}</a><span class="separator">/</span>
+  <a href="{{ url_for('workspace.gui_list', appliance_id=appliance.id) }}">{{ _('Server Policy') }}</a>
+  {% endif %}
+  {% if name %}<span class="separator">/</span><span>{{ name }}</span>{% endif %}
+</div>
+{% endblock %}
+{% from "_not_in_gui.html" import nig_editable %}
+{# input(f): the writable control of one field. Every control carries the REST
+   key it writes (data-gkey) and the value it started from (data-orig); Save
+   sends only the ones that changed. #}
+{# pencil(ref, name): FortiWeb's "Edit entry" shortcut beside a reference
+   selector -- opens the selected object in a panel stacked over the dialog
+   (FWDrawer), as FortiWeb does and as the SATOM Server Policy page always
+   did; never a new window. When a measured page lists the collection
+   (data-gui, fwg_ref_page) the panel holds the dialog the device draws for
+   that object; otherwise the generic object editor. The href (same tab) is
+   only the fallback when the drawer script is missing. #}
+{# sub_url(dialog, new, sub): a sub-table row dialog of the current object. #}
+{% macro sub_url(dialog, new=None, sub=None) -%}
+  {%- if gp -%}{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=_oname, v=gp.v, d=dialog, new=new, sub=sub) }}
+  {%- else -%}{{ url_for('workspace.gui_policy', appliance_id=appliance.id, name=name, dialog=dialog, new=new, sub=sub) }}{%- endif -%}
+{%- endmacro %}
+{% macro pencil(ref, name) -%}
+  {%- set coll = (ref or '').split('|')[0] -%}
+  {%- if coll -%}
+  <a class="fwg-pencil{{ ' is-off' if not name }}" title="{{ _('Edit entry') }}" aria-label="{{ _('Edit entry') }}"
+     data-fwg-pencil data-coll="{{ coll }}" data-mkey="{{ name or '' }}" data-base="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=coll) }}" data-gui="{{ fwg_ref_page(appliance, coll) }}"
+     href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=coll, mkey=name) if name else '#' }}"><i class="bi bi-pencil-fill" aria-hidden="true"></i></a>
+  {%- else -%}<i class="bi bi-pencil-fill fwg-pencil is-off" aria-hidden="true"></i>{%- endif -%}
+{%- endmacro %}
+{# creator(ref): FortiWeb's "+ Create" of a selector whose GUI source is
+   declared createNew (harvester: field create_new). FortiWeb puts it inside
+   the dropdown; a native select has no room for it, so it sits beside the
+   select. It opens the object's own empty dialog (fwg_ref_new) in the panel,
+   and what is saved there is selected here; without a measured page, the
+   generic editor's create. #}
+{% macro creator(ref, title='') -%}
+  {%- set coll = (ref or '').split('|')[0] -%}
+  {%- if coll -%}
+  <a class="fwg-pencil fwg-create" href="#" title="{{ _('Create New') }}" aria-label="{{ _('Create New') }}"
+     data-fwg-create data-coll="{{ coll }}" data-title="{{ title }}" data-gui="{{ fwg_ref_new(appliance, coll) }}"><i class="bi bi-plus-lg" aria-hidden="true"></i></a>
+  {%- endif -%}
+{%- endmacro %}
+{% macro more_inputs(f) %}
+  {% for m in f.more or [] %}<label class="form-check form-check-inline mb-0 ms-2"><input type="checkbox" class="form-check-input fwg-in" data-gkey="{{ m.key }}" data-orig="{{ m.raw }}" data-on="{{ m.on }}" data-off="{{ m.off }}"{{ ' checked' if m.raw == m.on }}> {{ m.label }}</label>{% endfor %}
+{% endmacro %}
+{% macro input(f) %}
+  {% set k = f.wkey %}
+  {% if f.kind == 'check' %}
+    <label class="form-check form-check-inline mb-0"><input type="checkbox" class="form-check-input fwg-in" data-gkey="{{ k }}" data-orig="{{ f.raw }}" data-on="{{ f.on }}" data-off="{{ f.off }}" aria-label="{{ f.label or k }}"{{ ' checked' if f.raw == f.on }}>{% if f.more %} {{ f.check_label or '' }}{% endif %}</label>
+  {% elif f.kind == 'toggle' %}
+    <span class="form-check form-switch mb-0"><input type="checkbox" class="form-check-input fwg-in" role="switch" data-gkey="{{ k }}" data-orig="{{ f.raw }}" data-on="{{ f.on }}" data-off="{{ f.off }}" aria-label="{{ f.label or k }}"{{ ' checked' if f.raw == f.on }}></span>
+  {% elif f.kind == 'toggle_rows' %}
+    <table class="fwg-table fwg-rows"><tbody>
+    {% for r in f.value or [] %}<tr><td>{{ r.label }}</td><td><span class="form-check form-switch mb-0"><input type="checkbox" class="form-check-input fwg-in" role="switch" data-gkey="{{ r.key }}" data-orig="{{ r.value }}" data-on="enable" data-off="disable" aria-label="{{ r.label }}"{{ ' checked' if r.value == 'enable' }}></span></td></tr>{% endfor %}
+    </tbody></table>
+  {% elif f.kind == 'radio' %}
+    <span class="fwg-in fwg-seg" role="radiogroup" aria-label="{{ f.label or k }}" data-gkey="{{ k }}" data-orig="{{ f.raw }}" data-kind="radio">
+    {% for o in f.opts %}<label class="fwg-seg-btn"><input type="radio" class="fwg-seg-input" name="g-{{ k }}" value="{{ o.value }}"{{ ' checked' if o.value == f.raw }}>{{ o.label }}</label>{% endfor %}
+    </span>
+  {% elif f.kind == 'select' %}
+    <select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ k }}" data-orig="{{ f.raw }}">
+      {% if f.raw not in f.opts|map(attribute='value')|list %}<option value="{{ f.raw }}" selected>{{ f.raw }}</option>{% endif %}
+      {% for o in f.opts %}<option value="{{ o.value }}"{{ ' selected' if o.value == f.raw }}>{{ o.label }}</option>{% endfor %}
+    </select>
+  {% elif f.kind == 'checks' %}
+    <span class="fwg-in" data-gkey="{{ k }}" data-orig="{{ f.raw }}" data-kind="checks">
+    {% set cur = f.raw.split() %}
+    {% for o in f.opts %}<label class="form-check form-check-inline mb-0"><input type="checkbox" class="form-check-input" value="{{ o.value }}"{{ ' checked' if o.value in cur }}> {{ o.label }}</label>{% endfor %}
+    </span>
+  {% elif f.kind == 'ref' and f.ref %}
+    <select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ k }}" data-orig="{{ f.raw }}" data-ref="{{ f.ref }}" data-omni{% if f.inline_edit %} data-inline-edit{% endif %}{% if f.create_new %} data-create-new{% endif %}{% if f.ref_filter %}{% if f.ref_api %} data-ref-api="{{ f.ref_api }}"{% endif %} data-ref-filter="{{ f.ref_filter|tojson|forceescape }}"{% endif %}>
+      <option value="">{{ _('— none —') }}</option>
+      {% if f.raw %}<option value="{{ f.raw }}" selected>{{ f.raw }}</option>{% endif %}
+    </select>
+    {% if f.edit_shortcut %}{{ pencil(f.ref, f.raw) }}{% endif %}
+    {% if f.create_new %}{{ creator(f.ref, f.label) }}{% endif %}
+  {% elif f.kind == 'textarea' %}
+    <textarea class="form-control form-control-sm fwg-in fwg-edit" rows="2" data-gkey="{{ k }}" data-orig="{{ f.raw }}">{{ f.raw }}</textarea>
+  {% elif f.kind == 'number' %}
+    <input type="number" class="form-control form-control-sm fwg-in fwg-edit" data-gkey="{{ k }}" data-orig="{{ f.raw }}" value="{{ f.raw }}"{% if f.min is not none %} min="{{ f.min }}"{% endif %}{% if f.max is not none %} max="{{ f.max }}"{% endif %}>
+  {% else %}
+    {# text, a reference SATOM has no list for, and multi-value fields
+       (space-separated, as FortiWeb's REST takes them) #}
+    {% set _rx = fw_regex_ctx(k, (gp.collection if gp and gp.collection else save_ep|default(''))) if _fwp and f.kind != 'multiselect' else none %}
+    {% if _rx is not none %}<div class="fw-rx-wrap d-flex gap-1">{% endif %}
+    <input type="text" class="form-control form-control-sm fwg-in fwg-edit" data-gkey="{{ k }}" data-orig="{{ f.raw }}" value="{{ f.raw }}"{% if f.kind == 'multiselect' %} placeholder="{{ _('space-separated values') }}"{% endif %}>
+    {% if _rx is not none %}<button type="button" class="btn btn-sm btn-fw-outline fw-rx-btn" data-rx-context="{{ _rx }}" title="{{ _('Regex calculator — test this pattern against samples') }}">.*</button></div>{% endif %}
+  {% endif %}
+  {{ more_inputs(f) }}
+  {% if f.bound_to %}<span class="fwg-suffix text-muted small" title="{{ _('Saved to %(ep)s, where FortiWeb keeps this setting', ep=f.bound_to) }}"><i class="bi bi-box-arrow-up-right"></i></span>{% endif %}
+  {% if f.suffix %}<span class="fwg-suffix">{{ f.suffix }}</span>{% endif %}
+{% endmacro %}
+{% macro value(f) %}
+  {% set empty = f.value in (None, '', []) %}
+  {% if can_edit and f.editable %}
+    {{ input(f) }}
+  {% elif f.kind in ('toggle', 'check') %}
+    <span class="fwg-switch {{ 'is-on' if f.value == f.on }}" role="img" aria-label="{{ f.value or 'disable' }}"></span>
+    {% for m in f.more or [] %}<span class="ms-2">{{ m.label }}</span> <span class="fwg-switch {{ 'is-on' if m.raw == m.on }}" role="img" aria-label="{{ m.raw or 'disable' }}"></span>{% endfor %}
+  {% elif f.kind == 'radio' %}
+    <span class="fwg-radio">{% for o in f.choices %}<span class="{{ 'is-on' if o.on }}">{{ o.label }}</span>{% else %}<span class="is-on">{{ f.value or '' }}</span>{% endfor %}</span>
+  {% elif f.kind == 'select' %}
+    <span class="fwg-input fwg-select is-wide">{{ f.value or '' }}</span>
+  {% elif f.kind == 'ref' and f.key == 'tags' %}
+    <span class="fwg-tagbox">{% for v in (f.value or '').split() %}<span class="fwg-chip">{{ v }}</span>{% endfor %}<i class="bi bi-plus-lg"></i></span>
+  {% elif f.kind == 'ref' %}
+    <span class="fwg-input fwg-select">{{ f.value or '' }}</span>
+    {% if f.edit_shortcut %}{{ pencil(f.ref, f.value) }}{% endif %}
+  {% elif f.kind in ('checks', 'multiselect') %}
+    <span class="fwg-input fwg-select">{% for v in f.value or [] %}<span class="fwg-chip">{{ v }}</span> {% endfor %}</span>
+  {% elif f.kind == 'toggle_rows' %}
+    <table class="fwg-table fwg-rows"><tbody>
+    {% for r in f.value or [] %}<tr><td>{{ r.label }}</td><td><span class="fwg-switch {{ 'is-on' if r.value == 'enable' }}"></span></td></tr>{% endfor %}
+    </tbody></table>
+  {% elif f.kind == 'table' and f.table %}
+    {# FortiWeb's inline sub-table: toolbar (Create New / Edit / Delete / Move /
+       Search), then the grid. Edit opens the row's own dialog; the rest write. #}
+    {% set t = f.table %}
+    {% set _ro = _('Read-only: nothing is sent to the device.') %}
+    <div class="fwg-subtable" data-fwg-sub>
+      <div class="fwg-toolbar">
+      {% for it in t.toolbar %}
+        {% set a = it.action or '' %}
+        {% if a == 'search' %}
+        <label class="fwg-search mb-0"><input type="search" placeholder="{{ it.label }}" aria-label="{{ it.label }}" data-fwg-search><span aria-hidden="true"><i class="bi bi-search"></i></span></label>
+        {% elif a.startswith('add') and t.row_dialog and _oname and t.rows is not none and t.subtable in (writable_subtables or ()) %}
+        <a class="fwg-tb-btn" href="{{ sub_url(t.row_dialog, new=1) }}" data-fwg-add><i class="bi bi-plus-lg"></i>{{ it.label }}</a>
+        {% elif a.startswith('edit') and t.row_dialog and _oname and t.rows %}
+        <a class="fwg-tb-btn" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil-fill"></i>{{ it.label }}</a>
+        {% else %}
+        <span class="fwg-tb-btn" aria-disabled="true" title="{{ _ro }}"><i class="bi {{ 'bi-plus-lg' if a.startswith('add') else ('bi-pencil-fill' if a.startswith('edit') else ('bi-trash-fill' if a.startswith('remove') else 'bi-arrow-down-up')) }}"></i>{{ it.label }}</span>
+        {% endif %}
+      {% endfor %}
+      </div>
+      <table class="fwg-table">
+        <thead><tr>{% for c in t.columns %}<th>{{ c.label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% if t.rows is none %}
+          <tr><td colspan="{{ t.columns|length }}" class="text-muted" data-fwg-table-untied>{% if _fwp %}{{ _('Not in the SATOM cache: this sub-table needs a deep capture of the policy, and SATOM does not capture every sub-table yet.') }}{% else %}{{ _('The GUI crawl did not tie this table to a REST field or collection on this build: SATOM cannot list its rows.') }}{% endif %}</td></tr>
+        {% else %}
+          {% for r in t.rows %}
+          <tr tabindex="0"{% if t.row_dialog and _oname and r.id not in (none, '') %} data-href="{{ sub_url(t.row_dialog, sub=r.id) }}"{% endif %}>
+            {% for v in r.cells %}<td>{{ v }}</td>{% endfor %}
+          </tr>
+          {% else %}
+          <tr><td colspan="{{ t.columns|length }}" class="fwg-noresults">{{ _('No results') }}</td></tr>
+          {% endfor %}
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+  {% elif f.kind == 'view_switch' %}
+    <span class="fwg-radio">{% for o in f.options %}<span class="{{ 'is-on' if loop.first }}">{{ o.label }}</span>{% endfor %}</span>
+    <span class="text-muted small">{{ _('Machine-learning models are managed from their own pages.') }}</span>
+  {% elif f.kind == 'link' %}
+    {% if f.dialog and name and not gp %}<a href="{{ url_for('workspace.gui_policy', appliance_id=appliance.id, name=name, dialog=f.dialog) }}">{{ f.label }}</a>
+    {% else %}<span class="text-muted">{{ f.label }}</span>{% endif %}
+  {% elif f.kind == 'textarea' %}
+    <span class="fwg-textarea">{{ f.value or '' }}</span>
+  {% elif f.kind == 'static' and f.text %}
+    <div class="fw-alert fw-alert-info fwg-note-box mb-0"><i class="bi bi-info-circle-fill me-1"></i>{{ f.text }}</div>
+  {% elif f.kind == 'display' or f.kind == 'static' %}
+    <span>{{ f.value if not empty else '' }}</span>
+  {% else %}
+    <span class="fwg-input {{ 'is-ro' if f.key == 'name' and name }}">{{ f.value if not empty else '' }}</span>
+  {% endif %}
+  {% if f.suffix and not (can_edit and f.editable) %}<span class="fwg-suffix">{{ f.suffix }}</span>{% endif %}
+{% endmacro %}
+{% macro live_attrs(f) -%}
+  {%- if f.cond is defined %} data-fwg-cond="{{ f.cond|tojson|forceescape }}"{% if f.hidden %} hidden{% endif %}{% endif -%}
+{%- endmacro %}
+{% macro fields(b) %}
+  <div class="fwg-fields">
+  {% for f in b.fields %}
+    <div class="fwg-label {{ 'fwg-unknown' if f.unknown }}"{{ live_attrs(f) }}>{% if f.kind != 'link' %}{{ f.label }}{% endif %}
+      {%- if f.help %}<i class="bi bi-info-circle-fill" title="{{ f.help|striptags }}"></i>{% endif %}
+      {%- if f.unknown %}<span class="fwg-unknown-tag" title="{{ _('Depends on: %(w)s', w=f.unknown_why|join(', ')) }}">{{ _('conditional') }}</span>{% endif %}
+      {%- if f.gui_only %}<span class="fw-badge fw-badge-secondary ms-1" data-gui-only title="{{ _('This field has no API on this build: it is shown as the GUI shows it and never saved.') }}">{{ _('No API on this build (GUI only)') }}</span>{% endif %}
+      {%- if f.bound_to and not _fwp %}<span class="fw-badge fw-badge-secondary ms-1" title="{{ _('Saved by the GUI into %(ep)s: shown here, edited on its own page.', ep=f.bound_to) }}">{{ f.bound_to }}</span>{% endif %}
+      {%- if f.readonly and not _fwp %}<span class="fw-badge fw-badge-secondary ms-1" title="{{ _('Read-only here: the device GUI draws it read-only, or its value is a structure edited on its own page.') }}">{{ _('read-only') }}</span>{% endif %}
+      {%- if f.candidates %}<span class="fwg-unknown-tag" data-key-candidates title="{{ _('The GUI crawl could not tell which REST field this control shows; still consistent with: %(c)s', c=f.candidates|join(', ')) }}">{{ _('key not measured') }}</span>{% endif %}
+      {%- if f.options_unread %}<span class="fwg-unknown-tag" title="{{ _('%(p)s offers a list of choices here that the GUI crawl could not read: type the value as the CLI takes it.', p=_gxl) }}">{{ _('choices not measured') }}</span>{% endif %}
+      {%- if f.unbound %}<span class="fwg-unknown-tag" data-unbound title="{{ _('The layout draws this control but does not say which field it shows: SATOM draws no value for it and saves nothing from it.') }}">{{ _('not bound to a field') }}</span>{% endif %}
+      {%- if f.options_mark %}<span class="fwg-unknown-tag" data-options-mark title="{{ _('The layout of this build carries no list of choices here; these are the ones the nearest other layout of the page has.') }}">{{ f.options_mark.text }}</span>{% endif %}
+      {%- if f.build_note %}<span class="fw-badge fw-badge-{{ 'warning' if f.build_state == 'missing' else 'secondary' }} ms-1" data-build-state="{{ f.build_state }}" title="{{ _('This layout was measured on another build: the API library says what this device\'s build has.') }}">{{ f.build_note }}</span>{% endif %}
+    </div>
+    <div class="fwg-value"{{ live_attrs(f) }}>{{ value(f) }}</div>
+  {% endfor %}
+  </div>
+{% endmacro %}
+{% block content %}
+{% if _lease_key %}<div class="fw-lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ _lease_key }}"></div>{% endif %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi {{ 'bi-layout-sidebar' if gp else 'bi-shield-check' }} me-2 text-accent"></i>{{ _t or view.key }}{% if name %} <span class="text-muted fw-normal">· {{ gp.display if gp and gp.display else name }}</span>{% endif %}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · {{ _gxl }} {{ appliance.fw_version }}{% endif %}</p>
+  </div>
+  <div class="d-flex gap-2">
+  {% if gp and gp.form and satom is defined and satom %}
+    {% if satom.section and satom.can_template and not gp.missing %}<button type="button" class="btn btn-secondary btn-sm" data-fwg-form-savetpl data-collection="{{ gp.collection }}" data-section="{{ satom.section }}" title="{{ _('Read these settings from the device and save them to the Template Library as a pending template.') }}"><i class="bi bi-bookmark-plus me-1"></i>{{ _('Save as template') }}</button>{% endif %}
+    {% if current_user.can('config_write') %}<form method="post" action="{{ url_for('workspace.fwgui_refresh', appliance_id=appliance.id, page=gp.page) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="v" value="{{ gp.v }}">
+      <button type="submit" class="btn btn-outline-secondary btn-sm" data-fwg-form-refresh title="{{ _('Pull live config from the device') }}"><i class="bi bi-arrow-clockwise"></i></button></form>{% endif %}
+  {% endif %}
+  <a class="btn btn-secondary btn-sm" href="{{ back }}"><i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}</a>
+  </div>
+</div>
+<div class="fwg-pane fw-card fwg-satom">
+  <div class="fwg-titlebar">
+    <span>{{ _t or view.key }}</span>
+    <span class="fwg-sub">
+      {% if gp and gp.action %}{{ _('Import is done on the device: SATOM does not upload files through this dialog.') }}
+      {% elif gp and gp.device_managed %}{{ _('Managed on the device: drawn as %(p)s draws it, read-only. Nothing is sent from this page.', p=_gxl) }}
+      {% elif gp and gp.gui_only %}{{ _('No API on this build (GUI only): drawn as %(p)s draws it, read-only. Nothing is sent from this page.', p=_gxl) }}
+      {% elif is_new and can_edit and gp %}{{ _('Create New with %(p)s\'s own defaults. Save shows the request first, then creates the object on %(dev)s.', p=_gxl, dev=appliance.name) }}
+      {% elif is_new and can_edit %}{{ _('Create New with FortiWeb\'s own defaults. Save shows the request first, then creates the policy on %(dev)s.', dev=appliance.name) }}
+      {% elif is_new %}{{ _('Preview of the Create New form with %(p)s\'s own defaults. Nothing is submitted from this page.', p=_gxl) }}
+      {% elif row_ctx and row_ctx.new and can_edit %}{{ _('New row with %(p)s\'s own defaults. Save shows the request first, then creates the row on %(dev)s.', p=_gxl, dev=appliance.name) }}
+      {% elif can_edit and not _fwp %}{{ _('Values read from %(dev)s. Save shows the change first, then writes it to the device and reads it back.', dev=appliance.name) }}
+      {% elif can_edit %}{{ _('Values from the SATOM cache of %(dev)s. Save shows the change first, then writes it to the device.', dev=appliance.name) }}
+      {% elif not _fwp %}{{ _('View mode: values read from %(dev)s; nothing is sent to it.', dev=appliance.name) }}
+      {% else %}{{ _('View mode: values from the SATOM cache of %(dev)s; nothing is sent to it.', dev=appliance.name) }}{% endif %}
+      {% if view.hidden %}· {{ _('%(n)s fields hidden by %(p)s for these settings.', n=view.hidden, p=_gxl) }}{% endif %}
+    </span>
+  </div>
+  {% include 'workspace/_gui_banner.html' %}
+  {% if gp and gp.tabs %}
+  <ul class="nav nav-tabs fwg-sat-tabs" role="tablist">
+    {% for t in gp.tabs %}<li class="nav-item"><a role="tab" class="nav-link {{ 'active' if t.i == gp.v }}" aria-selected="{{ 'true' if t.i == gp.v else 'false' }}" href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=t.i) }}">{{ t.label }}</a></li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if view.rendered_only %}<div class="fwg-note"><i class="bi bi-info-circle"></i><span>{{ _('%(p)s draws this page with its newer interface: SATOM read the layout from the page as %(p)s drew it on the lab device. Every field is shown; %(p)s may hide some of them for other settings.', p=_gxl) }}</span></div>{% endif %}
+  {% if gp and gp.missing %}<div class="fw-alert fw-alert-warning" data-fwg-read-error="{{ gp.read_error.kind if gp.read_error else 'not_read' }}">{% if gp.read_error %}{{ _('This settings object is not in the SATOM cache of %(dev)s and its live read failed: the form shows %(p)s\'s layout without values.', dev=appliance.name, p=_gxl) }} <span data-fwg-read-detail>{{ gp.read_error.text }}</span>{% else %}{{ _('This settings object is not in the SATOM cache of %(dev)s and could not be read from the device: the form shows %(p)s\'s layout without values.', dev=appliance.name, p=_gxl) }}{% endif %}</div>{% endif %}
+  {% if gp and gp.action %}<div class="fw-alert fw-alert-info" data-fwg-action="{{ gp.action.kind }}"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import is done on the device: SATOM does not upload files through this dialog.') }} {{ _('The fields below are what the device\'s dialog shows.') }}{% if gp.action.flow %} {{ _('SATOM has its own import for this object:') }} <a href="{{ gp.action.flow.url }}" data-fwg-action-flow>{{ gp.action.flow.label }} <i class="bi bi-arrow-right"></i></a>{% endif %}</div>{% endif %}
+  {% if gp and gp.device_managed %}<div class="fw-alert fw-alert-info" data-fwg-device-managed="{{ gp.device_managed }}"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Managed on the device: %(dev)s edits this page through its own GUI calls, which SATOM never replays. SATOM draws its layout read-only; nothing is sent from it.', dev=appliance.name) }}{% if gp.device_href %} <a href="{{ gp.device_href }}" target="_blank" rel="noopener" data-fwg-device-link>{{ _('Open it on the device') }} <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}</div>
+  {% elif gp and gp.gui_only %}<div class="fw-alert fw-alert-info" data-gui-only-page><i class="bi bi-window me-1"></i>{{ _('No API on this build (GUI only): %(p)s serves this page to its own GUI only, so SATOM shows its layout read-only and never saves it.', p=_gxl) }}</div>{% endif %}
+  {% if gp and gp.weak %}<div class="fwg-note" data-fwg-weak><i class="bi bi-link-45deg"></i><span>{{ _('Tied by one field: the crawl matched these objects to %(ep)s by %(n)s of its attributes only. Values are the API\'s; check them against the device before saving.', ep=gp.collection, n=(gp.evidence or {}).get('attributes_measured', 1)) }}</span></div>{% endif %}
+  {% if gp and gp.cli %}<div class="fwg-note" data-fwg-cli><i class="bi bi-terminal"></i><span>{{ _('Served only by the CLI on this build: read with show full-configuration over a read-only SSH session; Save writes it through the CLI writer (dry run first).') }}</span></div>{% endif %}
+  {% if gp and gp.error %}<div class="fw-alert fw-alert-warning" data-fwg-read-error>{{ fwg_read_failure(appliance, gp.error) }}</div>{% endif %}
+  {% if gp and gp.monitor %}<div class="fwg-note"><i class="bi bi-activity"></i><span>{{ _('Status view (FortiGate monitor API): read-only.') }}</span></div>{% endif %}
+  <div class="fwg-body">
+  {% set _tab = namespace(cur='') %}
+  {% for b in view.blocks %}
+    {% if b.tab and b.tab != _tab.cur %}{% set _tab.cur = b.tab %}<div class="fwg-dlg-tab" data-fwg-tab>{{ b.tab }}</div>{% endif %}
+    <div class="fwg-block"{% if b.cond is defined %} data-fwg-bcond="{{ b.cond|tojson|forceescape }}"{% if b.hidden %} hidden{% endif %}{% endif %}>
+    {% if b.title and b.fold %}
+      <details class="fwg-fold" {{ 'open' if b.open }}>
+        <summary class="fwg-sec-title {{ 'fwg-unknown' if b.unknown }}"><i class="bi bi-plus-square-fill"></i><i class="bi bi-dash-square-fill"></i>{{ b.title }}</summary>
+        {{ fields(b) }}
+      </details>
+    {% else %}
+      {% if b.title %}<div class="fwg-sec-title {{ 'fwg-unknown' if b.unknown }}">{{ b.title }}</div>{% endif %}
+      {{ fields(b) }}
+    {% endif %}
+    </div>
+  {% endfor %}
+  {% if view.hce_table %}{% set ht = view.hce_table %}
+  {% macro hce_sel(c, opts) -%}
+    {%- if c -%}<select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ c.key }}" data-orig="{{ c.raw }}"{{ ' disabled' if not can_edit or c.build_state == 'missing' }}>
+      {%- if c.raw not in opts|map('first')|list %}<option value="{{ c.raw }}" selected>{{ c.raw }}</option>{% endif -%}
+      {%- for v, l in opts %}<option value="{{ v }}"{{ ' selected' if v == c.raw }}>{{ l }}</option>{% endfor -%}
+    </select>{%- endif -%}
+  {%- endmacro %}
+  <style nonce="{{ csp_nonce }}">
+  .fwg-hce-table td{vertical-align:middle}
+  .fwg-hce-head td{background:var(--fw-content-bg,#F3F6FC);cursor:pointer;font-weight:600;user-select:none}
+  .fwg-hce-table{width:100%;table-layout:auto}
+  .fwg-hce-table td:nth-child(2){min-width:16rem;white-space:normal}
+  .fwg-hce-table td:nth-child(2) div{white-space:normal}
+  .fwg-hce-table select{min-width:6.5rem}
+  .fwg-hce-table input[type=number]{width:6.5rem}
+  </style>
+  <div class="fwg-block fwg-hce" data-hce-table>
+    <table class="fwg-table fwg-hce-table">
+      <thead><tr><th>Status</th><th>Name</th><th>Length</th><th>Action</th><th>Block Period</th><th>Severity</th><th>Threat Weight</th><th>Trigger Policy</th><th>HTTP Protocol Support</th></tr></thead>
+      {% for c in ht.categories %}
+      <tbody><tr class="fwg-hce-head" data-hce-cat="{{ loop.index0 }}"><td colspan="9"><i class="bi bi-plus-square"></i> {{ c.title }}({{ c.rows|length }})</td></tr></tbody>
+      <tbody data-hce-rows="{{ loop.index0 }}" hidden>
+      {% for r in c.rows %}<tr>
+        <td>{% if r.status %}<span class="form-check form-switch mb-0"><input type="checkbox" class="form-check-input fwg-in" role="switch" data-gkey="{{ r.status.key }}" data-orig="{{ r.status.raw }}" data-on="enable" data-off="disable" aria-label="{{ r.label }}"{{ ' checked' if r.status.raw == 'enable' }}{{ ' disabled' if not can_edit or r.status.build_state == 'missing' }}></span>{% endif %}</td>
+        <td>{{ r.label }}<div class="small text-muted">{{ r.desc }}</div>{% for text, state in r.notes %}<span class="fw-badge fw-badge-{{ 'warning' if state == 'missing' else 'secondary' }} me-1" data-build-state="{{ state }}" title="{{ _('This layout was measured on another build: the API library says what this device\'s build has.') }}">{{ text }}</span>{% endfor %}</td>
+        <td>{% if r.length %}<input type="number" class="form-control form-control-sm fwg-in fwg-edit" data-gkey="{{ r.length.key }}" data-orig="{{ r.length.raw }}" value="{{ r.length.raw }}"{{ ' disabled' if not can_edit or r.length.build_state == 'missing' }}>{% endif %}</td>
+        <td>{{ hce_sel(r.action, ht.options.action) }}</td>
+        <td>{% if r.block_period %}<input type="number" min="1" max="3600" class="form-control form-control-sm fwg-in fwg-edit" data-gkey="{{ r.block_period.key }}" data-orig="{{ r.block_period.raw }}" value="{{ r.block_period.raw }}"{{ ' disabled' if not can_edit or r.block_period.build_state == 'missing' }}>{% endif %}</td>
+        <td>{{ hce_sel(r.severity, ht.options.severity) }}</td>
+        <td>{{ hce_sel(r.threat_weight, ht.options.threat_weight) }}</td>
+        <td>{% if r.trigger %}<select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ r.trigger.key }}" data-orig="{{ r.trigger.raw }}" data-ref="log/trigger-policy"{{ ' disabled' if not can_edit or r.trigger.build_state == 'missing' }}><option value="">{{ _('— none —') }}</option>{% if r.trigger.raw %}<option value="{{ r.trigger.raw }}" selected>{{ r.trigger.raw }}</option>{% endif %}</select>{% endif %}</td>
+        <td class="small">{{ r.proto }}</td>
+      </tr>{% endfor %}
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    // FortiWeb's categories: collapsed, one click opens them.
+    document.querySelectorAll('[data-hce-cat]').forEach(function (h) {
+      h.addEventListener('click', function () {
+        var rows = document.querySelector('[data-hce-rows="' + h.dataset.hceCat + '"]');
+        if (!rows) return;
+        rows.hidden = !rows.hidden;
+        var i = h.querySelector('i');
+        if (i) i.className = 'bi bi-' + (rows.hidden ? 'plus' : 'dash') + '-square';
+      });
+    });
+  })();
+  </script>
+  {% endif %}
+  {% if view.grids %}
+  {# The categorised tables FortiWeb draws by hand (Known Bots, Syntax
+     Detection, Web Shell Detection): every cell is one of the object's own
+     fields, from the template's resolved rows (services.gui_grid). A cell the
+     build's schema does not carry is read-only. #}
+  {% macro grid_cell(x, r) -%}
+    {%- if not x -%}
+    {%- elif x.kind == 'text' -%}{{ x.text }}
+    {%- elif x.kind == 'toggle' -%}<span class="form-check form-switch mb-0"><input type="checkbox" class="form-check-input fwg-in" role="switch" data-gkey="{{ x.key }}" data-orig="{{ x.raw }}" data-on="{{ x.on }}" data-off="{{ x.off }}" aria-label="{{ r.label }}"{{ ' checked' if x.raw == x.on }}{{ ' disabled' if not x.editable }}></span>
+    {%- elif x.kind == 'select' -%}<select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ x.key }}" data-orig="{{ x.raw }}"{% if x.warn_on %} data-warn-value="{{ x.warn_on.value }}" data-warn-text="{{ x.warn_on.text }}"{% endif %}{{ ' disabled' if not x.editable }}>
+      {%- if x.raw not in x.opts|map('first')|list %}<option value="{{ x.raw }}" selected>{{ x.raw }}</option>{% endif -%}
+      {%- for v, l in x.opts %}<option value="{{ v }}"{{ ' selected' if v == x.raw }}>{{ l }}</option>{% endfor -%}
+    </select>
+    {%- elif x.kind == 'number' -%}<input type="number" class="form-control form-control-sm fwg-in fwg-edit" data-gkey="{{ x.key }}" data-orig="{{ x.raw }}" value="{{ x.raw }}"{% if x.min is not none %} min="{{ x.min }}"{% endif %}{% if x.max is not none %} max="{{ x.max }}"{% endif %}{% if x.enabled_when %} data-enable-key="{{ x.enabled_when.key }}" data-enable-values="{{ x.enabled_when['values']|join(' ') }}"{% endif %}{{ ' disabled' if not x.editable }}>{% if x.unit %} <span class="small text-muted">{{ x.unit }}</span>{% endif %}
+    {%- elif x.kind == 'ref' -%}<select class="form-select form-select-sm fwg-in fwg-edit" data-gkey="{{ x.key }}" data-orig="{{ x.raw }}"{% if x.ref %} data-ref="{{ x.ref }}" data-omni{% if x.inline_edit %} data-inline-edit{% endif %}{% if x.create_new %} data-create-new{% endif %}{% endif %}{{ ' disabled' if not x.editable }}><option value="">{{ _('— none —') }}</option>{% if x.raw %}<option value="{{ x.raw }}" selected>{{ x.raw }}</option>{% endif %}</select>
+      {%- if x.ref %}{{ pencil(x.ref, x.raw) }}{% if x.create_new %}{{ creator(x.ref, r.label) }}{% endif %}{% endif -%}
+    {%- endif -%}
+    {%- if x and x.unverified %} <span class="small text-muted" title="{{ _('unverified on this build: shown, not saved') }}"><i class="bi bi-question-circle"></i></span>{% endif -%}
+  {%- endmacro %}
+  {% for gt in view.grids %}{% set gi = loop.index0 %}
+  <div class="fwg-block fwg-hce" data-grid-table>
+    <table class="fwg-table fwg-hce-table">
+      <thead><tr>{% for c in gt.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+      {% for c in gt.categories %}
+      <tbody><tr class="fwg-hce-head" data-grid-cat="{{ gi }}-{{ loop.index0 }}"><td colspan="{{ gt.columns|length }}"><i class="bi bi-dash-square"></i> {{ c.title }} ({{ c.rows|length }})</td></tr></tbody>
+      <tbody data-grid-rows="{{ gi }}-{{ loop.index0 }}">
+      {% for r in c.rows %}<tr{% if r.tip %} title="{{ r.tip }}"{% endif %}>{% for x in r.cells %}<td>{{ grid_cell(x, r) }}</td>{% endfor %}</tr>{% endfor %}
+      </tbody>
+      {% endfor %}
+    </table>
+    <div class="small text-warning mt-1" data-grid-warn hidden></div>
+  </div>
+  {% endfor %}
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    // categories open as FortiWeb opens them; one click folds them
+    document.querySelectorAll('[data-grid-cat]').forEach(function (h) {
+      h.addEventListener('click', function () {
+        var rows = document.querySelector('[data-grid-rows="' + h.dataset.gridCat + '"]');
+        if (!rows) return;
+        rows.hidden = !rows.hidden;
+        var i = h.querySelector('i');
+        if (i) i.className = 'bi bi-' + (rows.hidden ? 'plus' : 'dash') + '-square';
+      });
+    });
+    // Block Period is usable only while its row's action is a block action
+    document.querySelectorAll('[data-grid-table] [data-enable-key]').forEach(function (n) {
+      var act = document.querySelector('[data-grid-table] [data-gkey="' + n.dataset.enableKey + '"]');
+      if (!act || n.disabled) return;
+      var ok = n.dataset.enableValues.split(' ');
+      function sync() { n.disabled = ok.indexOf(act.value) < 0; }
+      act.addEventListener('change', sync); sync();
+    });
+    // the warning FortiWeb shows for one action (Client ID Block Period)
+    document.querySelectorAll('[data-grid-table] select[data-warn-value]').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var box = sel.closest('[data-grid-table]').querySelector('[data-grid-warn]');
+        if (!box) return;
+        box.hidden = sel.value !== sel.dataset.warnValue;
+        box.textContent = box.hidden ? '' : sel.dataset.warnText;
+      });
+    });
+  })();
+  </script>
+  {% endif %}
+  {% if view.key == 'signature_dialog' and name and _fwp %}
+  {# Edit Signature Policy: the main-class table FortiWeb draws by hand under
+     the four fields (services.signature_dialog_gui, measured). Each cell is a
+     row of main_class_list ("^main_class_list|<id>#<field>"); Save writes each
+     changed row through the object editor's save-row. #}
+  {% set sg = view.sig_table %}
+  {% if sg %}
+  {% macro sg_sel(c, opts, off, extra) -%}
+    <select class="form-select form-select-sm fwg-in fwg-edit" {{ extra }} data-gkey="{{ c.key }}" data-orig="{{ c.raw }}"{{ ' disabled' if off or not can_edit }}>
+      {%- if c.raw not in opts|map('first')|list %}<option value="{{ c.raw }}" selected>{{ c.raw }}</option>{% endif -%}
+      {%- for v, l in opts %}<option value="{{ v }}"{{ ' selected' if v == c.raw }}>{{ l }}</option>{% endfor -%}
+    </select>
+  {%- endmacro %}
+  <style nonce="{{ csp_nonce }}">
+  .fwg-sig{overflow-x:auto}
+  /* column widths as FortiWeb draws them (fwb-signature-dialog, 7.6.8:
+     Name wide, Block Period and Trigger Policy narrow); a narrow panel
+     scrolls the table instead of squeezing it */
+  .fwg-sig-table{width:100%;min-width:1040px;table-layout:fixed}
+  .fwg-sig-table col:nth-child(1){width:3%}.fwg-sig-table col:nth-child(2){width:24%}
+  .fwg-sig-table col:nth-child(3){width:5%}.fwg-sig-table col:nth-child(4){width:16%}
+  .fwg-sig-table col:nth-child(5){width:17%}.fwg-sig-table col:nth-child(6){width:9%}
+  .fwg-sig-table col:nth-child(7){width:12%}.fwg-sig-table col:nth-child(8){width:14%}
+  .fwg-sig-table td{vertical-align:middle}
+  .fwg-sig-table td.c{text-align:center}
+  /* .fwg-edit's 220px minimum (fortiweb.css) would overflow the narrow columns */
+  .fwg-sig-table select.fwg-edit{width:100%;min-width:0}
+  /* Trigger Policy keeps its "+ Create" on the same line */
+  .fwg-sig-table td:last-child{white-space:nowrap}
+  .fwg-sig-table td:last-child select.fwg-edit{display:inline-block;width:calc(100% - 22px);vertical-align:middle}
+  .fwg-sig-table input.fwg-edit[type=number]{width:100%;min-width:0;max-width:7rem}
+  .fwg-sig-toggle{border:0;background:none;padding:0 .25rem;color:var(--fw-text-muted,#5a6b7d)}
+  .fwg-sig-warn{color:#8B1C2A;font-size:12px}
+  </style>
+  {# every column FortiWeb draws stays drawn (no auto-hide): a narrow panel
+     scrolls the table sideways instead #}
+  <div class="fwg-block fwg-sig" data-sig-table data-fit="off">
+    <table class="fwg-table fwg-sig-table">
+      <colgroup><col><col><col><col><col><col><col><col></colgroup>
+      <thead><tr>{% for c in sg.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {#- a class the policy has no row for is drawn with FortiWeb's values
+          (data-sig-new): saving it creates the row, untouched it is not written -#}
+      {% for r in sg.rows %}<tr data-sig-row="{{ r.id }}"{% if r.new %} data-sig-new="1"{% endif %}>
+        <td>{% if r.ident and sg.threshold %}<button type="button" class="fwg-sig-toggle" data-sig-expand aria-expanded="false" title="{{ sg.threshold.label }}"><i class="bi bi-plus-square"></i></button>{% endif %}</td>
+        <td>{{ r.name }}</td>
+        <td class="c"><span class="form-check form-switch mb-0 d-inline-block"><input type="checkbox" class="form-check-input fwg-in" role="switch" data-sig-status data-gkey="{{ r.status.key }}" data-orig="{{ r.status.raw }}" data-on="enable" data-off="disable" aria-label="{{ r.name }}"{{ ' checked' if r.status.raw == 'enable' }}{{ ' disabled' if not can_edit }}></span></td>
+        <td class="c">{% if r.fpm %}<span class="form-check form-switch mb-0 d-inline-block"><input type="checkbox" class="form-check-input fwg-in" role="switch" data-sig-dep data-gkey="{{ r.fpm.key }}" data-orig="{{ r.fpm.raw }}" data-on="enable" data-off="disable" aria-label="{{ r.name }} — False Positive Mitigation"{{ ' checked' if r.fpm.raw == 'enable' }}{{ ' disabled' if r.off or not can_edit }}></span>{% endif %}</td>
+        <td class="c">{{ sg_sel(r.action, r.actions, r.off, 'data-sig-dep data-sig-action') }}</td>
+        <td class="c"><input type="number" min="1" max="3600" class="form-control form-control-sm fwg-in fwg-edit d-inline-block" data-sig-block data-gkey="{{ r.block_period.key }}" data-orig="{{ r.block_period.raw }}" value="{{ r.block_period.raw }}"{{ ' disabled' if r.off or not r.block_on or not can_edit }}></td>
+        <td class="c">{{ sg_sel(r.severity, sg.options.severity, r.off, 'data-sig-dep') }}</td>
+        <td><select class="form-select form-select-sm fwg-in fwg-edit" data-sig-dep data-gkey="{{ r.trigger.key }}" data-orig="{{ r.trigger.raw }}" data-ref="log/trigger-policy"{{ ' disabled' if r.off or not can_edit }}><option value="">{{ _('— none —') }}</option>{% if r.trigger.raw %}<option value="{{ r.trigger.raw }}" selected>{{ r.trigger.raw }}</option>{% endif %}</select>{% if can_edit and sg.trigger_create %}{{ creator('log/trigger-policy', _('Trigger Policy')) }}{% endif %}</td>
+      </tr>
+      {% if r.ident and sg.threshold %}<tr data-sig-threshold hidden>
+        <td></td><td>{{ sg.threshold.label }}</td>
+        <td colspan="6"><input type="number" min="{{ sg.threshold.min }}" max="{{ sg.threshold.max }}" class="form-control form-control-sm fwg-in fwg-edit d-inline-block" style="min-width:275px;width:auto" data-gkey="{{ sg.threshold.key }}" data-orig="{{ sg.threshold.raw }}" value="{{ sg.threshold.raw }}"{{ ' disabled' if not can_edit }}></td>
+      </tr>{% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="fwg-sig-warn" data-sig-warn hidden>{{ sg.client_id_warning }}</div>
+  </div>
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    // As FortiWeb's dialog: a disabled class greys its row; Block Period is
+    // editable only for a block-period action; the PII row folds out its
+    // Detection Threshold; Client ID Block Period needs Client Management.
+    var CAN = {{ can_edit|tojson }}, BLOCK = {{ sg.block_actions|tojson }};
+    function sync(tr) {
+      var st = tr.querySelector('[data-sig-status]'), off = !(st && st.checked);
+      tr.querySelectorAll('[data-sig-dep]').forEach(function (el) { el.disabled = off || !CAN; });
+      var act = tr.querySelector('[data-sig-action]'), bp = tr.querySelector('[data-sig-block]');
+      if (bp) bp.disabled = off || !CAN || !act || BLOCK.indexOf(act.value) < 0;
+    }
+    var rows = document.querySelectorAll('[data-sig-row]');
+    rows.forEach(function (tr) {
+      sync(tr);
+      tr.addEventListener('change', function (e) {
+        sync(tr);
+        if (e.target.matches('[data-sig-action]') && e.target.value === 'client-id-block-period') {
+          var w = document.querySelector('[data-sig-warn]'); if (w) w.hidden = false;
+        }
+      });
+    });
+    var ex = document.querySelector('[data-sig-expand]');
+    if (ex) ex.addEventListener('click', function () {
+      var t = document.querySelector('[data-sig-threshold]');
+      if (!t) return;
+      t.hidden = !t.hidden;
+      ex.setAttribute('aria-expanded', t.hidden ? 'false' : 'true');
+      ex.querySelector('i').className = 'bi bi-' + (t.hidden ? 'plus' : 'dash') + '-square';
+    });
+  })();
+  </script>
+  {% else %}
+  <div class="fw-alert fw-alert-warning" data-sig-unknown>{{ _('The signature classes of this policy could not be read: %(dev)s refused or did not answer and the SATOM cache has none. They are not drawn rather than drawn empty.', dev=appliance.name) }}{% if view.sig_table_error %} <code>{{ view.sig_table_error }}</code>{% endif %}</div>
+  {% endif %}
+  {% endif %}
+  {% if (not is_new or not _fwp) and view.key == main and not row_ctx %}
+    {% if nig_edit %}
+      <div class="fw-card mt-3 p-3 fw-nig-tab">{{ nig_editable(nig_edit, create=is_new, mkey=name, collection=save_ep, endpoint=(gp.nig_endpoint if gp else ''), singleton=(gp.form if gp else false)) }}</div>
+    {% elif not (gp and gp.api) %}
+      {% with nig_sec = not_in_gui, nig_values = nig_row %}{% include "_not_in_gui_tab.html" %}{% endwith %}
+    {% endif %}
+  {% endif %}
+  </div>
+  {% if can_edit %}
+  <div class="fwg-review" data-fwg-review hidden>
+    <div class="fwg-sec-title">{{ _('Review the change') }}</div>
+    <div data-fwg-review-body></div>
+    <div class="d-flex gap-2 mt-2">
+      <button type="button" class="fwg-btn is-primary" data-fwg-apply>{{ _('Apply to %(dev)s', dev=appliance.name) }}</button>
+      <button type="button" class="fwg-btn" data-fwg-discard>{{ _('Back to the form') }}</button>
+    </div>
+  </div>
+  {% endif %}
+  <div class="fwg-footer">
+    {% if can_edit %}
+    <button type="button" class="fwg-btn is-primary" data-fwg-save>{{ _('Save') }}</button>
+    {% if not _fwp and row_ctx and row_ctx.source in ('field', 'child') and not row_ctx.new and row_ctx.sub_id %}<button type="button" class="fwg-btn" data-fwg-delete-row>{{ _('Delete row') }}</button>{% endif %}
+    <span class="small text-muted" data-fwg-status></span>
+    {% else %}
+    {% if not (gp and gp.action) %}<span class="fwg-btn is-primary" aria-disabled="true" title="{{ _('Read-only: nothing is sent to the device.') }}">{{ _('OK') }}</span>{% endif %}
+    {% endif %}
+    <a class="fwg-btn" href="{{ back }}" data-fwg-cancel>{{ _('Cancel') }}</a>
+    {% if view.key == 'signature_dialog' and name and _fwp %}<a class="fwg-btn" data-fwg-sig-detail href="{{ url_for('web_protection.signature_policy', id=appliance.id, name=name, back=url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=name)) }}" target="_top" title="{{ _("Slides in the policy's Signature Details over this dialog, as FortiWeb does: Dictionaries tree, signatures per sub-category, and each signature's detail and exceptions.") }}">{{ _('Signature Details') }}</a>{% endif %}
+  </div>
+</div>
+{% if gp and gp.form and satom is defined and satom and satom.lib %}{% set tlib = satom.lib %}{% include 'section_config/_template_library.html' %}{% endif %}
+{% if gp and gp.form and satom is defined and satom and satom.section %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // a settings object is captured whole (singleton, mkey-less)
+  var b = document.querySelector('[data-fwg-form-savetpl]');
+  if (!b) return;
+  b.addEventListener('click', function () {
+    var nm = prompt('Save these settings to the Template Library as:', {{ (satom.section ~ '-' ~ gp.page)|tojson }});
+    if (!nm) return;
+    fetch({{ url_for('objedit.save_template_from_object', appliance_id=appliance.id)|tojson }}, {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({collection: b.dataset.collection, mkey: '', singleton: 1, section: b.dataset.section,
+                            name: nm, note: 'Saved from ' + {{ gp.page|tojson }} + ' on device ' + {{ appliance.id }}})})
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) { alert('Error: ' + (j.error || 'failed')); return; }
+        var m = 'Saved "' + (j.name || nm) + '" v' + j.version + ' (pending approval)';
+        if (window.FW) FW.toast(m, 'success'); else alert(m);
+        setTimeout(function () { location.reload(); }, 900);
+      });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // Sub-tables behave like FortiWeb's grid: click selects, double-click /
+  // Enter / Edit opens the row's dialog, Search filters.
+  document.querySelectorAll('[data-fwg-sub]').forEach(function (box) {
+    var edit = box.querySelector('[data-fwg-edit]');
+    var rows = Array.prototype.slice.call(box.querySelectorAll('tbody tr[data-href]'));
+    function select(tr) {
+      rows.forEach(function (r) { r.classList.toggle('is-selected', r === tr); });
+      if (edit) {
+        edit.setAttribute('href', tr ? tr.getAttribute('data-href') : '#');
+        edit.setAttribute('aria-disabled', tr ? 'false' : 'true');
+      }
+    }
+    function open(tr) { window.location.href = tr.getAttribute('data-href'); }
+    rows.forEach(function (tr) {
+      tr.addEventListener('click', function () { select(tr); });
+      tr.addEventListener('dblclick', function () { open(tr); });
+      tr.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(tr); });
+    });
+    var q = box.querySelector('[data-fwg-search]');
+    if (q) q.addEventListener('input', function () {
+      var s = q.value.trim().toLowerCase();
+      rows.forEach(function (tr) { tr.hidden = !!s && tr.textContent.toLowerCase().indexOf(s) < 0; });
+    });
+  });
+  // "Edit entry" pencil: the referenced object opens in a panel stacked over
+  // this dialog (FWDrawer), never in a new window. The panel's selects feed
+  // back into the one that opened it, as on the Server Policy page.
+  window.OBJEDIT_AID = {{ appliance.id }};
+  // In a panel (framed): Cancel closes the panel, as FortiWeb's Cancel
+  // returns to the dialog that opened this one.
+  if (window.self !== window.top) {
+    document.querySelectorAll('[data-fwg-cancel]').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        window.parent.postMessage({fwDrawer: 'close'}, location.origin);
+      });
+    });
+  }
+  // "Read values over CLI" in "Not in GUI, but in CLI": the object's CLI-only
+  // values over a read-only SSH session (show full-configuration), filled into
+  // the inputs as value AND data-orig (an unchanged field is never sent back).
+  // Secrets are never returned: their inputs say so.
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('[data-js="nig-read-cli"]');
+    if (!btn) return;
+    e.preventDefault();
+    var sec = btn.closest('[data-nig]'), out = sec.querySelector('.fw-nig-read');
+    var names = Array.prototype.map.call(sec.querySelectorAll('[data-channel="CLI"]'),
+      function (el) { return el.dataset.nigKey; });
+    if (!names.length) { if (out) out.textContent = 'no CLI-only field here'; return; }
+    if (out) out.textContent = 'reading…';
+    fetch({{ url_for('appliances.not_in_gui_read', id=appliance.id)|tojson }}, {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({endpoint: sec.dataset.endpoint || sec.dataset.collection,
+                            mkey: sec.dataset.mkey || '', parent: sec.dataset.parent || '', names: names})})
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) { if (out) out.textContent = j.error || 'CLI read failed'; return; }
+        var vals = j.values || {}, secret = j.secret || [];
+        sec.querySelectorAll('[data-nig-key]').forEach(function (fld) {
+          var k = fld.dataset.nigKey, el = fld.querySelector('.fw-input');
+          if (!el) return;
+          if (secret.indexOf(k) >= 0) { el.value = ''; el.placeholder = 'secret — not shown'; return; }
+          if (!Object.prototype.hasOwnProperty.call(vals, k)) return;
+          var v = vals[k] == null ? '' : String(vals[k]);
+          el.value = v; el.dataset.orig = v;
+        });
+        if (out) out.textContent = 'read over CLI';
+      }).catch(function () { if (out) out.textContent = 'no answer from SATOM'; });
+  });
+  document.querySelectorAll('[data-fwg-pencil]').forEach(function (pen) {
+    pen.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (pen.classList.contains('is-off')) return;
+      var sel = pen.parentElement.querySelector('select[data-ref]');
+      var mkey = sel ? sel.value : pen.dataset.mkey;
+      if (!mkey) return;
+      var val = pen.closest('.fwg-value');
+      var lab = val && val.previousElementSibling;
+      var title = lab ? lab.textContent.trim() : pen.dataset.coll.split('/').pop();
+      if (window.FWDrawer && pen.dataset.gui && window.FWDrawer.openFrame) {
+        window.FWDrawer.openFrame(pen.dataset.gui.replace('__N__', encodeURIComponent(mkey)), pen.dataset.coll, mkey, {title: title, opener: sel});
+        return;
+      }
+      if (window.FWDrawer) { window.FWDrawer.openEdit(pen.dataset.coll, mkey, {title: title, opener: sel}); return; }
+      window.location.href = pen.getAttribute('href');
+    });
+  });
+  // FortiWeb's Omniselect: the list in a panel with a search box, an Edit
+  // entry pencil on each entry (source inlineEdit) and + Create at its top
+  // (createNew; FortiWeb puts it at the foot, the operator asked for the top). The native select stays (hidden) as the value the save
+  // reads; every pick goes through it (change event), so nothing else moves.
+  function omniOpenEntry(sel, pen, mkey) {
+    var val = sel.closest('.fwg-value');
+    var lab = val && val.previousElementSibling;
+    var title = lab ? lab.textContent.trim() : (pen ? pen.dataset.coll.split('/').pop() : '');
+    if (!pen || !mkey) return;
+    if (window.FWDrawer && pen.dataset.gui && window.FWDrawer.openFrame) {
+      window.FWDrawer.openFrame(pen.dataset.gui.replace('__N__', encodeURIComponent(mkey)), pen.dataset.coll, mkey, {title: title, opener: sel});
+    } else if (window.FWDrawer) {
+      window.FWDrawer.openEdit(pen.dataset.coll, mkey, {title: title, opener: sel});
+    }
+  }
+  document.querySelectorAll('select[data-omni]').forEach(function (sel) {
+    var box = sel.parentElement;
+    var pen = box.querySelector('[data-fwg-pencil]');
+    var create = box.querySelector('[data-fwg-create]');
+    var w = document.createElement('div');
+    w.className = 'fwg-omni';
+    w.innerHTML = '<button type="button" class="fwg-omni-btn form-select form-select-sm" aria-haspopup="listbox" aria-expanded="false"></button>' +
+      // + Create at the TOP: with many objects the foot of the list is far away
+      '<div class="fwg-omni-pop" hidden>' +
+      (create && sel.hasAttribute('data-create-new') ? '<button type="button" class="fwg-omni-create"><i class="bi bi-plus-lg"></i> {{ _('Create') }}</button>' : '') +
+      '<input type="search" class="form-control form-control-sm fwg-omni-q" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}">' +
+      '<ul class="fwg-omni-list" role="listbox"></ul></div>';
+    sel.insertAdjacentElement('afterend', w);
+    sel.hidden = true;
+    if (create && sel.hasAttribute('data-create-new')) create.hidden = true;  // it lives in the list now
+    var btn = w.querySelector('.fwg-omni-btn'), pop = w.querySelector('.fwg-omni-pop');
+    var q = w.querySelector('.fwg-omni-q'), list = w.querySelector('.fwg-omni-list');
+    var active = -1;
+    function label() { var o = sel.options[sel.selectedIndex]; btn.textContent = o && o.value ? o.textContent : '{{ _('— none —') }}'; }
+    function items() { return Array.prototype.slice.call(list.querySelectorAll('li[data-v]')); }
+    function mark(i) {
+      var it = items(); if (!it.length) return;
+      active = (i + it.length) % it.length;
+      it.forEach(function (li, j) { li.classList.toggle('is-active', j === active); });
+      it[active].scrollIntoView({block: 'nearest'});
+    }
+    function draw() {
+      var f = q.value.trim().toLowerCase();
+      list.innerHTML = '';
+      Array.prototype.forEach.call(sel.options, function (o) {
+        if (f && o.textContent.toLowerCase().indexOf(f) < 0) return;
+        var li = document.createElement('li');
+        li.setAttribute('role', 'option'); li.dataset.v = o.value;
+        if (o.value === sel.value) li.classList.add('is-sel');
+        var t = document.createElement('span'); t.textContent = o.value ? o.textContent : '{{ _('— none —') }}';
+        li.appendChild(t);
+        if (o.value && pen && sel.hasAttribute('data-inline-edit')) {
+          var e = document.createElement('a');
+          e.href = '#'; e.className = 'fwg-omni-edit'; e.title = '{{ _('Edit entry') }}';
+          e.setAttribute('aria-label', '{{ _('Edit entry') }} ' + o.value);
+          e.innerHTML = '<i class="bi bi-pencil-fill" aria-hidden="true"></i>';
+          e.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); close(); omniOpenEntry(sel, pen, o.value); });
+          li.appendChild(e);
+        }
+        li.addEventListener('click', function () { pick(o.value); });
+        list.appendChild(li);
+      });
+      active = -1;
+    }
+    function open() { if (sel.disabled) return; draw(); pop.hidden = false; btn.setAttribute('aria-expanded', 'true'); q.value = ''; q.focus(); }
+    function close() { pop.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+    function pick(v) {
+      sel.value = v; sel.dispatchEvent(new Event('change', {bubbles: true})); label(); close(); btn.focus();
+    }
+    btn.disabled = sel.disabled;
+    btn.addEventListener('click', function () { pop.hidden ? open() : close(); });
+    btn.addEventListener('keydown', function (e) { if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); open(); } });
+    q.addEventListener('input', draw);
+    q.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); mark(active + 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); mark(active - 1); }
+      else if (e.key === 'Enter') { e.preventDefault(); var it = items(); if (it[active]) pick(it[active].dataset.v); }
+      else if (e.key === 'Escape') { e.preventDefault(); close(); btn.focus(); }
+    });
+    var cr = w.querySelector('.fwg-omni-create');
+    if (cr) cr.addEventListener('click', function () { close(); create.click(); });
+    document.addEventListener('click', function (e) { if (!w.contains(e.target)) close(); });
+    // the list loads late (cache/device) and + Create adds to it: follow the select
+    sel.addEventListener('change', label);
+    new MutationObserver(function () { label(); if (!pop.hidden) draw(); }).observe(sel, {childList: true});
+    label();
+  });
+  // "+ Create": the object's empty dialog in the panel; what it saves is
+  // added to the list and selected here, then the panel closes (FortiWeb's
+  // inlineEditCreate -> notifySourceChanged)
+  document.querySelectorAll('[data-fwg-create]').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      var sel = btn.parentElement.querySelector('select[data-ref]');
+      if (sel && sel.disabled) return;
+      var val = btn.closest('.fwg-value');
+      var lab = val && val.previousElementSibling;
+      var title = btn.dataset.title || (lab ? lab.textContent.trim() : btn.dataset.coll.split('/').pop());
+      function pick(name) {
+        if (!sel || !name) return;
+        var have = Array.prototype.some.call(sel.options, function (o) { return o.value === name; });
+        if (!have) { var o = document.createElement('option'); o.value = o.textContent = name; sel.appendChild(o); }
+        sel.value = name;
+        sel.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+      if (window.FWDrawer && btn.dataset.gui && window.FWDrawer.openFrame) {
+        window.FWDrawer.openFrame(btn.dataset.gui, btn.dataset.coll, '{{ _('New') }}', {title: title, opener: sel, onCreated: pick});
+        return;
+      }
+      if (window.FWDrawer) window.FWDrawer.openCreate(btn.dataset.coll, {title: title, opener: sel});
+    });
+  });
+})();
+{% if view.live %}
+(function () {
+  // Live show / hide, as FortiWeb's GUI does while you edit: every field and
+  // section carries its condition (device facts already bound server-side,
+  // gui_template.bind_device); this evaluator mirrors gui_template.evaluate
+  // (tri-state: null = cannot tell = shown) over the starting row plus the
+  // current value of every control, derived and aliased keys recomputed.
+  var LIVE = {{ view.live|tojson }};
+  function truthy(v) { return !!v && v !== '' && v !== 0 && v !== '0'; }
+  function ev(a, row) {
+    if (a === null || a === undefined) return true;
+    if ('raw' in a) return null;
+    if ('lit' in a) return a.lit === undefined ? null : a.lit;
+    if ('field' in a) { var v = row[a.field]; return (v === undefined || v === null) ? '' : v; }
+    if ('ref_set' in a) return !!row[a.ref_set];
+    if ('ctx' in a) return null;
+    var args = a.args || [], i, x, y;
+    if (a.op === 'not') { x = ev(args[0], row); return x === null ? null : !truthy(x); }
+    if (a.op === 'eq' || a.op === 'ne') {
+      x = ev(args[0], row); y = ev(args[1], row);
+      if (x === null || y === null) return null;
+      var same = (typeof x !== 'boolean' && typeof y !== 'boolean') ? String(x) === String(y) : x === y;
+      return a.op === 'eq' ? same : !same;
+    }
+    var vals = args.map(function (n) { return ev(n, row); });
+    if (a.op === 'and') {
+      for (i = 0; i < vals.length; i++) if (vals[i] !== null && !truthy(vals[i])) return false;
+      return vals.indexOf(null) >= 0 ? null : true;
+    }
+    if (a.op === 'or') {
+      for (i = 0; i < vals.length; i++) if (vals[i] !== null && truthy(vals[i])) return true;
+      return vals.indexOf(null) >= 0 ? null : false;
+    }
+    return null;
+  }
+  window.fwgCurrent = function (el) {
+    if (el.dataset.kind === 'radio') {
+      var r = el.querySelector('input[type=radio]:checked');
+      return r ? r.value : el.dataset.orig;
+    }
+    if (el.dataset.kind === 'checks') {
+      return Array.prototype.map.call(el.querySelectorAll('input[type=checkbox]:checked'),
+        function (c) { return c.value; }).join(' ');
+    }
+    if (el.type === 'checkbox') return el.checked ? el.dataset.on : el.dataset.off;
+    return el.value;
+  };
+  function row() {
+    var r = Object.assign({}, LIVE.row);
+    document.querySelectorAll('.fwg-in[data-gkey]').forEach(function (el) { r[el.dataset.gkey] = window.fwgCurrent(el); });
+    Object.keys(LIVE.aliases || {}).forEach(function (g) { r[g] = r[LIVE.aliases[g]]; });
+    Object.keys(LIVE.derived || {}).forEach(function (k) {
+      delete r[k];
+      (LIVE.derived[k] || []).some(function (rule) {
+        if (r[rule.field] === rule.eq) { r[k] = rule.value; return true; }
+        return false;
+      });
+    });
+    return r;
+  }
+  function refresh() {
+    var r = row();
+    document.querySelectorAll('[data-fwg-bcond],[data-fwg-cond]').forEach(function (el) {
+      var c = JSON.parse(el.dataset.fwgBcond || el.dataset.fwgCond || 'null');
+      var v = ev(c, r);
+      el.hidden = v !== null && !truthy(v);
+    });
+  }
+  window.fwgRefreshLive = refresh;
+  document.addEventListener('change', refresh);
+  document.addEventListener('input', refresh);
+})();
+{% endif %}
+(function () {
+  // Regex Lab on a regex-capable field (same rule as the classic forms): the
+  // calculator fills the field it was opened from. Bound per button, so a
+  // Turbo revisit never stacks a second opener.
+  document.querySelectorAll('.fw-rx-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (!window.FWRegexLab) return;
+      FWRegexLab.open(b.closest('.fw-rx-wrap').querySelector('.fwg-in'), b.dataset.rxContext || '', 'fortiweb');
+    });
+  });
+})();
+{% if can_edit %}
+(function () {
+  // Save: collect the controls whose value changed (layout fields + the
+  // "Not in GUI, but in CLI" section) -- or, on a Create New form, every
+  // shown control with a value -- preview the exact request (dry run), then
+  // apply. Policy fields go through workspace.save (REST / CLI split by the
+  // build's channels), a sub-table row through gui_save_row (the object
+  // editor's row save), a new policy through workspace.create_policy.
+  // gp (a generic FortiWeb page): object / new-object / row write through the
+  // object editor (save-object / create-object / save-row).
+  var GP = {{ (gp or none)|tojson }};
+  // a FortiGate / FortiAuthenticator / FortiADC page saves through
+  // workspace.fwgui_save (GuiOps: dry run, apply, then a re-read that
+  // VERIFIES the write -- a value the device does not hold fails the save),
+  // never the FortiWeb editor
+  // what the re-read could not check, in words (the save stands, unproven);
+  // r.verdict is gui_products.verdict_view: {verdict, level, label, detail, text}
+  function unverifiedNote(r) {
+    var v = (r && r.verdict) || {};
+    return 'Saved on the device, but not verified' + (v.detail ? ': ' + v.detail : '') + '.';
+  }
+  // the verdict as a badge: Verified on the device / Not applied / Not verified
+  function verdictBadge(r) {
+    var v = r && r.verdict;
+    return v ? '<span class="fw-badge fw-badge-' + esc(v.level) + ' me-1" data-fwg-verdict="' +
+      esc(v.verdict) + '">' + esc(v.label) + '</span>' : '';
+  }
+  // a write the device accepted but did not keep: what it kept instead
+  function notApplied(r) {
+    var v = r && r.verdict;
+    return v && v.verdict === 'mismatch' ? 'Not saved: ' + (v.detail || 'the device did not keep it') : '';
+  }
+  var PX = !!(GP && GP.product && GP.product !== 'fortiweb');
+  var MODE = GP ? (GP.mode === 'row' ? 'gp-row' : GP.mode)
+           : {{ ('new-policy' if is_new else ('row' if row_ctx else 'policy'))|tojson }};
+  var ROW = {{ (row_ctx or {})|tojson }};
+  var SAVE = MODE === 'new-policy' ? {{ url_for('workspace.create_policy', appliance_id=appliance.id)|tojson }}
+           : MODE === 'row' ? {{ (url_for('workspace.gui_save_row', appliance_id=appliance.id, name=name) if row_ctx and not gp else '')|tojson }}
+           : MODE === 'object' ? {{ url_for('objedit.save_object', appliance_id=appliance.id)|tojson }}
+           : MODE === 'new-object' ? {{ url_for('objedit.create_object', appliance_id=appliance.id)|tojson }}
+           : MODE === 'gp-row' ? {{ url_for('objedit.save_row', appliance_id=appliance.id)|tojson }}
+           : {{ url_for('workspace.save', appliance_id=appliance.id)|tojson }};
+  {% if gp %}
+  var DONE = {{ (url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=name, v=gp.v) if name else url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=gp.v))|tojson }};
+  var GUI_POLICY = {{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name='__N__', v=gp.v)|tojson }};
+  {% else %}
+  var DONE = {{ (url_for('workspace.gui_policy', appliance_id=appliance.id, name=name) if name else url_for('workspace.gui_list', appliance_id=appliance.id))|tojson }};
+  var GUI_POLICY = {{ url_for('workspace.gui_policy', appliance_id=appliance.id, name='__N__')|tojson }};
+  {% endif %}
+  var OPTS = {{ url_for('workspace.cmdb_options', appliance_id=appliance.id)|tojson }};
+  var BACK = {{ back|tojson }};
+  // Delete one row of an inline table (FortiGate / FortiAuthenticator): the
+  // parent object is written without it; dry run first, then apply
+  var delRow = document.querySelector('[data-fwg-delete-row]');
+  if (delRow) delRow.addEventListener('click', function () {
+    if (!confirm('Delete this row?\n\nA dry-run preview is shown first.')) return;
+    var b = {page: GP.page, v: GP.v, collection: GP.collection, mkey: ROW.parent || '',
+             subtable: ROW.subtable, sub_id: ROW.sub_id, op: 'delete', fields: {}};
+    post(b, GP.save).then(function (j) {
+      if (!j.ok) { say('Not deleted: ' + (j.error || 'refused'), true); return; }
+      var req = j.request || {};
+      if (!confirm('DRY-RUN ' + (req.method || 'PUT') + ' ' + (req.path || '') + '\n\nApply this delete to the device now?')) return;
+      post(Object.assign({}, b, {apply: true}), GP.save).then(function (j2) {
+        if (!j2.ok) { say(notApplied(j2).replace(/^Not saved/, 'Not deleted') || 'Not deleted: ' + (j2.error || 'refused'), true, j2); return; }
+        if (j2.verified !== true) {
+          // the re-read could not prove the row gone: say so before leaving
+          say(unverifiedNote(j2).replace(/^Saved/, 'Deleted') + ' Reloading…', true, j2);
+          window.setTimeout(function () { window.location.href = BACK; }, 2500);
+          return;
+        }
+        say('Deleted. Reloading…', false, j2); window.location.href = BACK;
+      });
+    });
+  });
+  var status = document.querySelector('[data-fwg-status]');
+  var review = document.querySelector('[data-fwg-review]');
+  var reviewBody = document.querySelector('[data-fwg-review-body]');
+  var pending = null;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+  function current(el) {
+    if (window.fwgCurrent) return window.fwgCurrent(el);
+    if (el.type === 'checkbox') return el.checked ? el.dataset.on : el.dataset.off;
+    return el.value;
+  }
+  function shown(el) { return !el.closest('[hidden]'); }
+  function changes() {
+    var out = [];
+    document.querySelectorAll('.fwg-in[data-gkey]').forEach(function (el) {
+      if (!shown(el)) return;
+      var v = current(el);
+      if (MODE === 'new-policy' || MODE === 'new-object' || (ROW.new && (MODE === 'row' || MODE === 'gp-row'))) {
+        if (v !== '' && v !== undefined) out.push({key: el.dataset.gkey, was: '', now: v});
+      } else if (v !== (el.dataset.orig || '')) {
+        out.push({key: el.dataset.gkey, was: el.dataset.orig || '', now: v});
+      }
+    });
+    document.querySelectorAll('[data-nig] .fw-input[data-key]').forEach(function (el) {
+      if (el.value !== (el.dataset.orig || '')) out.push({key: el.dataset.key, was: el.dataset.orig || '', now: el.value, nig: true});
+    });
+    return out;
+  }
+  function body(fields, apply) {
+    // a row of an inline table: an object of its own collection, or written
+    // inside its parent object (subtable + sub_id)
+    if (PX && MODE === 'gp-row' && ROW.collection)
+      return {page: GP.page, v: GP.v, collection: ROW.collection, mkey: ROW.new ? '' : ROW.sub_id,
+              op: ROW.new ? 'create' : 'update', fields: fields, apply: !!apply};
+    if (PX && MODE === 'gp-row')
+      return {page: GP.page, v: GP.v, collection: GP.collection, mkey: ROW.parent || '',
+              subtable: ROW.subtable, sub_id: ROW.new ? '' : ROW.sub_id,
+              op: ROW.new ? 'create' : 'update', fields: fields, apply: !!apply};
+    if (PX) return {page: GP.page, v: GP.v, collection: GP.collection, mkey: GP.name || '',
+                    op: MODE === 'new-object' ? 'create' : 'update', fields: fields, apply: !!apply};
+    if (MODE === 'new-policy') return {policy: fields, apply: !!apply};
+    if (MODE === 'object') return {collection: GP.collection, mkey: GP.name, fields: fields, apply: !!apply};
+    if (MODE === 'new-object') {
+      var rest = Object.assign({}, fields); delete rest.name;
+      return {collection: GP.collection, mkey: fields.name, fields: rest, apply: !!apply};
+    }
+    if (MODE === 'gp-row') return {collection: ROW.collection, parent: GP.name, sub_id: ROW.sub_id || null, fields: fields, apply: !!apply};
+    if (MODE === 'row') return {subtable: ROW.subtable, sub_id: ROW.sub_id, fields: fields, apply: !!apply};
+    return {endpoint: {{ save_ep|tojson }}, mkey: {{ name|tojson }}, fields: fields, apply: !!apply};
+  }
+  function say(msg, bad, r) {
+    if (!status) return;
+    var badge = verdictBadge(r);
+    if (badge) status.innerHTML = badge + esc(msg); else status.textContent = msg;
+    status.classList.toggle('text-danger', !!bad);
+  }
+  // every write carries this page's edit-lease token (lock.js): the same
+  // operator's other tab is refused like a second user
+  function post(b, url) {
+    if (window.fwLeaseToken) b.lease_token = window.fwLeaseToken();
+    return fetch(url || SAVE, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(b)}).then(function (r) { return r.json(); });
+  }
+  // Stale-value check: each change carries the value the dialog loaded
+  // (``expected``); the server refuses it when the device has meanwhile been
+  // changed by someone else, instead of overwriting that unseen. OVERWRITE is
+  // the operator's explicit "save mine anyway" after being told.
+  var WAS = {}, OVERWRITE = false;
+  var NEW_FORM = MODE === 'new-policy' || MODE === 'new-object' || !!(ROW.new && (MODE === 'row' || MODE === 'gp-row'));
+  var LEASE_KEY = {{ (_lease_key or '')|tojson }};
+  function expectedFor(keys) {
+    var out = {};
+    (keys || []).forEach(function (K) {
+      if (!Object.prototype.hasOwnProperty.call(WAS, K)) return;
+      out[K.replace(/^@.+?#/, '').replace(/^\^.+?\|.+?#/, '')] = WAS[K];
+    });
+    return out;
+  }
+  function conflictText(r) {
+    return 'Changed on the device since this dialog opened. Nothing was sent.\n\n' +
+      Object.keys(r.conflict || {}).map(function (k) {
+        var c = r.conflict[k] || {};
+        return k + ': you loaded "' + c.loaded + '", the device now has "' + c.device + '", yours is "' + c.yours + '"';
+      }).join('\n') +
+      '\n\nOK = overwrite the device with your values. Cancel = keep the device values (the dialog reloads).';
+  }
+  document.addEventListener('change', function () {
+    if (MODE === 'new-policy' || MODE === 'new-object') return;
+    var n = changes().length;
+    say(n ? n + (n > 1 ? ' unsaved changes' : ' unsaved change') : '');
+  });
+  // Signature Details slides in over the dialog, as FortiWeb's does (a wide
+  // panel of the top window's stack, so it stays wide when this dialog is
+  // itself in a panel); its Return closes it, and a write made there reloads
+  // this dialog (FortiWeb's onSlideDone). The href is the no-script fallback.
+  var sigDetail = document.querySelector('[data-fwg-sig-detail]');
+  if (sigDetail) sigDetail.addEventListener('click', function (e) {
+    var top = window.top, drw = null;
+    try { drw = top.FWDrawer || window.FWDrawer; } catch (err) { drw = window.FWDrawer; }
+    if (!drw || !drw.openFrame) return;
+    e.preventDefault();
+    var url = sigDetail.getAttribute('href').replace(/([?&])back=[^&]*&?/, '$1').replace(/[?&]$/, '');
+    var panel = drw.openFrame(url + (url.indexOf('?') < 0 ? '?' : '&') + 'slide=1', 'waf/signature', GP.name || '',
+                              {title: 'Signature Details', wide: true,
+                               onClose: function (r) { if (r && r.changed) window.location.reload(); }});
+    if (!panel) window.top.location.href = sigDetail.getAttribute('href');
+  });
+  // The edit-entry pencil opens the object the select currently names.
+  document.querySelectorAll('select[data-ref]').forEach(function (sel) {
+    var pen = sel.parentElement.querySelector('[data-fwg-pencil]');
+    if (!pen) return;
+    sel.addEventListener('change', function () {
+      pen.classList.toggle('is-off', !sel.value);
+      pen.setAttribute('href', sel.value ? pen.dataset.base + '&mkey=' + encodeURIComponent(sel.value) : '#');
+    });
+  });
+  // Reference lists come from SATOM's cache (the device when it has none),
+  // one request per collection however many selects list it (the HTTP
+  // Protocol Constraints table has a Trigger Policy select per constraint).
+  var REFS = {};
+  document.querySelectorAll('select[data-ref]').forEach(function (sel) {
+    var first = sel.dataset.ref.split('|')[0];
+    var qs = '?endpoint=' + encodeURIComponent(first);
+    if (sel.dataset.refFilter) {
+      // the GUI's own filter (RSA / ECC certificates…): its GUI API list
+      qs += (sel.dataset.refApi ? '&api=' + encodeURIComponent(sel.dataset.refApi) : '') + '&filter=' + encodeURIComponent(sel.dataset.refFilter);
+    }
+    var req = REFS[qs] || (REFS[qs] = fetch(OPTS + qs)
+      .then(function (r) { return r.json(); }));
+    req.then(function (j) {
+        var have = {};
+        Array.prototype.forEach.call(sel.options, function (o) { have[o.value] = true; });
+        (j.names || []).forEach(function (n) {
+          if (!have[n]) { var o = document.createElement('option'); o.value = o.textContent = n; sel.appendChild(o); }
+        });
+      }).catch(function () {});
+  });
+  // Where each change goes: the dialog's own object (as above), a field
+  // FortiWeb keeps in another endpoint ("@<endpoint>#<key>", gui_bound), and
+  // a form FortiWeb's GUI writes through its own API (GP.api: GUI API save).
+  var SAVE_API = {{ url_for('workspace.fwgui_save_api', appliance_id=appliance.id)|tojson }};
+  var SAVE_OBJ = {{ url_for('objedit.save_object', appliance_id=appliance.id)|tojson }};
+  var SAVE_ROW = {{ url_for('objedit.save_row', appliance_id=appliance.id)|tojson }};
+  function plan(fields) {
+    var main = {}, bound = {}, subs = {}, steps = [];
+    Object.keys(fields).forEach(function (k) {
+      var m = /^@(.+?)#(.+)$/.exec(k), r = /^\^(.+?)\|(.+?)#(.+)$/.exec(k);
+      if (m) { (bound[m[1]] = bound[m[1]] || {})[m[2]] = fields[k]; }
+      else if (r) { var rk = r[1] + '|' + r[2]; (subs[rk] = subs[rk] || {st: r[1], id: r[2], f: {}}).f[r[3]] = fields[k]; }
+      else { main[k] = fields[k]; }
+    });
+    // a row of an inline table the dialog draws by hand (signature classes):
+    // its own save-row step, the row id outside the body. A class the policy
+    // had no row for (data-sig-new) is CREATED with every value the row shows
+    // and its main_class_id, as FortiWeb's OK writes the whole row.
+    Object.keys(subs).forEach(function (rk) {
+      var s = subs[rk], ep = GP.collection + '/' + s.st, pfx = '^' + s.st + '|' + s.id + '#';
+      var tr = document.querySelector('[data-sig-row="' + s.id + '"]');
+      var isNew = !!(tr && tr.dataset.sigNew);
+      var f = s.f;
+      if (isNew) {
+        f = {main_class_id: s.id};
+        tr.querySelectorAll('.fwg-in[data-gkey]').forEach(function (el) {
+          if (el.dataset.gkey.indexOf(pfx) === 0) f[el.dataset.gkey.slice(pfx.length)] = current(el);
+        });
+        Object.keys(s.f).forEach(function (k) { f[k] = s.f[k]; });
+      }
+      steps.push({ep: ep + ' [' + s.id + ']' + (isNew ? ' (new row)' : ''), url: SAVE_ROW, pfx: pfx,
+                  keys: Object.keys(s.f).map(function (k) { return pfx + k; }),
+                  make: function (a) { return {collection: ep, parent: GP.name, sub_id: isNew ? null : s.id, fields: f, apply: !!a}; }});
+    });
+    if (Object.keys(main).length) {
+      if (GP && GP.api) {
+        steps.push({ep: GP.collection, url: SAVE_API, keys: Object.keys(main), make: function (a) {
+          return {endpoint: GP.collection, method: GP.method || 'PUT', body: GP.body || 'data', fields: main, apply: !!a}; }});
+      } else {
+        steps.push({ep: (GP && GP.collection) || {{ save_ep|tojson }}, url: PX ? GP.save : SAVE, keys: Object.keys(main),
+                    main: true, make: function (a) { return body(main, a); }});
+      }
+    }
+    Object.keys(bound).forEach(function (ep) {
+      var f = bound[ep], api = ep.indexOf('api:') === 0;
+      steps.push({ep: ep, url: api ? SAVE_API : SAVE_OBJ, bound: true, keys: Object.keys(f).map(function (k) { return '@' + ep + '#' + k; }),
+        make: function (a) { var g = ((GP && GP.bound) || {})[ep] || {};
+                             return api ? {endpoint: ep, method: g.method || 'PUT', body: g.body || 'data', fields: f, apply: !!a}
+                                        : {collection: ep, mkey: '', fields: f, apply: !!a}; }});
+    });
+    return steps;
+  }
+  function runAll(steps, apply) {
+    var out = [];
+    return steps.reduce(function (p, st) {
+      return p.then(function (prev) {
+        if (prev && !prev.ok) return prev;          // stop at the first refusal
+        // each step goes to ITS endpoint's route (object editor / GUI API save)
+        var b = st.make(apply);
+        if (!NEW_FORM && b.fields) {
+          var exp = expectedFor(st.keys);
+          if (Object.keys(exp).length) b.expected = exp;
+          if (OVERWRITE) b.overwrite = true;
+        }
+        return post(b, st.url).then(function (r) { r._ep = st.ep; r._keys = st.keys; r._bound = !!st.bound; r._pfx = st.pfx || ''; out.push(r); return r; });
+      });
+    }, Promise.resolve(null)).then(function () { return out; });
+  }
+  function epOf(key, steps) {
+    for (var i = 0; i < steps.length; i++) if (steps[i].keys.indexOf(key) >= 0) return steps[i].ep;
+    return '';
+  }
+  var saveBtn = document.querySelector('[data-fwg-save]');
+  saveBtn.addEventListener('click', function () {
+    var blocked = window.fwLockBlocked && LEASE_KEY ? window.fwLockBlocked(LEASE_KEY) : '';
+    if (blocked) { say(blocked, true); return; }
+    var ch = changes();
+    if (!ch.length) { say('No changes to save.'); return; }
+    var fields = {};
+    WAS = {};
+    ch.forEach(function (c) { fields[c.key] = c.now; WAS[c.key] = c.was; });
+    if (MODE === 'new-policy' && !fields.name) { say('Not saved: the policy needs a Name.', true); return; }
+    if (MODE === 'new-object' && !PX && !fields.name) { say('Not saved: the object needs a Name.', true); return; }
+    var steps = plan(fields);
+    say('Checking the change…');
+    runAll(steps, false).then(function (res) {
+      var bad = res.filter(function (r) { return !r.ok; })[0];
+      if (bad && bad.conflict) {
+        if (window.confirm(conflictText(bad))) { OVERWRITE = true; saveBtn.click(); }
+        else window.location.reload();
+        return;
+      }
+      if (bad) { say('Not saved: ' + (bad._ep ? bad._ep + ': ' : '') + (bad.error || 'the device refused the change'), true); return; }
+      var cli = [];
+      // every save route names the fields it sends by CLI (cli_fields); a bound
+      // object's fields are keyed '@<endpoint>#<field>' in this dialog
+      res.forEach(function (r) {
+        (r.cli_fields || []).forEach(function (f) { cli.push(r._bound ? '@' + r._ep + '#' + f : (r._pfx ? r._pfx + f : f)); });
+      });
+      var multi = steps.length > 1 || steps.some(function (st) { return !st.main; });
+      var h = '<table class="fwg-table"><thead><tr><th>Field</th><th>Was</th><th>New</th><th>Channel</th>' +
+              (multi ? '<th>Endpoint</th>' : '') + '</tr></thead><tbody>';
+      ch.forEach(function (c) {
+        var ep = epOf(c.key, steps);
+        var key = c.key.replace(/^@.+?#/, '').replace(/^\^(.+?)\|(.+?)#/, '$1[$2].');
+        var chan = cli.indexOf(c.key) >= 0 ? 'CLI' : (ep.indexOf('api:') === 0 ? 'REST (GUI API)' : 'REST');
+        h += '<tr><td><code>' + esc(key) + '</code></td><td class="text-muted">' + esc(c.was) +
+             '</td><td>' + esc(c.now) + '</td><td>' + chan + '</td>' + (multi ? '<td><code>' + esc(ep) + '</code></td>' : '') + '</tr>';
+      });
+      var raw = res.map(function (r) { return r.request || r.steps || null; });
+      if (raw.length === 1) raw = raw[0];
+      h += '</tbody></table><details class="mt-2"><summary class="small text-muted">Raw request</summary><pre class="small">' +
+           esc(JSON.stringify(raw, null, 2)) + '</pre></details>';
+      reviewBody.innerHTML = h;
+      pending = fields;
+      review.hidden = false;
+      review.scrollIntoView({block: 'nearest'});
+      say('');
+    }).catch(function () { say('Not saved: no answer from SATOM.', true); });
+  });
+  document.querySelector('[data-fwg-discard]').addEventListener('click', function () {
+    review.hidden = true; pending = null;
+  });
+  document.querySelector('[data-fwg-apply]').addEventListener('click', function () {
+    if (!pending) return;
+    var btn = this; btn.disabled = true;
+    say('Writing to the device…');
+    var steps = plan(pending);
+    runAll(steps, true).then(function (all) {
+      var res = all.filter(function (r) { return !r.ok; })[0] || all[0] || {ok: false};
+      btn.disabled = false;
+      if (!res.ok && res.conflict) {
+        // changed on the device between the preview and the apply
+        if (window.confirm(conflictText(res))) { OVERWRITE = true; btn.click(); }
+        else window.location.reload();
+        return;
+      }
+      if (!res.ok) {
+        var done = all.filter(function (r) { return r.ok; }).map(function (r) { return r._ep; });
+        if (PX && notApplied(res)) { say(notApplied(res), true, res); return; }
+        say('Not saved: ' + (res._ep ? res._ep + ': ' : '') + (res.error || 'the device refused the change') +
+            (done.length ? ' (already written: ' + done.join(', ') + ')' : '') +
+            ((res.rolled_back || []).length ? ' (undone: ' + res.rolled_back.map(function (u) {
+              return u.name + (u.ok ? '' : ' FAILED, still on the device'); }).join(', ') + ')' : ''), true);
+        return;
+      }
+      if (PX) {
+        review.hidden = true; pending = null;
+        // (a mismatch never gets here: GuiOps fails it, notApplied above
+        // names what the device kept)
+        var go = function () {
+          if (MODE === 'new-object' && window.self !== window.top && res.mkey) {
+            window.parent.postMessage({fwDrawer: 'created', name: res.mkey}, location.origin);
+            return;
+          }
+          if (MODE === 'gp-row') window.location.href = BACK;
+          else if (MODE === 'new-object' && res.mkey) window.location.href = GUI_POLICY.replace('__N__', encodeURIComponent(res.mkey));
+          else if (MODE === 'new-object') window.location.href = DONE;
+          else window.location.reload();
+        };
+        if (res.verified === true) { say('Saved. Reloading…', false, res); go(); return; }
+        // unverified (or a CLI-only save, which the CLI writer checks itself)
+        say((res.verdict ? unverifiedNote(res) : 'Saved.') + ' Reloading…', !!res.verdict, res);
+        if (res.verdict) window.setTimeout(go, 2500); else go();
+        return;
+      }
+      if (all.length > 1 || (GP && GP.api)) { review.hidden = true; pending = null; say('Saved. Reloading…'); window.location.reload(); return; }
+      review.hidden = true;
+      var name = pending.name;
+      pending = null;
+      // the cache was re-read from the device: draw its values (and the
+      // fields FortiWeb shows or hides for them)
+      if (GP) {
+        // the object editor updated the SATOM copy; sub-table rows are read
+        // from the device when the page draws
+        // opened by a selector's "+ Create" in a panel: hand the new name
+        // back (selected there) and close, as FortiWeb's slide does
+        if (MODE === 'new-object' && window.self !== window.top) {
+          say('Created.');
+          window.parent.postMessage({fwDrawer: 'created', name: name}, location.origin);
+          return;
+        }
+        say('Saved. Reloading…');
+        if (MODE === 'new-object') window.location.href = GUI_POLICY.replace('__N__', encodeURIComponent(name));
+        else if (MODE === 'gp-row') window.location.href = DONE;
+        else window.location.reload();
+        return;
+      }
+      if (!res.cache_refreshed) { say('Saved on the device; the SATOM copy refreshes on the next sync.'); return; }
+      say('Saved. Reloading…');
+      if (MODE === 'new-policy') window.location.href = GUI_POLICY.replace('__N__', encodeURIComponent(name));
+      else if (MODE === 'row') window.location.href = DONE;
+      else window.location.reload();
+    }).catch(function () { btn.disabled = false; say('No answer from SATOM: check the device before retrying.', true); });
+  });
+})();
+{% endif %}
+</script>
+{% if _lease_key %}<script src="{{ asset('js/lock.js') }}" nonce="{{ csp_nonce }}"></script>{% endif %}
+{% endblock %}

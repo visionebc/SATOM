@@ -1,0 +1,395 @@
+"""Analysis dashboard — DB-first fleet & per-device analytics.
+
+Replaces the old live-FortiView page: every number comes from the local cache
+(``services.analysis``), so the page never touches an appliance. Filters are
+applied dynamically; the page fetches ``/analysis/data`` as JSON and (re)draws
+all charts/tables client-side.
+"""
+import re
+
+from flask import (Blueprint, render_template, request, jsonify, redirect,
+                   url_for, flash)
+from flask_login import login_required
+
+from ..auth.decorators import require_permission
+from ..models import Permission
+from ..models import visible_appliances, visible_appliance_or_404
+from ..services import analysis as ana
+from ..services.audit import log_action
+
+bp = Blueprint('analysis', __name__, url_prefix='/analysis')
+
+
+def _parse_filters(args) -> dict:
+    def _ids(raw_list):
+        out = []
+        for raw in raw_list:
+            for part in str(raw).split(','):
+                part = part.strip()
+                if part.isdigit():
+                    out.append(int(part))
+        return out
+    return {
+        "device_ids": _ids(args.getlist('device_ids')),
+        "platform": (args.get('platform') or '').strip(),
+        "zone": (args.get('zone') or '').strip(),
+        "line": (args.get('line') or '').strip(),
+        "department": (args.get('department') or '').strip(),
+        "date_from": (args.get('date_from') or '').strip(),
+        "date_to": (args.get('date_to') or '').strip(),
+    }
+
+
+#: Which page each ADOM gets, and — just as important — the fact that there is
+#: NO fallthrough. The old code was ``if product == 'fortianalyzer': faz.html
+#: else: index.html``, so every ADOM added after FortiAnalyzer silently
+#: inherited the FortiWeb WAF dashboard. Scoped to a product with no server
+#: policies and no protection profiles, that page renders every chart empty
+#: while still promising WAF analytics: the reader concludes the fleet is
+#: clean, not that the page is wrong.
+#:
+#: Every product with a page of its own is listed explicitly. The map is not an
+#: optimisation over an ``if``: it is the thing that makes a missing page fail
+#: LOUDLY, as ``analysis/unavailable.html``, instead of quietly borrowing
+#: another product's dashboard.
+#: The refusal page. Mapping an ADOM to it is a DECISION, written down: that
+#: product has nothing in SATOM's store an Analysis page could be built from.
+UNAVAILABLE = 'analysis/unavailable.html'
+
+ANALYSIS_PAGES = {
+    'fortiweb': 'analysis/index.html',
+    'fortiadc': 'analysis/adc.html',
+    'fortianalyzer': 'analysis/faz.html',
+    'fortiauthenticator': 'analysis/fac.html',
+    # FortiGate: SATOM reads its configuration and live status but stores no
+    # FortiGate traffic, attack or event logs, so no question this area asks
+    # has data behind it. Told so, rather than handed the FortiWeb dashboard
+    # (or its /data feed) scoped to devices that have no WAF objects.
+    'fortigate': UNAVAILABLE,
+    # Global is the string 'global' (product_scope.GLOBAL), and '' is the
+    # no-context case — a background thread, or a session stamped before the
+    # ADOM split. Both must resolve, and both must resolve to the WIDEST page,
+    # never to the refusal: an unrecognised scope failing closed would hide the
+    # dashboard from the one view that is supposed to see everything (§9c).
+    'global': 'analysis/index.html',
+    '': 'analysis/index.html',
+}
+
+#: Products whose page is built by a module other than ``services.analysis``.
+ANALYSIS_SERVICE = {
+    'fortiadc': 'analysis_adc',
+    'fortiauthenticator': 'analysis_fac',
+}
+
+
+def _analysis_service(product: str):
+    """The module that answers for this ADOM. Defaults to the FortiWeb-shaped
+    ``services.analysis``; a product listed in ``ANALYSIS_SERVICE`` gets its
+    own, so the two never have to share a schema they do not share."""
+    name = ANALYSIS_SERVICE.get(product or '')
+    if not name:
+        return ana
+    from importlib import import_module
+    return import_module('..services.' + name, __package__)
+
+
+def _product() -> str:
+    from flask import g
+    return str(getattr(g, 'product', '') or '')
+
+
+@bp.route('/')
+@login_required
+@require_permission(Permission.VIEW)
+def index():
+    product = _product()
+    svc = _analysis_service(product)
+    tpl = ANALYSIS_PAGES.get(product)
+    if tpl is None or tpl == UNAVAILABLE:
+        # An ADOM nobody wrote a page for gets told so. Handing it the FortiWeb
+        # dashboard would be a page that cannot answer, dressed as one that can.
+        return render_template(UNAVAILABLE, product_key=product)
+    ctx = {'options': svc.filter_options()}
+    if product in ANALYSIS_SERVICE:
+        # These pages render server-side: the numbers are DB-first and cheap,
+        # so there is no reason to make the browser ask twice.
+        ctx['data'] = svc.analyze(_parse_filters(request.args))
+    return render_template(tpl, **ctx)
+
+
+@bp.route('/data')
+@login_required
+@require_permission(Permission.VIEW)
+def data():
+    product = _product()
+    if ANALYSIS_PAGES.get(product) in (None, UNAVAILABLE):
+        # The page refuses this ADOM; its JSON feed must not answer with the
+        # FortiWeb-shaped analysis behind it.
+        return jsonify({'error': 'no analysis is built for this ADOM',
+                        'product': product}), 404
+    return jsonify(_analysis_service(product).analyze(_parse_filters(request.args)))
+
+
+@bp.route('/faz-ops')
+@login_required
+@require_permission(Permission.VIEW)
+def faz_ops():
+    """LIVE FortiAnalyzer operational metrics: incoming log rate + per-ADOM
+    storage/quota, read straight from the appliance via JSON-RPC. This is the
+    ONE endpoint in the Analysis area that leaves the DB-first contract, on
+    purpose (log rate / storage are excluded from the SoT harvest)."""
+    from datetime import datetime
+    from ..clients.fortianalyzer import FortiAnalyzerClient
+
+    appls = visible_appliances().filter_by(kind='fortianalyzer').all()
+    out = {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "devices": [a.name for a in appls],
+        "lograte": {"total": 0, "devs": []},
+        "storage": {"adoms": [], "total": {"analytics_used": 0,
+                    "analytics_max": 0, "archive_used": 0, "archive_max": 0}},
+        "error": None,
+    }
+    if not appls:
+        out["error"] = "No FortiAnalyzer appliance in scope"
+        return jsonify(out)
+
+    def _num(v):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return 0
+
+    errors = []
+    seen = set()
+    for a in appls:
+        c = FortiAnalyzerClient(a)
+        try:
+            c.login()
+        except Exception as exc:  # noqa: BLE001 — transport/auth
+            errors.append(f"{a.name}: login {type(exc).__name__}")
+            continue
+        try:
+            rows, err = c.list_with_error('storage_info')
+            if err:
+                errors.append(f"{a.name}: storage {err}")
+            for r in rows or []:
+                if not isinstance(r, dict):
+                    continue
+                name = (str(r.get('adomname') or '').strip() or '(root)')
+                key = (a.id, name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                au, am = _num(r.get('analytics-storage-usage')), _num(r.get('analytics-storage-max'))
+                ru, rm = _num(r.get('archive-storage-usage')), _num(r.get('archive-storage-max'))
+                out["storage"]["adoms"].append({
+                    "name": name,
+                    "analytics_used": au, "analytics_max": am,
+                    "archive_used": ru, "archive_max": rm,
+                    "analytics_days_config": _num(r.get('analytics-config-days')),
+                    "archive_days_config": _num(r.get('archive-config-days')),
+                })
+                t = out["storage"]["total"]
+                t["analytics_used"] += au
+                t["analytics_max"] += am
+                t["archive_used"] += ru
+                t["archive_max"] += rm
+
+            lrows, lerr = c.list_with_error('logview_logstats')
+            if lerr:
+                errors.append(f"{a.name}: logstats {lerr}")
+            for stat in lrows or []:
+                if not isinstance(stat, dict):
+                    continue
+                for dev in (stat.get('devs') or []):
+                    if not isinstance(dev, dict):
+                        continue
+                    rate = 0
+                    for k in ('lograte', 'log-rate', 'rate', 'lograte_avg'):
+                        if k in dev:
+                            rate = _num(dev.get(k))
+                            break
+                    nm = dev.get('devname') or dev.get('name') or dev.get('devid') or '?'
+                    out["lograte"]["devs"].append({"name": str(nm), "rate": rate})
+                    out["lograte"]["total"] += rate
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{a.name}: {type(exc).__name__}: {exc}")
+        finally:
+            try:
+                c.logout()
+            except Exception:  # noqa: BLE001
+                pass
+
+    out["storage"]["adoms"].sort(key=lambda x: -x["analytics_used"])
+    out["lograte"]["devs"].sort(key=lambda x: -x["rate"])
+    if errors and not out["storage"]["adoms"] and not out["lograte"]["devs"]:
+        out["error"] = "; ".join(errors)
+    return jsonify(out)
+
+
+@bp.route('/dashboard/<int:id>')
+@login_required
+@require_permission(Permission.VIEW)
+def dashboard(id):
+    # Back-compat: the device detail page links here. Open the dashboard scoped
+    # to that one device.
+    return redirect(url_for('analysis.index', device_ids=id))
+
+
+@bp.route('/appid-regex', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_appid_regex():
+    raw = (request.form.get('appid_regex') or '').strip()
+    try:
+        stored = ana.set_appid_regex(raw)
+        log_action('analysis.appid_regex', detail=stored)
+        flash(f'App ID pattern saved: {stored}', 'success')
+    except re.error as exc:
+        flash(f'Invalid regular expression: {exc}', 'danger')
+    return redirect(url_for('analysis.index'))
+
+
+# --------------------------------------------------------------------------- #
+#  Deep analytics (the WPP subtree + Server-Policy graph captured at depth)     #
+# --------------------------------------------------------------------------- #
+from flask import current_app  # noqa: E402
+from flask_login import current_user  # noqa: E402
+
+from ..services import analysis_deep  # noqa: E402
+
+
+def _requested_device_ids(args) -> set[int]:
+    """device_id (repeatable) + comma-separated device_ids, as asked."""
+    ids = list(args.getlist('device_id', type=int))
+    ids += _parse_filters(args)["device_ids"]
+    return set(ids)
+
+
+def _deep_device_ids(args, query=None):
+    """The devices a deep read covers: what was asked, cut to what this user
+    can see; with nothing asked, everything they can see.
+
+    Never ``None``: the deep services read "no filter" as "every appliance",
+    and that used to include other ADOMs and maintenance devices. An empty
+    visible set is ``[-1]`` (matches no row) for the same reason."""
+    visible = {a.id for a in visible_appliances(query).all()}
+    asked = _requested_device_ids(args)
+    ids = (asked & visible) if asked else visible
+    return sorted(ids) or [-1]
+
+
+@bp.route('/wpp-matrix')
+@login_required
+@require_permission(Permission.VIEW)
+def wpp_matrix():
+    return jsonify(analysis_deep.wpp_feature_matrix(
+        device_ids=_deep_device_ids(request.args)))
+
+
+@bp.route('/subelements')
+@login_required
+@require_permission(Permission.VIEW)
+def subelements():
+    rows = analysis_deep.subelement_counts(device_ids=_deep_device_ids(request.args))
+    top = request.args.get('top', type=int)
+    return jsonify(rows[:top] if top else rows)
+
+
+@bp.route('/orphans')
+@login_required
+@require_permission(Permission.VIEW)
+def orphans():
+    return jsonify(analysis_deep.orphan_objects(
+        device_ids=_deep_device_ids(request.args)))
+
+
+@bp.route('/deep/inventory')
+@login_required
+@require_permission(Permission.VIEW)
+def inventory():
+    """Fleet cardinality: policies, distinct/unique pools, back-ends +
+    ports, VIPs, SNI, certificates — over the deep cache."""
+    return jsonify(analysis_deep.fleet_inventory(
+        device_ids=_deep_device_ids(request.args)))
+
+
+@bp.route('/freshness')
+@login_required
+@require_permission(Permission.VIEW)
+def freshness():
+    return jsonify(ana.deep_freshness(device_ids=_deep_device_ids(request.args)))
+
+
+@bp.route('/deep/wpp/<int:appliance_id>/<path:mkey>')
+@login_required
+@require_permission(Permission.VIEW)
+def wpp_drill(appliance_id, mkey):
+    visible_appliance_or_404(appliance_id)
+    return jsonify(analysis_deep.wpp_drilldown(appliance_id, mkey) or {})
+
+
+@bp.route('/deep/policy/<int:appliance_id>/<path:mkey>')
+@login_required
+@require_permission(Permission.VIEW)
+def policy_drill(appliance_id, mkey):
+    visible_appliance_or_404(appliance_id)
+    return jsonify(analysis_deep.server_policy_drilldown(appliance_id, mkey) or {})
+
+
+@bp.route('/deep/object/<int:appliance_id>/<logical>/<path:mkey>')
+@login_required
+@require_permission(Permission.VIEW)
+def object_drill(appliance_id, logical, mkey):
+    """Any depth-0 deep object with its sub-tree (a FortiADC parent and the
+    child-table rows of its depth capture)."""
+    visible_appliance_or_404(appliance_id)
+    return jsonify(analysis_deep.object_drilldown(appliance_id, logical, mkey) or {})
+
+
+@bp.route('/deep/run', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def deep_run():
+    """Kick off a fleet deep-capture (bounded device-level pool, resumable). With
+    no device_id given, sweeps every FortiWeb. Returns the job id to poll."""
+    from ..models import Appliance
+    from ..services import deep_jobs
+    # Asked-for ids are cut to the visible FortiWebs: a posted id must not
+    # start an SSH/REST capture on a device this user cannot see.
+    fortiweb = Appliance.query.filter_by(kind='fortiweb')
+    asked = _requested_device_ids(request.form) | _requested_device_ids(request.args)
+    visible = {a.id for a in visible_appliances(fortiweb).all()}
+    ids = sorted((asked & visible) if asked else visible)
+    if not ids:
+        return jsonify({"started": False, "reason": "no devices"}), 400
+    max_workers = request.form.get('max_workers', type=int) or 8
+    job = deep_jobs.start_fleet_job(current_app._get_current_object(), ids,
+                                    by=getattr(current_user, 'username', ''),
+                                    max_workers=max_workers)
+    log_action('analysis.deep_run', detail=f"{len(ids)} device(s), job={job['job_id']}")
+    return jsonify({"started": True, "job": job})
+
+
+@bp.route('/deep/objects')
+@login_required
+@require_permission(Permission.VIEW)
+def deep_objects():
+    kind = (request.args.get('kind') or 'wpp').lower()
+    if kind == 'adc':
+        # every parent the FortiADC depth capture holds (pools, certificate
+        # groups, routing…): one picker, the logical name rides with each row
+        return jsonify(analysis_deep.deep_objects(
+            device_ids=_deep_device_ids(request.args), kind='fortiadc'))
+    logical = 'server_policy' if kind in ('policy', 'server_policy') else 'web_protection_profile'
+    return jsonify(analysis_deep.deep_objects(
+        device_ids=_deep_device_ids(request.args), logical_name=logical))
+
+
+@bp.route('/deep/job/<job_id>')
+@login_required
+@require_permission(Permission.VIEW)
+def deep_job(job_id):
+    from ..services import deep_jobs
+    return jsonify(deep_jobs.load_job(job_id) or {"error": "not found"})

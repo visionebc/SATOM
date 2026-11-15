@@ -1,0 +1,444 @@
+"""Sealed off-node custody for the two secrets no automatic copy carries.
+
+``recovery.py`` deliberately never writes a secret to disk. This module writes
+exactly one thing: an ENVELOPE whose contents are unreadable without a
+passphrase the fleet does not hold.
+
+Why an envelope at all, when ``recovery.py`` argues these secrets must not ride
+in a bundle: the argument was never "the material must not leave the node", it
+was "the material must not leave the node IN THE CLEAR". A bundle is retained,
+mirrored to the peer and pushed to an external host over SFTP whose password
+lives in a column ``FERNET_KEY`` opens -- so plaintext there collapses the whole
+scheme into a single file. Ciphertext does not. Whoever steals a bundle holds
+ciphertext; the operator, holding a passphrase and nothing else, can rebuild the
+installation from any copy.
+
+That asymmetry is the entire design. Everything below exists to keep it true.
+
+Where the envelope lives, and why it is the only correct place::
+
+    data/recovery/seal.json
+
+``data/`` is the ONE directory both replication mechanisms carry: the HA
+datasync rsyncs it to the peer, and the backup bundle packages it. A file
+anywhere else is carried by neither -- which is exactly how
+``publication-rules.local.json`` sat stale on the standby for weeks. ``data/``
+is also gitignored, so no envelope can reach the published mirror.
+
+Deliberately NOT here:
+
+* **The passphrase**, in any form -- not stored, not hashed, not hinted. A
+  verifier sitting beside the ciphertext is an offline cracking oracle, and
+  "does it open" is the only check anyone ever actually needs.
+* **Automatic re-sealing.** A seal that silently re-wraps itself under material
+  the operator has not recorded is a seal the operator cannot open. Re-sealing
+  is always an explicit act.
+
+Deliberately IN THE CLEAR: the *fingerprints* of the sealed material. They are
+one-way and truncated (see ``recovery.fingerprint``), and without them a restore
+cannot tell "this envelope holds the key I need" from "this holds a key from two
+rotations ago" without first spending a passphrase guess -- precisely the moment
+an operator has none to spare. They are covered by the AEAD's associated data,
+so an envelope cannot be relabelled to claim a key it does not hold.
+"""
+from __future__ import annotations
+
+import base64
+import json
+import logging
+import os
+import secrets
+import stat as _stat
+from datetime import datetime
+from pathlib import Path
+
+from . import recovery
+
+logger = logging.getLogger(__name__)
+
+#: Envelope format. Stored so the KDF cost can be raised later without
+#: stranding envelopes sealed under the old parameters.
+SEAL_VERSION = 1
+
+#: Floor for an operator-chosen passphrase. This guards a disaster-recovery
+#: secret that will sit in off-site copies for years, so the relevant threat is
+#: offline cracking, not a login prompt: there is no rate limit to hide behind.
+MIN_PASSPHRASE = 16
+
+#: scrypt work factor. ~32 MiB and ~100 ms per attempt on the class of node
+#: this product installs on -- cheap once, ruinous a few billion times. Kept
+#: below the aggressive end on purpose: sealing must not fail on a small node.
+_SCRYPT_N = 1 << 15
+_SCRYPT_R = 8
+_SCRYPT_P = 1
+_KEY_LEN = 32
+_SALT_LEN = 16
+_NONCE_LEN = 12
+
+#: Generated passphrases. Word-shaped output is transcribed correctly off a
+#: screen and read correctly down a phone line, which is how this secret will
+#: actually travel. ~62 bits from five words plus a numeric tail.
+_WORDS = (
+    "anchor amber basin beacon cedar cinder copper cortex dagger delta ember "
+    "falcon fathom garnet granite harbor indigo ivory jasper kernel lantern "
+    "linen marble meadow nickel nimbus onyx orchid pewter pillar quartz quiver "
+    "raven ridge saffron slate summit tundra umber vellum vertex walnut willow "
+    "zenith zircon"
+).split()
+
+
+class SealError(Exception):
+    """The envelope could not be created, opened, or trusted."""
+
+
+# ---------------------------------------------------------------------------
+# location
+# ---------------------------------------------------------------------------
+
+def _data_dir() -> Path:
+    """The app's ``data/`` tree. Resolved from the app root, never from a
+    configurable env var: this path decides whether the envelope is replicated
+    at all, and a wrong answer fails silently."""
+    return Path(__file__).resolve().parents[2] / "data"
+
+
+def _seal_dir() -> Path:
+    return _data_dir() / "recovery"
+
+
+def seal_path() -> Path:
+    return _seal_dir() / "seal.json"
+
+
+def _tree_owner() -> tuple:
+    """(uid, gid) of whoever owns the app tree.
+
+    DERIVED, never named: the account differs between new installs and the
+    nodes that adopted an existing tree, and hardcoding either is how the
+    datasync broke once already.
+
+    Read from the first tree anchor that is NOT root-owned. The install root
+    is the one anchor a stray root operation can flip -- an unpacked bundle,
+    a root checkout, a root-run build -- and root is the single answer this
+    function must never give, because it disables BOTH of its callers at the
+    same time: ``_hand_over`` chowns root to root, and ``_reachable`` then
+    compares root against root and calls an unreadable envelope reachable.
+    That is precisely the failure this module exists to catch, so it must not
+    be reachable through the module's own derivation.
+
+    Measured on a live node 2026-08-17: the install root was root-owned 0755
+    with every child owned by the service account, and diagnose reported a
+    critical unreachable finding against an envelope the service account
+    could read perfectly well.
+    """
+    here = Path(__file__).resolve()
+    for anchor in (here.parents[2], here.parents[1],
+                   here.parents[2] / "data", here):
+        try:
+            st = anchor.stat()
+        except OSError:                                   # pragma: no cover
+            continue
+        if st.st_uid != 0:
+            return st.st_uid, st.st_gid
+    return 0, 0                      # a genuinely root-run install
+
+
+def _hand_over(path: Path) -> None:
+    """Give *path* to the tree owner when we are root.
+
+    ``satom execute seal recovery`` needs root to read the material, so the
+    envelope is born root-owned -- and EVERY mechanism that carries it off
+    this disk (the HA datasync over SSH, the backup bundle writer) runs as the
+    service account. Without this the envelope is cryptographically perfect
+    and structurally unreachable, which is the failure mode this file's own
+    docstrings are about.
+    """
+    if os.geteuid() != 0:
+        return                                        # already the right user
+    uid, gid = _tree_owner()
+    try:
+        os.chown(path, uid, gid)
+    except OSError:                                   # pragma: no cover
+        # Losing the handover must not lose a good envelope; seal_state()
+        # reports the unreachability, so this fails loudly one layer up.
+        logger.warning("could not hand %s to uid %d", path, uid)
+
+
+def _readable_by(st, uid: int, gid: int, want: int) -> bool:
+    """Would a process running as (uid, gid) get *want* on this stat?
+
+    ``want`` is the octal permission triad: 4 for a file we must read, 5 for a
+    directory we must read and traverse.
+    """
+    if uid == 0:
+        # CAP_DAC_OVERRIDE: an all-root install reads every mode there is, so
+        # telling it that it cannot is a false critical on a healthy node.
+        return True
+    if st.st_uid == uid:
+        return st.st_mode & (want << 6) == (want << 6)
+    if st.st_gid == gid:
+        return st.st_mode & (want << 3) == (want << 3)
+    return st.st_mode & want == want
+
+
+def _reachable() -> tuple:
+    """Can the copy mechanisms actually read the envelope? -> (ok, why_not).
+
+    Asked as a stat comparison rather than by opening the file, so the answer
+    does not depend on WHO is asking. Root opening it successfully is exactly
+    how a root-owned envelope reported itself as custody.
+    """
+    uid, gid = _tree_owner()
+    for path, want, what in ((_seal_dir(), 0o5, "directory"),
+                             (seal_path(), 0o4, "envelope")):
+        try:
+            st = path.stat()
+        except OSError as exc:
+            return False, "cannot stat the %s: %s" % (what, exc)
+        if not _readable_by(st, uid, gid, want):
+            return False, (
+                "the %s is %s:%s mode %o, which uid %d cannot read -- the HA "
+                "datasync and the backup writer both run as that account, so "
+                "nothing is carrying this envelope off the node"
+                % (what, st.st_uid, st.st_gid,
+                   _stat.S_IMODE(st.st_mode), uid))
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
+# passphrase
+# ---------------------------------------------------------------------------
+
+def generate_passphrase(words: int = 5) -> str:
+    """A passphrase strong enough to sit in off-site copies for years.
+
+    Generated rather than prompted by default because operators asked to invent
+    a passphrase under time pressure produce ones that do not survive an offline
+    attack -- and this secret is only ever handled under time pressure.
+    """
+    picked = [secrets.choice(_WORDS) for _ in range(max(4, words))]
+    return "-".join(picked) + "-%02d" % secrets.randbelow(100)
+
+
+def _derive(passphrase: str, salt: bytes, n: int, r: int, p: int) -> bytes:
+    from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+    return Scrypt(salt=salt, length=_KEY_LEN, n=n, r=r, p=p).derive(
+        passphrase.encode("utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# seal / unseal
+# ---------------------------------------------------------------------------
+
+def seal(passphrase: str, by: str = "", kinds=recovery.KINDS) -> dict:
+    """Wrap the recovery material in an envelope only *passphrase* opens.
+
+    Returns the public header (never the material). Raises :class:`SealError`
+    before writing anything if the passphrase is too weak or there is nothing
+    to seal -- a half-written envelope reads as custody that does not exist.
+    """
+    if not isinstance(passphrase, str) or len(passphrase) < MIN_PASSPHRASE:
+        raise SealError(
+            "passphrase must be at least %d characters: this envelope will sit "
+            "in off-site copies where an attacker can grind it offline with no "
+            "rate limit" % MIN_PASSPHRASE)
+
+    material = recovery.export_material(kinds)
+    if not material:
+        raise SealError("this node holds none of the recovery material")
+
+    fingerprints = {k: v for k, v in recovery.current_fingerprints().items()
+                    if k in material}
+
+    salt = os.urandom(_SALT_LEN)
+    nonce = os.urandom(_NONCE_LEN)
+    header = {
+        "v": SEAL_VERSION,
+        "kdf": {"name": "scrypt", "n": _SCRYPT_N, "r": _SCRYPT_R,
+                "p": _SCRYPT_P, "salt": base64.b64encode(salt).decode()},
+        "nonce": base64.b64encode(nonce).decode(),
+        "fingerprints": fingerprints,
+        "kinds": sorted(material),
+        "at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "by": by or "unknown",
+    }
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    key = _derive(passphrase, salt, _SCRYPT_N, _SCRYPT_R, _SCRYPT_P)
+    ct = AESGCM(key).encrypt(nonce, json.dumps(material).encode("utf-8"),
+                             _aad(header))
+
+    doc = dict(header)
+    doc["ct"] = base64.b64encode(ct).decode()
+
+    d = _seal_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:                                   # pragma: no cover
+        pass
+    _hand_over(d)
+    tmp = seal_path().with_suffix(".tmp")
+    tmp.write_text(json.dumps(doc, indent=2))
+    os.chmod(tmp, 0o600)
+    # Ownership, never a wider mode. Making the envelope group- or
+    # world-readable would buy reachability by handing it to every account on
+    # the box, which is the opposite of what sealing is for.
+    _hand_over(tmp)
+    # Replace, never append: two envelopes are two passphrases, and the
+    # operator holds one. os.replace is atomic, so a crash mid-write cannot
+    # leave a truncated envelope where a working one used to be.
+    os.replace(tmp, seal_path())
+    logger.info("recovery seal written (%s)", ",".join(sorted(material)))
+    return header
+
+
+def _aad(header: dict) -> bytes:
+    """Associated data for the AEAD.
+
+    Everything the envelope asserts in the clear is authenticated, so the
+    fingerprints cannot be edited to claim a different key. Without this, the
+    check that exists to prevent a forensic afternoon would cause one.
+    """
+    return json.dumps({k: header[k] for k in
+                       ("v", "kdf", "nonce", "fingerprints", "kinds")},
+                      sort_keys=True).encode("utf-8")
+
+
+def unseal(passphrase: str) -> dict:
+    """Open the envelope. Returns the material; never writes it anywhere."""
+    doc = _read()
+    if doc is None:
+        raise SealError("no sealed recovery envelope on this node")
+
+    try:
+        kdf = doc["kdf"]
+        salt = base64.b64decode(kdf["salt"])
+        nonce = base64.b64decode(doc["nonce"])
+        ct = base64.b64decode(doc["ct"])
+        header = {k: doc[k] for k in
+                  ("v", "kdf", "nonce", "fingerprints", "kinds")}
+    except (KeyError, ValueError, TypeError) as exc:
+        raise SealError("sealed envelope is malformed: %s" % exc) from exc
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    key = _derive(passphrase, salt, int(kdf["n"]), int(kdf["r"]), int(kdf["p"]))
+    try:
+        plain = AESGCM(key).decrypt(nonce, ct, _aad(header))
+    except Exception as exc:                          # cryptography: InvalidTag
+        # One message for a wrong passphrase and for a tampered envelope, on
+        # purpose: distinguishing them tells an attacker which of the two they
+        # achieved, and tells the operator nothing they can act on differently.
+        raise SealError(
+            "could not open the sealed envelope: wrong passphrase, or the "
+            "envelope has been altered") from exc
+    try:
+        return json.loads(plain.decode("utf-8"))
+    except ValueError as exc:                         # pragma: no cover
+        raise SealError("sealed envelope opened but its contents are not "
+                        "readable: %s" % exc) from exc
+
+
+def _read():
+    p = seal_path()
+    if not p.exists():
+        return None
+    return json.loads(p.read_text())
+
+
+# ---------------------------------------------------------------------------
+# state
+# ---------------------------------------------------------------------------
+
+def seal_state() -> dict:
+    """What custody this node actually has. Never raises.
+
+    ``sealed`` is True only for an envelope that was read and parsed. An
+    unreadable envelope reports ``sealed: False`` with an ``error`` -- corrupt
+    must never render as fine, which is the failure this product keeps hitting:
+    a probe that cannot answer whose default value reads as healthy.
+    """
+    # ``reachable`` means "no reachability problem to report", so an absent
+    # envelope is True: it has a different, larger problem and stacking a
+    # second finding on it would bury the one that matters.
+    out = {"sealed": False, "fingerprints": {}, "kinds": [], "stale": [],
+           "at": "", "by": "", "error": "", "path": str(seal_path()),
+           "reachable": True, "reach_error": ""}
+    try:
+        doc = _read()
+    except (OSError, ValueError) as exc:
+        out["error"] = "sealed envelope is unreadable: %s" % exc
+        return out
+    if doc is None:
+        return out
+
+    fps = doc.get("fingerprints")
+    if not isinstance(fps, dict):
+        out["error"] = "sealed envelope has no fingerprint header"
+        return out
+
+    out.update(sealed=True, fingerprints=fps,
+               kinds=list(doc.get("kinds") or sorted(fps)),
+               at=doc.get("at", ""), by=doc.get("by", ""))
+
+    ok, why = _reachable()
+    out["reachable"], out["reach_error"] = ok, why
+
+    live = recovery.current_fingerprints()
+    # A key present in the envelope but rotated on the node is stale. A key the
+    # node no longer holds at all is NOT stale -- the envelope is then the only
+    # copy left, which is the envelope doing its job.
+    out["stale"] = sorted(k for k, was in fps.items()
+                          if live.get(k) and was and live[k] != was)
+    return out
+
+
+def check() -> list:
+    """Findings about sealed custody, worst first. Empty == nothing to say."""
+    findings = []
+    st = seal_state()
+
+    if st["error"]:
+        findings.append({
+            "kind": "seal", "severity": "critical",
+            "detail": ("%s -- this node reports no usable off-node custody. "
+                       "Re-seal with: satom execute seal recovery" % st["error"]),
+        })
+        return findings
+
+    if not st["sealed"]:
+        # Only worth saying if there is in fact something to seal. A node
+        # holding no recovery material has nothing to lose here.
+        if any(recovery.current_fingerprints().values()):
+            findings.append({
+                "kind": "seal", "severity": "warning",
+                "detail": ("No sealed recovery envelope. FERNET_KEY and the "
+                           "internal CA exist only on local disks: a bundle "
+                           "restored onto a rebuilt node would hold encrypted "
+                           "columns nothing can read. Seal them with: "
+                           "satom execute seal recovery"),
+            })
+        return findings
+
+    if not st["reachable"]:
+        # CRITICAL, not a warning, and deliberately worse than "not sealed at
+        # all": an unreachable envelope makes the no-envelope finding go away,
+        # so the node reports the durability problem as solved while nothing
+        # durable happened. An honest "not sealed" at least sends someone to
+        # fix it.
+        findings.append({
+            "kind": "seal", "severity": "critical",
+            "detail": ("The sealed envelope exists but %s. Re-seal with: "
+                       "satom execute seal recovery" % st["reach_error"]),
+        })
+
+    for kind in st["stale"]:
+        findings.append({
+            "kind": "seal", "severity": "warning",
+            "detail": ("The sealed envelope holds an OLD %s (envelope %s, this "
+                       "node %s). Restoring from it would not open this "
+                       "installation. Re-seal with: satom execute seal recovery"
+                       % (kind, st["fingerprints"].get(kind, "?"),
+                          recovery.current_fingerprints().get(kind, "?"))),
+        })
+    return findings

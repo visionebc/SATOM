@@ -1,0 +1,665 @@
+"""Provisioning orchestrator — walks a :class:`ProvisionRun` through STEPS.
+
+**Why a runner and not a function.** An end-to-end run touches five systems
+that fail independently: the IPAM provider, DNS, the hypervisor, the appliance
+itself and the certificate authority. A single function that dies halfway
+leaves a reserved address, a DNS row and a half-built machine, and the
+operator has no way to tell which of those actually happened. Here every step
+records what it did before it does the next one, and :func:`rollback` retraces
+exactly those — never more.
+
+Three rules the whole module is built on:
+
+1. **A step that cannot run is refused up front, not attempted.** Before any
+   state changes, :func:`preflight` asks the backend what it can do and
+   compares that with the mode the operator picked. A run that would die at
+   ``CreateVM_Task`` after reserving an address is worse than one that never
+   started.
+
+2. **Rollback undoes only what THIS run created.** A user-typed address is not
+   ours to release (``ip_from_ipam``); a machine SATOM did not create has no
+   ``vm_ref`` and is never deleted. Undo is driven by recorded facts, not by
+   inference from the current state of the world.
+
+3. **Stopping is a normal outcome, not a failure.** ``semi`` and ``vm_only``
+   are *designed* to stop; the run lands in ``paused`` with the exact reason
+   and the operator resumes it. Marking a deliberate handoff as ``failed``
+   teaches people to ignore the status field.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from typing import Any, Callable
+
+from ..extensions import db
+from ..models_provision import STEPS, ProvisionRun
+from .hypervisors import HypervisorError, VmRef, VmSpec
+
+#: Steps each mode is allowed to perform. Anything past the last entry is a
+#: deliberate stop, reported as ``paused`` with a reason the operator can act
+#: on. Keeping this as data (rather than ``if mode == ...`` inside the loop)
+#: means adding a mode is one dict entry, and the UI can render the plan
+#: before anything runs.
+MODE_STEPS: dict[str, tuple[str, ...]] = {
+    "full": STEPS,
+    "semi": ("draft", "ip_reserved", "dns_created", "vm_created",
+             "image_attached", "booted"),
+    "dhcp": ("draft", "dns_created", "vm_created", "image_attached", "booted",
+             "reachable", "onboarded", "cert_installed", "profile_applied",
+             "done"),
+    "vm_only": ("draft", "vm_created", "image_attached", "booted"),
+    "config_only": ("draft", "ip_reserved", "dns_created", "reachable",
+                    "onboarded", "cert_installed", "profile_applied", "done"),
+}
+
+#: What a RESUME runs after a mode's designed handoff. Semi pauses at
+#: ``booted`` for the human first-boot dialog; "press Resume" then has to
+#: reach the box and finish the pipeline, not re-pause at the same step.
+MODE_RESUME_STEPS: dict[str, tuple[str, ...]] = {
+    "semi": ("reachable", "onboarded", "cert_installed", "profile_applied",
+             "done"),
+}
+
+#: Why each mode stops where it does — printed verbatim when a run pauses, so
+#: "why did it stop?" never needs a support round trip.
+MODE_STOP_REASON = {
+    "semi": "The machine is built and powered on. Complete the appliance "
+            "first-boot dialog on the hypervisor console (set the admin "
+            "password and the management address), then resume this run.",
+    "vm_only": "The machine is built and powered on, as requested. Nothing "
+               "further will be done automatically.",
+    "full": "",
+    "dhcp": "",
+    "config_only": "",
+}
+
+#: Capabilities a mode needs from the hypervisor. Checked before the first
+#: state change.
+MODE_REQUIRES: dict[str, tuple[str, ...]] = {
+    "full": ("create_vm", "power_control", "serial_console"),
+    "semi": ("create_vm", "power_control"),
+    "dhcp": ("create_vm", "power_control"),
+    "vm_only": ("create_vm", "power_control"),
+    "config_only": (),
+}
+
+CAP_LABEL = {
+    "create_vm": "create virtual machines",
+    "power_control": "power machines on and off",
+    "serial_console": "drive the first-boot console unattended",
+    "upload_image": "upload an appliance image",
+}
+
+
+class StepResult:
+    """Outcome of one step. ``stop`` means a planned pause, not an error."""
+
+    __slots__ = ("ok", "detail", "stop")
+
+    def __init__(self, ok: bool, detail: str = "", stop: bool = False):
+        self.ok, self.detail, self.stop = ok, detail, stop
+
+
+# ---------------------------------------------------------------------------
+# preflight
+# ---------------------------------------------------------------------------
+def preflight(run: ProvisionRun) -> dict[str, Any]:
+    """What this run will and will not be able to do — before it starts.
+
+    Pure inspection: opens a connection to read capabilities, changes nothing.
+    """
+    plan = list(MODE_STEPS.get(run.mode, MODE_STEPS["semi"]))
+    out: dict[str, Any] = {
+        "mode": run.mode, "plan": plan, "blockers": [], "warnings": [],
+        "capabilities": {}, "ok": True,
+    }
+    needs_hv = any(s in plan for s in ("vm_created", "booted"))
+    if not needs_hv:
+        return out
+    target = _target(run)
+    if target is None:
+        out["ok"] = False
+        out["blockers"].append(
+            "no hypervisor selected — pick one, or use the 'Config only' mode "
+            "against a machine that already exists")
+        return out
+    try:
+        caps = target.client().capabilities()
+    except HypervisorError as exc:
+        out["ok"] = False
+        out["blockers"].append(f"hypervisor unreachable: {exc}")
+        return out
+    out["capabilities"] = {
+        "create_vm": caps.create_vm, "power_control": caps.power_control,
+        "upload_image": caps.upload_image, "disk_import": caps.disk_import,
+        "ovf_import": caps.ovf_import, "serial_console": caps.serial_console,
+        "notes": list(caps.notes),
+    }
+    for cap in MODE_REQUIRES.get(run.mode, ()):
+        if not getattr(caps, cap, False):
+            out["ok"] = False
+            out["blockers"].append(
+                "%s cannot %s" % (target.name, CAP_LABEL.get(cap, cap)))
+    if "image_attached" in plan and not (caps.disk_import or caps.ovf_import):
+        out["warnings"].append(
+            "this host cannot attach a disk image through SATOM — create the "
+            "machine, then attach the appliance disk by hand before resuming")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# step implementations
+# ---------------------------------------------------------------------------
+def _target(run: ProvisionRun):
+    from ..models_provision import HypervisorTarget
+    if not run.target_id:
+        return None
+    return db.session.get(HypervisorTarget, run.target_id)
+
+
+def _step_ip_reserved(run: ProvisionRun) -> StepResult:
+    """Take an address. Only asks IPAM when the operator opted in.
+
+    A hand-typed address is used as given and, crucially, is NOT marked as
+    ours: rollback must not hand somebody else's address back to a pool.
+    """
+    if run.mgmt_ip and not run.ip_from_ipam:
+        return StepResult(True, f"using the supplied address {run.mgmt_ip}")
+    if not run.ip_from_ipam:
+        return StepResult(
+            False, "no management address given and IPAM allocation was not "
+                   "requested for this run")
+    from . import dns_providers
+
+    # Which backend serves this pool is decided ONCE, here, and the same row
+    # is then asked what it can do. Resolving again for the capability probe
+    # would let the answer describe a different backend from the one about to
+    # be used the moment two of them are in scope.
+    res = dns_providers.resolve_ipam(run.ip_pool or "")
+    if not res.ok:
+        return StepResult(
+            False, f"IPAM allocation was requested but {res.detail}")
+    caps = dns_providers.capabilities_of(res.backend)
+    if caps is None:
+        return StepResult(
+            False, f"IPAM allocation was requested and {res.backend.name!r} "
+                   "was chosen, but it did not answer — unreachable or "
+                   "misconfigured (Settings -> DNS Records)")
+    if not caps.can_allocate:
+        return StepResult(
+            False, f"IPAM allocation was requested but {res.backend.name!r} "
+                   f"({caps.label}) does not hand out addresses")
+    try:
+        addr = dns_providers.allocate_address(
+            hostname=run.hostname or run.name, pool=run.ip_pool or "")
+    except Exception as exc:  # noqa: BLE001 — provider-specific failures
+        return StepResult(False, f"IPAM refused to allocate: {exc}")
+    if not addr.address:
+        return StepResult(False, "IPAM returned no address")
+    run.mgmt_ip = addr.address
+    # A field the pool did not answer leaves the run's own value alone: an
+    # empty netmask from the provider is "unknown", not "no netmask", and
+    # writing it over an operator-supplied one is a wrong default route.
+    run.netmask = addr.netmask or run.netmask or ""
+    run.gateway = addr.gateway or run.gateway or ""
+    run.ip_ref = addr.ref or ""
+    # Recorded BEFORE anything else can fail: this is the handle the rollback
+    # is driven by, and a reservation whose owner was never written down is a
+    # reservation nobody can hand back.
+    run.ip_backend_id = addr.backend_id
+    return StepResult(True, f"IPAM allocated {run.mgmt_ip} via "
+                            f"{res.backend.name}"
+                            + (f" from {addr.pool}" if addr.pool else ""))
+
+
+def _step_dns_created(run: ProvisionRun) -> StepResult:
+    """Publish the hostname, or say plainly that nothing was published.
+
+    The three outcomes below used to be two, and the missing one is why this
+    step could report success on a run that created no record:
+
+    * no provider configured -> a PASS, because a fleet without a DDI is a
+      supported install — but the detail says, in words nobody can misread,
+      that the name was not published and somebody has to do it by hand.
+    * a provider that cannot write records -> a FAILURE. The operator wired a
+      backend and asked for a hostname; answering "fine" to that is the lie.
+    * a provider that refuses the write -> a FAILURE, as before.
+
+    Multi-backend adds a fourth that must NOT be folded into the first: DNS
+    backends exist but none of them claims this name, or two claim it equally.
+    "No DDI at all" is a deployment choice and passes; "a DDI whose scopes do
+    not cover the name you asked for" is a misconfiguration, and passing it
+    would report success for a record the operator fully expected to be
+    written.
+    """
+    if not run.hostname:
+        return StepResult(True, "no hostname requested — DNS step skipped")
+    if not run.mgmt_ip:
+        return StepResult(False, "cannot create a DNS record without an address")
+    from . import dns_providers
+
+    res = dns_providers.resolve_dns(run.hostname)
+    if res.code == dns_providers.NO_BACKEND:
+        return StepResult(
+            True, f"NO DNS BACKEND IS CONFIGURED — no record was created for "
+                  f"{run.hostname}; publish {run.hostname} A {run.mgmt_ip} by "
+                  "hand, or configure one in Settings -> DNS Records")
+    if not res.ok:
+        return StepResult(
+            False, f"the hostname {run.hostname} could not be published: "
+                   f"{res.detail}")
+    caps = dns_providers.capabilities_of(res.backend)
+    if caps is None:
+        return StepResult(
+            False, f"{res.backend.name!r} was chosen to publish "
+                   f"{run.hostname} but did not answer — unreachable or "
+                   "misconfigured")
+    if not caps.can_write:
+        return StepResult(
+            False, f"{res.backend.name!r} ({caps.label}) cannot create DNS "
+                   f"records, but this run asked for the hostname "
+                   f"{run.hostname}. Clear the hostname, or point the DNS role "
+                   "at a backend that writes records.")
+    try:
+        rec = dns_providers.create_record(
+            name=run.hostname, rtype="A", value=run.mgmt_ip)
+    except Exception as exc:  # noqa: BLE001
+        return StepResult(False, f"DNS provider refused the record: {exc}")
+    run.dns_record_id = str(rec.id or "")
+    run.dns_backend_id = rec.backend_id
+    return StepResult(True, f"created {run.hostname} A {run.mgmt_ip} via "
+                            f"{res.backend.name}")
+
+
+def _step_vm_created(run: ProvisionRun) -> StepResult:
+    target = _target(run)
+    if target is None:
+        return StepResult(False, "no hypervisor target selected")
+    spec = VmSpec(
+        name=run.name,
+        cpus=run.cpus or 4,
+        memory_mb=run.memory_mb or 4096,
+        disk_gb=run.disk_gb or 0,
+        network=run.network or target.default_network or "",
+        datastore=run.datastore or target.default_datastore or "",
+        node=run.node or target.default_node or "",
+        image_path=_image_path(run),
+        serial=True,
+    )
+    try:
+        ref = target.client().create_vm(spec)
+    except HypervisorError as exc:
+        return StepResult(False, f"{exc}{(' — ' + exc.detail) if exc.detail else ''}")
+    run.vm_ref = json.dumps({
+        "backend": ref.backend, "identifier": ref.identifier,
+        "name": ref.name, "node": ref.node, "raw": ref.raw})
+    return StepResult(True, f"created {ref.name} ({ref.backend} id {ref.identifier})")
+
+
+def _step_image_attached(run: ProvisionRun) -> StepResult:
+    """The install image is attached during creation on every backend today.
+
+    Kept as its own step because it is the one that will move first: an OVA
+    path, an already-staged disk and a shell-side vmkfstools conversion all
+    land here, and having the slot already in the state machine means adding
+    one does not renumber anybody's progress.
+    """
+    if not run.firmware_id:
+        return StepResult(True, "no install image selected — the machine was "
+                                "created with an empty disk")
+    return StepResult(True, "install image attached during machine creation")
+
+
+def _step_booted(run: ProvisionRun) -> StepResult:
+    target = _target(run)
+    ref = run.ref()
+    if target is None or not ref:
+        return StepResult(False, "no machine to power on")
+    try:
+        target.client().power_on(VmRef(**{k: ref.get(k) for k in
+                                          ("backend", "identifier", "name",
+                                           "node", "raw")}))
+    except HypervisorError as exc:
+        return StepResult(False, f"power on refused: {exc}")
+    return StepResult(True, "powered on")
+
+
+def _step_reachable(run: ProvisionRun) -> StepResult:
+    """Can SATOM open a TCP session to the management address yet?
+
+    Deliberately a socket test and not an API call: at this point the
+    appliance may still be presenting a factory certificate and a default
+    account, and the only question is whether the address answers.
+    """
+    import socket
+    if not run.mgmt_ip:
+        return StepResult(False, "no management address to probe")
+    for port in (443, 8443, 22):
+        try:
+            with socket.create_connection((run.mgmt_ip, port), timeout=4):
+                return StepResult(True, f"{run.mgmt_ip}:{port} answered")
+        except OSError:
+            continue
+    return StepResult(
+        False, f"{run.mgmt_ip} is not answering on 443, 8443 or 22 — if the "
+               "first-boot dialog has not been completed yet, do that and "
+               "resume")
+
+
+def _step_onboarded(run: ProvisionRun) -> StepResult:
+    """Register the machine as an Appliance so the rest of SATOM can see it."""
+    from ..models import Appliance
+    if run.appliance_id:
+        return StepResult(True, "already onboarded")
+    if not run.mgmt_ip:
+        return StepResult(False, "no management address")
+    kind = run.product or ""
+    if not kind:
+        return StepResult(False, "run has no product/ADOM — cannot decide "
+                                 "what kind of appliance this is")
+    ap = Appliance(name=run.name, host=run.mgmt_ip, kind=kind,
+                   username=run.admin_user or "admin",
+                   # The classification decides which baseline combos the
+                   # machine falls into at profile_applied.
+                   zone=(run.zone or None), line=(run.line or None),
+                   department=(run.department or None))
+    # Setter encrypts. A factory appliance presents a self-signed certificate,
+    # so verification starts off — the same trap that has stalled every new
+    # device on this fleet (fadc, fortiweb08, fac01). Import the device CA in
+    # Settings > Trust store to turn it back on and have it mean something.
+    ap.password = run.admin_password or ""
+    ap.verify_ssl = False
+    db.session.add(ap)
+    db.session.flush()
+    run.appliance_id = ap.id
+    # The same seam as every other creation path: a device onboarded here used
+    # to get scrape targets from the Collection sweep and never a threshold.
+    from .monitoring_provision import provision_monitoring
+    prov = provision_monitoring(ap)
+    tail = ("; monitoring: " + "; ".join(prov["errors"])) if prov.get("errors") else ""
+    return StepResult(True, f"registered appliance #{ap.id} ({kind}){tail}")
+
+
+def _step_cert_installed(run: ProvisionRun) -> StepResult:
+    if not run.appliance_id:
+        return StepResult(False, "not onboarded yet")
+    return StepResult(True, "certificate step is a no-op until a CA profile "
+                            "is selected for this run")
+
+
+def _step_profile_applied(run: ProvisionRun) -> StepResult:
+    """Push the machine's full baseline — after the operator approves it.
+
+    The baseline is every combo the run's zone / line / department falls
+    into (or the one baseline picked on the run). The step never writes by
+    itself: it pauses with what will be pushed, the operator reviews the
+    dry-run and confirms on the device's baseline page, and the rollout job
+    closes this step (:func:`baseline_finished`). That page is the shared
+    two-phase path (dry-run, variables, firmware check, canary), not a
+    second copy of it.
+    """
+    from ..models import Appliance
+    if run.baseline_job_id:
+        from . import jobs
+        job = jobs.get_job(run.baseline_job_id) or {}
+        status = job.get("status") or "missing"
+        if status == jobs.SUCCESS:
+            return StepResult(True, f"baseline applied (job {run.baseline_job_id})")
+        if status in (jobs.PENDING, jobs.RUNNING, jobs.PAUSING, jobs.PAUSED,
+                      jobs.CANCELLING):
+            return StepResult(True, f"baseline rollout {run.baseline_job_id} is "
+                                    f"{status} — resume when it finishes", stop=True)
+        return StepResult(False, f"baseline rollout {run.baseline_job_id} ended "
+                                 f"{status}: {job.get('error') or job.get('message') or ''}"
+                                 " — open the baseline page to retry")
+    if not run.appliance_id:
+        return StepResult(False, "not onboarded yet")
+    ap = db.session.get(Appliance, run.appliance_id)
+    if ap is None:
+        return StepResult(False, f"appliance #{run.appliance_id} no longer exists")
+    from . import baselines
+    res = baselines.device_templates(ap, run.baseline_id)
+    if res["error"]:
+        return StepResult(False, res["error"])
+    if res["templates"]:
+        names = ", ".join(b.name for b in res["baselines"])
+        return StepResult(
+            True, f"baseline ready: {len(res['templates'])} template(s) from "
+                  f"{names} — open Apply baseline on this run, review the "
+                  "dry-run and confirm; nothing is written until you do",
+            stop=True)
+    if run.profile_id:
+        return StepResult(
+            True, f"no baseline covers this machine; ready for profile "
+                  f"#{run.profile_id} — apply it from Provisioning with dry-run "
+                  "and approval")
+    return StepResult(True, "no baseline covers this machine's zone / line / "
+                            "department — configuration left to the operator")
+
+
+def baseline_started(run_id: int, job_id: str) -> None:
+    """The operator confirmed the run's baseline: remember the job, so a
+    Resume reads its outcome instead of offering the push again."""
+    run = db.session.get(ProvisionRun, run_id)
+    if run is None:
+        return
+    run.baseline_job_id = job_id
+    run.add_log("profile_applied", True, f"baseline rollout started (job {job_id})")
+    if run.status in ("paused", "failed", "draft"):
+        run.status = "paused"
+        run.error = (f"baseline rollout {job_id} running — the run closes "
+                     "when it finishes")
+    db.session.commit()
+
+
+def baseline_finished(run_id: int, job_id: str, summary: dict) -> None:
+    """Close ``profile_applied`` with the rollout's outcome (called by the
+    job worker). Every mode that has the step ends ``profile_applied ->
+    done``, so success finishes the run here rather than re-planning it."""
+    run = db.session.get(ProvisionRun, run_id)
+    if run is None or run.baseline_job_id != job_id:
+        return  # a newer rollout took over this run
+    ok = (not summary.get("aborted") and not summary.get("cancelled")
+          and summary.get("ok") == summary.get("total") and summary.get("total"))
+    if ok:
+        run.add_log("profile_applied", True, f"baseline applied (job {job_id})")
+        run.add_log("done", True, "pipeline complete")
+        run.step, run.status, run.error = "done", "done", ""
+    else:
+        why = ("cancelled" if summary.get("cancelled") else
+               "aborted at the canary" if summary.get("aborted") else
+               f"{summary.get('ok', 0)}/{summary.get('total', 0)} device(s) ok")
+        msg = f"baseline rollout {job_id} {why} — open the baseline page to retry"
+        run.add_log("profile_applied", False, msg)
+        run.status, run.error = "failed", msg
+    db.session.commit()
+
+
+STEP_FUNCS: dict[str, Callable[[ProvisionRun], StepResult]] = {
+    "ip_reserved": _step_ip_reserved,
+    "dns_created": _step_dns_created,
+    "vm_created": _step_vm_created,
+    "image_attached": _step_image_attached,
+    "booted": _step_booted,
+    "reachable": _step_reachable,
+    "onboarded": _step_onboarded,
+    "cert_installed": _step_cert_installed,
+    "profile_applied": _step_profile_applied,
+}
+
+
+def _image_path(run: ProvisionRun) -> str:
+    if not run.firmware_id:
+        return ""
+    try:
+        from ..models_firmware import FirmwareImage
+    except ImportError:
+        return ""
+    img = db.session.get(FirmwareImage, run.firmware_id)
+    return getattr(img, "stored_path", "") or "" if img else ""
+
+
+# ---------------------------------------------------------------------------
+# driver
+# ---------------------------------------------------------------------------
+def advance(run: ProvisionRun, *, max_steps: int = 20) -> ProvisionRun:
+    """Run steps until the mode's plan is exhausted, or something stops it."""
+    plan = list(MODE_STEPS.get(run.mode, MODE_STEPS["semi"]))
+    if run.status in ("done", "aborted"):
+        return run
+    resume = MODE_RESUME_STEPS.get(run.mode)
+    if resume and plan and (run.step == plan[-1] or run.step in resume):
+        # Also when a resumed run paused again INSIDE the resume steps (the
+        # baseline waits for approval at profile_applied): without the
+        # resume steps in the plan, the next Resume re-paused at the handoff.
+        # The handoff was reached on an earlier pass: this call is the
+        # operator's Resume, so the plan continues past it.
+        plan += list(resume)
+    run.status = "running"
+    run.error = ""
+    db.session.commit()
+
+    guard = 0
+    while guard < max_steps:
+        guard += 1
+        nxt = _next_step(run, plan)
+        if nxt is None:
+            # Plan exhausted. "done" only when the plan really was the whole
+            # pipeline; otherwise this is a designed handoff.
+            if plan and plan[-1] == "done":
+                run.step, run.status = "done", "done"
+                run.add_log("done", True, "pipeline complete")
+            else:
+                run.status = "paused"
+                run.add_log(run.step, True,
+                            MODE_STOP_REASON.get(run.mode, "plan complete"))
+                run.error = MODE_STOP_REASON.get(run.mode, "")
+            db.session.commit()
+            return run
+        if nxt == "done":
+            run.step, run.status = "done", "done"
+            run.add_log("done", True, "pipeline complete")
+            db.session.commit()
+            return run
+        fn = STEP_FUNCS.get(nxt)
+        if fn is None:
+            run.add_log(nxt, True, "no action for this step")
+            run.step = nxt
+            db.session.commit()
+            continue
+        try:
+            res = fn(run)
+        except Exception as exc:  # noqa: BLE001 — a step must never 500 the run
+            res = StepResult(False, f"unhandled error: {exc}")
+        run.add_log(nxt, res.ok, res.detail)
+        if not res.ok:
+            run.status = "failed"
+            run.error = res.detail
+            db.session.commit()
+            return run
+        if res.stop:
+            # A planned pause: the step has not happened yet (it waits for
+            # the operator), so the run stays BEFORE it and Resume re-runs it.
+            run.status = "paused"
+            run.error = res.detail
+            db.session.commit()
+            return run
+        run.step = nxt
+        db.session.commit()
+    run.status = "failed"
+    run.error = "step budget exhausted — refusing to loop"
+    db.session.commit()
+    return run
+
+
+def _next_step(run: ProvisionRun, plan: list[str]) -> str | None:
+    try:
+        here = plan.index(run.step)
+    except ValueError:
+        # Current step is not in this mode's plan (mode changed mid-run).
+        # Resume at the first planned step the run has not passed yet.
+        done_to = STEPS.index(run.step) if run.step in STEPS else 0
+        for s in plan:
+            if s in STEPS and STEPS.index(s) > done_to:
+                return s
+        return None
+    return plan[here + 1] if here + 1 < len(plan) else None
+
+
+# ---------------------------------------------------------------------------
+# rollback
+# ---------------------------------------------------------------------------
+def rollback(run: ProvisionRun) -> ProvisionRun:
+    """Undo, in reverse, exactly what this run recorded creating.
+
+    Every arm is guarded by a *recorded fact*, never by looking at the world:
+    an address is released only if ``ip_from_ipam`` says SATOM took it, a
+    machine is deleted only if ``vm_ref`` says SATOM built it. Inferring
+    ownership from current state is how a rollback deletes somebody else's VM.
+    """
+    errors: list[str] = []
+
+    ref = run.ref()
+    if ref:
+        target = _target(run)
+        if target is None:
+            errors.append("hypervisor target is gone — the machine "
+                          f"{ref.get('name')!r} must be removed by hand")
+        else:
+            try:
+                target.client().delete_vm(VmRef(**{
+                    k: ref.get(k) for k in
+                    ("backend", "identifier", "name", "node", "raw")}))
+                run.add_log("rollback:vm", True,
+                            f"deleted {ref.get('name')}")
+                run.vm_ref = ""
+            except HypervisorError as exc:
+                errors.append(f"could not delete the machine: {exc}")
+                run.add_log("rollback:vm", False, str(exc))
+
+    if run.dns_record_id:
+        try:
+            from .dns_providers import delete_record
+            # Aimed at the RECORDED backend. A NULL id (a run from before the
+            # column existed) falls back to resolution, which is exactly what
+            # that run's single provider was.
+            delete_record(run.dns_record_id, name=run.hostname, rtype="A",
+                          backend_id=run.dns_backend_id)
+            run.add_log("rollback:dns", True, f"removed {run.hostname}")
+            run.dns_record_id = ""
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"could not remove the DNS record: {exc}")
+            run.add_log("rollback:dns", False, str(exc))
+
+    if run.ip_from_ipam and run.mgmt_ip:
+        try:
+            from .dns_providers import release_address
+            # Driven by the handle recorded at allocation, not by the address
+            # string: between the reservation and now the pool may legitimately
+            # have given that address to somebody else, and a release keyed on
+            # the string frees THEIR entry.
+            release_address(run.mgmt_ip, ref=run.ip_ref or "",
+                            backend_id=run.ip_backend_id,
+                            pool=run.ip_pool or "")
+            run.add_log("rollback:ip", True, f"released {run.mgmt_ip}")
+            run.ip_from_ipam = False
+            run.ip_ref = ""
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"could not release the address: {exc}")
+            run.add_log("rollback:ip", False, str(exc))
+
+    # An Appliance row created by this run is deliberately LEFT IN PLACE:
+    # by the time onboarding happened the device was answering, and deleting
+    # the record would orphan any harvest, snapshot or note already attached
+    # to it. It is named in the log instead.
+    if run.appliance_id:
+        run.add_log("rollback:appliance", True,
+                    f"appliance #{run.appliance_id} left registered on purpose "
+                    "— remove it from Appliances if it is not wanted")
+
+    run.status = "aborted"
+    run.error = "; ".join(errors)
+    run.updated_at = datetime.utcnow()
+    db.session.commit()
+    return run

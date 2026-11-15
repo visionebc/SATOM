@@ -1,0 +1,75 @@
+{# ============================================================================
+   Monitoring submenu — ONE definition, four call sites (Global, FortiWeb,
+   FortiADC and FortiAnalyzer ADOMs). Added 2026-07-28.
+
+   Why a partial and not four copies: the group had drifted before (Metrics was
+   a bare Fleet item in the ADOMs while Global had the three-entry submenu). An
+   entry added here now appears in EVERY ADOM in the same commit — it cannot be
+   added to Global and forgotten elsewhere.
+
+   Scoping is NOT done here. All pages filter their rows through
+   ``visible_appliances()`` (ADOM -> device kind), so the FortiWeb ADOM sees
+   FortiWeb devices and their probes, the ADC ADOM its own, and anything created
+   from the Global ADOM against a device of this product shows up here with no
+   extra bookkeeping. ``_adom`` pins the ADOM on hard (non-Turbo) navigations,
+   which cannot carry the X-ADOM header.
+
+   2026-08-05: "Fleet health" became a nested submenu holding SATOM health (this
+   installation) and Device health (the appliances). SATOM health is Global-only
+   and the route enforces it — the entry is simply not offered elsewhere.
+   2026-10-14: the "Fleet health" submenu is gone. Device health is a direct
+   Monitoring entry in every ADOM (in a device ADOM the submenu held only it);
+   SATOM health follows it as a direct entry in Global.
+   Collection moved OUT of here into Administrator (partials/nav_collection.html):
+   it sets collection policy, it does not display a measurement.
+   2026-10-03: a config_write holder WITHOUT user_manage (no Administrator group)
+   gets the same partial at the end of this submenu, since editing collection
+   needs config_write and the page was otherwise reachable only by URL.
+   ========================================================================= #}
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['monitoring','metrics','analysis','deep_monitor','service_monitor','monitor_analytics','monitor_reports'] }}" data-nav-subgroup="Monitoring">
+  <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-activity fw-nav-icon"></i><span>{{ _('Monitoring') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-subgroup-body">
+
+    {% if may_open('monitoring.index') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'monitoring.index' else '' }}" href="{{ url_for('monitoring.index', _adom=product.key) }}">
+      <i class="bi bi-hdd-rack fw-nav-icon"></i><span>{{ _('Device health') }}</span></a>
+    {% endif %}
+    {% if product.key == 'global' %}
+    {% if may_open('monitoring.satom') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'monitoring.satom' else '' }}" href="{{ url_for('monitoring.satom', _adom=product.key) }}">
+      <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('SATOM health') }}</span></a>
+    {% endif %}
+    {% endif %}
+
+    {# Sentinel left Monitoring on 2026-11-01 for its own Operations › Sentinel
+       subgroup (partials/nav_sentinel.html, drawn by nav_fleet.html right
+       below this submenu). #}
+    {% if may_open('metrics.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index', _adom=product.key) }}">
+      <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>{{ _('Metrics') }}</span></a>
+    {% endif %}
+    {% if may_open('analysis.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'analysis' else '' }}" href="{{ url_for('analysis.index', _adom=product.key) }}">
+      <i class="bi bi-graph-up fw-nav-icon"></i><span>{{ _('Analysis') }}</span></a>
+    {% endif %}
+    {% if may_open('deep_monitor.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'deep_monitor' else '' }}" href="{{ url_for('deep_monitor.index', _adom=product.key) }}">
+      <i class="bi bi-broadcast-pin fw-nav-icon"></i><span>{{ _('Deep monitors') }}</span></a>
+    {% endif %}
+    {% if may_open('service_monitor.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'service_monitor' else '' }}" href="{{ url_for('service_monitor.index', _adom=product.key) }}">
+      <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Service Monitor') }}</span></a>
+    {% endif %}
+    {% if may_open('monitor_analytics.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitor_analytics' else '' }}" href="{{ url_for('monitor_analytics.index', _adom=product.key) }}">
+      <i class="bi bi-graph-up-arrow fw-nav-icon"></i><span>{{ _('Analytics') }}</span></a>
+    {% endif %}
+    {% if may_open('monitor_reports.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitor_reports' else '' }}" href="{{ url_for('monitor_reports.index', _adom=product.key) }}">
+      <i class="bi bi-file-earmark-bar-graph fw-nav-icon"></i><span>{{ _('Reports') }}</span></a>
+    {% endif %}
+    {% if current_user and current_user.can('config_write') and not current_user.can('user_manage') %}
+    {% include "partials/nav_collection.html" %}
+    {% endif %}
+  </div>
+</div>

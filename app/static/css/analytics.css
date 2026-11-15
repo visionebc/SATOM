@@ -1,0 +1,260 @@
+/* Analytics boards and period reports.
+ *
+ * A SEPARATE stylesheet, not an addition to fortiweb.css. Two reasons: this is
+ * a self-contained page family whose rules nothing else consumes, and
+ * fortiweb.css is the file every other feature edits, so appending to it is how
+ * two concurrent changes collide.
+ *
+ * Everything below draws from the --fw-* tokens. SATOM is a LIGHT product —
+ * there is no dark mode and roughly 140 status tints are still hardcoded in the
+ * main sheet, so a dark surface here would render as an opaque grey slab on a
+ * white page (safeguards §9m). Status colours come from the .fw-badge-* palette,
+ * which is already calibrated for contrast against white.
+ */
+
+/* ---------------------------------------------------------------- toolbar - */
+.an-bar {
+  display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
+  padding: .6rem .75rem; margin-bottom: 1rem;
+  background: var(--fw-surface, #fff);
+  border: 1px solid var(--fw-border, #DFE3E8); border-radius: 8px;
+}
+.an-bar .an-spacer { flex: 1 1 auto; }
+
+.an-ranges { display: inline-flex; border: 1px solid var(--fw-border, #DFE3E8);
+  border-radius: 6px; overflow: hidden; }
+.an-ranges button {
+  border: 0; background: var(--fw-surface, #fff); padding: .28rem .6rem;
+  font-size: .8rem; color: var(--fw-text-muted, #5A6572); cursor: pointer;
+  border-right: 1px solid var(--fw-border, #DFE3E8);
+}
+.an-ranges button:last-child { border-right: 0; }
+.an-ranges button:hover { background: var(--fw-surface-alt, #FAFBFC); }
+.an-ranges button.active {
+  background: var(--fw-accent, #0A3F9F); color: #fff; font-weight: 600;
+}
+
+.an-boards { display: inline-flex; flex-wrap: wrap; gap: .35rem; }
+.an-boards a {
+  padding: .28rem .7rem; font-size: .82rem; border-radius: 6px;
+  text-decoration: none; color: var(--fw-text-muted, #5A6572);
+  border: 1px solid var(--fw-border, #DFE3E8);
+  background: var(--fw-surface, #fff);
+}
+.an-boards a:hover { background: var(--fw-surface-alt, #FAFBFC); }
+.an-boards a.active {
+  background: var(--fw-accent, #0A3F9F); border-color: var(--fw-accent, #0A3F9F);
+  color: #fff; font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ grid -- */
+.an-grid {
+  display: grid; grid-template-columns: repeat(12, 1fr); gap: 1rem;
+  align-items: start;
+}
+.an-panel { grid-column: span 6; min-width: 0; }
+.an-panel[data-w="3"]  { grid-column: span 3; }
+.an-panel[data-w="4"]  { grid-column: span 4; }
+.an-panel[data-w="6"]  { grid-column: span 6; }
+.an-panel[data-w="8"]  { grid-column: span 8; }
+.an-panel[data-w="12"] { grid-column: span 12; }
+
+/* Below ~1100px a 3-of-12 panel is ~200px wide, which is narrower than its own
+ * legend. Collapse to halves, then to a single column on a phone. */
+@media (max-width: 1100px) {
+  .an-panel, .an-panel[data-w="3"], .an-panel[data-w="4"],
+  .an-panel[data-w="8"] { grid-column: span 6; }
+}
+@media (max-width: 700px) {
+  .an-panel, .an-panel[data-w="3"], .an-panel[data-w="4"],
+  .an-panel[data-w="6"], .an-panel[data-w="8"],
+  .an-panel[data-w="12"] { grid-column: span 12; }
+}
+
+/* ----------------------------------------------------------------- panel -- */
+.an-card {
+  background: var(--fw-surface, #fff);
+  border: 1px solid var(--fw-border, #DFE3E8);
+  border-radius: 8px; overflow: hidden;
+  display: flex; flex-direction: column; height: 100%;
+}
+.an-card-head {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .55rem .75rem;
+  border-bottom: 1px solid var(--fw-border, #DFE3E8);
+  background: var(--fw-surface-alt, #FAFBFC);
+}
+.an-card-title { font-weight: 600; font-size: .87rem; min-width: 0;
+  color: var(--fw-text, #1F2933); }
+.an-card-sub { font-size: .74rem; color: var(--fw-text-muted, #5A6572);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-card-tools { margin-left: auto; display: flex; gap: .25rem;
+  flex: 0 0 auto; }
+.an-card-tools button {
+  border: 1px solid transparent; background: transparent; cursor: pointer;
+  color: var(--fw-text-muted, #5A6572); border-radius: 5px;
+  padding: .1rem .35rem; font-size: .82rem; line-height: 1.3;
+}
+.an-card-tools button:hover {
+  background: var(--fw-surface, #fff);
+  border-color: var(--fw-border, #DFE3E8);
+  color: var(--fw-accent, #0A3F9F);
+}
+.an-card-body { position: relative; padding: .6rem .75rem .75rem; flex: 1 1 auto; }
+.an-card-foot {
+  padding: .3rem .75rem .5rem; font-size: .7rem;
+  color: var(--fw-text-muted, #5A6572);
+  display: flex; gap: .6rem; flex-wrap: wrap; align-items: center;
+}
+
+/* The chart owns a fixed box. Chart.js with maintainAspectRatio:false grows to
+ * its parent, and a parent sized by its content grows every frame. */
+.an-chart-wrap { position: relative; width: 100%; }
+.an-chart-wrap canvas { display: block; width: 100% !important; }
+
+/* ------------------------------------------------------------------ stat -- */
+.an-stat { display: flex; flex-direction: column; justify-content: center;
+  height: 100%; gap: .15rem; }
+.an-stat-row { display: flex; align-items: baseline; gap: .5rem;
+  flex-wrap: wrap; }
+.an-stat-value { font-size: 2rem; font-weight: 700; line-height: 1.1;
+  color: var(--fw-text, #1F2933); font-variant-numeric: tabular-nums; }
+.an-stat-unit { font-size: .9rem; color: var(--fw-text-muted, #5A6572); }
+.an-stat-label { font-size: .74rem; color: var(--fw-text-muted, #5A6572); }
+.an-stat-list { margin-top: .35rem; display: flex; flex-direction: column;
+  gap: .15rem; }
+.an-stat-item { display: flex; align-items: baseline; gap: .4rem;
+  font-size: .76rem; }
+.an-stat-item .an-dot { width: 8px; height: 8px; border-radius: 50%;
+  flex: 0 0 auto; }
+.an-stat-item .an-name { color: var(--fw-text-muted, #5A6572);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-stat-item .an-num { margin-left: auto; font-weight: 600;
+  font-variant-numeric: tabular-nums; }
+
+/* Delta vs the previous window. Neutral by default: for latency "up" is bad and
+ * for throughput it is good, and this component cannot know which, so it
+ * reports direction and magnitude and lets the operator judge. */
+.an-delta { font-size: .74rem; font-weight: 600; padding: .04rem .35rem;
+  border-radius: 4px; background: var(--fw-surface-alt, #FAFBFC);
+  color: var(--fw-text-muted, #5A6572);
+  border: 1px solid var(--fw-border, #DFE3E8);
+  font-variant-numeric: tabular-nums; }
+
+/* ----------------------------------------------------------------- gauge -- */
+.an-gauge { display: flex; flex-direction: column; gap: .5rem; }
+.an-gauge-row { display: flex; align-items: center; gap: .5rem; }
+.an-gauge-name { font-size: .76rem; min-width: 0; flex: 0 0 34%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--fw-text-muted, #5A6572); }
+.an-gauge-track { position: relative; flex: 1 1 auto; height: 10px;
+  border-radius: 5px; background: var(--fw-surface-alt, #F0F2F5);
+  overflow: hidden; }
+.an-gauge-fill { position: absolute; inset: 0 auto 0 0; border-radius: 5px; }
+.an-gauge-mark { position: absolute; top: -2px; bottom: -2px; width: 2px;
+  background: var(--fw-text-muted, #5A6572); opacity: .55; }
+.an-gauge-val { font-size: .78rem; font-weight: 600; min-width: 4.5rem;
+  text-align: right; font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------------- heatmap -- */
+.an-heat { display: flex; flex-direction: column; gap: 3px; overflow-x: auto; }
+.an-heat-row { display: flex; align-items: center; gap: .4rem; }
+.an-heat-name { flex: 0 0 150px; font-size: .72rem;
+  color: var(--fw-text-muted, #5A6572);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-heat-cells { display: flex; gap: 1px; flex: 1 1 auto; min-width: 0; }
+.an-heat-cell { flex: 1 1 auto; min-width: 2px; height: 16px; border-radius: 2px; }
+
+/* ------------------------------------------------------- status timeline -- */
+.an-strip { display: flex; flex-direction: column; gap: .5rem; }
+.an-strip-row { display: flex; flex-direction: column; gap: .2rem; }
+.an-strip-name { font-size: .74rem; color: var(--fw-text-muted, #5A6572);
+  display: flex; gap: .4rem; align-items: center; }
+.an-strip-bar { display: flex; gap: 1px; height: 14px; border-radius: 3px;
+  overflow: hidden; }
+.an-strip-seg { flex: 1 1 auto; min-width: 1px; }
+
+/* Status fills. Solid, from the calibrated badge palette — NOT the pale tints
+ * that once rendered a `crit` badge at ~1.4:1 against white. */
+.st-ok      { background: #15692A; }
+.st-warn    { background: #7A5700; }
+.st-crit    { background: #8B1C2A; }
+.st-error   { background: #B0561B; }
+.st-unknown { background: #C9CFD6; }
+
+/* ----------------------------------------------------------------- table -- */
+.an-table { width: 100%; font-size: .78rem; border-collapse: collapse; }
+.an-table th {
+  text-align: left; font-weight: 600; padding: .3rem .4rem;
+  border-bottom: 1px solid var(--fw-border, #DFE3E8);
+  color: var(--fw-text-muted, #5A6572); position: sticky; top: 0;
+  background: var(--fw-surface, #fff);
+}
+.an-table td { padding: .3rem .4rem;
+  border-bottom: 1px solid var(--fw-border, #DFE3E8);
+  font-variant-numeric: tabular-nums; }
+.an-table td.an-num, .an-table th.an-num { text-align: right; }
+.an-table tbody tr:last-child td { border-bottom: 0; }
+.an-table-wrap { overflow: auto; }
+
+/* ----------------------------------------------------------------- misc --- */
+.an-empty { padding: 1.5rem .75rem; text-align: center;
+  color: var(--fw-text-muted, #5A6572); font-size: .82rem; }
+.an-empty i { display: block; font-size: 1.5rem; margin-bottom: .35rem;
+  opacity: .5; }
+
+/* "no data" is a FINDING, not a neutral blank. It gets the same visual weight
+ * as a reading so nobody skims past a panel that measured nothing and reads it
+ * as healthy. */
+.an-nodata { color: #7A5700; font-weight: 600; }
+
+.an-src {
+  font-size: .68rem; padding: .05rem .35rem; border-radius: 4px;
+  background: var(--fw-surface-alt, #FAFBFC);
+  border: 1px solid var(--fw-border, #DFE3E8);
+  color: var(--fw-text-muted, #5A6572);
+}
+.an-mixed { color: #7A5700; }
+
+.an-legend { display: flex; flex-wrap: wrap; gap: .1rem .7rem;
+  margin-top: .35rem; }
+.an-legend-item { display: inline-flex; align-items: center; gap: .3rem;
+  font-size: .72rem; color: var(--fw-text-muted, #5A6572); cursor: pointer;
+  user-select: none; }
+.an-legend-item .an-dot { width: 9px; height: 9px; border-radius: 50%; }
+.an-legend-item.off { opacity: .4; text-decoration: line-through; }
+
+.an-drag-over { outline: 2px dashed var(--fw-accent, #0A3F9F);
+  outline-offset: 3px; }
+.an-dragging { opacity: .45; }
+
+/* ------------------------------------------------------------- cadence ---- */
+.an-cadence td.an-drift { color: #8B1C2A; font-weight: 600; }
+.an-cadence .an-tick { font-weight: 600; }
+
+/* ------------------------------------------------------------- reports ---- */
+.an-rep-grid { display: grid; gap: .75rem;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.an-kpi {
+  background: var(--fw-surface, #fff);
+  border: 1px solid var(--fw-border, #DFE3E8);
+  border-radius: 8px; padding: .7rem .8rem;
+}
+.an-kpi-label { font-size: .72rem; color: var(--fw-text-muted, #5A6572); }
+.an-kpi-value { font-size: 1.5rem; font-weight: 700; line-height: 1.2;
+  font-variant-numeric: tabular-nums; color: var(--fw-text, #1F2933); }
+.an-kpi-note { font-size: .72rem; color: var(--fw-text-muted, #5A6572); }
+
+.an-sched { display: flex; gap: .5rem; flex-wrap: wrap; }
+.an-sched-chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-size: .75rem; padding: .2rem .55rem; border-radius: 999px;
+  border: 1px solid var(--fw-border, #DFE3E8);
+  background: var(--fw-surface, #fff); color: var(--fw-text-muted, #5A6572);
+}
+.an-sched-chip .an-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+.an-report-body h3 { font-size: .95rem; font-weight: 600; margin: 1.1rem 0 .5rem; }
+.an-inc-list { font-size: .78rem; }
+.an-inc-list td { padding: .25rem .4rem;
+  border-bottom: 1px solid var(--fw-border, #DFE3E8); }

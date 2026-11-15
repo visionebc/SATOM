@@ -1,0 +1,1515 @@
+{# ============================================================================
+   ONE probe page, two mount points: Deep monitors and Service Monitor.
+
+   The two pages are views over the SAME monitor_probe / monitor_sample tables
+   and the SAME runner — the split is a partition of deep_monitor.KINDS, not a
+   second subsystem (see app/views/monitor_probes.py for why). Everything that
+   differs arrives in ``page``: title, blurb, the kinds this page owns, which
+   form field groups to render, which discovery steps to offer, and the URL
+   prefix its JS talks to.
+
+   Adding a probe kind therefore means adding it to ONE page's spec — it cannot
+   land on both, and it cannot land on neither without the partition test in
+   tests/test_service_monitor.py failing.
+   ========================================================================= #}
+{% extends "base.html" %}
+{% block title %}{{ page.title }}{% endblock %}
+
+{% set K = page.kinds %}
+{% block content %}
+{% from "monitoring/_pages_compare.html" import compare_button, compare_modal with context %}
+{{ compare_modal(request.blueprint) }}
+<style nonce="{{ csp_nonce }}">
+  /* --------------------------------------------------------------------
+     SATOM renders on a LIGHT chrome: static/css/fortiweb.css sets
+     the --fw-* tokens (docs/design-system.md) on white cards, and
+     there is no dark mode anywhere in the app. Every colour below is
+     therefore chosen against WHITE.
+
+     The fleet's dark glassmorphism palette does NOT apply to this product.
+     Dropped on this page a card reads as a grey slab and the light-on-light
+     status pills disappear -- which is exactly what happened on 2026-07-28.
+     -------------------------------------------------------------------- */
+  .dp-sum { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px; margin-bottom:18px; }
+  .dp-sum .fw-card-body { padding:14px 16px; }
+  .dp-kpi { font-size:1.6rem; font-weight:600; line-height:1.1; color:var(--fw-text-primary); }
+  .dp-badge { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; padding:1px 8px;
+              border-radius:9px; border:1px solid; white-space:nowrap; font-weight:600; }
+  .dp-b-ok      { color:#15692A; background:rgba(40,167,69,.16);   border-color:rgba(40,167,69,.30); }
+  .dp-b-warn    { color:#7A5700; background:rgba(255,193,7,.22);   border-color:rgba(255,193,7,.45); }
+  .dp-b-crit    { color:#8B1C2A; background:rgba(220,53,69,.16);   border-color:rgba(220,53,69,.30); }
+  .dp-b-error   { color:#4C2A85; background:rgba(139,92,246,.16);  border-color:rgba(139,92,246,.32); }
+  .dp-b-unknown { color:#3D4550; background:rgba(108,117,125,.16); border-color:rgba(108,117,125,.30); }
+  .dp-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .dp-tbl { width:100%; font-size:.85rem; }
+  .dp-tbl th { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em;
+               color:var(--fw-text-secondary); font-weight:600; padding:6px 8px;
+               border-bottom:1px solid var(--fw-border); }
+  .dp-tbl td { padding:8px; border-bottom:1px solid var(--fw-border-light); vertical-align:middle; }
+  .dp-tbl tr:hover td { background:rgba(239,84,36,.06); }
+  /* Row actions on ONE line (2026-10-24): Edit + Probe now visible, the rest
+     behind the "..." menu; the column takes only the width the cluster needs. */
+  .dp-tbl .actions-col { white-space:nowrap; width:1%; }
+  .dp-name { font-weight:600; color:var(--fw-text-primary); }
+  .dp-sub  { font-size:.74rem; color:var(--fw-text-secondary); }
+  .dp-detail { font-size:.78rem; color:var(--fw-text-primary); }
+  .dp-spark { display:block; }
+  .dp-chart-open { display:block; cursor:pointer; border-radius:6px; padding:2px;
+                   transition:background .12s ease; }
+  .dp-chart-open:hover { background:rgba(239,84,36,.10); }
+  .dp-ch-bar { display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+               justify-content:space-between; margin-bottom:14px; }
+  .dp-ch-dates { display:flex; gap:7px; align-items:center; }
+  .dp-ch-dates input { width:150px; }
+  .dp-ch-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));
+                gap:10px; margin-bottom:12px; }
+  .dp-ch-kpi { border:1px solid var(--fw-border); border-radius:10px; padding:8px 11px; }
+  .dp-ch-kpi .k { font-size:.66rem; text-transform:uppercase; letter-spacing:.06em;
+                  color:var(--fw-text-secondary); }
+  .dp-ch-kpi .v { font-size:1.05rem; font-weight:600; font-variant-numeric:tabular-nums;
+                  color:var(--fw-text-primary); }
+  .dp-ch-wrap { position:relative; height:300px; }
+  .dp-strip { display:flex; gap:1px; height:10px; margin-top:10px; border-radius:3px;
+              overflow:hidden; }
+  .dp-strip span { flex:1 1 0; min-width:1px; }
+  .dp-ch-empty { text-align:center; color:var(--fw-text-secondary); font-size:.85rem; padding:60px 0; }
+  .dp-kind { font-size:.66rem; padding:1px 7px; border-radius:8px; white-space:nowrap;
+             background:rgba(23,110,190,.10); border:1px solid rgba(23,110,190,.26); color:#12558F; }
+  .dp-kind.interface { background:rgba(40,167,69,.10);  border-color:rgba(40,167,69,.28);  color:#15692A; }
+  .dp-kind.proxyd    { background:rgba(255,193,7,.18);  border-color:rgba(255,193,7,.44);  color:#7A5700; }
+  .dp-kind.cpu       { background:rgba(139,92,246,.10); border-color:rgba(139,92,246,.30); color:#4C2A85; }
+  .dp-kind.memory    { background:rgba(214,51,132,.10); border-color:rgba(214,51,132,.28); color:#8A1F55; }
+  .dp-kind.sessions        { background:rgba(13,148,178,.10); border-color:rgba(13,148,178,.28); color:#0A5F6C; }
+  .dp-kind.policy_sessions { background:rgba(13,148,178,.10); border-color:rgba(13,148,178,.28); color:#0A5F6C; }
+  .dp-kind.throughput      { background:rgba(23,110,190,.10); border-color:rgba(23,110,190,.28); color:#12558F; }
+  .dp-kind.transactions    { background:rgba(139,92,246,.10); border-color:rgba(139,92,246,.30); color:#4C2A85; }
+  .dp-ports { max-height:190px; overflow:auto; border:1px solid var(--fw-border);
+              border-radius:8px; padding:8px 10px; }
+  .dp-ports label { display:flex; gap:8px; align-items:center; font-size:.8rem; padding:2px 0;
+                    cursor:pointer; }
+  .dp-ports .ip { color:var(--fw-text-secondary); font-size:.72rem; margin-left:auto;
+                  font-variant-numeric:tabular-nums; }
+  .dp-disc label { display:flex; gap:9px; align-items:flex-start; font-size:.82rem;
+                   padding:7px 9px; border:1px solid var(--fw-border);
+                   border-radius:9px; margin-bottom:7px; cursor:pointer; }
+  .dp-disc label:hover { background:rgba(239,84,36,.05); }
+  .dp-off td { opacity:.45; }
+  .dp-note { font-size:.72rem; color:var(--fw-text-secondary); margin-top:10px; }
+  .dp-hist pre { font-size:.72rem; max-height:260px; overflow:auto; background:#F8F9FA;
+                 border:1px solid var(--fw-border); border-radius:8px; padding:10px;
+                 color:var(--fw-text-primary); }
+  .dp-hrow { display:flex; gap:10px; align-items:baseline; padding:4px 0;
+             border-bottom:1px dashed var(--fw-border); font-size:.78rem; }
+  .dp-hrow .ts { color:var(--fw-text-secondary); width:140px; flex:none; font-variant-numeric:tabular-nums; }
+
+  /* --- device traffic cards (rollup pages only) -------------------------
+     Sized for a FLEET, not a demo. Cards start collapsed (see OPEN_KEY in
+     the JS) and tile in a dense grid, so ~100 appliances stay inside one
+     screenful instead of becoming a kilometre of scroll. An EXPANDED card
+     takes the whole row: the policy table needs the width, and a tall item
+     inside a narrow grid column would stretch every tile beside it.
+     -------------------------------------------------------------------- */
+  .dp-dev { display:grid; grid-template-columns:repeat(auto-fill, minmax(258px,1fr));
+            grid-auto-flow:row dense; align-items:start; gap:8px; margin-bottom:16px; }
+  .dp-dev-card { background:#fff; border:1px solid var(--fw-border);
+                 border-radius:var(--fw-radius-lg); box-shadow:var(--fw-card-shadow);
+                 padding:7px 10px; min-width:0;
+                 transition:box-shadow var(--fw-transition), border-color var(--fw-transition); }
+  .dp-dev-card:hover { box-shadow:var(--fw-card-shadow-hover); }
+  .dp-dev-card:not(.is-collapsed) { grid-column:1 / -1; padding:12px 16px 14px;
+                 border-color:rgba(239,84,36,.38); }
+  .dp-dev-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .dp-dev-toggle { cursor:pointer; user-select:none; border-radius:6px; }
+  .dp-dev-toggle:focus-visible { outline:2px solid var(--fw-accent); outline-offset:3px; }
+  .dp-dev-ttl { display:flex; align-items:center; gap:7px; min-width:0; }
+  .dp-caret { color:var(--fw-text-secondary); font-size:.7rem; flex:0 0 auto;
+              transition:transform .18s ease; }
+  .dp-dev-card.is-collapsed .dp-caret { transform:rotate(-90deg); }
+  .dp-dev-hr { display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+  .dp-dev-card:not(.is-collapsed) .dp-hchip { display:none; }
+  .dp-dev-card.is-collapsed .dp-dev-body { display:none; }
+  /* One line per folded card: the host reappears only when expanded. */
+  .dp-dev-card.is-collapsed .dp-dev-sub { display:none; }
+  .dp-dev-name { font-weight:600; font-size:.84rem; color:var(--fw-text-primary);
+                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dp-dev-card:not(.is-collapsed) .dp-dev-name { font-size:.98rem; }
+  .dp-tp { display:flex; align-items:baseline; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .dp-tp-val { font-size:1.7rem; font-weight:700; line-height:1; color:var(--fw-text-primary);
+               font-variant-numeric:tabular-nums; }
+  .dp-tp-sub { color:var(--fw-text-secondary); font-size:.76rem; }
+  .dp-tp-none { color:var(--fw-text-secondary); font-style:italic; font-size:.86rem; margin-top:8px; }
+  .dp-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+  .dp-chip { font-size:.68rem; padding:1px 7px; border-radius:999px;
+             background:#EEF1F4; color:var(--fw-text-secondary);
+             border:1px solid var(--fw-border-light); white-space:nowrap; }
+  .dp-chip.bad  { background:rgba(220,53,69,.14); color:#8B1C2A; border-color:rgba(220,53,69,.26); }
+  .dp-chip.warn { background:rgba(255,193,7,.22); color:#7A5700; border-color:rgba(255,193,7,.42); }
+  .dp-hchip { font-variant-numeric:tabular-nums; }
+  .dp-ptbl { width:100%; margin-top:11px; font-size:.79rem; border-collapse:collapse; }
+  .dp-ptbl th { color:var(--fw-text-secondary); font-weight:600; text-transform:uppercase;
+                font-size:.64rem; letter-spacing:.05em; padding:4px 6px; text-align:left;
+                border-bottom:1px solid var(--fw-border); }
+  .dp-ptbl td { padding:5px 6px; border-bottom:1px solid var(--fw-border-light);
+                vertical-align:middle; }
+  .dp-ptbl tr.dp-prow { cursor:pointer; }
+  .dp-ptbl tr.dp-prow:hover { background:rgba(239,84,36,.07); }
+  .dp-mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.94em; }
+  .dp-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(118px,1fr)); gap:10px; }
+  .dp-kpi-t { border:1px solid var(--fw-border); border-radius:11px; padding:9px 11px; }
+  .dp-kpi-t .v { font-size:1.15rem; font-weight:700; color:var(--fw-text-primary); }
+  .dp-kpi-t .l { color:var(--fw-text-secondary); font-size:.66rem; text-transform:uppercase;
+                 letter-spacing:.05em; }
+  .dp-sect { margin-top:16px; }
+  .dp-sect h6 { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em;
+                color:var(--fw-text-secondary); margin-bottom:7px; }
+</style>
+
+<div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="fw-page-title mb-0"><i class="bi {{ page.icon }} me-2 text-accent"></i>{{ page.title }}</h1>
+    <p class="text-muted small mb-0">{{ page.blurb|safe }}</p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span id="dpStamp" class="text-muted small"></span>
+    {{ compare_button() }}
+    {% if can_edit %}
+    <button id="dpDiscoverBtn" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-magic me-1"></i>{{ _('Discover from device') }}</button>
+    <button id="dpAddBtn" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-plus-lg me-1"></i>{{ _('Add probe') }}</button>
+    <button id="dpRunBtn" class="btn btn-sm btn-primary">
+      <i class="bi bi-play-fill me-1"></i>{{ _('Probe now') }}</button>
+    {% endif %}
+    <button id="dpRefreshBtn" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-clockwise"></i></button>
+  </div>
+</div>
+
+{% if page.rollup %}
+<div class="dp-dev" id="dpDevices"></div>
+{% endif %}
+
+<div class="dp-sum" id="dpSummary"></div>
+
+<div class="fw-card">
+  <div class="fw-card-body">
+    <div class="table-responsive">
+      <table class="dp-tbl">
+        <thead><tr>
+          <th style="width:26%">{{ _('Probe') }}</th>
+          <th style="width:9%">{{ _('Type') }}</th>
+          <th style="width:9%">{{ _('Status') }}</th>
+          <th style="width:14%">{{ _('Trend') }}</th>
+          <th>{{ _('Last result') }}</th>
+          <th style="width:12%">{{ _('Checked') }}</th>
+          <th class="actions-col"></th>
+        </tr></thead>
+        <tbody id="dpRows"><tr><td colspan="7" class="text-muted">{{ _('Loading…') }}</td></tr></tbody>
+      </table>
+    </div>
+    <div class="dp-note">
+      <i class="bi bi-info-circle me-1"></i>
+      {{ _('A page load never contacts an appliance — every row is read from the stored samples. Probing runs as a background job (') }}<b>{{ _('Probe now') }}</b>) or on a schedule via the
+      <code>deep_monitor</code> scheduled action, which sweeps this page and
+      <b>{{ _('Deep monitors') }}</b>/<b>{{ _('Service Monitor') }}</b> alike every three minutes.
+      {{ page.footnote|safe }}
+      <b>{{ _('Click any sparkline') }}</b> for 1&nbsp;h / 24&nbsp;h / 7&nbsp;d / 30&nbsp;d or a date
+      range. Raw samples are capped per probe; beyond that the chart is served from
+      hourly buckets (90 days) and daily buckets (2 years), so depth costs kilobytes
+      instead of gigabytes.
+    </div>
+  </div>
+</div>
+
+<!-- drill-down chart: click any sparkline -->
+{% if page.rollup %}
+<div class="modal fade" id="dpPolModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="dpPolTitle">{{ _('Server policy') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body" id="dpPolBody"><span class="text-muted">{{ _('Loading…') }}</span></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="modal fade" id="dpChartModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="dpChTitle">{{ _('History') }}</h5>
+          <div class="dp-sub" id="dpChSub"></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <div class="dp-ch-bar">
+          <div class="btn-group btn-group-sm" role="group" aria-label="{{ _('Time range') }}">
+            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="1h">{{ _('1 h') }}</button>
+            <button type="button" class="btn btn-outline-secondary dp-ch-r active" data-range="24h">{{ _('24 h') }}</button>
+            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="7d">{{ _('7 days') }}</button>
+            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="30d">{{ _('30 days') }}</button>
+          </div>
+          <div class="dp-ch-dates">
+            <input type="date" class="form-control form-control-sm" id="dpChFrom" aria-label="{{ _('From date') }}">
+            <span class="dp-sub">&rarr;</span>
+            <input type="date" class="form-control form-control-sm" id="dpChTo" aria-label="{{ _('To date') }}">
+            <button type="button" class="btn btn-sm btn-primary" id="dpChApply">{{ _('Apply') }}</button>
+          </div>
+        </div>
+        <div class="dp-ch-kpis" id="dpChKpis"></div>
+        <div class="dp-ch-wrap"><canvas id="dpChCanvas"></canvas></div>
+        <div class="dp-strip" id="dpChStrip"></div>
+        <div class="dp-sub mt-2" id="dpChSrc"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- history drawer -->
+<div class="modal fade" id="dpHistModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="dpHistTitle">{{ _('History') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body dp-hist" id="dpHistBody"></div>
+    </div>
+  </div>
+</div>
+
+{% if can_edit %}
+<!-- add / edit probe -->
+<div class="modal fade" id="dpEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="dpForm">
+        <div class="modal-header">
+          <h5 class="modal-title" id="dpEditTitle">{{ _('Add probe') }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="id" id="dpFid">
+          <div class="mb-2">
+            <label class="form-label small">{{ _('Type') }}</label>
+            <select class="form-select form-select-sm" name="kind" id="dpFkind">
+              {% for k in K %}<option value="{{ k }}">{{ page.labels[k] }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">{{ _('Name') }}</label>
+            <input class="form-control form-control-sm" name="name" id="dpFname" placeholder="{{ _('fwb1 · shop-policy') }}">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">{{ _('Device') }}</label>
+            <select class="form-select form-select-sm" name="appliance_id" id="dpFdev"></select>
+            <div class="form-text small">
+              {%- if 'https' in K %}Required for every kind except a bare URL probe.
+              {%- else %}Required — every kind on this page reads that device's monitor API.
+              {%- endif %}</div>
+          </div>
+          {% if 'https' in page.groups %}
+          <div class="mb-2 dp-f-https">
+            <label class="form-label small">URL</label>
+            <input class="form-control form-control-sm" name="url" id="dpFurl" placeholder="{{ _('https://app.example.com/') }}">
+          </div>
+          <div class="row g-2 dp-f-https">
+            <div class="col-4"><label class="form-label small">{{ _('Expect status') }}</label>
+              <input type="number" class="form-control form-control-sm" name="expect_status" id="dpFexp" value="0">
+              <div class="form-text small">0 = any &lt; 400</div></div>
+            <div class="col-4"><label class="form-label small">{{ _('Slow above (ms)') }}</label>
+              <input type="number" class="form-control form-control-sm" name="warn_ms" id="dpFms" value="2000"></div>
+            <div class="col-4"><label class="form-label small">{{ _('TLS warn (days)') }}</label>
+              <input type="number" class="form-control form-control-sm" name="tls_warn_days" id="dpFtls" value="21"></div>
+          </div>
+          {% endif %}
+          {% if 'proxyd' in page.groups %}
+          <div class="row g-2 dp-f-proxyd">
+            <div class="col-12"><label class="form-label small">{{ _('Process') }}</label>
+              <input class="form-control form-control-sm" name="process_name" id="dpFproc" value="proxyd">
+              <div class="form-text small">Matched on the command basename, so
+                <code>proxyd</code> finds <code>/bin/proxyd</code>. This probe grades the
+                daemon alone &mdash; running, and whether its PID set changed &mdash; and
+                charts the memory <b>{{ _('consumed') }}</b> {{ _('and') }} <b>{{ _('free') }}</b> {{ _('on the appliance. There is no threshold here on purpose: box memory belongs to the') }} <b>{{ _('Memory usage') }}</b>
+                probe, and the daemon's own <code>%VSZ</code> is virtual size, which sums
+                past 100&nbsp;% across processes.</div></div>
+          </div>
+          {% endif %}
+          {% if 'box' in page.groups %}
+          <div class="row g-2 dp-f-box">
+            <div class="col-6"><label class="form-label small">Warn at %</label>
+              <input type="number" class="form-control form-control-sm" name="warn_pct" id="dpFwarnp" value="80"></div>
+            <div class="col-6"><label class="form-label small">Critical at %</label>
+              <input type="number" class="form-control form-control-sm" name="crit_pct" id="dpFcritp" value="95"></div>
+            <div class="col-12"><div class="form-text small">Read from
+              <code>get system performance</code> on FortiWeb and FortiADC, from the
+              REST <code>systeminfo</code> call on FortiAuthenticator, from REST
+              <code>monitor/system/resource/usage</code> on FortiGate; offered on
+              FortiAnalyzer too, where the CLI reading is unverified.
+              0 disables that level.</div></div>
+          </div>
+          {% endif %}
+          {% if 'interface' in page.groups %}
+          <div class="mb-2 dp-f-interface">
+            <label class="form-label small">{{ _('Ports to watch') }}</label>
+            <div class="dp-ports" id="dpFports"><span class="dp-sub">{{ _('pick a device first') }}</span></div>
+            <div class="form-text small">
+              {{ _('Nothing ticked = every port on the device, as one series. Tick a subset to watch only those. For a series') }} <em>{{ _('per port') }}</em> {{ _('use') }}
+              <b>{{ _('Discover from device') }}</b> → <i>{{ _('one probe per interface') }}</i>.
+            </div>
+          </div>
+          <div class="mb-2 dp-f-interface">
+            <label class="form-label small">{{ _('Warn if the harvest is older than (hours)') }}</label>
+            <input type="number" class="form-control form-control-sm" name="stale_after_h" id="dpFstale" value="6">
+          </div>
+          {% endif %}
+          {% if 'api' in page.groups %}
+          <div class="mb-2 dp-f-api">
+            <label class="form-label small" id="dpFpolLabel">{{ _('Server policy') }}</label>
+            <input class="form-control form-control-sm" name="target" id="dpFpol"
+                   list="dpPolList" placeholder="{{ _('pol-shop-main') }}" autocomplete="off">
+            <datalist id="dpPolList"></datalist>
+            <datalist id="dpFtargetList"></datalist>
+            <div class="form-text small" id="dpFpolHelp">
+              The policy name exactly as the appliance reports it in
+              <code>policy/policystatus</code> — pick the device above and the list fills
+              itself from the LIVE box (not the harvest cache, which is empty on a
+              licence-locked appliance). For <b>{{ _('HTTP throughput') }}</b> you may instead use
+              the aggregate <code>Total HTTP Throughput</code>; leave it empty on a
+              <b>{{ _('Concurrent sessions') }}</b> {{ _('probe, which is box-wide.') }}
+            </div>
+          </div>
+          <div class="row g-2 dp-f-api">
+            <div class="col-6"><label class="form-label small">{{ _('Warn at') }}</label>
+              <input type="number" step="any" class="form-control form-control-sm"
+                     name="warn_num" id="dpFwarnn" value="0"></div>
+            <div class="col-6"><label class="form-label small">{{ _('Critical at') }}</label>
+              <input type="number" step="any" class="form-control form-control-sm"
+                     name="crit_num" id="dpFcritn" value="0"></div>
+            <div class="col-12"><div class="form-text small" id="dpFnumUnit"></div></div>
+          </div>
+          <div class="mb-2 dp-f-api" id="dpFhoursRow">
+            <label class="form-label small">{{ _('Window (hours)') }}</label>
+            <input type="number" class="form-control form-control-sm" name="stale_after_h"
+                   id="dpFhours" value="1">
+            <div class="form-text small">{{ _('Only used by') }} <b>{{ _('HTTP transactions') }}</b>: the
+              appliance picks the bucket width from this (1&nbsp;h → 5-minute buckets,
+              24&nbsp;h → 2-hour buckets).</div>
+          </div>
+          <div class="mb-2 dp-f-api">
+            <div class="form-text small">
+              {{ _('Every kind here reads the appliance\'s REST monitor API and never opens an SSH session, so they keep reporting on a device whose') }} <em>{{ _('cmdb') }}</em>
+              is licence-locked — verified on a FortiWeb-VM whose every config read fails with
+              <code>-20010</code> while <code>policystatus</code> still answers 200.
+              Each kind is offered on the products that can actually answer it:
+              traffic and session kinds on <b>{{ _('FortiWeb') }}</b>{{ _(', licence headroom and the FortiToken pools on') }} <b>{{ _('FortiAuthenticator') }}</b>{{ _('. 0 disables a threshold level.') }}
+            </div>
+          </div>
+          {% endif %}
+          <div class="row g-2 mt-1">
+            <div class="col-6"><label class="form-label small">{{ _('Interval (min)') }}</label>
+              <input type="number" class="form-control form-control-sm" name="interval_min" id="dpFint" value="{{ default_interval|default(3) }}"></div>
+            <div class="col-6"><label class="form-label small">{{ _('Timeout (s)') }}</label>
+              <input type="number" class="form-control form-control-sm" name="timeout_s" id="dpFto" value="10"></div>
+          </div>
+          <div class="form-text small mt-2">
+            {{ _('Leave a threshold box') }} <b>{{ _('empty') }}</b> to inherit this product's value from
+            Settings&nbsp;&rarr;&nbsp;Thresholds; the greyed number in the box is
+            what it will inherit. <b>0</b> is a different answer &mdash; it switches
+            that level off.
+          </div>
+          <div class="row g-2 mt-2 pt-2 border-top">
+            <div class="col-12"><label class="form-label small mb-1">{{ _('Mute this probe (hours)') }}</label>
+              <div class="form-text small mb-1">
+                A muted probe keeps running and keeps showing its own status &mdash;
+                what it stops doing is raising the device badge and the alert mail.
+                Maximum 720&nbsp;h; there is no permanent mute, and it switches
+                itself back on when it expires. 0 or empty lifts it.
+              </div>
+            </div>
+            <div class="col-4">
+              <input type="number" min="0" step="1" class="form-control form-control-sm"
+                     name="suppress_hours" id="dpFsuph" placeholder="0"></div>
+            <div class="col-8">
+              <input type="text" maxlength="200" class="form-control form-control-sm"
+                     name="suppress_reason" id="dpFsupr"
+                     placeholder="{{ _('why (recorded and shown on the row)') }}"></div>
+          </div>
+          <div class="alert alert-danger py-2 px-3 mt-2 small d-none" id="dpFerr"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-sm btn-primary">{{ _('Save') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- discover -->
+<div class="modal fade" id="dpDiscModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="dpDiscForm">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ _('Discover probes from a device') }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted">
+            {% if 'api' in page.discover %}Server policies are read from the LIVE appliance
+            (the harvest cache is empty on a licence-locked box), so the device has to answer.
+            {% else %}Everything is read from the harvest cache, so this works with the appliance
+            powered off.{% endif %} Every step is idempotent — an existing probe is left alone.
+          </p>
+          <select class="form-select form-select-sm mb-3" name="appliance_id" id="dpDiscDev"></select>
+          <div class="dp-disc">
+            {% if 'policies' in page.discover %}
+            <label><input type="checkbox" name="what" value="policies" checked>
+              <span><b>{{ _('Server policies') }}</b> — one HTTPS probe per published front-end
+                (explicit IP &rarr; system VIP &rarr; bound interface, the same order the
+                upgrade runbook uses). FortiWeb only.</span></label>
+            {% endif %}
+            {% if 'baseline' in page.discover %}
+            <label><input type="checkbox" name="what" value="baseline" checked>
+              <span><b>{{ _('Device baseline') }}</b> — one interface watch covering all ports, plus
+                processor load and memory usage, plus <code>proxyd</code> on FortiWeb.</span></label>
+            {% endif %}
+            {% if 'interfaces' in page.discover %}
+            <label><input type="checkbox" name="what" value="interfaces">
+              <span><b>{{ _('One probe per interface') }}</b> {{ _('— a separate series, interval and history for every port. Pick this instead of the all-ports watch when you want to chart or alert on ports individually.') }}</span></label>
+            {% endif %}
+            {% if 'api' in page.discover %}
+            <label><input type="checkbox" name="what" value="api" checked>
+              <span><b>{{ _('REST telemetry') }}</b> — box concurrent sessions, the
+                <code>Total HTTP Throughput</code> aggregate, and per-policy sessions +
+                throughput for every HTTP/HTTPS server policy. Policies come from the LIVE
+                <code>policystatus</code> call, not the harvest cache, so this needs the
+                appliance reachable — and it still works when its cmdb is licence-locked.
+                FortiWeb (traffic and sessions) and FortiAuthenticator (licence headroom
+                and FortiToken pools).</span></label>
+            {% endif %}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-sm btn-primary">{{ _('Discover') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<style nonce="{{ csp_nonce }}">
+  .dp-inh { color: var(--fw-text-muted, #5B6B7D); margin-left: 2px;
+            cursor: help; font-weight: 700; }
+  .dp-muted-chip { display: inline-block; padding: 0 6px; border-radius: 10px;
+                   font-size: .72rem; font-weight: 600; cursor: help;
+                   color: #4C2A85; background: rgba(76, 42, 133, .12); }
+</style>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  var CAN_EDIT = {{ 'true' if can_edit else 'false' }};
+  // Delegated handlers live on `document`, which survives every Turbo visit
+  // while this script re-runs on each one. Bound with the page signal so they
+  // are dropped when the next page renders; bound bare, the second visit made
+  // one click open every modal twice and closing it left the screen dimmed.
+  function docOn(type, fn) {
+    document.addEventListener(type, fn, { signal: window.fwPageSignal ? window.fwPageSignal() : undefined });
+  }
+  // One Modal instance per element: constructing a fresh one on each open
+  // stacks instances, and an instance nobody hides owns a backdrop nobody removes.
+  function showModal(id) { bootstrap.Modal.getOrCreateInstance(document.getElementById(id)).show(); }
+  // Every URL is derived from the page's own mount point, so the same script
+  // drives /monitoring/deep and /monitoring/services without knowing which.
+  var BASE = {{ page.base|tojson }};
+  var URLS = {
+    data:     BASE + '/data',
+    run:      BASE + '/run',
+    create:   BASE + '/probe',
+    discover: BASE + '/discover',
+    policy:   BASE + '/policy'
+  };
+  var UNITS = {{ page.units|tojson }};
+  var ROLLUP = {{ page.rollup|tojson }};
+  var STATE = { probes: [], devices: [] };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function color(st) {
+    // Light chrome: these are drawn on #fff, so they use the fw palette,
+    // not the dark-theme pastels (which wash out completely on white).
+    return st === 'crit' ? '#DC3545' : st === 'warn' ? '#E0A800'
+         : st === 'error' ? '#7C4DEF' : st === 'ok' ? '#28A745' : '#6C757D';
+  }
+  function badge(st) {
+    return '<span class="dp-badge dp-b-' + (st || 'unknown') + '">' + esc(st || 'unknown') + '</span>';
+  }
+  function ago(iso) {
+    if (!iso) return 'never';
+    var t = new Date(iso + 'Z').getTime();
+    if (isNaN(t)) return esc(iso);
+    var s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 90) return Math.round(s) + ' s ago';
+    if (s < 5400) return Math.round(s / 60) + ' min ago';
+    if (s < 172800) return Math.round(s / 3600) + ' h ago';
+    return Math.round(s / 86400) + ' d ago';
+  }
+
+  // Sparkline: value line where a value exists, status band underneath always —
+  // so an outage (no value) still shows as a red segment instead of a gap.
+  function spark(series) {
+    if (!series || !series.length) return '<span class="dp-sub">no samples</span>';
+    var W = 120, H = 26, n = series.length;
+    var vals = series.map(function (s) { return s.value_num; });
+    var nums = vals.filter(function (v) { return typeof v === 'number'; });
+    var bands = series.map(function (s, i) {
+      var w = W / n;
+      return '<rect x="' + (i * w).toFixed(2) + '" y="' + (H - 3) + '" width="' + (w + .6).toFixed(2) +
+             '" height="3" fill="' + color(s.status) + '" opacity=".85"/>';
+    }).join('');
+    var path = '';
+    if (nums.length > 1) {
+      var mn = Math.min.apply(null, nums), mx = Math.max.apply(null, nums);
+      var rng = (mx - mn) || 1;
+      var pts = [];
+      series.forEach(function (s, i) {
+        if (typeof s.value_num !== 'number') return;
+        var x = n > 1 ? (i * (W / (n - 1))) : 0;
+        var y = (H - 7) - ((s.value_num - mn) / rng) * (H - 12);
+        pts.push(x.toFixed(2) + ',' + y.toFixed(2));
+      });
+      if (pts.length > 1) {
+        path = '<polyline points="' + pts.join(' ') + '" fill="none" stroke="#3b82f6" ' +
+               'stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>';
+      }
+    }
+    return '<svg class="dp-spark" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H +
+           '" role="img" aria-label="last ' + n + ' samples">' + path + bands + '</svg>';
+  }
+
+  function renderSummary(d) {
+    var cards = d.kinds.map(function (k) {
+      var s = (d.summary || {})[k.key] || { count: 0, worst: 'unknown' };
+      var mine = STATE.probes.filter(function (p) { return p.kind === k.key; });
+      var bad = mine.filter(function (p) { return p.status === 'crit' || p.status === 'error'; }).length;
+      return '<div class="fw-card"><div class="fw-card-body">' +
+        '<div class="d-flex justify-content-between align-items-start">' +
+        '<span class="text-muted small">' + esc(k.label) + '</span>' + badge(s.worst) + '</div>' +
+        '<div class="dp-kpi mt-1">' + s.count + '</div>' +
+        '<div class="dp-sub">' + (s.count ? (bad ? bad + ' failing' : 'all healthy') : 'no probes configured') +
+        '</div></div></div>';
+    }).join('');
+    document.getElementById('dpSummary').innerHTML = cards;
+  }
+
+  function renderRows(d) {
+    // A row's "..." menu is open: redrawing now would close it under the pointer.
+    if (document.querySelector('#dpRows .fw-row-more .dropdown-menu.show')) return;
+    if (!d.probes.length) {
+      document.getElementById('dpRows').innerHTML =
+        '<tr><td colspan="7" class="text-muted">No probes yet.' +
+        (CAN_EDIT ? ' Use <b>Discover from device</b> to create them from a device.' : '') +
+        '</td></tr>';
+      return;
+    }
+    document.getElementById('dpRows').innerHTML = d.probes.map(function (p) {
+      var where = p.appliance ? esc(p.appliance) : 'no device';
+      if (p.suppressed)
+        where = '<span class="dp-muted-chip" title="' + esc(p.suppress_note) +
+                '">muted</span> ' + where;
+      if (p.kind === 'https' && p.url) where += ' · ' + esc(p.url);
+      else if (p.kind === 'proxyd') where += ' · ' + esc(p.process_name);
+      else if (p.kind === 'cpu' || p.kind === 'memory')
+        where += ' · ' + lvl(p, 'warn_pct') + ' / ' + lvl(p, 'crit_pct');
+      else if (p.kind === 'throughput')
+        where += ' · ' + esc(p.target || 'Total HTTP Throughput') +
+                 ' · ' + lvl(p, 'warn_num');
+      else if (p.kind === 'policy_sessions' || p.kind === 'transactions')
+        where += ' · ' + esc(p.target || '(no policy)') +
+                 ' · ' + lvl(p, 'warn_num');
+      else if (p.kind === 'sessions')
+        where += ' · box-wide · ' + lvl(p, 'warn_num');
+      else if (p.kind === 'interface')
+        where += ' · ' + (p.target ? esc(p.target) : 'all ports');
+      var act = CAN_EDIT
+        ? '<div class="fw-row-actions">' +
+          '<button class="btn btn-sm btn-link px-1 py-0 dp-act" data-act="edit" data-id="' + p.id +
+            '" title="Edit"><i class="bi bi-pencil"></i></button>' +
+          '<button class="btn btn-sm btn-link px-1 py-0 dp-act" data-act="run" data-id="' + p.id +
+            '" title="Probe now"><i class="bi bi-play-fill"></i></button>' +
+          '<div class="dropdown fw-row-more">' +
+          '<button type="button" class="btn btn-sm btn-link px-1 py-0" data-bs-toggle="dropdown"' +
+            ' aria-expanded="false" data-bs-popper-config=\'{"strategy":"fixed"}\'' +
+            ' title="More actions"><i class="bi bi-three-dots"></i></button>' +
+          '<div class="dropdown-menu dropdown-menu-end">' +
+          (p.suppressed
+            ? '<button type="button" class="dropdown-item dp-act" data-act="unmute" data-id="' + p.id +
+              '"><i class="bi bi-bell"></i>Unmute (lift the suppression now)</button>'
+            : '') +
+          '<button type="button" class="dropdown-item dp-act" data-act="toggle" data-id="' + p.id +
+            '"><i class="bi bi-' + (p.enabled ? 'pause' : 'play') + '-circle"></i>' +
+            (p.enabled ? 'Disable' : 'Enable') + '</button>' +
+          '<div class="dropdown-divider"></div>' +
+          '<button type="button" class="dropdown-item text-danger dp-act" data-act="delete" data-id="' + p.id +
+            '"><i class="bi bi-trash"></i>Delete</button>' +
+          '</div></div></div>'
+        : '';
+      return '<tr class="' + (p.enabled ? '' : 'dp-off') + '">' +
+        '<td><div class="dp-name"><span class="dp-dot" style="background:' + color(p.status) + '"></span>' +
+          esc(p.name) + '</div><div class="dp-sub">' + where + '</div></td>' +
+        '<td><span class="dp-kind ' + esc(p.kind) + '">' + esc(p.kind) + '</span></td>' +
+        '<td>' + badge(p.status) + '</td>' +
+        '<td><span class="dp-chart-open" role="button" tabindex="0" data-id="' +
+          p.id + '" title="Open the chart — 24 h, 7 days, 30 days or a date range">' +
+          spark(p.series) + '</span></td>' +
+        '<td><span class="dp-detail dp-hist-open" role="button" data-id="' + p.id + '">' +
+          esc(p.latest ? p.latest.detail : 'never run') + '</span></td>' +
+        '<td class="dp-sub">' + esc(ago(p.last_run_at)) + '<br><span class="dp-sub">every ' +
+          p.interval_min + ' min</span></td>' +
+        '<td class="text-end actions-col">' + act + '</td></tr>';
+    }).join('');
+  }
+
+  // A resolved threshold, with the marker that says it was not typed here.
+  // "0" prints as "off" rather than as a limit of zero, because a level of zero
+  // is disabled everywhere in this product and rendering it as a number reads
+  // as "this alerts at zero".
+  function lvl(p, key) {
+    var r = (p.resolved || {})[key];
+    if (!r) return '';
+    var label = key.indexOf('warn') === 0 ? 'warn' : 'crit';
+    var body = (!r.value ? 'off' : r.value + (r.unit ? ' ' + esc(r.unit) : ''));
+    return label + ' ' + body + (r.origin === 'probe' ? ''
+      : '<span class="dp-inh" title="' + esc(r.explain) + '">\u21b3</span>');
+  }
+
+  function load() {
+    return fetch(URLS.data, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        STATE.probes = d.probes; STATE.devices = d.devices;
+        renderSummary(d); renderRows(d); renderDevices(d);
+        document.getElementById('dpStamp').textContent =
+          d.probes.length + ' probe(s) · updated ' + new Date().toLocaleTimeString();
+        fillDevices();
+      })
+      .catch(function () {
+        document.getElementById('dpStamp').textContent = 'refresh failed';
+      });
+  }
+
+  function fillDevices() {
+    ['dpFdev', 'dpDiscDev'].forEach(function (id) {
+      var sel = document.getElementById(id);
+      if (!sel) return;
+      var cur = sel.value;
+      var blank = id === 'dpFdev' ? '<option value="">— none (bare URL) —</option>' : '';
+      sel.innerHTML = blank + STATE.devices.map(function (a) {
+        return '<option value="' + a.id + '">' + esc(a.name) + ' (' + esc(a.kind) + ')</option>';
+      }).join('');
+      if (cur) sel.value = cur;
+    });
+  }
+
+  function post(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: body
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); });
+  }
+
+  // ---- drill-down chart ---------------------------------------------------
+  // Raw samples are capped per probe, so anything past ~2 days is served from
+  // pre-aggregated buckets. The server says which resolution it used and the
+  // footer prints it: an hourly average and a five-minute reading are not the
+  // same claim about the device, and the chart must not blur the two.
+  var CH = { id: null, range: '24h', from: '', to: '', chart: null };
+
+  function chNum(v, unit) {
+    if (v === null || v === undefined || isNaN(v)) return '—';
+    var n = Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10;
+    return n.toLocaleString() + (unit ? ' ' + unit : '');
+  }
+
+  function chLabel(iso, source) {
+    var d = new Date(iso + 'Z');
+    if (isNaN(d.getTime())) return iso;
+    if (source === 'day') return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    if (source === 'hour') return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit' });
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // A date input is a LOCAL day; the store is UTC. Convert here so "27 July"
+  // means the operator's 27 July, not a window shifted by the offset.
+  function chIso(value, endOfDay) {
+    if (!value) return '';
+    var p = value.split('-');
+    if (p.length !== 3) return '';
+    var d = new Date(+p[0], +p[1] - 1, +p[2],
+                     endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0);
+    return d.toISOString().replace(/\.\d+Z$/, '');
+  }
+
+  function chSetRange(range) {
+    CH.range = range;
+    Array.prototype.forEach.call(document.querySelectorAll('.dp-ch-r'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-range') === range);
+    });
+  }
+
+  function openChart(id) {
+    var p = STATE.probes.filter(function (x) { return String(x.id) === String(id); })[0];
+    CH.id = id;
+    document.getElementById('dpChTitle').textContent = p ? p.name : 'History';
+    document.getElementById('dpChSub').textContent =
+      p ? (p.kind + (p.appliance ? ' · ' + p.appliance : '')) : '';
+    document.getElementById('dpChKpis').innerHTML = '';
+    document.getElementById('dpChStrip').innerHTML = '';
+    document.getElementById('dpChSrc').textContent = 'Loading…';
+    chSetRange('24h');
+    showModal('dpChartModal');
+    loadChart();
+  }
+
+  function loadChart() {
+    var url = BASE + '/probe/' + encodeURIComponent(CH.id) +
+              '/series?range=' + encodeURIComponent(CH.range);
+    if (CH.range === 'custom') {
+      url += '&from=' + encodeURIComponent(CH.from) + '&to=' + encodeURIComponent(CH.to);
+    }
+    document.getElementById('dpChSrc').textContent = 'Loading…';
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          document.getElementById('dpChSrc').innerHTML =
+            '<span class="text-danger">' + esc(res.j.error || 'could not load') + '</span>';
+          return;
+        }
+        renderChart(res.j);
+      })
+      .catch(function () {
+        document.getElementById('dpChSrc').innerHTML =
+          '<span class="text-danger">Could not load the series.</span>';
+      });
+  }
+
+  function renderChart(d) {
+    var pts = d.points || [];
+    var meta = d.meta || {};
+    var unit = meta.unit || '';
+    var t = d.totals || {};
+    var kpis = [
+      { k: 'Minimum', v: chNum(t.v_min, unit) },
+      { k: 'Average', v: chNum(t.v_avg, unit) },
+      { k: 'Maximum', v: chNum(t.v_max, unit) },
+      { k: 'Healthy', v: (d.healthy_pct === null || d.healthy_pct === undefined)
+                          ? '—' : d.healthy_pct + ' %' },
+      { k: 'Samples', v: (t.samples || 0).toLocaleString() },
+      { k: 'Changes', v: (t.changes || 0).toLocaleString() }
+    ];
+    document.getElementById('dpChKpis').innerHTML = kpis.map(function (x) {
+      return '<div class="dp-ch-kpi"><div class="k">' + esc(x.k) + '</div>' +
+             '<div class="v">' + esc(x.v) + '</div></div>';
+    }).join('');
+
+    document.getElementById('dpChStrip').innerHTML = pts.map(function (p) {
+      return '<span style="background:' + color(p.status) + '" title="' +
+             esc(chLabel(p.t, d.source) + ' · ' + p.status) + '"></span>';
+    }).join('');
+
+    var srcTxt = d.source === 'raw'
+      ? 'Drawn from raw samples — every probe run, full fidelity.'
+      : d.source === 'hour'
+        ? 'Drawn from hourly buckets (min / average / max per hour), kept ' +
+          d.retention.hourly_days + ' days.'
+        : 'Drawn from daily buckets (min / average / max per day), kept ' +
+          d.retention.daily_days + ' days.';
+    document.getElementById('dpChSrc').textContent =
+      srcTxt + ' Raw samples are capped at ' + (d.retention.raw_samples || 0) +
+      ' per probe. Times are local; the store is UTC.';
+
+    if (CH.chart) { CH.chart.destroy(); CH.chart = null; }
+    var wrap = document.querySelector('.dp-ch-wrap');
+    if (!pts.length) {
+      wrap.innerHTML = '<div class="dp-ch-empty">No data in this window.' +
+        (d.earliest ? '<br>Oldest stored sample: ' + esc(chLabel(d.earliest, 'raw')) : '') +
+        '</div>';
+      return;
+    }
+    wrap.innerHTML = '<canvas id="dpChCanvas"></canvas>';
+
+    var labels = pts.map(function (p) { return chLabel(p.t, d.source); });
+    var band = d.source !== 'raw';
+    var sets = [];
+    if (band) {
+      sets.push({ label: 'max', data: pts.map(function (p) { return p.max; }),
+                  borderColor: 'rgba(59,130,246,0)', backgroundColor: 'rgba(59,130,246,.14)',
+                  pointRadius: 0, borderWidth: 0, fill: '+1', tension: .25 });
+      sets.push({ label: 'min', data: pts.map(function (p) { return p.min; }),
+                  borderColor: 'rgba(59,130,246,0)', pointRadius: 0, borderWidth: 0,
+                  fill: false, tension: .25 });
+    }
+    sets.push({ label: (meta.label || 'value') + (unit ? ' (' + unit + ')' : ''),
+                data: pts.map(function (p) { return p.avg; }),
+                borderColor: '#3b82f6', backgroundColor: '#3b82f6',
+                pointRadius: 0, borderWidth: 1.8, tension: .25, fill: false });
+    if (meta.v2_label) {
+      sets.push({ label: meta.v2_label + (meta.v2_unit ? ' (' + meta.v2_unit + ')' : ''),
+                  data: pts.map(function (p) { return p.v2; }),
+                  borderColor: '#8b5cf6', backgroundColor: '#8b5cf6',
+                  pointRadius: 0, borderWidth: 1.4, tension: .25, fill: false,
+                  hidden: true });
+    }
+    var th = d.thresholds || {};
+    [['warn', '#E0A800'], ['crit', '#DC3545']].forEach(function (pair) {
+      var v = th[pair[0]];
+      if (!v) return;
+      sets.push({ label: pair[0] + ' ' + v + (unit ? ' ' + unit : ''),
+                  data: pts.map(function () { return v; }),
+                  borderColor: pair[1], borderDash: [5, 4], pointRadius: 0,
+                  borderWidth: 1, fill: false });
+    });
+
+    CH.chart = new Chart(document.getElementById('dpChCanvas').getContext('2d'), {
+      type: 'line',
+      data: { labels: labels, datasets: sets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { filter: function (i) { return i.text !== 'min' && i.text !== 'max'; },
+                              color: '#495057', boxWidth: 12 } },
+          tooltip: {
+            callbacks: {
+              afterBody: function (items) {
+                var p = pts[items[0].dataIndex];
+                if (!p) return '';
+                var out = [];
+                if (d.source !== 'raw') {
+                  out.push('min ' + chNum(p.min, unit) + ' · max ' + chNum(p.max, unit));
+                  out.push(p.n + ' sample(s) in bucket');
+                }
+                out.push('status: ' + p.status);
+                if (p.changes) out.push(p.changes + ' fingerprint change(s)');
+                return out;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: '#6C757D', maxTicksLimit: 12, autoSkip: true,
+                        maxRotation: 0 },
+               grid: { color: 'rgba(16,32,52,.09)' } },
+          y: { ticks: { color: '#6C757D' }, grid: { color: 'rgba(16,32,52,.09)' },
+               title: { display: !!unit, text: unit, color: '#6C757D' } }
+        }
+      }
+    });
+  }
+
+
+  // --- device traffic cards ------------------------------------------------
+  // Everything here is read from stored samples. A card NEVER prints a number
+  // for a probe that is missing, disabled or has never run: those render as
+  // "not measured", because a zero that means "no probe" and a zero that means
+  // "idle" look identical on screen and only one of them is good news.
+
+  function mbps(v) {
+    if (typeof v !== 'number') return '\u2014';
+    if (v >= 1) return v.toFixed(2) + ' Mbps';
+    if (v > 0) return (v * 1000).toFixed(0) + ' Kbps';
+    return '0';
+  }
+  function num(v) { return (typeof v === 'number') ? v.toLocaleString() : '\u2014'; }
+
+  function gapChips(cov) {
+    if (!cov || !cov.gaps || !cov.gaps.length) return '';
+    var byWhy = {};
+    cov.gaps.forEach(function (g) { byWhy[g.why] = (byWhy[g.why] || 0) + 1; });
+    return Object.keys(byWhy).map(function (w) {
+      return '<span class="dp-chip warn">' + byWhy[w] + ' ' + esc(w) + '</span>';
+    }).join('');
+  }
+
+  function devCard(dev) {
+    var tp = dev.total_throughput || {};
+    var box = dev.box_metrics || {};
+    var collapsed = !OPEN.has(String(dev.id));   // folded unless opened
+    // A collapsed card still has to say something useful, otherwise collapsing
+    // is the same as hiding the device. The head keeps the headline number.
+    var hchip = '<span class="dp-chip dp-hchip">' +
+      (tp.measured ? esc(mbps(tp.avg_mbps)) : '\u2014') + ' \u00b7 ' +
+      dev.policies.length + ' pol</span>';
+    var head = '<div class="dp-dev-head dp-dev-toggle" role="button" tabindex="0"' +
+      ' data-dev="' + dev.id + '" aria-expanded="' + (collapsed ? 'false' : 'true') +
+      '" title="Show or hide this device\'s detail">' +
+      '<div class="dp-dev-ttl"><i class="bi bi-chevron-down dp-caret"></i><div>' +
+      '<div class="dp-dev-name">' + esc(dev.name) +
+      (dev.maintenance ? ' <span class="dp-chip warn">maintenance</span>' : '') +
+      '</div><div class="dp-sub dp-mono dp-dev-sub">' + esc(dev.host || '') +
+      '</div></div></div>' +
+      '<div class="dp-dev-hr">' + hchip +
+      badge(tp.measured ? tp.status : 'unknown') + '</div></div>';
+
+    var body;
+    if (!tp.present) {
+      body = '<div class="dp-tp-none">No total-throughput probe on this device.' +
+             (CAN_EDIT ? ' Run <b>Discover from device</b> \u2192 REST telemetry.' : '') +
+             '</div>';
+    } else if (!tp.measured) {
+      body = '<div class="dp-tp-none">Total throughput not measured \u2014 ' +
+             esc(tp.detail || 'no sample') + '.</div>';
+    } else {
+      body = '<div class="dp-tp">' +
+        '<span class="dp-tp-val">' + esc(mbps(tp.avg_mbps)) + '</span>' +
+        '<span class="dp-tp-sub">avg \u00b7 peak ' + esc(mbps(tp.peak_mbps)) +
+        (tp.window_s ? ' \u00b7 ' + tp.window_s + 's window' : '') + '</span>' +
+        '<span class="ms-auto dp-chart-open" role="button" tabindex="0" data-id="' +
+          tp.probe_id + '" title="Open the throughput chart">' + spark(tp.series) + '</span>' +
+        '</div>';
+    }
+
+    var chips = '';
+    if (Object.keys(box).length) {
+      chips += '<span class="dp-chip">' + num(box.sessions) + ' sessions</span>' +
+               '<span class="dp-chip">' + num(box.conn_per_sec) + ' conn/s</span>' +
+               '<span class="dp-chip">CPU ' + num(box.cpu_pct) + '%</span>' +
+               '<span class="dp-chip">MEM ' + num(box.mem_pct) + '%</span>';
+    } else {
+      chips += '<span class="dp-chip warn">box counters not measured</span>';
+    }
+    if (tp.measured && tp.stale) {
+      chips += '<span class="dp-chip warn">stale \u00b7 ' + esc(ago(tp.ts)) + '</span>';
+    }
+    chips += gapChips(dev.coverage);
+
+    var pol = '';
+    if (!dev.policies.length) {
+      pol = '<div class="dp-sub mt-2">No server policy is monitored on this device.</div>';
+    } else {
+      pol = '<table class="dp-ptbl"><thead><tr>' +
+        '<th>Server policy</th><th>Sessions</th><th>Conn/s</th>' +
+        '<th>Throughput</th><th>Backends</th><th></th></tr></thead><tbody>' +
+        dev.policies.map(function (p) {
+          var be = p.backends_total
+            ? ((p.backends_total - p.backends_down) + '/' + p.backends_total)
+            : '\u2014';
+          var beCls = (p.backends_total && p.backends_down === p.backends_total) ? 'bad'
+                    : (p.backends_down ? 'warn' : '');
+          var tpc = p.throughput || {};
+          return '<tr class="dp-prow dp-pol-open" data-dev="' + dev.id +
+            '" data-name="' + esc(p.name) + '" title="Open the full policy view">' +
+            '<td><span class="dp-dot" style="background:' + color(p.status) + '"></span> ' +
+              esc(p.name) +
+              (p.policy_status && p.policy_status !== 'enable'
+                ? ' <span class="dp-chip warn">' + esc(p.policy_status) + '</span>' : '') +
+              '</td>' +
+            '<td class="dp-mono">' + (p.measured ? num(p.sessions) : '\u2014') + '</td>' +
+            '<td class="dp-mono">' + (p.measured ? num(p.conn_per_sec) : '\u2014') + '</td>' +
+            '<td class="dp-mono">' + (tpc.measured ? esc(mbps(tpc.avg_mbps))
+                                                   : '<span class="dp-sub">no probe</span>') + '</td>' +
+            '<td>' + (beCls ? '<span class="dp-chip ' + beCls + '">' + be + '</span>'
+                            : '<span class="dp-mono">' + be + '</span>') + '</td>' +
+            '<td class="text-end"><i class="bi bi-chevron-right dp-sub"></i></td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+
+    return '<div class="dp-dev-card' + (collapsed ? ' is-collapsed' : '') + '">' +
+           head + '<div class="dp-dev-body">' + body +
+           '<div class="dp-chips">' + chips + '</div>' + pol + '</div></div>';
+  }
+
+  // Card state lives in localStorage, never in the DOM: renderDevices()
+  // replaces innerHTML on every poll, so DOM state would reset every 20s.
+  //
+  // We persist the set of OPEN cards, not the closed ones. With a fleet of
+  // ~100 appliances the only usable default is "everything folded", and an
+  // empty-set-by-default gives exactly that with no first-run flag to keep
+  // in sync. The key is deliberately NOT the old '...collapsed.' one: reusing
+  // it would silently reinterpret a stored closed-set as an open-set, so
+  // every card an operator had folded would come back expanded.
+  var OPEN_KEY = 'satom.probecards.open.' + BASE;
+  var OPEN = (function () {
+    try { return new Set(JSON.parse(localStorage.getItem(OPEN_KEY) || '[]')); }
+    catch (e) { return new Set(); }
+  })();
+  function saveOpen() {
+    try { localStorage.setItem(OPEN_KEY, JSON.stringify(Array.from(OPEN))); }
+    catch (e) { /* private mode / quota: expanding still works for this view */ }
+  }
+  function toggleDev(head) {
+    var id = String(head.getAttribute('data-dev') || '');
+    if (!id) return;
+    var card = head.closest('.dp-dev-card');
+    var opening = !OPEN.has(id);
+    if (opening) { OPEN.add(id); } else { OPEN.delete(id); }
+    saveOpen();
+    if (card) card.classList.toggle('is-collapsed', !opening);
+    head.setAttribute('aria-expanded', opening ? 'true' : 'false');
+  }
+  docOn('click', function (ev) {
+    var h = ev.target.closest ? ev.target.closest('.dp-dev-toggle') : null;
+    if (h) toggleDev(h);
+  });
+  docOn('keydown', function (ev) {
+    if (ev.key !== 'Enter' && ev.key !== ' ' && ev.key !== 'Spacebar') return;
+    var h = ev.target.closest ? ev.target.closest('.dp-dev-toggle') : null;
+    if (!h) return;
+    ev.preventDefault();
+    toggleDev(h);
+  });
+
+  function renderDevices(d) {
+    var host = document.getElementById('dpDevices');
+    if (!host) return;
+    var rows = d.device_rollup || [];
+    if (!rows.length) {
+      host.innerHTML = '<div class="dp-dev-card"><div class="dp-sub">' +
+        'No device in this ADOM exposes the REST monitor API.</div></div>';
+      return;
+    }
+    host.innerHTML = rows.map(devCard).join('');
+  }
+
+  // --- per-policy drill-down ----------------------------------------------
+
+  function polRow(m) {
+    var down = !m.up || String(m.health || '').toLowerCase() === 'disable';
+    return '<tr><td class="dp-mono">' + esc(m.server) + ':' + esc(m.port) + '</td>' +
+      '<td class="dp-sub">' + esc(m.pool || '') + '</td>' +
+      '<td><span class="dp-chip ' + (down ? 'bad' : '') + '">' +
+        esc(m.health || 'n/a') + '</span></td>' +
+      '<td class="dp-mono">' + num(m.sessions) + '</td>' +
+      '<td class="dp-mono">' + num(m.server_rtt) + ' ms</td>' +
+      '<td class="dp-mono">' + num(m.app_response_time) + ' ms</td></tr>';
+  }
+
+  function kpi(label, value, sub) {
+    return '<div class="dp-kpi-t"><div class="l">' + esc(label) + '</div>' +
+           '<div class="v">' + value + '</div>' +
+           (sub ? '<div class="dp-sub">' + sub + '</div>' : '') + '</div>';
+  }
+
+  function renderPolicy(d) {
+    var p = d.policy || {}, s = d.sessions || {}, t = d.throughput || {},
+        x = d.transactions || {}, st = t.stats || {};
+    var measured = s.measured;
+    var head = '<div class="d-flex flex-wrap gap-2 align-items-center mb-3">' +
+      badge(s.measured ? s.status : 'unknown') +
+      '<span class="dp-chip">' + esc(d.appliance.name) + '</span>' +
+      (p.protocol ? '<span class="dp-chip">' + esc(p.protocol) + '</span>' : '') +
+      (p.vserver ? '<span class="dp-chip dp-mono">' + esc(p.vserver) +
+                   (p.port ? ':' + esc(p.port) : '') + '</span>' : '') +
+      (p.status && p.status !== 'enable'
+        ? '<span class="dp-chip warn">policy ' + esc(p.status) + '</span>' : '') +
+      '<span class="ms-auto dp-sub">' +
+        (s.ts ? 'sessions read ' + esc(ago(s.ts)) : 'never read') + '</span></div>';
+
+    var kpis = '<div class="dp-kpis">' +
+      kpi('Sessions', measured ? num(p.sessions) : '\u2014') +
+      kpi('Conn / s', measured ? num(p.conn_per_sec) : '\u2014') +
+      kpi('Client RTT', measured ? num(p.client_rtt) + ' <span class="dp-tp-sub">ms</span>' : '\u2014') +
+      kpi('Server RTT', measured ? num(p.server_rtt) + ' <span class="dp-tp-sub">ms</span>' : '\u2014') +
+      kpi('App response', measured ? num(p.app_response_time) + ' <span class="dp-tp-sub">ms</span>' : '\u2014') +
+      kpi('Throughput avg', t.measured ? esc(mbps(st.avg_mbps)) : '<span class="dp-sub">n/m</span>',
+          t.measured ? 'peak ' + esc(mbps(st.peak_mbps)) : (t.present ? esc(t.detail) : 'no probe')) +
+      kpi('Transactions', x.measured ? num(x.total != null ? x.total : x.value_num)
+                                     : '<span class="dp-sub">n/m</span>',
+          x.present ? '' : 'no probe') +
+      '</div>';
+
+    var charts = '<div class="dp-sect"><h6>Trend \u2014 click a sparkline for the full chart</h6>' +
+      ['sessions', 'throughput', 'transactions'].map(function (k) {
+        var b = d[k] || {};
+        if (!b.present) return '<div class="dp-sub mb-1">' + esc(k) + ': no probe configured</div>';
+        return '<div class="d-flex align-items-center gap-2 mb-1">' +
+          '<span class="dp-sub" style="width:110px">' + esc(k) + '</span>' +
+          '<span class="dp-chart-open" role="button" tabindex="0" data-id="' + b.probe_id +
+            '">' + spark(b.series) + '</span>' +
+          '<span class="dp-sub">' + esc(b.detail || '') + '</span></div>';
+      }).join('') + '</div>';
+
+    var members = '<div class="dp-sect"><h6>Backend pool members</h6>';
+    if (d.members_error) {
+      members += '<div class="dp-chip warn">backend health unavailable: ' +
+                 esc(d.members_error) + '</div>';
+    }
+    if (!d.members.length) {
+      members += '<div class="dp-sub">No pool member reported for this policy.</div>';
+    } else {
+      members += '<table class="dp-ptbl"><thead><tr><th>Server</th><th>Pool</th>' +
+        '<th>Health</th><th>Sessions</th><th>Server RTT</th><th>App resp.</th>' +
+        '</tr></thead><tbody>' + d.members.map(polRow).join('') + '</tbody></table>';
+    }
+    members += '</div>';
+
+    var cov = '';
+    if (d.coverage && d.coverage.gaps.length) {
+      cov = '<div class="dp-sect"><h6>Not measured</h6><div class="dp-chips">' +
+        d.coverage.gaps.map(function (g) {
+          return '<span class="dp-chip warn">' + esc(g.what) + ': ' + esc(g.why) + '</span>';
+        }).join('') + '</div></div>';
+    }
+
+    var note = '<div class="dp-note mt-3"><i class="bi bi-info-circle me-1"></i>' +
+      'Built entirely from stored samples \u2014 opening this view does not contact ' +
+      'the appliance, so it answers with the box powered off or its config API ' +
+      'licence-locked.</div>';
+
+    document.getElementById('dpPolBody').innerHTML =
+      head + kpis + charts + members + cov + note;
+  }
+
+  function openPolicy(aid, name) {
+    document.getElementById('dpPolTitle').textContent = name;
+    document.getElementById('dpPolBody').innerHTML =
+      '<span class="text-muted">Loading\u2026</span>';
+    showModal('dpPolModal');
+    fetch(URLS.policy + '/' + aid + '?name=' + encodeURIComponent(name),
+          { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          document.getElementById('dpPolBody').innerHTML =
+            '<div class="dp-chip bad">' + esc(res.j.error || 'failed') + '</div>';
+          return;
+        }
+        renderPolicy(res.j);
+      })
+      .catch(function () {
+        document.getElementById('dpPolBody').innerHTML =
+          '<div class="dp-chip bad">request failed</div>';
+      });
+  }
+
+  if (ROLLUP) {
+    docOn('click', function (ev) {
+      var row = ev.target.closest('.dp-pol-open');
+      // A click on the sparkline inside a card opens the chart, not the policy.
+      if (!row || ev.target.closest('.dp-chart-open')) return;
+      openPolicy(row.getAttribute('data-dev'), row.getAttribute('data-name'));
+    });
+  }
+
+  docOn('click', function (ev) {
+    var open = ev.target.closest('.dp-chart-open');
+    if (open) { openChart(open.getAttribute('data-id')); return; }
+    var r = ev.target.closest('.dp-ch-r');
+    if (r) { chSetRange(r.getAttribute('data-range')); loadChart(); }
+  });
+
+  document.getElementById('dpChApply').addEventListener('click', function () {
+    var f = chIso(document.getElementById('dpChFrom').value, false);
+    var t = chIso(document.getElementById('dpChTo').value, true);
+    if (!f || !t) {
+      document.getElementById('dpChSrc').innerHTML =
+        '<span class="text-danger">Pick both a start and an end date.</span>';
+      return;
+    }
+    CH.from = f; CH.to = t;
+    chSetRange('custom');
+    loadChart();
+  });
+
+  // ---- history drawer -----------------------------------------------------
+  docOn('click', function (ev) {
+    var h = ev.target.closest('.dp-hist-open');
+    if (!h) return;
+    var id = h.getAttribute('data-id');
+    var probe = STATE.probes.filter(function (p) { return String(p.id) === String(id); })[0];
+    document.getElementById('dpHistTitle').textContent = probe ? probe.name : 'History';
+    document.getElementById('dpHistBody').innerHTML = '<div class="text-muted small">Loading…</div>';
+    showModal('dpHistModal');
+    fetch(BASE + '/probe/' + encodeURIComponent(id) + '/history',
+          { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var rows = (d.samples || []).map(function (s) {
+          return '<div class="dp-hrow"><span class="ts">' + esc(s.ts.replace('T', ' ')) + '</span>' +
+                 badge(s.status) + '<span>' + esc(s.detail) + '</span></div>';
+        }).join('') || '<div class="text-muted small">No samples yet.</div>';
+        var last = (d.samples || [])[0];
+        var raw = last && last.payload
+          ? '<div class="mt-3"><div class="text-muted small mb-1">Latest raw payload</div><pre>' +
+            esc(JSON.stringify(last.payload, null, 2)) + '</pre></div>'
+          : '';
+        document.getElementById('dpHistBody').innerHTML = rows + raw;
+      })
+      .catch(function () {
+        document.getElementById('dpHistBody').innerHTML =
+          '<div class="text-danger small">Could not load history.</div>';
+      });
+  });
+
+  document.getElementById('dpRefreshBtn').addEventListener('click', load);
+
+  if (CAN_EDIT) {
+    var runBtn = document.getElementById('dpRunBtn');
+    runBtn.addEventListener('click', function () {
+      runBtn.disabled = true;
+      runBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Probing…';
+      post(URLS.run, new URLSearchParams()).then(function () {
+        runBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Probing in the background…';
+        setTimeout(function () {
+          runBtn.disabled = false;
+          runBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Probe now';
+          load();
+        }, 6000);
+      }).catch(function () {
+        runBtn.disabled = false;
+        runBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Probe now';
+      });
+    });
+
+    document.getElementById('dpAddBtn').addEventListener('click', function () {
+      document.getElementById('dpForm').reset();
+      document.getElementById('dpFid').value = '';
+      document.getElementById('dpEditTitle').textContent = 'Add probe';
+      document.getElementById('dpFerr').classList.add('d-none');
+      syncKind();
+      loadPorts('', []);
+      loadPolicies(document.getElementById('dpFdev').value);
+      showModal('dpEditModal');
+    });
+
+    // Which field group each kind uses comes from the SERVER (PageSpec._GROUP),
+    // so the mapping cannot drift between the validator and the form. cpu and
+    // memory share 'box'; the four REST kinds share 'api' because they take the
+    // same shape of input — a policy name plus two absolute thresholds. Only the
+    // UNIT differs, and that is a label, not a form.
+    var GROUP_OF = {{ page.group_of|tojson }};
+    var UNIT_HINT = { sessions: 'sessions', policy_sessions: 'sessions',
+                      throughput: 'Mbps — graded on the window PEAK, not its average',
+                      transactions: 'transactions in the window',
+                      licence: 'percent of the entitlement CONSUMED — same direction as every other threshold here, so 95 means "95 % used"',
+                      tokens: 'percent of the token pool ASSIGNED — the free count is in the result line, but the threshold is on consumption so it reads like the rest' };
+    // Kinds whose target is a closed set, straight from the server-side
+    // allowlist the validator uses. One source, so the picker cannot offer a
+    // name the form will then reject.
+    var TARGETS = {{ page.targets|tojson }};
+    var TARGET_COPY = {
+      licence: ['Licence counter',
+                'Which entitlement to grade. An identity appliance has no throughput to measure — what bounds it is how much of its licence is consumed, and the counter with no ceiling is reported <b>unknown</b> rather than healthy.'],
+      tokens: ['FortiToken pool',
+               'Which token pool to grade. A pool with nothing imported is reported <b>unknown</b>: zero percent of an empty pool is not health.']
+    };
+    function syncKind() {
+      var k = document.getElementById('dpFkind').value;
+      var group = GROUP_OF[k] || k;
+      ['https', 'interface', 'proxyd', 'box', 'api'].forEach(function (g) {
+        document.querySelectorAll('.dp-f-' + g).forEach(function (el) {
+          el.style.display = (g === group) ? '' : 'none';
+        });
+      });
+      if (group === 'api') {
+        document.getElementById('dpFnumUnit').textContent =
+          'Threshold unit for this type: ' + (UNIT_HINT[k] || UNITS[k] || '') + '.';
+        // Hours only mean something to `transactions`; showing the box on the
+        // others would invite a value that is read but never used.
+        var hours = document.getElementById('dpFhoursRow');
+        if (hours) hours.style.display = (k === 'transactions') ? '' : 'none';
+        // `sessions` is box-wide: a policy name here would be silently ignored.
+        var pol = document.getElementById('dpFpol');
+        if (pol) pol.closest('.dp-f-api').style.display = (k === 'sessions') ? 'none' : '';
+        // Closed-set kinds swap the free-text policy picker for their own list,
+        // label and help. Leaving the FortiWeb copy in place would tell the
+        // operator to type a server-policy name into a licence probe.
+        var lbl = document.getElementById('dpFpolLabel');
+        var help = document.getElementById('dpFpolHelp');
+        var dl = document.getElementById('dpFtargetList');
+        if (pol && TARGETS[k]) {
+          dl.innerHTML = TARGETS[k].map(function (o) {
+            return '<option value="' + o.value + '">' + o.label + '</option>';
+          }).join('');
+          pol.setAttribute('list', 'dpFtargetList');
+          pol.placeholder = TARGETS[k][0] ? TARGETS[k][0].value : '';
+          if (lbl) lbl.textContent = TARGET_COPY[k][0];
+          if (help) help.innerHTML = TARGET_COPY[k][1] +
+            ' Accepted: <code>' +
+            TARGETS[k].map(function (o) { return o.value; }).join('</code>, <code>') +
+            '</code>.';
+        } else if (pol) {
+          pol.setAttribute('list', 'dpPolList');
+          pol.placeholder = 'pol-shop-main';
+          if (lbl) lbl.textContent = 'Server policy';
+        }
+      }
+    }
+
+    // Policy picker: fills the datalist from the LIVE box. A failure is PRINTED,
+    // never swallowed into an empty list — "no policies" and "could not ask" look
+    // identical in a dropdown and mean opposite things.
+    function loadPolicies(devId) {
+      var list = document.getElementById('dpPolList');
+      var help = document.getElementById('dpFpolHelp');
+      if (!list) return;
+      // A closed-set kind owns this field: its list, label and help all come
+      // from the server-side allowlist. Fetching the FortiWeb policy list here
+      // would both clobber that copy and interrogate a product that has no
+      // server policies — printing "could not read the policy list" on a
+      // licence probe, which reads as a broken device.
+      var kindEl = document.getElementById('dpFkind');
+      if (kindEl && TARGETS[kindEl.value]) return;
+      list.innerHTML = '';
+      if (!devId) return;
+      fetch(BASE + '/policies/' + encodeURIComponent(devId),
+            { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.error) {
+            if (help) help.innerHTML = '<span class="text-warning">Could not read the ' +
+              'policy list: ' + esc(d.error) + '</span> — type the name manually.';
+            return;
+          }
+          var names = (d.policies || []).map(function (x) { return x.name; });
+          if (d.aggregate) names.unshift(d.aggregate);
+          list.innerHTML = names.map(function (n) {
+            return '<option value="' + esc(n) + '"></option>';
+          }).join('');
+          if (help) help.textContent = names.length
+            ? (names.length - 1) + ' policy/policies read live from the device' +
+              ' (plus the ' + d.aggregate + ' aggregate).'
+            : 'The device reports no server policies.';
+        })
+        .catch(function () {
+          if (help) help.innerHTML =
+            '<span class="text-warning">Could not read the policy list.</span>';
+        });
+    }
+    document.getElementById('dpFkind').addEventListener('change', syncKind);
+
+    // The picker lists what the HARVEST holds, so the operator ticks real port
+    // names instead of typing one blind — and it answers with the box powered off.
+    function loadPorts(devId, picked) {
+      var box = document.getElementById('dpFports');
+      if (!box) return;
+      if (!devId) { box.innerHTML = '<span class="dp-sub">pick a device first</span>'; return; }
+      box.innerHTML = '<span class="dp-sub">reading the cache…</span>';
+      fetch(BASE + '/device/' + encodeURIComponent(devId) + '/ports',
+            { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var sel = {};
+          (picked || []).forEach(function (n) { if (n) sel[String(n).toLowerCase()] = 1; });
+          box.innerHTML = (d.ports || []).map(function (p) {
+            var on = sel[p.name.toLowerCase()] ? ' checked' : '';
+            return '<label><input type="checkbox" name="target" value="' + esc(p.name) + '"' + on +
+                   '><span>' + esc(p.name) + '</span><span class="ip">' +
+                   esc(p.ip || 'no IP') + (p.status ? ' · ' + esc(p.status) : '') +
+                   '</span></label>';
+          }).join('') ||
+          '<span class="dp-sub">no interfaces cached — run a device sync first</span>';
+        })
+        .catch(function () {
+          box.innerHTML = '<span class="dp-sub">could not read the cache</span>';
+        });
+    }
+    document.getElementById('dpFdev').addEventListener('change', function () {
+      loadPorts(this.value, []);
+      loadPolicies(this.value);
+    });
+
+    function openEdit(id) {
+      var p = STATE.probes.filter(function (x) { return String(x.id) === String(id); })[0];
+      if (!p) return;
+      document.getElementById('dpForm').reset();
+      document.getElementById('dpFid').value = p.id;
+      document.getElementById('dpEditTitle').textContent = 'Edit probe';
+      document.getElementById('dpFerr').classList.add('d-none');
+      fillDevices();
+      // A NULL column means "inherit": the box must be EMPTY, and the value it
+      // would inherit becomes the PLACEHOLDER. Writing the resolved number into
+      // the box instead would silently convert an inheriting probe into an
+      // overriding one the first time anybody pressed Save.
+      var blank = function (v) { return (v === null || v === undefined) ? '' : v; };
+      var set = {
+        dpFkind: p.kind, dpFname: p.name || '', dpFdev: p.appliance_id || '',
+        dpFurl: p.url || '', dpFexp: p.expect_status, dpFms: blank(p.warn_ms),
+        dpFtls: blank(p.tls_warn_days), dpFproc: p.process_name || 'proxyd',
+        dpFwarnp: blank(p.warn_pct), dpFcritp: blank(p.crit_pct),
+        dpFwarnn: blank(p.warn_num), dpFcritn: blank(p.crit_num),
+        dpFpol: p.target || '', dpFhours: blank(p.stale_after_h),
+        dpFstale: blank(p.stale_after_h), dpFint: p.interval_min, dpFto: p.timeout_s,
+        dpFsuph: '', dpFsupr: p.suppress_reason || ''
+      };
+      Object.keys(set).forEach(function (k) {
+        var el = document.getElementById(k);
+        if (el) el.value = set[k];
+      });
+      [['dpFms', 'warn_ms'], ['dpFtls', 'tls_warn_days'], ['dpFstale', 'stale_after_h'],
+       ['dpFwarnp', 'warn_pct'], ['dpFcritp', 'crit_pct'],
+       ['dpFwarnn', 'warn_num'], ['dpFcritn', 'crit_num']].forEach(function (pair) {
+        var el = document.getElementById(pair[0]);
+        var r = (p.resolved || {})[pair[1]];
+        if (el) el.placeholder = r ? (r.value + ' (' + r.explain + ')') : '';
+      });
+      syncKind();
+      loadPorts(p.appliance_id, String(p.target || '').split(',').map(function (s) {
+        return s.trim();
+      }));
+      loadPolicies(p.appliance_id);
+      showModal('dpEditModal');
+    }
+
+    document.getElementById('dpForm').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var fd = new FormData(ev.target);
+      var id = fd.get('id');
+      var url = id ? (BASE + '/probe/' + encodeURIComponent(id)) : URLS.create;
+      post(url, new URLSearchParams(fd)).then(function (res) {
+        var box = document.getElementById('dpFerr');
+        if (!res.ok || res.j.error) {
+          box.textContent = res.j.error || 'save failed';
+          box.classList.remove('d-none');
+          return;
+        }
+        bootstrap.Modal.getInstance(document.getElementById('dpEditModal')).hide();
+        load();
+      });
+    });
+
+    document.getElementById('dpDiscoverBtn').addEventListener('click', function () {
+      showModal('dpDiscModal');
+    });
+    document.getElementById('dpDiscForm').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      post(URLS.discover, new URLSearchParams(new FormData(ev.target))).then(function () {
+        bootstrap.Modal.getInstance(document.getElementById('dpDiscModal')).hide();
+        setTimeout(load, 4000);
+      });
+    });
+
+    docOn('click', function (ev) {
+      var b = ev.target.closest('.dp-act');
+      if (!b) return;
+      var id = b.getAttribute('data-id'), act = b.getAttribute('data-act');
+      if (act === 'edit') { openEdit(id); return; }
+      if (act === 'delete' && !confirm('Delete this probe and its history?')) return;
+      var url = act === 'run' ? URLS.run : (BASE + '/probe/' + id + '/' + act);
+      var body = new URLSearchParams();
+      if (act === 'run') body.append('id', id);
+      b.disabled = true;
+      post(url, body).then(function () { setTimeout(load, act === 'run' ? 3000 : 200); });
+    });
+  }
+
+  load();
+  var timer = setInterval(load, 30000);
+  document.addEventListener('turbo:before-render', function () { clearInterval(timer); }, { once: true });
+})();
+</script>
+{% endblock %}

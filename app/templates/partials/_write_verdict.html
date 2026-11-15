@@ -1,0 +1,33 @@
+{#
+  The device re-read of an API-console write — ONE author for the badge the
+  FortiWeb, FortiADC, FortiGate and FortiAuthenticator consoles draw next to
+  the device's raw reply (services/device_verify.py builds the verdict).
+
+  An accepted write is not proof of a change, so every applied write is read
+  back and judged: "Verified on the device", "Not applied: <what differs>",
+  or "Not verified: <why>" — never a fake "verified". The raw reply above it
+  stays exactly what the device answered; the verdict is additive.
+
+  Usage: a <span data-verdict-badge class="fw-badge d-none"> in the page, and
+  ``satomVerdictBadge(spanEl, response.verify)`` after each run (a read, a dry
+  run or a refused write carries no verdict: the badge hides).
+#}
+<script nonce="{{ csp_nonce }}">
+window.satomVerdictBadge = function (el, v) {
+  if (!el) return;
+  var wrap = el.closest('[data-verdict-wrap]');
+  if (!v || !v.verdict) {
+    el.className = 'fw-badge d-none';
+    el.textContent = '';
+    el.removeAttribute('title');
+    if (wrap) wrap.classList.add('d-none');
+    return;
+  }
+  var cls = { verified: 'fw-badge-success', mismatch: 'fw-badge-danger' }[v.verdict]
+            || 'fw-badge-warning';
+  el.className = 'fw-badge ' + cls;
+  el.textContent = v.label || v.verdict;          // textContent: device values are never markup
+  el.title = v.what ? ('Re-read: ' + v.what) : '';
+  if (wrap) wrap.classList.remove('d-none');
+};
+</script>

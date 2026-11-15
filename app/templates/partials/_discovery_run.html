@@ -1,0 +1,280 @@
+{# ─────────────────────────────────────────────────────────────────────────────
+   Capture — the ONE action that refreshes BOTH halves of the CLI coverage
+   diff. ONE author for this markup.
+
+   Fed by views/_discovery.context(). Included by the API-versions page of each
+   product that HAS a CLI configuration dump; the others render their reason
+   and stop.
+
+   ONE appliance selector for the whole card. There were two — "load from" and
+   "ask" — and nothing compared them, so the candidates could come from one
+   box's dump while the verdicts came from another: every `absent` then true
+   about the wrong device.
+
+   WHAT THIS CARD NO LONGER DOES (2026-09-17, at the operator's request): it no
+   longer PROBES. "What would it cost?" and "Run discovery" are gone, and with
+   them every control that ONLY their results could fill — Stop, the job
+   progress bar, the findings table, its filter, "Select all registerable" and
+   "Register selected". Deleting the two buttons and leaving that markup would
+   have left a table no code path can populate and a Register button with
+   nothing to register: markup that reads as broken rather than as removed.
+   The three server routes (plan / run / register) still exist and are now
+   unreachable from any page — see the note in views/_discovery.py.
+
+   "Load API catalog + CLI configuration" has ALWAYS been a background job
+   (rediscovery.start spawns a thread and writes progress.json) — this card
+   simply never read it, so a flash message was the whole feedback and the
+   operator had to guess when to reload. It polls the SAME endpoint the
+   Rediscover page polls, and prints the same phases: REST sweep, deep
+   capture, CLI capture.
+
+   `cc_report.chosen` is READ here, never recomputed: a second
+   cli_coverage.report() in this partial would be a second answer to "which
+   dump", which is the class of defect this card was just fixed for.
+   Light FortiWeb theme only (.fw-card / --fw-* / .fw-badge-*) — no dark-theme
+   colours in this product (safeguards §9m).
+   ──────────────────────────────────────────────────────────────────────────── #}
+<div class="fw-card mt-3" id="discoveryRun">
+  <div class="fw-card-header">
+    <span class="fw-card-title">
+      <i class="bi bi-binoculars me-2 text-accent"></i>{{ _('Capture — API catalog + CLI configuration') }}
+      {%- if dr_scope %} <code class="ms-1">{{ dr_scope }}</code>{% endif %}
+    </span>
+    <button class="btn btn-sm btn-fw-outline" type="button" data-bs-toggle="collapse"
+            data-bs-target="#discoveryRunBody" aria-expanded="true" aria-controls="discoveryRunBody">
+      <i class="bi bi-chevron-expand"></i>
+    </button>
+  </div>
+
+  <div class="collapse show" id="discoveryRunBody">
+  <div class="fw-card-body">
+
+    {% if not dr_supported %}
+      <p class="text-muted mb-0" style="font-size:13px;">
+        <i class="bi bi-slash-circle me-1"></i>{{ dr_reason or _('This product has no CLI configuration dump to compare against.') }}
+      </p>
+    {% else %}
+
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('The coverage diff is only ever as good as the older of its two halves, so this card refreshes both in ONE action: a REST sweep of the API catalog and an SSH capture of the CLI configuration, off the same appliance in the same pass. Nothing here probes a candidate path or writes to the catalog.') }}
+    </p>
+
+    {# ── 0. the build ─────────────────────────────────────────────────────
+       A run answers about ONE firmware build or about nothing in particular,
+       and until 2026-09-16 it was always the second while looking like the
+       first: candidates were derived from whichever CLI dump sorted first, the
+       page never named it, and the GETs went to whatever box the operator
+       picked. Every `absent` that came back was true of that pairing and
+       useless as a statement about a firmware.
+
+       With a scope, both halves are pinned and printed. Without one, the card
+       behaves exactly as it did — which is what the hubs with no version axis
+       still need. #}
+    {% if dr_scope %}
+    <div class="alert alert-info py-2 mb-3" style="font-size:12.5px;">
+      <strong>{{ _('Scoped to build') }} <code>{{ dr_scope }}</code>.</strong>
+      {{ _('The candidates come from a CLI dump captured on this exact build, and the appliances offered below are the ones running it. A dump from another build cannot stand in: 8.0.4 and 8.0.7 are both "8.0" and their CLI is not the same.') }}
+      {% if not dr_scope_appliances %}
+        <br><span class="fw-badge fw-badge-warning">{{ _('no appliance runs this build') }}</span>
+        {{ _('There is nothing here to capture from, then: the selector below lists only the boxes on this build, and a dump taken on another one cannot stand in for it.') }}
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── 1. the appliance — ONE selector, used by every action on this card ─
+       The control lives outside the load <form> and is tied to it with
+       form="drLoadForm", the same trick the object editor uses for inputs that
+       cannot sit inside their form. That is what makes it genuinely one
+       control instead of two that agree by convention. #}
+    {% set dr_ev = (cc_report.chosen if cc_report else None) %}
+    {# Rendered only when SOMETHING on this card can use it. A picker with no
+       action behind it is a control that silently does nothing. #}
+    {% if dr_can_load and dr_load_endpoint %}
+    <div class="fw-subcard p-2 mb-3" style="background:var(--fw-subtle-bg,#FAFBFC);border:1px solid var(--fw-border,#E3E6EA);border-radius:6px;">
+      <div class="d-flex flex-wrap align-items-end gap-2">
+        <div>
+          <label class="fw-form-label mb-1" for="drAppliance">{{ _('Appliance') }}</label>
+          <select class="form-select fw-form-control" name="appliance_id" id="drAppliance"
+                  form="drLoadForm" required
+                  data-dr-watch="{{ request.args.get('dr_watch') or '' }}">
+            <option value="">{{ _('choose an appliance…') }}</option>
+            {# Scoped: only the boxes actually running this build, and there is
+               no second picker behind it. A box on another build cannot be
+               asked from here at all — the answers would describe a different
+               firmware, and a block missing there is not a block that does not
+               exist. #}
+            {% for a in (dr_scope_appliances if dr_scope else cc_probe_appliances) %}
+              <option value="{{ a.id }}"{% if request.args.get('dr_watch') == a.id|string %} selected{% endif %}>{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-check pb-2">
+          <input class="form-check-input" type="checkbox" name="api_only" value="1"
+                 id="drApiOnly" form="drLoadForm">
+          <label class="form-check-label" for="drApiOnly" style="font-size:12.5px;">{{ _('API only (skip the CLI dump)') }}</label>
+        </div>
+        <button class="btn btn-sm btn-fw-outline" type="submit" form="drLoadForm">
+          <i class="bi bi-arrow-repeat me-1"></i>{{ _('Load API catalog + CLI configuration') }}
+        </button>
+      </div>
+      <form method="post" action="{{ url_for(dr_load_endpoint) }}" id="drLoadForm" class="d-none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if dr_scope %}<input type="hidden" name="version" value="{{ dr_scope }}">{% endif %}
+      </form>
+      <p class="text-muted mb-0 mt-1" style="font-size:11.5px;">
+        {{ _('Loading is one action, because a diff between a catalog swept today and a dump captured in July describes two different afternoons. The REST sweep runs first and the CLI capture follows it as a separate pass, so an SSH failure cannot cost a sweep that already succeeded. The running firmware version is read off the device and stored in the same pass.') }}
+      </p>
+
+      {# ── the sweep's own progress. It was ALWAYS a background job; the only
+         thing missing was a reader. Each phase names itself, and the three CLI
+         outcomes stay three: captured / skipped (with the reason) / failed
+         (with the error) — folding them would hide either a real breakage or a
+         decision the worker made deliberately. #}
+      <div class="mt-2 d-none" id="drSweep">
+        <div class="d-flex align-items-center gap-2">
+          <div class="progress flex-grow-1" style="height:8px;max-width:360px;">
+            <div class="progress-bar" id="drSweepBar" role="progressbar" style="width:0%"></div>
+          </div>
+          <span id="drSweepPct" style="font-size:11.5px;" class="text-muted"></span>
+        </div>
+        <div id="drSweepLine" style="font-size:11.5px;" class="mt-1"></div>
+      </div>
+
+      {# The evidence, on screen and never implied: these candidates are
+         derived from THIS dump, and the answers below will come from whatever
+         device is asked. Two facts, printed side by side, because the whole
+         defect this replaces was that only one of them was visible. #}
+      <div class="mt-2" style="font-size:11.5px;" id="drEvidence">
+        {% if dr_ev %}
+          <span class="fw-badge fw-badge-info">{{ _('evidence') }}</span>
+          <code>{{ dr_ev.appliance }}</code>
+          · {{ dr_ev.version or dr_ev.line or _('no firmware version recorded') }}
+          · {{ dr_ev.created_at }}
+          <span class="text-muted">{{ _('— the CLI dump the coverage diff above is built from. A capture replaces it.') }}</span>
+        {% else %}
+          <span class="fw-badge fw-badge-warning">{{ _('no CLI evidence') }}</span>
+          <span class="text-muted">{{ _('No usable dump for this product, so the CLI half of the diff above has nothing to rest on until a capture runs.') }}</span>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+      <p class="text-muted mb-0" style="font-size:12px;">
+        <i class="bi bi-lock me-1"></i>{{ _('Capturing a catalog sweep and a CLI configuration dump drives a write against the appliance record, so it needs the appliance apply permission.') }}
+      </p>
+    {% endif %}
+
+    {% endif %}
+  </div>
+  </div>
+</div>
+
+{% if dr_supported and dr_can_load and dr_load_endpoint %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var root = document.getElementById('discoveryRun');
+  if (!root) { return; }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+    });
+  }
+
+  // ── the LOAD job (rediscovery sweep) ──────────────────────────────────────
+  // Polls the endpoint the Rediscover page has always polled. One status
+  // authority for one worker; this card simply stopped ignoring it.
+  var SWEEP_URL = '{{ url_for("appliances.rediscover_status", id=0) }}';
+  var sweepTimer = null;
+
+  // Five states, five sentences. `interrupted` is NOT `failed` and neither is
+  // `done`: a sweep killed by a restart wrote no snapshot and reported no
+  // error, so both other words would be a claim nobody can support.
+  var SWEEP_PHASE = {
+    'running':      '{{ _("REST sweep — asking the catalog endpoints") }}',
+    'deep-running': '{{ _("deep capture — WPP + policy graph") }}',
+    'cli-running':  '{{ _("CLI capture — show full-configuration over SSH") }}'
+  };
+  function sweepActive(s) { return !!SWEEP_PHASE[s]; }
+
+  function paintSweep(p) {
+    var box = document.getElementById('drSweep');
+    if (!box || !p || !p.state || p.state === 'idle') { return; }
+    box.classList.remove('d-none');
+    var bar = document.getElementById('drSweepBar');
+    var pct = typeof p.percent === 'number' ? p.percent : 0;
+    bar.style.width = (sweepActive(p.state) ? Math.max(pct, 2) : 100) + '%';
+    document.getElementById('drSweepPct').textContent =
+      sweepActive(p.state) ? (pct + '%') : '';
+    var html = '';
+    if (sweepActive(p.state)) {
+      html = '<span class="fw-badge fw-badge-info">' + SWEEP_PHASE[p.state] + '</span> ' +
+             esc(p.section || '') +
+             (p.total ? ' · ' + p.done + '/' + p.total + ' {{ _("endpoints") }}' : '') +
+             (p.objects ? ' · ' + p.objects + ' {{ _("objects") }}' : '');
+    } else if (p.state === 'done') {
+      html = '<span class="fw-badge fw-badge-success">{{ _("load finished") }}</span> ' +
+             esc(p.summary || '');
+      // Captured / skipped / failed are three outcomes and stay three: "no
+      // dump was taken" and "a dump was attempted and lost" send the operator
+      // to opposite places.
+      if (p.cli_kb != null) {
+        html += ' · <span class="fw-badge fw-badge-success">{{ _("CLI dump captured") }}</span> ' +
+                esc(p.cli_kb) + ' KB';
+      }
+      if (p.cli_skipped) {
+        html += ' · <span class="fw-badge fw-badge-secondary">{{ _("CLI capture skipped") }}</span> ' +
+                esc(p.cli_skipped);
+      }
+      if (p.cli_error) {
+        html += ' · <span class="fw-badge fw-badge-danger">{{ _("CLI capture failed") }}</span> ' +
+                esc(p.cli_error);
+      }
+      html += ' <span class="text-muted">{{ _("— reload the page to see the refreshed diff.") }}</span>';
+    } else if (p.state === 'interrupted') {
+      html = '<span class="fw-badge fw-badge-warning">{{ _("interrupted") }}</span> ' +
+             esc(p.error || '{{ _("the service restarted while this sweep was running") }}');
+    } else if (p.state === 'failed') {
+      html = '<span class="fw-badge fw-badge-danger">{{ _("load failed") }}</span> ' +
+             esc(p.error || '');
+    }
+    document.getElementById('drSweepLine').innerHTML = html;
+  }
+
+  function pollSweep(id) {
+    if (!id) { return; }
+    fetch(SWEEP_URL.replace('/0/', '/' + encodeURIComponent(id) + '/'))
+      .then(function (r) { return r.json(); })
+      .then(function (p) {
+        paintSweep(p);
+        if (!sweepActive(p.state)) {
+          clearInterval(sweepTimer); sweepTimer = null;
+        }
+      })
+      .catch(function () { /* a dropped poll is not a finished sweep */ });
+  }
+
+  function watchSweep(id) {
+    if (!id) { return; }
+    pollSweep(id);
+    if (!sweepTimer) {
+      sweepTimer = setInterval(function () { pollSweep(id); }, 1500);
+    }
+  }
+
+  var sel = document.getElementById('drAppliance');
+  if (sel) {
+    // After a Load the server redirects with ?dr_watch=<id>, so the card
+    // attaches to the run it just started instead of asking the operator to
+    // guess when to reload.
+    var watch = sel.getAttribute('data-dr-watch');
+    if (watch) { watchSweep(watch); }
+    sel.addEventListener('change', function () {
+      clearInterval(sweepTimer); sweepTimer = null;
+      var box = document.getElementById('drSweep');
+      if (box) { box.classList.add('d-none'); }
+      if (sel.value) { pollSweep(sel.value); }
+    });
+  }
+
+})();
+</script>
+{% endif %}

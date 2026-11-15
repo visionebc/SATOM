@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Global — SATOM{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center gap-3 mb-4">
+  <img src="{{ url_for('static', filename='img/global-mark.svg') }}"
+       alt="{{ _('Global') }}" style="width:42px;height:42px;">
+  <div>
+    <h1 class="h4 mb-0">{{ _('Global') }}</h1>
+    <div class="text-muted" style="font-size:13px;">Fleet-wide console —
+      everything across {{ adoms | map(attribute='name') | join(', ') }}</div>
+  </div>
+  <div class="ms-auto">
+    <a href="{{ url_for('product.switch') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left-right me-1"></i>{{ _('Switch product') }}</a>
+  </div>
+</div>
+
+{% include "_infra_health.html" %}
+
+{# ---- Stat cards ------------------------------------------------------ #}
+{# The ADOM cards are DERIVED from the branding registry (see
+   views/global_home.py -> product_scope.device_products). Do NOT add a card
+   per product here: two literal cards is exactly how FortiAuthenticator and
+   FortiAnalyzer stayed invisible on the console that spans the whole fleet.
+   The Jobs and Certificates cards below are not ADOMs and stay literal. #}
+<div class="row g-3 mb-4">
+  {% for _a in adoms %}
+  <div class="col-6 col-lg-3">
+    <a class="fw-card d-block h-100 text-decoration-none" style="padding:16px 18px;"
+       {% if current_user.can('view') %}href="{{ url_for('product.enter', key=_a.key) }}"{% endif %}>
+      <div class="d-flex align-items-center gap-2 text-muted" style="font-size:12px;">
+        <img src="{{ url_for('static', filename=_a.mark) }}" alt="" style="width:18px;height:18px;">
+        {{ _a.name }} ADOM</div>
+      <div class="h3 mb-0 mt-1">{{ _a.n_appliances }}</div>
+      <div class="text-muted" style="font-size:12px;">appliance(s) · open &rsaquo;</div>
+    </a>
+  </div>
+  {% endfor %}
+  <div class="col-6 col-lg-3">
+    <a class="fw-card d-block h-100 text-decoration-none" style="padding:16px 18px;"
+       href="{{ url_for('jobs.manager') }}">
+      <div class="d-flex align-items-center gap-2 text-muted" style="font-size:12px;">
+        <i class="bi bi-list-task"></i> {{ _('Jobs') }}</div>
+      <div class="h3 mb-0 mt-1">{{ jobs_running }}</div>
+      <div class="text-muted" style="font-size:12px;">active job(s) &rsaquo;</div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-3">
+    {# Certificate Manager is user_manage-only: the tile links there only for
+       those who can open it (2026-10-03 audit, AD-31). #}
+    {% set _cm_link = current_user and current_user.can('user_manage') %}
+    <{{ 'a' if _cm_link else 'div' }} class="fw-card d-block h-100 text-decoration-none" style="padding:16px 18px;"
+       {% if _cm_link %}href="{{ url_for('cert_manager.index') }}"{% endif %}>
+      <div class="d-flex align-items-center gap-2 text-muted" style="font-size:12px;">
+        <i class="bi bi-shield-lock"></i> {{ _('Certificates') }}</div>
+      <div class="h3 mb-0 mt-1">{{ certs.total }}</div>
+      <div class="text-muted" style="font-size:12px;">
+        {% if certs.expiring %}<span class="text-warning">{{ certs.expiring }} expiring &le;30d</span>
+        {% else %}none expiring &le;30d{% endif %}{% if _cm_link %} &rsaquo;{% endif %}</div>
+    </{{ 'a' if _cm_link else 'div' }}>
+  </div>
+</div>
+
+{# ---- Global sections (the old per-product "Global" menus, unified) ---- #}
+<div class="fw-card mb-4" style="padding:18px 20px;">
+  <h2 class="h6 mb-3"><i class="bi bi-globe2 me-2 text-accent"></i>{{ _('Global sections') }}</h2>
+  {# A launcher grid, not a toolbar: equal-width tiles in aligned columns
+     instead of a ragged second row (layout sweep 2026-10-24). #}
+  <div class="d-grid gap-2" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">
+    {% if may_open('monitoring.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('monitoring.index') }}"><i class="bi bi-activity me-1"></i>{{ _('Monitoring') }}</a>{% endif %}
+    {% if may_open('search.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('search.index') }}"><i class="bi bi-search me-1"></i>{{ _('Search') }}</a>{% endif %}
+    {% if may_open('architecture.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('architecture.index') }}"><i class="bi bi-hdd-network me-1"></i>{{ _('Service Diagram') }}</a>{% endif %}
+    {% if may_open('analysis.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('analysis.index') }}"><i class="bi bi-graph-up me-1"></i>{{ _('Analysis') }}</a>{% endif %}
+    {% if may_open('fleet_objects.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('fleet_objects.index') }}"><i class="bi bi-box-seam me-1"></i>{{ _('Fleet Objects') }}</a>{% endif %}
+    {% if may_open('metrics.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('metrics.index') }}"><i class="bi bi-bar-chart-line me-1"></i>{{ _('Metrics') }}</a>{% endif %}
+    {% if may_open('jobs.manager') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('jobs.manager') }}"><i class="bi bi-list-task me-1"></i>{{ _('Jobs') }}</a>{% endif %}
+    {% if current_user and current_user.can('user_manage') %}
+    {% if may_open('cert_manager.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('cert_manager.index') }}"><i class="bi bi-shield-lock me-1"></i>{{ _('Certificate Manager') }}</a>{% endif %}
+    {% if may_open('appliances.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('appliances.index') }}"><i class="bi bi-server me-1"></i>{{ _('Appliances') }}</a>{% endif %}
+    {% if may_open('audit.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('audit.index') }}"><i class="bi bi-clipboard-check me-1"></i>{{ _('Audit Log') }}</a>{% endif %}
+    {% if may_open('users.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('users.index') }}"><i class="bi bi-people me-1"></i>{{ _('Users') }}</a>{% endif %}
+    {% if may_open('database.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('database.index') }}"><i class="bi bi-hdd me-1"></i>{{ _('Database') }}</a>{% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{# ---- Fleet (every product) ------------------------------------------- #}
+<div class="fw-card" style="padding:18px 20px;">
+  <h2 class="h6 mb-3"><i class="bi bi-hdd-rack me-2 text-accent"></i>{{ _('Fleet') }}
+    <span class="text-muted" style="font-size:12px;">— {{ fleet|length }} appliance(s), every product</span></h2>
+  {% if fleet %}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th>{{ _('Name') }}</th><th>{{ _('Product') }}</th><th>{{ _('Host') }}</th>
+          <th>{{ _('Zone') }}</th><th>{{ _('Line') }}</th><th>{{ _('Department') }}</th><th class="text-end">{{ _('Open') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {# Badge and Open target come from kind_meta (built in the view from the
+           registry). A device whose kind matches no ACTIVE ADOM still gets a
+           row — Global is the only console that can see it. #}
+        {% for a in fleet %}
+        {% set _k = a.kind or 'fortiweb' %}
+        {% set _m = kind_meta.get(_k) %}
+        <tr>
+          <td><strong>{{ a.name }}</strong></td>
+          <td>
+            {% if _m %}
+            <span class="fw-badge fw-badge-secondary"><img src="{{ url_for('static', filename=_m.mark) }}" alt="" style="width:12px;height:12px;" class="me-1">{{ _m.name }}</span>
+            {% else %}
+            <span class="fw-badge fw-badge-secondary" title="{{ _('No active ADOM manages this kind') }}">{{ _k }}</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ a.host }}:{{ a.port }}</td>
+          <td class="text-muted">{{ a.zone or '—' }}</td>
+          <td class="text-muted">{{ a.line or '—' }}</td>
+          <td class="text-muted">{{ a.department or '—' }}</td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-secondary"
+               href="{{ url_for(_m.open_endpoint if _m else 'appliances.detail', id=a.id) }}"
+               title="{{ ('Open in the ' ~ _m.name ~ ' ADOM') if _m else 'Appliance detail' }}"><i class="bi bi-box-arrow-in-right"></i></a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="fw-empty-state py-4">
+    <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi bi-hdd-rack"></i></div>
+    {% if fleet_hidden %}
+    <div class="fw-empty-state-title">{{ _('Appliance inventory not available') }}</div>
+    <div class="fw-empty-state-text">{{ _('Your profile does not include viewing appliances.') }}</div>
+    {% else %}
+    <div class="fw-empty-state-title">{{ _('No appliances registered yet') }}</div>
+    <div class="fw-empty-state-text">Register
+      {{ adoms | map(attribute='name') | join(' / ') }} devices under
+      <a href="{{ url_for('appliances.index') }}">{{ _('Appliances') }}</a>.</div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

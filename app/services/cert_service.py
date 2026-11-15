@@ -1,0 +1,1312 @@
+"""The service's OWN TLS certificate — the leaf nginx serves on :8443 (the
+node-facing / soon-to-be-public listener).
+
+Two ways to put a cert here, exactly as the operator asked:
+
+* **Import** — upload a PEM cert (+ key, + optional chain) issued anywhere else.
+  We validate that the key matches the cert, install it, track its expiry and
+  warn before it lapses. Import is *import-only*: we did not issue it, so we do
+  NOT pretend to auto-renew it — the dashboard just alerts and the operator
+  re-imports.
+* **Issue via the internal cert-manager** — mint a leaf from the node's internal
+  CA (``pki/internal-ca``, primary holds the key) for the node hostname. Because
+  we issued it, we CAN and DO auto-renew it before expiry (``satom-cert-renew``
+  timer → ``flask cert-renew``).
+
+Installing = write ``pki/public/server.{crt,key}``, ``nginx -t`` (roll back on a
+bad config), then reload nginx. The web process runs as root on this node, so it
+performs the install + reload directly; there is no separate privileged runner
+hop for cert changes.
+
+``pki/`` itself is node-local (outside ``data/``, gitignored), but the three
+things under it do NOT share one rule — see ``docs/encryption-and-node-tls.md``:
+
+* ``internal-ca/`` — BOTH nodes are meant to hold it; the installer places
+  ``ca.key`` on a joining node from the cluster join key. ``ca_custody()``
+  reports whether THIS node can actually issue, because a node with ``ca.crt``
+  and no ``ca.key`` cannot self-renew and cannot take over issuance after a
+  promote. Nothing here moves ``ca.key`` between hosts: the join key is the
+  sanctioned transport and it is operator-driven.
+* ``node/leaf.*`` — per node, forever. It names this node in its SAN and is also
+  the Postgres replication CLIENT cert, so a copy breaks ``clientcert=verify-ca``
+  on the peer. This module never reads or writes it.
+* ``public/server.*`` — the served cert. Shareable via ``data/pki-shared/``
+  (``publish_shared_cert`` / ``install_shared_cert``), because ``data/`` is what
+  the HA datasync replicates. Only an **imported** cert may be shared — a
+  CA-issued leaf carries one node's name and sharing it is the leaf bug again —
+  and a shared cert is installed only on a node whose served names it covers.
+"""
+from __future__ import annotations
+
+import ipaddress
+import json
+import os
+import re
+import shutil
+import socket
+import ssl
+import subprocess
+import threading
+import time
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from . import self_update as su
+from . import settings_store as ss
+
+PKI = Path("/opt/satom/pki")
+PUB = PKI / "public"
+CA_DIR = PKI / "internal-ca"
+CRT = PUB / "server.crt"
+KEY = PUB / "server.key"
+META = PUB / "meta.json"
+RENEW_THRESHOLD_DAYS = 30
+ISSUE_DAYS = 825
+
+# The one slot both nodes can see. data/ is what satom-ha-datasync replicates
+# (and what the backup bundles carry); pki/ is not, which is why the served
+# cert used to be copied between nodes BY HAND. Gitignored like the rest of
+# data/, so no private key reaches the repository.
+SHARED_DIR = Path(__file__).resolve().parents[2] / "data" / "pki-shared"
+SHARED_SOURCE = "imported"   # the ONLY origin that may be shared — see below
+CH_SHARED = "shared"         # renewal-journal channel for the shared slot
+
+
+# ---------------------------------------------------------------------------
+def node_hostname() -> str:
+    """Public hostname this node serves TLS for. Operator-overridable; defaults
+    from the HA node name."""
+    h = ss.get_str("security.node_cert.hostname", None)
+    if h:
+        return h
+    name = su.this_node_name() or "satom"
+    if "." in name:
+        return name
+    # Only the SUFFIX is deployment-specific, and it is read per node rather
+    # than stored as a full name: on an HA pair the standby replicates the
+    # primary's settings row, so a stored FQDN would make the standby issue a
+    # certificate naming the primary. Empty by default — appending a domain
+    # the installation does not own produces a certificate for somebody
+    # else's namespace, and an internal CA is content with a short name.
+    domain = (ss.get_str("security.node_cert.domain", None) or "").strip(". ")
+    return "%s.%s" % (name, domain) if domain else name
+
+
+def _meta() -> dict:
+    try:
+        return json.loads(META.read_text())
+    except Exception:
+        return {}
+
+
+def _write_meta(**kw) -> None:
+    m = _meta()
+    m.update(kw)
+    META.write_text(json.dumps(m, indent=2))
+
+
+def can_issue_internal() -> bool:
+    """A node can mint from the internal CA only if it holds the CA KEY."""
+    return (CA_DIR / "ca.key").exists() and (CA_DIR / "ca.crt").exists()
+
+
+# --- CA custody ------------------------------------------------------------
+# The installer's node-join step writes ca.key onto a joining node from the
+# cluster join key, so BOTH nodes are supposed to be issuers. A node that ended
+# up with ca.crt only (older install path) still looks fine everywhere else:
+# TLS verifies, the trust bundle is complete, the Monitoring cards are green.
+# What it cannot do is issue — so it cannot auto-renew its own leaf and cannot
+# take over issuance after a promote. That is a state with a remedy, not a
+# healthy state, and the remedy is operator-driven: re-run the join step. No
+# code path here copies ca.key over the network.
+CUSTODY_ISSUER = "issuer"            # ca.crt + ca.key — can issue and renew
+CUSTODY_TRUST_ONLY = "trust-only"    # ca.crt only — verifies, cannot issue
+CUSTODY_KEY_ONLY = "key-without-cert"  # ca.key only — unusable, half a CA
+CUSTODY_ABSENT = "absent"            # no internal CA on this node at all
+
+_CUSTODY_REMEDY = {
+    CUSTODY_TRUST_ONLY:
+        "This node holds the internal CA certificate but NOT its private key, so "
+        "it cannot mint or renew a leaf and cannot take over issuance after a "
+        "promote. Re-run the installer's node-join step with the cluster join key "
+        "(the sanctioned transport for ca.key) on this node. Do not copy the key "
+        "by hand, and do not let a service copy it for you.",
+    CUSTODY_KEY_ONLY:
+        "This node holds an internal CA private key with no matching certificate — "
+        "issuing is impossible and the trust bundle is incomplete. Re-run the "
+        "installer's node-join step to place a consistent CA pair.",
+    CUSTODY_ABSENT:
+        "No internal CA on this node. Bootstrap it on the first node with the "
+        "installer, then join this node with the cluster join key so it receives "
+        "the CA and can issue and renew on its own.",
+}
+
+
+def ca_custody() -> dict:
+    """Who holds what of the internal CA on THIS node, and can it issue?
+
+    Reportable state — a node that cannot issue is never reported healthy."""
+    has_crt = (CA_DIR / "ca.crt").exists()
+    has_key = (CA_DIR / "ca.key").exists()
+    if has_crt and has_key:
+        state = CUSTODY_ISSUER
+    elif has_crt:
+        state = CUSTODY_TRUST_ONLY
+    elif has_key:
+        state = CUSTODY_KEY_ONLY
+    else:
+        state = CUSTODY_ABSENT
+    can_issue = can_issue_internal()
+    return {
+        "state": state,
+        "has_ca_cert": has_crt,
+        "has_ca_key": has_key,
+        "can_issue": can_issue,
+        "healthy": state == CUSTODY_ISSUER,
+        "summary": {
+            CUSTODY_ISSUER: "internal CA present — this node can issue and auto-renew",
+            CUSTODY_TRUST_ONLY: "internal CA certificate only — this node CANNOT issue",
+            CUSTODY_KEY_ONLY: "internal CA key without its certificate — unusable",
+            CUSTODY_ABSENT: "no internal CA on this node",
+        }[state],
+        "remedy": _CUSTODY_REMEDY.get(state, ""),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Inspect
+# ---------------------------------------------------------------------------
+def current() -> dict:
+    from .. import runtime
+    from . import encryption_health as eh
+    if runtime.delegated("cert_activation"):
+        # The web does not mount satom-pki (it also holds the key and the
+        # internal CA); the agent forwards the public certificate it serves.
+        from . import container_ops
+        pem, source = container_ops.served_cert_pem()
+        info = eh.node_cert(pem) if pem else eh.node_cert(b"")
+        info["source"] = source or "bootstrap"
+        info["installed_at"] = None
+        info["hostname"] = node_hostname()
+        info["can_issue_internal"] = False
+        info["renew_threshold_days"] = RENEW_THRESHOLD_DAYS
+        return info
+    info = eh.node_cert()
+    m = _meta()
+    info["source"] = m.get("source", ss.get_str("security.node_cert.source", "bootstrap"))
+    info["installed_at"] = m.get("installed_at")
+    info["hostname"] = node_hostname()
+    info["can_issue_internal"] = can_issue_internal()
+    info["renew_threshold_days"] = RENEW_THRESHOLD_DAYS
+    return info
+
+
+# ---------------------------------------------------------------------------
+# Validate + install
+# ---------------------------------------------------------------------------
+def validate_pem(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None = None) -> dict:
+    """Parse + sanity-check an imported cert/key. Raises ValueError on any
+    problem (bad PEM, key/cert mismatch)."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa, ec
+
+    try:
+        cert = x509.load_pem_x509_certificate(cert_pem)
+    except Exception as e:
+        raise ValueError("certificate is not valid PEM: %s" % e)
+    try:
+        key = serialization.load_pem_private_key(key_pem, password=None)
+    except Exception as e:
+        raise ValueError("private key is not valid PEM (or is passphrase-protected): %s" % e)
+
+    # key must match the cert's public key
+    cpub = cert.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    kpub = key.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    if cpub != kpub:
+        raise ValueError("private key does not match the certificate")
+
+    if chain_pem:
+        try:
+            x509.load_pem_x509_certificates(chain_pem)
+        except Exception as e:
+            raise ValueError("chain is not valid PEM: %s" % e)
+
+    na = cert.not_valid_after_utc
+    return {
+        "subject": cert.subject.rfc4514_string(),
+        "issuer": cert.issuer.rfc4514_string(),
+        "not_after": na.isoformat(),
+        "days_left": int((na - datetime.now(timezone.utc)).total_seconds() // 86400),
+        "self_signed": cert.subject == cert.issuer,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Activation progress — what the operator watches while nginx switches cert
+# ---------------------------------------------------------------------------
+# Activating a certificate is several steps, one of them possibly a 90 s wait
+# for the root runner, and it ends by reloading the nginx that carries the
+# operator's own browser session. The console runs it as a job and shows each
+# step as it happens; this module only REPORTS them, through a per-thread sink
+# the job installs. With no sink (the nightly timer, the CLI, tests) _step is
+# a no-op, so no caller has to know about jobs.
+_PROGRESS = threading.local()
+
+#: The listener verify_served() asks. :8443 carries only the SATOM vhost
+#: (default_server); :443 may also carry the pages vhost on SNI.
+SERVED_PORT = 8443
+SERVED_WAIT_SECONDS = 10
+
+
+@contextmanager
+def progress_sink(fn):
+    """Route this thread's activation steps to ``fn(key, label, state, detail)``.
+    ``state`` is one of running / ok / warn / failed."""
+    prev = getattr(_PROGRESS, "fn", None)
+    _PROGRESS.fn = fn
+    try:
+        yield
+    finally:
+        _PROGRESS.fn = prev
+
+
+def _step(key: str, label: str, state: str, detail: str = "") -> None:
+    fn = getattr(_PROGRESS, "fn", None)
+    if fn is None:
+        return
+    try:
+        fn(key, label, state, detail)
+    except Exception:  # noqa: BLE001 — a progress display never breaks an activation
+        pass
+
+
+def _served_der(port: int = SERVED_PORT, timeout: float = 3.0) -> bytes:
+    """The leaf nginx presents right now, as DER. Unverified on purpose: the
+    question is WHICH certificate is served, not whether we trust it."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with socket.create_connection(("127.0.0.1", port), timeout=timeout) as raw:
+        with ctx.wrap_socket(raw, server_hostname=node_hostname()) as tls:
+            return tls.getpeercert(binary_form=True) or b""
+
+
+def verify_served(cert_pem: bytes, wait: float = SERVED_WAIT_SECONDS) -> tuple[bool, str]:
+    """After the reload, poll until nginx presents ``cert_pem``. A reload is
+    asynchronous (new workers take over as the old ones drain), so the first
+    handshake may still see the previous certificate."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    want = x509.load_pem_x509_certificate(cert_pem).public_bytes(serialization.Encoding.DER)
+    deadline = time.monotonic() + wait
+    last = ""
+    while True:
+        try:
+            if _served_der() == want:
+                return True, "nginx presents the new certificate on :%d" % SERVED_PORT
+            last = "nginx still presents the previous certificate on :%d" % SERVED_PORT
+        except OSError as exc:
+            last = "could not connect to :%d (%s)" % (SERVED_PORT, exc)
+        if time.monotonic() >= deadline:
+            return False, last
+        time.sleep(0.5)
+
+
+def _priv(argv: list[str]) -> list[str]:
+    """Prefix a command with non-interactive sudo unless we are already root.
+
+    The web worker runs as the unprivileged SATOM service account (see
+    docs/privilege-model.md). Exactly two commands are allowlisted in
+    /etc/sudoers.d/satom -- `nginx -t` and `systemctl reload nginx` -- and both
+    live in this module, because activating a TLS certificate is the only thing
+    the worker does that genuinely needs root.
+
+    Kept conditional so a node that has not run deploy/migrate-deprivilege.sh
+    yet (app still User=root) behaves identically instead of hard-failing on a
+    missing sudoers file.
+    """
+    return argv if os.geteuid() == 0 else ["sudo", "-n", *argv]
+
+
+#: How long a certificate activation waits for the root runner. The runner
+#: config-tests nginx, reloads it and checks the front answers on :443 --
+#: seconds -- and the slack covers a request queued behind one it is applying.
+RUNNER_WAIT_SECONDS = 90
+
+
+class _SudoRefused(Exception):
+    """sudo itself said no -- as opposed to nginx failing its config test."""
+
+
+def _sudo_refused(proc) -> bool:
+    """sudo's own refusals start with 'sudo:' or 'Sorry, user'; nginx's start
+    with 'nginx:'. Telling them apart is the whole point: a refusal falls back
+    to the runner, a failed config test must NOT be retried anywhere."""
+    out = ((proc.stderr or "") + (proc.stdout or "")).strip()
+    return out.startswith(("sudo:", "Sorry, user")) or "is not in the sudoers" in out
+
+
+def _run_priv(argv: list[str]):
+    try:
+        p = subprocess.run(_priv(argv), capture_output=True, text=True)
+    except FileNotFoundError as e:  # no sudo binary at all
+        if os.geteuid() == 0:
+            raise
+        raise _SudoRefused(str(e))
+    if p.returncode != 0 and os.geteuid() != 0 and _sudo_refused(p):
+        raise _SudoRefused((p.stderr or p.stdout or "").strip()[-200:])
+    return p
+
+
+def _reload_nginx() -> None:
+    """Validate config then reload. Raises RuntimeError with nginx's message on a
+    bad config (the caller has already restored the previous cert on failure).
+
+    The sudoers allowlist is the fast path, but it is the HOST's sudo policy
+    that decides whether it applies: a managed sudoers without
+    ``@includedir /etc/sudoers.d``, an LDAP/SSSD sudo source or a later rule
+    can all turn ``sudo -n`` into "a password is required" on a node that was
+    installed correctly. When sudo refuses, the same test + reload goes through
+    the root runner (``satom-updater.path``), which already exists on every
+    node for updates and service control and does not depend on sudo at all.
+    """
+    try:
+        _step("nginx_test", L_TEST, "running")
+        t = _run_priv(["nginx", "-t"])
+        if t.returncode != 0:
+            _step("nginx_test", L_TEST, "failed", (t.stderr or t.stdout)[-400:])
+            raise RuntimeError("nginx -t failed: " + (t.stderr or t.stdout)[-400:])
+        _step("nginx_test", L_TEST, "ok")
+        _step("reload", L_RELOAD, "running")
+        r = _run_priv(["systemctl", "reload", "nginx"])
+        if r.returncode != 0:
+            _step("reload", L_RELOAD, "failed", (r.stderr or r.stdout)[-400:])
+            raise RuntimeError("nginx reload failed: " + (r.stderr or r.stdout)[-400:])
+        _step("reload", L_RELOAD, "ok")
+    except _SudoRefused as e:
+        _step("nginx_test", L_TEST, "running",
+              "sudo refused (%s) — handed to the root runner" % str(e)[:120])
+        _reload_via_runner(refusal=str(e))
+
+
+L_VALIDATE = "Validate the certificate, key and chain"
+L_TEST = "Test the nginx configuration (nginx -t)"
+L_RELOAD = "Reload nginx"
+
+
+def _reload_via_runner(refusal: str = "", wait: float = RUNNER_WAIT_SECONDS) -> None:
+    """Hand ``nginx -t`` + ``systemctl reload nginx`` to the root runner and wait
+    for its verdict. ``wait=0`` enqueues and returns (rollback path)."""
+    from . import service_control as sc
+    uid = sc.request_service_action("nginx.service", "reload", by="node-cert",
+                                    origin="node-cert")
+    if wait <= 0:
+        return
+    path = su.STATUS_DIR / (uid + ".json")
+    started = time.monotonic()
+    deadline = started + wait
+    st: dict = {}
+    while time.monotonic() < deadline:
+        try:
+            st = json.loads(path.read_text())
+        except Exception:  # noqa: BLE001 — being rewritten; read again
+            st = {}
+        if st.get("state") in ("success", "failed"):
+            break
+        _step("nginx_test", L_TEST, "running",
+              "%s by the root runner (%ds of up to %ds)"
+              % ("waiting to be picked up" if st.get("state") in (None, "queued")
+                 else "being applied", time.monotonic() - started, wait))
+        time.sleep(1)
+    state = st.get("state")
+    if state == "success":
+        _step("nginx_test", L_TEST, "ok", "through the root runner")
+        _step("reload", L_RELOAD, "ok", "through the root runner")
+        return
+    _step("nginx_test", L_TEST, "failed", "root runner: %s" % (state or "no answer"))
+    why = " (sudo: %s)" % refusal if refusal else ""
+    if state == "failed":
+        bad = [s for s in (st.get("steps") or []) if not s.get("ok")]
+        first = bad[0] if bad else {}
+        if first.get("name") == "nginx -t":
+            raise RuntimeError("nginx -t failed: " + (first.get("detail") or "")[-400:])
+        raise RuntimeError("nginx reload through the root runner failed at '%s': %s"
+                           % (first.get("name") or "?",
+                              (first.get("detail") or st.get("error") or "")[-300:]))
+    if state in (None, "queued"):
+        raise RuntimeError(
+            "sudo refused the nginx reload%s and the root runner did not pick up "
+            "the request within %ds. Check that the runner is armed: "
+            "systemctl enable --now satom-updater.path" % (why, int(wait)))
+    raise RuntimeError("the root runner is still applying the nginx reload after "
+                       "%ds (request %s) — see Settings → Software Update" % (int(wait), uid))
+
+
+def _rollback_reload() -> None:
+    """Best effort after the files were restored: never waits, never raises."""
+    try:
+        _run_priv(["systemctl", "reload", "nginx"])
+    except _SudoRefused:
+        try:
+            _reload_via_runner(wait=0)
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _install(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None,
+             source: str, by: str) -> dict:
+    """Write the cert (+chain) and key, test nginx, reload — rolling the files
+    back if nginx rejects them."""
+    from .. import runtime
+    # Refused BEFORE anything is written. Failing later, inside _reload_nginx,
+    # would take the rollback path and leave the operator with a stack trace
+    # about nginx on a node that has no nginx -- the wrong diagnosis, pointing
+    # at the wrong container.
+    runtime.require("cert_activation")
+    if runtime.is_container_runtime():
+        # Reached only with a live operations agent (require() passed). This
+        # process has no satom-pki and no nginx to reload; the agent writes the
+        # pair into the proxy's volume and restarts the proxy. It re-checks
+        # the PEMs itself, and tls-bootstrap refuses a mismatched pair.
+        from . import container_ops
+        container_ops.install_cert(cert_pem, key_pem, chain_pem, by=by)
+        return current()
+
+    PUB.mkdir(parents=True, exist_ok=True)
+    bak = PUB / ".rollback"
+    bak.mkdir(exist_ok=True)
+    for f in (CRT, KEY):
+        if f.exists():
+            shutil.copy2(f, bak / f.name)
+    full = cert_pem if not chain_pem else (cert_pem.rstrip() + b"\n" + chain_pem.lstrip())
+    try:
+        _step("write", "Write the certificate and key (previous pair kept for rollback)", "running")
+        CRT.write_bytes(full)
+        KEY.write_bytes(key_pem)
+        KEY.chmod(0o600)
+        _step("write", "Write the certificate and key (previous pair kept for rollback)", "ok")
+        _reload_nginx()
+    except Exception:
+        # roll back to the previous cert/key so :8443 keeps serving
+        _step("rollback", "Restore the previous certificate", "running")
+        for f in (CRT, KEY):
+            b = bak / f.name
+            if b.exists():
+                shutil.copy2(b, f)
+        _rollback_reload()
+        _step("rollback", "Restore the previous certificate", "ok",
+              "previous pair restored; nginx reload requested")
+        raise
+    if getattr(_PROGRESS, "fn", None) is not None:
+        # Only when someone is watching (the console job): the nightly timer
+        # has no one to tell and must not pay a 10 s probe.
+        _step("verify", "Check that nginx serves the new certificate", "running")
+        ok, why = verify_served(cert_pem)
+        # Not fatal and no rollback: the files ARE in place and nginx accepted
+        # them. A mismatch means the reload has not taken (or the vhost reads
+        # other files) — what the operator must be told instead of "done".
+        _step("verify", "Check that nginx serves the new certificate",
+              "ok" if ok else "warn", why)
+    # meta.json (node-local file) is the source of record for the cert origin —
+    # it works even on a standby whose Postgres is read-only.
+    _write_meta(source=source, installed_at=datetime.now(timezone.utc).isoformat(),
+                installed_by=by, hostname=node_hostname())
+    # Mirror into app_settings when writable (primary); best-effort on a standby
+    # (read-only replica) where the UPDATE would raise — the cert is already live.
+    try:
+        ss.set_str("security.node_cert.source", source)
+    except Exception:
+        try:
+            from ..models import db
+            db.session.rollback()
+        except Exception:
+            pass
+    return current()
+
+
+def import_pem(cert_pem: bytes, key_pem: bytes | None, chain_pem: bytes | None, by: str,
+               *, _log: bool = True) -> dict:
+    """Validate + install an externally-issued cert. Import-only (no auto-renew).
+
+    ``key_pem`` may be empty when the certificate was issued from a CSR
+    generated on this node: the pending key whose public key the certificate
+    carries is used, and consumed once the install succeeds.
+
+    _log=False when the caller already journals the attempt (autopull), so a
+    single renewal does not produce two rows on the Renewals page."""
+    from . import cert_renew_log as jrn
+    csr_id = None
+    try:
+        cert_pem = _norm_pem(cert_pem)
+        chain_pem = _norm_pem(chain_pem) or None
+        key_pem = _norm_pem(key_pem)
+        if not cert_pem:
+            raise ValueError("the certificate is empty")
+        csr_id = _csr_id_for_cert(cert_pem)
+        if not key_pem:
+            if not csr_id:
+                raise ValueError(
+                    "no private key given, and no CSR generated on this node "
+                    "matches this certificate — paste or upload the key, or import "
+                    "the certificate your CA issued from a CSR generated here")
+            key_pem = (CSR_DIR / (csr_id + ".key")).read_bytes()
+        _step("validate", L_VALIDATE, "running")
+        try:
+            v = validate_pem(cert_pem, key_pem, chain_pem)
+        except Exception as exc:
+            _step("validate", L_VALIDATE, "failed", str(exc)[:300])
+            raise
+        _step("validate", L_VALIDATE, "ok", "%s%s" % (
+            v.get("subject") or "", " · key from the pending CSR" if csr_id else ""))
+        info = _install(cert_pem, key_pem, chain_pem, source="imported", by=by)
+        if csr_id:
+            _drop_csr(csr_id)   # the key now lives in pki/public; the CSR is spent
+    except Exception as exc:  # noqa: BLE001 — _install already rolled nginx back
+        if _log:
+            jrn.record(jrn.CH_IMPORT, jrn.OK_ERROR, "import rejected — cert NOT installed",
+                       error="%s: %s" % (type(exc).__name__, exc), by=by)
+        raise
+    if _log:
+        jrn.record(jrn.CH_IMPORT, jrn.OK_RENEWED, "imported PEM installed", by=by,
+                   days_left=info.get("days_left"), not_after=info.get("not_after"))
+    return info
+
+
+# ---------------------------------------------------------------------------
+# CSR — let another CA issue the certificate, keep the key on this node
+# ---------------------------------------------------------------------------
+# The key is generated here and never leaves the node: only the CSR (public)
+# is shown. Pending entries are keyed by the fingerprint of their PUBLIC key,
+# so the certificate that comes back finds its key by content -- generating a
+# second CSR while the first is still at the CA does not orphan the first.
+# Node-local like the rest of pki/: a CSR names this node and its key must not
+# reach the peer, so it stays out of data/ (which the HA datasync replicates).
+CSR_DIR = PKI / "csr"
+CSR_KEEP = 10
+CSR_KEY_TYPES = {
+    "rsa2048": "RSA 2048", "rsa3072": "RSA 3072", "rsa4096": "RSA 4096",
+    "ec256": "ECDSA P-256", "ec384": "ECDSA P-384",
+}
+_CSR_ID_RE = re.compile(r"^[0-9a-f]{16}$")
+_DNS_RE = re.compile(r"^(\*\.)?([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
+                     r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+
+
+def _norm_pem(blob) -> bytes:
+    """Pasted PEM arrives with CRLF, indentation or trailing blanks."""
+    if not blob:
+        return b""
+    if isinstance(blob, str):
+        blob = blob.encode()
+    lines = [ln.strip() for ln in blob.replace(b"\r", b"").split(b"\n")]
+    text = b"\n".join(ln for ln in lines if ln)
+    return text + b"\n" if text else b""
+
+
+def _spki_id(public_key) -> str:
+    import hashlib
+    from cryptography.hazmat.primitives import serialization
+    der = public_key.public_bytes(serialization.Encoding.DER,
+                                  serialization.PublicFormat.SubjectPublicKeyInfo)
+    return hashlib.sha256(der).hexdigest()[:16]
+
+
+def _csr_id_for_cert(cert_pem: bytes) -> str | None:
+    try:
+        from cryptography import x509
+        cid = _spki_id(x509.load_pem_x509_certificate(cert_pem).public_key())
+    except Exception:  # noqa: BLE001 — validate_pem reports a bad cert properly
+        return None
+    return cid if (CSR_DIR / (cid + ".key")).exists() else None
+
+
+def _drop_csr(csr_id: str) -> None:
+    for ext in (".key", ".csr", ".json"):
+        try:
+            (CSR_DIR / (csr_id + ext)).unlink()
+        except OSError:
+            pass
+
+
+def _split_names(raw) -> list[str]:
+    if isinstance(raw, (list, tuple)):
+        raw = ",".join(str(x) for x in raw)
+    return [n.strip() for n in re.split(r"[,\s;]+", raw or "") if n.strip()]
+
+
+def generate_csr(by: str, common_name: str | None = None, sans=None,
+                 key_type: str = "rsa2048", organization: str = "",
+                 org_unit: str = "", locality: str = "", state: str = "",
+                 country: str = "") -> dict:
+    """Generate a private key + CSR on this node. Returns the pending entry
+    (CSR PEM included, key never)."""
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec, rsa
+    from .. import runtime
+    runtime.require("cert_activation")
+    if runtime.is_container_runtime():
+        raise RuntimeError("CSR generation is not available in the container "
+                           "runtime: generate the key and CSR elsewhere and "
+                           "import the certificate together with its key")
+
+    cn = (common_name or "").strip() or node_hostname()
+    if not _DNS_RE.match(cn) and not _is_ip(cn):
+        raise ValueError("common name %r is not a valid host name or IP address" % cn)
+    names = [cn] + [n for n in _split_names(sans) if n.lower() != cn.lower()]
+    alt = []
+    for n in dict.fromkeys(names):          # de-duplicated, order kept
+        if _is_ip(n):
+            alt.append(x509.IPAddress(ipaddress.ip_address(n)))
+        elif _DNS_RE.match(n):
+            alt.append(x509.DNSName(n))
+        else:
+            raise ValueError("%r is neither a host name nor an IP address" % n)
+    country = (country or "").strip().upper()
+    if country and not re.match(r"^[A-Z]{2}$", country):
+        raise ValueError("country must be a two-letter ISO code (e.g. CH, MX, US)")
+    if key_type not in CSR_KEY_TYPES:
+        raise ValueError("key type must be one of: %s" % ", ".join(CSR_KEY_TYPES))
+
+    if key_type.startswith("rsa"):
+        key = rsa.generate_private_key(public_exponent=65537, key_size=int(key_type[3:]))
+    else:
+        key = ec.generate_private_key(ec.SECP256R1() if key_type == "ec256" else ec.SECP384R1())
+
+    attrs = [x509.NameAttribute(NameOID.COMMON_NAME, cn)]
+    for oid, val in ((NameOID.ORGANIZATION_NAME, organization),
+                     (NameOID.ORGANIZATIONAL_UNIT_NAME, org_unit),
+                     (NameOID.LOCALITY_NAME, locality),
+                     (NameOID.STATE_OR_PROVINCE_NAME, state),
+                     (NameOID.COUNTRY_NAME, country)):
+        val = (val or "").strip()
+        if val:
+            attrs.append(x509.NameAttribute(oid, val[:64]))
+    csr = (x509.CertificateSigningRequestBuilder()
+           .subject_name(x509.Name(attrs))
+           .add_extension(x509.SubjectAlternativeName(alt), critical=False)
+           .sign(key, hashes.SHA256()))
+
+    cid = _spki_id(key.public_key())
+    CSR_DIR.mkdir(parents=True, exist_ok=True)
+    CSR_DIR.chmod(0o700)
+    kp = CSR_DIR / (cid + ".key")
+    fd = os.open(str(kp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(key.private_bytes(serialization.Encoding.PEM,
+                                   serialization.PrivateFormat.TraditionalOpenSSL,
+                                   serialization.NoEncryption()))
+    csr_pem = csr.public_bytes(serialization.Encoding.PEM)
+    (CSR_DIR / (cid + ".csr")).write_bytes(csr_pem)
+    meta = {"id": cid, "common_name": cn, "sans": names, "key_type": key_type,
+            "subject": csr.subject.rfc4514_string(),
+            "created_at": datetime.now(timezone.utc).isoformat(), "created_by": by}
+    (CSR_DIR / (cid + ".json")).write_text(json.dumps(meta, indent=2))
+    for old in pending_csrs()[CSR_KEEP:]:
+        _drop_csr(old["id"])
+    return dict(meta, csr_pem=csr_pem.decode())
+
+
+def _is_ip(s: str) -> bool:
+    try:
+        ipaddress.ip_address(s)
+        return True
+    except ValueError:
+        return False
+
+
+def pending_csrs() -> list[dict]:
+    """CSRs waiting for their certificate, newest first. Only entries whose key
+    is still present count -- a CSR without its key can never be completed."""
+    out = []
+    if not CSR_DIR.is_dir():
+        return out
+    for meta in CSR_DIR.glob("*.json"):
+        cid = meta.stem
+        if not _CSR_ID_RE.match(cid) or not (CSR_DIR / (cid + ".key")).exists():
+            continue
+        try:
+            m = json.loads(meta.read_text())
+            m["csr_pem"] = (CSR_DIR / (cid + ".csr")).read_text()
+        except Exception:  # noqa: BLE001
+            continue
+        m["id"] = cid
+        m["key_label"] = CSR_KEY_TYPES.get(m.get("key_type"), m.get("key_type"))
+        out.append(m)
+    out.sort(key=lambda m: m.get("created_at") or "", reverse=True)
+    return out
+
+
+def discard_csr(csr_id: str) -> bool:
+    """Delete a pending CSR and its key. A certificate issued from it can no
+    longer be imported without its key -- which no longer exists anywhere."""
+    if not _CSR_ID_RE.match(csr_id or ""):
+        raise ValueError("invalid CSR id")
+    existed = (CSR_DIR / (csr_id + ".key")).exists()
+    _drop_csr(csr_id)
+    return existed
+
+
+# ---------------------------------------------------------------------------
+# Issue from the internal CA (+ auto-renew)
+# ---------------------------------------------------------------------------
+def _mint_leaf(hostname: str, days: int = ISSUE_DAYS) -> tuple[bytes, bytes]:
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    ca_cert = x509.load_pem_x509_certificate((CA_DIR / "ca.crt").read_bytes())
+    ca_key = serialization.load_pem_private_key((CA_DIR / "ca.key").read_bytes(), password=None)
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = datetime.now(timezone.utc)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, hostname)])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(ca_cert.subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + timedelta(days=days))
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName(hostname)]), critical=False)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .add_extension(x509.ExtendedKeyUsage([
+            ExtendedKeyUsageOID.SERVER_AUTH, ExtendedKeyUsageOID.CLIENT_AUTH]), critical=False)
+        .sign(ca_key, hashes.SHA256())
+    )
+    crt_pem = cert.public_bytes(serialization.Encoding.PEM)
+    key_pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption())
+    return crt_pem, key_pem
+
+
+def issue_internal(by: str, hostname: str | None = None, *, _log: bool = True) -> dict:
+    """Mint + install a leaf from the internal CA (primary only). Auto-renewable.
+
+    _log=False when renew_if_needed already journals the attempt."""
+    from . import cert_renew_log as jrn
+    if not can_issue_internal():
+        raise RuntimeError("internal CA key not present on this node — this node "
+                           "cannot issue (only the CA holder / primary can). Import a cert instead.")
+    hostname = hostname or node_hostname()
+    try:
+        _step("mint", "Mint a certificate from the internal CA", "running", hostname)
+        crt_pem, key_pem = _mint_leaf(hostname)
+        ca_pem = (CA_DIR / "ca.crt").read_bytes()  # ship the internal CA as the chain
+        _step("mint", "Mint a certificate from the internal CA", "ok", hostname)
+        info = _install(crt_pem, key_pem, ca_pem, source="issued", by=by)
+    except Exception as exc:  # noqa: BLE001
+        if _log:
+            jrn.record(jrn.CH_ISSUE, jrn.OK_ERROR, "minting from the internal CA failed",
+                       error="%s: %s" % (type(exc).__name__, exc), by=by)
+        raise
+    if _log:
+        jrn.record(jrn.CH_ISSUE, jrn.OK_RENEWED, "minted from the internal CA (%s)" % hostname,
+                   by=by, days_left=info.get("days_left"), not_after=info.get("not_after"))
+    return info
+
+
+def renew_if_needed(by: str = "auto-renew", force: bool = False) -> dict:
+    """Re-issue an *issued* cert when it is within the renewal threshold. No-op
+    for imported / bootstrap certs (we cannot renew what we did not issue).
+
+    Every outcome — renewed, skipped, failed — goes to the renewal journal
+    (app.services.cert_renew_log) so the Renewals page can show WHY a
+    night produced no new certificate. Before this existed the only trace was
+    the timer's stdout in journald."""
+    from . import cert_renew_log as jrn
+    cur = current()
+    days = cur.get("days_left")
+    na = cur.get("not_after")
+    if cur.get("source") != "issued":
+        res = {"renewed": False, "reason": "source is %r — only CA-issued certs auto-renew"
+               % cur.get("source"), "days_left": days}
+        jrn.record(jrn.CH_INTERNAL, jrn.OK_SKIPPED, res["reason"], by=by,
+                   days_left=days, not_after=na)
+        return res
+    if not can_issue_internal():
+        res = {"renewed": False, "reason": "no CA key on this node", "days_left": days}
+        jrn.record(jrn.CH_INTERNAL, jrn.OK_SKIPPED, res["reason"], by=by,
+                   days_left=days, not_after=na)
+        return res
+    if not force and days is not None and days > RENEW_THRESHOLD_DAYS:
+        res = {"renewed": False, "reason": "not due (%s d left, threshold %s)"
+               % (days, RENEW_THRESHOLD_DAYS), "days_left": days}
+        jrn.record(jrn.CH_INTERNAL, jrn.OK_SKIPPED, res["reason"], by=by,
+                   days_left=days, not_after=na)
+        return res
+    try:
+        new = issue_internal(by=by, _log=False)
+    except Exception as exc:  # noqa: BLE001 — journal it, then let the caller see it
+        jrn.record(jrn.CH_INTERNAL, jrn.OK_ERROR, "re-mint from the internal CA failed",
+                   error="%s: %s" % (type(exc).__name__, exc), by=by, days_left=days)
+        raise
+    jrn.record(jrn.CH_INTERNAL, jrn.OK_RENEWED, "re-minted from the internal CA", by=by,
+               days_left=new.get("days_left"), not_after=new.get("not_after"))
+    return {"renewed": True, "days_left": new.get("days_left"), "not_after": new.get("not_after")}
+
+
+# ---------------------------------------------------------------------------
+# Renewal strategy for IMPORTED certs — the operator's choice of two ways
+# ---------------------------------------------------------------------------
+# A CA-*issued* cert auto-renews above. An *imported* cert (e.g. the fleet
+# wildcard copied from the edge) can't be re-minted here, so the operator picks:
+#
+#   * ``alert``    (default) — do nothing automatic; the alert engine warns at
+#                  T-N days (services.alerts cert check) and the operator re-
+#                  imports by hand. Zero extra trust, zero key movement.
+#   * ``autopull`` — the node fetches the renewed cert+key from a source over
+#                  SSH/SFTP (typically the edge that runs certbot) and installs
+#                  it through the same validated import path (nginx -t + auto-
+#                  rollback). Convenient, but it means a private key is copied to
+#                  the node and an SSH trust to the source exists — the operator
+#                  opts into that explicitly.
+#
+# Both run from the SAME nightly ``satom-cert-renew`` timer. The mode + autopull
+# connection live in app_settings (JSON, SSH password Fernet-encrypted at rest).
+K_RENEW_MODE = "cert.renew_mode"          # "alert" | "autopull"
+K_AUTOPULL = "cert.autopull"              # JSON dict
+_AUTOPULL_DEFAULTS = {
+    "ssh_host": "", "ssh_port": 22, "ssh_user": "root",
+    "ssh_auth": "key",                    # "key" | "password"
+    "ssh_key_path": "", "ssh_password_enc": "",
+    "remote_cert": "", "remote_key": "", "remote_chain": "",
+}
+
+
+def renew_mode() -> str:
+    m = (ss.get_str(K_RENEW_MODE, "alert") or "alert").strip().lower()
+    return m if m in ("alert", "autopull") else "alert"
+
+
+def autopull_config(reveal_secret: bool = False) -> dict:
+    raw = ss.get_json(K_AUTOPULL, {}) or {}
+    cfg = dict(_AUTOPULL_DEFAULTS)
+    if isinstance(raw, dict):
+        cfg.update({k: raw.get(k, v) for k, v in _AUTOPULL_DEFAULTS.items()})
+    try:
+        cfg["ssh_port"] = int(cfg.get("ssh_port") or 22)
+    except (TypeError, ValueError):
+        cfg["ssh_port"] = 22
+    if reveal_secret:
+        from . import encryption
+        tok = cfg.get("ssh_password_enc") or ""
+        try:
+            cfg["ssh_password"] = encryption.decrypt(tok) if tok else ""
+        except Exception:
+            cfg["ssh_password"] = ""
+    cfg["configured"] = bool(cfg.get("ssh_host") and cfg.get("remote_cert")
+                             and cfg.get("remote_key"))
+    return cfg
+
+
+def save_autopull_config(form: dict, mode: str | None = None) -> None:
+    from . import encryption
+    cur = ss.get_json(K_AUTOPULL, {}) or {}
+    out = dict(_AUTOPULL_DEFAULTS)
+    if isinstance(cur, dict):
+        out.update({k: cur.get(k, v) for k, v in _AUTOPULL_DEFAULTS.items()})
+    for k in ("ssh_host", "ssh_user", "ssh_auth", "ssh_key_path",
+              "remote_cert", "remote_key", "remote_chain"):
+        if k in form:
+            out[k] = (form.get(k) or "").strip()
+    if "ssh_port" in form:
+        try:
+            out["ssh_port"] = int(form.get("ssh_port") or 22)
+        except (TypeError, ValueError):
+            out["ssh_port"] = 22
+    new_pw = form.get("ssh_password", "")
+    if new_pw:
+        out["ssh_password_enc"] = encryption.encrypt(new_pw)
+    ss.set_json(K_AUTOPULL, out)
+    if mode is not None:
+        ss.set_str(K_RENEW_MODE, mode if mode in ("alert", "autopull") else "alert")
+
+
+def autopull(by: str = "autopull-timer", force: bool = False) -> dict:
+    """Journaling wrapper around _autopull — classifies the outcome into
+    renewed / skipped / error and writes it to the renewal journal so a silent
+    nightly failure (bad SSH host, stale remote path, key mismatch) becomes a
+    visible row with its error text instead of a line in journald."""
+    from . import cert_renew_log as jrn
+    try:
+        res = _autopull(by=by, force=force)
+    except Exception as exc:  # noqa: BLE001 — _autopull is documented never to raise
+        jrn.record(jrn.CH_AUTOPULL, jrn.OK_ERROR, "autopull crashed",
+                   error="%s: %s" % (type(exc).__name__, exc), by=by)
+        raise
+    reason = res.get("reason") or ""
+    if res.get("pulled"):
+        jrn.record(jrn.CH_AUTOPULL, jrn.OK_RENEWED, "fetched + installed the renewed cert",
+                   by=by, days_left=res.get("days_left"), not_after=res.get("not_after"))
+    elif reason.startswith(("fetch failed", "install rejected", "paramiko unavailable")):
+        jrn.record(jrn.CH_AUTOPULL, jrn.OK_ERROR, "autopull failed", error=reason, by=by)
+    else:
+        jrn.record(jrn.CH_AUTOPULL, jrn.OK_SKIPPED, reason, by=by,
+                   days_left=res.get("days_left"))
+    return res
+
+
+def _autopull(by: str = "autopull-timer", force: bool = False) -> dict:
+    """Fetch the renewed cert/key (+optional chain) from the configured source
+    over SFTP and install it through the validated import path. No-op unless the
+    renewal mode is ``autopull`` and the connection is configured. Never raises —
+    connection/validation failures are reported in the return dict (install has
+    its own nginx-test + rollback)."""
+    if not force and renew_mode() != "autopull":
+        return {"pulled": False, "reason": "renew_mode is not 'autopull'"}
+    cfg = autopull_config(reveal_secret=True)
+    if not cfg.get("configured"):
+        return {"pulled": False, "reason": "autopull source not configured"}
+    try:
+        import paramiko
+    except Exception as exc:  # noqa: BLE001
+        return {"pulled": False, "reason": f"paramiko unavailable: {exc}"}
+
+    # This connection carries the node's TLS certificate AND PRIVATE KEY back
+    # over SFTP. It had no host-key store at all: AutoAdd with nothing to
+    # compare against accepts whatever key answers, every time, and never
+    # notices when the answer changes.
+    from . import ssh_pinning
+    known = Path(__file__).resolve().parents[2] / "data" / "known_hosts"
+
+    class _PinError(RuntimeError):
+        pass
+
+    client = paramiko.SSHClient()
+    try:
+        ssh_pinning.load_pins(client, known, _PinError)
+    except _PinError as exc:
+        return {"pulled": False, "reason": str(exc)}
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    connect_kw = {"hostname": cfg["ssh_host"], "port": cfg["ssh_port"],
+                  "username": cfg["ssh_user"], "timeout": 15, "allow_agent": False,
+                  "look_for_keys": False}
+    if cfg.get("ssh_auth") == "password":
+        connect_kw["password"] = cfg.get("ssh_password") or ""
+    else:
+        if cfg.get("ssh_key_path"):
+            connect_kw["key_filename"] = cfg["ssh_key_path"]
+        connect_kw["look_for_keys"] = True
+    try:
+        client.connect(**connect_kw)
+        ssh_pinning.persist(client, known, _PinError)
+        sftp = client.open_sftp()
+        try:
+            with sftp.open(cfg["remote_cert"], "rb") as fh:
+                cert_pem = fh.read()
+            with sftp.open(cfg["remote_key"], "rb") as fh:
+                key_pem = fh.read()
+            chain_pem = None
+            if cfg.get("remote_chain"):
+                with sftp.open(cfg["remote_chain"], "rb") as fh:
+                    chain_pem = fh.read()
+        finally:
+            sftp.close()
+    except Exception as exc:  # noqa: BLE001
+        return {"pulled": False, "reason": f"fetch failed: {type(exc).__name__}: {exc}"}
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+    # Skip a redundant reinstall when the fetched cert already matches what we
+    # serve (same bytes) — avoids a needless nginx reload every night.
+    try:
+        full = cert_pem if not chain_pem else cert_pem.rstrip() + b"\n" + chain_pem.lstrip()
+        if CRT.exists() and CRT.read_bytes().strip() == full.strip():
+            return {"pulled": False, "reason": "already up to date (identical cert)",
+                    "days_left": current().get("days_left")}
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        info = import_pem(cert_pem, key_pem, chain_pem, by=by, _log=False)
+        return {"pulled": True, "days_left": info.get("days_left"),
+                "not_after": info.get("not_after")}
+    except Exception as exc:  # noqa: BLE001 — import_pem already rolled nginx back
+        return {"pulled": False, "reason": f"install rejected: {exc}"}
+
+
+# ---------------------------------------------------------------------------
+# The SHARED served certificate — data/pki-shared/
+#
+# The served cert is the ONE piece of pki/ that legitimately wants to be the
+# same on both nodes: `satom{,-2}` are two names under one wildcard, and the
+# operator was copying it across by hand. It goes through data/ because that is
+# the tree satom-ha-datasync replicates (primary -> standby, rsync --delete) and
+# the tree the backup bundles carry.
+#
+# Two hard gates, both enforced below rather than promised in prose:
+#
+#   1. source must be `imported`. A CA-ISSUED leaf is per-node BY CONSTRUCTION —
+#      its SAN is that node's hostname — so sharing it repeats exactly the bug
+#      that makes pki/node/leaf.* non-shareable. `bootstrap` (the self-signed
+#      cert minted for this node at install) is per-node for the same reason.
+#   2. the cert must cover THIS node's served names. Installing one that does
+#      not is worse than doing nothing: the node then serves a certificate the
+#      browser rejects, and the product reports it as freshly installed.
+#
+# Install reuses the ordinary _install() path — key/cert match check, nginx -t,
+# automatic rollback — so there is exactly one implementation of "activate a
+# certificate safely" in this module.
+# ---------------------------------------------------------------------------
+def _shared_paths() -> tuple[Path, Path, Path]:
+    return (SHARED_DIR / "server.crt", SHARED_DIR / "server.key",
+            SHARED_DIR / "meta.json")
+
+
+def _write_private(path: Path, data: bytes) -> None:
+    """Create/replace a private key file that is never briefly world-readable."""
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+    os.chmod(path, 0o600)
+
+
+def cert_dns_names(cert_pem: bytes) -> list[str]:
+    """DNS names a certificate presents (SAN, falling back to CN)."""
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+
+    cert = x509.load_pem_x509_certificate(cert_pem)
+    names: list[str] = []
+    try:
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+        names = list(san.value.get_values_for_type(x509.DNSName))
+    except x509.ExtensionNotFound:
+        names = []
+    if not names:
+        names = [a.value for a in cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)]
+    return [str(n).strip().rstrip(".").lower() for n in names if n]
+
+
+def _name_matches(presented: str, wanted: str) -> bool:
+    """RFC 6125 host matching: a wildcard covers exactly ONE leftmost label."""
+    presented = (presented or "").strip().rstrip(".").lower()
+    wanted = (wanted or "").strip().rstrip(".").lower()
+    if not presented or not wanted:
+        return False
+    if not presented.startswith("*."):
+        return presented == wanted
+    head, _, rest = wanted.partition(".")
+    return bool(head) and rest == presented[2:]
+
+
+def served_names() -> list[str]:
+    """The names this node must be able to answer for on :443/:8443."""
+    return [n for n in (node_hostname(),) if n]
+
+
+def cert_covers_served_names(cert_pem: bytes) -> tuple[bool, list[str], list[str]]:
+    """(covers?, names NOT covered, names the cert presents)."""
+    presented = cert_dns_names(cert_pem)
+    missing = [w for w in served_names()
+               if not any(_name_matches(p, w) for p in presented)]
+    return (not missing), missing, presented
+
+
+def shared_cert_status() -> dict:
+    """What is in the shared slot and whether THIS node could take it."""
+    crt_p, key_p, meta_p = _shared_paths()
+    out = {"present": False, "source": None, "names": [], "not_after": None,
+           "covers_this_node": None, "missing_names": [], "differs": None,
+           "shareable": None, "error": None}
+    if not (crt_p.exists() and key_p.exists()):
+        return out
+    out["present"] = True
+    try:
+        smeta = json.loads(meta_p.read_text())
+    except Exception:  # noqa: BLE001 — an unreadable meta is a refusal, not a crash
+        smeta = {}
+    out["source"] = smeta.get("source")
+    out["published_at"] = smeta.get("published_at")
+    out["published_by"] = smeta.get("published_by")
+    out["shareable"] = (out["source"] or "").strip().lower() == SHARED_SOURCE
+    try:
+        cert_pem = crt_p.read_bytes()
+        covers, missing, names = cert_covers_served_names(cert_pem)
+        out["names"] = names
+        out["covers_this_node"] = covers
+        out["missing_names"] = missing
+        out["not_after"] = validate_pem(cert_pem, key_p.read_bytes())["not_after"]
+        out["differs"] = not (CRT.exists()
+                              and CRT.read_bytes().strip() == cert_pem.strip())
+    except Exception as exc:  # noqa: BLE001
+        out["error"] = "%s: %s" % (type(exc).__name__, exc)
+    return out
+
+
+def _shared_slot_not_after(crt_p: Path, key_p: Path) -> str | None:
+    """``not_after`` of the certificate currently in the shared slot, or ``None``
+    if the slot is empty or unreadable.
+
+    Read from the CERTIFICATE, never from ``meta.json``: meta describes the slot
+    and can be stale or hand-edited, while the cert is the thing a peer would
+    actually end up serving.
+    """
+    if not (crt_p.exists() and key_p.exists()):
+        return None
+    try:
+        return validate_pem(crt_p.read_bytes(), key_p.read_bytes())["not_after"]
+    except Exception:  # noqa: BLE001 — an unreadable slot is "no opinion"
+        return None
+
+
+def _expires_before(a: str | None, b: str | None) -> bool:
+    """``a`` expires strictly before ``b``. Unparseable either side ⇒ False, so a
+    date we cannot read never blocks a publish."""
+    if not a or not b:
+        return False
+    try:
+        return datetime.fromisoformat(a) < datetime.fromisoformat(b)
+    except (TypeError, ValueError):
+        return False
+
+
+def publish_shared_cert(by: str = "publish") -> dict:
+    """Copy the cert this node SERVES into data/pki-shared/ so the peer gets it.
+
+    Refuses anything the peer must not receive. Never raises."""
+    from . import cert_renew_log as jrn
+
+    def _refuse(reason: str) -> dict:
+        jrn.record(CH_SHARED, jrn.OK_SKIPPED, "publish refused: " + reason, by=by)
+        return {"published": False, "reason": reason}
+
+    if not (CRT.exists() and KEY.exists()):
+        return _refuse("no certificate is served on this node yet")
+    src = (_meta().get("source") or "").strip().lower()
+    if src != SHARED_SOURCE:
+        return _refuse(
+            "the served certificate's source is %r, and only an %r certificate may "
+            "be shared: a %s certificate names THIS node in its SAN, so the peer "
+            "would serve a certificate for somebody else's hostname"
+            % (src or "unknown", SHARED_SOURCE, src or "node-local"))
+    cert_pem, key_pem = CRT.read_bytes(), KEY.read_bytes()
+    try:
+        info = validate_pem(cert_pem, key_pem)
+    except ValueError as exc:
+        return _refuse("the served cert/key pair does not validate: %s" % exc)
+
+    crt_p, key_p, meta_p = _shared_paths()
+
+    # NEVER replace a NEWER certificate in the slot with an older one.
+    #
+    # The nightly pass runs publish-then-install on EVERY node, standby
+    # included, and that order is fatal on the standby without this guard:
+    # publish overwrites the slot with the cert this node still serves, and
+    # install then finds the slot identical to what it serves and adopts
+    # nothing. The node the whole mechanism exists for was the one node it could
+    # never update — and it looked healthy, because the datasync restores the
+    # primary's copy minutes later, long after a once-a-day pass has finished.
+    #
+    # Measured on a standby node, 2026-08-20: slot 2026-10-15, served 2026-09-02,
+    # `satom execute cert renew` reported "already up to date (identical cert)".
+    #
+    # The guard is a freshness rule rather than a role check on purpose: a
+    # role-gated publish would be wrong the moment the roles are swapped, and
+    # "do not overwrite something newer" is true on every node in every role.
+    slot_na = _shared_slot_not_after(crt_p, key_p)
+    if _expires_before(info.get("not_after"), slot_na):
+        return _refuse(
+            "the shared slot already holds a NEWER certificate (expires %s; the "
+            "one served here expires %s). Publishing would push the pair "
+            "backwards and stop this node adopting the newer one."
+            % (slot_na, info.get("not_after")))
+
+    try:
+        SHARED_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(SHARED_DIR, 0o700)
+        except OSError:
+            pass
+        crt_p.write_bytes(cert_pem)
+        _write_private(key_p, key_pem)
+        names = cert_dns_names(cert_pem)
+        meta_p.write_text(json.dumps({
+            "source": SHARED_SOURCE,
+            "subject": info["subject"],
+            "not_after": info["not_after"],
+            "names": names,
+            "published_at": datetime.now(timezone.utc).isoformat(),
+            "published_by": by,
+            "published_from": node_hostname(),
+            "note": "Served certificate shared with the peer node via the HA data "
+                    "sync. Only imported certs land here; the internal CA key and "
+                    "the per-node leaf never do.",
+        }, indent=2))
+    except Exception as exc:  # noqa: BLE001
+        return _refuse("could not write the shared slot: %s: %s"
+                       % (type(exc).__name__, exc))
+    jrn.record(CH_SHARED, jrn.OK_RENEWED, "published the served certificate to the "
+               "shared slot", by=by, days_left=info.get("days_left"),
+               not_after=info.get("not_after"))
+    return {"published": True, "reason": "", "names": names,
+            "not_after": info["not_after"], "days_left": info["days_left"]}
+
+
+def install_shared_cert(by: str = "ha-shared") -> dict:
+    """Adopt the shared certificate on THIS node, if it is one we may serve.
+
+    Idempotent and safe to run on either node: a slot holding what we already
+    serve is a no-op (no nginx reload), and anything we must not serve is
+    refused with the reason. Never raises."""
+    from . import cert_renew_log as jrn
+
+    def _refuse(reason: str) -> dict:
+        jrn.record(CH_SHARED, jrn.OK_ERROR, "shared certificate refused",
+                   error=reason, by=by)
+        return {"installed": False, "reason": reason}
+
+    crt_p, key_p, meta_p = _shared_paths()
+    if not (crt_p.exists() and key_p.exists()):
+        # Steady state on a pair that never published — not journalled, or the
+        # nightly timer would write one row per node per night forever.
+        return {"installed": False, "reason": "no shared certificate published"}
+    try:
+        smeta = json.loads(meta_p.read_text())
+    except Exception:  # noqa: BLE001
+        smeta = {}
+    src = (smeta.get("source") or "").strip().lower()
+    if src != SHARED_SOURCE:
+        return _refuse(
+            "the shared certificate declares source %r; only an %r certificate may "
+            "be shared between nodes (a CA-issued or bootstrap cert is minted for "
+            "ONE node's name)" % (src or "unknown", SHARED_SOURCE))
+
+    cert_pem, key_pem = crt_p.read_bytes(), key_p.read_bytes()
+    if CRT.exists() and CRT.read_bytes().strip() == cert_pem.strip():
+        return {"installed": False, "reason": "already up to date (identical cert)",
+                "days_left": current().get("days_left")}
+    try:
+        validate_pem(cert_pem, key_pem)
+    except ValueError as exc:
+        return _refuse("the shared cert/key pair does not validate: %s" % exc)
+    covers, missing, presented = cert_covers_served_names(cert_pem)
+    if not covers:
+        return _refuse(
+            "the shared certificate does not cover this node's served name(s) %s — "
+            "it presents %s. Installing it would serve a certificate every browser "
+            "rejects, so it is NOT installed."
+            % (", ".join(missing), ", ".join(presented) or "no DNS name"))
+    try:
+        # Same install path as import/issue: nginx -t, automatic rollback.
+        info = _install(cert_pem, key_pem, None, source=SHARED_SOURCE, by=by)
+    except Exception as exc:  # noqa: BLE001 — _install already rolled nginx back
+        return _refuse("install rejected: %s: %s" % (type(exc).__name__, exc))
+    jrn.record(CH_SHARED, jrn.OK_RENEWED, "installed the shared certificate", by=by,
+               days_left=info.get("days_left"), not_after=info.get("not_after"))
+    return {"installed": True, "reason": "", "names": presented,
+            "days_left": info.get("days_left"), "not_after": info.get("not_after")}

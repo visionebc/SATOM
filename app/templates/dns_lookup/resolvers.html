@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{# Administrator › Objects › DNS Resolvers (views.dns_tool.resolvers). #}
+
+{% block title %}{{ _('DNS Resolvers') }} — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Administrator') }}</span>
+  <span class="separator">/</span>
+  <span>{{ _('Objects') }}</span>
+  <span class="separator">/</span>
+  <span>{{ _('DNS Resolvers') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-hdd-network me-2 text-accent"></i>{{ _('DNS Resolvers') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('The servers DNS Lookup asks, one results column each. One list for the whole console: every ADOM uses it.') }}
+    </p>
+  </div>
+</div>
+{% include 'dns_lookup/_resolvers.html' %}
+{% endblock %}

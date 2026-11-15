@@ -1,0 +1,40 @@
+{# Which GUI template this page is drawn from, and how well it fits the device.
+   One line for every closeness (``layout_origin``: both builds named, a badge
+   by closeness), then what that means for the operator, then what the page is
+   on this build (absent / not measured).
+   `gui_aside` is an optional link on the right. #}
+{% from 'workspace/_layout_origin.html' import layout_origin %}
+{% set _bl = gx.label if gx is defined and gx else 'FortiWeb' %}
+{% set _o = fwg_origin(appliance, tpl, _bl) %}
+{% set _pn = tpl.get('page_notice') %}
+<div class="fwg-note" data-gui-origin-note>
+  <i class="bi bi-layout-text-window"></i>
+  <span>{{ layout_origin(_o) }}
+  {% if not _o.fw_read %}<span class="fw-badge fw-badge-warning" data-gui-fw="model" title="{{ _('The firmware was not read from the device yet: the layout was chosen by the model on record (%(dv)s).', dv=appliance.fw_version or '?') }}">{{ _('firmware not read yet') }}</span>{% endif %}
+  {% if tpl.origin and tpl.origin.source == 'pack' %}<span class="fw-badge fw-badge-secondary" data-gui-origin="pack" title="{{ tpl.origin.provenance }}">{{ _('knowledge pack') }}</span>{% endif %}
+  {% if not can_edit %}· {{ _('read-only') }}{% endif %}</span>
+  {% if gui_aside %}{{ gui_aside|safe }}{% endif %}
+</div>
+{# On a page the build does not have there are no fields to compare and nothing to draw:
+   the "older/newer train, some fields" warning is noise above the ONE statement below. #}
+{% if _o.consequence and not (_pn and _pn.kind == 'absent') %}
+<div class="fw-alert fw-alert-{{ 'info' if _o.badge == 'info' else 'warning' }}" data-gui-closeness="{{ _o.closeness }}">
+  <i class="bi bi-{{ 'info-circle' if _o.badge == 'info' else 'exclamation-triangle' }} me-1"></i>
+  {{ _o.consequence }}
+</div>
+{% endif %}
+{% if _pn %}
+<div class="fw-alert fw-alert-warning" data-gui-page-state="{{ 'absent' if _pn.kind == 'absent' else 'unknown' }}">
+  <i class="bi bi-{{ 'slash-circle' if _pn.kind == 'absent' else 'question-circle' }} me-1"></i>
+  {{ _pn.text }}{% if _pn.kind == 'absent' %} {{ _('This page is read-only: nothing can be created or saved here.') }}{% endif %}
+</div>
+{% endif %}
+{% if tpl.gui_absent %}
+<div class="fw-alert fw-alert-info" data-gui-absent>
+  <i class="bi bi-terminal me-1"></i>
+  {{ _('Not in GUI, but in CLI: %(dv)s has these objects and its own GUI does not draw them on this build (measured: no page of the GUI reads them). The fields come from the device\'s schema; every change shows its request first.', dv=appliance.name) }}
+</div>
+{% endif %}
+{% if not dev.opmode and _bl == 'FortiWeb' %}
+<div class="fw-alert fw-alert-warning">{{ _('Operation mode not cached for this device: fields that depend on it are shown and marked.') }}</div>
+{% endif %}

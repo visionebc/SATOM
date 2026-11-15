@@ -1,0 +1,1637 @@
+"""Tree-clone engine for the web app — recreate a WHOLE FortiWeb object tree on
+the same (or another) appliance, validating at the destination.
+
+This is the web port of the desktop ``services.clone`` engine. It walks the
+in-repo dependency map (:mod:`app.registry.dependencies`) — a **Web Protection
+Profile** (→ its ~40 protection sub-policies, each with child rule-lists) or a
+**Server Policy** — against a SOURCE appliance, collecting every ``via``-
+referenced named object DEEPEST-FIRST (a signature policy before the WPP that
+references it; pool members after their pool), then classifies each item against
+the DESTINATION:
+
+    - ``exists``      → already on the target ⇒ NOT copied (the validation: "if
+                        the WPP already exists, don't copy it").
+    - ``create``      → missing ⇒ will be created.
+    - ``cert``        → a certificate ⇒ SSH-only, never carried over REST.
+    - ``no-endpoint`` → urn has no writable registry endpoint ⇒ reported, kept.
+    - ``no-rest`` → the collection itself is unreachable over REST (-20001) ⇒
+      reported and NAMED, never written, never a blocking gap.
+    - ``empty``       → not found on the source.
+
+``apply_clone`` creates the ``create`` items via a caller-supplied ``write``
+callable (so snapshot/audit/dry-run live with the route, through ``FortiWebOps``).
+
+PURE PLANNER: it talks to the boxes only through a duck-typed reader exposing
+``get_raw(urn, mkey) -> list[dict]`` (and optionally ``get_object(logical, mkey)``
+for the reliable ``?mkey=`` scoped read), so ``tests/test_clone.py`` drives it
+with in-memory fakes — no Flask, no network.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterable, Protocol
+from urllib.parse import quote
+
+from ..registry.dependencies import (
+    DepNode,
+    SERVER_POLICY,
+    WEB_PROTECTION_PROFILE,
+    dep_node_for_urn,
+    field_ref_edges,
+    when_holds,
+)
+from ..registry.loader import registry_for, version_of
+from .fortiweb_field_schema import (
+    REST_UNREADABLE as _REST_UNREADABLE)
+from .fortiweb_ops import sanitize_payload as clean_for_write
+from . import clone_scope, objform
+
+# WPP root urns — splice the FULL profile subtree in wherever a parent only
+# *points* at a profile by name.
+_WPP_INLINE = WEB_PROTECTION_PROFILE.urn  # cmdb/waf/web-protection-profile.inline-protection
+_WPP_OFFLINE = "cmdb/waf/web-protection-profile.offline-protection"
+
+# Certificates can't move over REST (SSH-only) — flagged, never copied.
+# Objects whose payload is key/certificate MATERIAL: reported, never written
+# over REST. `certificate.ocsp-signing-certs` belongs here for a reason the
+# other two do not need -- a cmdb POST to it answers 200 and silently drops the
+# PEM, so omitting it would not fail loudly, it would create an empty shell and
+# call the clone a success. See `registry.dependencies._CERT_VERIFY_REFS`.
+#
+# ``certificate.sni`` is NOT in this set, and putting it here was a defect that
+# stopped an SNI policy from being cloned AT ALL. An SNI policy is a hostname
+# table — configuration, not secrets. Measured on fortiweb12 (7.6.8) with this
+# project's own client, every leg:
+#
+#   POST cmdb/system/certificate.sni          {"name": …}        -> 200
+#   GET  the object back    -> {"name": …, "sz_members": 1}  — no PEM field
+#   POST …/members?mkey=…   {"domain": …, "local-cert": …}   -> 200
+#   GET  the row back       -> domain / local-cert / inter-group /
+#                              lets-certificate / verify — no PEM field
+#
+# Classified as key material it took the whole subtree with it: the object read
+# ``cert`` ("SSH-only, not cloned over REST") and every member row then read
+# ``empty`` ("parent object is not being created"), so the copied policy landed
+# naming an SNI table the destination had never seen. What its ROWS name IS
+# material — the local certificate — and that edge is declared on the member
+# node (``registry.dependencies._SNI_MEMBER_REFS``) so it is reported and
+# mappable instead of being silently absent.
+_CERT_URNS = {"cmdb/system/certificate.local",
+              "cmdb/system/certificate.ocsp-signing-certs"}
+
+# ── Collections the REST API does not expose ────────────────────────────────
+#
+# A THIRD class, after ordinary configuration and key material. These
+# collections EXIST — the CLI lists them and a policy field resolves to them as
+# a live ``<datasource>`` — but REST, the only transport the clone writes over,
+# answers ``-20001 "The REST API has invalid URL."`` for them. Neither end can
+# be read, so neither end can be compared and nothing can be written.
+#
+# Getting the class wrong goes BOTH ways, which is why it is a status and not a
+# suppression:
+#
+#   * Undeclared, the reference is invisible: the policy is copied naming a
+#     profile the destination has never seen and the appliance refuses it with a
+#     bare ``-651`` that names nothing.
+#   * Declared as an ORDINARY node the source read is empty, which the
+#     classifier below reads as "not found on source" and turns into a BLOCKING
+#     gap — a false statement about an object that is there, and one that would
+#     make every FTP policy unclonable.
+#
+# Measured on fortiweb12 (7.6.8), every leg:
+#   GET cmdb/waf/ftp-protection-profile              -> 500 / -20001
+#   CLI `config waf ftp-protection-profile`          -> listed by `config waf ?`
+#                                                       yet refuses to be entered
+#   CLI `set ftp-protection-profile ?` on an FTP policy
+#                                                    -> `<datasource>  ftp
+#                                                       application protection
+#                                                       profile`
+# Derived, never re-typed: the same dict answers for the validator
+# (`ref_validate`), so a collection cannot be unreachable for the clone and
+# readable for the pre-write check.
+_REST_UNREACHABLE: dict[str, str] = {
+    "cmdb/" + coll: why for coll, why in _REST_UNREADABLE.items()
+}
+
+# Both classes whose empty payload is EXPECTED rather than a gap, in ONE place.
+# Two suppressions covering one hole would mean neither could be shown to be
+# load-bearing.
+_EXEMPT_FROM_GAPS: frozenset = frozenset(_CERT_URNS) | frozenset(_REST_UNREACHABLE)
+
+# The VIP address object — the one payload a clone rewrites when the copy must
+# come up on a dummy IP (bulk clones, or the IP the operator typed).
+_VIP_URN = "cmdb/system/vip"
+_VSERVER_URN = "cmdb/server-policy/vserver"
+_VIPLIST_URN = "cmdb/server-policy/vserver/vip-list"
+_WPP_URNS = (_WPP_INLINE, _WPP_OFFLINE)
+
+#: Public alias. The comparison page has to recognise a WPP root so it can
+#: compare the profile as ONE package rather than entry by entry; a second
+#: spelling of these two urns over there would drift the day an offline
+#: variant is added here.
+WPP_URNS = _WPP_URNS
+
+
+def interface_fields() -> frozenset[str]:
+    """Every payload field that names a ``system/interface``.
+
+    DERIVED from ``fortiweb_field_schema.REF_ENDPOINTS`` rather than restated
+    here. A hand-kept copy is how this stops agreeing with the schema on the
+    next FortiWeb release — and the failure mode is silent: a field that has
+    dropped out of the copy is simply never checked, so the clone binds it to a
+    port the destination may not have and the gate says everything is fine.
+    Today this resolves to ``interface`` (system/vip + the vip-list row),
+    ``data-capture-port`` and ``block-port`` (the policy itself)."""
+    from .fortiweb_field_schema import REF_ENDPOINTS
+    return frozenset(k for k, v in REF_ENDPOINTS.items()
+                     if v == "system/interface")
+
+# Values that mean "no reference" when read off a parent field.
+_EMPTY_REFS = {"", "0", "disable", "enable", "none", "None", "http://", "https://"}
+
+OnLog = Callable[[str], None]
+_NOOP: OnLog = lambda _m: None  # noqa: E731
+
+
+# --------------------------------------------------------------------------- #
+#  registry urn -> logical index (the web registry is a flat {logical: urn})    #
+# --------------------------------------------------------------------------- #
+def registry_urn_index(version: str = "") -> dict[str, str]:
+    """``{collection: logical}`` inverted from the FortiWeb registry.
+
+    Keyed by the NORMALISED collection (``objform.collection_of``) because
+    the registry spells urns as full REST paths (``/api/v2.0/cmdb/waf/…``)
+    while ``dependencies.py`` uses the bare ``cmdb/waf/…`` form — both reduce to
+    the same ``waf/…`` collection, which is how a tree urn finds its logical name.
+
+    ``version`` is a box's build: the map is ``loader.registry_for`` of that
+    build (empty → the pure registry)."""
+    return {objform.collection_of(urn): logical
+            for logical, urn in registry_for("fortiweb", version).items()}
+
+
+def _logical_to_urn(logical: str, version: str = "") -> str:
+    return registry_for("fortiweb", version).get(logical, "")
+
+
+def _reader_version(reader: Any) -> str:
+    """The build behind a clone Reader (its client's box), ``""`` if unknown."""
+    return version_of(getattr(reader, "client", None))
+
+
+# --------------------------------------------------------------------------- #
+#  pure helpers (replace library.inspector on the desktop)                      #
+# --------------------------------------------------------------------------- #
+def unwrap(value: Any) -> Any:
+    return value
+
+
+def attr(obj: dict, *names: str) -> Any:
+    if isinstance(obj, dict):
+        for n in names:
+            if n in obj:
+                return obj[n]
+    return None
+
+
+class Reader(Protocol):
+    """Read side of an appliance: raw GET by concrete urn + path key."""
+
+    def get_raw(self, urn: str, mkey: str = "") -> list[dict]: ...
+
+
+# --------------------------------------------------------------------------- #
+#  Client adapter — wraps the web FortiWebClient as a clone Reader              #
+# --------------------------------------------------------------------------- #
+def _unwrap_list(raw: Any) -> list[dict]:
+    """Object list out of a FortiWeb ``{"results": …}`` envelope (errcode → [])."""
+    if isinstance(raw, dict):
+        res = raw.get("results", raw.get("data"))
+        if isinstance(res, dict) and res.get("errcode") not in (None, 0):
+            return []
+        if isinstance(res, list):
+            return [r for r in res if isinstance(r, dict)]
+        if isinstance(res, dict):
+            return [res]
+        return [raw] if "name" in raw else []
+    return [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+
+
+class ClientReader:
+    """Duck-typed clone Reader over a web :class:`FortiWebClient`.
+
+    ``get_object(logical, mkey)`` is the RELIABLE scoped read (logical → urn via
+    the registry → ``?mkey=``); ``get_raw(urn, mkey)`` is the path-style fallback.
+    Neither raises (returns ``[]`` on any transport failure)."""
+
+    def __init__(self, client: Any) -> None:
+        self.client = client
+
+    def get_raw(self, urn: str, mkey: str = "") -> list[dict]:
+        try:
+            path = objform.rest_path(urn)
+            if mkey:
+                path += "?mkey=%s" % quote(str(mkey), safe="")
+            return _unwrap_list(self.client.get(path).json())
+        except Exception:  # noqa: BLE001
+            return []
+
+    def get_object(self, logical: str, mkey: str = "") -> list[dict]:
+        urn = _logical_to_urn(logical, version_of(self.client))
+        if not urn:
+            return []
+        try:
+            path = objform.rest_path(urn) + "?mkey=%s" % quote(str(mkey), safe="")
+            return _unwrap_list(self.client.get(path).json())
+        except Exception:  # noqa: BLE001
+            return []
+
+
+# --------------------------------------------------------------------------- #
+#  Plan item                                                                   #
+# --------------------------------------------------------------------------- #
+@dataclass
+class CloneItem:
+    """One object (or sub-table row) in a clone plan, with its destination verdict."""
+
+    label: str
+    urn: str
+    logical: str | None
+    mkey: str
+    parent_mkey: str
+    kind: str               # "object" | "subrow"
+    depth: int
+    payload: dict
+    status: str = "create"  # create | update | exists | untouched | cert |
+                            # no-endpoint | no-rest | empty
+    #: ``untouched`` is NOT a flavour of ``exists``. "the destination has
+    #: this row" and "the destination does NOT have it and we deliberately
+    #: are not putting it there" are opposite facts about the destination,
+    #: and only one of them leaves the operator something to do. Folding
+    #: them together is the whole defect additive mode exists to avoid.
+    note: str = ""
+    applied: bool = False
+    result: str = ""
+    verified: str = ""   # after a real clone: present | missing | unverifiable
+    #: The write's own re-read verdict (``object_refresh``): verified |
+    #: mismatch | unverified; "" when nothing was written.
+    check: str = ""
+    #: FortiWeb PREDEFINED marker, read off the RAW payload before
+    #: ``clean_for_write`` strips it. See :func:`clone_scope.is_factory`.
+    factory: bool = False
+    #: Same-device clonability verdict (:mod:`clone_scope`); "" until classified.
+    scope: str = ""
+    scope_reason: str = ""
+    #: Set by :func:`deep_rename` — the source object this copy was derived from.
+    renamed_from: str = ""
+    #: Set ONLY on an ``update`` item: the DESTINATION row that already owns this
+    #: row's unique key, and THAT row's id. The write is addressed by the
+    #: destination's id — a PUT carrying the source row's own id would address
+    #: some unrelated row of the destination table, and it would look like a
+    #: successful reconcile.
+    dst_row_key: str = ""
+    dst_row: dict = field(default_factory=dict)
+
+    @property
+    def will_create(self) -> bool:
+        return self.status == "create"
+
+    def to_dict(self) -> dict:
+        return {
+            "label": self.label, "urn": self.urn, "logical": self.logical,
+            "mkey": self.mkey, "parent_mkey": self.parent_mkey, "kind": self.kind,
+            "depth": self.depth, "status": self.status, "note": self.note,
+            "result": self.result, "verified": self.verified,
+            "check": self.check,
+            "factory": bool(self.factory), "scope": self.scope,
+            "scope_reason": self.scope_reason, "renamed_from": self.renamed_from,
+            "dst_row_key": self.dst_row_key,
+        }
+
+
+# --------------------------------------------------------------------------- #
+#  Reference-field parsing                                                      #
+# --------------------------------------------------------------------------- #
+def _is_named_ref(node: DepNode) -> bool:
+    return bool(node.via) and "=" not in node.via
+
+
+#: Reference fields whose value is a SPACE-SEPARATED LIST of object names
+#: rather than one name. Declared PER FIELD, and only for fields measured to be
+#: lists, for the same reason the sub-row key table is per table: a space is a
+#: LEGAL character in a FortiWeb object name nearly everywhere (a health check,
+#: a URL access policy, a WPP and an SNI policy all accept ``"zz probe space"``,
+#: and one named ``"zztrail "`` keeps its trailing space and can only be deleted
+#: WITH it — all measured on 7.6.8). Splitting every reference would turn one
+#: legal name into two that do not exist, which is this same failure moved
+#: elsewhere. The split is unambiguous HERE because the scripting collection
+#: REFUSES a name containing a space (``-2004 Invalid name.``).
+#:
+#: Measured on FortiWeb 7.6.8: a policy with ONE script reads
+#: ``scripting-list = "zzprobe-lua "`` and with two,
+#: ``"zzprobe-lua zzprobe-lua2 "`` — a separator AND a trailing space. Read as a
+#: single name the mkey carries that trailing space, the source read answers
+#: ``-3 The entry is not found``, the payload comes back empty and
+#: :func:`validate_completeness` REFUSES the clone. So the ONE-script case failed
+#: too, not just the multi-script one — which is why "the script is on both
+#: boxes" never helped: the destination was never consulted.
+_LIST_REF_FIELDS = {"scripting-list"}
+
+
+def referenced_names(obj: dict, via: str) -> list[str]:
+    """Names referenced by ``obj`` through the ``via`` edge (handles ``a / b``)."""
+    names: list[str] = []
+    for token in via.split("/"):
+        token = token.strip()
+        if not token or "=" in token or " " in token:
+            continue
+        val = unwrap(attr(obj, token, token.replace("-", "_")))
+        if not isinstance(val, str) or not val:
+            continue
+        # A DECLARED list field is split; every other field is taken VERBATIM,
+        # trailing space included, because that space may be part of the name.
+        for name in (val.split() if token in _LIST_REF_FIELDS else [val]):
+            if name and name not in _EMPTY_REFS and name not in names:
+                names.append(name)
+    return names
+
+
+def _row_key(row: dict) -> str:
+    for k in ("name", "id", "_mkey"):
+        v = row.get(k)
+        if v not in (None, ""):
+            return str(v)
+    return ""
+
+
+def _content_keys(payload) -> list:
+    """The distinguishing (business) fields of a by-parent row: scalar, non-empty,
+    server-managed keys stripped, and the auto-assigned ``id`` excluded (it differs
+    per box). These identify "the same row" across two appliances."""
+    if not isinstance(payload, dict):
+        return []
+    clean = clean_for_write(payload)
+    return [k for k, v in clean.items()
+            if k != "id" and not isinstance(v, (dict, list)) and str(v) != ""]
+
+
+def _subrow_in(payload, rows) -> bool:
+    """Is a by-parent row with this CONTENT already present in ``rows``?
+
+    Matched by business content (:func:`_content_keys`), NOT by ``id`` — sub-table
+    ids are auto-assigned, so the same logical row has different ids on source vs
+    destination. A row with no distinguishing content is treated as present (never
+    recreate ⇒ never risk a duplicate)."""
+    keys = _content_keys(payload)
+    if not keys:
+        return True
+    clean_src = clean_for_write(payload)
+    for r in rows:
+        cr = clean_for_write(r) if isinstance(r, dict) else {}
+        if all(str(clean_src.get(k, "")) == str(cr.get(k, "")) for k in keys):
+            return True
+    return False
+
+
+# --------------------------------------------------------------------------- #
+#  Rows the destination already owns (unique-key collisions)                    #
+# --------------------------------------------------------------------------- #
+# A by-parent row used to be classified by asking "is this EXACT row already at
+# the destination?" (:func:`_subrow_in`). The appliance does not ask that. It
+# enforces uniqueness on a NATURAL KEY — a SUBSET of the row — so a destination
+# row carrying the same key with different content is ABSENT to the tool and
+# PRESENT to the box: the plan says create, the box refuses it as a duplicate,
+# and the destination keeps serving the old value.
+#
+# Measured on FortiWeb 7.6.8 (build 1128), fortiweb12, not inferred:
+#
+#   certificate.sni/members   {domain: D, local-cert: C}  -> 200
+#                             {domain: D}                 -> -5 duplicate
+#                             {domain: D, local-cert: C}  -> -5 duplicate
+#                             {domain: D2, local-cert: C} -> 200
+#     => the key is `domain` ALONE. The certificate is NOT part of it, which is
+#        exactly why "the host is already listed but is served no certificate"
+#        was unreachable through a create.
+#
+#   ip-group/members          POST {ip: X} twice -> -6014 "The IP has already
+#                             existed in the table."
+#     => the key is `ip`, and note the errcode: a duplicate refusal is NOT one
+#        code across tables, so nothing here may be built on matching -5.
+#
+# Only MEASURED tables appear. A sub-table with no entry keeps the previous
+# behaviour EXACTLY — being wrong in the old way beats guessing a key and
+# silently overwriting a row that was never a conflict.
+_SUBROW_KEYS: dict = {
+    "system/certificate.sni/members": ("domain",),
+    "server-policy/ip-group/members": ("ip",),
+}
+
+
+def _bare_urn(urn: str) -> str:
+    """A urn without its ``cmdb/`` prefix, so a lookup never misses on shape."""
+    u = str(urn or "")
+    return u[5:] if u.startswith("cmdb/") else u
+
+
+def subrow_key_fields(urn: str) -> tuple:
+    """The MEASURED unique-key fields of a by-parent sub-table, or ``()``."""
+    return _SUBROW_KEYS.get(_bare_urn(urn), ())
+
+
+def subrow_diff(payload: Any, row: Any) -> list:
+    """``[(field, destination_value, source_value)]`` for a keyed collision.
+
+    Only fields the SOURCE row carries are compared: a destination row
+    legitimately carries defaults the source never named, and reporting those as
+    differences would bury the one line that matters under twenty that do not."""
+    if not isinstance(payload, dict) or not isinstance(row, dict):
+        return []
+    s, d = clean_for_write(payload), clean_for_write(row)
+    return [(k, str(d.get(k, "")), str(s.get(k, "")))
+            for k in _content_keys(payload)
+            if str(s.get(k, "")) != str(d.get(k, ""))]
+
+
+def subrow_update_payload(payload: Any, dst_row: Any, urn: str) -> dict:
+    """The body that reconciles ONE destination row — the MINIMUM EDIT.
+
+    Built from the DESTINATION row, with the source's **non-empty** fields laid
+    over it. The empty ones are deliberately NOT carried, and that is the whole
+    decision here: a blank on the source means "this box does not use this
+    field", not "delete whatever the other box has". Carrying blanks would let a
+    reconcile silently clear a destination field that :func:`subrow_diff` never
+    listed — a change with no line in the plan, which is the exact failure this
+    port exists to end.
+
+    Consequence, stated plainly: a reconciled row is NOT a byte-for-byte copy of
+    the source row. It is the destination's row carrying everything the source
+    NAMES. A row that must match exactly has to be deleted and re-created, and
+    the cloner never deletes.
+
+    ONE author on purpose: the writer and its guard read this same function, so
+    they cannot drift apart the way two hand-written merges would."""
+    if not isinstance(payload, dict):
+        return {}
+    dst = clean_for_write(dst_row) if isinstance(dst_row, dict) else {}
+    body = dict(dst)
+    s = clean_for_write(payload)
+    for k in _content_keys(payload):
+        body[k] = s[k]
+    for k in subrow_key_fields(urn):
+        if str(s.get(k, "")) != "":
+            body[k] = s[k]
+    row_id = _row_key(dst) if dst else ""
+    if row_id:
+        body["id"] = row_id
+    return body
+
+
+def subrow_conflict(payload: Any, rows: Iterable[dict], urn: str) -> dict:
+    """The destination row that OWNS this row's unique key WHILE DIFFERING.
+
+    ``{}`` when the table has no measured key, when nothing collides, or when the
+    colliding row is IDENTICAL (that is :func:`_subrow_in`'s "exists", not a
+    conflict). An empty key value never collides: a blank is not an identity."""
+    keys = subrow_key_fields(urn)
+    if not keys or not isinstance(payload, dict):
+        return {}
+    s = clean_for_write(payload)
+    want = [str(s.get(k, "")) for k in keys]
+    if not all(want):
+        return {}
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        cr = clean_for_write(r)
+        if [str(cr.get(k, "")) for k in keys] != want:
+            continue
+        return dict(r) if subrow_diff(payload, r) else {}
+    return {}
+
+
+def scoped_rows(reader: Any, urn: str, logical: str | None, parent_mkey: str) -> list[dict]:
+    """A by-parent sub-table's rows SCOPED to ``parent_mkey``.
+
+    Prefer ``get_object(logical, parent)`` (the reliable ``?mkey=`` read); fall
+    back to ``get_raw`` for in-memory test fakes. The path-style read leaks the
+    WHOLE parent collection when the sub-table is empty (FortiWeb quirk)."""
+    get_object = getattr(reader, "get_object", None)
+    if logical and callable(get_object):
+        rows = get_object(logical, parent_mkey)
+        if isinstance(rows, dict):
+            return [rows]
+        if isinstance(rows, list):
+            return [r for r in rows if isinstance(r, dict)]
+    return reader.get_raw(urn, parent_mkey)
+
+
+def subtable_rows(reader: Any, urn: str, logical: str | None,
+                  parent_mkey: str) -> list[dict]:
+    """:func:`scoped_rows` for a BY-PARENT sub-table, with the parent echo dropped.
+
+    FortiWeb does **not** 404 a sub-table path it doesn't implement: it answers
+    with the PARENT OBJECT itself. Verified on fortiweb08 — GET
+    ``cmdb/waf/custom-access.rule/<anything>?mkey=car-ratelimit`` returns the
+    ``car-ratelimit`` rule. Handed to the planner that reads as one sub-table
+    row, so the clone would POST the rule back into itself as a filter.
+
+    That is why the dependency tree can't be widened safely without this guard:
+    every sub-table declared for an object is one more path that may be absent on
+    an older firmware, and each absent one would manufacture a bogus row.
+
+    The discriminator is the row's own ``name``: a by-parent row is keyed by its
+    auto-assigned ``id``, so a row whose ``name`` IS the parent's mkey is the
+    parent coming back. Swept over the whole live fortiweb08 server-policy tree
+    (57 objects / 30 sub-rows): zero legitimate rows collide, and only one
+    sub-row carries a ``name`` field at all (``x-frame-options`` under
+    ``hhs-full``, which differs from its parent).
+
+    An absent sub-table therefore contributes nothing, which is what it means.
+    """
+    rows = scoped_rows(reader, urn, logical, parent_mkey)
+    if not parent_mkey:
+        return rows
+    return [r for r in rows
+            if not (isinstance(r, dict) and str(r.get("name", "")) == str(parent_mkey))]
+
+
+def _rich(node: DepNode) -> DepNode:
+    """Splice the FULL WPP subtree wherever a node only names a profile."""
+    if node.urn == _WPP_INLINE and not node.children:
+        return WEB_PROTECTION_PROFILE
+    return node
+
+
+# --------------------------------------------------------------------------- #
+#  Planner                                                                      #
+# --------------------------------------------------------------------------- #
+class ClonePlanner:
+    """Builds (and validates) a clone plan for a dependency-tree root."""
+
+    def __init__(self, src: Reader, dst: Reader) -> None:
+        self.src = src
+        self.dst = dst
+        # collection -> logical, from the TARGET box's build: what the plan
+        # can write is what the destination serves.
+        self.urn_index = registry_urn_index(_reader_version(dst))
+        self._follow_wpp = True  # set per-plan; False prunes the WPP subtree
+        #: ``{(urn, mkey): {(parent_urn, parent_mkey), …}}`` — WHO names each
+        #: collected object. A same-device clone needs it because re-pointing a
+        #: reference is a write to the PARENT: a child may only be duplicated
+        #: when every object that names it is itself being created.
+        self._refs: dict[tuple[str, str], set[tuple[str, str]]] = {}
+        #: ``[(parent_urn, parent_mkey, via, child_urn, child_mkey), …]`` —
+        #: the same edges ``_refs`` records, WITH the field they were
+        #: reached through. ``_refs`` answers "who names this?"; a
+        #: comparison needs "what ROLE does it play?", and only the field
+        #: says that. Written beside every ``_refs`` write, never instead.
+        self.edges: list[tuple[str, str, str, str, str]] = []
+
+    def _lg(self, urn: str) -> str | None:
+        """Logical name for a urn, matched on the normalised collection so a
+        ``cmdb/…`` tree urn finds its ``/api/v2.0/cmdb/…`` registry entry."""
+        return self.urn_index.get(objform.collection_of(urn))
+
+    def _fetch(self, urn: str, mkey: str) -> dict:
+        rows = scoped_rows(self.src, urn, self._lg(urn), mkey)
+        if not rows and urn == _WPP_INLINE:
+            rows = scoped_rows(self.src, _WPP_OFFLINE, self._lg(_WPP_OFFLINE), mkey)
+        return rows[0] if rows else {}
+
+    def _visit(
+        self, node: DepNode, mkey: str, depth: int,
+        items: list[CloneItem], visited: set[tuple[str, str]],
+    ) -> None:
+        if not mkey:
+            return
+        key = (node.urn, mkey)
+        if key in visited:
+            return
+        visited.add(key)
+        obj = self._fetch(node.urn, mkey)
+
+        # 1) referenced named objects FIRST (deepest-first: deps before dependents)
+        #    The declared children, then the cross-cutting FIELD edges this
+        #    object actually carries. Same pass, and BEFORE the object itself: a
+        #    `trigger` is a dependency like any other, and the appliance rejects
+        #    the object outright when the policy it names is absent.
+        for child in list(node.children) + field_ref_edges(obj):
+            if _is_named_ref(child) and when_holds(child, obj):
+                if not self._follow_wpp and child.urn in _WPP_URNS:
+                    continue  # "don't copy the WPP" — prune the whole subtree
+                for ref in referenced_names(obj, child.via):
+                    # Recorded even when the child was already visited: the
+                    # SECOND parent is exactly the one that makes a re-point
+                    # unsafe, and ``visited`` would hide it.
+                    self._refs.setdefault((child.urn, ref), set()).add((node.urn, mkey))
+                    self.edges.append((node.urn, mkey, child.via, child.urn, ref))
+                    self._visit(_rich(child), ref, depth + 1, items, visited)
+
+        # 2) THIS object
+        items.append(CloneItem(
+            label=node.fortiweb, urn=node.urn,
+            logical=self._lg(node.urn), mkey=mkey,
+            parent_mkey="", kind="object", depth=depth,
+            payload=clean_for_write(obj) if obj else {},
+            factory=clone_scope.is_factory(obj),
+        ))
+
+        # 3) child sub-tables (by_parent), created AFTER this object.
+        for child in node.children:
+            if _is_named_ref(child) or not child.urn:
+                continue
+            for row in subtable_rows(self.src, child.urn, self._lg(child.urn), mkey) or []:
+                for g in list(child.children) + field_ref_edges(row):
+                    if _is_named_ref(g) and when_holds(g, row):
+                        if not self._follow_wpp and g.urn in _WPP_URNS:
+                            continue  # content-routing rows can name a WPP too
+                        for ref in referenced_names(row, g.via):
+                            # The referrer is the ENCLOSING object, not the row:
+                            # the row is created with its parent, so the parent
+                            # is what has to be created for a re-point to be safe.
+                            self._refs.setdefault((g.urn, ref), set()).add((node.urn, mkey))
+                            self.edges.append((node.urn, mkey, g.via, g.urn, ref))
+                            self._visit(_rich(g), ref, depth + 2, items, visited)
+                items.append(CloneItem(
+                    label="%s · %s" % (node.fortiweb, child.fortiweb), urn=child.urn,
+                    logical=self._lg(child.urn), mkey=_row_key(row),
+                    parent_mkey=mkey, kind="subrow", depth=depth + 1,
+                    payload=clean_for_write(row),
+                ))
+
+    def _exists_at_dst(self, urn: str, mkey: str) -> bool:
+        if not mkey:
+            return False
+        return bool(scoped_rows(self.dst, urn, self._lg(urn), mkey))
+
+    def _dst_subrows(self, urn: str, logical, parent_mkey: str):
+        """Destination sub-table rows for (urn, parent), cached per ``plan()``.
+        ``None`` means the destination could not be read (never recreate then)."""
+        cache = getattr(self, "_subrow_cache", None)
+        if cache is None:
+            cache = self._subrow_cache = {}
+        key = (urn, parent_mkey)
+        if key not in cache:
+            try:
+                cache[key] = subtable_rows(self.dst, urn, logical, parent_mkey)
+            except Exception:  # noqa: BLE001 — unreadable dst ⇒ assume present
+                cache[key] = None
+        return cache[key]
+
+    def _subrow_exists_at_dst(self, it: "CloneItem") -> bool:
+        """Is THIS by-parent row already present under its (existing) parent on the
+        destination? The gap that left a partial clone's binding rows uncreated:
+        a parent that survived a failed run existed, so its missing sub-rows were
+        wrongly assumed present. Matched by content, so recovery re-clones only the
+        rows that are genuinely absent."""
+        rows = self._dst_subrows(it.urn, it.logical, it.parent_mkey)
+        if rows is None:
+            return True
+        return _subrow_in(it.payload, rows)
+
+    def _subrow_owner_at_dst(self, it: "CloneItem") -> dict:
+        """The destination row that already OWNS this row's unique key.
+
+        Read from the SAME cached destination rows the content match uses: two
+        reads of one table could disagree, and the disagreement would decide
+        between a create and an update."""
+        rows = self._dst_subrows(it.urn, it.logical, it.parent_mkey)
+        if not rows:
+            return {}
+        return subrow_conflict(it.payload, rows, it.urn)
+
+    def collect(self, root: DepNode, mkey: str, *, new_name: str = "",
+                follow_wpp: bool = True) -> list[CloneItem]:
+        """Walk the source tree and return every object + sub-table row WITH ITS
+        LIVE PAYLOAD, deepest-first, WITHOUT destination classification."""
+        items: list[CloneItem] = []
+        self._follow_wpp = follow_wpp
+        self._refs = {}
+        self.edges = []
+        try:
+            self._visit(_rich(root), mkey, 0, items, set())
+        finally:
+            self._follow_wpp = True
+
+        if new_name:
+            root_item = next(
+                (it for it in items if it.depth == 0 and it.kind == "object"), None)
+            if root_item is not None:
+                old = root_item.mkey
+                root_item.mkey = new_name
+                if isinstance(root_item.payload, dict):
+                    root_item.payload = {**root_item.payload, "name": new_name}
+                if new_name != old:
+                    for it in items:
+                        if it.kind == "subrow" and it.parent_mkey == old:
+                            it.parent_mkey = new_name
+        return items
+
+    def plan(self, root: DepNode, mkey: str, *, new_name: str = "",
+             follow_wpp: bool = True, wpp_new_name: str = "",
+             wpp_suffix: str = "", deep_suffix: str = "",
+             managed: dict | None = None,
+             additive_only: bool = False,
+             clone_anyway: Iterable[str] = (),
+             own_listener: str = "") -> list[CloneItem]:
+        """Walk the source tree and classify each item vs the destination.
+
+        ``follow_wpp=False`` prunes the Web Protection Profile subtree (the copy
+        keeps naming the profile — the destination must already have it).
+        ``wpp_new_name`` re-labels the copied WPP (and re-points the root
+        policy's reference) so a differing same-name profile on the destination
+        is never silently reused; ``wpp_suffix`` does the same per-profile
+        (``<wpp>-suffix``) — the bulk form, where one fixed name would collide
+        across policies binding different profiles.
+
+        ``deep_suffix`` switches on the SAME-DEVICE mode: every sub-object the
+        root may legitimately own is copied under ``<name>-<deep_suffix>`` and
+        the references are re-pointed, instead of being classified ``exists``
+        and left pointing at the original's objects. Without it a same-device
+        clone shares its whole subtree — see :mod:`clone_scope`.
+
+        ``additive_only`` moves the unit of "the destination already has this"
+        from the ROW up to the OBJECT: an object the destination does not have
+        is created whole, with every row; an object it DOES have is left exactly
+        as it is. That closes BOTH write paths into a live object, not just the
+        loud one. The quiet one is the dangerous one — a pool that GAINS a
+        member serves traffic it was not serving a minute ago, which is as
+        modified as a pool whose member was rewritten, and it arrives labelled
+        "recreating". Every row held back this way becomes ``untouched``: it is
+        the only difference a run can produce that leaves NO trace on the
+        destination, so it is reported instead of written."""
+        items = self.collect(root, mkey, new_name=new_name, follow_wpp=follow_wpp)
+        self._subrow_cache = {}
+        if follow_wpp and (wpp_new_name or wpp_suffix):
+            wpp = next((it for it in items
+                        if it.urn in _WPP_URNS and it.kind == "object"), None)
+            if wpp is not None:
+                rename_wpp(items, wpp_new_name or (wpp.mkey + wpp_suffix))
+        self.renames: list[dict] = []
+        if own_listener:
+            # SAME-BOX clone of a Server Policy: the copy needs its OWN virtual
+            # server and VIP. Measured on fortiweb17 (7.6.8) / fortiweb18
+            # (8.0.6): a second policy on the same vserver — or on a NEW vserver
+            # naming the same VIP — with the same service answers -7212 "The
+            # same service port cannot be used for one Virtual IP twice", and a
+            # second VIP object on the same address answers -7970. So the
+            # vserver and its VIPs are copied under ``<name>-<own_listener>``
+            # (the VIP address is rewritten by the caller); everything else
+            # (pool, WPP, …) stays shared, as before.
+            self.renames = deep_rename(items, own_listener,
+                                       listener_keys(items),
+                                       exists=self._exists_at_dst,
+                                       index=via_field_index(_rich(root)))
+        if deep_suffix:
+            classify_scope(items, managed)
+            created = resolve_shared(items, self._refs, root_mkey=mkey,
+                                     clone_anyway=clone_anyway)
+            self.renames = deep_rename(items, deep_suffix, created,
+                                       exists=self._exists_at_dst,
+                                       index=via_field_index(_rich(root)))
+        existing_parents: set[str] = set()
+        created_parents: set[str] = set()
+        for it in items:
+            if it.urn in _CERT_URNS:
+                it.status, it.note = "cert", "Certificate — SSH-only, not cloned over REST"
+            elif it.urn in _REST_UNREACHABLE:
+                # Ordered ABOVE the empty-payload branch on purpose. The read did
+                # come back empty and it always will; the reason is known here
+                # and nowhere else, and the generic branch would turn it into a
+                # blocking gap that misstates a real object as missing.
+                it.status, it.note = "no-rest", _REST_UNREACHABLE[it.urn]
+            elif not it.payload:
+                it.status, it.note = "empty", "not found on source"
+            elif it.logical is None:
+                it.status, it.note = "no-endpoint", "no write endpoint in the registry"
+            elif it.kind == "object" and self._exists_at_dst(it.urn, it.mkey):
+                it.status, it.note = "exists", "already exists on destination"
+                existing_parents.add(it.mkey)
+            elif it.kind == "subrow" and it.parent_mkey not in created_parents:
+                if it.parent_mkey in existing_parents:
+                    if self._subrow_exists_at_dst(it):
+                        it.status, it.note = "exists", "row already present under the existing parent"
+                    elif additive_only:
+                        # BOTH remaining outcomes write INTO an object the
+                        # destination already owns, so both are held back here:
+                        # the keyed collision (a rewrite) and the absent row (an
+                        # append). Which one it was still gets named — the
+                        # operator has to be able to tell "a row that differs was
+                        # not rewritten" from "a row that is missing was not
+                        # added"; they call for different work.
+                        it.status = "untouched"
+                        it.note = (
+                            "additive mode — the destination owns this key and "
+                            "its row was NOT rewritten"
+                            if self._subrow_owner_at_dst(it) else
+                            "additive mode — the parent already exists on the "
+                            "destination and this row was NOT added")
+                    else:
+                        # A row that is not there BY CONTENT may still be there
+                        # BY KEY. Planning a create for it is planning a
+                        # duplicate refusal — the defect this branch ends.
+                        owner = self._subrow_owner_at_dst(it)
+                        if owner:
+                            it.status = "update"
+                            it.dst_row = owner
+                            it.dst_row_key = _row_key(owner)
+                            diff = subrow_diff(it.payload, owner)
+                            it.note = (
+                                "the destination already has this %s — %s"
+                                % (" / ".join(
+                                    "%s=%s" % (k, str(clean_for_write(it.payload)
+                                                      .get(k, "")))
+                                    for k in subrow_key_fields(it.urn)),
+                                   "; ".join("%s: %s -> %s"
+                                             % (f, d or "(blank)", s or "(blank)")
+                                             for f, d, s in diff[:4])
+                                   or "content differs"))
+                        else:
+                            it.status, it.note = "create", "missing under an existing parent \u2014 recreating"
+                else:
+                    it.status, it.note = "empty", "parent object is not being created"
+            else:
+                it.status = "create"
+                if it.kind == "object":
+                    created_parents.add(it.mkey)
+        return items
+def validate_completeness(items: list["CloneItem"]) -> list[dict]:
+    """Referential-completeness gate over a LIVE-collected tree. Returns the
+    BLOCKING issues: every ``object`` node that was referenced on the source but
+    whose live payload came back empty (renamed, deleted, or the read did not
+    resolve). Certificates are exempt \u2014 their key material never travels over
+    REST, so an empty cert payload is expected, not a gap. Empty by-parent
+    sub-tables are trusted: the caller only validates a tree collected from a
+    source that already answered live + healthy, so an empty sub-table is a real
+    empty table, not a failed read (which the caller blocks upstream)."""
+    # A name that resolved on ANY node covers the predefined -> custom fallback
+    # (a policy naming "HTTP" visits service.predefined [resolves] AND
+    # service.custom [empty]; the empty one is not a gap). Only a name that
+    # resolved NOWHERE is a real missing object.
+    resolved = {it.mkey for it in items
+                if it.kind == "object" and it.payload
+                and it.urn not in _EXEMPT_FROM_GAPS}
+    issues: list[dict] = []
+    seen: set[str] = set()
+    for it in items:
+        if it.kind != "object" or it.urn in _EXEMPT_FROM_GAPS:
+            continue
+        if it.payload or it.mkey in resolved or it.mkey in seen:
+            continue
+        seen.add(it.mkey)
+        issues.append({
+            "object": it.label, "mkey": it.mkey, "urn": it.urn,
+            "reason": "referenced on the source tree but not found live "
+                      "(renamed, deleted, or unreadable)",
+        })
+    return issues
+
+
+
+
+# --------------------------------------------------------------------------- #
+#  Apply                                                                        #
+# --------------------------------------------------------------------------- #
+def apply_clone(
+    items: list[CloneItem],
+    write: Callable[[CloneItem], None],
+    *,
+    dry_run: bool = True,
+    on_log: OnLog = _NOOP,
+) -> list[CloneItem]:
+    """Write every ``create``, ``update`` and ``obj-update`` item (skip the rest).
+
+    An ``update`` is a WRITE and is never folded into "already there": the whole
+    point of that status is that the destination is serving a different value,
+    so a run that reported it as skipped would claim nothing was written while a
+    write is planned.
+
+    ``obj-update`` is the same statement about an OBJECT rather than a row — an
+    existing destination object whose own fields the operator accepted from the
+    source. It is a separate status and not an ``update`` because the two are
+    addressed differently on the wire (``?mkey=`` alone versus ``?mkey=`` plus
+    ``?sub_mkey=``), and sending one as the other addresses nothing."""
+    for it in items:
+        if it.status not in ("create", "update", "obj-update"):
+            it.result = it.status
+            continue
+        verb = "update" if it.status in ("update", "obj-update") else "create"
+        if dry_run:
+            it.result = "dry-run"
+            on_log("[dry] %s %s (%s)" % (verb, it.label, it.mkey))
+            continue
+        try:
+            write(it)
+            it.applied = True
+            it.result = "updated" if verb == "update" else "created"
+            on_log("%sd %s (%s)" % (verb, it.label, it.mkey))
+        except Exception as e:  # noqa: BLE001 — best-effort, keep going
+            it.result = "error: %s: %s" % (type(e).__name__, e)
+            on_log("error %s: %s" % (it.label, it.result))
+    return items
+
+
+# --------------------------------------------------------------------------- #
+#  Plan post-processing                                                         #
+# --------------------------------------------------------------------------- #
+_STATUS_FIELDS = ("status", "enable", "enabled")
+
+
+def disable_root(items: list[CloneItem]) -> None:
+    """Leave the cloned ROOT object disabled (safe until manual cutover)."""
+    for it in items:
+        if it.depth == 0 and it.kind == "object" and isinstance(it.payload, dict):
+            payload = {k: v for k, v in it.payload.items() if k not in _STATUS_FIELDS}
+            payload["status"] = "disable"
+            it.payload = payload
+            return
+
+
+def listener_keys(items: list[CloneItem]) -> set[tuple[str, str]]:
+    """``{(urn, mkey)}`` of the ROOT policy's virtual server and of the VIP
+    objects its vip-list rows name — what a same-box copy must own."""
+    root = next((it for it in items if it.depth == 0 and it.kind == "object"),
+                None)
+    if root is None or not isinstance(root.payload, dict):
+        return set()
+    vs = str(root.payload.get("vserver") or "")
+    if not vs:
+        return set()
+    keys = {(_VSERVER_URN, vs)}
+    for it in items:
+        if (it.kind == "subrow" and it.urn == _VIPLIST_URN
+                and it.parent_mkey == vs and isinstance(it.payload, dict)):
+            vip = str(it.payload.get("vip") or "")
+            if vip:
+                keys.add((_VIP_URN, vip))
+    return keys
+
+
+def vip_addresses(items: list[CloneItem]) -> dict[str, str]:
+    """``{VIP mkey: address}`` as the plan stands now (before a rewrite)."""
+    return {it.mkey: str(it.payload.get("vip") or "") for it in items
+            if it.urn == _VIP_URN and it.kind == "object"
+            and isinstance(it.payload, dict)}
+
+
+def listener_blockers(items: list[CloneItem],
+                      before: dict[str, str] | None = None) -> list[str]:
+    """Why a same-box copy planned with ``own_listener`` cannot come up, BEFORE
+    anything is written. Empty = it can.
+
+    * a vip-list row on the INTERFACE address: the copy would listen on the same
+      address and port (fortiweb18 8.0.6: -7637 "The service of this port is in
+      use.");
+    * a copied VIP still on the source address: -7970 "The IP address of VIP is
+      already used by another VIP." (fortiweb18 8.0.6). ``before`` is
+      :func:`vip_addresses` taken before the VIP rewrite.
+    """
+    before = before or {}
+    out: list[str] = []
+    renamed = {it.mkey for it in items
+               if it.urn == _VSERVER_URN and it.kind == "object" and it.renamed_from}
+    for it in items:
+        if (it.kind == "subrow" and it.urn == _VIPLIST_URN
+                and it.parent_mkey in renamed and isinstance(it.payload, dict)
+                and str(it.payload.get("use-interface-ip") or "") == "enable"):
+            out.append(
+                'virtual server "%s" listens on the interface address of %s — a '
+                "copy on the same box would listen on the same address and port "
+                "(FortiWeb -7637). Clone it to another appliance, or give the "
+                "original a VIP first." % (it.parent_mkey,
+                                           it.payload.get("interface") or "?"))
+    for it in items:
+        if (it.urn == _VIP_URN and it.kind == "object" and it.renamed_from
+                and it.status == "create" and isinstance(it.payload, dict)
+                and str(it.payload.get("vip") or "").split("/")[0]
+                == str(before.get(it.mkey, "")).split("/")[0]):
+            out.append(
+                'VIP "%s" would keep the address %s of "%s" — FortiWeb refuses a '
+                "second VIP on one address (-7970). Give the copy a VIP address "
+                '(or "auto").' % (it.mkey, it.payload.get("vip") or "?",
+                                  it.renamed_from))
+    return out
+
+
+def vip_items(items: list[CloneItem]) -> list[CloneItem]:
+    """The VIP address objects in a plan (source of the current IPs)."""
+    return [it for it in items if it.urn == _VIP_URN and it.kind == "object"]
+
+
+def set_vip_ip(items: list[CloneItem], ip: str = "",
+               transform: Callable[[str], str] | None = None) -> list[str]:
+    """Rewrite every TO-CREATE VIP's address, keeping its mask.
+
+    ``ip``        — one explicit address for all VIPs (the single-policy dialog).
+    ``transform`` — per-VIP mapping old-IP → new-IP (the bulk dummy rules).
+
+    Only ``create`` items are touched — a VIP that already exists on the
+    destination is never mutated. Returns the list of ``old → new`` notes."""
+    changed: list[str] = []
+    for it in items:
+        if it.urn != _VIP_URN or it.kind != "object" or it.status != "create":
+            continue
+        if not isinstance(it.payload, dict):
+            continue
+        cur = str(it.payload.get("vip") or "")
+        cur_ip, _, mask = cur.partition("/")
+        new_ip = ip or (transform(cur_ip) if transform else "")
+        if not new_ip or new_ip == cur_ip:
+            continue
+        it.payload = {**it.payload, "vip": new_ip + (("/" + mask) if mask else "")}
+        it.note = (it.note + " · " if it.note else "") + "IP %s → %s" % (cur_ip or "?", new_ip)
+        changed.append("%s: %s → %s" % (it.mkey, cur_ip or "?", new_ip))
+    return changed
+
+
+def interface_refs(items: list[CloneItem]) -> list[dict]:
+    """Every ``system/interface`` binding carried by a plan, in plan order.
+
+    Returns ``[{"interface", "field", "urn", "mkey", "kind", "status"}]``.
+
+    Reports bindings on items of EVERY status, not just ``create``. An item
+    that already exists at the destination is not evidence that its interface
+    does — ``skip-if-exists`` matches on the object's mkey, never on what the
+    object points at — but it IS the case where a rewrite must not happen,
+    so the caller needs to see both and tell them apart via ``status``."""
+    fields = interface_fields()
+    out: list[dict] = []
+    for it in items:
+        if it.kind not in ("object", "subrow") or not isinstance(it.payload, dict):
+            continue
+        for field in fields:
+            val = str(it.payload.get(field) or "").strip()
+            if not val or val in _EMPTY_REFS:
+                continue
+            out.append({"interface": val, "field": field, "urn": it.urn,
+                        "mkey": it.mkey, "kind": it.kind, "status": it.status})
+    return out
+
+
+def set_interface(items: list[CloneItem], mapping: dict[str, str]) -> list[str]:
+    """Re-bind TO-CREATE objects from a source port to a destination port.
+
+    ``mapping`` is ``{source interface name: destination interface name}`` —
+    per-name and not a single value, because one policy tree can legitimately
+    touch several ports (a VIP on the front-side port, a block port on
+    another) and collapsing them onto one address would silently merge two
+    networks.
+
+    Only ``create`` items are rewritten. An object that already exists at the
+    destination belongs to the destination; re-pointing its interface here
+    would describe a change this clone is not going to make — the plan would
+    claim a binding the device never receives."""
+    fields = interface_fields()
+    changed: list[str] = []
+    for it in items:
+        if it.status != "create" or it.kind not in ("object", "subrow"):
+            continue
+        if not isinstance(it.payload, dict):
+            continue
+        payload = it.payload
+        notes: list[str] = []
+        for field in fields:
+            cur = str(payload.get(field) or "").strip()
+            new = (mapping.get(cur) or "").strip()
+            if not cur or not new or new == cur:
+                continue
+            payload = {**payload, field: new}
+            notes.append("%s %s → %s" % (field, cur, new))
+            changed.append("%s.%s: %s → %s" % (it.mkey, field, cur, new))
+        if notes:
+            it.payload = payload
+            it.note = (it.note + " · " if it.note else "") + " · ".join(notes)
+    return changed
+
+
+def rename_wpp(items: list[CloneItem], new_name: str) -> str:
+    """Re-label the copied Web Protection Profile as ``new_name`` and re-point
+    every reference to it (the root policy's ``web-protection-profile`` field,
+    content-routing rows, and any WPP-owned sub-rows). Returns the old name
+    ('' when the plan carries no WPP)."""
+    wpp = next((it for it in items if it.urn in _WPP_URNS and it.kind == "object"), None)
+    if wpp is None or not new_name or new_name == wpp.mkey:
+        return ""
+    old = wpp.mkey
+    wpp.mkey = new_name
+    if isinstance(wpp.payload, dict):
+        wpp.payload = {**wpp.payload, "name": new_name}
+    for it in items:
+        if it.kind == "subrow" and it.urn.startswith(wpp.urn) and it.parent_mkey == old:
+            it.parent_mkey = new_name
+        if it.kind in ("object", "subrow") and isinstance(it.payload, dict) \
+                and it.urn not in _WPP_URNS \
+                and it.payload.get("web-protection-profile") == old:
+            it.payload = {**it.payload, "web-protection-profile": new_name}
+    return old
+
+
+# --------------------------------------------------------------------------- #
+#  Same-device deep clone                                                       #
+# --------------------------------------------------------------------------- #
+_VIA_INDEX: dict[str, set[str]] | None = None
+
+
+# --------------------------------------------------------------------------- #
+#  Which profile the copy lands on, and whether to leave it alone               #
+# --------------------------------------------------------------------------- #
+def wpp_landing_name(policy_row: dict, wpp_new_name: str = "") -> str:
+    """The profile name the copy would LAND ON at the destination.
+
+    NOT the source's name when a rename is in play: with ``wpp_new_name`` filled
+    in the copy lands on the new name, and a collision check asking about the
+    source's name would answer a question nobody asked.
+
+    ``''`` when the policy has no profile. FortiWeb writes that as the literal
+    string ``disable`` — not a blank — so a truthiness test on the field alone
+    would treat "no profile" as a profile NAMED ``disable`` and then report the
+    destination as missing an object that exists nowhere."""
+    new = (wpp_new_name or "").strip()
+    if new:
+        return new
+    cur = str((policy_row or {}).get("web-protection-profile") or "").strip()
+    return "" if cur in ("", "disable") else cur
+
+
+def wpp_reuse_name(landing: str, dst_names: Iterable[str], enabled: bool) -> str:
+    """The profile to LEAVE ALONE: non-empty when the subtree must be pruned.
+
+    "Create it if the destination lacks it, and do not touch one it already
+    has." The second half is the point, and it is NOT what the plain subtree
+    copy does: an existing profile is classified ``exists`` and its OBJECT is
+    left alone, but its ~40 sub-tables are still classified one by one, so a
+    signature list or a constraint the destination's profile does NOT have gets
+    ADDED to it. That is a live production profile — possibly shared with other
+    policies — being edited by the clone of a different one. Pruning is the only
+    way to promise it is untouched."""
+    if not enabled or not landing:
+        return ""
+    return landing if landing in set(dst_names) else ""
+
+
+def dst_wpp_names(reader) -> set:
+    """Every inline web protection profile the DESTINATION has, by name.
+
+    Read through the CLIENT's CHECKED lister and not through
+    :class:`ClientReader`, and that is the POINT of this function rather than a
+    detail. ``ClientReader.get_raw`` says so on the tin — it never raises — so a
+    failed read comes back as the EMPTY set, and an empty set here does not mean
+    "the destination has no profiles", it means **every profile is missing**: in
+    "only if missing" that silently UN-PRUNES a subtree the operator asked not to
+    touch. A safety read that fails must not look like a safe answer.
+
+    :meth:`FortiWebClient.cmdb_names_checked` already separates ``ok`` /
+    ``absent`` / ``error`` and documents that only ``ok`` licenses a caller to
+    reject a value for not being in the list — so it is reused rather than
+    re-derived. Two authors of one fact is how they drift.
+
+    An EMPTY list under ``ok`` is a legal answer, just a rare one (a factory
+    FortiWeb ships several). It is the UNREADABLE case that raises."""
+    client = getattr(reader, "client", reader)
+    names, status, err = client.cmdb_names_checked(
+        _WPP_INLINE[5:] if _WPP_INLINE.startswith("cmdb/") else _WPP_INLINE)
+    if status != "ok":
+        raise RuntimeError(
+            "the destination's web protection profile list came back %s (%s) — "
+            "an unreadable list cannot be treated as an empty one"
+            % (status, err or "no detail"))
+    return {str(n) for n in names if n}
+
+
+def repoint_wpp(items: list[CloneItem], dst_name: str) -> list[str]:
+    """Point the copy at a Web Protection Profile the DESTINATION already owns.
+
+    Distinct from :func:`rename_wpp`, and the difference is the whole feature:
+    ``rename_wpp`` renames a profile that IS being copied, so it can find the
+    object in the plan and follow it. Here nothing is being copied — the plan
+    was built with ``follow_wpp=False`` — so the only thing left naming the
+    source's profile is the FIELD on the policy, and rewriting that field is the
+    entire job. Returns the source names that were replaced.
+
+    Two refusals live HERE and not at the call site, so a second caller cannot
+    forget them:
+
+      * An EMPTY ``dst_name`` is a no-op, never a blank write. Writing ``""``
+        into ``web-protection-profile`` does not mean "no profile" to a FortiWeb
+        policy — it means an unparsable one.
+      * A plan that still CARRIES a profile object is left alone and reported.
+        Repointing then would create the source's profile at the destination and
+        then not use it — an orphan that looks like a successful copy."""
+    dst_name = (dst_name or "").strip()
+    if not dst_name:
+        return []
+    if any(it.urn in _WPP_URNS and it.kind == "object" for it in items):
+        return []
+    replaced: list[str] = []
+    for it in items:
+        if it.kind not in ("object", "subrow") or not isinstance(it.payload, dict):
+            continue
+        old = it.payload.get("web-protection-profile")
+        if isinstance(old, str) and old.strip() and old != dst_name:
+            it.payload = dict(it.payload, **{"web-protection-profile": dst_name})
+            replaced.append(old)
+    return replaced
+
+
+def via_field_index(root: DepNode | None = None) -> dict[str, set[str]]:
+    """``{parent field name: {collection it can name}}`` from the dependency map.
+
+    A reference re-point must rewrite the FIELD that names the object, and only
+    that field. Matching on "any string equal to the old name" would rewrite a
+    description, a host header, or a rule that happens to carry the same text.
+    The dependency map already records every such field as a ``via`` edge, so
+    the index is derived from it rather than restated — a restated copy is the
+    kind that stops agreeing with the map on the next FortiWeb release.
+
+    ``root`` scopes the index to ONE tree (what a plan actually walked); the
+    no-arg form spans both roots and is cached.
+    """
+    global _VIA_INDEX
+    if root is None and _VIA_INDEX is not None:
+        return _VIA_INDEX
+    index: dict[str, set[str]] = {}
+
+    def walk(node: DepNode, seen: set[int]) -> None:
+        if id(node) in seen:
+            return
+        seen.add(id(node))
+        for child in node.children:
+            if _is_named_ref(child) and child.urn:
+                coll = objform.collection_of(child.urn)
+                for token in child.via.split("/"):
+                    token = token.strip()
+                    if token and "=" not in token and " " not in token:
+                        index.setdefault(token, set()).add(coll)
+            walk(child, seen)
+
+    if root is not None:
+        walk(root, set())
+        return index
+    for node in (SERVER_POLICY, WEB_PROTECTION_PROFILE):
+        walk(node, set())
+    _VIA_INDEX = index
+    return index
+
+
+def classify_scope(items: list[CloneItem], managed: dict | None = None) -> None:
+    """Stamp every collected item with its :mod:`clone_scope` verdict."""
+    for it in items:
+        if it.kind != "object":
+            continue
+        it.scope, it.scope_reason = clone_scope.classify(it, managed)
+
+
+def resolve_shared(items: list[CloneItem], refs: dict, *, root_mkey: str,
+                   clone_anyway: Iterable[str] = ()) -> set[tuple[str, str]]:
+    """Which objects this same-device clone may actually duplicate.
+
+    Clonability is not a property of an object on its own: **re-pointing a
+    reference writes to the PARENT**, so duplicating a child whose parent stays
+    shared would push the new name into an object other profiles still read.
+    That is the leak the clone exists to close, one level up. So the answer is a
+    reachability computation from the root: an object may be created only when
+    every object that names it is being created too.
+
+    Returns the ``{(urn, mkey)}`` that will be duplicated, and annotates the
+    rest with :data:`clone_scope.BLOCKED_BY_PARENT` so the operator is told what
+    is being left shared and why.
+    """
+    forced = {str(r) for r in (clone_anyway or ())}
+    objs = [it for it in items if it.kind == "object"]
+    created: set[tuple[str, str]] = {
+        (it.urn, root_mkey) for it in objs if it.depth == 0}
+
+    def allowed(it: CloneItem) -> bool:
+        if it.scope == clone_scope.CLONABLE:
+            return True
+        return (it.scope in clone_scope.OVERRIDABLE
+                and "%s|%s" % (it.urn, it.mkey) in forced)
+
+    changed = True
+    while changed:
+        changed = False
+        for it in objs:
+            if it.depth == 0 or not it.payload:
+                continue
+            key = (it.urn, it.mkey)
+            if key in created or not allowed(it):
+                continue
+            parents = refs.get(key) or set()
+            if parents and parents <= created:
+                created.add(key)
+                changed = True
+
+    for it in objs:
+        if it.depth == 0 or not it.payload:
+            continue
+        key = (it.urn, it.mkey)
+        if key in created:
+            if it.scope in clone_scope.OVERRIDABLE:
+                it.scope_reason = (it.scope_reason
+                                   + " Cloning anyway at the operator's request.")
+            continue
+        if it.scope == clone_scope.CLONABLE:
+            blockers = sorted({p for _u, p in (refs.get(key) or set())}
+                              - {root_mkey})
+            it.scope = clone_scope.BLOCKED_BY_PARENT
+            it.scope_reason = (
+                '"%s" stays shared because %s is not being copied — re-pointing '
+                "it would write the new name into an object other profiles still "
+                "read." % (it.mkey,
+                           ", ".join('"%s"' % b for b in blockers[:4])
+                           or "its parent"))
+    return created
+
+
+def repoint_value(field: str, value: str,
+                  colls: Iterable[str],
+                  by_coll: dict[str, dict[str, str]]) -> str | None:
+    """``value`` with every renamed name replaced, or ``None`` if nothing moved.
+
+    A DECLARED list field (:data:`_LIST_REF_FIELDS`) is re-pointed name BY NAME,
+    using the same split :func:`referenced_names` uses to decide what to COPY.
+    The two halves must agree on what a field holds: reading ``"a b "`` as two
+    names and then re-pointing it WHOLE matches nothing, so the plan copies both
+    scripts, renames both copies, and leaves the copied policy naming the
+    ORIGINALS — exactly the sharing :func:`deep_rename` exists to end, and
+    silent, because every other line of the plan looks right.
+
+    Separators are preserved verbatim (FortiWeb returns ``"a b "``, with the
+    trailing space), so a name that was not renamed survives byte for byte.
+
+    Every other field is matched WHOLE, trailing space included, because there
+    the space may be part of the name itself.
+    """
+    # Materialised: ``_renamed`` walks it once PER NAME, and a generator would
+    # be exhausted after the first one — silently re-pointing only the head of
+    # every list.
+    colls = tuple(colls)
+
+    def _renamed(name: str) -> str | None:
+        for coll in colls:
+            new = by_coll.get(coll, {}).get(name)
+            if new:
+                return new
+        return None
+
+    if field not in _LIST_REF_FIELDS:
+        return _renamed(value)
+
+    parts = re.split(r"(\s+)", value)
+    hit = False
+    for i, part in enumerate(parts):
+        if not part or part.isspace():
+            continue
+        new = _renamed(part)
+        if new:
+            parts[i] = new
+            hit = True
+    return "".join(parts) if hit else None
+
+
+def deep_rename(items: list[CloneItem], suffix: str,
+                created: set[tuple[str, str]], *,
+                exists: Callable[[str, str], bool] | None = None,
+                index: dict[str, set[str]] | None = None) -> list[dict]:
+    """Give every duplicated object its OWN name and re-point every reference.
+
+    ``ClonePlanner`` classifies against the destination, and on a same-device
+    clone the destination is the source: leave the names alone and every child
+    resolves to the original's object, which is how a "cloned" profile ended up
+    sharing all ~40 of its sub-policies. Renaming is therefore not cosmetic — it
+    is the entire isolation.
+
+    Returns one ``{label, urn, old, new}`` row per copy, for the plan the
+    operator reads before authorising the write.
+    """
+    index = via_field_index() if index is None else index
+    renames: list[dict] = []
+    by_coll: dict[str, dict[str, str]] = {}
+    used: set[str] = set()
+
+    for it in items:
+        if it.kind != "object" or it.depth == 0 or not it.payload:
+            continue
+        if (it.urn, it.mkey) not in created:
+            continue
+        old = it.mkey
+
+        def _taken(name: str, urn: str = it.urn) -> bool:
+            return name in used or bool(exists and exists(urn, name))
+
+        new = clone_scope.derive_name(old, suffix, _taken)
+        if not new or new == old:
+            it.scope = clone_scope.BLOCKED_BY_PARENT
+            it.scope_reason = (
+                'no free name could be derived for "%s" within FortiWeb\'s %d-'
+                "character limit, so it stays shared."
+                % (old, clone_scope.MAX_NAME))
+            continue
+        used.add(new)
+        it.renamed_from = old
+        it.mkey = new
+        it.payload = {**it.payload, "name": new}
+        by_coll.setdefault(objform.collection_of(it.urn), {})[old] = new
+        renames.append({"label": it.label, "urn": it.urn, "old": old, "new": new})
+        prefix = it.urn + "/"
+        for sub in items:
+            if (sub.kind == "subrow" and sub.parent_mkey == old
+                    and sub.urn.startswith(prefix)):
+                sub.parent_mkey = new
+
+    if not by_coll:
+        return renames
+
+    for it in items:
+        if not isinstance(it.payload, dict):
+            continue
+        patched: dict | None = None
+        for k, v in it.payload.items():
+            if not isinstance(v, str) or not v:
+                continue
+            new = repoint_value(k, v, index.get(k, ()), by_coll)
+            if new is None:
+                continue
+            patched = patched if patched is not None else dict(it.payload)
+            patched[k] = new
+        if patched is not None:
+            it.payload = patched
+    return renames
+
+
+def wants_by_logical(items: list[CloneItem]) -> dict[str, int]:
+    """``{registry logical: how many objects this plan will CREATE}`` — the
+    input to the per-type capacity check. Sub-table rows are excluded: they are
+    rows inside an object, not objects the model counts."""
+    wants: dict[str, int] = {}
+    for it in items:
+        if it.kind == "object" and it.status == "create" and it.logical:
+            wants[it.logical] = wants.get(it.logical, 0) + 1
+    return wants
+
+
+# --------------------------------------------------------------------------- #
+#  Summary helpers                                                              #
+# --------------------------------------------------------------------------- #
+_STATUS_LABELS = {
+    "create": "to create",
+    # Its OWN slot, never folded into "already exists": the destination holds a
+    # row with this unique key and DIFFERENT content, so this is a write.
+    "update": "to update in place (destination owns the key)",
+    # An EXISTING destination object whose own fields the operator accepted
+    # from the source. Its own slot for the same reason `update` has one: it
+    # is a write into something the destination is already serving.
+    "obj-update": "to retune in place (operator accepted the source's values)",
+    "exists": "already exists (skipped)",
+    "cert": "certificate (SSH, skipped)",
+    "no-endpoint": "no REST endpoint (skipped)",
+    # Deliberately NOT folded into `no-endpoint`: that one means the registry has
+    # no writable endpoint for a reachable collection. This one means the API
+    # cannot reach the collection at all, and the operator has to create the
+    # object at the destination by hand or the policy is refused with -651.
+    "no-rest": "REST cannot carry this object (must exist on the destination)",
+    "empty": "empty on source (skipped)",
+}
+
+
+def summarize(items: list[CloneItem]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for it in items:
+        counts[it.status] = counts.get(it.status, 0) + 1
+    return counts
+
+
+def render_plan(items: list[CloneItem]) -> str:
+    # "no-content": a file-backed object (schema/DTD/WSDL/OpenAPI/IDL/Lua)
+    # whose BYTES could not be obtained, deliberately skipped instead of being
+    # created as an empty shell. It gets its own mark because "~" next to a
+    # name the operator expected to see created is the only place the plan text
+    # can say "this one is not really there".
+    marks = {"create": "+", "update": "~>", "exists": "=", "cert": "lock",
+             "no-endpoint": "!",
+             "no-rest": "!",
+             "empty": ".", "no-content": "~",
+             # Its own mark, never "=" — "=" reads as "the destination already
+             # has this", and this row is precisely the one it does NOT have.
+             "untouched": "/"}
+    lines: list[str] = []
+    for it in items:
+        indent = "  " * it.depth
+        mark = marks.get(it.status, "?")
+        label = it.label + ("  " + it.mkey if it.mkey else "")
+        suffix = "   - %s" % it.note if it.note and it.status != "create" else ""
+        lines.append("%s %s%s%s" % (mark, indent, label, suffix))
+    return "\n".join(lines)
+
+
+def template_body(items: list[CloneItem], new_name: str) -> dict:
+    """A multi-object template body (root + subobjects, deepest-first) from a
+    collected clone — the desired-state snapshot saved to the template library.
+
+    Mirrors the desktop ``node_to_template_body``: the ROOT object's payload is
+    ``data``; every other collected item rides in ``subobjects`` (sub-objects
+    FIRST = dependency order, which ``items`` already is)."""
+    root = next((it for it in items if it.depth == 0 and it.kind == "object"), None)
+    sub = [it for it in items if it is not root and it.payload]
+    return {
+        "endpoint": (root.logical or root.urn) if root else "",
+        "mkey": new_name or (root.mkey if root else ""),
+        "data": root.payload if root else {},
+        "subobjects": [
+            {
+                "endpoint": it.logical or it.urn,
+                "mkey": it.mkey,
+                "parent_mkey": it.parent_mkey,
+                "kind": it.kind,
+                "data": it.payload,
+            }
+            for it in sub
+        ],
+    }
+
+
+# --------------------------------------------------------------------------- #
+#  Clone RESULT reconciliation (what was planned vs created vs verified live)    #
+# --------------------------------------------------------------------------- #
+def verify_created(items: list[CloneItem], reader: Any) -> list[CloneItem]:
+    """Re-read the DESTINATION for every item we actually created and annotate
+    it ``present`` | ``missing`` | ``unverifiable``. Best-effort and read-only —
+    a device that can't be read (license flap) yields ``unverifiable``, never an
+    exception. This is the post-apply confirmation the operator asked for: the
+    box, not our optimism, is the source of truth about what landed."""
+    for it in items:
+        if not it.applied:
+            continue
+        try:
+            if it.kind == "subrow":
+                rows = scoped_rows(reader, it.urn, it.logical, it.parent_mkey)
+                found = _subrow_in(it.payload, rows)
+            else:
+                rows = scoped_rows(reader, it.urn, it.logical, it.mkey)
+                found = bool(rows)
+            it.verified = "present" if found else "missing"
+        except Exception:  # noqa: BLE001 — verification never sinks the clone
+            it.verified = "unverifiable"
+    return items
+
+
+def outcome(items: list[CloneItem]) -> dict:
+    """A JSON-able reconciliation of a planned/applied clone: the full item list
+    plus the three buckets the operator compares — what SHOULD have been created
+    (``planned_create``), what WAS created (``created``, with the live-verify
+    verdict), and what FAILED (``failed``, with the device error). Feeds the
+    clone-result report page linked from the job."""
+    def row(it: CloneItem) -> dict:
+        d = it.to_dict()
+        d["applied"] = bool(it.applied)
+        return d
+    rows = [row(it) for it in items]
+    created = [r for r in rows if r["applied"]]
+    return {
+        "total": len(rows),
+        "counts": summarize(items),
+        "items": rows,
+        "planned_create": [r for r in rows if r["status"] == "create"],
+        # Enumerated in its own bucket so the report can show, per row, the value
+        # the destination serves TODAY next to the source's: "a duplicate" says
+        # nothing about which of the two is on the wire.
+        "planned_update": [r for r in rows if r["status"] == "update"],
+        "updated": [r for r in rows if r["applied"] and r["status"] == "update"],
+        "created": created,
+        "failed": [r for r in rows if (r["result"] or "").startswith("error")],
+        # Its own bucket, NOT folded into ``failed``: the operator authorised
+        # these skips, so calling them failures would misreport a decision as a
+        # defect — and NOT folded into the silent statuses either, because the
+        # destination is now missing protection the source had.
+        "skipped_no_content": [r for r in rows if r["status"] == "no-content"],
+        # Additive mode's held-back rows. Enumerated, because this is the only
+        # difference a run can produce that leaves NOTHING behind on the
+        # destination to find later: no object, no row, no error. A count would
+        # say how many; the operator needs the parent and the key, which is the
+        # work.
+        "untouched": [r for r in rows if r["status"] == "untouched"],
+        "verified_missing": [r for r in created if r.get("verified") == "missing"],
+        "unverifiable": [r for r in created if r.get("verified") == "unverifiable"],
+        # The write's own re-read could not compare anything (re-read failed,
+        # only secrets/sub-tables sent): reported, never failed.
+        "unverified_writes": [r for r in created if r.get("check") == "unverified"],
+    }
+
+
+# Root nodes exposed by name.
+ROOT_SERVER_POLICY = SERVER_POLICY
+ROOT_WPP = WEB_PROTECTION_PROFILE
+
+
+__all__ = [
+    "CloneItem", "ClonePlanner", "ClientReader", "Reader",
+    "apply_clone", "summarize", "render_plan", "referenced_names",
+    "disable_root", "template_body", "registry_urn_index",
+    "outcome", "verify_created",
+    "ROOT_SERVER_POLICY", "ROOT_WPP", "WPP_URNS", "validate_completeness",
+    "via_field_index", "classify_scope", "resolve_shared", "deep_rename",
+    "wants_by_logical",
+    "interface_fields", "interface_refs", "set_interface",
+    "listener_keys", "listener_blockers", "vip_addresses",
+]

@@ -1,0 +1,18 @@
+{#- View, widget or app: what each one is and which one a request needs
+    (plugin_package.KIND_GUIDE / KIND_RULE, the same words SATOM Builder shows
+    and the author guide gives the AI). Used where a kind is chosen. -#}
+{% macro kind_explainer(current=None, open=False) -%}
+<details class="fw-kind-explainer mt-2" {{ 'open' if open }}>
+  <summary class="text-secondary" style="cursor:pointer;font-size:13px;"><i class="bi bi-question-circle me-1"></i>{{ _('View, widget or app: which one?') }}</summary>
+  <div class="d-grid gap-2 mt-2" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));">
+  {% for k in plugin_kind_order %}{% set g = plugin_kind_guide[k] %}
+    <div class="fw-card mb-0 p-2{{ ' border-primary' if current == k }}" data-kind="{{ k }}" style="font-size:12.5px;">
+      <div><i class="bi {{ g.icon }} me-1"></i><strong>{{ g.label }}</strong> <span class="text-secondary">· {{ g.where }}</span></div>
+      <div class="text-secondary">{{ g.what }}</div>
+      <div class="text-secondary mt-1"><strong>{{ _('For') }}:</strong> {{ g.use_for }}. <em>{{ g.example }}</em></div>
+    </div>
+  {% endfor %}
+  </div>
+  <p class="text-secondary mt-2 mb-0" style="font-size:12.5px;"><strong>{{ _('Rule of thumb') }}:</strong> {{ plugin_kind_rule }}</p>
+</details>
+{%- endmacro %}

@@ -1,0 +1,85 @@
+{# ============================================================================
+   "Which page answers what" — Deep monitors vs Service Monitor vs Analytics.
+
+   Operator, 2026-10-23: the three pages read alike from the menu, so each one
+   carries the same explanation behind a button in its header. ONE file, three
+   call sites: a copy per page would drift the day a fourth kind of probe
+   moves between them (sessions/throughput already moved on 2026-07-28).
+
+   The button uses Bootstrap's own data-bs-toggle: that handler is registered
+   once in <head>, so a Turbo visit can never stack a second opener (the
+   Deep monitors dimmed-screen bug of 2026-10-23).
+
+   `current` is the blueprint of the page drawing it; that row is marked
+   "You are here" and the others link to their page when the user may open it.
+   ========================================================================= #}
+
+{% macro compare_button() %}
+<button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal"
+        data-bs-target="#monCompareModal" title="{{ _('How these monitoring pages differ') }}">
+  <i class="bi bi-info-circle me-1"></i>{{ _('Which page?') }}</button>
+{% endmacro %}
+
+{% macro compare_modal(current) %}
+{% set rows = [
+  {'bp': 'deep_monitor', 'ep': 'deep_monitor.index', 'icon': 'bi-broadcast-pin',
+   'name': _('Deep monitors'),
+   'question': _('Is the service actually working? (yes / no)'),
+   'how': _('Checks that reach into the appliance: synthetic HTTPS against a server policy, interface IP / link drift, CPU, memory, and the proxyd workers and restarts. Several need SSH or a synthetic request.'),
+   'when': _('A site is down or slow and you need to know whether the box is the cause.')},
+  {'bp': 'service_monitor', 'ep': 'service_monitor.index', 'icon': 'bi-speedometer2',
+   'name': _('Service Monitor'),
+   'question': _('How much is it carrying right now?'),
+   'how': _("REST calls to the appliance's monitor API only, no SSH: sessions, sessions + latency + backend health per server policy, throughput, HTTP transactions; licence and FortiToken usage on FortiAuthenticator. Keeps answering when the configuration API is licence-locked."),
+   'when': _('Sizing, load, a policy that suddenly carries more (or less) traffic.')},
+  {'bp': 'monitor_analytics', 'ep': 'monitor_analytics.index', 'icon': 'bi-graph-up-arrow',
+   'name': _('Analytics'),
+   'question': _('How do they compare, and what changed over time?'),
+   'how': _('Measures nothing new: boards that put many already-recorded series on one chart, over windows up to ninety days.'),
+   'when': _('Comparing appliances side by side, or a trend over the month.')},
+] %}
+<div class="modal fade" id="monCompareModal" tabindex="-1" aria-hidden="true" aria-labelledby="monCompareTitle">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="monCompareTitle"><i class="bi bi-info-circle me-2"></i>{{ _('Deep monitors, Service Monitor and Analytics') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <div class="table-responsive">
+        <table class="table table-sm align-middle mb-3">
+          <thead><tr>
+            <th style="width:19%;">{{ _('Page') }}</th>
+            <th style="width:21%;">{{ _('The question it answers') }}</th>
+            <th>{{ _('How it measures') }}</th>
+            <th style="width:22%;">{{ _('Use it when') }}</th>
+          </tr></thead>
+          <tbody>
+          {% for r in rows %}
+            <tr class="{{ 'table-active' if r.bp == current else '' }}">
+              <td>
+                <i class="bi {{ r.icon }} me-1 text-accent"></i>
+                {%- if r.bp == current %}<strong>{{ r.name }}</strong>
+                  <div><span class="fw-badge fw-badge-info">{{ _('You are here') }}</span></div>
+                {%- elif may_open(r.ep) %}<a href="{{ url_for(r.ep, _adom=product.key) }}"><strong>{{ r.name }}</strong></a>
+                {%- else %}<strong>{{ r.name }}</strong>{% endif %}
+              </td>
+              <td class="small"><strong>{{ r.question }}</strong></td>
+              <td class="small">{{ r.how }}</td>
+              <td class="small text-muted">{{ r.when }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        <div class="small text-muted">
+          <i class="bi bi-shield-check me-1"></i>{{ _('All three render from data already recorded: opening any of them never contacts an appliance. Probing runs in the background (the deep_monitor scheduled action, or "Probe now").') }}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-primary" data-bs-dismiss="modal">{{ _('Close') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endmacro %}

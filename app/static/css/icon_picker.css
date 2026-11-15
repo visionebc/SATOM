@@ -1,0 +1,7 @@
+/* Icon picker (js/icon_picker.js): Plugin Studio app settings and the Report
+ * Studio editor. Same look as the SATOM Builder's picker, on the --fw-* tokens. */
+.ip-icon-panel { border: 1px solid var(--fw-border); border-radius: 6px; padding: 8px; margin-top: 4px; background: var(--fw-surface); box-shadow: var(--fw-card-shadow, 0 3px 12px rgba(16,32,52,.08)); min-width: min(420px, 90vw); max-width: 520px; position: relative; z-index: 20; }
+.ip-icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 4px; max-height: 260px; overflow: auto; }
+.ip-icon-cell { border: 1px solid var(--fw-border-light, #EAEFF9); background: var(--fw-surface-alt); border-radius: 4px; height: 36px; font-size: 18px; }
+.ip-icon-cell:hover, .ip-icon-cell:focus-visible { border-color: var(--fw-accent); }
+.ip-icon-cell.is-selected { border-color: var(--fw-accent); background: var(--fw-accent-light); }

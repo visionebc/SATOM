@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if baseline else 'New' }} baseline{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>
+      {{ 'Edit baseline' if baseline else 'New baseline' }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Name it, scope it to a zone / line / department, and compose it from approved templates.') }}</p>
+  </div>
+</div>
+
+<form method="post"
+      action="{{ url_for('provisioning.baseline_edit', baseline_id=baseline.id) if baseline else url_for('provisioning.baseline_new') }}"
+      style="max-width: 960px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">{{ _('Name') }}</label>
+      <input class="form-control" name="name" required
+             value="{{ baseline.name if baseline else '' }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">{{ _('Zone') }}</label>
+      <select class="form-select" name="zone">
+        <option value="">{{ _('(any)') }}</option>
+        {% for z in zones %}<option value="{{ z }}"
+          {{ 'selected' if baseline and baseline.zone == z }}>{{ z }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">{{ _('Line') }}</label>
+      <select class="form-select" name="line">
+        <option value="">{{ _('(any)') }}</option>
+        {% for l in lines %}<option value="{{ l }}"
+          {{ 'selected' if baseline and baseline.line == l }}>{{ l }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">{{ _('Department') }}</label>
+      <select class="form-select" name="department">
+        <option value="">{{ _('(any)') }}</option>
+        {% for d in departments %}<option value="{{ d }}"
+          {{ 'selected' if baseline and baseline.department == d }}>{{ d }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <label class="form-label">{{ _('Compose from approved system-profile templates') }}</label>
+    <p class="text-muted" style="font-size:12px;">{{ _('Only approved templates whose scope is compatible with the selected zone/line/department are shown.') }}</p>
+    {% if not approved %}
+      <div class="alert alert-warning">{{ _('No approved templates match the current scope. Author and approve profiles in') }} <a href="{{ url_for('provisioning.index') }}">{{ _('System Provisioning') }}</a> {{ _('first.') }}</div>
+    {% else %}
+    <div class="card"><div class="card-body" style="max-height: 360px; overflow:auto;">
+      {% for t in approved %}
+      {% set sc = t.body_dict.get('_scope') or {} %}
+      {% set scope_parts = [sc.get('zone',''), sc.get('line',''), sc.get('department','')] | select | list %}
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="template_ids"
+               value="{{ t.id }}" id="t{{ t.id }}"
+               {{ 'checked' if t.id in selected_ids }}>
+        <label class="form-check-label" for="t{{ t.id }}">
+          <strong>{{ t.name }}</strong>
+          <span class="text-muted small ms-1">v{{ t.version }}</span>
+          {% for part in scope_parts %}<span class="fw-badge fw-badge-secondary ms-1" style="font-size:11px;">{{ part }}</span>{% endfor %}
+          {% if not scope_parts %}<span class="text-muted small ms-1">{{ _('(any scope)') }}</span>{% endif %}
+        </label>
+      </div>
+      {% endfor %}
+    </div></div>
+    {% endif %}
+  </div>
+
+  <div class="mt-3">
+    <label class="form-label">{{ _('Note') }}</label>
+    <textarea class="form-control" name="note" rows="2">{{ baseline.note if baseline else '' }}</textarea>
+  </div>
+
+  <div class="mt-4">
+    <button class="btn btn-fw-primary" type="submit">
+      {{ 'Save changes' if baseline else 'Create baseline' }}</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('provisioning.baselines') }}">{{ _('Cancel') }}</a>
+  </div>
+</form>
+{% endblock %}

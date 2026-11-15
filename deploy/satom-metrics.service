@@ -1,0 +1,47 @@
+# SATOM metrics store — VictoriaMetrics single-node (OSS, Apache-2.0).
+#
+# Holds the high-cardinality device telemetry (per-policy sessions, traffic,
+# transactions, box resources) that Postgres structurally cannot hold at fleet
+# scale: measured 2026-08-05, 100 devices x 750 policies costs ~450 GB in
+# monitor_sample rows vs ~8 GB here (<1 B/sample compressed), with 90+ days of
+# full-resolution raw instead of hourly averages.
+#
+# Loopback only: queries go through the app (auth + ADOM scoping); nothing on
+# the network talks to this port directly. Data lives OUTSIDE data/ on purpose
+# — satom-ha-datasync rsyncs data/ with --delete and a time-series store must
+# never be rsynced under a running process; each node keeps its own store.
+[Unit]
+Description=SATOM metrics store (VictoriaMetrics single-node)
+After=network.target
+
+#
+# [SATOM-METRICS-AUTHKEYS] The admin endpoints (delete_series, snapshot*,
+# force_merge, force_flush, reload, resetRollupResultCache, config, flags,
+# pprof, ...) take an authKey. The keys come from a ROOT-ONLY env file that
+# deploy/install-metrics-store.sh generates (VM_<flag> variables, dots as
+# underscores) -- never from this unit or the command line, both of which any
+# local account can read. The leading '-' keeps the store starting, unkeyed as
+# before, if the file is ever missing. The app reads only the snapshot key, from
+# /etc/satom/metrics-snapshot.key (root:<service account> 0640).
+[Service]
+Type=simple
+User=satom
+Group=satom
+EnvironmentFile=-/etc/satom/metrics-auth.env
+ExecStart=/usr/local/bin/victoria-metrics \
+  -envflag.enable \
+  -envflag.prefix=VM_ \
+  -storageDataPath=/var/lib/satom-metrics \
+  -httpListenAddr=127.0.0.1:8428 \
+  -retentionPeriod=396d \
+  -memory.allowedBytes=512MiB \
+  -search.maxQueryDuration=30s
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/satom-metrics
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Wiki topics') }} — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('wiki.index') }}">{{ _('Wiki') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Topics') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Wiki topics') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('One topic per article, in a tree. Filtering by a topic includes its sub-topics. Deleting a topic deletes its sub-topics; their articles stay, without a topic.') }}</p>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr><th>{{ _('Topic') }}</th><th>{{ _('Articles') }}</th><th>{{ _('Description') }}</th><th class="text-end"></th></tr></thead>
+      <tbody>
+      {% for row in tree %}{% set t = row.topic %}
+      <tr>
+        <td style="padding-left:{{ 8 + row.depth * 18 }}px;"><i class="bi bi-folder2 me-1 text-muted"></i>{{ t.name }}</td>
+        <td>{{ counts.get(t.id, 0) }}</td>
+        <td class="text-muted small">{{ t.description or '—' }}</td>
+        <td class="text-end text-nowrap">
+          <form method="post" action="{{ url_for('wiki.topic_delete', topic_id=t.id) }}" class="d-inline" data-wiki-confirm="{{ _('Delete this topic and its sub-topics?') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted">{{ _('No topics yet.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<form class="fw-card" method="post" action="{{ url_for('wiki.topics') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="fw-card-header"><span class="fw-card-title">{{ _('Add or rename a topic') }}</span></div>
+  <div class="fw-card-body d-flex flex-wrap gap-2 align-items-end">
+    <div>
+      <label class="form-label small mb-1" for="wt-edit">{{ _('Topic to rename') }}</label>
+      <select class="form-select form-select-sm" id="wt-edit" name="topic_id">
+        <option value="">{{ _('— new topic —') }}</option>
+        {% for row in tree %}<option value="{{ row.topic.id }}">{{ '— ' * row.depth }}{{ row.topic.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label small mb-1" for="wt-name">{{ _('Name') }}</label>
+      <input class="form-control form-control-sm" id="wt-name" name="name" maxlength="80" required>
+    </div>
+    <div>
+      <label class="form-label small mb-1" for="wt-parent">{{ _('Under') }}</label>
+      <select class="form-select form-select-sm" id="wt-parent" name="parent_id">
+        <option value="">{{ _('(top level)') }}</option>
+        {% for row in tree %}<option value="{{ row.topic.id }}">{{ '— ' * row.depth }}{{ row.topic.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="flex-grow-1">
+      <label class="form-label small mb-1" for="wt-desc">{{ _('Description') }}</label>
+      <input class="form-control form-control-sm" id="wt-desc" name="description" maxlength="2000">
+    </div>
+    <button class="btn btn-fw-primary btn-sm px-4">{{ _('Save') }}</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/wiki.js') }}"></script>
+{% endblock %}

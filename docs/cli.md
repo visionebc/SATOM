@@ -1,0 +1,824 @@
+# The operator CLI (`satom`)
+
+A console tool for diagnosing, controlling and rebuilding a SATOM node —
+including, and especially, when the web UI will not start. It is modelled on the
+appliance CLIs the product manages: verbs first (`get`, `show`, `diagnose`,
+`execute`), `?` for completion at any depth, and an interactive prompt.
+
+```
+$ satom get system health
+$ satom diagnose all
+$ sudo satom execute restart web
+$ satom                       # interactive prompt
+```
+
+---
+
+## 1. Why it looks the way it does
+
+Three constraints shaped every decision below. They are load-bearing; if you
+extend the CLI, keep them.
+
+### 1.1 It must work on a node that is broken
+
+That is the only reason it exists. So the CLI is **standard library only** at
+module level: no Flask, no SQLAlchemy, no psycopg, not even the app package. A
+tool that needs a healthy venv to tell you the venv is unhealthy is not a
+recovery tool.
+
+Commands that genuinely need the app (queueing an update, running
+`flask cert-renew`) import it **lazily**, inside the function, and degrade with
+a stated reason when it is unavailable. `tests/test_cli.py` enforces the
+module-level rule with an AST check, because a stray import would not be
+noticed until the day it matters.
+
+### 1.2 It degrades by privilege instead of failing
+
+`get`, `show` and `diagnose` work as **any** user — that is the half of the tool
+that rescues an operator staring at a dead node before they have sudo. `execute`
+requires root and refuses with an explanation, an exit code of `3`, and the full
+command echoed back so the arguments do not have to be retyped from memory. It
+never prints a traceback for a permission problem.
+
+Where a probe needs a credential the caller cannot read (`.env` is `0640
+root:<service account>` on purpose), the command reports **degraded** and says
+so. A probe that could not run must never render as a pass — that is the exact
+failure mode that let the Fleet health badge show four dead appliances as
+healthy (see `safeguards.md` §9b).
+
+### 1.3 It is a root tool for a human, and that must not weaken the app
+
+Reinstalling a venv, writing unit files or installing packages **is** root.
+There is no subset of that which is "a bit less than root" — a `.deb` runs its
+own maintainer scripts as root, so permission to install packages *is* root.
+
+That is fine, because the privilege model
+([`privilege-model.md`](privilege-model.md)) governs the **service account**,
+not the human at the console. What it forbids is:
+
+> **Never add `satom` to the service account's sudoers.**
+> A `NOPASSWD: /usr/local/sbin/satom` line for the app user equals
+> `NOPASSWD: ALL`: it would turn a compromised web worker into root and undo
+> the entire deprivilege work. `satom diagnose privilege` fails loudly if it
+> finds such a line.
+
+And the corollary that dictates where the code lives:
+
+> **The CLI never executes from `/opt/satom`.**
+> The app tree is writable by the service account. A launcher that exec'd code
+> from there would let a compromised worker rewrite what an operator is about to
+> run under `sudo`. So the binary is `/usr/local/sbin/satom` (`root:root 0755`)
+> and its code is a **copy** at `/usr/local/lib/satom-cli/` (`root:root`).
+> Both are verified — ownership, mode, and *not a symlink* — by the installer
+> and again by `satom diagnose privilege`.
+
+The same rule covers what the CLI **runs**, not only where its own code lives:
+
+> **Root never executes the app tree.** The venv python, `flask`, `pip` and
+> `git` against `/opt/satom` (which reads the service account's `.git/config`:
+> `git status` runs its `core.fsmonitor`) all run **as the service account**
+> (`runuser -m -u <owner>`, or `setpriv` to the tree's uid when that uid has no
+> name). That includes `execute reinstall venv`: the venv is built and
+> `requirements.txt` installed as the service account, so a package's build
+> code never runs as root. Root keeps only what the account cannot do itself:
+> moving the old venv aside, the `pip freeze` copy under `/root`, unit files.
+> And root never writes or chowns *through* the tree: files the CLI stages in
+> `data/` (update packages, API packs) are written by a child that already
+> dropped to the service account, and `execute repair permissions` walks by
+> directory fd without following a symlink or touching a hard-linked file.
+> `tests/test_cli_privdrop.py` fails on any git/venv/flask/pip argv that does
+> not go through `context.app_cmd`.
+
+---
+
+### 1.4 The console announces what it is, who made it and under what licence
+
+`satom` with no arguments opens the interactive prompt, and before the first
+prompt it prints a banner: the SATOM wordmark in ASCII blocks, the version and
+node identity read from the node itself, the attribution to VisionEBC, and the
+licence.
+
+```
+  ############  ############  ############  ############  ###      ###
+  ##        ##  ##        ##      ####      ##        ##  ####    ####
+  ##            ##        ##      ####      ##        ##  ## ##  ## ##
+  ############  ############      ####      ##        ##  ##  ####  ##
+            ##  ##        ##      ####      ##        ##  ##   ##   ##
+  ##        ##  ##        ##      ####      ##        ##  ##        ##
+  ############  ##        ##      ####      ############  ##        ##
+
+  SATOM operator CLI 4.13.0
+  System Automation & Task Orchestration Manager
+  Made by VisionEBC  ·  https://visionebc.com
+  satom-node-1 · primary · root
+  ────────────────────────────────────────────────────────────────────────────
+  Copyright 2026 Vision EBC  ·  Licensed under the Elastic License 2.0
+  Source-available, NOT OSI open source  ·  provided AS IS, without warranty
+  Offering SATOM to third parties as a hosted or managed service requires
+  a commercial licence: licensing@visionebc.com
+  ────────────────────────────────────────────────────────────────────────────
+  '?' lists commands here  ·  'show tree' is the whole map  ·  'exit' leaves
+```
+
+Three properties are load-bearing, and §1.1 is why:
+
+* **The art is blocks of `#`, never Unicode.** The alternate glyph set in
+  `render.py` exists because box drawing folds to garbage on a serial console —
+  which is exactly where this tool gets opened. `#` renders identically with
+  `--ascii`, through a pipe, and on the console of a node that will not boot.
+* **Below 78 columns the banner collapses to its one-line header.** The licence
+  paragraph is fixed-width prose; suppressing only the art would leave four
+  74-column sentences to wrap into confetti on the recovery console the
+  threshold exists to protect. Through a **pipe** nothing is suppressed: width
+  `0` means "do not reflow", not "narrow", and a redirected transcript must
+  still carry the licence.
+* **`SATOM_CLI_NO_BANNER=1` returns the one-line header.** Runbooks and
+  operators who open this console dozens of times a day should not have to
+  scroll past twenty lines to reach a prompt.
+
+The banner is the **ninth** surface on which SATOM states its licence, after
+`LICENSE`, `NOTICE`, `README.md`, `CONTRIBUTING.md`, `DISCLAIMER`,
+`SECURITY.md`, the curated `site/` pages and the footer template in
+`deploy/gen_site_docs.py`. Nothing *fails* when one of them goes stale — the
+claim simply becomes false, which is how `Version: 1.0` survived four releases
+in the README. `tests/test_cli_banner.py` pins the console's wording to the same
+assertions the site footer makes and forbids the old licence outright.
+
+> The banner is **not** printed on SSH login. It appears when someone opens the
+> SATOM console, which is a different event: an operator who signs in to read a
+> log has not asked what licence the product ships under.
+
+---
+
+## 2. Getting the privilege
+
+Print the rule and hand it to whoever administers the box. This needs no
+privilege and changes nothing, so you can produce it from the account that does
+not yet have rights:
+
+```bash
+satom show sudoers alice
+```
+
+```
+alice ALL=(root) /usr/local/sbin/satom
+```
+
+Install it as `/etc/sudoers.d/satom-operator`, `0440`, after
+`visudo -cf`. What it grants: everything under `execute` — service control,
+venv and unit reinstall, queued code and pip updates, promote, certificate
+operations. What it does **not** grant: a shell. There is no "run arbitrary
+command" verb, and package changes go through the curated allowlist, never a
+free-form `pip install`.
+
+The path must stay fixed and the target `root:root`. If the operator can write
+`/usr/local/sbin/satom`, the rule is equivalent to `NOPASSWD: ALL`. Same trap
+as the installer sudoers rule documented in `INSTALL.md` §5.
+
+---
+
+## 3. Command reference
+
+`?` works at every level — `satom ?`, `satom get ?`, `satom execute reinstall ?`
+— and in the prompt, where Tab completes as well. A `*` marks commands that
+need root.
+
+Two rules run through the whole table and are enforced by
+`tests/test_cli_ops.py`:
+
+* **A read never writes.** `get`, `show` and `diagnose` must leave the node
+  byte-identical. This is not theoretical: `git status` run as root rewrites
+  `.git/index` and takes it from the service account, and `compileall` leaves
+  root-owned `__pycache__` behind — so two *diagnostics* were creating the
+  ownership drift a third diagnostic then reported. Fixed with
+  `--no-optional-locks`, an in-memory `compile()` and
+  `PYTHONDONTWRITEBYTECODE=1`.
+* **Absence of data is never health.** A check that cannot read reports
+  *unknown* and exits 4. It never reports OK.
+
+### `get` — read state (any user)
+
+| Command | What it answers |
+|---|---|
+| `get system status` | Identity, version, git head, HA role, and *your* privilege level |
+| `get system health` | **Start here.** Units + `/healthz` + code freshness + disk, folded into one status. A process older than the code on disk (the scheduler after a deploy that restarted only the web) is a warning |
+| `get system performance` | Load, memory, filesystems |
+| `get system disk` | Space, **inodes**, and the directories that actually grow here |
+| `get system interface` | Addresses and the ports SATOM cares about |
+| `get system time` | Clock and NTP. Skew breaks TLS, ACME and every "age" below |
+| `get service status [<svc>]` | One unit (with journal tail) or all of them |
+| `get timer status` | Every timer and `.path`: enabled, last fire, next fire, last result |
+| `get node status` | Role, peer list, peer reachability over `:8443` |
+| `get database status` | Connection, size, replication stream |
+| `get certificate status` | Served cert, expiry, renewal journal |
+| `get certificate list` | **Every** certificate this node holds: served, node leaf, internal CA |
+| `get backup status` | The four copies side by side, with their real ages |
+| `get backup list` | The bundles `execute restore db` accepts |
+| `get scheduler status` | Scheduled actions: what exists, last run, failure streak, overdue |
+| `get device status` | Appliances: when the configuration last reached the local store (warns past 26 h or never), the web console's last reachability probe, maintenance flag |
+| `get device config [<device> [<section> [<table>]]]` | The configuration as SATOM last harvested it — from the local store, never from the box |
+| `get device naming [<device> [--table <type>]] [--product <p>]` | Naming Discovery: the pattern each object type already follows (`vs-{name}`), how many objects follow it, the exceptions with their reason, the Naming scheme pattern and how many objects match it; without a device, the fleet consensus per product. Read from the stored tree, run as the service account (root) |
+| `get device not-in-gui <device> [--endpoint <key\|cli path>]` | "Not in GUI, but in CLI" for one device: objects only the CLI serves, CLI-only fields of REST objects, REST fields the Fortinet GUI does not show, and objects the device's GUI does not draw — each with the channel SATOM writes it over. From the API library and the measured layouts; the device is not contacted. Current values and the editor stay on `/appliances/<id>/not-in-gui` (root) |
+| `get signatures status` | FortiGuard signature DB version and age per FortiWeb (stale past `alerts.signature_max_days`, or never updated), the signature source, and what the local signature index holds |
+| `get monitor status` | Probe states; parked devices are shown but do not raise the roll-up |
+| `get job list` | The background-job ledger, including ghosts |
+| `get update history` | Recent updates, and whether the runner ever picked them up |
+| `get git status` | Branch, drift, oldest unpushed commit, parked safety refs |
+| `get user list` | Who can log in — and whether anyone still can |
+| `get alerts status` | Whether anyone is actually **told** when something breaks — including the result of the last alert email; **bad** when it was not delivered, or delivered unsigned straight to the recipient's server (**deliverability: ERROR** — may land in spam) |
+| `get log <svc> [lines]` | Journal tail |
+
+Most of this half has no console of its own in the product: the scheduler, the
+timers, the four backup copies and the alert delivery path are things you
+otherwise only see indirectly, through their consequences.
+
+### `show` — configuration and reference (any user)
+
+| Command | What it answers |
+|---|---|
+| `show privilege` | How privilege is split here and why. Read this before asking for rights |
+| `show sudoers [<account>]` | The rule to request for an operator account |
+| `show config` | `.env` with secrets redacted by pattern |
+| `show units` | Alias → unit map with install state |
+| `show services` | What each unit is *for*, and which are off limits |
+| `show paths` | Canonical layout: what is replicated, what is node-local, what is secret |
+| `show ports` | Which port belongs to which listener, and why |
+| `show schedule` | What *should* run and how often |
+| `show runbook [<topic>]` | **Offline recovery procedures** — see below |
+| `show changelog` | The most recent release notes from the tree |
+| `show docs [<page>]` | The manual, from the tree. Works with no network |
+| `show trust` | Public keys this node accepts, per purpose (update, api_pack, knowledge) |
+| `show package <file>` | Inspect an update package without applying it |
+| `show apipack` | API library packs on this node and what was imported from them |
+| `show knowledge` | Knowledge packs per lane (age), the feed, the mode and the last fetch |
+| `show layouts [<product>]` | Measured GUI layouts per product and exact build (config, live-monitor and "Not in GUI, but in CLI" pages, source pack), and whether each device has one for its exact build |
+| `show tree` | The whole command tree in one view |
+| `show version` | App, CLI, Python, node |
+
+`show runbook` carries twelve procedures inside the binary: `web-down`,
+`db-down`, `scheduler-idle`, `update-stuck`, `cert-expired`, `disk-full`,
+`peer`, `promote`, `restore`, `fresh-install`, `locked-out`,
+`device-unreachable`. They live in `deploy/satom_cli/runbooks.py` rather than in
+this file because the operator who needs them is on a node with no web UI, no
+browser and usually no route to the internet. Keep the commands in them
+copy-pasteable.
+
+The CLI never prints a secret and no command accepts one as an argument — it
+would land in shell history and in the process table.
+
+### `diagnose` — active probes (any user)
+
+| Command | What it finds |
+|---|---|
+| `diagnose all` | All 24 checks, folded into one exit code. The one to paste into a ticket |
+| `diagnose install` | **Is this node ARMED, or merely installed?** Run it on day one |
+| `diagnose code` | Is each long-running process running the code that is on disk? |
+| `diagnose scheduler` | Is anything automated actually firing here? |
+| `diagnose units` | Unit inventory, `User=` drop-ins, and who each process really runs as |
+| `diagnose config` | `.env`: present, correctly owned, internally consistent |
+| `diagnose service <svc>` | State, resolved `User=`, drop-ins, journal |
+| `diagnose database` | Connect, recovery state, TLS in use, lock waits |
+| `diagnose python` | venv, `pip check`, in-memory compile, **and the lazy-import smoke test** |
+| `diagnose network` | Listening ports, `nginx -t`, local HTTPS probe |
+| `diagnose nginx` | Syntax, which vhost owns `default_server` on `:443`, and the ACME redirect trap |
+| `diagnose certificate` | Expiry, live handshake, the renewal timer's last result |
+| `diagnose acme` | Client, account key, webroot, provider credentials |
+| `diagnose peer` | Peer reachability, datasync key mode, datasync timer |
+| `diagnose git` | Repository integrity, including the root-owned-files trap |
+| `diagnose privilege` | Integrity of the CLI install and the sudo boundary |
+
+**`diagnose install` is the one to run on a new node.** The installer delivers
+code, units, TLS and a database. It does *not* deliver the automated
+protections, because those are DATA and operator edits win over code defaults
+in this product — no `ScheduledAction` row is ever seeded. A fresh node
+therefore has every capability, zero coverage, and looks perfectly healthy.
+`diagnose install` prints that difference; `execute seed actions` closes it.
+
+**`diagnose code` exists because the scheduler carries its own copy of the
+application.** Touching an action spec or the probe registry and restarting only
+`web` leaves the sidecar on the old code, and the symptom is pathognomonic: the
+manual run succeeds while the scheduled run fails with `Unknown action`.
+
+**`diagnose python` exists because of a real incident.** In 1.2 and 1.2.1 a
+stray `import os` above `from __future__ import annotations` made
+`app/services/cert_service.py` a hard `SyntaxError`. Every caller imports that
+module *inside a function*, so the app booted, `/healthz` returned 200 and 757
+tests stayed green while the nightly certificate renewal died on both nodes.
+The check therefore does two things nothing else does: it compiles every module
+under `app/` and `deploy/`, and it explicitly imports the known lazily-imported
+modules (`LAZY_MODULES` in `cmd_diagnose.py`). **When you add a module that is
+only imported inside functions, add it to that list.**
+
+**`diagnose nginx`** watches the vhost trap: exactly one config must own
+`default_server` on `:443`. With none, the alphabetically first config wins and
+the application becomes unreachable by hostname while the static site keeps
+serving — which reads like a DNS fault. It also flags a `return 301` at *server*
+level in a config with no ACME challenge location: that redirect runs in the
+rewrite phase, before a location is chosen, so it swallows the HTTP-01
+challenge.
+
+### `execute` — change state (root)
+
+| Command | Notes |
+|---|---|
+| `execute restart\|start\|stop <svc>` | Restart **verifies** `/healthz` afterwards; `systemctl` returning 0 has lied before |
+| `execute restart-all` | On a primary, runs `flask db upgrade` when the schema is behind the newest migration (a standby follows by replication); compiles any language catalogue older than its `.po`; restarts the stack in dependency order; then `nginx -t` + reload, then verify |
+| `execute enable\|disable <unit>` | Timers and `.path` units. `disable updater` is refused — see below |
+| `execute reload nginx` | Runs `nginx -t` first and refuses on invalid config |
+| `execute seed actions [--yes] [--upgrade]` | **Creates the protections a fresh install does not.** Prints the plan; `--yes` applies; `--upgrade` limits it to the actions 3.x introduced (what an update from 2.x runs by itself) |
+| `execute update code [<target>]` | **Queues** a git update (or a rollback, by commit) for the privileged runner |
+| `execute update pip <pkg> <ver>` | Curated allowlist only. Node-local: the venv is not replicated |
+| `execute update status [<id>]` | The runner's `steps[]` log (any user) |
+| `execute reinstall venv --yes` | Rebuilds `venv/` as the service account, saving a `pip freeze` and moving the old one aside |
+| `execute reinstall units` | Re-copies the units **and re-pins `User=` via drop-in** |
+| `execute reinstall cli` | Refreshes the root-owned copy of this CLI |
+| `execute repair permissions` | Gives root-owned files in the app tree back to the service account |
+| `execute repair jobs [--older-than N] --yes` | Sweeps ghost jobs and prunes the terminated ledger |
+| `execute repair tmp [--older-than N] --yes` | Deletes aged scratch under `data/tmp`. Nothing else prunes it |
+| `execute cert renew` | Runs the renewal pass now instead of waiting for 03:30 |
+| `execute alerts run [--dry-run]` | Evaluates the health checks now |
+| `execute backup db [--push]` | A **bundle** in the product's own format; `--push` also sends it off-node |
+| `execute backup git` | `git bundle --all`, including the parked safety refs |
+| `execute restore db <bundle> --yes` | Stops the writers, restores, restarts, verifies `/healthz` |
+| `execute admin reset-password <user>` | Asked interactively; never in `argv` |
+| `execute admin unlock <user>` | Clears a lockout; leaves the password and the enabled flag alone |
+| `execute scheduler run\|enable\|disable <id>` | One action, now |
+| `execute maintenance <device> <on\|off>` | Park or un-park an appliance |
+| `execute support bundle` | Every diagnostic, journal and unit file in one `0600` archive |
+| `execute preflight` / `postflight` | The existing risky-change harness |
+| `execute promote --yes` | Standby only; requires the explicit flag |
+
+Anything destructive prints its plan and **exits 2** unless given `--yes`.
+`tests/test_cli_ops.py` fails the suite if a command flagged destructive does
+not document that confirmation.
+
+Two units are deliberately **not** operator-controllable:
+`satom-updater.{path,service}` (it *is* the privileged root runner — a verb that
+restarts it re-enters the privilege boundary sideways) and `postgresql`
+(shared state; use `systemctl` and know why). `execute disable updater` is
+refused outright for the opposite reason: disabled, every enqueued update sits
+at `queued` forever and *nothing* reports an error. `execute enable updater` is
+allowed, because that is the fix.
+
+`execute backup db` and `execute restore db` **delegate to
+`app/services/system_backup.py`**. The bundle is a `.tar.gz` of `db.dump` +
+`reports/` + a manifest, and the System Backup page, the retention policy, the
+push to the external server and `restore_backup` all read exactly that format.
+An earlier version of this CLI wrote a bare `pg_dump` instead: invisible to
+every one of them. A backup nothing can restore is not a backup. What the CLI
+adds on top is the part a web request cannot do — stopping the writers around
+the restore and verifying the node afterwards.
+
+`execute reinstall units` writes a **drop-in**, never an edit to the unit file,
+because `self_update_runner.py` re-copies `deploy/<unit>` on every code update.
+That is exactly how the standby silently reverted to `User=root` after the
+2026-07-26 deprivilege — a `sed` on a unit does not survive.
+
+`execute repair permissions` exists because running anything as root inside
+`/opt/satom` (pytest, a git command, a manual script) leaves root-owned files
+in `.git/`, `data/jobs/` and `reports/`. The symptoms are indirect: git publish
+keeps working, because git renames refs and only needs the directory, while some
+other write fails quietly.
+
+### `ha` — the HA link: can the standby fetch code from this primary?
+
+| Command | Notes |
+|---|---|
+| `ha check` | Read-only. The standby's **own** reconciler record (over `/healthz/reconciler`), this node's `systemd-logind` (logins of the service account stuck in `opening` for more than 60 s) and whether `sshd` answers. Exit 1 when the link is broken |
+| `ha repair` | **Preview** — the check, what the repair does and does not do. Exits 2; nothing changes |
+| `ha repair --yes [--wait N]` | Root. Enqueues `restart systemd-logind` for the privileged runner (the same allowlisted request as the GUI's *Repair HA link* button), waits up to N s (default 90) for the runner, then re-checks and prints before and after |
+
+Both delegate to `app/services/ha_link.py` and run it as the service account,
+so the console, the Software Update & HA page and the alert can never give
+different answers. The repair is **role-guarded**: on a standby or a standalone
+node it refuses and says why, and the runner refuses a hand-written request on
+any node whose Postgres is not the primary. When the app itself cannot start,
+`ha check` prints the manual commands instead. The full procedure is
+`satom show runbook ha-link`; the background is in the user guide, §24.1.
+
+### The complete table
+
+Everything above is a curated tour — grouped, with the reasoning. The table
+below is the *exhaustive* list, and it is **generated from the live registry**
+(`deploy/satom_cli/tree.py`) by `deploy/gen_cli_reference.py`. A hand-typed
+enumeration of this many commands goes stale at the fifth addition, and the
+person who most needs it is the one whose web interface is down and who cannot
+check. `tests/test_docs_publication.py` fails the suite when this block no
+longer matches the console you are running.
+
+<!-- BEGIN GENERATED COMMAND REFERENCE -->
+
+*129 commands in 48 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+
+### `get`
+
+Read state. Every command below works as **any user** — this is the half of the console that has to keep working when everything else does not.
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom get system status` | — | — | Identity, version, HA role and your privilege level. |
+| `satom get system health` | — | — | One-shot roll-up: units, /healthz, disk. Start here. |
+| `satom get system performance` | — | — | CPU, memory and filesystem usage. |
+| `satom get system interface` | — | — | IP addresses and the ports SATOM cares about. |
+| `satom get system disk` | — | — | Space, inodes, and the directories that actually grow. |
+| `satom get system time` | — | — | Clock and NTP. Skew breaks TLS, ACME and every 'age' here. |
+| `satom get service status [<service>]` | — | — | State of one unit, or all of them. |
+| `satom get timer status` | — | — | Enabled, last fire, next fire, last result. |
+| `satom get node status` | — | — | Role, peer list and peer reachability over :8443. |
+| `satom get database status` | — | — | Connection, size, replication. |
+| `satom get certificate status` | — | — | Served certificate, expiry and the renewal journal. |
+| `satom get certificate list` | — | — | Every certificate this node holds, not just the served one. |
+| `satom get backup status` | — | — | All four, side by side, with their real ages. |
+| `satom get backup list` | — | — | Database bundles you can hand to 'execute restore db'. |
+| `satom get clone status` | — | — | Last clone import and whether this node is still holding it. |
+| `satom get scheduler status` | — | — | What exists, when it last ran, what is overdue. |
+| `satom get api versions [<product>]` | — | — | Firmware lines SATOM has evidence for, and how much. |
+| `satom get api preflight <appliance\|line> <object> <field>... [--product <p>]` | — | — | Would a payload of these fields be understood on that line? 'unmeasured' is an answer, never a yes. |
+| `satom get device status` | — | — | Last sync to the local store, last reachability probe, maintenance flag. |
+| `satom get device config [<device> [<section> [<table>]]] [--version <id>]` | — | — | The device's configuration as SATOM last harvested it — read from the LOCAL store, never from the box. |
+| `satom get device naming [<device> [--table <type>]] [--product <p>]` | — | — | The naming convention each object type already follows, from the stored tree — exceptions, fleet consensus. |
+| `satom get device not-in-gui <device> [--endpoint <key\|cli path>]` | — | — | Every object and field the device's build has outside the Fortinet GUI, and the channel SATOM writes it over. |
+| `satom get signatures status` | — | — | DB version and age per device, the source, what the index holds. |
+| `satom get monitor status` | — | — | Probe states, and how much coverage is disabled. |
+| `satom get job list` | — | — | The ledger, including ghosts that keep the dock's toast open. |
+| `satom get update history` | — | — | Recent updates and whether the runner ever picked them up. |
+| `satom get git status` | — | — | Branch, drift, unpushed age, parked safety refs. |
+| `satom get release trust` | — | — | Release trust anchor, newest signed commit, and whether HEAD's deploy/ matches it (details need sudo). |
+| `satom get user list` | — | — | Who can log in — and whether anyone still can. |
+| `satom get alerts status` | — | — | Whether anyone is actually told when something breaks. |
+| `satom get log <service> [lines]` | — | — | Tail a unit's journal. |
+
+### `show`
+
+Configuration, reference material and the console's own map. Also unprivileged: `show sudoers` prints the rule you need *before* you have it.
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom show trust` | — | — | Public keys this node accepts, per purpose (update, api_pack, knowledge), with fingerprints. |
+| `satom show package <file.tar.gz>` | — | — | Inspect an update package without applying it. |
+| `satom show apipack` | — | — | API library packs on this node and what was imported from them. |
+| `satom show knowledge` | — | — | Knowledge packs per lane (age), the feed, the mode and the last fetch. |
+| `satom show layouts [<product>]` | — | — | Measured GUI layouts per product and build, and which device has one for its exact build. |
+| `satom show config` | — | — | The .env, with secrets redacted. |
+| `satom show units` | — | — | Alias -> systemd unit map, with install state. |
+| `satom show services` | — | — | What each unit is FOR, and which ones are off limits. |
+| `satom show paths` | — | — | Canonical filesystem layout: what is replicated, what is not. |
+| `satom show ports` | — | — | Which port belongs to which listener, and why. |
+| `satom show schedule` | — | — | What SHOULD run and how often. |
+| `satom show runbook [<topic>]` | — | — | Offline recovery procedures. 'show runbook' lists them. |
+| `satom show privilege` | — | — | How privilege is split here, and why. Read this first. |
+| `satom show sudoers [<account>]` | — | — | Print the sudoers rule to request for an operator account. |
+| `satom show docs [<name>] [<section>]` | — | — | The manual, from the tree. 'show docs' lists it. Works with no network. |
+| `satom show changelog` | — | — | The most recent release notes from the tree. |
+| `satom show version` | — | — | Versions of the app, the CLI and Python. |
+| `satom show tree [<prefix>...] [--commands] [--depth N] [--root] [--danger]` | — | — | The WHOLE command tree in one view. Filters: --commands/--depth/--root. |
+
+### `diagnose`
+
+Active probes that reach out — sockets, database handshakes, compilers, peers. Unprivileged, but they take longer than `get`.
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom diagnose all` | — | — | Every check, folded into one exit code. |
+| `satom diagnose service <service>` | — | — | One unit: state, definition, drop-ins, journal. |
+| `satom diagnose install` | — | — | Is this node ARMED, or merely installed? Run on day one. |
+| `satom diagnose code` | — | — | Is each process running the code that is on disk? |
+| `satom diagnose scheduler` | — | — | Is anything automated actually firing here? |
+| `satom diagnose units` | — | — | Unit inventory and whether the privilege model survived. |
+| `satom diagnose config` | — | — | The .env: present, correctly owned, internally consistent. |
+| `satom diagnose data` | — | — | Is anything under data/ readable by another local account? |
+| `satom diagnose database` | — | — | Connect, replication role, TLS, lock waits. |
+| `satom diagnose python` | — | — | venv integrity, compileall, and the LAZY-import smoke test. |
+| `satom diagnose network` | — | — | Listening ports, nginx -t, local HTTPS probe. |
+| `satom diagnose nginx` | — | — | Syntax, which vhost wins :443, and the ACME redirect trap. |
+| `satom diagnose certificate` | — | — | Expiry, live handshake, renewal timer result. |
+| `satom diagnose acme` | — | — | Client, account key, webroot, provider credentials. |
+| `satom diagnose peer` | — | — | Peer reachability, datasync key and timer. |
+| `satom diagnose git` | — | — | Repository integrity, including the root-owned-files trap. |
+| `satom diagnose updates` | — | — | Can this node accept a signed offline package, and is that safe? |
+| `satom diagnose privilege` | — | — | Integrity of the CLI install and the sudo boundary. |
+| `satom diagnose recovery` | — | — | Does anyone hold the two secrets no backup carries? |
+
+### `execute`
+
+Everything that changes state. **Root required.** Without it each command refuses with the full command line you tried and exit code 3, never a traceback.
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom execute rollback list` | yes | — | Rollback points saved on this node, newest first. |
+| `satom execute rollback apply <point-id> [--yes]` | yes | ! | Restore one point. Dry run unless --yes. |
+| `satom execute seal recovery [--yes]` | yes | ! | Seal FERNET_KEY + internal CA into data/ so the peer and every bundle carry them. Passphrase shown once, never stored. |
+| `satom execute unseal recovery [--yes]` | yes | ! | Print FERNET_KEY + internal CA from the sealed envelope. |
+| `satom execute export recovery-key [--out PATH] [--yes]` | yes | ! | Print FERNET_KEY + the internal CA key so a rebuild is possible. |
+| `satom execute restart <service>` | yes | — | Restart a service and VERIFY it actually came back. |
+| `satom execute restart-all` | yes | — | Migrate the schema on a primary (flask db upgrade), compile stale language catalogues, restart the whole stack in order, then verify /healthz. |
+| `satom execute start <service>` | yes | — | Start a service. |
+| `satom execute stop <service>` | yes | — | Stop a service. |
+| `satom execute enable <unit>` | yes | — | Enable a timer or .path unit (--now). |
+| `satom execute disable <unit>` | yes | — | Disable a timer. Refuses the privileged runner. |
+| `satom execute reload nginx` | yes | — | Validate the config, then reload nginx. |
+| `satom execute reset theme` | yes | — | Activate the built-in theme — the way back from a palette that made the console unreadable. |
+| `satom execute seed actions [--yes] [--upgrade]` | yes | — | The minimum scheduled actions. Shows the plan; --yes applies. |
+| `satom execute update code [<target>]` | yes | — | Queue a git update — or a rollback, by passing a commit. |
+| `satom execute update pip <package> <version>` | yes | — | Queue a curated-allowlist package change. Node-local. |
+| `satom execute update package <file.tar.gz> [--yes] [--allow-downgrade] [--no-backup]` | yes | ! | Apply a SIGNED offline update package. Works with no network. |
+| `satom execute update fetch [--yes] [--download-only] [--full] [--feed <https-url>] [--user <name>]` | yes | ! | Download the newest signed package from the upgrade feed and apply it. |
+| `satom execute update status [<id>]` | — | — | Show the latest (or a specific) update record. |
+| `satom execute reinstall venv` | yes | ! | Recreate venv/ from requirements.txt. Needs --yes; keeps a freeze to roll back to. |
+| `satom execute reinstall units` | yes | — | Re-copy the systemd units AND re-pin User= via drop-in. |
+| `satom execute reinstall cli` | yes | — | Refresh the root-owned copy of this CLI from the repo. |
+| `satom execute reinstall runner` | yes | — | Refresh the root-owned copy of the privileged update runner. |
+| `satom execute reinstall metrics-store` | yes | — | Install or re-assert the node-local metrics store (VictoriaMetrics). |
+| `satom execute apipack import <file.tar.gz\|shipped> [--yes] [--product <p>[,<p>...]] [--section <s>[,<s>...]]` | yes | — | Import a SIGNED API pack. Dry run unless --yes; never replaces local data. |
+| `satom execute knowledge fetch [--feed <https-url>] [--import] [--yes]` | yes | — | Check the knowledge feed. --yes downloads the pack, --import --yes also imports it (signature verified). Primary only. |
+| `satom execute apilib harvest <appliance-id\|name> [--no-probe]` | yes | — | Read one appliance's CLI schema (tree + hidden fields) and probe the REST paths the library lacks. Read-only on the box. |
+| `satom execute apilib compat <product> <buildA> <buildB> [--json]` | yes | — | Compare two builds of a product through both channels (REST + CLI schema): added/removed, options, renames. |
+| `satom execute apilib channels <product> <build> [--json]` | yes | — | One build: fields per channel (both / CLI only / hidden / REST only / meta / unknown). |
+| `satom execute migration report <appliance-id\|name> --target <build> [--backup <id>]` | yes | — | Check one appliance's configuration (newest vault dump) against a target build: blocking, translated, warned and new items + verdict. Read-only. |
+| `satom execute trust add-key <file.pub> [--purpose update\|api_pack\|knowledge] [--name <slug>]` | yes | — | Install a signing public key for one purpose (default: update). |
+| `satom execute trust remove-key <name\|fingerprint> [--purpose update\|api_pack\|knowledge] --yes` | yes | ! | Stop accepting packages signed by a key. Needs --yes. |
+| `satom execute repair permissions` | yes | — | Give root-owned files in the app tree back to the service account. |
+| `satom execute repair jobs [--older-than N] [--yes]` | yes | ! | Sweep ghost jobs and prune the terminated ledger. |
+| `satom execute repair tmp [--older-than N] [--yes]` | yes | ! | Delete aged scratch under data/tmp. Nothing else prunes it. |
+| `satom execute repair nginx [--yes]` | yes | ! | Re-pin the proxied Host header and the served names in the vhost. |
+| `satom execute repair data [--yes]` | yes | ! | Close data/ to other accounts: 0750, vault and bundles owner-only. |
+| `satom execute cert renew` | yes | — | Run the renewal pass now instead of waiting for 03:30. |
+| `satom execute alerts run [--dry-run]` | yes | — | Evaluate the health checks now. |
+| `satom execute backup db` | yes | — | pg_dump the application database into data/system_backups/. |
+| `satom execute backup git` | yes | — | git bundle --all, including the parked safety refs. |
+| `satom execute restore db <file> --yes` | yes | ! | Replace the database from a bundle. Dumps the current one first. |
+| `satom execute clone export [--yes]` | yes | — | Write a clone bundle of this deploy's configuration (no backups, history or firmware). Secrets travel re-encrypted under a one-time key; the passphrase is printed once. |
+| `satom execute clone import <bundle.tar.gz> [--yes]` | yes | ! | Replace this deploy's configuration with a clone bundle's. Keeps this node's identity and holds every schedule until released. |
+| `satom execute clone release [--yes]` | yes | — | Re-enable what an import held: schedules, alert e-mail, NetBox push, hooks. |
+| `satom execute admin reset-password <username>` | yes | — | Set a password (asked interactively, never in argv); re-enables the account. |
+| `satom execute admin unlock <username>` | yes | — | Clear a lockout. Touches neither the password nor the enabled flag. |
+| `satom execute scheduler run <action-id>` | yes | — | Fire one action NOW as a manual run. |
+| `satom execute scheduler enable <action-id>` | yes | — | Enable one action. |
+| `satom execute scheduler disable <action-id>` | yes | — | Disable one action. |
+| `satom execute support bundle` | yes | — | Collect every diagnostic and journal into one 0600 file. |
+| `satom execute device reboot <device> --yes` | yes | ! | Reboot one appliance via its CR-bound action. DESTRUCTIVE. |
+| `satom execute device upgrade <device> --yes` | yes | ! | Firmware upgrade of one appliance via its CR-bound action. |
+| `satom execute maintenance <device> <on\|off>` | yes | — | Park or un-park an appliance. |
+| `satom execute preflight [<label>]` | yes | — | Capture a health baseline BEFORE a risky change. |
+| `satom execute postflight` | yes | — | Diff the current health against the last preflight. |
+| `satom execute promote` | yes | ! | Promote this standby to primary. Requires --yes. |
+| `satom execute sign-release [--yes]` | yes | ! | Sign HEAD of main with the root-only release key (one empty signed commit, pushed). Primary only; dry run unless --yes. |
+
+### `ha`
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom ha check` | — | — | Standby's own fetch state + this node's logind/sshd. Read-only; run it on the primary. |
+| `satom ha repair [--yes] [--wait SECONDS]` | yes | — | Restart systemd-logind on THIS primary via the privileged runner, then re-check. Preview unless --yes. |
+
+### `tree`
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom tree [<prefix>...] [--commands] [--depth N] [--root] [--danger]` | — | — | The whole command tree. Alias for 'show tree'. |
+
+<!-- END GENERATED COMMAND REFERENCE -->
+
+---
+
+## 4. Exit codes
+
+Stable contract; scripts and the recovery steps in `INSTALL.md` depend on them.
+
+| Code | Meaning |
+|---|---|
+| `0` | OK |
+| `1` | The command ran and the result is bad (unit dead, cert expired) |
+| `2` | Usage error — the parser could not resolve what you typed |
+| `3` | Insufficient privilege |
+| `4` | Could not run (missing dependency, unreadable credentials) |
+
+`--json` switches every command to machine output with the same status and exit
+code. `SATOM_CLI_TRACE=1` adds a traceback when a handler itself crashes.
+
+---
+
+## 5. Extending it
+
+**The command tree is data.** `deploy/satom_cli/tree.py` holds the whole
+grammar; the parser, `?` help, Tab completion, the privilege gate and the JSON
+renderer all read that structure. Adding a command is one entry:
+
+```python
+_n("throughput", "Live throughput for a server policy.",
+   run=g.throughput, usage="get service throughput <policy>"),
+```
+
+Handlers take `(ctx, args)` and return a `Result`. `ctx` (see `context.py`)
+gives you `run()`, `psql()`, `http()`, `unit_state()`, `journal()`, `role`,
+`env`, `is_root` and `app_user` — all of them already degrading correctly.
+
+Same contract the rest of the product already uses for `registry_endpoints`,
+`adoms` and `acme_dns_providers`: **behaviour is data, so extending it is a row,
+not a refactor.** A tree of `if/elif` rots by the fourth command.
+
+`tests/test_cli.py` walks the tree and fails the suite if a node lacks help
+text or a declared privilege level, if a read-only verb requires root, if a
+state-changing verb does not, or if a node both runs and has children (the
+parser cannot resolve that). Those are not style checks: an undeclared node
+fails with a traceback for the unprivileged operator, at the one moment a
+traceback is least useful.
+
+### Where the code lives
+
+| Module | Holds |
+|---|---|
+| `tree.py` | the grammar — **the extension point** |
+| `context.py` | `Ctx`: process, env, role, units, HTTP, psql. Everything degrades |
+| `render.py` | `Result`, the exit-code contract, the refusal message |
+| `dbq.py` | every SQL read, in one place, so `get` and `diagnose` cannot disagree |
+| `cmd_get.py` / `cmd_ops.py` | reads: the node itself / the automated layer |
+| `cmd_show.py` / `cmd_docs.py` | configuration / reference and runbooks |
+| `cmd_diagnose.py` / `cmd_checks.py` | probes: core / install-completeness and drift |
+| `cmd_execute.py` / `cmd_fix.py` | state changes: core / repair, seed, restore, accounts |
+| `runbooks.py` | the twelve offline procedures, as data |
+
+Split by *when you reach for it*, not by size. A new read about scheduled work
+belongs in `cmd_ops.py`; a new SQL read belongs in `dbq.py` next to the others,
+never inline in a handler.
+
+`tests/test_cli_ops.py` adds the operational guards: reads that cannot write,
+the checker/fixer key sets staying identical, seeded action keys existing in the
+real catalogue, destructive verbs refusing without `--yes`, and every runbook
+being listed and containing at least one command. When you add a lazily-imported
+module, add it to `LAZY_MODULES`; when you add a protection to
+`MIN_ACTIONS`, add it to `SEED_PLAN` in the same commit — the suite fails
+otherwise, on purpose.
+
+### Deliberately not built yet
+
+A FortiWeb-style `config … / set … / end` mode. It is a real state machine
+(buffer, `abort`, validation on `end`) and there is nothing yet that justifies
+it — reconfiguration today goes through the web UI or the installer. The
+one-shot dispatcher is the substrate it would sit on, so adding it later costs
+nothing that has been built here.
+
+---
+
+## 6. Installation and drift
+
+The CLI is installed by `deploy/install-cli.sh`, which is idempotent and called
+from **three** places so the root-owned copy cannot age behind the app:
+
+1. `installers/install-satom.sh` — on a fresh install.
+2. `deploy/self_update_runner.py` — after every code update. This matters: the
+   CLI lives *outside* the app tree, so a `git pull` does not reach it. Without
+   this step the console tool would silently drift from the app it exists to
+   repair.
+3. `satom execute reinstall cli` — by hand.
+
+Verify at any time:
+
+```bash
+satom diagnose privilege
+```
+
+It fails if the binary or the library is not `root:root`, is group/world
+writable, is a symlink, is loaded from inside the app tree, or if
+`/etc/sudoers.d/satom` has been widened to grant the CLI to the service account.
+
+---
+
+## 7. Output: what is decoration and what is contract
+
+The rule the renderer exists to keep:
+
+> **Decoration is for a TTY. Content is identical either way.**
+
+An operator redirects this tool into a ticket, greps it, and pastes it into a
+chat window. So colour, the rules under headings and the box-drawing in
+`show tree` appear only when a human is looking at a terminal. Through a pipe
+the bytes are plain — and, because there is no width to fit, nothing is
+truncated either: help text you would lose is text you cannot get back.
+
+| control | effect |
+|---|---|
+| `--color` / `--no-color` | force colour on or off, whatever the stream is |
+| `NO_COLOR=1` | the cross-tool convention; honoured. An explicit flag still wins |
+| `SATOM_CLI_COLOR=1` | force colour from the environment (for a wrapper script) |
+| `--ascii` / `SATOM_CLI_ASCII=1` | plain `|-` branches instead of box-drawing |
+| `--width N` | pretend the terminal is N columns (used by the tests) |
+| `--json` | machine contract: never coloured, never wrapped |
+
+`TERM=dumb` and an unset `TERM` disable colour on their own. The glyph set is
+chosen from the stream's **encoding**, not from a guess: on a serial console
+with an ASCII stdout the box characters would be unprintable, so the CLI falls
+back to `|-` / `` `- `` automatically.
+
+**Two layers keep the output path from raising.** Typographic characters this
+code emits (em dashes in titles, middots in the banner, the truncation
+ellipsis) are folded to ASCII when the stream cannot carry them; anything
+outside that table — a device name, a certificate subject, a journal line —
+is caught by reconfiguring the stream with `errors="replace"`. This is not
+theoretical: an em dash in a title once crashed the whole command under an
+ASCII stdout. *A diagnostic tool that dies while printing its diagnosis, on a
+node that is already broken, is worse than no tool.*
+
+**Colour has a narrow vocabulary, on purpose.** Only words this CLI emits as a
+*verdict* are painted: `pass`/`ok` green, `warn` amber, `FAIL`/`error` red.
+State words — `active`, `inactive`, `enabled`, `disabled` — are deliberately
+never painted. `satom-ha-datasync` is `inactive` on the primary **by design**;
+painting it red is the same false positive that had to be removed from
+`get system health`. A check that always complains is a check that gets
+ignored, and so is a colour that always complains.
+
+### `show tree` — the whole command surface
+
+```
+satom show tree                      every command, as a tree
+satom tree                           same thing (alias, for muscle memory)
+satom show tree execute              just that branch
+satom show tree --commands           flat list, one runnable command per line
+satom show tree --depth 2            stop two levels down
+satom show tree --root               only branches that require root
+satom show tree --danger             only destructive commands
+satom show tree --json               the registry as nested JSON
+```
+
+Marks: `*` requires root, `!` destructive (needs `--yes`). Both propagate up,
+so a group shows `*!` when anything under it does.
+
+This renders the **live registry** (`deploy/satom_cli/tree.py`), so it cannot
+describe commands this build does not have, and it cannot omit ones it does. A
+hand-written command list in a document is a copy, and copies go stale the
+first time somebody adds a node — `tests/test_cli_render.py` fails the suite if
+any runnable command is missing from `--commands`.
+
+`--commands` is fixed-column and always separated by two spaces, so it can be
+`cut`/`awk`'d. That mattered: on the widest row the padding is zero, and a
+single separator space fused the path, the mark and the help into one
+unsplittable field for exactly the longest command.
+
+---
+
+## 8. Application commands: `flask apilib`
+
+Not every operator command lives in `satom`. Commands that need the application
+itself — its database models and its device clients — are Flask CLI commands.
+They run only on a node whose application imports, which is exactly what
+`satom` is built not to need; so they sit beside it rather than in it.
+
+The `apilib` group maintains the **API library**, the database record of which
+endpoints and fields each firmware build serves (full reference:
+[API library](api-library.md)). Run it from the installation directory, as the
+service account:
+
+```
+cd /opt/satom
+sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib --help
+```
+
+| Command | What it does |
+|---|---|
+| `flask apilib status` | One line per product — builds, endpoints, evidence documents per source, `(catalog only)` for FortiGate — then one line per product, build and source |
+| `flask apilib backfill [--data-root DIR] [--product P]...` | Ingest every on-disk evidence store: rediscovery snapshots (deleted appliances included), harvested field schemas and the frozen pre-build-axis matrices. `--data-root` defaults to the installation's `data/`; `--product` is repeatable |
+| `flask apilib import-vendor PATH` | Import an **extracted** vendor Ansible collection — `fortinet.fortios` (FortiGate) or `fortinet.fortianalyzer` (FortiAnalyzer). `PATH` is the directory holding `MANIFEST.json` |
+| `flask apilib ingest-file PATH` | Ingest one evidence document — plain or gzipped JSON, or a JSON list of documents |
+| `flask apilib harvest-fac [--appliance NAME]` | Read the live API schema of every FortiAuthenticator, or the named one (GET requests only), and ingest it. One unreachable box does not stop the others |
+| `flask apilib compat PRODUCT BASE TARGET` | Two builds through both channels as JSON: REST field totals, CLI schema objects and fields added / removed, option, type, range and default changes, field and object rename candidates (same CLI attribute id) and moves. Read-only; `satom execute apilib compat` renders it |
+| `flask apilib channels PRODUCT BUILD` | One build per channel as JSON: counts of both / CLI only / hidden / REST only / unknown / meta and vendor-doc conflicts, plus the CLI-only, hidden and REST-only field lists. Read-only; `satom execute apilib channels` renders it |
+| `flask apilib migration-report APPLIANCE --target BUILD [--backup ID]` | Check the appliance's newest `show full-configuration` dump (backup vault) against the target build and print the migration report as JSON: block / translate / warn / info rows and a verdict. Read-only; the report carries no configuration value |
+| `flask apilib baseline status` | The endpoint baseline each registry product is seeded from: pinned build, protocol, entries per provenance, applied or not |
+| `flask apilib baseline promote --product P --build X [--apply] [--export]` | Show what promoting the library's measurements of build X would change in the registry; `--apply` does it, `--export` rewrites the shipped artifact. Refuses a build nobody measured |
+| `flask apilib baseline check [--product P]` | Drift between the registry, the baseline and the evidence of every build the fleet runs. Exit status 1 on drift |
+| `flask apilib baseline resolve --product P [--build X] NAME` | Which URN NAME resolves to on build X, and on what authority |
+| `flask apilib baseline apply\|export\|adopt` | Re-apply the active baseline; rewrite the artifacts; one-time adoption of a legacy map. See [api-library.md](api-library.md) §9 |
+
+**Every command is safe to re-run.** All of them write through one idempotent
+ingest: evidence whose content is already stored answers `"created": false` and
+only bumps its confirmation counter. Output is JSON (except `status`).
+
+**Refreshing vendor data.** Download the collection from Ansible Galaxy (the
+*Download tarball* link on its Galaxy page, or
+`ansible-galaxy collection download fortinet.fortios`), extract it, make it
+readable by the service account, and import the extracted directory:
+
+```
+mkdir -p /tmp/fortios
+tar -xzf fortinet-fortios-<version>.tar.gz -C /tmp/fortios
+chown -R satom: /tmp/fortios
+cd /opt/satom
+sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib import-vendor /tmp/fortios
+```
+
+A build newer than the newest one the imported collection knows about reads
+`unmeasured` until a newer collection is imported. The `fortinet.fortiweb` and
+`fortinet.fortiadc` collections carry no version data; importing one answers
+*carries no version data; nothing imported*.
+
+**Errors** are printed as `Error: …` with exit code `1`: a path that is not a
+collection (`no MANIFEST.json`), a file that is not JSON, an evidence document
+with an unknown source, or `harvest-fac` finding no FortiAuthenticator (or none
+by that name). These are Click's exit codes, not the `satom` contract in §4.
+
+## Related
+
+* [`privilege-model.md`](privilege-model.md) — accounts, sudoers, HA trust
+* [`safeguards.md`](safeguards.md) §3 — the privilege boundary and how to verify it
+* [`INSTALL.md`](INSTALL.md) §1.2, §5 — installer privilege and hardening
+* [`api-library.md`](api-library.md) — the API library the `flask apilib` commands maintain

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% set _gxl = gx.label if gx is defined and gx else 'FortiWeb' %}
+{% block title %}{{ _('%(p)s menu', p=_gxl) }} — {{ appliance.name }}{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ appliance.name }}</a><span class="separator">/</span>
+  <span>{{ _gxl }}</span>
+</div>
+{% endblock %}
+{% macro node(n) %}
+  {% if n.entry is defined %}
+    {% set e = n.entry %}
+    <li><a href="{{ url_for(e.special, appliance_id=appliance.id) if e.special else url_for('workspace.fwgui_list', appliance_id=appliance.id, page=e.page) }}">{{ n.label }}</a></li>
+  {% else %}
+    <li><span class="fwg-idx-group">{{ n.label }}</span>
+      <ul>{% for c in n.children %}{{ node(c) }}{% endfor %}</ul></li>
+  {% endif %}
+{% endmacro %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-layout-sidebar me-2 text-accent"></i>{{ _('%(p)s menu', p=_gxl) }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · {{ _gxl }} {{ appliance.fw_version }}{% endif %}</p>
+  </div>
+</div>
+<div class="fwg-pane fw-card fwg-satom">
+  <div class="fwg-note">{{ _('Every %(p)s page SATOM has a measured GUI layout for, in %(p)s\'s own menu order. Layouts come with the knowledge packs, per firmware build.', p=_gxl) }}</div>
+  <div class="fwg-body">
+  {% if nav %}
+    <div class="fwg-idx">
+    {% for top in nav %}
+      <div class="fw-card p-3">
+        <div class="fwg-sec-title mb-2">{{ top.label }}</div>
+        {% if top.entry is defined %}<ul>{{ node(top) }}</ul>
+        {% else %}<ul>{% for c in top.children %}{{ node(c) }}{% endfor %}</ul>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+  {% else %}
+    <div class="fw-alert fw-alert-info">{{ _('No %(p)s GUI layout has been imported on this node yet (they come with the knowledge packs).', p=_gxl) }}</div>
+  {% endif %}
+  </div>
+</div>
+{% endblock %}

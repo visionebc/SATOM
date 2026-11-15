@@ -1,0 +1,101 @@
+{# ============================================================================
+   OPERATIONS — ONE definition, EVERY device ADOM (2026-10-11).
+
+   It was drawn inline in the FortiWeb branch of base.html only. FortiWeb is
+   the reference menu (operator rule), so every device ADOM now draws the same
+   group in the same place (until 2026-10-14 after the device's own menu;
+   now first, see below). Backend Reachability and Config
+   Compare left this group on 2026-10-13 for Fleet › Troubleshooting, which
+   became Plugins › Troubleshooting (Plugin Studio apps) on 2026-10-31.
+
+   Each entry is live where its page works for this ADOM's devices and drawn
+   disabled with the reason elsewhere (services/adom_menu.py). Permissions are
+   asked first, so a profile that may not open a page sees neither.
+
+   Since 2026-10-14 (operator) Operations is the FIRST group of every device
+   ADOM and the Fleet group is gone: its entries (partials/nav_fleet.html,
+   each with its own permission, unchanged) lead this group, above Device
+   Backups. base.html includes this partial where the Fleet group stood; the
+   Global ADOM keeps its "Global" block and has no Operations group.
+
+   Diagnose Log Collection left this group's own entries on 2026-10-14
+   (operator request) for Operations › Troubleshooting; since 2026-10-31 it
+   is the Plugin Studio app diagnose-log-collection (Plugins ›
+   Troubleshooting).
+
+   Automation became the last entry of this group on 2026-10-14 (operator):
+   a subgroup (partials/nav_automation.html, its API subgroup inside), drawn
+   for config_write as before. The Global ADOM keeps Automation as a group.
+   Plugins follows it as the last subgroup (partials/nav_plugins.html), same
+   day (operator).
+
+   Later on 2026-10-14 (operator): Automation moved up to right below WAF
+   (drawn by partials/nav_fleet.html), and Jobs left the Fleet entries to
+   close this group, below Plugins.
+
+   2026-10-23 (operator): Automation is drawn here again, right above Plugins
+   (below Template Library), its entries alphabetical
+   (partials/nav_automation.html).
+
+   2026-10-16 (operator): Wiki (partials/nav_wiki.html) is the first entry,
+   here and at the top of the Global block in base.html.
+
+   2026-11-06 (operator: "every ADOM added was to have the common menu"):
+   placeholder ADOMs (Settings > ADOMs, e.g. Linux) draw this group too. The
+   entries that read records of the ADOM's own kind of device (Device
+   Backups, Import Backup, Template Library; Report/Lua Studio in Plugins)
+   are left out there, as nav_admin.html and nav_automation.html already do
+   with ``_dev``; Plugins draws the ADOM's apps (nav_placeholder_apps.html).
+   ========================================================================= #}
+{% from 'partials/_nav_off.html' import nav_off %}
+{% if product.key != 'global' %}
+{% set _dev = not product.placeholder %}
+{% set _g_ops = request.blueprint in ['backups','import_backup','plugins','lua_studio','wiki','apps'] %}
+{% set _m_bak = adom_menu('backups', product) %}
+{% set _m_imp = adom_menu('import_backup', product) %}
+{% set _m_tpl = adom_menu('templates', product) %}
+{# Scout: top level, right above Wiki (operator, 2026-10-31). #}
+{% include 'partials/nav_advisor.html' %}
+{# Sentinel: top level, right below Scout (operator, 2026-11-09). #}
+{% include 'partials/nav_sentinel.html' %}
+<div class="fw-nav-group{{ ' open' if _g_ops }}" data-nav-group="Operations">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-tools fw-nav-section-icon" style="color:#94a3b8;"></i><span>{{ _('Operations') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+    {# Wiki leads the group (operator, 2026-10-16), above the Fleet entries. #}
+    {% include 'partials/nav_wiki.html' %}
+    {% include 'partials/nav_fleet.html' %}
+    {% if _dev and current_user.can('backups.view') and may_open('backups.index') %}
+    {% if _m_bak.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'backups' else '' }}" href="{{ url_for('backups.index') }}">
+      <i class="bi bi-cloud-arrow-down fw-nav-icon"></i><span>{{ _('Device Backups') }}</span></a>
+    {% else %}{{ nav_off('bi-cloud-arrow-down', _('Device Backups'), _m_bak.reason, ep='backups.index') }}{% endif %}
+    {% endif %}
+    {% if _dev and current_user.can('backups.restore') and may_open('import_backup.index') %}
+    {% if _m_imp.on %}
+    <a class="fw-nav-item" href="{{ url_for('import_backup.index') }}">
+      <i class="bi bi-file-earmark-arrow-up fw-nav-icon"></i><span>{{ _('Import Backup') }}</span></a>
+    {% else %}{{ nav_off('bi-file-earmark-arrow-up', _('Import Backup'), _m_imp.reason, ep='import_backup.index') }}{% endif %}
+    {% endif %}
+    {# Template Library needs only operations.view; administrators reach it
+       under Administrator, everyone else who may open it finds it here. #}
+    {% if _dev and current_user and current_user.can('operations.view') and not current_user.can('user_manage') and may_open('templates.index') %}
+    {% if _m_tpl.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}" href="{{ url_for('templates.index') }}">
+      <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
+    {% else %}{{ nav_off('bi-collection', _('Template Library'), _m_tpl.reason, ep='templates.index') }}{% endif %}
+    {% endif %}
+    {# Automation ▸ right above Plugins (operator, 2026-10-23; below WAF
+       until then, from partials/nav_fleet.html). config_write-gated inside. #}
+    {% include 'partials/nav_automation.html' %}
+    {# Plugins ▸ — the last subgroup since 2026-10-14 (operator). #}
+    {% include 'partials/nav_plugins.html' %}
+    {# A placeholder ADOM's Plugins: its Plugin Studio apps only. #}
+    {% include 'partials/nav_placeholder_apps.html' %}
+    {# Jobs — the last entry of Operations (operator, 2026-10-14). #}
+    {% if may_open('jobs.manager') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
+      <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

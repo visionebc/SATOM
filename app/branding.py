@@ -1,0 +1,348 @@
+"""Product branding registry — DB-backed single source of truth.
+
+The app ships several "ADOMs" that share the same chrome but differ in
+identity and scope:
+
+* ``global``    — the fleet-wide console at ``/`` spanning both products.
+* ``fortiweb``  — the full Web Application Firewall manager (under ``/web``).
+* ``fortiadc``  — Application Delivery Controller (under ``/adc``).
+* ``fortianalyzer`` — FortiAnalyzer, live over its JSON-RPC API (under ``/faz``).
+* ``fortiauthenticator`` — FortiAuthenticator, live over its REST API (under
+  ``/fac``).
+* ``fortigate`` — FortiGate, read live over the FortiOS REST API (under
+  ``/fgt``). All are real ADOMs (``placeholder`` False); the placeholder
+  scaffold dashboard remains only for a future ADOM added in Settings → ADOMs.
+
+**As of 2026-07-12 the registry lives in the ``adoms`` table** (model
+``models_adom.Adom``), edited from Settings → ADOMs. This module reads that
+table (cached with a short TTL so all gunicorn workers converge after an edit)
+and exposes exactly the same public surface the rest of the app already imports:
+
+* ``PRODUCTS``  — a live ``Mapping`` of ACTIVE ADOMs, ``key -> branding dict``.
+                  Same object identity forever, so ``from .branding import
+                  PRODUCTS`` stays live across edits.
+* ``get_product`` / ``is_valid`` / ``DEFAULT_PRODUCT``.
+* Capability sequences — ``live_products(cap)`` returns a live sequence of the
+  ACTIVE keys that declare a capability. These replace the old hardcoded lists
+  (``BANNER_PRODUCTS``, ``VALID_PRODUCTS``, firmware ``_PRODUCTS``,
+  ``naming``/``regex_lab`` PRODUCTS) — one flag on the ADOM row now drives them
+  all, so a new ADOM can never silently miss a subsystem again.
+
+If the DB is unreachable (pre-migration boot, CLI import outside an app
+context), everything falls back to :data:`_FALLBACK` so the app still works.
+"""
+from __future__ import annotations
+
+import time
+from collections.abc import Mapping, Sequence
+
+DEFAULT_PRODUCT = "fortiweb"
+
+# Canonical seed / offline fallback. Also the source for ``seed_defaults()``.
+# Order here is the display order (sort_order is assigned from it).
+_FALLBACK: list[dict] = [
+    {
+        "key": "global", "name": "Global", "title": "SATOM",
+        "tagline": "Global — all products", "mark": "img/global-mark.svg",
+        "description": "One console over the whole fleet — dashboards, "
+                       "metrics, jobs, certificates and administration "
+                       "across FortiWeb and FortiADC.",
+        "active": True, "placeholder": False, "banner_default": "slate",
+        "cap_banner": False, "cap_tokens": True, "cap_firmware": False,
+        "cap_naming": False, "cap_regex": False,
+    },
+    {
+        "key": "fortiweb", "name": "FortiWeb", "title": "SATOM",
+        "tagline": "Web Application Firewall", "mark": "img/fortiweb-mark.svg",
+        "description": "Manage server policies, web protection, exceptions, "
+                       "backups and the full FortiWeb appliance fleet.",
+        "active": True, "placeholder": False, "banner_default": "slate",
+        "cap_banner": True, "cap_tokens": True, "cap_firmware": True,
+        "cap_naming": True, "cap_regex": True,
+    },
+    {
+        "key": "fortiadc", "name": "FortiADC", "title": "SATOM",
+        "tagline": "Application Delivery Controller",
+        "mark": "img/fortiadc-mark.svg",
+        "description": "Manage virtual servers, server/link/global load "
+                       "balancing, WAF, network security and the FortiADC "
+                       "appliance fleet.",
+        "active": True, "placeholder": False, "banner_default": "ember",
+        "cap_banner": True, "cap_tokens": True, "cap_firmware": True,
+        "cap_naming": True, "cap_regex": True,
+    },
+    {
+        "key": "fortiauthenticator", "name": "FortiAuthenticator",
+        "title": "SATOM", "tagline": "Identity & Access Management",
+        "mark": "img/fortiauthenticator-mark.svg",
+        "description": "Local, LDAP and RADIUS identities, user groups, "
+                       "FortiTokens, issued certificates and the RADIUS / "
+                       "TACACS+ clients that authenticate against the unit.",
+        # Promoted from placeholder to a real product ADOM on 2026-08-05: it
+        # now has a REST client, a registry seeded live from the device and
+        # section pages. This entry SEEDS cap_firmware/cap_naming/cap_regex
+        # False — FortiAuthenticator images are not carried in the firmware
+        # repository, and naming/regex are FortiWeb-shaped tools with no
+        # meaning for an identity store. These are the seed defaults, NOT the
+        # running policy: the `adoms` table is authoritative and the seed is
+        # insert-only, so an admin who ticks these in Settings → ADOMs turns
+        # them on and this file never overrides that. Read the table (or
+        # `branding.live_products(cap)`), never this literal, to learn what a
+        # given installation actually offers.
+        "active": True, "placeholder": False, "banner_default": "indigo",
+        "cap_banner": True, "cap_tokens": True, "cap_firmware": False,
+        "cap_naming": False, "cap_regex": False,
+    },
+    {
+        "key": "fortianalyzer", "name": "FortiAnalyzer", "title": "SATOM",
+        "tagline": "Logging & Analytics",
+        "mark": "img/fortianalyzer-mark.svg",
+        "description": "Centralized logging, reporting and security analytics "
+                       "across the fabric — Device Manager, FortiView, Log "
+                       "View, Incidents & Events and Reports live over the "
+                       "JSON-RPC API, plus Fleet, Firmware and Administration.",
+        "active": True, "placeholder": False, "banner_default": "amber",
+        "cap_banner": True, "cap_tokens": True, "cap_firmware": True,
+        "cap_naming": False, "cap_regex": False,
+    },
+    {
+        "key": "fortigate", "name": "FortiGate", "title": "SATOM",
+        "tagline": "Next-Generation Firewall",
+        "mark": "img/fortigate-mark.svg",
+        "description": "Interfaces, routing, firewall policies and objects, "
+                       "security profiles, VPN, users and system settings, "
+                       "read live over the FortiOS REST API.",
+        # Added 2026-10-07 as a BASE ADOM: REST client (API token), sidebar
+        # mirroring the FortiOS GUI and read-only section pages. No writes,
+        # no firmware vault (nothing flashes a FortiGate), and naming/regex
+        # are FortiWeb-shaped tools — same seed reasoning as FAC above.
+        "active": True, "placeholder": False, "banner_default": "teal",
+        "cap_banner": True, "cap_tokens": True, "cap_firmware": False,
+        "cap_naming": False, "cap_regex": False,
+    },
+]
+
+_CAPS = ("banner", "tokens", "firmware", "naming", "regex", "webserver")
+
+# ── DB-backed cache ─────────────────────────────────────────────────────────
+_TTL = 15.0          # seconds; edits become visible fleet-wide within this
+_cache_active: "dict[str, dict] | None" = None   # active only, ordered
+_cache_all: "list[dict] | None" = None           # every row (admin console)
+_cache_ts: float = 0.0
+#: True while the caches above hold :data:`_FALLBACK` instead of the ``adoms``
+#: table. Nothing raises when the registry cannot be read — the fallback is a
+#: COMPLETE-LOOKING six-ADOM answer, so no caller can tell it apart from a
+#: successful read by inspecting the rows. Anything that fails OPEN on an
+#: unrecognised key (``services.product_scope``) has to be able to ask.
+_cache_degraded: bool = True
+
+
+def _fallback_active() -> dict:
+    return {d["key"]: dict(d) for d in _FALLBACK if d.get("active", True)}
+
+
+def _fallback_all() -> list[dict]:
+    out = []
+    for i, d in enumerate(_FALLBACK):
+        row = dict(d)
+        row.setdefault("sort_order", i)
+        out.append(row)
+    return out
+
+
+def _refresh() -> None:
+    """(Re)load the registry from the DB into the module cache. Falls back to
+    ``_FALLBACK`` on any failure (no app context, table missing, DB down)."""
+    global _cache_active, _cache_all, _cache_ts, _cache_degraded
+    try:
+        from .models_adom import Adom
+        rows = Adom.query.order_by(Adom.sort_order, Adom.key).all()
+        if not rows:
+            raise RuntimeError("adoms table empty")
+        alld = [r.to_branding() for r in rows]
+        _cache_all = alld
+        _cache_active = {r["key"]: r for r in alld if r.get("active", True)}
+        _cache_degraded = False
+    except Exception:
+        _cache_all = _fallback_all()
+        _cache_active = _fallback_active()
+        _cache_degraded = True
+    _cache_ts = time.monotonic()
+
+
+def _ensure_fresh() -> None:
+    if _cache_active is None or (time.monotonic() - _cache_ts) > _TTL:
+        _refresh()
+
+
+def invalidate() -> None:
+    """Force the next read to hit the DB (call right after an admin edit)."""
+    global _cache_ts
+    _cache_ts = 0.0
+
+
+def _active() -> "dict[str, dict]":
+    _ensure_fresh()
+    return _cache_active or _fallback_active()
+
+
+def is_fallback() -> bool:
+    """True when the answers above come from :data:`_FALLBACK`, not the table.
+
+    The fallback exists so the app still boots pre-migration or outside an app
+    context, and that is right. What is NOT right is that it is indistinguishable
+    from a real answer: a sixth ADOM an operator declared is simply absent from
+    it, and a caller that treats "not in the registry" as "unscoped" then shows
+    that session everything. Scoping asks this before it decides.
+    """
+    _ensure_fresh()
+    return bool(_cache_degraded)
+
+
+def all_adoms() -> list[dict]:
+    """Every ADOM (active AND inactive), ordered — for the admin console."""
+    _ensure_fresh()
+    return list(_cache_all if _cache_all is not None else _fallback_all())
+
+
+# ── live PRODUCTS mapping (active ADOMs) ─────────────────────────────────────
+class _ProductRegistry(Mapping):
+    """A live, read-only mapping over the ACTIVE ADOMs. Same object identity
+    forever so ``from .branding import PRODUCTS`` keeps working after edits."""
+
+    def __getitem__(self, key):
+        return _active()[key]
+
+    def __iter__(self):
+        return iter(_active())
+
+    def __len__(self):
+        return len(_active())
+
+    def __contains__(self, key):
+        return key in _active()
+
+    def __repr__(self):
+        return "PRODUCTS(%r)" % (list(_active().keys()),)
+
+
+PRODUCTS = _ProductRegistry()
+
+
+def get_product(key: str | None) -> dict:
+    """Return the branding dict for ``key`` (defaults to FortiWeb)."""
+    active = _active()
+    if key and key in active:
+        return active[key]
+    if DEFAULT_PRODUCT in active:
+        return active[DEFAULT_PRODUCT]
+    # Last resort if the default itself was deactivated.
+    return next(iter(active.values())) if active else dict(_FALLBACK[1])
+
+
+def is_valid(key: str | None) -> bool:
+    return key in _active()
+
+
+# ── capability sequences (replace the old hardcoded lists) ───────────────────
+def products_with(cap: str) -> tuple[str, ...]:
+    """Tuple of ACTIVE ADOM keys that declare capability ``cap``."""
+    flag = "cap_" + cap
+    return tuple(k for k, p in _active().items() if p.get(flag))
+
+
+class _LiveSeq(Sequence):
+    """A live, tuple-like sequence recomputed on every access. Binding it with
+    ``from x import NAME`` stays live because access re-reads the registry."""
+
+    def __init__(self, producer):
+        self._producer = producer
+
+    def _t(self):
+        return tuple(self._producer())
+
+    def __getitem__(self, i):
+        return self._t()[i]
+
+    def __len__(self):
+        return len(self._t())
+
+    def __iter__(self):
+        return iter(self._t())
+
+    def __contains__(self, v):
+        return v in self._t()
+
+    def __repr__(self):
+        return repr(self._t())
+
+    def __eq__(self, other):
+        return tuple(self._t()) == tuple(other)
+
+    def __hash__(self):
+        return hash(self._t())
+
+
+def live_products(cap: str) -> _LiveSeq:
+    """Live sequence of the ACTIVE ADOM keys with capability ``cap``."""
+    return _LiveSeq(lambda: products_with(cap))
+
+
+def naming_products() -> _LiveSeq:
+    """Live ``((key, name), ...)`` pairs for naming-capable active ADOMs."""
+    return _LiveSeq(
+        lambda: tuple((k, p["name"]) for k, p in _active().items()
+                      if p.get("cap_naming")))
+
+
+# ── seeding (called at boot, after db.create_all) ────────────────────────────
+#: ``(key, description)`` pairs a past seed shipped and that are now false. A
+#: row still holding one VERBATIM is refreshed to the current seed text on boot
+#: (the seed is otherwise insert-only); an operator-edited text never matches.
+_RETIRED_DESCRIPTIONS = (
+    ("fortianalyzer",
+     "Centralized logging, reporting and security analytics across the "
+     "fabric — Fleet, Firmware and Administration live; "
+     "Configuration/Operation/Automation scaffolded until the JSON-RPC "
+     "backend is wired."),
+)
+
+
+def seed_defaults() -> int:
+    """Insert-only seed of the canonical ADOMs. Existing rows (operator edits)
+    are never touched. Returns the number of rows inserted."""
+    from .extensions import db
+    from .models_adom import Adom
+    added = 0
+    rows = {a.key: a for a in Adom.query.all()}
+    existing = set(rows)
+    refreshed = 0
+    for key, old in _RETIRED_DESCRIPTIONS:
+        # Verbatim old seed text = never edited by an operator, so the
+        # corrected seed may replace it. Any other text is left alone.
+        row = rows.get(key)
+        if row is not None and (row.description or "") == old:
+            row.description = next(d["description"] for d in _FALLBACK
+                                   if d["key"] == key)
+            refreshed += 1
+    for i, d in enumerate(_FALLBACK):
+        if d["key"] in existing:
+            continue
+        a = Adom(
+            key=d["key"], name=d["name"], title=d.get("title", "SATOM"),
+            tagline=d.get("tagline", ""), description=d.get("description", ""),
+            mark=d.get("mark", "img/global-mark.svg"),
+            active=d.get("active", True), placeholder=d.get("placeholder", False),
+            sort_order=i, banner_default=d.get("banner_default", "slate"),
+            cap_banner=d.get("cap_banner", False),
+            cap_tokens=d.get("cap_tokens", False),
+            cap_firmware=d.get("cap_firmware", False),
+            cap_naming=d.get("cap_naming", False),
+            cap_regex=d.get("cap_regex", False),
+        )
+        db.session.add(a)
+        added += 1
+    if added or refreshed:
+        db.session.commit()
+        invalidate()
+    return added

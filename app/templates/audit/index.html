@@ -1,0 +1,366 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Audit Log') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-clipboard-check me-2 text-accent"></i>{{ _('Audit Log') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('All user actions are recorded for compliance and accountability') }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-fw-outline btn-sm" data-js="audit-refresh">
+      <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}
+    </button>
+    {% set _export_args = request.args.to_dict() %}{% set _noop = _export_args.pop('page', None) %}
+    <a href="{{ url_for('audit.export_csv', **_export_args) }}"
+       class="btn btn-sm btn-outline-secondary" title="{{ _('Download the entries matching the current filters') }}">
+      <i class="bi bi-download me-1"></i>{{ _('Export CSV') }}
+    </a>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-funnel me-2"></i>{{ _('Filters') }}</span>
+    <a href="{{ url_for('audit.index') }}" class="btn btn-sm btn-secondary">
+      <i class="bi bi-x-lg me-1"></i>{{ _('Clear') }}
+    </a>
+  </div>
+  <div class="fw-card-body">
+    <form method="GET" action="{{ url_for('audit.index') }}" class="row g-3 align-items-end">
+      <div class="col-md-12">
+        <label class="fw-form-label">{{ _('Search (user · action · target · detail · error ID)') }}</label>
+        <input type="text" name="q" class="form-control form-control-sm"
+               placeholder="{{ _('Search all fields — e.g. an Error ID like 69881E81') }}"
+               value="{{ request.args.get('q','') if request else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="fw-form-label">{{ _('Username') }}</label>
+        <input type="text" name="user" class="form-control form-control-sm"
+               placeholder="{{ _('Filter by user') }}" value="{{ request.args.get('user','') if request else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="fw-form-label">{{ _('Action') }}</label>
+        <select name="action" class="form-select form-select-sm">
+          <option value="">{{ _('All Actions') }}</option>
+          <option value="login" {{ 'selected' if request and request.args.get('action') == 'login' }}>{{ _('Login') }}</option>
+          <option value="logout" {{ 'selected' if request and request.args.get('action') == 'logout' }}>{{ _('Logout') }}</option>
+          <option value="create" {{ 'selected' if request and request.args.get('action') == 'create' }}>{{ _('Create') }}</option>
+          <option value="update" {{ 'selected' if request and request.args.get('action') == 'update' }}>{{ _('Update') }}</option>
+          <option value="delete" {{ 'selected' if request and request.args.get('action') == 'delete' }}>{{ _('Delete') }}</option>
+          <option value="backup" {{ 'selected' if request and request.args.get('action') == 'backup' }}>{{ _('Backup') }}</option>
+          <option value="error" {{ 'selected' if request and request.args.get('action') == 'error' }}>{{ _('Error') }}</option>
+          <option value="api_call" {{ 'selected' if request and request.args.get('action') == 'api_call' }}>{{ _('API Call') }}</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label">{{ _('From Date') }}</label>
+        <input type="date" name="date_from" class="form-control form-control-sm"
+               value="{{ request.args.get('date_from','') if request else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label">{{ _('To Date') }}</label>
+        <input type="date" name="date_to" class="form-control form-control-sm"
+               value="{{ request.args.get('date_to','') if request else '' }}">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-fw-primary btn-sm w-100">
+          <i class="bi bi-search me-1"></i>{{ _('Apply') }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Results count -->
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <span class="text-muted" style="font-size:13px;">
+    {{ _('Showing') }} <strong>{{ entries|length if entries else 0 }}</strong> entries
+    {% if request and (request.args.get('q') or request.args.get('user') or request.args.get('action') or request.args.get('date_from')) %}
+      (filtered)
+    {% endif %}
+  </span>
+  <div class="fw-search-box" style="max-width:240px;">
+    <i class="bi bi-search search-icon"></i>
+    <input type="text" id="auditSearch" placeholder="{{ _('Quick search…') }}">
+  </div>
+</div>
+
+<style nonce="{{ csp_nonce }}">
+.audit-id { font-family:'Consolas','Monaco',monospace; font-size:12px;
+  color:var(--fw-text-secondary); cursor:pointer; white-space:nowrap; }
+.audit-id:hover { color:var(--fw-accent); text-decoration:underline; }
+</style>
+
+<!-- Audit Table -->
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="auditTable">
+    <thead>
+      <tr>
+        <th style="width:92px;">ID</th>
+        <th>{{ _('Timestamp') }}</th>
+        <th>{{ _('User') }}</th>
+        <th>{{ _('Action') }}</th>
+        <th>{{ _('Target') }}</th>
+        <th data-priority="1">{{ _('Detail') }}</th>
+        <th data-priority="5">{{ _('IP Address') }}</th>
+        <th style="width:34px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if entries %}
+        {% for e in entries %}
+        <tr class="audit-row" style="cursor:pointer;"
+            data-id="{{ e.id }}"
+            data-ts="{{ e.timestamp | localtime }}"
+            data-user="{{ e.username or '—' }}"
+            data-action="{{ e.action or '—' }}"
+            data-target="{{ e.target or '' }}"
+            data-ip="{{ e.ip_address or '' }}"
+            data-extra="{{ e.extra or '' }}">
+          <td>
+            <span class="audit-id" data-js="copy-id" data-id="{{ e.id }}"
+                  title="{{ _('Click to copy this entry ID') }}">#{{ e.id }}</span>
+          </td>
+          <td class="text-nowrap mono" style="font-size:12px;">
+            {{ e.timestamp | localtime }}
+          </td>
+          <td>
+            <div class="fw-avatar d-inline-flex" style="width:22px;height:22px;font-size:9px;border-radius:50%;background:#1D3452;color:#fff;align-items:center;justify-content:center;vertical-align:middle;margin-right:6px;">
+              {{ e.username[0].upper() if e.username else '?' }}
+            </div>
+            {{ e.username or '—' }}
+          </td>
+          <td>
+            {% set action_lower = e.action|lower if e.action else '' %}
+            {% if 'delete' in action_lower or 'error' in action_lower %}
+              <span class="fw-badge fw-badge-danger">{{ e.action }}</span>
+            {% elif 'create' in action_lower or 'login' in action_lower %}
+              <span class="fw-badge fw-badge-success">{{ e.action }}</span>
+            {% elif 'update' in action_lower or 'backup' in action_lower %}
+              <span class="fw-badge fw-badge-primary">{{ e.action }}</span>
+            {% else %}
+              <span class="fw-badge fw-badge-secondary">{{ e.action or '—' }}</span>
+            {% endif %}
+          </td>
+          <td style="font-size:13px;">{{ e.target or '—' }}</td>
+          <td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ e.extra or '' }}">
+            {{ e.extra or '—' }}
+          </td>
+          <td class="mono" style="font-size:12px;">{{ e.ip_address or '—' }}</td>
+          <td class="text-center text-muted"><i class="bi bi-chevron-right"></i></td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="8">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-clipboard"></i></div>
+              <div class="fw-empty-state-title">{{ _('No audit entries') }}</div>
+              <div class="fw-empty-state-text">
+                {{ _('Audit entries will appear here as users interact with the system.') }}
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination -->
+{% if pagination and (pagination.page > 1 or pagination.has_next) %}
+{% set _page_args = request.args.to_dict() %}
+<div class="d-flex justify-content-between align-items-center mt-3">
+  <span class="text-muted" style="font-size:13px;">{{ _('Page') }} {{ pagination.page }}{% if pagination.pages %} / {{ pagination.pages }}{% endif %}</span>
+  <div class="d-flex gap-2">
+    {% if pagination.has_prev %}
+      {% set _noop = _page_args.update({'page': pagination.page - 1}) %}
+      <a href="{{ url_for('audit.index', **_page_args) }}"
+         class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-chevron-left"></i> {{ _('Previous') }}
+      </a>
+    {% endif %}
+    {% if pagination.has_next %}
+      {% set _noop = _page_args.update({'page': pagination.page + 1}) %}
+      <a href="{{ url_for('audit.index', **_page_args) }}"
+         class="btn btn-outline-secondary btn-sm">
+        {{ _('Next') }} <i class="bi bi-chevron-right"></i>
+      </a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ===== Detail drawer (click a row to open) ===== -->
+<div id="auditDetailBackdrop"
+     style="position:fixed;inset:0;background:rgba(16,32,52,.35);
+            opacity:0;visibility:hidden;transition:opacity .2s ease,visibility .2s ease;z-index:1080;"></div>
+<aside id="auditDetailPanel"
+       style="position:fixed;top:0;right:0;height:100%;width:460px;max-width:92vw;
+              background:var(--fw-surface);color:var(--fw-text-primary);border-left:1px solid var(--fw-border);
+              box-shadow:-12px 0 40px rgba(16,32,52,.18);transform:translateX(100%);
+              transition:transform .26s cubic-bezier(.4,0,.2,1);z-index:1081;
+              display:flex;flex-direction:column;">
+  <div style="display:flex;align-items:center;justify-content:space-between;
+              padding:16px 18px;background:var(--fw-surface-alt);border-bottom:1px solid var(--fw-border);">
+    <h5 style="margin:0;font-size:15px;font-weight:700;color:var(--fw-text-primary);">
+      <i class="bi bi-clipboard-data me-2" style="color:var(--fw-accent);"></i>{{ _('Audit Entry') }}
+    </h5>
+    <button type="button" data-js="audit-detail-close"
+            style="background:var(--fw-surface-alt);border:1px solid var(--fw-border);
+                   color:var(--fw-text-secondary);border-radius:8px;width:30px;height:30px;cursor:pointer;line-height:1;">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+  <div id="auditDetailBody" style="padding:18px;overflow-y:auto;flex:1;font-size:13px;"></div>
+</aside>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+function filterAudit(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#auditTable tbody tr').forEach(function (row) {
+    if (!row.classList.contains('audit-row') && row.querySelector('.fw-empty-state')) return;
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function _esc(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, function (c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function _row(label, value, mono) {
+  var v = (value === '' || value == null) ? '—' : _esc(value);
+  return '<div style="margin-bottom:14px;">' +
+    '<div style="text-transform:uppercase;letter-spacing:.04em;font-size:10px;color:var(--fw-text-secondary);margin-bottom:3px;">' + _esc(label) + '</div>' +
+    '<div style="color:var(--fw-text-primary);' + (mono ? 'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all;' : '') + '">' + v + '</div>' +
+  '</div>';
+}
+
+function openAuditDetail(rowEl) {
+  var d = rowEl.dataset;
+  var html = '';
+
+  // Highlighted Error ID (if the detail carries one)
+  var extra = d.extra || '';
+  var m = extra.match(/([0-9A-Fa-f]{8})/);
+  var eid = null;
+  if (extra.toLowerCase().indexOf('error_id') !== -1 && m) { eid = m[1].toUpperCase(); }
+  if (eid) {
+    html += '<div style="background:rgba(239,68,68,.10);border:1px solid rgba(239,68,68,.35);' +
+      'border-radius:10px;padding:12px 14px;margin-bottom:18px;">' +
+      '<div style="text-transform:uppercase;letter-spacing:.04em;font-size:10px;color:#8B1C2A;margin-bottom:4px;">Error reference</div>' +
+      '<div style="display:flex;align-items:center;gap:10px;">' +
+        '<span style="font-family:ui-monospace,Menlo,monospace;font-size:18px;font-weight:700;color:#8B1C2A;letter-spacing:.06em;">' + _esc(eid) + '</span>' +
+        '<button type="button" data-js="copy-errid" data-eid="' + _esc(eid) + '" ' +
+          'style="background:var(--fw-surface-alt);border:1px solid var(--fw-border);color:var(--fw-text-secondary);' +
+          'border-radius:7px;padding:3px 9px;font-size:11px;cursor:pointer;"><i class="bi bi-clipboard me-1"></i>Copy</button>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--fw-text-secondary);margin-top:8px;">grep this ID in <span style="font-family:monospace;">data/logs/satom.log</span> for the full traceback.</div>' +
+    '</div>';
+  }
+
+  // Entry ID first: it is the handle for everything else on this panel.
+  html += '<div style="margin-bottom:16px;">' +
+    '<div style="text-transform:uppercase;letter-spacing:.04em;font-size:10px;color:var(--fw-text-secondary);margin-bottom:4px;">Entry ID</div>' +
+    '<div style="display:flex;align-items:center;gap:10px;">' +
+      '<span style="font-family:ui-monospace,Menlo,monospace;font-size:16px;font-weight:700;color:var(--fw-text-primary);letter-spacing:.04em;">#' + _esc(d.id) + '</span>' +
+      '<button type="button" data-js="copy-entryid" data-eid="' + _esc(d.id) + '" ' +
+        'style="background:var(--fw-surface-alt);border:1px solid var(--fw-border);color:var(--fw-text-secondary);' +
+        'border-radius:7px;padding:3px 9px;font-size:11px;cursor:pointer;"><i class="bi bi-clipboard me-1"></i>Copy</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--fw-text-secondary);margin-top:7px;">Paste it in the search box to pull this entry back up on any page.</div>' +
+  '</div>';
+
+  html += _row('Timestamp', d.ts, true);
+  html += _row('User', d.user, false);
+  html += _row('Action', d.action, false);
+  html += _row('Target', d.target, true);
+  html += _row('IP Address', d.ip, true);
+
+  // Full detail payload
+  html += '<div style="margin-top:6px;">' +
+    '<div style="text-transform:uppercase;letter-spacing:.04em;font-size:10px;color:var(--fw-text-secondary);margin-bottom:4px;">Detail</div>' +
+    '<pre style="background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:9px;' +
+      'padding:12px;margin:0;color:var(--fw-text-secondary);font-size:12px;white-space:pre-wrap;word-break:break-word;' +
+      'max-height:42vh;overflow:auto;">' + (extra ? _esc(extra) : '—') + '</pre>' +
+  '</div>';
+
+  var body = document.getElementById('auditDetailBody');
+  body.innerHTML = html;
+  // CSP (script-src-attr 'none') forbids on* attributes even in JS-built markup — bind after insert.
+  body.querySelectorAll('[data-js="copy-errid"],[data-js="copy-entryid"]').forEach(function (b) {
+    b.addEventListener('click', function (event) { copyErrId(this, this.dataset.eid); });
+  });
+  document.getElementById('auditDetailBackdrop').style.opacity = '1';
+  document.getElementById('auditDetailBackdrop').style.visibility = 'visible';
+  document.getElementById('auditDetailPanel').style.transform = 'translateX(0)';
+}
+
+function closeAuditDetail() {
+  document.getElementById('auditDetailBackdrop').style.opacity = '0';
+  document.getElementById('auditDetailBackdrop').style.visibility = 'hidden';
+  document.getElementById('auditDetailPanel').style.transform = 'translateX(100%)';
+}
+
+function copyEntryId(el, id) {
+  navigator.clipboard.writeText(id).then(function () {
+    var old = el.textContent;
+    el.textContent = 'copied \u2713';
+    setTimeout(function () { el.textContent = old; }, 900);
+  });
+}
+
+function copyErrId(btn, eid) {
+  navigator.clipboard.writeText(eid).then(function () {
+    var old = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied';
+    setTimeout(function () { btn.innerHTML = old; }, 1500);
+  });
+}
+
+document.addEventListener('keydown', function (ev) {
+  if (ev.key === 'Escape') closeAuditDetail();
+});
+
+(function () {
+  document.querySelector('[data-js="audit-refresh"]').addEventListener('click', function (event) {
+    window.location.reload();
+  });
+  document.getElementById('auditSearch').addEventListener('input', function (event) {
+    filterAudit(this.value);
+  });
+  document.querySelectorAll('#auditTable tbody tr.audit-row').forEach(function (row) {
+    row.addEventListener('click', function (event) { openAuditDetail(this); });
+  });
+  document.querySelectorAll('#auditTable .audit-id').forEach(function (el) {
+    el.addEventListener('click', function (ev) {
+      // The row opens the drawer. Copying the ID must not also open it, or the
+      // one gesture whose whole point is "give me the handle" buries it.
+      ev.stopPropagation();
+      copyEntryId(this, this.dataset.id);
+    });
+  });
+  document.getElementById('auditDetailBackdrop').addEventListener('click', function (event) {
+    closeAuditDetail();
+  });
+  document.querySelector('[data-js="audit-detail-close"]').addEventListener('click', function (event) {
+    closeAuditDetail();
+  });
+})();
+</script>
+{% endblock %}

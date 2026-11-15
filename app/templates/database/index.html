@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+{% block title %}Database — Source of Truth{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-database me-2 text-accent"></i>{{ _('Database') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">The PostgreSQL source of truth — relational model, tables &amp; a read-only SQL console.</p>
+  </div>
+  {% if current_user.can('studio.python_console') %}
+  <a class="btn btn-outline-primary btn-sm ms-auto" href="{{ url_for('studio.index', pane='console') }}">
+    <i class="bi bi-terminal me-1"></i>{{ _('Python Console') }}</a>
+  {% endif %}
+</div>
+
+<ul class="nav nav-tabs mb-3" id="dbTabs" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-model" type="button">{{ _('Relational model') }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-tables" type="button">{{ _('Tables') }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-console" type="button">{{ _('SQL console') }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reports" type="button" id="tab-reports-btn">Reports &amp; dashboards</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-plugin-datasets" type="button" id="tab-plugin-datasets-btn">{{ _('Plugin datasets') }}{% set _pending = plugin_datasets|selectattr('status', 'equalto', 'pending')|list|length %}{% if _pending %} <span class="badge bg-warning text-dark">{{ _pending }}</span>{% endif %}</button></li>
+</ul>
+
+<div class="tab-content">
+  <!-- Relational model — professional ER / schema diagram (SVG) -->
+  <div class="tab-pane fade show active" id="tab-model">
+    <div class="card"><div class="card-body">
+      <div class="d-flex align-items-start gap-3 mb-2">
+        <p class="text-muted small mb-0">{% set _inferred = edges|selectattr('inferred')|list|length %}{{ tables|length }} tables · {{ edges|length - _inferred }} foreign-key relationships{% if _inferred %} · {{ _inferred }} inferred from column names{% endif %}.
+          <span class="text-muted">{{ _('Layered schema layout — parents left, dependents right; crow\'s-foot = many side. Drag a table, scroll to zoom, drag the canvas to pan; click a table to pin its relationships.') }}</span></p>
+        <button class="btn btn-outline-secondary btn-sm ms-auto flex-shrink-0 text-nowrap" type="button" id="er-view-toggle"
+                data-bs-toggle="collapse" data-bs-target="#er-list" aria-expanded="false" aria-controls="er-list"
+                data-label-list="{{ _('Show as list') }}" data-label-diagram="{{ _('Show diagram') }}">
+          <i class="bi bi-list-ul me-1"></i><span>{{ _('Show as list') }}</span></button>
+      </div>
+      <div id="er-diagram" style="width:100%;height:72vh;min-height:640px;"></div>
+
+      <!-- text fallback / accessible list -->
+      <div class="collapse mt-3" id="er-list">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead><tr><th>{{ _('Table') }}</th><th>{{ _('Columns') }}</th><th>{{ _('Rows') }}</th><th>{{ _('Primary key') }}</th><th>{{ _('References (FK → table.col)') }}</th></tr></thead>
+            <tbody>
+            {% for t in tables %}
+              <tr>
+                <td class="fw-bold"><i class="bi bi-table me-1 text-muted"></i>{{ t.name }}</td>
+                <td>{{ t.columns }}</td>
+                <td>{{ t.rows if t.rows is defined and t.rows >= 0 else '—' }}</td>
+                <td><code>{{ t.pk|join(', ') }}</code></td>
+                <td class="small">
+                  {% for e in edges if e.from_table == t.name %}
+                    <span class="badge bg-dark border me-1"{% if e.inferred %} title="{{ _('Inferred from the column name: no FK constraint in the database') }}"{% endif %}>{{ e.from_col }} → {{ e.to_table }}.{{ e.to_col }}{% if e.inferred %} ({{ _('inferred') }}){% endif %}</span>
+                  {% endfor %}
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- Tables browser -->
+  <div class="tab-pane fade" id="tab-tables">
+    <div class="card"><div class="card-body">
+      <div class="d-flex gap-2 align-items-center mb-3">
+        <label class="small text-muted">{{ _('Table') }}</label>
+        <select id="tbl-select" class="form-select form-select-sm" style="max-width:300px">
+          <option value="">{{ _('— pick a table —') }}</option>
+          {% for n in table_names %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+        </select>
+        <span id="tbl-meta" class="small text-muted"></span>
+        <div class="ms-auto btn-group btn-group-sm">
+          <button id="tbl-prev" class="btn btn-outline-secondary" disabled>&laquo; Prev</button>
+          <button id="tbl-next" class="btn btn-outline-secondary" disabled>Next &raquo;</button>
+        </div>
+      </div>
+      <div class="table-responsive"><table class="table table-sm table-striped" id="tbl-data">
+        <thead></thead><tbody></tbody></table></div>
+    </div></div>
+  </div>
+
+  <!-- SQL console -->
+  <div class="tab-pane fade" id="tab-console">
+    <div class="card"><div class="card-body">
+      <div class="alert alert-info py-2 small mb-2"><i class="bi bi-shield-lock me-1"></i>
+        Read-only: only <code>SELECT</code> / <code>WITH</code> / <code>EXPLAIN</code> run. Writes &amp; DDL are rejected; queries run in a rolled-back, time-limited transaction.</div>
+      <textarea id="sql-input" class="form-control font-monospace mb-2" rows="5"
+        placeholder="SELECT name, deployment_mode, status FROM device_server_policies LIMIT 50;"></textarea>
+      <div class="d-flex gap-2 mb-2">
+        <button id="sql-run" class="btn btn-fw-primary btn-sm"><i class="bi bi-play-fill me-1"></i>{{ _('Run') }}</button>
+        <form id="sql-csv-form" method="post" action="{{ url_for('database.query_csv') }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="sql" id="sql-csv-field">
+          <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download me-1"></i>{{ _('Export CSV') }}</button>
+        </form>
+        <span id="sql-meta" class="small text-muted align-self-center"></span>
+      </div>
+      <div id="sql-error" class="alert alert-danger py-2 small d-none"></div>
+      <div class="table-responsive"><table class="table table-sm table-striped" id="sql-data">
+        <thead></thead><tbody></tbody></table></div>
+    </div></div>
+  </div>
+
+  <!-- Reports & dashboards -->
+  <div class="tab-pane fade" id="tab-reports">
+    <div class="card"><div class="card-body">
+      <div class="d-flex align-items-center mb-2 gap-2 flex-wrap">
+        <p class="text-muted small mb-0 me-auto">{{ _('Saved reports run over the same read-only query layer as the SQL console (SELECT-only, sensitive columns masked). Each report renders as a live dashboard and exports to PDF.') }}</p>
+        <a href="{{ url_for('database.report_new', wizard=1) }}" class="btn btn-fw-primary btn-sm text-nowrap">
+          <i class="bi bi-magic me-1"></i>{{ _('Build a report (no SQL needed)') }}</a>
+        <a href="{{ url_for('database.report_new') }}" class="btn btn-outline-secondary btn-sm text-nowrap">
+          <i class="bi bi-plus-lg me-1"></i>{{ _('New (blank)') }}</a>
+      </div>
+      <div class="alert py-2 px-3 small mb-3" style="background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.25)">
+        <i class="bi bi-lightbulb me-1 text-accent"></i><strong>{{ _('New to reports?') }}</strong>
+        {{ _('Click') }} <em>{{ _('Build a report (no SQL needed)') }}</em> {{ _('for a guided step-by-step wizard, or start from a') }}
+        <strong>{{ _('built-in') }}</strong> below &mdash; hit its <i class="bi bi-files"></i> {{ _('Clone button to get an editable copy.') }}
+      </div>
+      {% if reports %}
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+          <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Description') }}</th><th>{{ _('Widgets') }}</th><th>{{ _('By') }}</th><th>{{ _('Updated') }}</th><th class="text-end actions-col">{{ _('Actions') }}</th></tr></thead>
+          <tbody>
+          {% for r in reports %}
+            <tr>
+              <td class="fw-bold"><a href="{{ url_for('database.report_view', report_id=r.id) }}">{{ r.name }}</a>{% if r.builtin %} <span class="badge bg-dark border" title="{{ _('Built-in template') }}">{{ _('built-in') }}</span>{% endif %}</td>
+              <td class="small text-muted">{{ (r.description or '')[:90] }}</td>
+              <td><span class="badge bg-dark border">{{ r.widgets|length }}</span></td>
+              <td class="small">{{ r.created_by or '—' }}</td>
+              <td class="small text-muted">{{ r.updated_at.strftime('%Y-%m-%d %H:%M') if r.updated_at else '—' }}</td>
+              <td class="text-end actions-col"><div class="fw-row-actions">
+                <a class="btn btn-sm btn-outline-primary btn-sm-icon" href="{{ url_for('database.report_view', report_id=r.id) }}" title="{{ _('Open dashboard') }}" aria-label="{{ _('Open dashboard') }}"><i class="bi bi-graph-up"></i></a>
+                <a class="btn btn-sm btn-outline-secondary btn-sm-icon" href="{{ url_for('database.report_pdf', report_id=r.id) }}" title="{{ _('Download PDF') }}" aria-label="{{ _('Download PDF') }}"><i class="bi bi-file-earmark-pdf"></i></a>
+                <form method="post" action="{{ url_for('database.report_clone', report_id=r.id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon" title="{{ _('Clone') }}" aria-label="{{ _('Clone') }}"><i class="bi bi-files"></i></button>
+                </form>
+                {% if not r.builtin %}
+                <a class="btn btn-sm btn-outline-secondary btn-sm-icon" href="{{ url_for('database.report_edit', report_id=r.id) }}" title="{{ _('Edit') }}" aria-label="{{ _('Edit') }}"><i class="bi bi-pencil"></i></a>
+                <form method="post" action="{{ url_for('database.report_delete', report_id=r.id) }}" class="d-inline js-del-report">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="{{ _('Delete') }}" aria-label="{{ _('Delete') }}"><i class="bi bi-trash"></i></button>
+                </form>
+                {% endif %}
+              </div></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-5">
+        <i class="bi bi-clipboard-data" style="font-size:2rem;"></i>
+        <p class="mt-2 mb-1">{{ _('No reports yet.') }}</p>
+        <p class="small">Build one with the guided wizard &mdash; no SQL required. Tables, charts and stat cards, exportable to PDF.</p>
+        <a href="{{ url_for('database.report_new', wizard=1) }}" class="btn btn-fw-primary btn-sm mt-2">
+          <i class="bi bi-magic me-1"></i>{{ _('Build a report (no SQL needed)') }}</a>
+      </div>
+      {% endif %}
+    </div></div>
+  </div>
+
+  <!-- Plugin datasets (services.plugin_datasets) -->
+  <div class="tab-pane fade" id="tab-plugin-datasets">
+    <div class="card"><div class="card-body">
+      <div class="d-flex align-items-center mb-2 gap-2 flex-wrap">
+        <p class="text-muted small mb-0 me-auto">{{ _('A plugin never runs SQL: it declares the datasets it reads and SATOM hands it the rows, cut to the ADOM and devices of whoever opens it. Build a dataset here with the same no-SQL query builder as reports; once published, every plugin editor and SATOM Builder offer it (key admin_<name>).') }}</p>
+        <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" id="pd-browse">
+          <i class="bi bi-grid-3x3-gap me-1"></i>{{ _('Browse the %(n)d datasets', n=dataset_browser|length) }}</button>
+        {% if can_plugin_datasets %}
+        <form method="post" action="{{ url_for('database.plugin_dataset_generate') }}" class="d-inline" id="pd-generate-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-outline-primary btn-sm text-nowrap" id="pd-generate"
+                  title="{{ _('Writes, published and one ADOM each, the joins the device cache allows: every list with its parent, every field that names another object resolved, and the common chains (which rules use an address, which groups hold it...). Never overwrites: only keys that do not exist yet; a deleted one comes back if you run it again.') }}">
+            <i class="bi bi-diagram-3 me-1"></i>{{ _('Generate joined datasets') }}</button>
+        </form>
+        <a href="{{ url_for('database.plugin_dataset_new') }}" class="btn btn-fw-primary btn-sm text-nowrap" id="pd-new">
+          <i class="bi bi-plus-lg me-1"></i>{{ _('New plugin dataset') }}</a>
+        {% endif %}
+      </div>
+      <div class="alert py-2 px-3 small mb-3" style="background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.25)">
+        <i class="bi bi-collection me-1 text-accent"></i>
+        {{ _('Datasets plugins can read on this server:') }}
+        <strong>{{ dataset_summary.builtin }}</strong> {{ _('built-in') }} ·
+        <strong>{{ dataset_summary.admin }}</strong> {{ _('published here') }} ·
+        <strong>{{ dataset_summary.objects.values()|sum }}</strong> {{ _('device-object datasets, one per object type the device cache holds') }}{% if dataset_summary.objects %} ({% for p, n in dataset_summary.objects|dictsort %}{{ p }} {{ n }}{{ ', ' if not loop.last }}{% endfor %}){% endif %}.
+      </div>
+      {% if not can_plugin_datasets %}
+      <p class="small text-muted">{{ _('Creating and publishing plugin datasets needs the Plugin Studio permission (studio.plugin_studio).') }}</p>
+      {% endif %}
+      {% if plugin_datasets %}
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle" id="pd-table">
+          <thead><tr><th>{{ _('Key') }}</th><th>{{ _('Name') }}</th><th>{{ _('ADOM') }}</th><th>{{ _('Status') }}</th><th>{{ _('Used by') }}</th><th>{{ _('Updated') }}</th><th class="text-end actions-col">{{ _('Actions') }}</th></tr></thead>
+          <tbody>
+          {% for adom, rows in plugin_datasets|groupby('product') %}
+            <tr class="pd-adom"><th colspan="7" class="small text-uppercase text-muted pt-3" scope="rowgroup">
+              {{ (adom ~ ' ADOM') if adom else _('Every ADOM') }} · {{ rows|length }}</th></tr>
+          {% for d in rows %}
+            {% set used = plugin_dataset_usage.get(d.key, []) %}
+            <tr id="pd-row-{{ d.key }}">
+              <td><code>{{ d.key }}</code></td>
+              <td>{{ d.label }}<div class="small text-muted">{{ (d.description or '')[:120] }}</div></td>
+              <td class="small">{{ d.product or _('every ADOM') }}</td>
+              <td>{% if d.status == 'published' %}<span class="badge bg-success">{{ _('published') }}</span>
+                  {% elif d.status == 'pending' %}<span class="badge bg-warning text-dark" title="{{ _('Came in with an imported package: review the query, then publish it.') }}">{{ _('pending approval') }}</span>{% if d.source %}<div class="small text-muted">{{ d.source }}</div>{% endif %}
+                  {% else %}<span class="badge bg-secondary">{{ _('draft') }}</span>{% endif %}</td>
+              <td class="small">{{ used|join(', ') or '—' }}</td>
+              <td class="small text-muted">{{ d.updated_at.strftime('%Y-%m-%d %H:%M') if d.updated_at else '—' }} · {{ d.updated_by or d.created_by }}</td>
+              <td class="text-end actions-col"><div class="fw-row-actions">
+                {% if can_plugin_datasets %}
+                <a class="btn btn-sm btn-outline-secondary btn-sm-icon" href="{{ url_for('database.plugin_dataset_edit', ds_id=d.id) }}" title="{{ _('Edit') }}" aria-label="{{ _('Edit') }} {{ d.key }}"><i class="bi bi-pencil"></i></a>
+                <form method="post" action="{{ url_for('database.plugin_dataset_status', ds_id=d.id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  {% if d.status == 'published' %}
+                  <input type="hidden" name="status" value="draft">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon" title="{{ _('Unpublish') }}" aria-label="{{ _('Unpublish') }} {{ d.key }}"><i class="bi bi-eye-slash"></i></button>
+                  {% else %}
+                  <input type="hidden" name="status" value="published">
+                  <button type="submit" class="btn btn-sm btn-outline-primary btn-sm-icon" title="{{ _('Publish') if d.status == 'draft' else _('Approve and publish') }}" aria-label="{{ _('Publish') }} {{ d.key }}"><i class="bi bi-check2-circle"></i></button>
+                  {% endif %}
+                </form>
+                <form method="post" action="{{ url_for('database.plugin_dataset_delete', ds_id=d.id) }}" class="d-inline js-del-dataset">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="{{ _('Delete') }}" aria-label="{{ _('Delete') }} {{ d.key }}"><i class="bi bi-trash"></i></button>
+                </form>
+                {% endif %}
+              </div></td>
+            </tr>
+          {% endfor %}
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-4" id="pd-empty">
+        <i class="bi bi-collection" style="font-size:2rem;"></i>
+        <p class="mt-2 mb-1">{{ _('No plugin datasets built here yet.') }}</p>
+        <p class="small">{{ _('Plugins can already read the built-in and device-object datasets. Build one here when a plugin needs something else: a join, a filter, a total.') }}</p>
+      </div>
+      {% endif %}
+    </div></div>
+  </div>
+</div>
+
+{% set exb_id = 'pd-browser' %}
+{% set exb_title = _('Plugin datasets, by ADOM') %}
+{% set exb_search = _('Search datasets, keys, columns…') %}
+{% include '_example_browser.html' %}
+<script nonce="{{ csp_nonce }}" id="pd-browser-data" type="application/json">{{ dataset_browser|tojson }}</script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  function go(){
+    if (!window.ExampleBrowser) return;
+    window.ExampleBrowser.init({
+      catalogElId: 'pd-browser-data', modalElId: 'pd-browser', openBtnId: 'pd-browse',
+      previewField: 'code',
+      labels: { all: 'All datasets', insert: 'Copy key', empty: 'No dataset matches.', show: 'How a plugin reads it' },
+      onInsert: function (d) {
+        var txt = '{{ "{{" }} ' + d.id + '.rows {{ "}}" }}';
+        if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(function(){});
+      }
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+})();
+</script>
+<script nonce="{{ csp_nonce }}" id="er-data" type="application/json">{"tables": {{ tables|tojson }}, "edges": {{ edges|tojson }}}</script>
+<script src="{{ asset('js/er_diagram.js') }}" nonce="{{ csp_nonce }}"></script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  function tok(){ var m=document.querySelector('meta[name="csrf-token"]'); return m?m.content:''; }
+  function escapeHtml(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  // ----- ER diagram -----
+  var erData=JSON.parse(document.getElementById('er-data').textContent);
+  var erRendered=false;
+  function renderER(){
+    if(erRendered) return; erRendered=true;
+    window.initERDiagram('er-diagram', erData.tables, erData.edges);
+  }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', renderER); }
+  else { renderER(); }
+
+  // "Show as list" swaps the views. The list sits under a 72vh diagram, so
+  // merely expanding it opened it below the fold and the click looked dead.
+  var erList=document.getElementById('er-list'), erDiagram=document.getElementById('er-diagram');
+  var erToggle=document.getElementById('er-view-toggle');
+  function erView(list){
+    erDiagram.classList.toggle('d-none', list);
+    erToggle.querySelector('i').className='bi '+(list?'bi-diagram-3':'bi-list-ul')+' me-1';
+    erToggle.querySelector('span').textContent=erToggle.dataset[list?'labelDiagram':'labelList'];
+  }
+  if(erList && erDiagram && erToggle){
+    erList.addEventListener('show.bs.collapse', function(){ erView(true); });
+    erList.addEventListener('hidden.bs.collapse', function(){ erView(false); });
+  }
+
+  // ----- Tables browser -----
+  var sel=document.getElementById('tbl-select'), meta=document.getElementById('tbl-meta');
+  var prev=document.getElementById('tbl-prev'), next=document.getElementById('tbl-next');
+  var page=1, pages=1, cur='';
+  function loadTable(){
+    if(!cur){ return; }
+    fetch('{{ url_for("database.table") }}?name='+encodeURIComponent(cur)+'&page='+page)
+      .then(function(r){return r.json();}).then(function(j){
+        page=j.page; pages=j.pages;
+        meta.textContent=j.row_count+' rows · page '+j.page+'/'+j.pages;
+        prev.disabled=(page<=1); next.disabled=(page>=pages);
+        var th='<tr>'+(j.columns||[]).map(function(c){return '<th class="small">'+escapeHtml(c)+'</th>';}).join('')+'</tr>';
+        document.querySelector('#tbl-data thead').innerHTML=th;
+        document.querySelector('#tbl-data tbody').innerHTML=(j.rows||[]).map(function(row){
+          return '<tr>'+row.map(function(c){return '<td class="small">'+(c===''?'<span class="text-muted">∅</span>':escapeHtml(c))+'</td>';}).join('')+'</tr>';
+        }).join('');
+      });
+  }
+  sel.addEventListener('change', function(event){ cur=sel.value; page=1; loadTable(); });
+  prev.addEventListener('click', function(event){ if(page>1){page--; loadTable();} });
+  next.addEventListener('click', function(event){ if(page<pages){page++; loadTable();} });
+
+  // ----- SQL console -----
+  var input=document.getElementById('sql-input'), errBox=document.getElementById('sql-error'),
+      smeta=document.getElementById('sql-meta');
+  // Export CSV posts whatever is in the editor NOW — before this, the hidden
+  // field was only filled by Run, so exporting first downloaded "empty query".
+  document.getElementById('sql-csv-form').addEventListener('submit', function(event){
+    document.getElementById('sql-csv-field').value=input.value;
+    if(!input.value.trim()){ event.preventDefault(); errBox.textContent='Type a query first.'; errBox.classList.remove('d-none'); }
+  });
+  document.getElementById('sql-run').addEventListener('click', function(event){
+    errBox.classList.add('d-none');
+    document.getElementById('sql-csv-field').value=input.value;
+    fetch('{{ url_for("database.query") }}',{method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':tok()},
+      body:JSON.stringify({sql:input.value})}).then(function(r){return r.json();}).then(function(j){
+        if(j.error){ errBox.textContent=j.error; errBox.classList.remove('d-none');
+          document.querySelector('#sql-data thead').innerHTML='';
+          document.querySelector('#sql-data tbody').innerHTML=''; smeta.textContent=''; return; }
+        smeta.textContent=j.row_count+' rows'+(j.truncated?' (truncated)':'');
+        document.querySelector('#sql-data thead').innerHTML='<tr>'+(j.columns||[]).map(function(c){return '<th class="small">'+escapeHtml(c)+'</th>';}).join('')+'</tr>';
+        document.querySelector('#sql-data tbody').innerHTML=(j.rows||[]).map(function(row){
+          return '<tr>'+row.map(function(c){return '<td class="small">'+(c===''?'<span class="text-muted">∅</span>':escapeHtml(c))+'</td>';}).join('')+'</tr>';
+        }).join('');
+      });
+  });
+
+  // ----- Reports tab helpers -----
+  if(location.hash==='#tab-reports'){
+    var btn=document.getElementById('tab-reports-btn');
+    if(btn && window.bootstrap){ new bootstrap.Tab(btn).show(); }
+  }
+  document.querySelectorAll('.js-del-report').forEach(function(f){
+    f.addEventListener('submit', function(ev){
+      if(!confirm('Delete this report?')) ev.preventDefault();
+    });
+  });
+  if(location.hash==='#tab-plugin-datasets'){
+    var pbtn=document.getElementById('tab-plugin-datasets-btn');
+    if(pbtn && window.bootstrap){ new bootstrap.Tab(pbtn).show(); }
+  }
+  document.querySelectorAll('.js-del-dataset').forEach(function(f){
+    f.addEventListener('submit', function(ev){
+      if(!confirm('Delete this plugin dataset?')) ev.preventDefault();
+    });
+  });
+})();
+</script>
+{% endblock %}

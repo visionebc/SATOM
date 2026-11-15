@@ -1,0 +1,6 @@
+{# Service Monitor — the REST-telemetry probe kinds (sessions, per-policy
+   sessions, throughput, transactions). Same tables, same runner and the same
+   deep_monitor scheduled action as Deep monitors; a separate page because these
+   never open an SSH session and keep answering on a licence-locked appliance.
+   Everything that differs is in app/views/service_monitor.py::SPEC. #}
+{% extends "monitoring/_probe_page.html" %}

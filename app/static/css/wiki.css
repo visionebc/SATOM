@@ -1,0 +1,136 @@
+/* Operations › Wiki. Light theme only, like the rest of the product: cards
+   are .fw-card, colours come from --fw-* and the .fw-badge-* set. */
+
+/* Two columns decided by the WIKI's own width (container queries), not the
+   window's: a maximised window with display scaling can be < 992 CSS px
+   wide and still have room for both columns. */
+.wiki-layout { container: wikilayout / inline-size; display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
+@container wikilayout (max-width: 720px) { .wiki-layout > * { grid-column: 1 / -1; } }
+
+.wiki-list-item { padding: 12px 16px; border-bottom: 1px solid var(--fw-border-light); }
+.wiki-list-item:last-child { border-bottom: 0; }
+.wiki-list-item h3 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+.wiki-list-item h3 a { color: var(--fw-text-primary); text-decoration: none; }
+.wiki-list-item h3 a:hover { color: var(--fw-accent); text-decoration: underline; }
+.wiki-excerpt { color: var(--fw-text-secondary); font-size: 13px; margin: 0 0 6px; }
+.wiki-meta { font-size: 12px; color: var(--fw-text-secondary); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+
+.wiki-tag { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px;
+  background: var(--fw-accent-light); color: var(--fw-accent); text-decoration: none; }
+.wiki-tag:hover { background: var(--fw-accent); color: #fff; }
+.wiki-tag-count { opacity: .7; margin-left: 3px; }
+
+.wiki-side h4, .wiki-nav h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--fw-text-secondary); margin: 0 0 8px; }
+.wiki-topic-link { display: block; font-size: 13px; padding: 2px 0; color: var(--fw-text-primary); text-decoration: none; }
+.wiki-topic-link.active { color: var(--fw-accent); font-weight: 600; }
+.wiki-topic-link:hover { text-decoration: underline; }
+
+/* Article body: what users write. */
+.wiki-body { font-size: 14px; line-height: 1.6; color: var(--fw-text-primary); overflow-wrap: anywhere; }
+.wiki-body h1, .wiki-body h2, .wiki-body h3 { margin: 1.2em 0 .5em; font-weight: 600; }
+.wiki-body h1 { font-size: 22px; } .wiki-body h2 { font-size: 18px; } .wiki-body h3 { font-size: 16px; }
+.wiki-body pre { background: var(--fw-surface-alt); border: 1px solid var(--fw-border); border-radius: var(--fw-radius);
+  padding: 10px 12px; overflow-x: auto; font-size: 12.5px; color: var(--fw-text-primary); }
+.wiki-body code { font-size: 12.5px; background: var(--fw-surface-alt); padding: 0 3px; border-radius: 3px; color: #8B1C2A; }
+.wiki-body pre code { background: none; padding: 0; color: inherit; }
+.wiki-body blockquote { border-left: 3px solid var(--fw-border); margin: 0 0 1em; padding: 2px 12px; color: var(--fw-text-secondary); }
+.wiki-body table { border-collapse: collapse; margin: 0 0 1em; font-size: 13px; }
+.wiki-body th, .wiki-body td { border: 1px solid var(--fw-border); padding: 4px 8px; }
+.wiki-body th { background: var(--fw-surface-alt); }
+.wiki-body img { max-width: 100%; height: auto; }
+
+.wiki-editor textarea.wiki-source { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; min-height: 420px; }
+.wiki-preview { min-height: 420px; border: 1px solid var(--fw-border); border-radius: var(--fw-radius);
+  padding: 10px 14px; background: var(--fw-surface); overflow: auto; }
+.wiki-choice-list { max-height: 180px; overflow-y: auto; border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius); padding: 6px 10px; background: var(--fw-surface); }
+
+/* The Wiki's own menu (wiki/_nav.html): left column on the list and on
+   every article; above the content on narrow screens. */
+.wiki-shell { container: wikishell / inline-size; display: grid;
+  grid-template-columns: 220px minmax(0, 1fr); gap: 18px; align-items: start; }
+/* The Wiki's menu is a left panel that stays in view while the article scrolls. */
+.wiki-nav { position: sticky; top: calc(var(--fw-topbar-height, 50px) + 14px); max-height: calc(100vh - var(--fw-topbar-height, 50px) - 28px); overflow-y: auto;
+  padding-right: 4px; }
+@container wikishell (max-width: 520px) {
+  .wiki-shell > * { grid-column: 1 / -1; }
+  .wiki-shell > .wiki-nav { position: static; max-height: none; overflow: visible; }
+}
+.wiki-nav-link { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 6px; border-radius: 6px;
+  color: var(--fw-text-primary); text-decoration: none; min-width: 0; }
+.wiki-nav-link:hover { background: var(--fw-surface-alt); }
+.wiki-nav-link.active { background: var(--fw-accent-light); color: var(--fw-accent); font-weight: 600; }
+.wiki-nav-link .bi { color: var(--fw-text-secondary); flex: 0 0 auto; }
+.wiki-nav-link.active .bi { color: var(--fw-accent); }
+.wiki-nav-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wiki-nav-count { flex: 0 0 auto; font-size: 11px; color: var(--fw-text-secondary); }
+.wiki-nav-node > summary { list-style: none; display: flex; align-items: center; cursor: pointer; }
+.wiki-nav-node > summary::-webkit-details-marker { display: none; }
+.wiki-nav-node > summary::before { content: "\F285"; font-family: bootstrap-icons; font-size: 10px; width: 14px;
+  flex: 0 0 14px; color: var(--fw-text-secondary); transition: transform .15s; }
+.wiki-nav-node[open] > summary::before { transform: rotate(90deg); }
+.wiki-nav-node > summary > .wiki-nav-link { flex: 1 1 auto; }
+.wiki-nav-leaf { margin-left: 14px; }
+.wiki-nav-children { margin-left: 12px; border-left: 1px solid var(--fw-border-light); padding-left: 2px; }
+.wiki-tag.active { background: var(--fw-accent); color: #fff; }
+
+.wiki-topic-head { padding: 10px 14px; border-left: 3px solid var(--fw-accent); background: var(--fw-surface);
+  border-radius: var(--fw-radius); font-size: 13px; color: var(--fw-text-secondary); }
+.wiki-topic-path { font-size: 15px; font-weight: 600; color: var(--fw-text-primary); }
+.wiki-topic-path a { color: inherit; text-decoration: none; }
+.wiki-topic-path a:hover { color: var(--fw-accent); text-decoration: underline; }
+.wiki-summary { color: var(--fw-text-primary); font-size: 13px; margin: 0 0 6px; }
+.wiki-summary-lead { font-size: 14px; color: var(--fw-text-secondary); }
+
+/* Rich-text editor (Toast UI). The textarea is the fallback editor and the
+   field that is posted; wiki.js hides it once the editor is up. */
+.wiki-rich { min-height: 0; }
+.wiki-rich:empty::before { content: attr(data-loading); font-size: 12px; color: var(--fw-text-secondary); }
+.wiki-rich.is-ready::before, .wiki-rich.is-failed { display: none; }
+.wiki-rich .toastui-editor-defaultUI { border-color: var(--fw-border); border-radius: var(--fw-radius); }
+.wiki-rich .toastui-editor-contents { font-family: inherit; font-size: 14px; }
+.wiki-modal-body { background: var(--fw-content-bg, #F3F6FC); }
+.wiki-nav .fw-card { margin-bottom: 0; }
+
+.wiki-adom-filter { border: 0; padding: 0; margin: 0; min-width: 0; }
+.wiki-adom-filter legend { float: none; width: auto; font-size: inherit; }
+.wiki-adom-boxes { display: flex; flex-wrap: wrap; gap: 2px 4px; padding: 4px 0; }
+.wiki-autosave { font-size: 12px; color: var(--fw-text-secondary); }
+.wiki-autosave.is-failed { color: #8B1C2A; }
+.wiki-draft-note { padding: 8px 12px; border-radius: var(--fw-radius); font-size: 13px;
+  background: #FFF7E0; border: 1px solid #F0D58A; color: #7A5700; }
+.wiki-draft-note a { color: #7A5700; font-weight: 600; }
+
+/* Comments (wiki/_comments.html): replies indent by depth, capped server-side. */
+.wiki-comments-title { font-size: 16px; font-weight: 600; margin-bottom: .6em; }
+.wiki-comment { margin: 0 0 10px calc(var(--wiki-depth, 0) * 22px); padding: 8px 12px;
+  background: #FFFFFF; border: 1px solid var(--fw-border); border-radius: var(--fw-radius); }
+.wiki-comment-head { display: flex; gap: 8px; align-items: baseline; font-size: 12px; margin-bottom: 4px; }
+.wiki-comment-head a { text-decoration: none; }
+.wiki-comment-body { font-size: 13px; }
+.wiki-comment-body > :last-child { margin-bottom: 0; }
+.wiki-comment-actions { display: flex; gap: 12px; font-size: 12px; margin-top: 4px; }
+.wiki-comment-actions .btn-link { font-size: 12px; text-decoration: none; }
+.wiki-comment-form { margin-top: 6px; }
+.wiki-comment:target { border-color: var(--fw-accent); }
+
+/* The article list: title on the left, Follow / Confluence on the right. */
+.wiki-list-title { display: flex; align-items: flex-start; gap: 8px; }
+.wiki-list-title h3 { flex: 1 1 auto; min-width: 0; }
+.wiki-list-actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; flex: 0 0 auto; }
+.wiki-list-actions .btn { padding: 1px 8px; font-size: 12px; }
+.wiki-follow-menu { min-width: 260px; max-height: 70vh; overflow-y: auto; }
+
+/* Publish to Confluence: the space's page tree (js/wiki_confluence.js). */
+.wiki-cf-tree { max-height: 320px; overflow-y: auto; border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius); padding: 6px 8px; background: var(--fw-surface); font-size: 13px; }
+.wiki-cf-row { display: flex; align-items: center; gap: 2px; }
+.wiki-cf-twisty { border: 0; background: none; padding: 0 4px; color: var(--fw-text-secondary); line-height: 1; }
+.wiki-cf-pick { border: 0; background: none; padding: 2px 6px; border-radius: 4px; text-align: left;
+  color: var(--fw-text-primary); min-width: 0; overflow-wrap: anywhere; }
+.wiki-cf-pick:hover { background: var(--fw-surface-alt); }
+.wiki-cf-pick.active { background: var(--fw-accent-light); color: var(--fw-accent); font-weight: 600; }
+.wiki-cf-path { display: block; font-size: 11px; color: var(--fw-text-secondary); font-weight: 400; }
+.wiki-cf-children { padding-left: 16px; }

@@ -1,0 +1,21 @@
+{# ============================================================================
+   DEVICE MENU TAIL — drawn right after the device's own menu in every device
+   sidebar.
+
+   * FortiADC: the device's measured menu (partials/nav_fortiadc.html; draws
+     nothing elsewhere).
+   * API: since 2026-10-14 a subgroup of Operations › Automation
+     (partials/_nav_api.html).
+     Only a profile that cannot see Automation (no config_write) keeps the
+     standalone "API" group here: the console (registry.view) and, since
+     2026-10-14, Schema builds and Build compatibility.
+
+   Operations left this partial on 2026-10-14: it is the first group of every
+   device ADOM now, where the Fleet group stood (partials/nav_operations.html).
+   ========================================================================= #}
+{% from 'partials/_nav_api.html' import api_menu with context %}
+{% include 'partials/nav_fortiadc.html' %}
+{# Administrator holds API for user_manage since 2026-11-09 (operator). #}
+{% if not (current_user and (current_user.can('config_write') or current_user.can('user_manage'))) %}
+{{ api_menu(false) }}
+{% endif %}

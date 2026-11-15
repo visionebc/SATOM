@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{{ _('Reset Password — SATOM') }}</title>
+  {# Vendored, not a CDN: this product ships offline installers for isolated
+     management networks, where an auth page that needs public internet to lay
+     itself out is an auth page nobody can read. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/fortiweb.css') }}">
+  <link rel="icon" href="{{ theme_favicon_url or url_for('static', filename='img/favicon.png') }}">
+  {% if theme_css %}<style nonce="{{ csp_nonce }}">{{ theme_css }}</style>{% endif %}
+  <style nonce="{{ csp_nonce }}">
+    body{background:var(--fw-sidebar-bg);display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;font-family:var(--fw-font);}
+    .login-wrapper{width:100%;max-width:420px;padding:20px;}
+    .login-card{background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;}
+    .login-header{background:var(--fw-topbar-bg);padding:32px;text-align:center;}
+    .login-logo{width:64px;height:64px;background:var(--fw-accent);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:26px;color:#fff;margin:0 auto 16px;}
+    .login-brand-text{color:#fff;font-size:20px;font-weight:700;margin:0 0 4px;}
+    .login-subtitle{color:#B8C8D8;font-size:13px;margin:0;}
+    .login-body{padding:32px;}
+    .btn-login{background:var(--fw-accent);border-color:var(--fw-accent);color:#fff;font-weight:600;padding:10px;border-radius:6px;width:100%;}
+    .btn-login:hover{background:var(--fw-accent-hover);color:#fff;}
+    .alert-login{border:none;border-left:4px solid var(--fw-accent);background:var(--fw-accent-light);color:#7a2c14;border-radius:6px;padding:10px 14px;font-size:13px;margin-bottom:20px;}
+  </style>
+</head>
+<body>
+<div class="login-wrapper">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-logo"><i class="bi bi-key"></i></div>
+      <p class="login-brand-text">{{ _('Reset your password') }}</p>
+      <p class="login-subtitle">{{ _('We\'ll email a reset link to your recovery address') }}</p>
+    </div>
+    <div class="login-body">
+      {% with messages = get_flashed_messages(with_categories=True) %}
+        {% if messages %}{% for category, message in messages %}
+          <div class="alert-login"><i class="bi bi-info-circle me-1"></i>{{ message }}</div>
+        {% endfor %}{% endif %}
+      {% endwith %}
+      {% if not email_configured %}
+      <div class="alert alert-warning py-2" style="font-size:12.5px;">
+        {{ _('Email is not configured on the server, so reset links cannot be sent. Ask an administrator to reset your password.') }}
+      </div>
+      {% endif %}
+      <form method="POST" action="{{ url_for('auth.forgot_password') }}" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="mb-4">
+          <label for="username" class="form-label">{{ _('Username') }}</label>
+          <input type="text" class="form-control" id="username" name="username"
+                 placeholder="{{ _('Your username') }}" autocomplete="username" autofocus required>
+          <div class="form-text">{{ _('A link is sent only if a recovery email is on file (local accounts).') }}</div>
+        </div>
+        <button type="submit" class="btn btn-login"><i class="bi bi-send me-1"></i>{{ _('Send reset link') }}</button>
+      </form>
+      <div class="text-center mt-3">
+        <a href="{{ url_for('auth.login') }}" style="font-size:13px;"><i class="bi bi-arrow-left me-1"></i>{{ _('Back to sign in') }}</a>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

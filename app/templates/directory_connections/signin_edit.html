@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ a.name }} — App sign-in{% endblock %}
+{% block content %}
+{# Administrator > Access > App sign-in > <app> (views.directory_connections.signin_edit).
+   The sign-in itself is the partial Plugin Studio > Apps > <app> > Sign-in draws too. #}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('directory_connections.signin_index') }}">{{ _('App sign-in') }}</a> › {{ a.slug }}</div>
+    <h1 class="fw-page-title"><i class="bi {{ a.icon }} me-2 text-accent"></i>{{ a.name }}</h1>
+  </div>
+  {% if a.kind == 'flow' %}<div class="ms-auto"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.app_edit', slug=a.slug) }}#signin"><i class="bi bi-pencil me-1"></i>{{ _('Edit in Plugin Studio') }}</a></div>{% endif %}
+</div>
+<div class="row g-3">
+  <div class="col-xl-7">
+    {% set with_access = True %}{% set can_edit = True %}{% include "directory_connections/_signin_policy.html" %}
+  </div>
+  <div class="col-xl-5">
+    <div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-people me-2 text-accent"></i>{{ _('Shared with (no sign-in rule needed)') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <p class="text-muted" style="font-size:12px;">{{ _('Groups and people who may use the app with the account they already have, plus every Plugin Studio author. Same list as Plugin Studio > app > Settings.') }}</p>
+        <div class="row">
+          <div class="col-md-6"><div class="text-muted small mb-1">{{ _('Groups') }}</div><div style="max-height:220px;overflow:auto;">
+            {% for g in groups %}<div class="form-check"><input class="form-check-input si-group" type="checkbox" id="si-g-{{ g.id }}" value="{{ g.id }}" {{ 'checked' if g.id in a.access.groups }}><label class="form-check-label" for="si-g-{{ g.id }}">{{ g.name }}</label></div>
+            {% else %}<div class="text-muted small">{{ _('No groups yet.') }}</div>{% endfor %}</div></div>
+          <div class="col-md-6"><div class="text-muted small mb-1">{{ _('People') }}</div><div style="max-height:220px;overflow:auto;">
+            {% for u in users %}<div class="form-check"><input class="form-check-input si-user" type="checkbox" id="si-u-{{ u.id }}" value="{{ u.id }}" {{ 'checked' if u.id in a.access.users }}><label class="form-check-label" for="si-u-{{ u.id }}">{{ u.username }}</label></div>{% endfor %}</div></div>
+        </div>
+      </div></div>
+  </div>
+</div>
+{% endblock %}

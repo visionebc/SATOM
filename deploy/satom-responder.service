@@ -1,0 +1,22 @@
+[Unit]
+# The response runner. Separate from satom.service on purpose: the web tier can
+# only ever move an action row to 'queued'. This unit is the only thing in the
+# product that writes an enforcement rule to an appliance, so it is the only
+# thing that needs those credentials, and it is startable, stoppable and
+# auditable on its own.
+Description=SATOM Sentinel response runner (apply / expire / verify)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=satom
+WorkingDirectory=/opt/satom
+EnvironmentFile=/opt/satom/.env
+ExecStart=/opt/satom/venv/bin/python -m app.cli_sentinel responder-tick
+# A tick that hangs must not stack up behind the timer.
+TimeoutStartSec=300
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,724 @@
+{% extends "base.html" %}
+{% from 'partials/_maintenance_toggle.html' import maintenance_toggle with context %}
+
+{% block title %}Appliances — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Appliances') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-server me-2 text-accent"></i>{{ _('Appliances') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Manage FortiWeb appliance connections') }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('appliances.flash_reports') }}" class="btn fw-btn-secondary">
+      <i class="bi bi-clipboard-data me-1"></i>{{ _('Firmware Reports') }}
+    </a>
+    {% if current_user.can('config_write') %}
+    <button class="btn btn-fw-primary" data-js="open-add-appliance">
+      <i class="bi bi-plus-lg me-1"></i>{{ _('Add Appliance') }}
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{# ---------------------------------------------------------------------------
+   Every tile here counts APPLIANCES, never rows. A FortiWeb in ADOM mode is
+   one row per ADOM (models.chassis_key), so the old "Total Appliances" tile
+   read 13 for a fleet of 10 boxes -- and the tree right below it, which folds
+   those rows, said 10. The ADOM tile is the number that total used to hide.
+   Five tiles: one auto-width row on xl, three per row on md, two on a phone.
+   --------------------------------------------------------------------------- #}
+<div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3 mb-4">
+  <div class="col">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-server"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ device_count if device_count is defined else (appliances|length if appliances else 0) }}</div>
+        <div class="fw-stat-label" title="{{ _('Physical appliances. The ADOM rows of one appliance are folded into it.') }}">{{ _('Devices') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-diagram-2"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ adom_count if adom_count is defined else 0 }}</div>
+        <div class="fw-stat-label" title="{{ _('Administrative domains registered, counted per appliance: two appliances partitioned into root are two ADOMs, not one.') }}">{{ _('ADOMs') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-success"><i class="bi bi-check-circle"></i></div>
+      <div>
+        <div class="fw-stat-value" id="stat-online">—</div>
+        <div class="fw-stat-label">{{ _('Online') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-x-circle"></i></div>
+      <div>
+        <div class="fw-stat-value" id="stat-offline">—</div>
+        <div class="fw-stat-label">{{ _('Offline') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-tag"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ kinds_count if kinds_count is defined else (appliances|map(attribute='kind')|unique|list|length if appliances else 0) }}</div>
+        <div class="fw-stat-label">{{ _('Platforms') }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="fw-toolbar">
+  <form class="fw-search-box" method="get" action="{{ url_for('appliances.index') }}" style="margin:0;">
+    <i class="bi bi-search search-icon"></i>
+    {# typing = instant filter within the current page (input listener in the
+       scripts block); Enter = server-side search across the WHOLE fleet (paginated). #}
+    <input type="text" id="tableSearch" name="q" value="{{ q or '' }}"
+           placeholder="{{ _('Search appliances… (Enter = whole fleet)') }}">
+  </form>
+  {# One platform in this ADOM = a filter that can only ever be a no-op.
+     Rendered from the ADOM registry, never a hardcoded list. #}
+  {% if (kind_options or [])|length > 1 %}
+  <select class="form-select form-select-sm" style="width:auto;" id="kindFilter">
+    <option value="">{{ _('All Kinds') }}</option>
+    {% for key, label in kind_options %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+  </select>
+  {% endif %}
+  <button class="btn btn-fw-outline btn-sm" data-js="refresh-page">
+    <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}
+  </button>
+</div>
+
+{# ---------------------------------------------------------------------------
+   One author for the middle columns and for the action bar, because a device
+   row and its ADOM rows must differ in EXACTLY one thing: the verbs that act
+   on the hardware. Copying the cell markup per row type is how those two drift
+   until an ADOM row quietly offers a firmware push.
+   --------------------------------------------------------------------------- #}
+{% macro appliance_cells(a) %}
+          <td>
+            <span class="fw-badge fw-badge-secondary mono" title="{{ a.kind_tooltip }}">{{ a.kind_badge }}</span>
+          </td>
+          <td class="mono" style="font-size:12.5px;">{{ a.host }}</td>
+          <td>{{ a.port }}</td>
+          <td>{{ a.vdom or '—' }}</td>
+          <td>
+            {% if a.tags %}
+              {% for tag in a.tags.split(',') if a.tags %}
+                <span class="fw-tag">{{ tag.strip() }}</span>
+              {% endfor %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="fw-status fw-status-unknown" data-status-id="{{ a.id }}">
+              <span class="fw-status-dot"></span>
+              <span class="fw-loading-spinner" style="width:10px;height:10px;"></span>
+            </span>
+          </td>
+{% endmacro %}
+{% macro appliance_actions(a, device_scope, owner) %}
+          <td class="actions-col">
+            {# Layout sweep 2026-10-24: Test, Edit and Maintenance stay visible;
+               the rest sits behind "..." so the row is one line at 1280 px. #}
+            <div class="fw-row-actions">
+            <button class="btn btn-sm btn-outline-secondary btn-sm-icon"
+                    title="{{ _('Test Connection') }}"
+                    data-test-id="{{ a.id }}">
+              <i class="bi bi-lightning"></i>
+            </button>
+            {% if current_user.can('config_write') %}
+            <button class="btn btn-sm btn-outline-primary btn-sm-icon"
+                    title="{{ _('Edit') }}"
+                    data-js="edit-appliance"
+                    data-appliance='{{ a.to_dict()|tojson }}'>
+              <i class="bi bi-pencil"></i>
+            </button>
+            {% endif %}
+{{ maintenance_toggle(a, 'index') }}
+            {% if a.kind in ('fortiweb', 'fortiadc') or current_user.can('config_write') %}
+            <div class="dropdown fw-row-more">
+              <button type="button" class="btn btn-sm btn-outline-secondary btn-sm-icon" data-bs-toggle="dropdown"
+                      data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false"
+                      title="{{ _('More actions') }}" aria-label="{{ _('More actions') }}"><i class="bi bi-three-dots"></i></button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                {% if a.kind in ('fortiweb', 'fortiadc') %}
+                <li><a class="dropdown-item" href="{{ url_for('appliances.inspector', id=a.id) }}"><i class="bi bi-diagram-2"></i>{{ _('Policy Inspector') }}</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('appliances.rediscover', id=a.id) }}"><i class="bi {{ 'bi-arrow-repeat' if has_snapshot(a.id) else 'bi-binoculars' }}"></i>{{ 'Rediscovery' if has_snapshot(a.id) else 'Discovery' }}</a></li>
+                {% if device_scope %}
+                {% if current_user.can('appliances.apply') %}
+                <li><a class="dropdown-item" href="{{ url_for('appliances.console', id=a.id) }}"><i class="bi bi-terminal"></i>{{ _('Console') }}</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('appliances.upgrade_prep', id=a.id) }}"><i class="bi bi-clipboard-check"></i>{{ _('Upgrade Preparation') }}</a></li>
+                {% endif %}
+                {% if a.kind == 'fortiweb' and current_user.can('appliances.apply') %}
+                <li><a class="dropdown-item" href="{{ url_for('appliances.upgrade', id=a.id) }}"><i class="bi bi-cloud-arrow-up"></i>{{ _('Upgrade Firmware') }}</a></li>
+                {% endif %}
+                {% elif owner %}
+                <li><a class="dropdown-item fw-adom-owner-link" href="{{ url_for('appliances.detail', id=owner.id) }}"
+                       title="{{ _('Firmware, the backup vault and the console act on the whole appliance — they live on') }} {{ owner.name }}"><i class="bi bi-hdd-network"></i>{{ owner.name }}</a></li>
+                {% endif %}
+                {% endif %}
+                {% if current_user.can('config_write') %}
+                {% if a.kind in ('fortiweb', 'fortiadc') %}<li><hr class="dropdown-divider"></li>{% endif %}
+                <li><form method="POST"
+                          action="{{ url_for('appliances.delete', id=a.id) }}"
+                          data-fw-confirm-form="Delete appliance '{{ a.name }}'? This cannot be undone.">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash"></i>{{ _('Delete') }}</button>
+                </form></li>
+                {% endif %}
+              </ul>
+            </div>
+            {% endif %}
+            </div>
+          </td>
+{% endmacro %}
+
+<!-- Appliances Table -->
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="appliancesTable">
+    <thead>
+      <tr>
+        <th>{{ _('Name') }}</th>
+        <th>{{ _('Kind') }}</th>
+        <th data-priority="2">{{ _('Host') }}</th>
+        <th data-priority="5">{{ _('Port') }}</th>
+        <th>{{ _('ADOM (vdom)') }}</th>
+        <th data-priority="5">{{ _('Tags') }}</th>
+        <th>{{ _('Status') }}</th>
+        <th class="actions-col">{{ _('Actions') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if groups %}
+        {% for g in groups %}
+        {% set dev = g.device %}
+        {% set dev_parts = appliance_name_parts(dev) %}
+        <tr data-kind="{{ dev.kind }}"{% if g.adoms %} data-adom-parent="{{ dev.id }}"{% endif %}>
+          <td>
+            {% if g.adoms %}
+            <button type="button" class="fw-adom-toggle" data-adom-toggle="{{ dev.id }}"
+                    aria-expanded="false"
+                    title="{{ _('Show the other ADOMs of this appliance') }}"><i class="bi bi-chevron-right"></i></button>
+            {% else %}
+            <span class="fw-adom-none" aria-hidden="true">-</span>
+            {% endif %}
+            <a href="{{ url_for('appliances.detail', id=dev.id) }}" class="fw-appliance-name" style="font-size:14px;text-decoration:none;">{{ dev_parts[0] }}</a>
+            {% if dev_parts[1] %}<span class="fw-tag ms-1" title="{{ _('Administrative domain this row administers') }}">{{ dev_parts[1] }}</span>{% endif %}
+            {% if g.adoms %}<span class="fw-badge fw-badge-secondary ms-1" title="{{ _('One physical appliance, one row per ADOM') }}"><i class="bi bi-diagram-2 me-1"></i>{{ _('ADOM') }} · {{ g.adoms|length + 1 }}</span>{% endif %}
+            {% if dev.is_cluster %}<span class="fw-badge fw-badge-secondary ms-1" title="HA cluster ({{ dev.ha_mode or 'per_node' }})"><i class="bi bi-diagram-3 me-1"></i>HA · {{ dev.members|length }}</span>{% endif %}
+            {% if dev.maintenance %}<span class="fw-badge ms-1" style="background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.35);" title="{{ _('Maintenance mode - hidden from operators') }}"><i class="bi bi-tools me-1"></i>{{ _('Maintenance') }}</span>{% endif %}
+          </td>
+          {{ appliance_cells(dev) }}
+          {{ appliance_actions(dev, owns_device_scope(dev), device_scope_owner(dev)) }}
+        </tr>
+        {% for m in g.adoms %}
+        {% set m_parts = appliance_name_parts(m) %}
+        <tr class="fw-adom-row" data-kind="{{ m.kind }}" data-adom-of="{{ dev.id }}" style="display:none;">
+          <td class="fw-adom-cell">
+            <i class="bi bi-arrow-return-right text-muted me-1"></i>
+            <a href="{{ url_for('appliances.detail', id=m.id) }}" style="text-decoration:none;font-size:13px;">{{ m_parts[1] or m_parts[0] }}</a>
+            {% if m.maintenance %}<span class="fw-badge ms-1" style="background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.35);" title="{{ _('Maintenance mode - hidden from operators') }}"><i class="bi bi-tools me-1"></i>{{ _('Maintenance') }}</span>{% endif %}
+          </td>
+          {{ appliance_cells(m) }}
+          {{ appliance_actions(m, owns_device_scope(m), device_scope_owner(m)) }}
+        </tr>
+        {% endfor %}
+        {% if dev.is_cluster %}{% for m in dev.cluster_members() %}
+        <tr class="fw-member-row" data-kind="{{ m.kind }}" data-member-of="{{ dev.id }}" style="background:rgba(148,163,184,0.04);">
+          <td style="padding-left:28px;"><i class="bi bi-arrow-return-right text-muted me-1"></i><a href="{{ url_for('appliances.detail', id=m.id) }}" style="text-decoration:none;font-size:13px;">{{ m.name }}</a>
+            {% if m.ha_role_hint %}<span class="fw-tag ms-1">{{ m.ha_role_hint }}</span>{% endif %}</td>
+          <td><span class="fw-badge fw-badge-secondary mono" title="{{ m.kind_tooltip }}">{{ m.kind_badge }}</span></td>
+          <td class="mono" style="font-size:12.5px;">{{ m.host }}</td>
+          <td>{{ m.port }}</td>
+          <td colspan="2"><span class="text-muted small">{{ _('live role:') }}</span> <span class="fw-tag" data-live-role="{{ m.id }}">…</span></td>
+          <td><span class="fw-status fw-status-unknown" data-status-id="{{ m.id }}"><span class="fw-status-dot"></span></span></td>
+          <td class="actions-col"><a href="{{ url_for('appliances.detail', id=m.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon" title="{{ _('Open') }}"><i class="bi bi-box-arrow-up-right"></i></a></td>
+        </tr>
+        {% endfor %}{% endif %}
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="8">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-server"></i></div>
+              <div class="fw-empty-state-title">{{ _('No appliances configured') }}</div>
+              <div class="fw-empty-state-text">{{ _('Add your first FortiWeb appliance to get started.') }}</div>
+              {% if current_user.can('config_write') %}
+              <button class="btn btn-fw-primary" data-js="open-add-appliance">
+                <i class="bi bi-plus-lg me-1"></i>{{ _('Add Appliance') }}
+              </button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% if pagination is defined and pagination and pagination.pages > 1 %}
+<nav class="d-flex justify-content-between align-items-center mt-3" aria-label="{{ _('Appliance pages') }}">
+  <div class="text-muted" style="font-size:13px;">
+    Showing {{ pagination.first }}–{{ pagination.last }} of {{ pagination.total }}
+    {%- if q %} matching “{{ q }}”{% endif %}
+  </div>
+  <ul class="pagination pagination-sm mb-0">
+    <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+      <a class="page-link" href="{{ url_for('appliances.index', page=pagination.prev_num, q=q or None) }}">«</a>
+    </li>
+    {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+      {% if p %}
+        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+          <a class="page-link" href="{{ url_for('appliances.index', page=p, q=q or None) }}">{{ p }}</a>
+        </li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+      {% endif %}
+    {% endfor %}
+    <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+      <a class="page-link" href="{{ url_for('appliances.index', page=pagination.next_num, q=q or None) }}">»</a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
+
+<!-- ============================================================
+     ADD APPLIANCE MODAL
+     ============================================================ -->
+<div class="modal fade fw-modal" id="modalAddAppliance" tabindex="-1" aria-labelledby="modalAddLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalAddLabel">
+          <i class="bi bi-plus-circle me-2"></i>{{ _('Add Appliance') }}
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('appliances.create') }}" id="formAddAppliance">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
+              <input type="text" class="form-control fw-form-control" name="name" placeholder="{{ _('e.g. FW-Prod-01') }}" required>
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('Kind') }} <span class="text-danger">*</span></label>
+              <select class="form-select fw-form-control" name="kind" required>
+                {% if (kind_options or [])|length != 1 %}<option value="">{{ _('Select platform…') }}</option>{% endif %}
+                {% for key, label in (kind_options or []) %}<option value="{{ key }}" {{ 'selected' if key == default_kind else '' }}>{{ label }}</option>{% endfor %}
+              </select>
+              {% if (kind_options or [])|length == 1 %}
+              <div class="form-text mt-1"><i class="bi bi-shield-lock me-1"></i>This ADOM manages {{ kind_options[0][1] }} only. Use the Global ADOM to add other platforms.</div>
+              {% endif %}
+            </div>
+            <div class="col-md-8">
+              <label class="fw-form-label">{{ _('Host / IP') }} <span class="text-danger">*</span></label>
+              <input type="text" class="form-control fw-form-control" name="host" placeholder="{{ _('IP address or hostname') }}" required>
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">{{ _('Port') }}</label>
+              <input type="number" class="form-control fw-form-control" name="port" value="443" min="1" max="65535">
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('Username') }} <span class="text-danger">*</span></label>
+              <input type="text" class="form-control fw-form-control" name="username" placeholder="{{ _('admin') }}" required>
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('Password') }} <span class="text-danger">*</span></label>
+              <input type="password" class="form-control fw-form-control" name="password" placeholder="••••••••" required>
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('ADOM (vdom, optional)') }}</label>
+              <input type="text" class="form-control fw-form-control" name="vdom" placeholder="{{ _('root') }}">
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('Tags (comma-separated)') }}</label>
+              <input type="text" class="form-control fw-form-control" name="tags" placeholder="{{ _('production, datacenter-a') }}">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">{{ _('Zone') }}</label>
+              <select class="form-select fw-form-control" name="zone">
+                <option value="">{{ _('(none)') }}</option>
+                {% for v in (classification.zones if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">{{ _('Line') }}</label>
+              <select class="form-select fw-form-control" name="line">
+                <option value="">{{ _('(none)') }}</option>
+                {% for v in (classification.lines if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">{{ _('Department') }}</label>
+              <select class="form-select fw-form-control" name="department">
+                <option value="">{{ _('(none)') }}</option>
+                {% for v in (classification.departments if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="apply_baseline" id="add-apply-baseline" value="1">
+                <label class="form-check-label" for="add-apply-baseline"><i class="bi bi-layers me-1"></i>{{ _('Then apply its full baseline') }}
+                  <span class="text-muted">{{ _('— every combo its zone / line / department falls into; you see the dry-run and confirm before anything is written') }}</span></label>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="verify_ssl" id="verify_ssl" checked>
+                <label class="form-check-label" for="verify_ssl">
+                  {{ _('Verify SSL certificate') }}
+                </label>
+              </div>
+            </div>
+            {% if current_user.can('appliances.view_maintenance') %}
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="maintenance" id="add-maintenance">
+                <label class="form-check-label" for="add-maintenance"><i class="bi bi-tools me-1"></i>{{ _('Maintenance mode') }} <span class="text-muted">{{ _('(hidden from operators)') }}</span></label>
+              </div>
+            </div>
+            {% endif %}
+            <div class="col-12"><hr class="my-1"></div>
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_cluster" id="add_is_cluster">
+                <label class="form-check-label" for="add_is_cluster"><strong>{{ _('This is an HA cluster (node 0)') }}</strong></label>
+              </div>
+              <div class="form-text">{{ _('Node 0 is the logical cluster. Add member nodes (p1/p2) afterwards from the cluster\'s detail page.') }}</div>
+            </div>
+            <div class="col-md-6 ha-fields-add d-none">
+              <label class="fw-form-label">{{ _('HA mode') }}</label>
+              <select class="form-select fw-form-control" name="ha_mode" id="add_ha_mode">
+                <option value="per_node">{{ _('Per-node IP (detect live primary before each write)') }}</option>
+                <option value="vip">{{ _('Shared VIP (one address that lands on the primary)') }}</option>
+              </select>
+            </div>
+            <div class="col-md-6 ha-fields-add ha-vip-add d-none">
+              <label class="fw-form-label">{{ _('Shared VIP address') }}</label>
+              <input type="text" class="form-control fw-form-control" name="ha_vip" placeholder="192.0.2.50">
+            </div>
+            <div class="col-12"><hr class="my-1"></div>
+            <div class="col-12 d-flex justify-content-between align-items-center">
+              <label class="fw-form-label mb-0"><i class="bi bi-ethernet me-1"></i>{{ _('Interfaces — what each port is FOR') }}</label>
+              <button type="button" class="btn btn-sm btn-fw-outline" id="addIfBtnNew"><i class="bi bi-plus-lg me-1"></i>{{ _('Add interface') }}</button>
+            </div>
+            <div class="col-12">
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-1" id="ifTableNew">
+                  <thead><tr>
+                    <th style="min-width:110px;">{{ _('Interface') }}</th>
+                    <th style="min-width:190px;">{{ _('Role (what it is for)') }}</th>
+                    <th style="min-width:150px;">{{ _('Network / segment') }}</th>
+                    <th style="min-width:120px;">IP</th>
+                    <th>{{ _('Notes') }}</th>
+                    <th style="width:38px;"></th>
+                  </tr></thead>
+                  <tbody id="ifBodyNew"></tbody>
+                </table>
+              </div>
+              <div class="form-text">{{ _('Optional at registration and editable later, but declaring the role here is what lets a clone or migrate verify the destination instead of guessing. Media type and “connected to” are on the edit page; a Rediscovery fills name/type/IP but never the role — the device does not model one.') }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary">
+            <i class="bi bi-plus-lg me-1"></i>{{ _('Add Appliance') }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT APPLIANCE MODAL -->
+<div class="modal fade fw-modal" id="modalEditAppliance" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>{{ _('Edit Appliance') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="formEditAppliance">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="_method" value="PUT">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('Name') }}</label>
+              <input type="text" class="form-control" name="name" id="edit-name" required>
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('Kind') }}</label>
+              <select class="form-select" name="kind" id="edit-kind">
+                {% for key, label in (kind_options or []) %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-8">
+              <label class="fw-form-label">{{ _('Host / IP') }}</label>
+              <input type="text" class="form-control" name="host" id="edit-host" required>
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">{{ _('Port') }}</label>
+              <input type="number" class="form-control" name="port" id="edit-port" value="443">
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('Username') }}</label>
+              <input type="text" class="form-control" name="username" id="edit-username" required>
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('New Password (leave blank to keep)') }}</label>
+              <input type="password" class="form-control" name="password" placeholder="••••••••">
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('ADOM (vdom)') }}</label>
+              <input type="text" class="form-control" name="vdom" id="edit-vdom">
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('Tags') }}</label>
+              <input type="text" class="form-control" name="tags" id="edit-tags">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">{{ _('Zone') }}</label>
+              <select class="form-select" name="zone" id="edit-zone">
+                <option value="">{{ _('(none)') }}</option>
+                {% for v in (classification.zones if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">{{ _('Line') }}</label>
+              <select class="form-select" name="line" id="edit-line">
+                <option value="">{{ _('(none)') }}</option>
+                {% for v in (classification.lines if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">{{ _('Department') }}</label>
+              <select class="form-select" name="department" id="edit-department">
+                <option value="">{{ _('(none)') }}</option>
+                {% for v in (classification.departments if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="verify_ssl" id="edit-verify-ssl">
+                <label class="form-check-label" for="edit-verify-ssl">{{ _('Verify SSL certificate') }}</label>
+              </div>
+            </div>
+            {% if current_user.can('appliances.view_maintenance') %}
+            <div class="col-12">
+              <input type="hidden" name="maintenance_present" value="1">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="maintenance" id="edit-maintenance">
+                <label class="form-check-label" for="edit-maintenance"><i class="bi bi-tools me-1"></i>{{ _('Maintenance mode') }} <span class="text-muted">{{ _('(hidden from operators)') }}</span></label>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary">{{ _('Save Changes') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Classification catalogs (Settings → Classification) for Zone/Line/Department fields -->
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+// Interface rows in the Add-Appliance modal. The role list is rendered FROM the
+// server vocabulary (never re-typed): the same list the save path validates
+// against is the only one that may be offered.
+var IF_ROLES = {{ interface_roles | tojson }};
+var IF_ROLE_OPTIONS = IF_ROLES.map(function (r) {
+  return '<option value="' + r[0] + '">' + r[1] + '</option>';
+}).join('');
+(function () {
+  var body = document.getElementById('ifBodyNew');
+  var addBtn = document.getElementById('addIfBtnNew');
+  if (!body || !addBtn) return;
+  function blankRow() {
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><input type="text" name="if_name" class="form-control form-control-sm" placeholder="port1"></td>' +
+      '<td><select name="if_role" class="form-select form-select-sm">' + IF_ROLE_OPTIONS + '</select></td>' +
+      '<td><input type="text" name="if_segment" class="form-control form-control-sm" placeholder="DMZ / VLAN 20"></td>' +
+      '<td><input type="text" name="if_ip" class="form-control form-control-sm" placeholder="192.0.2.1"></td>' +
+      '<td><input type="text" name="if_notes" class="form-control form-control-sm"></td>' +
+      '<td><button type="button" class="btn btn-sm btn-outline-danger if-del" title="Remove row"><i class="bi bi-trash"></i></button></td>';
+    return tr;
+  }
+  addBtn.addEventListener('click', function () { body.appendChild(blankRow()); });
+  body.addEventListener('click', function (e) {
+    var btn = e.target.closest('.if-del');
+    if (btn) btn.closest('tr').remove();
+  });
+})();
+function toggleHA(scope) {
+  const cb = document.getElementById(scope + '_is_cluster');
+  const on = !!(cb && cb.checked);
+  document.querySelectorAll('.ha-fields-' + scope).forEach(function (el) { el.classList.toggle('d-none', !on); });
+  const mode = document.getElementById(scope + '_ha_mode');
+  const vipOn = on && mode && mode.value === 'vip';
+  document.querySelectorAll('.ha-vip-' + scope).forEach(function (el) { el.classList.toggle('d-none', !vipOn); });
+}
+// ADOM rows: collapsed by default, and the STORE HOLDS THE OPEN SET.
+// A stored closed-set would have to be seeded per chassis on first sight, and
+// any chassis it had never seen would open itself — with one row per ADOM on a
+// 60-device fleet the only usable default is "folded".
+var ADOM_OPEN_KEY = 'satom.appliances.adom.open';
+function adomOpenSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(ADOM_OPEN_KEY) || '[]')); }
+  catch (e) { return new Set(); }
+}
+function adomSaveOpen(set) {
+  try { localStorage.setItem(ADOM_OPEN_KEY, JSON.stringify(Array.from(set))); }
+  catch (e) { /* private mode: the page still works, it just forgets */ }
+}
+function applyRowVisibility() {
+  const searchEl = document.getElementById('tableSearch');
+  const q        = (searchEl ? searchEl.value : '').toLowerCase();
+  // The kind filter is only rendered when this ADOM manages >1 platform.
+  const kindEl   = document.getElementById('kindFilter');
+  const kind     = kindEl ? kindEl.value.toLowerCase() : '';
+  const open     = adomOpenSet();
+  document.querySelectorAll('#appliancesTable tbody tr').forEach(function (row) {
+    const text    = row.textContent.toLowerCase();
+    const rowKind = (row.dataset.kind || '').toLowerCase();
+    const match   = text.includes(q) && (kind === '' || rowKind.includes(kind));
+    const parent  = row.getAttribute('data-adom-of');
+    // A search REACHES a folded ADOM. A row that matches and stays hidden
+    // reads as "no such device", which is the one answer the box must not give.
+    const folded  = parent && q === '' && !open.has(parent);
+    row.style.display = (match && !folded) ? '' : 'none';
+  });
+  document.querySelectorAll('[data-adom-toggle]').forEach(function (btn) {
+    const on = open.has(btn.getAttribute('data-adom-toggle'));
+    btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    btn.classList.toggle('is-open', on);
+  });
+}
+function filterTable() { applyRowVisibility(); }
+
+function openEditModal(appliance) {
+  document.getElementById('edit-name').value     = appliance.name || '';
+  // Add the row's own kind if this ADOM does not list it, so opening the
+  // modal never rewrites the platform of the device being edited.
+  var kindSel = document.getElementById('edit-kind');
+  var wanted  = appliance.kind || '';
+  if (wanted && !Array.from(kindSel.options).some(function (o) { return o.value === wanted; })) {
+    kindSel.add(new Option(wanted, wanted));
+  }
+  kindSel.value = wanted;
+  document.getElementById('edit-host').value     = appliance.host || '';
+  document.getElementById('edit-port').value     = appliance.port || 443;
+  document.getElementById('edit-username').value = appliance.username || '';
+  document.getElementById('edit-vdom').value     = appliance.vdom || '';
+  document.getElementById('edit-tags').value     = (Array.isArray(appliance.tags) ? appliance.tags.join(', ') : (appliance.tags || ''));
+  const setClsSelect = (id, v) => { const sel = document.getElementById(id); if (!sel) return; v = v || ''; if (v && !Array.from(sel.options).some(function(o){ return o.value === v; })) sel.add(new Option(v + ' (unregistered)', v)); sel.value = v; };
+  setClsSelect('edit-zone', appliance.zone);
+  setClsSelect('edit-line', appliance.line);
+  setClsSelect('edit-department', appliance.department);
+  document.getElementById('edit-verify-ssl').checked = appliance.verify_ssl !== false;
+  { const mc = document.getElementById('edit-maintenance'); if (mc) mc.checked = !!appliance.maintenance; }
+
+  const form = document.getElementById('formEditAppliance');
+  form.action = '/appliances/' + appliance.id + '/edit';
+
+  API.openModal('modalEditAppliance');
+}
+
+// HA: fetch live member roles for each cluster on the page
+document.addEventListener('DOMContentLoaded', function () {
+  const clusters = new Set();
+  document.querySelectorAll('[data-member-of]').forEach(function (r) { clusters.add(r.getAttribute('data-member-of')); });
+  clusters.forEach(function (cid) {
+    fetch('/appliances/' + cid + '/members/roles').then(function (r) { return r.json(); }).then(function (roles) {
+      Object.keys(roles).forEach(function (mid) {
+        const el = document.querySelector('[data-live-role="' + mid + '"]');
+        if (el) { el.textContent = roles[mid]; if (roles[mid] === 'primary') el.style.color = '#10b981'; }
+      });
+    }).catch(function () {});
+  });
+});
+// Update stats after status polling
+document.addEventListener('DOMContentLoaded', function () {
+  function updateStats() {
+    // One appliance, one vote. An ADOM row probes the SAME box as its
+    // device row, so counting every status pill made Online/Offline add up to
+    // the ROW count while the tile beside them counts devices -- two numbers
+    // about the same fleet that could never agree. Cluster members stay in:
+    // those are separate boxes with their own power supply.
+    const statuses = document.querySelectorAll('tr:not(.fw-adom-row) [data-status-id]');
+    let online = 0, offline = 0;
+    statuses.forEach(function (el) {
+      if (el.classList.contains('fw-status-online')) online++;
+      else if (el.classList.contains('fw-status-offline')) offline++;
+    });
+    document.getElementById('stat-online').textContent  = online;
+    document.getElementById('stat-offline').textContent = offline;
+  }
+
+  // Re-check every few seconds after polling
+  setInterval(updateStats, 5000);
+  setTimeout(updateStats, 3000);
+});
+// CSP: former inline on* attributes, re-bound here (Turbo-safe immediate IIFE)
+(function () {
+  document.querySelectorAll('[data-js="open-add-appliance"]').forEach(function (el) {
+    el.addEventListener('click', function () { API.openModal('modalAddAppliance'); });
+  });
+  var search = document.getElementById('tableSearch');
+  if (search) search.addEventListener('input', applyRowVisibility);
+  var kindFilter = document.getElementById('kindFilter');
+  if (kindFilter) kindFilter.addEventListener('change', applyRowVisibility);
+  document.querySelectorAll('[data-adom-toggle]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var key = this.getAttribute('data-adom-toggle');
+      var set = adomOpenSet();
+      if (set.has(key)) { set.delete(key); } else { set.add(key); }
+      adomSaveOpen(set);
+      applyRowVisibility();
+    });
+  });
+  applyRowVisibility();
+  var refresh = document.querySelector('[data-js="refresh-page"]');
+  if (refresh) refresh.addEventListener('click', function () { window.location.reload(); });
+  document.querySelectorAll('button[data-test-id]').forEach(function (el) {
+    el.addEventListener('click', function () { API.testConnection(this.dataset.testId); });
+  });
+  document.querySelectorAll('[data-js="edit-appliance"]').forEach(function (el) {
+    el.addEventListener('click', function () { openEditModal(JSON.parse(this.dataset.appliance)); });
+  });
+  var addCluster = document.getElementById('add_is_cluster');
+  if (addCluster) addCluster.addEventListener('change', function () { toggleHA('add'); });
+  var addHaMode = document.getElementById('add_ha_mode');
+  if (addHaMode) addHaMode.addEventListener('change', function () { toggleHA('add'); });
+})();
+</script>
+{% endblock %}

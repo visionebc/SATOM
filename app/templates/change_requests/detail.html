@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{#
+  The change's own page. Deliberately THIN: the seven blocks below the header
+  live in `change_requests/_view.html`, because stage 2 of the upgrade flow
+  renders the very same change inline and two copies of this markup would drift
+  — with the embedded copy, the one nobody re-reads, drifting first.
+#}
+
+{% block title %}{{ crv.cr.title }} — Change Request — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('change_requests.index') }}">{{ _('Change Requests') }}</a>
+  <span class="separator">/</span>
+  <span>#{{ crv.cr.id }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-clipboard2-check me-2 text-accent"></i>{{ crv.cr.title }}
+      <span class="fw-badge {{ crv.status_badge.get(crv.cr.status, 'fw-badge-secondary') }} ms-2 text-capitalize">
+        {{ crv.cr.status|replace('_', ' ') }}
+      </span>
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Change Request #{{ crv.cr.id }} — requested by {{ crv.cr.requested_by or 'unknown' }}
+    </p>
+  </div>
+  <a class="btn btn-fw-outline btn-sm" href="{{ url_for('change_requests.index') }}">
+    <i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}
+  </a>
+</div>
+
+{% include 'change_requests/_view.html' %}
+{% endblock %}

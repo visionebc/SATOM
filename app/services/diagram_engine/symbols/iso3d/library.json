@@ -1,0 +1,6658 @@
+{
+ "schema": "satom.symbols/1",
+ "id": "iso3d",
+ "label": "Isometric 3D",
+ "version": "1.0",
+ "license": "ELv2 (original artwork, drawn for SATOM)",
+ "variant": "iso3d",
+ "anchor": [
+  0.5,
+  0.71875
+ ],
+ "families": {
+  "network": {
+   "label": "Network",
+   "classes": {
+    "access_point": "Access Point",
+    "antenna": "Antenna",
+    "cdn": "CDN",
+    "cell_tower": "Cell Tower",
+    "core_switch": "Core Switch",
+    "dmz": "DMZ",
+    "dns": "DNS",
+    "firewall": "Firewall",
+    "ids_ips": "IDS / IPS",
+    "internet": "Internet",
+    "lan": "LAN",
+    "load_balancer": "Load Balancer / ADC",
+    "modem": "Modem",
+    "nat_gateway": "NAT Gateway",
+    "patch_panel": "Patch Panel",
+    "poe_switch": "PoE Switch",
+    "proxy": "Proxy",
+    "router": "Router",
+    "satellite": "Satellite",
+    "sdwan_edge": "SD-WAN Edge",
+    "subnet": "Subnet",
+    "switch_l2": "Switch (L2)",
+    "switch_l3": "Switch (L3)",
+    "transit_gateway": "Transit Gateway",
+    "vpc": "VPC / VNet",
+    "vpn_gateway": "VPN Gateway",
+    "waf": "Web Application Firewall",
+    "wireless_bridge": "Wireless Bridge",
+    "wireless_controller": "Wireless Controller"
+   }
+  },
+  "security": {
+   "label": "Security",
+   "classes": {
+    "admin": "Administrator",
+    "casb": "CASB",
+    "certificate": "Certificate",
+    "certificate_authority": "Certificate Authority",
+    "ddos_protection": "DDoS Protection",
+    "dlp": "DLP",
+    "edr": "EDR / XDR",
+    "email_security": "Email Security",
+    "honeypot": "Honeypot",
+    "hsm": "HSM",
+    "identity": "Identity Provider",
+    "mfa_token": "MFA Token",
+    "nac": "NAC",
+    "ngfw": "Next-Gen Firewall",
+    "pam": "PAM",
+    "siem": "SIEM / Logging",
+    "soc": "SOC",
+    "trust_boundary": "Trust Boundary",
+    "user": "User",
+    "utm": "UTM Appliance",
+    "vault": "Secrets Vault",
+    "web_gateway": "Secure Web Gateway",
+    "zone": "Security Zone",
+    "ztna": "ZTNA Broker"
+   }
+  },
+  "infra": {
+   "label": "Infrastructure",
+   "classes": {
+    "availability_zone": "Availability Zone",
+    "backup": "Backup",
+    "blade_chassis": "Blade Chassis",
+    "cloud": "Cloud",
+    "container": "Container",
+    "cooling": "Cooling Unit",
+    "database": "Database",
+    "datacenter": "Data Center",
+    "edge_node": "Edge Node",
+    "file_share": "File Share",
+    "generator": "Generator",
+    "gpu_server": "GPU Server",
+    "ha_cluster": "Cluster / HA Pair",
+    "hypervisor": "Hypervisor",
+    "kubernetes": "Kubernetes Cluster",
+    "mainframe": "Mainframe",
+    "nas": "NAS",
+    "object_storage": "Object Storage",
+    "pdu": "PDU",
+    "pod": "Pod",
+    "rack": "Rack",
+    "rack_server": "Rack Server",
+    "region": "Region",
+    "san": "SAN",
+    "server": "Server",
+    "storage": "Storage Array",
+    "tape_library": "Tape Library",
+    "ups": "UPS",
+    "virtual_machine": "Virtual Machine"
+   }
+  },
+  "devices": {
+   "label": "End-user devices",
+   "classes": {
+    "badge_reader": "Badge Reader",
+    "desktop": "Desktop",
+    "iot_sensor": "IoT Sensor",
+    "ip_camera": "IP Camera",
+    "ip_phone": "IP Phone",
+    "laptop": "Laptop",
+    "phone": "Phone",
+    "plc": "PLC / OT Controller",
+    "printer": "Printer",
+    "scanner": "Scanner",
+    "smart_tv": "Smart TV / Display",
+    "tablet": "Tablet",
+    "thin_client": "Thin Client"
+   }
+  },
+  "data": {
+   "label": "Data & AI",
+   "classes": {
+    "ai_agent": "AI Agent",
+    "bi_dashboard": "BI Dashboard",
+    "cache": "Cache",
+    "etl": "ETL / Pipeline",
+    "event_stream": "Event Stream",
+    "lake": "Data Lake",
+    "llm": "LLM",
+    "ml_model": "ML Model",
+    "search_index": "Search Index",
+    "warehouse": "Data Warehouse"
+   }
+  },
+  "software": {
+   "label": "Software",
+   "classes": {
+    "api": "API",
+    "api_gateway": "API Gateway",
+    "application": "Application",
+    "artifact_store": "Artifact Store",
+    "browser": "Browser",
+    "chat": "Chat",
+    "ci_cd": "CI/CD Pipeline",
+    "container_registry": "Container Registry",
+    "email": "Email",
+    "function": "Function",
+    "git_repo": "Git Repository",
+    "identity_provider": "Identity Provider",
+    "message_bus": "Message Bus",
+    "microservice": "Microservice",
+    "mobile_app": "Mobile App",
+    "queue": "Queue",
+    "scheduler": "Scheduler / Cron",
+    "sms": "SMS",
+    "web_app": "Web App",
+    "webhook": "Webhook"
+   }
+  },
+  "people": {
+   "label": "People & places",
+   "classes": {
+    "branch": "Branch Office",
+    "customer": "Customer",
+    "headquarters": "Headquarters",
+    "home_office": "Home Office",
+    "on_call": "On-call Engineer",
+    "site": "Building / Site",
+    "soc_analyst": "SOC Analyst",
+    "team": "Team",
+    "vendor": "Vendor / Partner"
+   }
+  },
+  "flow": {
+   "label": "Flow / Decision",
+   "classes": {
+    "document": "Document"
+   }
+  },
+  "generic": {
+   "label": "Generic",
+   "classes": {
+    "pipe": "Pipe"
+   }
+  }
+ },
+ "symbols": [
+  {
+   "id": "router",
+   "label": "Router",
+   "category": "network.router",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "gateway",
+    "routing",
+    "layer 3",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "router.svg",
+   "variants": {
+    "generic": "router",
+    "color": "router"
+   }
+  },
+  {
+   "id": "switch-l2",
+   "label": "Switch (L2)",
+   "category": "network.switch_l2",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "switch",
+    "ethernet",
+    "access switch",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "switch-l2.svg",
+   "variants": {
+    "generic": "switch-l2",
+    "color": "switch-l2"
+   }
+  },
+  {
+   "id": "switch-l3",
+   "label": "Switch (L3)",
+   "category": "network.switch_l3",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "core switch",
+    "layer 3 switch",
+    "multilayer",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "switch-l3.svg",
+   "variants": {
+    "generic": "switch-l3",
+    "color": "switch-l3"
+   }
+  },
+  {
+   "id": "core-switch",
+   "label": "Core Switch",
+   "category": "network.core_switch",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "core",
+    "chassis",
+    "backbone",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "core-switch.svg",
+   "variants": {
+    "generic": "core-switch",
+    "color": "core-switch"
+   }
+  },
+  {
+   "id": "poe-switch",
+   "label": "PoE Switch",
+   "category": "network.poe_switch",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "power over ethernet",
+    "poe",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "poe-switch.svg",
+   "variants": {
+    "generic": "poe-switch",
+    "color": "poe-switch"
+   }
+  },
+  {
+   "id": "firewall",
+   "label": "Firewall",
+   "category": "network.firewall",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "security",
+    "packet filter",
+    "fw",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "firewall.svg",
+   "variants": {
+    "generic": "firewall",
+    "color": "firewall"
+   }
+  },
+  {
+   "id": "ngfw",
+   "label": "Next-Gen Firewall",
+   "category": "security.ngfw",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "ngfw",
+    "next generation firewall",
+    "utm",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "ngfw.svg",
+   "variants": {
+    "generic": "ngfw",
+    "color": "ngfw"
+   }
+  },
+  {
+   "id": "utm",
+   "label": "UTM Appliance",
+   "category": "security.utm",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "unified threat management",
+    "utm",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "utm.svg",
+   "variants": {
+    "generic": "utm",
+    "color": "utm"
+   }
+  },
+  {
+   "id": "waf",
+   "label": "Web Application Firewall",
+   "category": "network.waf",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "waf",
+    "web firewall",
+    "application firewall",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "waf.svg",
+   "variants": {
+    "generic": "waf",
+    "color": "waf"
+   }
+  },
+  {
+   "id": "load-balancer",
+   "label": "Load Balancer / ADC",
+   "category": "network.load_balancer",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "lb",
+    "adc",
+    "balancer",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "load-balancer.svg",
+   "variants": {
+    "generic": "load-balancer",
+    "color": "load-balancer"
+   }
+  },
+  {
+   "id": "access-point",
+   "label": "Access Point",
+   "category": "network.access_point",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "wifi",
+    "wireless",
+    "wlan",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "access-point.svg",
+   "variants": {
+    "generic": "access-point",
+    "color": "access-point"
+   }
+  },
+  {
+   "id": "wireless-controller",
+   "label": "Wireless Controller",
+   "category": "network.wireless_controller",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "wlc",
+    "wifi controller",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "wireless-controller.svg",
+   "variants": {
+    "generic": "wireless-controller",
+    "color": "wireless-controller"
+   }
+  },
+  {
+   "id": "vpn-gateway",
+   "label": "VPN Gateway",
+   "category": "network.vpn_gateway",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "vpn",
+    "ipsec",
+    "tunnel",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "vpn-gateway.svg",
+   "variants": {
+    "generic": "vpn-gateway",
+    "color": "vpn-gateway"
+   }
+  },
+  {
+   "id": "ids-ips",
+   "label": "IDS / IPS",
+   "category": "network.ids_ips",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "intrusion detection",
+    "intrusion prevention",
+    "ids",
+    "ips",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "ids-ips.svg",
+   "variants": {
+    "generic": "ids-ips",
+    "color": "ids-ips"
+   }
+  },
+  {
+   "id": "proxy",
+   "label": "Proxy",
+   "category": "network.proxy",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "forward proxy",
+    "reverse proxy",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "proxy.svg",
+   "variants": {
+    "generic": "proxy",
+    "color": "proxy"
+   }
+  },
+  {
+   "id": "modem",
+   "label": "Modem",
+   "category": "network.modem",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "dsl",
+    "cable modem",
+    "ont",
+    "fibre terminal",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "modem.svg",
+   "variants": {
+    "generic": "modem",
+    "color": "modem"
+   }
+  },
+  {
+   "id": "internet",
+   "label": "Internet",
+   "category": "network.internet",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "web",
+    "public network",
+    "www",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "internet.svg",
+   "variants": {
+    "generic": "internet",
+    "color": "internet"
+   }
+  },
+  {
+   "id": "cloud",
+   "label": "Cloud",
+   "category": "infra.cloud",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "cloud",
+    "public cloud",
+    "iaas",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "cloud.svg",
+   "variants": {
+    "generic": "cloud",
+    "color": "cloud"
+   }
+  },
+  {
+   "id": "cell-tower",
+   "label": "Cell Tower",
+   "category": "network.cell_tower",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "cellular",
+    "lte",
+    "5g",
+    "mobile network",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "cell-tower.svg",
+   "variants": {
+    "generic": "cell-tower",
+    "color": "cell-tower"
+   }
+  },
+  {
+   "id": "satellite",
+   "label": "Satellite",
+   "category": "network.satellite",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "satcom",
+    "vsat",
+    "orbit",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "satellite.svg",
+   "variants": {
+    "generic": "satellite",
+    "color": "satellite"
+   }
+  },
+  {
+   "id": "antenna",
+   "label": "Antenna",
+   "category": "network.antenna",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "antenna",
+    "radio",
+    "mast",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "antenna.svg",
+   "variants": {
+    "generic": "antenna",
+    "color": "antenna"
+   }
+  },
+  {
+   "id": "patch-panel",
+   "label": "Patch Panel",
+   "category": "network.patch_panel",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "patch panel",
+    "cabling",
+    "keystone",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "patch-panel.svg",
+   "variants": {
+    "generic": "patch-panel",
+    "color": "patch-panel"
+   }
+  },
+  {
+   "id": "sdwan-edge",
+   "label": "SD-WAN Edge",
+   "category": "network.sdwan_edge",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "sd-wan",
+    "sdwan",
+    "branch edge",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "sdwan-edge.svg",
+   "variants": {
+    "generic": "sdwan-edge",
+    "color": "sdwan-edge"
+   }
+  },
+  {
+   "id": "dns",
+   "label": "DNS",
+   "category": "network.dns",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "dns",
+    "name server",
+    "resolver",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "dns.svg",
+   "variants": {
+    "generic": "dns",
+    "color": "dns"
+   }
+  },
+  {
+   "id": "nat-gateway",
+   "label": "NAT Gateway",
+   "category": "network.nat_gateway",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "nat",
+    "pat",
+    "masquerade",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "nat-gateway.svg",
+   "variants": {
+    "generic": "nat-gateway",
+    "color": "nat-gateway"
+   }
+  },
+  {
+   "id": "transit-gateway",
+   "label": "Transit Gateway",
+   "category": "network.transit_gateway",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "transit",
+    "hub",
+    "tgw",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "transit-gateway.svg",
+   "variants": {
+    "generic": "transit-gateway",
+    "color": "transit-gateway"
+   }
+  },
+  {
+   "id": "cdn",
+   "label": "CDN",
+   "category": "network.cdn",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "content delivery",
+    "edge cache",
+    "cdn",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "cdn.svg",
+   "variants": {
+    "generic": "cdn",
+    "color": "cdn"
+   }
+  },
+  {
+   "id": "wireless-bridge",
+   "label": "Wireless Bridge",
+   "category": "network.wireless_bridge",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "point to point",
+    "ptp",
+    "radio link",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "wireless-bridge.svg",
+   "variants": {
+    "generic": "wireless-bridge"
+   }
+  },
+  {
+   "id": "siem",
+   "label": "SIEM / Logging",
+   "category": "security.siem",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "siem",
+    "log management",
+    "splunk",
+    "elastic",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "siem.svg",
+   "variants": {
+    "generic": "siem",
+    "color": "siem"
+   }
+  },
+  {
+   "id": "soc",
+   "label": "SOC",
+   "category": "security.soc",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "security operations centre",
+    "noc",
+    "monitoring",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "soc.svg",
+   "variants": {
+    "generic": "soc",
+    "color": "soc"
+   }
+  },
+  {
+   "id": "hsm",
+   "label": "HSM",
+   "category": "security.hsm",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "hardware security module",
+    "key store",
+    "crypto",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "hsm.svg",
+   "variants": {
+    "generic": "hsm",
+    "color": "hsm"
+   }
+  },
+  {
+   "id": "vault",
+   "label": "Secrets Vault",
+   "category": "security.vault",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "secrets",
+    "vault",
+    "key vault",
+    "password manager",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "vault.svg",
+   "variants": {
+    "generic": "vault",
+    "color": "vault"
+   }
+  },
+  {
+   "id": "mfa-token",
+   "label": "MFA Token",
+   "category": "security.mfa_token",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "mfa",
+    "2fa",
+    "otp",
+    "authenticator",
+    "yubikey",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "mfa-token.svg",
+   "variants": {
+    "generic": "mfa-token",
+    "color": "mfa-token"
+   }
+  },
+  {
+   "id": "certificate-authority",
+   "label": "Certificate Authority",
+   "category": "security.certificate_authority",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "ca",
+    "pki",
+    "issuing ca",
+    "root ca",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "certificate-authority.svg",
+   "variants": {
+    "generic": "certificate-authority",
+    "color": "certificate-authority"
+   }
+  },
+  {
+   "id": "certificate",
+   "label": "Certificate",
+   "category": "security.certificate",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "tls",
+    "ssl",
+    "x509",
+    "pki",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "certificate.svg",
+   "variants": {
+    "generic": "certificate",
+    "color": "certificate"
+   }
+  },
+  {
+   "id": "ddos-protection",
+   "label": "DDoS Protection",
+   "category": "security.ddos_protection",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "ddos",
+    "scrubbing",
+    "anti ddos",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "ddos-protection.svg",
+   "variants": {
+    "generic": "ddos-protection",
+    "color": "ddos-protection"
+   }
+  },
+  {
+   "id": "email-security",
+   "label": "Email Security",
+   "category": "security.email_security",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "mail gateway",
+    "anti spam",
+    "seg",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "email-security.svg",
+   "variants": {
+    "generic": "email-security",
+    "color": "email-security"
+   }
+  },
+  {
+   "id": "web-gateway",
+   "label": "Secure Web Gateway",
+   "category": "security.web_gateway",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "swg",
+    "web filter",
+    "url filtering",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "web-gateway.svg",
+   "variants": {
+    "generic": "web-gateway",
+    "color": "web-gateway"
+   }
+  },
+  {
+   "id": "ztna",
+   "label": "ZTNA Broker",
+   "category": "security.ztna",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "zero trust",
+    "ztna",
+    "access broker",
+    "sdp",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "ztna.svg",
+   "variants": {
+    "generic": "ztna",
+    "color": "ztna"
+   }
+  },
+  {
+   "id": "casb",
+   "label": "CASB",
+   "category": "security.casb",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "cloud access security broker",
+    "casb",
+    "saas security",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "casb.svg",
+   "variants": {
+    "generic": "casb",
+    "color": "casb"
+   }
+  },
+  {
+   "id": "edr",
+   "label": "EDR / XDR",
+   "category": "security.edr",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "endpoint detection",
+    "edr",
+    "xdr",
+    "antivirus",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "edr.svg",
+   "variants": {
+    "generic": "edr",
+    "color": "edr"
+   }
+  },
+  {
+   "id": "nac",
+   "label": "NAC",
+   "category": "security.nac",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "network access control",
+    "802.1x",
+    "posture",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "nac.svg",
+   "variants": {
+    "generic": "nac",
+    "color": "nac"
+   }
+  },
+  {
+   "id": "pam",
+   "label": "PAM",
+   "category": "security.pam",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "privileged access",
+    "pam",
+    "jump host",
+    "bastion",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "pam.svg",
+   "variants": {
+    "generic": "pam",
+    "color": "pam"
+   }
+  },
+  {
+   "id": "honeypot",
+   "label": "Honeypot",
+   "category": "security.honeypot",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "honeypot",
+    "deception",
+    "decoy",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "honeypot.svg",
+   "variants": {
+    "generic": "honeypot",
+    "color": "honeypot"
+   }
+  },
+  {
+   "id": "dlp",
+   "label": "DLP",
+   "category": "security.dlp",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "data loss prevention",
+    "dlp",
+    "exfiltration",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "dlp.svg",
+   "variants": {
+    "generic": "dlp",
+    "color": "dlp"
+   }
+  },
+  {
+   "id": "security-zone",
+   "label": "Security Zone",
+   "category": "security.zone",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "zone",
+    "segment",
+    "trust zone",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "security-zone.svg",
+   "variants": {
+    "generic": "security-zone",
+    "color": "security-zone"
+   }
+  },
+  {
+   "id": "trust-boundary",
+   "label": "Trust Boundary",
+   "category": "security.trust_boundary",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "trust boundary",
+    "boundary",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "trust-boundary.svg",
+   "variants": {
+    "generic": "trust-boundary"
+   }
+  },
+  {
+   "id": "identity",
+   "label": "Identity Provider",
+   "category": "security.identity",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "idp",
+    "iam",
+    "identity",
+    "directory",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "identity.svg",
+   "variants": {
+    "generic": "identity",
+    "color": "identity"
+   }
+  },
+  {
+   "id": "server",
+   "label": "Server",
+   "category": "infra.server",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "host",
+    "bare metal",
+    "tower",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "server.svg",
+   "variants": {
+    "generic": "server",
+    "color": "server"
+   }
+  },
+  {
+   "id": "rack-server",
+   "label": "Rack Server",
+   "category": "infra.rack_server",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "1u",
+    "2u",
+    "rack mount",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "rack-server.svg",
+   "variants": {
+    "generic": "rack-server",
+    "color": "rack-server"
+   }
+  },
+  {
+   "id": "rack",
+   "label": "Rack",
+   "category": "infra.rack",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "cabinet",
+    "42u",
+    "rack",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "rack.svg",
+   "variants": {
+    "generic": "rack",
+    "color": "rack"
+   }
+  },
+  {
+   "id": "blade-chassis",
+   "label": "Blade Chassis",
+   "category": "infra.blade_chassis",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "blade",
+    "chassis",
+    "enclosure",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "blade-chassis.svg",
+   "variants": {
+    "generic": "blade-chassis",
+    "color": "blade-chassis"
+   }
+  },
+  {
+   "id": "storage-array",
+   "label": "Storage Array",
+   "category": "infra.storage",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "storage",
+    "disk array",
+    "san array",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "storage-array.svg",
+   "variants": {
+    "generic": "storage",
+    "color": "storage"
+   }
+  },
+  {
+   "id": "nas",
+   "label": "NAS",
+   "category": "infra.nas",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "network attached storage",
+    "file server",
+    "nas",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "nas.svg",
+   "variants": {
+    "generic": "nas",
+    "color": "nas"
+   }
+  },
+  {
+   "id": "san",
+   "label": "SAN",
+   "category": "infra.san",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "storage area network",
+    "fibre channel",
+    "fc",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "san.svg",
+   "variants": {
+    "generic": "san",
+    "color": "san"
+   }
+  },
+  {
+   "id": "tape-library",
+   "label": "Tape Library",
+   "category": "infra.tape_library",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "tape",
+    "lto",
+    "archive",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "tape-library.svg",
+   "variants": {
+    "generic": "tape-library",
+    "color": "tape-library"
+   }
+  },
+  {
+   "id": "ups",
+   "label": "UPS",
+   "category": "infra.ups",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "uninterruptible power supply",
+    "battery",
+    "power",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "ups.svg",
+   "variants": {
+    "generic": "ups",
+    "color": "ups"
+   }
+  },
+  {
+   "id": "pdu",
+   "label": "PDU",
+   "category": "infra.pdu",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "power distribution",
+    "power strip",
+    "pdu",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "pdu.svg",
+   "variants": {
+    "generic": "pdu",
+    "color": "pdu"
+   }
+  },
+  {
+   "id": "cooling",
+   "label": "Cooling Unit",
+   "category": "infra.cooling",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "crac",
+    "hvac",
+    "air conditioning",
+    "chiller",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "cooling.svg",
+   "variants": {
+    "generic": "cooling",
+    "color": "cooling"
+   }
+  },
+  {
+   "id": "generator",
+   "label": "Generator",
+   "category": "infra.generator",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "diesel generator",
+    "genset",
+    "backup power",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "generator.svg",
+   "variants": {
+    "generic": "generator",
+    "color": "generator"
+   }
+  },
+  {
+   "id": "gpu-server",
+   "label": "GPU Server",
+   "category": "infra.gpu_server",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "gpu",
+    "accelerator",
+    "ai server",
+    "cuda",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "gpu-server.svg",
+   "variants": {
+    "generic": "gpu-server",
+    "color": "gpu-server"
+   }
+  },
+  {
+   "id": "mainframe",
+   "label": "Mainframe",
+   "category": "infra.mainframe",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "mainframe",
+    "z series",
+    "big iron",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "mainframe.svg",
+   "variants": {
+    "generic": "mainframe",
+    "color": "mainframe"
+   }
+  },
+  {
+   "id": "hypervisor",
+   "label": "Hypervisor",
+   "category": "infra.hypervisor",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "esxi",
+    "kvm",
+    "proxmox",
+    "hyper-v",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "hypervisor.svg",
+   "variants": {
+    "generic": "hypervisor",
+    "color": "hypervisor"
+   }
+  },
+  {
+   "id": "virtual-machine",
+   "label": "Virtual Machine",
+   "category": "infra.virtual_machine",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "vm",
+    "guest",
+    "instance",
+    "ec2",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "virtual-machine.svg",
+   "variants": {
+    "generic": "virtual-machine",
+    "color": "virtual-machine"
+   }
+  },
+  {
+   "id": "container",
+   "label": "Container",
+   "category": "infra.container",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "docker",
+    "oci",
+    "container",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "container.svg",
+   "variants": {
+    "generic": "container",
+    "color": "container"
+   }
+  },
+  {
+   "id": "kubernetes",
+   "label": "Kubernetes Cluster",
+   "category": "infra.kubernetes",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "k8s",
+    "cluster",
+    "orchestration",
+    "openshift",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "kubernetes.svg",
+   "variants": {
+    "generic": "kubernetes",
+    "color": "kubernetes"
+   }
+  },
+  {
+   "id": "pod",
+   "label": "Pod",
+   "category": "infra.pod",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "pod",
+    "replica",
+    "workload",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "pod.svg",
+   "variants": {
+    "generic": "pod",
+    "color": "pod"
+   }
+  },
+  {
+   "id": "datacenter",
+   "label": "Data Center",
+   "category": "infra.datacenter",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "dc",
+    "colocation",
+    "facility",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "datacenter.svg",
+   "variants": {
+    "generic": "datacenter",
+    "color": "datacenter"
+   }
+  },
+  {
+   "id": "edge-node",
+   "label": "Edge Node",
+   "category": "infra.edge_node",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "edge",
+    "mec",
+    "branch compute",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "edge-node.svg",
+   "variants": {
+    "generic": "edge-node",
+    "color": "edge-node"
+   }
+  },
+  {
+   "id": "object-storage",
+   "label": "Object Storage",
+   "category": "infra.object_storage",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "s3",
+    "bucket",
+    "blob",
+    "object store",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "object-storage.svg",
+   "variants": {
+    "generic": "object-storage",
+    "color": "object-storage"
+   }
+  },
+  {
+   "id": "file-share",
+   "label": "File Share",
+   "category": "infra.file_share",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "smb",
+    "nfs",
+    "cifs",
+    "share",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "file-share.svg",
+   "variants": {
+    "generic": "file-share",
+    "color": "file-share"
+   }
+  },
+  {
+   "id": "backup",
+   "label": "Backup",
+   "category": "infra.backup",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "backup",
+    "snapshot",
+    "restore",
+    "dr",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "backup.svg",
+   "variants": {
+    "generic": "backup",
+    "color": "backup"
+   }
+  },
+  {
+   "id": "ha-cluster",
+   "label": "Cluster / HA Pair",
+   "category": "infra.ha_cluster",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "ha",
+    "failover",
+    "cluster",
+    "active passive",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "ha-cluster.svg",
+   "variants": {
+    "generic": "ha-cluster",
+    "color": "ha-cluster"
+   }
+  },
+  {
+   "id": "region",
+   "label": "Region",
+   "category": "infra.region",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "region",
+    "geography",
+    "location",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "region.svg",
+   "variants": {
+    "generic": "region",
+    "color": "region"
+   }
+  },
+  {
+   "id": "availability-zone",
+   "label": "Availability Zone",
+   "category": "infra.availability_zone",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "az",
+    "zone",
+    "fault domain",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "availability-zone.svg",
+   "variants": {
+    "generic": "availability-zone",
+    "color": "availability-zone"
+   }
+  },
+  {
+   "id": "vpc",
+   "label": "VPC / VNet",
+   "category": "network.vpc",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "vpc",
+    "vnet",
+    "virtual network",
+    "vcn",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "vpc.svg",
+   "variants": {
+    "generic": "vpc",
+    "color": "vpc"
+   }
+  },
+  {
+   "id": "subnet",
+   "label": "Subnet",
+   "category": "network.subnet",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "subnet",
+    "cidr",
+    "prefix",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "subnet.svg",
+   "variants": {
+    "generic": "subnet",
+    "color": "subnet"
+   }
+  },
+  {
+   "id": "dmz",
+   "label": "DMZ",
+   "category": "network.dmz",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "dmz",
+    "perimeter",
+    "demilitarized zone",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "dmz.svg",
+   "variants": {
+    "generic": "dmz",
+    "color": "dmz"
+   }
+  },
+  {
+   "id": "lan",
+   "label": "LAN",
+   "category": "network.lan",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "lan",
+    "local network",
+    "internal network",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "lan.svg",
+   "variants": {
+    "generic": "lan",
+    "color": "lan"
+   }
+  },
+  {
+   "id": "database",
+   "label": "Database",
+   "category": "infra.database",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "db",
+    "sql",
+    "rdbms",
+    "postgres",
+    "mysql",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "database.svg",
+   "variants": {
+    "generic": "database",
+    "color": "database"
+   }
+  },
+  {
+   "id": "data-warehouse",
+   "label": "Data Warehouse",
+   "category": "data.warehouse",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "warehouse",
+    "olap",
+    "dwh",
+    "snowflake",
+    "bigquery",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "data-warehouse.svg",
+   "variants": {
+    "generic": "data-warehouse",
+    "color": "data-warehouse"
+   }
+  },
+  {
+   "id": "data-lake",
+   "label": "Data Lake",
+   "category": "data.lake",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "lake",
+    "lakehouse",
+    "raw data",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "data-lake.svg",
+   "variants": {
+    "generic": "data-lake",
+    "color": "data-lake"
+   }
+  },
+  {
+   "id": "cache",
+   "label": "Cache",
+   "category": "data.cache",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "redis",
+    "memcached",
+    "in memory",
+    "cache",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "cache.svg",
+   "variants": {
+    "generic": "cache",
+    "color": "cache"
+   }
+  },
+  {
+   "id": "queue",
+   "label": "Queue",
+   "category": "software.queue",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "mq",
+    "message queue",
+    "sqs",
+    "rabbitmq",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "queue.svg",
+   "variants": {
+    "generic": "queue",
+    "color": "queue"
+   }
+  },
+  {
+   "id": "event-stream",
+   "label": "Event Stream",
+   "category": "data.event_stream",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "kafka",
+    "kinesis",
+    "pubsub",
+    "stream",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "event-stream.svg",
+   "variants": {
+    "generic": "event-stream",
+    "color": "event-stream"
+   }
+  },
+  {
+   "id": "pipe",
+   "label": "Pipe",
+   "category": "generic.pipe",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "pipe",
+    "connector",
+    "link",
+    "trunk",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "pipe.svg",
+   "variants": {}
+  },
+  {
+   "id": "search-index",
+   "label": "Search Index",
+   "category": "data.search_index",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "elasticsearch",
+    "opensearch",
+    "solr",
+    "index",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "search-index.svg",
+   "variants": {
+    "generic": "search-index",
+    "color": "search-index"
+   }
+  },
+  {
+   "id": "etl",
+   "label": "ETL / Pipeline",
+   "category": "data.etl",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "etl",
+    "elt",
+    "data pipeline",
+    "airflow",
+    "dbt",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "etl.svg",
+   "variants": {
+    "generic": "etl",
+    "color": "etl"
+   }
+  },
+  {
+   "id": "bi-dashboard",
+   "label": "BI Dashboard",
+   "category": "data.bi_dashboard",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "dashboard",
+    "bi",
+    "reporting",
+    "grafana",
+    "power bi",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "bi-dashboard.svg",
+   "variants": {
+    "generic": "bi-dashboard",
+    "color": "bi-dashboard"
+   }
+  },
+  {
+   "id": "ml-model",
+   "label": "ML Model",
+   "category": "data.ml_model",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "machine learning",
+    "model",
+    "inference",
+    "neural network",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "ml-model.svg",
+   "variants": {
+    "generic": "ml-model",
+    "color": "ml-model"
+   }
+  },
+  {
+   "id": "llm",
+   "label": "LLM",
+   "category": "data.llm",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "large language model",
+    "llm",
+    "gpt",
+    "foundation model",
+    "genai",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "llm.svg",
+   "variants": {
+    "generic": "llm",
+    "color": "llm"
+   }
+  },
+  {
+   "id": "ai-agent",
+   "label": "AI Agent",
+   "category": "data.ai_agent",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "agent",
+    "assistant",
+    "bot",
+    "copilot",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "ai-agent.svg",
+   "variants": {
+    "generic": "ai-agent",
+    "color": "ai-agent"
+   }
+  },
+  {
+   "id": "application",
+   "label": "Application",
+   "category": "software.application",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "app",
+    "software",
+    "program",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "application.svg",
+   "variants": {
+    "generic": "application",
+    "color": "application"
+   }
+  },
+  {
+   "id": "web-app",
+   "label": "Web App",
+   "category": "software.web_app",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "web application",
+    "site",
+    "portal",
+    "frontend",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "web-app.svg",
+   "variants": {
+    "generic": "web-app",
+    "color": "web-app"
+   }
+  },
+  {
+   "id": "browser",
+   "label": "Browser",
+   "category": "software.browser",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "browser",
+    "web client",
+    "chrome",
+    "firefox",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "browser.svg",
+   "variants": {
+    "generic": "browser",
+    "color": "browser"
+   }
+  },
+  {
+   "id": "microservice",
+   "label": "Microservice",
+   "category": "software.microservice",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "service",
+    "microservice",
+    "svc",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "microservice.svg",
+   "variants": {
+    "generic": "microservice",
+    "color": "microservice"
+   }
+  },
+  {
+   "id": "api",
+   "label": "API",
+   "category": "software.api",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "rest",
+    "graphql",
+    "endpoint",
+    "openapi",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "api.svg",
+   "variants": {
+    "generic": "api",
+    "color": "api"
+   }
+  },
+  {
+   "id": "api-gateway",
+   "label": "API Gateway",
+   "category": "software.api_gateway",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "api gateway",
+    "apim",
+    "kong",
+    "ingress",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "api-gateway.svg",
+   "variants": {
+    "generic": "api-gateway",
+    "color": "api-gateway"
+   }
+  },
+  {
+   "id": "function",
+   "label": "Function",
+   "category": "software.function",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "serverless",
+    "faas",
+    "function",
+    "lambda",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "function.svg",
+   "variants": {
+    "generic": "function",
+    "color": "function"
+   }
+  },
+  {
+   "id": "message-bus",
+   "label": "Message Bus",
+   "category": "software.message_bus",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "esb",
+    "bus",
+    "event bus",
+    "integration",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "message-bus.svg",
+   "variants": {
+    "generic": "message-bus",
+    "color": "message-bus"
+   }
+  },
+  {
+   "id": "ci-cd",
+   "label": "CI/CD Pipeline",
+   "category": "software.ci_cd",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "ci",
+    "cd",
+    "pipeline",
+    "jenkins",
+    "github actions",
+    "gitlab ci",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "ci-cd.svg",
+   "variants": {
+    "generic": "ci-cd",
+    "color": "ci-cd"
+   }
+  },
+  {
+   "id": "git-repo",
+   "label": "Git Repository",
+   "category": "software.git_repo",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "git",
+    "repository",
+    "source control",
+    "gitea",
+    "github",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "git-repo.svg",
+   "variants": {
+    "generic": "git-repo",
+    "color": "git-repo"
+   }
+  },
+  {
+   "id": "container-registry",
+   "label": "Container Registry",
+   "category": "software.container_registry",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "registry",
+    "harbor",
+    "docker hub",
+    "image registry",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "container-registry.svg",
+   "variants": {
+    "generic": "container-registry",
+    "color": "container-registry"
+   }
+  },
+  {
+   "id": "artifact-store",
+   "label": "Artifact Store",
+   "category": "software.artifact_store",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "artifactory",
+    "nexus",
+    "packages",
+    "artifacts",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "artifact-store.svg",
+   "variants": {
+    "generic": "artifact-store"
+   }
+  },
+  {
+   "id": "scheduler",
+   "label": "Scheduler / Cron",
+   "category": "software.scheduler",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "cron",
+    "scheduler",
+    "job",
+    "timer",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "scheduler.svg",
+   "variants": {
+    "generic": "scheduler",
+    "color": "scheduler"
+   }
+  },
+  {
+   "id": "webhook",
+   "label": "Webhook",
+   "category": "software.webhook",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "webhook",
+    "callback",
+    "http hook",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "webhook.svg",
+   "variants": {
+    "generic": "webhook",
+    "color": "webhook"
+   }
+  },
+  {
+   "id": "email",
+   "label": "Email",
+   "category": "software.email",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "mail",
+    "smtp",
+    "imap",
+    "exchange",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "email.svg",
+   "variants": {
+    "generic": "email",
+    "color": "email"
+   }
+  },
+  {
+   "id": "sms",
+   "label": "SMS",
+   "category": "software.sms",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "sms",
+    "text message",
+    "notification",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "sms.svg",
+   "variants": {
+    "generic": "sms",
+    "color": "sms"
+   }
+  },
+  {
+   "id": "chat",
+   "label": "Chat",
+   "category": "software.chat",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "chat",
+    "slack",
+    "teams",
+    "messaging",
+    "im",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "chat.svg",
+   "variants": {
+    "generic": "chat",
+    "color": "chat"
+   }
+  },
+  {
+   "id": "document",
+   "label": "Document",
+   "category": "flow.document",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "file",
+    "report",
+    "doc",
+    "paper",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "document.svg",
+   "variants": {
+    "generic": "document",
+    "color": "document"
+   }
+  },
+  {
+   "id": "identity-provider",
+   "label": "Identity Provider",
+   "category": "software.identity_provider",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "sso",
+    "saml",
+    "oidc",
+    "oauth",
+    "idp",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "identity-provider.svg",
+   "variants": {
+    "generic": "identity-provider",
+    "color": "identity-provider"
+   }
+  },
+  {
+   "id": "user",
+   "label": "User",
+   "category": "security.user",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "person",
+    "employee",
+    "end user",
+    "human",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "user.svg",
+   "variants": {
+    "generic": "user",
+    "color": "user"
+   }
+  },
+  {
+   "id": "admin",
+   "label": "Administrator",
+   "category": "security.admin",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "admin",
+    "operator",
+    "root",
+    "sysadmin",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "admin.svg",
+   "variants": {
+    "generic": "admin",
+    "color": "admin"
+   }
+  },
+  {
+   "id": "team",
+   "label": "Team",
+   "category": "people.team",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "group",
+    "team",
+    "department",
+    "squad",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "team.svg",
+   "variants": {
+    "generic": "team",
+    "color": "team"
+   }
+  },
+  {
+   "id": "customer",
+   "label": "Customer",
+   "category": "people.customer",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "client",
+    "buyer",
+    "consumer",
+    "customer",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "customer.svg",
+   "variants": {
+    "generic": "customer",
+    "color": "customer"
+   }
+  },
+  {
+   "id": "vendor",
+   "label": "Vendor / Partner",
+   "category": "people.vendor",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "supplier",
+    "partner",
+    "third party",
+    "vendor",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "vendor.svg",
+   "variants": {
+    "generic": "vendor",
+    "color": "vendor"
+   }
+  },
+  {
+   "id": "soc-analyst",
+   "label": "SOC Analyst",
+   "category": "people.soc_analyst",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "analyst",
+    "security analyst",
+    "blue team",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "soc-analyst.svg",
+   "variants": {
+    "generic": "soc-analyst",
+    "color": "soc-analyst"
+   }
+  },
+  {
+   "id": "on-call",
+   "label": "On-call Engineer",
+   "category": "people.on_call",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "pager",
+    "on call",
+    "sre",
+    "duty",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "on-call.svg",
+   "variants": {
+    "generic": "on-call",
+    "color": "on-call"
+   }
+  },
+  {
+   "id": "building",
+   "label": "Building / Site",
+   "category": "people.site",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "office",
+    "site",
+    "branch",
+    "campus",
+    "location",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "building.svg",
+   "variants": {
+    "generic": "building",
+    "color": "building"
+   }
+  },
+  {
+   "id": "headquarters",
+   "label": "Headquarters",
+   "category": "people.headquarters",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "hq",
+    "head office",
+    "headquarters",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "headquarters.svg",
+   "variants": {
+    "generic": "headquarters",
+    "color": "headquarters"
+   }
+  },
+  {
+   "id": "branch-office",
+   "label": "Branch Office",
+   "category": "people.branch",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "branch",
+    "store",
+    "remote office",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "branch-office.svg",
+   "variants": {
+    "generic": "branch-office",
+    "color": "branch-office"
+   }
+  },
+  {
+   "id": "home-office",
+   "label": "Home Office",
+   "category": "people.home_office",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "home",
+    "remote worker",
+    "telework",
+    "house",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "home-office.svg",
+   "variants": {
+    "generic": "home-office",
+    "color": "home-office"
+   }
+  },
+  {
+   "id": "laptop",
+   "label": "Laptop",
+   "category": "devices.laptop",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "notebook",
+    "laptop",
+    "workstation",
+    "client",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "laptop.svg",
+   "variants": {
+    "generic": "laptop",
+    "color": "laptop"
+   }
+  },
+  {
+   "id": "desktop",
+   "label": "Desktop",
+   "category": "devices.desktop",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "pc",
+    "workstation",
+    "desktop",
+    "monitor",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "desktop.svg",
+   "variants": {
+    "generic": "desktop",
+    "color": "desktop"
+   }
+  },
+  {
+   "id": "thin-client",
+   "label": "Thin Client",
+   "category": "devices.thin_client",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "vdi",
+    "thin client",
+    "zero client",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "thin-client.svg",
+   "variants": {
+    "generic": "thin-client",
+    "color": "thin-client"
+   }
+  },
+  {
+   "id": "phone",
+   "label": "Phone",
+   "category": "devices.phone",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "smartphone",
+    "mobile",
+    "cell phone",
+    "iphone",
+    "android",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "phone.svg",
+   "variants": {
+    "generic": "phone",
+    "color": "phone"
+   }
+  },
+  {
+   "id": "mobile-app",
+   "label": "Mobile App",
+   "category": "software.mobile_app",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "mobile app",
+    "ios app",
+    "android app",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "mobile-app.svg",
+   "variants": {
+    "generic": "mobile-app",
+    "color": "mobile-app"
+   }
+  },
+  {
+   "id": "tablet",
+   "label": "Tablet",
+   "category": "devices.tablet",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "tablet",
+    "ipad",
+    "slate",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "tablet.svg",
+   "variants": {
+    "generic": "tablet",
+    "color": "tablet"
+   }
+  },
+  {
+   "id": "printer",
+   "label": "Printer",
+   "category": "devices.printer",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "printer",
+    "mfp",
+    "copier",
+    "print server",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "printer.svg",
+   "variants": {
+    "generic": "printer",
+    "color": "printer"
+   }
+  },
+  {
+   "id": "scanner",
+   "label": "Scanner",
+   "category": "devices.scanner",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "scanner",
+    "document scanner",
+    "flatbed",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "scanner.svg",
+   "variants": {
+    "generic": "scanner",
+    "color": "scanner"
+   }
+  },
+  {
+   "id": "ip-phone",
+   "label": "IP Phone",
+   "category": "devices.ip_phone",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "voip",
+    "sip phone",
+    "desk phone",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "ip-phone.svg",
+   "variants": {
+    "generic": "ip-phone",
+    "color": "ip-phone"
+   }
+  },
+  {
+   "id": "ip-camera",
+   "label": "IP Camera",
+   "category": "devices.ip_camera",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "cctv",
+    "camera",
+    "surveillance",
+    "nvr",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "ip-camera.svg",
+   "variants": {
+    "generic": "ip-camera",
+    "color": "ip-camera"
+   }
+  },
+  {
+   "id": "smart-tv",
+   "label": "Smart TV / Display",
+   "category": "devices.smart_tv",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "tv",
+    "display",
+    "signage",
+    "screen",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "smart-tv.svg",
+   "variants": {
+    "generic": "smart-tv",
+    "color": "smart-tv"
+   }
+  },
+  {
+   "id": "iot-sensor",
+   "label": "IoT Sensor",
+   "category": "devices.iot_sensor",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "iot",
+    "sensor",
+    "thermostat",
+    "smart device",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "iot-sensor.svg",
+   "variants": {
+    "generic": "iot-sensor",
+    "color": "iot-sensor"
+   }
+  },
+  {
+   "id": "plc",
+   "label": "PLC / OT Controller",
+   "category": "devices.plc",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "plc",
+    "ot",
+    "scada",
+    "ics",
+    "industrial",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "plc.svg",
+   "variants": {
+    "generic": "plc",
+    "color": "plc"
+   }
+  },
+  {
+   "id": "badge-reader",
+   "label": "Badge Reader",
+   "category": "devices.badge_reader",
+   "shape": "symbol",
+   "w": 96,
+   "h": 96,
+   "ports": [
+    {
+     "id": "n",
+     "x": 0.5,
+     "y": 0.08
+    },
+    {
+     "id": "e",
+     "x": 0.92,
+     "y": 0.6575
+    },
+    {
+     "id": "s",
+     "x": 0.5,
+     "y": 0.92
+    },
+    {
+     "id": "w",
+     "x": 0.08,
+     "y": 0.6575
+    }
+   ],
+   "keywords": [
+    "access control",
+    "rfid",
+    "card reader",
+    "door",
+    "3d",
+    "isometric"
+   ],
+   "aliases": {},
+   "style": {
+    "fill": "none",
+    "stroke": "none"
+   },
+   "svg": "badge-reader.svg",
+   "variants": {
+    "generic": "badge-reader",
+    "color": "badge-reader"
+   }
+  }
+ ]
+}

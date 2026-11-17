@@ -1,0 +1,155 @@
+{# "Not in GUI, but in CLI" — the section every object view renders (permanent
+   rule, user 2026-10-08; built by services/not_in_gui.py). Two macros:
+
+   nig_editable(sec, create)  — inside an editor scope: the fields are the
+       editor's own .fw-input widgets, so the scope's Save sends them and the
+       save route splits REST / CLI by the build's channels.
+   nig_readonly(sec, values)  — read-only product views (FortiGate,
+       FortiAuthenticator, FortiADC, FortiAnalyzer): a table of field, channel
+       and the value the device returned (or "not readable over REST").
+
+   The section is ALWAYS rendered (collapsed, never merged into another
+   group), also with 0 fields: then it says why — every field is in the
+   Fortinet GUI, or this page's GUI layout is not measured yet. #}
+{% from "workspace/_fields.html" import fld %}
+{% from "workspace/_layout_origin.html" import layout_origin %}
+
+{% macro channel_badge(ch) -%}
+{%- if ch == 'CLI' -%}<span class="fw-badge fw-badge-warning" title="{{ _('Written by SATOM over SSH (CLI writer): this build does not serve the field over REST') }}">CLI</span>
+{%- elif ch == 'REST' -%}<span class="fw-badge fw-badge-info" title="{{ _('Served by the REST API: a normal save writes it') }}">REST</span>
+{%- else -%}<span class="fw-badge fw-badge-secondary" title="{{ _('No source measured this field on this build') }}">{{ _('unverified on this build') }}</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro nig_empty(sec) -%}
+{%- if not sec.fields -%}
+<p class="fw-nig-empty small mb-0">{% if sec.layout_measured %}{{ _('Every field this object has on this build is in the Fortinet GUI.') }}{% elif sec.evidence %}{{ _('No CLI-only field on this build. Fields the Fortinet GUI hides on this page will be listed here once its GUI layout is measured.') }}{% endif %}</p>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro nig_editable(sec, create=false, mkey='', collection='', parent='', endpoint='', singleton=false) %}
+{% if sec %}
+{# data-endpoint: the API-library key the CLI read names (a GUI layout page
+   passes it; the object editor reads by its collection) #}
+<details class="fw-group fw-nig" data-nig data-collection="{{ collection }}" data-mkey="{{ mkey if mkey != '~' else '' }}"{% if endpoint %} data-endpoint="{{ endpoint }}"{% endif %}{% if parent %} data-parent="{{ parent }}"{% endif %}>
+  <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
+  <p class="fw-nig-note small text-muted mb-2">{% if sec.layout and sec.layout.origin %}<span data-nig-origin>{{ layout_origin(sec.layout.origin) }}</span> — {% endif %}{{ sec.note }}</p>
+  {{ nig_empty(sec) }}
+  {% if sec.has_cli and (mkey or singleton) and not create %}
+    <button type="button" class="btn btn-sm btn-outline-secondary mb-2" data-js="nig-read-cli">
+      <i class="bi bi-terminal me-1"></i>{{ _('Read values over CLI') }}</button>
+    <span class="fw-nig-read small text-muted"></span>
+  {% endif %}
+  {% if sec.fields %}<div class="fw-fld-grid">
+    {% for f in sec.fields %}
+      <div class="fw-nig-fld" data-nig-key="{{ f.key }}" data-channel="{{ f.channel }}">
+        <div class="fw-nig-ch">{{ channel_badge(f.channel) }}{% if f.unread %} <span class="small text-muted">{{ _('value not read') }}</span>{% endif %}</div>
+        {% if create and f.channel == 'CLI' %}
+          <div class="small text-muted"><code>{{ f.key }}</code> — {{ _('CLI-only on this build: set it once the object exists.') }}</div>
+        {% else %}
+          {{ fld(f, false) }}
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>{% endif %}
+</details>
+{% endif %}
+{% endmacro %}
+
+{# nig_cli(sec, appliance, values) — product views without their own editor
+   (FortiGate, FortiAuthenticator, FortiADC, FortiAnalyzer tabs, objects only
+   the CLI serves, the per-device page). Each CLI field is an input; Preview
+   renders the CLI script, Apply runs it through the CLI writer
+   (/appliances/<id>/not-in-gui/save, static/js/nig_cli.js). REST and
+   unverified fields are listed with their value and why they are not
+   written here. A user without config_write gets the same table, read-only. #}
+{% macro nig_cli(sec, appliance, values=None) %}
+{% if sec %}
+{% set can_write = sec.writable and current_user.can('config_write') %}
+{% set obj = sec.object or {} %}
+<details class="fw-group fw-nig" data-nig data-nig-cli data-aid="{{ appliance.id }}" data-endpoint="{{ sec.endpoint }}" data-kind="{{ obj.kind }}">
+  <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span>{% if obj.cli_path %} <code class="small ms-1">config {{ obj.cli_path }}</code>{% endif %}</summary>
+  <p class="fw-nig-note small text-muted mb-2">{% if sec.layout and sec.layout.origin %}<span data-nig-origin>{{ layout_origin(sec.layout.origin) }}</span> — {% endif %}{{ sec.note }}</p>
+  {{ nig_empty(sec) }}
+  {% if sec.fields %}
+    {% if sec.has_cli and sec.write_note %}<p class="small text-muted mb-2" data-nig-nowrite>{{ sec.write_note }}</p>{% endif %}
+    {% if sec.has_cli and sec.writable %}
+    <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
+      {% if obj.parent %}
+      <label class="small mb-0">{{ _('Row of') }} <code>{{ obj.parent }}</code>
+        <input class="form-control form-control-sm" data-nig-parent placeholder="{{ _('parent row key') }}"></label>
+      {% endif %}
+      {% if obj.kind != 'singleton' %}
+      <label class="small mb-0">{{ _('Row') }}{% if obj.mkey %} (<code>{{ obj.mkey }}</code>){% endif %}
+        <input class="form-control form-control-sm" data-nig-mkey value="{{ sec.row_keys[0] if sec.row_keys|length == 1 else '' }}" list="nig-rows-{{ sec.endpoint|replace('/', '-') }}" placeholder="{{ _('row key') }}"></label>
+        <datalist id="nig-rows-{{ sec.endpoint|replace('/', '-') }}">{% for k in sec.row_keys %}<option value="{{ k }}">{% endfor %}</datalist>
+      {% endif %}
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-js="nig-cli-read">
+        <i class="bi bi-terminal me-1"></i>{{ _('Read values over CLI') }}</button>
+      <span class="fw-nig-read small text-muted"></span>
+    </div>
+    {% endif %}
+    <table class="table table-sm fw-nig-table mb-0">
+      <thead><tr><th>{{ _('Field') }}</th><th>{{ _('Channel') }}</th><th>{{ _('Type') }}</th><th>{{ _('Value') }}</th></tr></thead>
+      <tbody>
+      {% for f in sec.fields %}
+        <tr data-nig-key="{{ f.key }}" data-channel="{{ f.channel }}">
+          <td><code>{{ f.key }}</code>{% if f.lib_channel == 'hidden' %} <span class="small text-muted">({{ _('hidden from the CLI tree') }})</span>{% endif %}</td>
+          <td>{{ channel_badge(f.channel) }}</td>
+          <td class="small text-muted">{{ f.cli_type or '' }}{% if f.cli_options %} <span title="{{ f.cli_options|join(', ') }}">({{ f.cli_options|length }} {{ _('options') }})</span>{% endif %}</td>
+          <td class="small">
+          {% set v = values[f.key] if values is not none and f.key in values else none %}
+          {% if f.channel == 'CLI' and can_write %}
+            {% if f.cli_options %}
+            <select class="form-select form-select-sm" data-nig-input data-key="{{ f.key }}" data-orig="{{ v if v is not none else '' }}">
+              <option value="">{{ _('— not read —') }}</option>
+              {% for o in f.cli_options %}<option value="{{ o }}"{% if v is not none and o == v|string %} selected{% endif %}>{{ o }}</option>{% endfor %}
+            </select>
+            {% else %}
+            <input class="form-control form-control-sm" data-nig-input data-key="{{ f.key }}" value="{{ v if v is not none else '' }}" data-orig="{{ v if v is not none else '' }}">
+            {% endif %}
+          {% elif v is not none %}{{ v }}
+          {% elif f.channel == 'CLI' %}<span class="text-muted">{{ _('not readable over REST') }}</span>
+          {% elif f.channel == 'REST' %}<span class="text-muted">{{ _("written by the object's own form") }}</span>
+          {% else %}<span class="text-muted" title="{{ _('SATOM writes a field only on a channel measured on this build') }}">{{ _('not writable until measured on this build') }}</span>
+          {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if can_write and sec.has_cli %}
+    <div class="d-flex gap-2 mt-2">
+      <button type="button" class="btn btn-sm btn-outline-primary" data-js="nig-cli-preview"><i class="bi bi-eye me-1"></i>{{ _('Preview CLI change') }}</button>
+      <button type="button" class="btn btn-sm btn-primary" data-js="nig-cli-apply" disabled><i class="bi bi-check2 me-1"></i>{{ _('Apply') }}</button>
+    </div>
+    {% if not sec.dialect_verified %}<p class="small text-muted mt-1 mb-0" data-nig-unverified-dialect>{{ _('The CLI dialect of this product has not been verified on a device yet: read the previewed script before applying.') }}</p>{% endif %}
+    <div class="fw-nig-out mt-2"></div>
+    {% endif %}
+  {% endif %}
+</details>
+{% endif %}
+{% endmacro %}
+
+{% macro nig_readonly(sec, values=None) %}
+{% if sec %}
+<details class="fw-group fw-nig" data-nig>
+  <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
+  <p class="fw-nig-note small text-muted mb-2">{% if sec.layout and sec.layout.origin %}<span data-nig-origin>{{ layout_origin(sec.layout.origin) }}</span> — {% endif %}{{ sec.note }}</p>
+  {{ nig_empty(sec) }}
+  {% if sec.fields %}<table class="table table-sm fw-nig-table mb-0">
+    <thead><tr><th>{{ _('Field') }}</th><th>{{ _('Channel') }}</th><th>{{ _('Type') }}</th><th>{{ _('Value') }}</th></tr></thead>
+    <tbody>
+    {% for f in sec.fields %}
+      <tr data-nig-key="{{ f.key }}" data-channel="{{ f.channel }}">
+        <td><code>{{ f.key }}</code></td>
+        <td>{{ channel_badge(f.channel) }}</td>
+        <td class="small text-muted">{{ f.cli_type or '' }}{% if f.cli_options %} <span title="{{ f.cli_options|join(', ') }}">({{ f.cli_options|length }} {{ _('options') }})</span>{% endif %}</td>
+        <td class="small">{% if values is not none and f.key in values %}{{ values[f.key] }}{% elif f.channel == 'CLI' %}<span class="text-muted">{{ _('not readable over REST') }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>{% endif %}
+</details>
+{% endif %}
+{% endmacro %}

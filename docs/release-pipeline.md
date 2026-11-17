@@ -1,0 +1,299 @@
+# Release & publication pipeline
+
+SATOM is developed privately and published publicly through an
+automated, deterministic gate. Nothing reaches the public mirror by hand.
+This document is the source of truth for that process and is intentionally
+public so users can see exactly how releases are produced and vetted.
+
+**There are exactly two repositories, and they are not peers.** Development is
+private and holds the full history; the public mirror is derived from it by the
+gate below and is the only thing anyone installs from. A third, intermediate
+mirror existed until 2026-08-30 and was **retired**: it was always pinned to the
+same commit as the public mirror, so it added a hop that could fail without
+adding a copy that could be restored from — and its package registry was the
+undeclared source of the public release assets, which made an ordinary cleanup
+into an outage waiting to happen. Release assets are now taken from the build
+output directly.
+
+The public **documentation and product site is not GitHub Pages.** Pages is
+switched off for this project; `satom.visionebc.com` is served from its own
+repository and its own node (Stage 0, hop 7).
+
+```
+   INTERNAL (private)                    GATE                     PUBLIC
+  ┌──────────────────┐   ┌───────────────────────────────┐   ┌──────────────┐
+  │ Gitea dev repo   │──▶│ 1. Sanitize (git-filter-repo) │──▶│ GitHub mirror│
+  │ satom-dev        │   │ 2. Secret scan (gitleaks-like) │   │ + Releases   │
+  │ (full history)   │   │ 3. Internal AI vuln audit      │   │ (public)     │
+  └──────────────────┘   └───────────────────────────────┘   └──────────────┘
+```
+
+## Stage 0 — the promotion order
+
+Publication is the **last** hop of a chain. Each hop reaches a wider audience
+than the one before it and nothing downstream can be un-published, so each has
+a gate that must be green before the next one runs.
+
+| # | Hop | What it is | Gate before moving on |
+|---|---|---|---|
+| 1 | **Primary node** | the only node where code is written | targeted tests for the zone touched, run on the internal test platform; every new guard mutation-tested; service restarted if Python or templates changed; `/healthz` 200 |
+| 2 | **Standby node** | pulls straight from the primary — no remote involved | converged to the primary's HEAD; unit up; `/healthz` 200 on the app port and through the TLS edge; zero failed units |
+| 3 | **Release guards** | the version, CHANGELOG, release-notes, site and docs guards, on the internal test platform (never on a node); the full suite only when the release is started with `with_suite` | the platform's run for the exact release commit reports `passed` |
+| 4 | **Dev remote** | the private repository, full history | derived pages regenerated (below); push accepted |
+| 5 | **Documentation site** | its web root **is** a checkout of the repository | `git fetch && git reset --hard origin/<branch>`; there is no build step, the pull *is* the deploy |
+| 6 | **Public mirror** | sanitised history, release artefacts, tagged releases | stages 1–4 of this document |
+| 7 | **Product site** | a separate repository, deployed with `rsync --delete` | the checkout diffed against the live node first |
+
+Two hops carry a trap worth stating outright.
+
+**Step 2 is a pull, not a push.** The standby fetches from the primary's
+checkout over a restricted, read-only SSH key (`engineering.md` §2). Wiring it
+that way is what makes the sentence *"validated on both nodes before it reaches
+the remote"* true; with the standby following the remote instead, the code
+cannot exist on it until after the push, and the promise is unachievable no
+matter how carefully it is followed.
+
+**Step 7 deploys with `--delete`, onto a node that is edited by hand.** A file
+that exists only on the live node is destroyed by the next deploy — published
+today, `404` tomorrow. Before running it, diff both sides (ignoring the asset
+cache-busting stamp) and list the downloads directory on each. When the node is
+**ahead**, the correct repair is to bring the checkout forward; never publish
+over it to make the two agree.
+
+**Step 3 is the release guards, not the full suite.** The release modes
+`short` and `full` decide only whether the offline bundles are built; neither
+runs the suite. The pipeline always runs the targeted guards that protect the
+release surfaces (version, CHANGELOG, release notes, the public site and the
+docs). The full suite is a separate opt-in, `with_suite`, which defaults to
+false and is stored with the release, so a resume keeps it and never adds it.
+
+**Step 3 never runs on a node.** The pipeline's guard step (and its suite step,
+when `with_suite` is set) submits the exact release commit to the internal
+test platform (satom-audit) and polls for the verdict; production nodes never
+run pytest. Running the suite on the
+primary cost it ~4.9 GB of fixture tmpdirs per run and contended with the live
+service — release 12 died of `ENOSPC` that way. The rules that remain:
+
+- the commit must be fetchable by the platform, so the pipeline pushes it to a
+  temporary `release-guards/r<id>` branch of the dev remote first and deletes
+  it once the verdict is in (the public mirror only receives `main` and
+  release tags, so the branch never leaves the dev remote);
+- **only `passed` passes.** Failed, error, cancelled, a run that never started,
+  ran over its budget, or reports a different commit stops the release, with
+  the run's URL and its failing tests in the step log;
+- time spent queued behind other runs does not count against the step's
+  budget; a run over its budget is cancelled and **diagnosed, never retried**.
+  To raise `SUITE_TIMEOUT_S`, take the number from a completed `suite` step —
+  never from a guess.
+- there is no fallback to running the suite on a node: if the platform is down,
+  repair it and resume the release from the failed step.
+
+---
+
+## Stage 1 — Sanitization
+The full internal history is rewritten into a clean mirror with
+`git-filter-repo`:
+- **Removed from all history:** `.env` and `.env.*`, `CLAUDE.md`,
+  `GEMINI.md`, `AGENTS.md`, `.claude/`, `docs/superpowers/`, and internal
+  `reports/` device data.
+- **Commit messages** are filtered to drop any AI-assistant references.
+- The rewrite is **deterministic**: the same internal history always
+  produces the same public commit SHAs.
+
+## Stage 2 — Secret scan
+Every blob in the sanitized history is scanned with a gitleaks-style
+detector (high-confidence patterns: PEM private keys, GitHub/AWS/Slack/
+Google tokens, and `fernet`/`secret_key`/`encryption_key` assignments).
+**A single hit aborts the publish** and reports the pattern -> path. Large
+and binary blobs are skipped. This is a hard gate, not advisory.
+
+**The PEM rule matches key MATERIAL, not the label** (2026-08-30). It used to
+fire on a bare `-----BEGIN … PRIVATE KEY-----` header, so an HTML `placeholder=`
+attribute, a test fixture whose body is the letter `B` repeated, and a design
+note in Markdown all aborted the publish exactly as a real key would. The
+practical cost was not noise: the scan runs over the **whole** history of the
+mirror, so neutralising the files at `HEAD` unblocked nothing, and the public
+repository sat frozen for twelve days before anyone attempted a publish and
+found out. The header must now be followed by **at least 40 base64 characters
+within the next 200 bytes**. The window is deliberately narrow — widen it and
+the header starts pairing with unrelated base64 further down the file (a
+data-URI, a CSP nonce) and the false positive returns through another door.
+
+Narrowing a scanner that guards a public repository is only defensible with
+evidence that it still bites. `tools_check_secret_patterns.py` **generates**
+eight real key encodings — PKCS#8, traditional RSA, EC, ED25519, OpenSSH, a
+`DEK-Info` encrypted PEM, a JSON-escaped one-liner and a YAML block scalar —
+and asserts every one still aborts, alongside seven labels that must not.
+
+## Stage 3 — Internal AI vulnerability audit
+Before a release is blessed, the code is audited by **fleet-internal LLMs**
+(no third-party/cloud AI, no code leaves the LAN): DeepSeek-R1 and
+Qwen2.5-Coder running on local Ollama nodes, orchestrated by the Project
+Index `/audit` service. The audit combines:
+- static secret detection,
+- dependency review,
+- LLM-driven source review (auth gaps, injection, SSRF, deserialization,
+  path traversal, crypto misuse).
+
+Findings are triaged in a control plane (`fixed` / `dismissed` with a
+written verdict). **Auditor output is treated as a lead, not a verdict:**
+every finding is verified against the real source before it is fixed or
+dismissed — automated scanners over-report (stale snapshots, hallucinated
+files), so human/maintainer verification is mandatory.
+
+## Before any of it — regenerate the derived pages
+
+The public site carries two generated trees, and both are derived from files a
+release necessarily touches:
+
+```bash
+python3 deploy/gen_site_docs.py        # site/docs/*.html   <- docs/*.md
+python3 deploy/gen_release_notes.py    # site/releases/*.html <- CHANGELOG.md
+python3 deploy/stamp_site_assets.py    # asset hashes, hero pill, installer banner
+```
+
+The release also carries the **Documentation Center** every node serves at
+`/manual/docs-center/` (user guide §47). Its source is the satom-site
+repository, so it is not regenerated from this tree alone: the pipeline step
+`docs_center` (before `regen_pages`) builds satom-site `origin/master` with
+`docs-center/build.py --src /opt/satom --no-internal` and commits the result
+into `docs-center/` when it changed — only that directory, only on a clean
+tree. The build stops on any leak its scanner finds, and
+`tests/test_manual_local.py` scans the vendored copy again. By hand, see
+`docs-center/README.md`.
+
+Cutting a version means editing `VERSION` and `CHANGELOG.md`; both feed the
+site. The release guards fail if they are stale, so this is a reminder rather than a
+rule you can forget — but running it after the tests and before the sync saves
+a round trip.
+
+**NAF Framework pin.** [docs/naf-alignment.md](naf-alignment.md) maps SATOM
+to the Network Automation Forum's framework
+(https://reference.networkautomation.forum/Framework/Framework/) at a pinned upstream commit
+(today `da82b12`), because the framework has no version number. At every cut, diff the upstream
+`docs/Framework/Framework.md` of https://github.com/Network-Automation-Forum/reference
+against the pinned commit; if it changed, re-run the mapping and bump the pin
+on every surface that names it (the alignment document, `README.md`,
+`site/architecture.html`, `NOTICE`). Also update the matrix rows this release
+changes — the status line at the top of that document is derived from the
+matrix and a test fails when they disagree. This is a checklist step, never a
+network call inside a test.
+
+---
+
+## Stage 4 — Publish
+On a clean gate the sanitized history is force-pushed to the **public GitHub
+mirror** — one destination, with every version tag repointed at the sanitized
+commit that carries the same tree — and the release artefacts (installers +
+offline bundles + the container image + `SHA256`) are attached to the
+matching **GitHub Release**.
+
+The container image (`satom-image-<ver>-amd64.tar.gz`, `docker save | gzip`
+of `satom:<ver>`) is built in the same step as the bundles, on a dedicated
+Docker builder, from the **same redacted payload** — never from a checkout.
+It carries that payload's sha256 as an image label, and verification loads
+the published tarball back and refuses it unless the label matches the
+bundles' payload and `/opt/satom/VERSION` inside it matches the release.
+
+The **offline update package** (`satom-update-<ver>.tar.gz`) is built in the
+same step from the same payload. It is application code plus pinned wheels,
+which an existing node applies from Settings → Software Update. It is built on
+the primary but **signed on the release host**, with the pipeline's release key
+(an encrypted key whose passphrase is read from a file, never from a command
+line). Verification checks it with the product's own stdlib verifier against
+the public key the tagged code ships (`deploy/update-keys/satom-release-2026.pub`),
+and refuses it unless its manifest names this version and commit and its
+`app.tar.gz` is the bundles' payload byte for byte. A package signed by a key
+the product does not ship stops the release here, not on a customer's node.
+The public key is published next to it, and the release notes print its
+fingerprint.
+
+The **update feed** (`satom-system-upgrades/latest.json`) is committed on
+`main` once the package is verified, and the same bytes are attached to the
+release as `satom-update-latest.json`, so
+`https://github.com/visionebc/SATOM/releases/latest/download/satom-update-latest.json`
+always names the newest package. The asset is copied only if the committed
+feed names this release's package (version, sha256, size), and the link is
+read back anonymously right after the GitHub release is published.
+
+The **API library pack** (`satom-apipack-<ver>.tar.gz`) is different: it is
+committed to `api-packs/` in the repository **before the tag**, so the clone,
+every bundle's payload, the update package and the public mirror all carry it
+without any builder knowing about it. The `api_pack` gate checks the release
+commit holds exactly this release's pack, that it verifies against the
+product's public key and names this version, and reads every file inside it
+with the mirror's own redaction and secret rules — the mirror itself cannot,
+because the pack is a gzip of gzips. **From 3.0** the pack is no longer exported
+from a node's live library: the step takes the newest **approved** snapshot of
+the Knowledge Harvester, refuses the release when any (product, build, source)
+the previous API pack carried is missing (the parity gate prints exactly what),
+writes the `satom.api-pack/2` manifest with lane `api_pack` pinned to the
+release, signs it with the `api_pack` key — never the release key — and commits
+exactly `api-packs/`; a mirror-rule hit is never repaired. The publish step
+attaches the pack, with its `sha256`, from the tag to the release, and the
+system-upgrade feed names it with its `sha256` and points at the knowledge feed.
+The rolling knowledge packs are published separately, signed with the
+`knowledge` key, and never ride inside the update.
+See [api-library.md §11.6 and §12](api-library.md) and
+[knowledge-harvester.md](knowledge-harvester.md).
+
+**Old artefacts are pruned, with a public copy as the precondition.** Once
+the catalog holds this release, the pipeline keeps the artefacts of the newest
+three release versions on every build host (the primary's `dist/`, the build
+node's output directory, the release host's update builds and download
+catalog) and deletes an older copy only when the public GitHub release for
+that version carries a file of the same name — build inputs only need the
+release to exist. A version without a public release (a retired tag, a draft,
+GitHub unreachable) is kept and named in the log, never deleted: it may be the
+last copy anywhere. Unversioned files are not considered. A dry run prints the
+plan and removes nothing.
+
+**Each downloads page carries only the current release.** The product site's
+`/downloads/` page links this release's files on GitHub, and the documentation
+gate refuses a release whose page still names an older version. The staging
+node also serves a `/downloads/` of its own with the files themselves (the update
+package and the API library pack, with their checksums), for clients that cannot
+rely on GitHub: the `staging_downloads` step copies them from the download
+catalog, verifies every checksum on the node before swapping them in, moves what
+was there to a dated backup directory instead of deleting it, and then reads the
+page back over HTTP — the listing must be exactly this release's four files and
+the update package's bytes must match its checksum.
+
+The builders (one per bundle family, plus the Docker builder) are build-only
+machines that do not start at boot. Verification and publication start them
+again to read their artefacts, so the run stops every one of them when it
+ends, whether it succeeded or failed, and logs any it could not stop. After
+the public result has been read back, the download catalog's version record is
+set to the release, so the catalog never names a version nobody can download.
+The last step reads the health of both nodes. The standby is only ever read:
+the pipeline's key is accepted there solely for a fixed, read-only probe
+(`/healthz`, failed units, `HEAD`), whatever command the pipeline sends.
+
+Three properties of this stage are worth stating because none of them announces
+itself when it breaks:
+
+- **The artefacts come from the build output.** They used to be copied out of
+  the intermediate mirror's package registry, which quietly made a repository
+  nobody looked at into a mandatory link in the chain of custody for every
+  public download. The source of a published artefact is now the artefact.
+- **A release refuses to carry a filename that disagrees with `VERSION`.** If
+  the built bundles are `…-1.10.1-…` and `VERSION` says `1.20.0`, the publish
+  **aborts** rather than creating a `v1.20.0` release whose assets are named
+  after a different build. That mismatch is invisible after the fact — the
+  release is created, the files upload, and every step reports success — so the
+  only place it can be caught is before the upload.
+- **Every commit on the mirror is attributable.** The rewrite stamps a single
+  public identity, and the address it stamps is the account's `noreply` form
+  (`<id>+<login>@users.noreply.github.com`), not the contact address published
+  in the source. GitHub only links a commit to an account through a **verified**
+  address; the contact address is not one, so the entire public history read as
+  authored by nobody — no account, no avatar, no link — while every check
+  passed, because "all identities are identical" and "the identity is
+  attributable" are different claims. The numeric account id is used rather
+  than the login because a login can be renamed and the id cannot.
+
+## Why publish this
+Users of a security tool deserve to know how its releases are vetted.
+Publishing the pipeline is part of the trust model: reproducible
+sanitization, a hard secret gate, and an internal audit that runs on
+every release.

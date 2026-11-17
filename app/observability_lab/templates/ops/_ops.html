@@ -1,0 +1,10 @@
+{% macro sev_chip(s) -%}
+<span class="obs-chip st-{{ 'error' if s == 'critical' else 'stale' }}"><i class="bi bi-{{ 'x-octagon-fill' if s == 'critical' else 'exclamation-triangle-fill' }}" aria-hidden="true"></i> {{ s|capitalize }}</span>
+{%- endmacro %}
+{% macro dur(s) -%}
+{%- if s is none -%}—{%- elif s < 60 -%}{{ s }} s{%- elif s < 3600 -%}{{ (s // 60) }} min{%- elif s < 86400 -%}{{ (s // 3600) }} h {{ ((s % 3600) // 60) }} min{%- else -%}{{ (s // 86400) }} d {{ ((s % 86400) // 3600) }} h{%- endif -%}
+{%- endmacro %}
+{% macro inc_chip(s) -%}
+{% set m = {'open': ('error', 'fire', 'Open'), 'acknowledged': ('stale', 'eye-fill', 'Acknowledged'), 'resolved': ('ok', 'check-circle-fill', 'Resolved')}[s] %}
+<span class="obs-chip st-{{ m[0] }}"><i class="bi bi-{{ m[1] }}" aria-hidden="true"></i> {{ m[2] }}</span>
+{%- endmacro %}

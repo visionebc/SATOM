@@ -1,0 +1,576 @@
+{% extends "base.html" %}
+{% block title %}Integrations — Settings{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('settings.index') }}">{{ _('Settings') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Integrations') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-plug me-2 text-accent"></i>{{ _('Integrations') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+    {{ _('Outbound links to systems SATOM does not own: NetBox for maintenance windows, an issue tracker (Jira, OpenProject or Vikunja) for change tickets, Confluence for Wiki articles, and your own Python hooks for anything else. Every integration here is optional — with all of them off, change requests and upgrades work exactly as before. Nothing on this page is contacted while the page renders.') }}
+    </p>
+  </div>
+</div>
+
+{#
+   The Admin Console submenu comes WITH the page: the same settings/_nav.html
+   the console draws, in `links` mode because this page has no panes to switch.
+   Sharing the partial and copying its layout per page is exactly what made the
+   sections drift before -- so the wrapper is the console's too.
+#}
+<div class="fw-settings-layout">
+  {% include "settings/_nav.html" %}
+
+  <div class="fw-settings-main">
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('NetBox') }}</span>
+    <span class="small text-muted">{{ _('Source of truth for the maintenance window') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <form method="post" action="{{ url_for('integrations.save_netbox') }}" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3">
+        <div class="form-check form-switch mt-4">
+          <input class="form-check-input" type="checkbox" id="nb_enabled" name="enabled" {% if netbox.enabled %}checked{% endif %}>
+          <label class="form-check-label" for="nb_enabled">{{ _('Enabled') }}</label>
+        </div>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small">{{ _('Base URL') }}</label>
+        <input class="form-control form-control-sm" name="url" value="{{ netbox.url }}" placeholder="{{ _('https://netbox.example.com') }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small">{{ _('API token') }}</label>
+        <input class="form-control form-control-sm" name="token" type="password" autocomplete="new-password"
+               placeholder="{% if netbox.has_token %}•••••••• (leave blank to keep){% else %}paste token{% endif %}">
+        <div class="form-text">{{ _('Stored encrypted. Leaving this blank keeps the existing token — it never clears it.') }}</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Timeout (s)') }}</label>
+        <input class="form-control form-control-sm" name="timeout" type="number" min="1" max="60" value="{{ netbox.timeout }}">
+        <div class="form-text">{{ _('Hard cap. In an isolated management network everything external must fail fast.') }}</div>
+      </div>
+      <div class="col-md-3">
+        <div class="form-check form-switch mt-4">
+          <input class="form-check-input" type="checkbox" id="nb_tls" name="verify_tls" {% if netbox.verify_tls %}checked{% endif %}>
+          <label class="form-check-label" for="nb_tls">{{ _('Verify TLS') }}</label>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small">{{ _('Maintenance-window backend') }}</label>
+        <select class="form-select form-select-sm" name="mw_backend">
+          {% for slug, label in mw_backends %}
+            <option value="{{ slug }}" {% if netbox.mw_backend == slug %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">
+          {{ _('NetBox') }} <strong>{{ _('core has no maintenance-window object') }}</strong> {{ _('— that lives in third-party plugins. These backends use core models only, so they work against any NetBox. Pick the one your NetBox conventions match.') }}
+        </div>
+      </div>
+      <div class="col-12 d-flex gap-2">
+        <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="nb-test">
+          <i class="bi bi-broadcast me-1"></i>{{ _('Test connection') }}
+        </button>
+        <span id="nb-test-result" class="small align-self-center"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-ticket-detailed me-2 text-accent"></i>{{ _('Issue tracker') }}</span>
+    <span class="small text-muted">{{ _('Where a change request opens its ticket') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-muted mb-3">
+      {{ _('With a backend selected, raising the CRQ on a change request opens a real ticket and writes its reference back onto the change — no Python hook required. The ticket carries the appliances') }} <strong>{{ _('by name') }}</strong>{{ _(', the pre-upgrade evidence, and the appliances that have none. A change that already carries a reference is never given a second ticket.') }}
+    </p>
+    <form method="post" action="{{ url_for('integrations.save_tracker') }}" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <!-- verify_tls posts explicitly: HTML omits unchecked checkboxes, and an
+           absent flag defaulting to false would silently downgrade TLS. -->
+      <input type="hidden" name="verify_tls" value="0">
+      <div class="col-md-4">
+        <label class="form-label small">{{ _('Backend') }}</label>
+        <select class="form-select form-select-sm" name="backend" id="tk-backend">
+          {% for slug, spec in tracker_backends.items() %}
+            <option value="{{ slug }}" {% if tracker.backend == slug %}selected{% endif %}>{{ spec.label }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text" id="tk-help">{{ tracker_backends[tracker.backend].help }}</div>
+      </div>
+      <div class="col-md-2">
+        <div class="form-check form-switch mt-4">
+          <input class="form-check-input" type="checkbox" id="tk_enabled" name="enabled" {% if tracker.enabled %}checked{% endif %}>
+          <label class="form-check-label" for="tk_enabled">{{ _('Enabled') }}</label>
+        </div>
+      </div>
+      <div class="col-md-6" data-tk-field="url">
+        <label class="form-label small">{{ _('Base URL') }}</label>
+        <input class="form-control form-control-sm" name="url" id="tk-url" value="{{ tracker.url }}" placeholder="https://yourorg.atlassian.net">
+      </div>
+
+      <div class="col-md-4" data-tk-field="user">
+        <label class="form-label small" data-tk-label="user">{{ _('Account e-mail') }}</label>
+        <input class="form-control form-control-sm" name="user" value="{{ tracker.user }}" placeholder="you@example.com">
+      </div>
+      <div class="col-md-4" data-tk-field="token">
+        <label class="form-label small">{{ _('API token') }}</label>
+        <input class="form-control form-control-sm" name="token" type="password" autocomplete="new-password"
+               placeholder="{% if tracker.has_token %}•••••••• (leave blank to keep){% else %}paste token{% endif %}">
+        <div class="form-text">{{ _('Stored encrypted. Leaving this blank keeps the existing token — it never clears it.') }}</div>
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="tk_clear" name="clear_token" value="1">
+          <label class="form-check-label small" for="tk_clear">{{ _('Clear the stored token') }}</label>
+        </div>
+      </div>
+
+      <div class="col-md-4" data-tk-field="project">
+        <label class="form-label small" data-tk-label="project">{{ _('Project key') }}</label>
+        <input class="form-control form-control-sm" name="project" value="{{ tracker.project }}">
+      </div>
+      <div class="col-md-3" data-tk-field="type">
+        <label class="form-label small" data-tk-label="type">{{ _('Issue type') }}</label>
+        <input class="form-control form-control-sm" name="issue_type" value="{{ tracker.issue_type }}" placeholder="Task">
+      </div>
+      <div class="col-md-2" data-tk-field="url">
+        <label class="form-label small">{{ _('Timeout (s)') }}</label>
+        <input class="form-control form-control-sm" name="timeout" type="number" min="3" max="60" value="{{ tracker.timeout }}">
+      </div>
+      <div class="col-md-3" data-tk-field="url">
+        <div class="form-check form-switch mt-4">
+          <input class="form-check-input" type="checkbox" id="tk_tls" name="verify_tls" value="1" {% if tracker.verify_tls %}checked{% endif %}>
+          <label class="form-check-label" for="tk_tls">{{ _('Verify TLS') }}</label>
+        </div>
+      </div>
+
+      <div class="col-12 d-flex gap-2">
+        <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="tk-test">
+          <i class="bi bi-broadcast me-1"></i>{{ _('Test connection') }}
+        </button>
+        <span id="tk-test-result" class="small align-self-center"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+{#  Confluence connections (views/integrations.confluence_*). The Wiki's
+    Confluence button publishes through them; the space and the parent page
+    are picked there, per article. The credential is write-only here.     #}
+<div class="fw-card mb-3" id="confluence">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-box-arrow-up-right me-2 text-accent"></i>{{ _('Confluence') }}</span>
+    <span class="small text-muted">{{ _('Where Wiki articles can be published') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-muted mb-3">{{ _('One way: SATOM writes the page and replaces it on every publication; nothing comes back from Confluence. Whoever publishes an article picks the space and the parent page with the Confluence button on the article.') }}</p>
+    <table class="fw-table table mb-3">
+      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Address') }}</th><th>{{ _('Credential') }}</th><th>{{ _('Pages') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
+      <tbody>
+      {% for t in cf_targets %}
+      <tr>
+        <td><a href="{{ url_for('integrations.index', confluence=t.id) }}#confluence">{{ t.name }}</a>
+          {% if not t.enabled %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('disabled') }}</span>{% endif %}</td>
+        <td class="small">{{ t.base_url }} <span class="text-muted">({{ 'Cloud' if t.flavor == 'cloud' else 'Data Center' }})</span></td>
+        <td>{% if cf_has_secret(t) %}<span class="fw-badge fw-badge-success">{{ _('stored') }}</span>{% else %}<span class="fw-badge fw-badge-warning">{{ _('missing') }}</span>{% endif %}</td>
+        <td>{{ cf_counts.get(t.id, 0) }}</td>
+        <td class="actions-col text-nowrap">
+          <form method="post" action="{{ url_for('integrations.confluence_test', target_id=t.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-secondary">{{ _('Test') }}</button>
+          </form>
+          <form method="post" action="{{ url_for('integrations.confluence_delete', target_id=t.id) }}" class="d-inline"
+                data-cf-confirm="{{ _('Delete this connection? Its pages stay in Confluence; SATOM stops updating them.') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger" title="{{ _('Delete') }}"><i class="bi bi-trash"></i></button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted">{{ _('No Confluence connection yet.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    {% set t = cf_edit %}
+    <form method="post" action="{{ url_for('integrations.confluence_save', target_id=t.id) if t else url_for('integrations.confluence_save') }}" class="row g-2" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-12 d-flex align-items-center">
+        <h6 class="me-auto mb-0">{{ _('Edit %(name)s', name=t.name) if t else _('New connection') }}</h6>
+        {% if t %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('integrations.index') }}#confluence">{{ _('New connection') }}</a>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small mb-1" for="cf-name">{{ _('Name') }}</label>
+        <input class="form-control form-control-sm" id="cf-name" name="name" maxlength="80" required value="{{ t.name if t else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1" for="cf-flavor">{{ _('Confluence') }}</label>
+        <select class="form-select form-select-sm" id="cf-flavor" name="flavor">
+          <option value="cloud" {{ 'selected' if not t or t.flavor == 'cloud' }}>Cloud (REST API v2)</option>
+          <option value="datacenter" {{ 'selected' if t and t.flavor == 'datacenter' }}>Data Center / Server</option>
+        </select>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small mb-1" for="cf-url">{{ _('Address') }}</label>
+        <input class="form-control form-control-sm" id="cf-url" name="base_url" maxlength="500" required placeholder="https://example.atlassian.net/wiki" value="{{ t.base_url if t else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1" for="cf-auth">{{ _('Authentication') }}</label>
+        <select class="form-select form-select-sm" id="cf-auth" name="auth">
+          <option value="basic" {{ 'selected' if not t or t.auth == 'basic' }}>{{ _('User + API token') }}</option>
+          <option value="bearer" {{ 'selected' if t and t.auth == 'bearer' }}>{{ _('Personal access token') }}</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small mb-1" for="cf-user">{{ _('User (e-mail on Cloud)') }}</label>
+        <input class="form-control form-control-sm" id="cf-user" name="username" maxlength="255" value="{{ t.username if t else '' }}">
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small mb-1" for="cf-secret">{{ _('API token / password') }}</label>
+        <input class="form-control form-control-sm" id="cf-secret" name="secret" type="password" maxlength="8192" autocomplete="new-password"
+               placeholder="{{ _('Stored — leave empty to keep it') if t and cf_has_secret(t) else '' }}">
+        <div class="form-text">{{ _('Never shown again. Kept in the vault when one is configured, else encrypted. Changing the address, the flavour, the authentication or the user removes it.') }}</div>
+      </div>
+      <div class="col-12 d-flex flex-wrap gap-3 align-items-center">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="verify_tls" value="1" id="cf-tls" {{ 'checked' if not t or t.verify_tls }}>
+          <label class="form-check-label small" for="cf-tls">{{ _('Verify the TLS certificate (trust store)') }}</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="enabled" value="1" id="cf-on" {{ 'checked' if not t or t.enabled }}>
+          <label class="form-check-label small" for="cf-on">{{ _('Enabled') }}</label></div>
+        <button class="btn btn-fw-primary btn-sm ms-auto"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-link-45deg me-2 text-accent"></i>{{ _('Device mapping') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      {{ _('Which NetBox object each appliance is. Leave blank to fall back to an exact') }} <em>{{ _('name') }}</em> {{ _('match — that works until somebody renames a device on either side, which is why the fallback is shown rather than assumed.') }}
+    </p>
+    <p class="small text-muted mb-2">
+      {{ _('A NetBox id is only half an address: the same number is a different object depending on its type. Write a device id on its own') }}
+      (<code>7</code>) {{ _('and a virtual machine with its prefix') }} (<code>vm:95</code>).
+      {{ _('The name fallback tries devices first, then virtual machines.') }}
+    </p>
+    <form method="post" action="{{ url_for('integrations.save_map') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <table class="table table-sm align-middle mb-2">
+        <thead><tr><th>{{ _('Appliance') }}</th><th>{{ _('Host') }}</th><th style="width:220px;">{{ _('NetBox object') }}</th><th>{{ _('Resolution') }}</th></tr></thead>
+        <tbody>
+        {% for a in appliances %}
+          <tr>
+            <td><strong>{{ a.name }}</strong></td>
+            <td><code class="small">{{ a.host }}</code></td>
+            <td><input class="form-control form-control-sm" name="map_{{ a.id }}" value="{{ device_map.get(a.id|string, '') }}" placeholder="7 or vm:95"></td>
+            <td>
+              {% if device_map.get(a.id|string) %}
+                <span class="fw-badge fw-badge-success">{{ _('mapped') }}</span>
+              {% else %}
+                <span class="fw-badge fw-badge-info">{{ _('by name') }}</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="text-muted small">{{ _('No appliances registered.') }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save mapping') }}</button>
+    </form>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>{{ _('Integration hooks (your Python)') }}</span>
+    <a class="btn btn-fw-primary btn-sm" href="{{ url_for('integrations.hook_detail', slug='new') }}">
+      <i class="bi bi-plus-lg me-1"></i>{{ _('New hook') }}
+    </a>
+  </div>
+  <div class="fw-card-body">
+    {% if hooks_error %}
+      <div class="alert alert-warning small mb-0">Hooks subsystem unavailable: <code>{{ hooks_error }}</code></div>
+    {% else %}
+    <p class="small text-muted">
+      A hook is a small Python script SATOM runs when it emits an event — for example, opening a CRQ in your own CRM
+      when a change is requested. Hooks never execute inside the web application: saving one only writes it to disk,
+      and a privileged runner (<code>satom-integrations.service</code>) executes it out of process, as an unprivileged
+      user, with a hard timeout and only the secrets the hook declared.
+    </p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>{{ _('Hook') }}</th><th>{{ _('Event') }}</th><th>{{ _('Enabled') }}</th><th>{{ _('Timeout') }}</th><th>{{ _('Secrets') }}</th><th>{{ _('Updated') }}</th><th></th></tr></thead>
+      <tbody>
+      {% for h in hooks %}
+        <tr>
+          <td><a href="{{ url_for('integrations.hook_detail', slug=h.slug) }}"><strong>{{ h.name or h.slug }}</strong></a>
+              <div class="small text-muted"><code>{{ h.slug }}</code></div></td>
+          <td><code class="small">{{ h.event }}</code></td>
+          <td>{% if h.enabled %}<span class="fw-badge fw-badge-success">{{ _('on') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('off') }}</span>{% endif %}</td>
+          <td class="small">{{ h.timeout }}s</td>
+          <td class="small">{{ h.secrets|join(', ') or '—' }}</td>
+          <td class="small text-muted">{{ h.updated_at or '' }}</td>
+          <td class="text-end"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('integrations.hook_detail', slug=h.slug) }}">{{ _('Open') }}</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-muted small">{{ _('No hooks yet.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <h6 class="mt-3">{{ _('Events SATOM emits') }}</h6>
+    <ul class="small text-muted mb-3">
+      {% for name, doc in events.items() %}<li><code>{{ name }}</code> — {{ doc }}</li>{% endfor %}
+    </ul>
+
+    <h6>{{ _('Recent hook runs') }}</h6>
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>{{ _('When') }}</th><th>{{ _('Hook') }}</th><th>{{ _('Event') }}</th><th>{{ _('Status') }}</th><th>{{ _('ms') }}</th><th>{{ _('Detail') }}</th></tr></thead>
+      <tbody>
+      {% for r in recent %}
+        <tr>
+          <td class="small text-muted">{{ r.started_at or r.queued_at or '' }}</td>
+          <td class="small"><code>{{ r.slug }}</code></td>
+          <td class="small"><code>{{ r.event }}</code></td>
+          <td>
+            {% if r.status == 'ok' %}<span class="fw-badge fw-badge-success">{{ _('ok') }}</span>
+            {% elif r.status in ('failed', 'timeout') %}<span class="fw-badge fw-badge-danger">{{ r.status }}</span>
+            {% elif r.status == 'running' %}<span class="fw-badge fw-badge-info">{{ _('running') }}</span>
+            {% else %}<span class="fw-badge fw-badge-secondary">{{ r.status }}</span>{% endif %}
+          </td>
+          <td class="small">{{ r.duration_ms if r.duration_ms is not none else '—' }}</td>
+          <td class="small text-muted">{{ (r.error or r.detail or '')[:160] }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="text-muted small">{{ _('No runs recorded.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+
+<div class="fw-card mt-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i>{{ _('Scheduled reconciliation') }}</span>
+    {% if nb_task %}
+      {% if nb_task.enabled %}
+        <span class="fw-badge fw-badge-success">{{ _('scheduled') }}</span>
+      {% else %}
+        <span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>
+      {% endif %}
+    {% else %}
+      <span class="fw-badge fw-badge-info">{{ _('not scheduled') }}</span>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      {{ _('One round asks NetBox about the appliances that have no explicit mapping above, lowest id first, and writes the ones NetBox answers by name into the table — as a real object id, which keeps working after a rename on either side. It is read-only against NetBox: it creates nothing there and never removes a mapping you wrote. What it could not resolve is named in the run log, every round.') }}
+    </p>
+    <form method="post" action="{{ url_for('integrations.save_netbox_schedule') }}" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="col-md-4">
+        <label class="form-label small">{{ _('Task name') }}</label>
+        <input class="form-control form-control-sm" name="name" maxlength="128"
+               value="{{ nb_task.name if nb_task else nb_task_name }}">
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Appliances per round') }}</label>
+        <input class="form-control form-control-sm" type="number" name="per_round"
+               min="1" max="{{ nb_max_per_round }}"
+               value="{{ (nb_task.params_dict.get('per_round', nb_default_per_round)) if nb_task else nb_default_per_round }}">
+        <div class="form-text small">{{ _('1–%(max)s. The rest carry over to the next round.', max=nb_max_per_round) }}</div>
+      </div>
+
+      <div class="col-md-5">
+        <label class="form-label small">{{ _('Runs') }}</label>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <select class="form-select form-select-sm" name="schedule_kind" id="nb-sched-kind" style="max-width:130px;">
+            <option value="daily" {{ 'selected' if not nb_task or nb_task.schedule_kind != 'interval' else '' }}>{{ _('daily') }}</option>
+            <option value="interval" {{ 'selected' if nb_task and nb_task.schedule_kind == 'interval' else '' }}>{{ _('every') }}</option>
+          </select>
+          <span id="nb-sched-daily" class="d-flex align-items-center gap-1">
+            <span class="small text-muted">{{ _('at') }}</span>
+            <input class="form-control form-control-sm" type="time" name="daily_time" style="max-width:120px;"
+                   value="{{ nb_task.schedule_dict.get('time', nb_default_time) if nb_task and nb_task.schedule_kind == 'daily' else nb_default_time }}">
+          </span>
+          <span id="nb-sched-interval" class="d-flex align-items-center gap-1">
+            <input class="form-control form-control-sm" type="number" name="interval_every" min="1" style="max-width:80px;"
+                   value="{{ nb_task.schedule_dict.get('every', 6) if nb_task and nb_task.schedule_kind == 'interval' else 6 }}">
+            <select class="form-select form-select-sm" name="interval_unit" style="max-width:110px;">
+              {% for u in ['minutes', 'hours', 'days'] %}
+              <option value="{{ u }}" {{ 'selected' if nb_task and nb_task.schedule_kind == 'interval' and nb_task.schedule_dict.get('unit') == u else ('selected' if u == 'hours' and not (nb_task and nb_task.schedule_kind == 'interval') else '') }}>{{ _(u) }}</option>
+              {% endfor %}
+            </select>
+          </span>
+        </div>
+        <div class="form-text small">{{ _('Wall-clock times follow the instance time zone.') }}</div>
+      </div>
+
+      <div class="col-12 d-flex align-items-center gap-3 flex-wrap">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="enabled" id="nb-sched-on"
+                 {{ 'checked' if (nb_task.enabled if nb_task else true) }}>
+          <label class="form-check-label small" for="nb-sched-on">{{ _('Enabled') }}</label>
+        </div>
+        <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save as scheduled task') }}</button>
+        {% if nb_task %}
+          <span class="small text-muted">
+            {{ _('Next run') }}: <strong>{{ nb_task.next_run or '—' }}</strong> UTC
+            {% if nb_task.last_run %} · {{ _('last') }}: {{ nb_task.last_run }} ({{ nb_task.last_status or '—' }}){% endif %}
+          </span>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('scheduled_actions.index') }}">
+            <i class="bi bi-list-check me-1"></i>{{ _('Scheduled actions') }}
+          </a>
+          {% if calendar_on %}
+            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('calendar_plan.index') }}">
+              <i class="bi bi-calendar3 me-1"></i>{{ _('Calendar') }}
+            </a>
+          {% else %}
+            <span class="small text-muted">{{ _('(the calendar is switched off for your user)') }}</span>
+          {% endif %}
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+  </div><!-- /.fw-settings-main -->
+</div><!-- /.fw-settings-layout -->
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+// Confluence connections: confirm a delete (inline handlers are blocked by the CSP).
+document.querySelectorAll('form[data-cf-confirm]').forEach(function (f) {
+  f.addEventListener('submit', function (ev) {
+    if (!window.confirm(f.getAttribute('data-cf-confirm'))) { ev.preventDefault(); }
+  });
+});
+(function () {
+  // Only ONE of the two schedule shapes is meaningful at a time; both stay in
+  // the DOM so the posted field names match the Automation editor exactly.
+  var kind = document.getElementById('nb-sched-kind');
+  var daily = document.getElementById('nb-sched-daily');
+  var every = document.getElementById('nb-sched-interval');
+  function sync() {
+    if (!kind || !daily || !every) { return; }
+    var isInterval = kind.value === 'interval';
+    daily.style.display = isInterval ? 'none' : '';
+    every.style.display = isInterval ? '' : 'none';
+  }
+  if (kind) { kind.addEventListener('change', sync); sync(); }
+})();
+(function () {
+  var btn = document.getElementById('nb-test');
+  var out = document.getElementById('nb-test-result');
+  if (!btn || !out) { return; }
+  var tok = document.querySelector('input[name="csrf_token"]');
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    out.textContent = 'testing…';
+    out.className = 'small align-self-center text-muted';
+    fetch({{ url_for('integrations.test_netbox')|tojson }}, {
+      method: 'POST',
+      headers: {'X-CSRFToken': tok ? tok.value : ''}
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      btn.disabled = false;
+      if (d.ok) {
+        out.className = 'small align-self-center text-success';
+        out.textContent = 'NetBox ' + (d.version || '?') + ' · ' + d.elapsed_ms + ' ms'
+          + (d.plugins && d.plugins.length ? ' · plugins: ' + d.plugins.join(', ') : ' · no plugins');
+      } else {
+        // A failed probe still reports its elapsed time: a connector that
+        // burned 8 seconds before failing spent them, and hiding that hides
+        // the difference between "refused" and "never answered".
+        out.className = 'small align-self-center text-danger';
+        out.textContent = (d.detail || 'failed') + (d.elapsed_ms != null ? ' · ' + d.elapsed_ms + ' ms' : '');
+      }
+    }).catch(function (e) {
+      btn.disabled = false;
+      out.className = 'small align-self-center text-danger';
+      out.textContent = 'request failed: ' + e;
+    });
+  });
+})();
+
+(function () {
+  // Field visibility is driven by the SERVER's catalogue, not by a second
+  // list written here. Two authors of "does Vikunja need a username" is how
+  // the answers drift apart.
+  var SPECS = {{ tracker_backends|tojson }};
+  var sel = document.getElementById('tk-backend');
+  if (!sel) { return; }
+  var help = document.getElementById('tk-help');
+  var url = document.getElementById('tk-url');
+
+  function apply() {
+    var spec = SPECS[sel.value] || {};
+    var on = sel.value !== 'none';
+    document.querySelectorAll('[data-tk-field]').forEach(function (el) {
+      var need = el.getAttribute('data-tk-field');
+      var show = on && (need === 'url' || need === 'token'
+        || (need === 'user' && spec.needs_user)
+        || (need === 'project' && spec.needs_project)
+        || (need === 'type' && spec.needs_type));
+      el.style.display = show ? '' : 'none';
+    });
+    if (help) { help.textContent = spec.help || ''; }
+    if (url && spec.url_hint) { url.placeholder = spec.url_hint; }
+    document.querySelectorAll('[data-tk-label]').forEach(function (el) {
+      var k = el.getAttribute('data-tk-label');
+      var txt = k === 'user' ? spec.user_label
+        : (k === 'project' ? spec.project_label : spec.type_label);
+      if (txt) { el.textContent = txt; }
+    });
+  }
+  sel.addEventListener('change', apply);
+  apply();
+
+  var btn = document.getElementById('tk-test');
+  var out = document.getElementById('tk-test-result');
+  if (!btn || !out) { return; }
+  var tok = document.querySelector('input[name="csrf_token"]');
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    out.textContent = 'testing…';
+    out.className = 'small align-self-center text-muted';
+    fetch({{ url_for('integrations.test_tracker')|tojson }}, {
+      method: 'POST',
+      headers: {'X-CSRFToken': tok ? tok.value : ''}
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      btn.disabled = false;
+      // The probe tests identity AND the project. It reports what it tested,
+      // never a bare tick: "authenticated" alone is the state in which a
+      // change window discovers the project is invisible to the token.
+      out.className = 'small align-self-center ' + (d.ok ? 'text-success' : 'text-danger');
+      out.textContent = (d.detail || (d.ok ? 'ok' : 'failed'))
+        + (d.elapsed_ms != null ? ' · ' + d.elapsed_ms + ' ms' : '');
+    }).catch(function (e) {
+      btn.disabled = false;
+      out.className = 'small align-self-center text-danger';
+      out.textContent = 'request failed: ' + e;
+    });
+  });
+})();
+</script>
+{% endblock %}

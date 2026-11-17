@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Error{% if error_id %} · {{ error_id }}{% endif %}</title>
+<style nonce="{{ csp_nonce }}">
+  /* Standalone page: it has to render when the stylesheet cannot be served,
+     so the SATOM palette is inlined literally rather than via var(--fw-*).
+     Values copied from :root in static/css/fortiweb.css. Light theme only
+     (safeguards Sec. 9m) -- this page used to ship the fleet's dark
+     glassmorphism theme, which is not this product's theme. */
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       font-family:'Inter',system-ui,-apple-system,"Segoe UI",Roboto,'Helvetica Neue',Arial,sans-serif;
+       background:#F3F6FC;color:#0C1B33;padding:2rem}
+  .card{max-width:560px;width:100%;text-align:center;padding:2.75rem 2.5rem;
+        background:#FFFFFF;border:1px solid #DCE4F3;border-radius:8px;
+        box-shadow:0 1px 2px rgba(16,32,52,0.06),0 3px 12px rgba(16,32,52,0.06)}
+  .glyph{font-size:3rem;line-height:1}
+  h1{margin:.6rem 0 .4rem;font-size:1.6rem;font-weight:700;color:#0C1B33}
+  p{color:#51607F;margin:.4rem 0}
+  a.home{display:inline-block;margin-top:1.1rem;padding:.6rem 1.4rem;border-radius:4px;color:#FFFFFF;
+         text-decoration:none;font-weight:600;background:#0A3F9F}
+  a.home:hover{background:#041F5A;color:#FFFFFF}
+  .ref{margin:1.5rem 0 1rem}
+  .ref .lbl{color:#51607F;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.35rem}
+  /* The old amber landed at ~1.7:1 on white -- an error reference nobody can
+     read is the one thing this page exists to deliver. Accent blue is 8.6:1. */
+  code{font-size:1.35rem;letter-spacing:.12em;color:#0A3F9F;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .copy{margin-left:.5rem;background:#F8FAFE;border:1px solid #DCE4F3;
+        color:#51607F;border-radius:4px;padding:.25rem .55rem;cursor:pointer;font-size:.85rem}
+  .copy:hover{background:#EAEFF9;color:#0C1B33}
+  .hint{color:#51607F;font-size:.83rem}
+  #fw-err-id{cursor:pointer}
+  /* Same reason: the warning tone calibrated against white. */
+  .note{margin-top:.6rem;color:#7A5700;font-size:.82rem}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="glyph">⚠️</div>
+    <h1>{{ _('Something went wrong') }}</h1>
+    <p>{{ _('An unexpected error occurred while processing your request. The problem has been logged.') }}</p>
+    {% if error_id %}
+    <div class="ref">
+      <div class="lbl">{{ _('Error reference') }}</div>
+      <code id="fw-err-id" data-js="select-err"
+            title="{{ _('Click to select') }}">{{ error_id }}</code>
+      <button type="button" class="copy"
+              data-js="copy-err" data-error-id="{{ error_id }}">{{ _('Copy') }}</button>
+      <div id="fw-err-note" class="note" hidden
+           data-msg="{{ _('The reference is selected — press') }}"></div>
+    </div>
+    <p class="hint">{{ _('Share this reference with your administrator so they can locate the exact problem in the logs.') }}</p>
+    {% endif %}
+    <a class="home" href="/">{{ _('Return home') }}</a>
+  </div>
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    var btn = document.querySelector('[data-js="copy-err"]');
+    var ref = document.getElementById('fw-err-id');
+    var note = document.getElementById('fw-err-note');
+    if (!btn || !ref) { return; }
+    var label = btn.textContent;
+    var timer = null;
+    var COMBO = /Mac|iPhone|iPad/.test(navigator.userAgent || '') ? '⌘C' : 'Ctrl-C';
+
+    // Last resort when no clipboard path works: leave the reference selected
+    // so the operator can copy it by hand. Never claim success.
+    function selectRef() {
+      if (!window.getSelection || !document.createRange) { return; }
+      var range = document.createRange();
+      range.selectNodeContents(ref);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    // A failure has to STAY on screen. The first version flashed an x for two
+    // seconds and then restored the label, which from the operator's seat is
+    // indistinguishable from a button that does nothing -- and it took the
+    // diagnosis with it, so a report could only ever say "it doesn't work".
+    function done(ok, why) {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (ok) {
+        note.hidden = true;
+        btn.textContent = '✓';
+        timer = setTimeout(function () { btn.textContent = label; }, 2000);
+        return;
+      }
+      btn.textContent = label;
+      selectRef();
+      note.textContent = note.dataset.msg + ' ' + COMBO + (why ? ' · ' + why : '');
+      note.hidden = false;
+    }
+
+    // navigator.clipboard is undefined outside a secure context, which is
+    // exactly how this page gets reached over plain http on the LAN.
+    function legacyCopy(text) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+
+    btn.addEventListener('click', function () {
+      var text = btn.dataset.errorId;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        var settled = false;
+        // A promise that never settles -- a permission prompt that never
+        // appears, an extension that swallows the call -- would otherwise
+        // leave the button silent for good, which is the one outcome that
+        // cannot be reported.
+        var t = setTimeout(function () {
+          if (settled) { return; }
+          settled = true;
+          done(false, 'timeout');
+        }, 1500);
+        navigator.clipboard.writeText(text).then(function () {
+          if (settled) { return; }
+          settled = true; clearTimeout(t); done(true, '');
+        }, function (e) {
+          if (settled) { return; }
+          settled = true; clearTimeout(t);
+          // NOT legacyCopy(): document.execCommand('copy') needs this click's
+          // transient activation, and a promise callback has already lost it.
+          // Calling it here could only ever report a second failure, so the
+          // honest move is to hand the operator the selected text instead.
+          done(false, (e && e.name) || 'error');
+        });
+        return;
+      }
+      // No async API: this is still inside the click, so execCommand keeps the
+      // activation it needs.
+      done(legacyCopy(text), 'execCommand');
+    });
+
+    // A path that depends on no clipboard API at all.
+    ref.addEventListener('click', selectRef);
+  })();
+  </script>
+</body>
+</html>

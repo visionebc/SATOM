@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% set is_adc = appliance.kind == 'fortiadc' %}
+{% block title %}{{ 'VS Inspector' if is_adc else 'Policy Inspector' }} - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-diagram-2 me-2"></i>{{ 'VS Inspector' if is_adc else 'Policy Inspector' }} — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
+</div>
+{% if is_adc %}
+<p class="text-muted">{{ _('Per virtual-server tree: every reference followed to the end — content routing to pool, members and real servers, health checks, client SSL profile to certificate group and certificates, auth policy to user groups and RADIUS/LDAP servers, WAF sub-profiles.') }}</p>
+<div class="d-flex align-items-center gap-2 mb-2 small">
+  {% set q = {'policy': one_policy} if one_policy else {} %}
+  <a href="{{ url_for('appliances.inspector', id=appliance.id, **q) }}" class="btn btn-sm {{ 'btn-fw-primary' if not capture else 'btn-fw-secondary' }}">{{ _('Live (REST)') }}</a>
+  <a href="{{ url_for('appliances.inspector', id=appliance.id, source='capture', **q) }}" class="btn btn-sm {{ 'btn-fw-primary' if capture else 'btn-fw-secondary' }}">{{ _('From last rediscovery') }}</a>
+  {% if capture %}
+    <span class="text-muted">{{ _('Sweep') }}: {{ capture.sweep or '—' }} · {{ _('depth') }}: {{ capture.deep or _('not captured') }}</span>
+  {% endif %}
+</div>
+{% if capture and not capture.deep %}
+  <div class="fw-alert fw-alert-warning small">{{ _('No depth capture on this node: certificate-group, CA-group and schedule-group members are served only by child tables, so those groups are drawn without members. Run a rediscovery with "Capture full depth" on.') }}</div>
+{% elif capture and capture.deep_sweep and capture.deep_sweep != capture.sweep %}
+  <div class="fw-alert fw-alert-warning small">{{ _('The depth capture belongs to an earlier sweep than the snapshot shown; group members may not match the objects drawn.') }}</div>
+{% endif %}
+{% else %}
+<p class="text-muted">{{ _('Per server-policy tree (virtual server + VIPs, server pool + back-ends, health check, web-protection profile), composed live over REST.') }}</p>
+{% endif %}
+
+{% if error %}
+  <div class="fw-alert fw-alert-danger">{{ error }}</div>
+{% elif result %}
+  <div class="mb-3 text-muted small">
+    {% if is_adc %}
+    {{ result.count }} virtual server{{ '' if result.count == 1 else 's' }} inspected
+    {% else %}
+    {{ result.count }} server polic{{ 'y' if result.count == 1 else 'ies' }} inspected
+    {% endif %}
+    {% if one_policy %}<a href="{{ url_for('appliances.inspector', id=appliance.id) }}" class="ms-2">{{ _('show all') }}</a>{% endif %}
+    {% if result.errors %}· <span class="text-danger">{{ result.errors|length }} failed</span>{% endif %}
+  </div>
+  {% for p in result.policies %}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header fw-card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-shield-check me-2"></i>{{ p.name }}</span>
+        <button class="btn fw-btn-secondary btn-sm" type="button" data-bs-toggle="collapse"
+                data-bs-target="#json-{{ loop.index }}">{{ _('Raw JSON') }}</button>
+      </div>
+      <div class="card-body">
+        <pre class="fw-tree mb-0">{{ p.tree }}</pre>
+        <div class="collapse mt-3" id="json-{{ loop.index }}">
+          <pre class="fw-pre mb-0">{{ p.full | tojson(indent=2) }}</pre>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <div class="fw-alert fw-alert-info">{{ _('No server policies found on this appliance.') }}</div>
+  {% endfor %}
+  {% if result.errors %}
+    <div class="card shadow-sm">
+      <div class="card-header fw-card-header text-danger">{{ _('Failed policies') }}</div>
+      <div class="card-body p-0"><table class="table table-sm fw-table mb-0">
+        <thead><tr><th>{{ _('Policy') }}</th><th>{{ _('Error') }}</th></tr></thead>
+        <tbody>{% for e in result.errors %}<tr><td>{{ e.name }}</td><td class="text-danger small">{{ e.error }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

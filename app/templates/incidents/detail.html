@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}{{ inc.ref }} — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Operations') }}</span>
+  <span class="separator">/</span>
+  <a href="{{ url_for('incidents.index') }}">{{ _('Incidents') }}</a>
+  <span class="separator">/</span>
+  <span>{{ inc.ref }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-ticket-detailed me-2 text-accent"></i>{{ inc.ref }} · {{ inc.title }}</h1>
+    <div class="d-flex flex-wrap gap-2 align-items-center" style="font-size:13px;">
+      <span class="fw-badge {{ status_badge.get(inc.status, 'fw-badge-secondary') }}" id="inc-status">{{ label(inc.status) }}</span>
+      <span class="fw-badge {{ severity_badge.get(inc.severity, 'fw-badge-secondary') }}">{{ inc.severity }}</span>
+      <span class="text-muted">{{ _('opened %(when)s UTC by %(who)s', when=inc.created_at.strftime('%Y-%m-%d %H:%M'), who=inc.created_by) }}</span>
+    </div>
+  </div>
+  <a class="btn btn-secondary btn-sm" href="{{ url_for('incidents.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('All incidents') }}</a>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    {% if inc.summary %}
+    <div class="fw-card mb-3">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-card-text me-2"></i>{{ _('Summary') }}</span></div>
+      <div class="fw-card-body"><pre class="mb-0" id="inc-summary" style="white-space:pre-wrap;font-size:12px;max-height:50vh;overflow:auto;">{{ inc.summary }}</pre></div>
+    </div>
+    {% endif %}
+
+    <div class="fw-card mb-3">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-clock-history me-2"></i>{{ _('History') }}</span></div>
+      <div class="fw-card-body">
+        <table class="fw-table mb-2" id="inc-history" style="font-size:12px;">
+          <tbody>
+            {% for e in inc.entries %}
+            <tr>
+              <td class="text-muted" style="white-space:nowrap;">{{ e.at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td style="white-space:nowrap;">{{ e.user }}</td>
+              <td><span class="fw-badge fw-badge-secondary">{{ e.kind }}</span></td>
+              <td style="white-space:pre-line;">{{ e.text }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if may_edit %}
+        <form method="POST" action="{{ url_for('incidents.note', iid=inc.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="fw-form-label" for="inc-note">{{ _('Add a note') }}</label>
+          <textarea id="inc-note" name="text" rows="2" class="form-control form-control-sm mb-2" required></textarea>
+          <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-chat-left-text me-1"></i>{{ _('Add note') }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fw-card mb-3" id="inc-vendor">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-headset me-2"></i>{{ _('Vendor / L3 tickets') }}</span></div>
+      <div class="fw-card-body">
+        {% for t in inc.vendor_tickets %}
+        <div class="border rounded p-2 mb-2" data-ticket-id="{{ t.id }}">
+          <div class="d-flex flex-wrap gap-2 align-items-center mb-1" style="font-size:13px;">
+            <strong>{{ t.vendor }}</strong>
+            <span>{{ t.ticket_no or _('(no number yet)') }}</span>
+            <span class="fw-badge {{ 'fw-badge-success' if t.status in ('resolved', 'closed') else 'fw-badge-info' }}">{{ label(t.status) }}</span>
+            {% if t.url %}<a href="{{ t.url }}" target="_blank" rel="noopener noreferrer">{{ _('Open in the vendor portal') }} <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}
+          </div>
+          <table class="fw-table mb-2" style="font-size:12px;"><tbody>
+            {% for e in t.entries %}
+            <tr><td class="text-muted" style="white-space:nowrap;">{{ e.at.strftime('%Y-%m-%d %H:%M') }}</td><td style="white-space:nowrap;">{{ e.user }}</td><td style="white-space:pre-line;">{{ e.text }}</td></tr>
+            {% endfor %}
+          </tbody></table>
+          {% if may_edit %}
+          <form method="POST" action="{{ url_for('incidents.vendor_update', iid=inc.id, tid=t.id) }}" class="row g-2 align-items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-md-6"><input name="text" class="form-control form-control-sm" placeholder="{{ _('What the vendor or L3 said or did') }}"></div>
+            <div class="col-md-2"><input name="ticket_no" class="form-control form-control-sm" value="{{ t.ticket_no }}" placeholder="{{ _('Ticket number') }}"></div>
+            <div class="col-md-2">
+              <select name="status" class="form-select form-select-sm">
+                {% for s in ticket_statuses %}<option value="{{ s }}" {{ 'selected' if s == t.status }}>{{ label(s) }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-2"><button type="submit" class="btn btn-sm btn-fw-primary w-100">{{ _('Record') }}</button></div>
+          </form>
+          {% endif %}
+        </div>
+        {% else %}
+        <p class="text-muted mb-2" style="font-size:13px;">{{ _('No ticket with a vendor or L3 yet.') }}</p>
+        {% endfor %}
+        {% if may_edit %}
+        <details class="mt-2" {{ 'open' if not inc.vendor_tickets }}>
+          <summary style="font-size:13px;cursor:pointer;">{{ _('Add a vendor / L3 ticket') }}</summary>
+          <form method="POST" action="{{ url_for('incidents.vendor_add', iid=inc.id) }}" class="row g-2 mt-1">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-md-4"><label class="fw-form-label">{{ _('With') }}</label>
+              <input name="vendor" class="form-control form-control-sm" list="inc-vendors" required placeholder="Fortinet TAC"></div>
+            <div class="col-md-3"><label class="fw-form-label">{{ _('Ticket number') }}</label>
+              <input name="ticket_no" class="form-control form-control-sm"></div>
+            <div class="col-md-5"><label class="fw-form-label">{{ _('Link (https://…)') }}</label>
+              <input name="url" type="url" class="form-control form-control-sm"></div>
+            <div class="col-12"><textarea name="note" rows="2" class="form-control form-control-sm" placeholder="{{ _('What was reported to them') }}"></textarea></div>
+            <div class="col-12"><button type="submit" class="btn btn-sm btn-fw-primary"><i class="bi bi-plus-lg me-1"></i>{{ _('Add ticket') }}</button></div>
+            <datalist id="inc-vendors"><option value="Fortinet TAC"><option value="L3"></datalist>
+          </form>
+        </details>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-info-circle me-2"></i>{{ _('Details') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <dl class="row mb-0">
+          <dt class="col-5">{{ _('Appliance') }}</dt>
+          <dd class="col-7">{% if inc.appliance_id %}<a href="{{ url_for('appliances.detail', id=inc.appliance_id) }}">{{ inc.appliance_name }}</a>{% else %}{{ inc.appliance_name or '—' }}{% endif %}</dd>
+          <dt class="col-5">{{ _('Opened by') }}</dt>
+          <dd class="col-7">{% if inc.source == 'runbook' %}{{ _('runbook') }} {{ inc.app_slug }}{% if run %} · <a href="{{ url_for('apps.run_page', rid=run.id) }}">{{ _('run #%(id)s', id=run.id) }}</a>{% endif %}{% else %}{{ inc.created_by }}{% endif %}</dd>
+          <dt class="col-5">{{ _('Resolved') }}</dt>
+          <dd class="col-7">{{ inc.resolved_at.strftime('%Y-%m-%d %H:%M') ~ ' UTC' if inc.resolved_at else '—' }}</dd>
+          <dt class="col-5">{{ _('Closed') }}</dt>
+          <dd class="col-7">{{ inc.closed_at.strftime('%Y-%m-%d %H:%M') ~ ' UTC' if inc.closed_at else '—' }}</dd>
+          <dt class="col-5">{{ _('Company ticket') }}</dt>
+          <dd class="col-7 text-muted">{{ (inc.itsm_system ~ ' ' ~ inc.itsm_ref) if inc.itsm_ref else _('not linked (no company ticket system connected yet)') }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    {% if may_edit %}
+    <div class="fw-card mb-3">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-sliders me-2"></i>{{ _('Update') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <form method="POST" action="{{ url_for('incidents.status', iid=inc.id) }}" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="fw-form-label" for="inc-st">{{ _('Status') }}</label>
+          <div class="d-flex gap-2">
+            <select id="inc-st" name="status" class="form-select form-select-sm">
+              {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s == inc.status }}>{{ label(s) }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn btn-sm btn-fw-primary">{{ _('Set') }}</button>
+          </div>
+          <input name="note" class="form-control form-control-sm mt-1" placeholder="{{ _('Why (optional)') }}">
+        </form>
+        <form method="POST" action="{{ url_for('incidents.severity', iid=inc.id) }}" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="fw-form-label" for="inc-sv">{{ _('Severity') }}</label>
+          <div class="d-flex gap-2">
+            <select id="inc-sv" name="severity" class="form-select form-select-sm">
+              {% for s in severities %}<option {{ 'selected' if s == inc.severity }}>{{ s }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn btn-sm btn-fw-primary">{{ _('Set') }}</button>
+          </div>
+        </form>
+        <form method="POST" action="{{ url_for('incidents.owner', iid=inc.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="fw-form-label" for="inc-ow">{{ _('Owner') }}</label>
+          <div class="d-flex gap-2">
+            <select id="inc-ow" name="owner" class="form-select form-select-sm">
+              <option value="">{{ _('Nobody') }}</option>
+              {% for u in users %}<option {{ 'selected' if u == inc.owner }}>{{ u }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn btn-sm btn-fw-primary">{{ _('Set') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% else %}
+    <div class="fw-card mb-3"><div class="fw-card-body" style="font-size:13px;">
+      <strong>{{ _('Owner') }}:</strong> {{ inc.owner or '—' }}
+    </div></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

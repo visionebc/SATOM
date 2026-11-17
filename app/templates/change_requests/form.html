@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}New Change Request — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('change_requests.index') }}">{{ _('Change Requests') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('New') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-clipboard2-plus me-2 text-accent"></i>{{ _('New Change Request') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Two questions &mdash; the language the document is written in, then the type of change.
+      Everything that follows from those is proposed for you; the devices and the maintenance
+      window are decisions, so they are never guessed. Created as a
+      <strong>{{ _('draft') }}</strong> {{ _('and must be approved before it can be scheduled.') }}
+    </p>
+  </div>
+  <a class="btn btn-fw-outline btn-sm" href="{{ url_for('change_requests.index') }}">
+    <i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}
+  </a>
+</div>
+
+{% include 'change_requests/_new_form.html' %}
+{% endblock %}

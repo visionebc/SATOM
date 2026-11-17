@@ -1,0 +1,329 @@
+{# AI Advisor settings — provider registry + feature flags. Self-contained:
+   fetches its own state from /settings/ai/state instead of riding the main
+   index() context, so this tab cannot regress the rest of that 2000+ line
+   view. Gated by the caller on current_user.can('advisor.configure'). #}
+<div id="ai-settings-root">
+  <div class="fw-card" id="card-scout">
+    <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Scout') }}</h2></div>
+    <div class="fw-card-body">
+      <p class="text-secondary" style="font-size:13px">{{ _('The advisor never writes to SATOM or an appliance directly — see') }} <a href="{{ docs_url('ai-advisor') }}" target="_blank" rel="noopener">{{ _('docs/ai-advisor.md') }}</a>{{ _('. Local Ollama traffic never leaves the LAN. Every message sent to an external provider is logged (') }}<a href="{{ url_for('audit.index') }}">{{ _('Audit log') }}</a>, action <code>advisor.send</code>), redacted of
+        known internal identifiers first, and requires "Allow external providers" below in addition to the
+        provider itself being configured.</p>
+      <div class="d-flex flex-wrap gap-4 mb-2">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="ai-flag-enabled" data-flag="enabled">
+          <label class="form-check-label" for="ai-flag-enabled">{{ _('Enable Scout') }}</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="ai-flag-tools" data-flag="tools">
+          <label class="form-check-label" for="ai-flag-tools">{{ _('Allow read-only tool calls (mode C)') }}</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="ai-flag-external" data-flag="external">
+          <label class="form-check-label" for="ai-flag-external">{{ _('Allow external providers') }}</label>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <label class="form-label mb-0" for="ai-tool-rounds">{{ _('Tool rounds per question') }}</label>
+          <input type="number" class="form-control form-control-sm" style="width:5rem" id="ai-tool-rounds" min="1" max="12" step="1">
+          <span class="text-secondary small" id="ai-tool-rounds-result"></span>
+        </div>
+      </div>
+      <div class="form-text">{{ _('Each round is one model call that may run several read-only tools. When the rounds are spent Scout answers from what it has and says which checks it could not make. Default 6; 1–12.') }}</div>
+    </div>
+  </div>
+
+  <div class="fw-card" id="card-providers">
+    <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Providers') }}</h2></div>
+    <div class="fw-card-body">
+      <div id="ai-provider-list" class="mb-3"></div>
+      <button type="button" class="btn btn-fw-outline btn-sm" id="ai-provider-new"><i class="bi bi-plus-lg me-1"></i>{{ _('Add provider') }}</button>
+    </div>
+  </div>
+
+  <div class="fw-card" id="ai-provider-form-card" style="display:none">
+    <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Provider') }}</h2></div>
+    <div class="fw-card-body">
+      <input type="hidden" id="ai-p-editing" value="">
+      <div class="row g-2">
+        <div class="col-md-4"><label class="form-label">{{ _('Key (slug, unique)') }}</label><input class="form-control" id="ai-p-key"></div>
+        <div class="col-md-4"><label class="form-label">{{ _('Label') }}</label><input class="form-control" id="ai-p-label"></div>
+        <div class="col-md-4"><label class="form-label">{{ _('Kind') }}</label>
+          <select class="form-select" id="ai-p-kind">
+            <option value="ollama">{{ _('Ollama (local, no API key)') }}</option>
+            <option value="openai">{{ _('OpenAI-compatible (ChatGPT / Azure OpenAI / LiteLLM / vLLM…)') }}</option>
+            <option value="anthropic">{{ _('Anthropic (Claude Messages API)') }}</option>
+          </select>
+        </div>
+        <div class="col-md-6"><label class="form-label">{{ _('Base URL') }}</label><input class="form-control" id="ai-p-url" placeholder="{{ _('http://localhost:11434 or https://api.openai.com/v1') }}"></div>
+        <div class="col-md-3"><label class="form-label">{{ _('Model') }}</label><input class="form-control" id="ai-p-model" placeholder="{{ _('qwen2.5-coder:32b') }}"></div>
+        <div class="col-md-3"><label class="form-label">{{ _('API key') }} <span class="text-secondary">{{ _('(blank = keep / not needed for Ollama)') }}</span></label><input type="password" class="form-control" id="ai-p-key-secret"></div>
+      </div>
+      <div class="d-flex gap-2 mt-3">
+        <button type="button" class="btn btn-fw-primary" id="ai-p-save">{{ _('Save') }}</button>
+        <button type="button" class="btn btn-fw-outline" id="ai-p-test">{{ _('Test connection') }}</button>
+        <button type="button" class="btn btn-fw-outline" id="ai-p-cancel">{{ _('Cancel') }}</button>
+      </div>
+      <div id="ai-p-result" class="mt-2" style="font-size:12.5px"></div>
+    </div>
+  </div>
+
+  <div class="fw-card" id="card-logsources">
+    <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Log sources') }} <span class="fw-badge fw-badge-secondary">{{ _('optional') }}</span></h2></div>
+    <div class="fw-card-body">
+      <p class="text-secondary" style="font-size:13px">{{ _('Scout already reads Sentinel events, the syslog receiver and the FortiAnalyzer behind each appliance (Sentinel → Edge map). Add your SIEM here when part of the service path logs somewhere else — a Cisco switch or firewall in front of a FortiWeb never reaches a FortiAnalyzer. Read only: use a token of a role that can only search. Scout puts its search text inside one quoted term, so it can never append a command.') }}</p>
+      <div id="ai-ls-list" class="mb-3"></div>
+      <button type="button" class="btn btn-fw-outline btn-sm" id="ai-ls-new"><i class="bi bi-plus-lg me-1"></i>{{ _('Add log source') }}</button>
+    </div>
+  </div>
+
+  <div class="fw-card" id="card-ai-ls-form" style="display:none">
+    <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Log source') }}</h2></div>
+    <div class="fw-card-body">
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label" for="ai-ls-key">{{ _('Key (slug, unique)') }}</label><input class="form-control" id="ai-ls-key" placeholder="splunk-dc1"></div>
+        <div class="col-md-3"><label class="form-label" for="ai-ls-label">{{ _('Label') }}</label><input class="form-control" id="ai-ls-label"></div>
+        <div class="col-md-6"><label class="form-label" for="ai-ls-kind">{{ _('Kind') }}</label>
+          <select class="form-select" id="ai-ls-kind">
+            <option value="splunk">{{ _('Splunk (REST search export, port 8089) — unverified on a live Splunk') }}</option>
+            <option value="elastic">{{ _('Elasticsearch / OpenSearch / Wazuh indexer (_search, port 9200) — unverified on a live cluster') }}</option>
+          </select>
+        </div>
+        <div class="col-md-6"><label class="form-label" for="ai-ls-url">{{ _('Management URL') }}</label><input class="form-control" id="ai-ls-url" placeholder="https://splunk.example.com:8089"></div>
+        <div class="col-md-4"><label class="form-label" for="ai-ls-token">{{ _('Token') }} <span class="text-secondary">{{ _('(blank = keep)') }}</span></label><input type="password" class="form-control" id="ai-ls-token" autocomplete="off"></div>
+        <div class="col-md-2"><label class="form-label" for="ai-ls-auth">{{ _('Auth') }}</label>
+          <select class="form-select" id="ai-ls-auth">
+            <option value="bearer">{{ _('Bearer (Splunk)') }}</option>
+            <option value="apikey">{{ _('API key (Elastic)') }}</option>
+            <option value="basic">{{ _('Basic user:password') }}</option>
+          </select></div>
+        <div class="col-md-8"><label class="form-label" for="ai-ls-prefix">{{ _('Search prefix (Splunk) / index pattern (Elastic)') }}</label><input class="form-control" id="ai-ls-prefix" placeholder="index=network (sourcetype=cisco:asa OR sourcetype=cisco:ios)">
+          <div class="form-text" style="font-size:11.5px">{{ _('Splunk: written by you, used as is at the start of every search; Scout only adds a device clause and one quoted term after it. Elastic/OpenSearch: the index pattern searched (for example logs-* or wazuh-alerts-*); Scout only adds a time range, a device clause and one phrase.') }}</div></div>
+        <div class="col-md-4"><label class="form-label" for="ai-ls-field">{{ _('Device field') }}</label><input class="form-control" id="ai-ls-field" placeholder="host">
+          <div class="form-text" style="font-size:11.5px">{{ _('Matched against the appliance name and management address. Blank = never filter by appliance.') }}</div></div>
+        <div class="col-md-4"><label class="form-label" for="ai-ls-timefield">{{ _('Time field (Elastic)') }}</label><input class="form-control" id="ai-ls-timefield" placeholder="@timestamp"></div>
+      </div>
+      <div class="d-flex flex-wrap gap-4 mt-2">
+        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="ai-ls-verify" checked><label class="form-check-label" for="ai-ls-verify">{{ _('Verify TLS against the trust store') }}</label></div>
+        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="ai-ls-enabled" checked><label class="form-check-label" for="ai-ls-enabled">{{ _('Enabled') }}</label></div>
+      </div>
+      <div class="d-flex gap-2 mt-3">
+        <button type="button" class="btn btn-fw-primary" id="ai-ls-save">{{ _('Save') }}</button>
+        <button type="button" class="btn btn-fw-outline" id="ai-ls-cancel">{{ _('Cancel') }}</button>
+      </div>
+      <div id="ai-ls-result" class="mt-2" style="font-size:12.5px"></div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function(){
+  var root = document.getElementById('ai-settings-root');
+  if (!root) return;
+  var csrf = (document.querySelector('meta[name=csrf-token]')||{}).content || '';
+
+  function api(url, opts){
+    opts = opts || {};
+    opts.headers = Object.assign({'X-CSRFToken': csrf, 'Content-Type':'application/json'}, opts.headers||{});
+    return fetch(url, opts).then(function(r){ return r.json(); });
+  }
+  // The div/textContent trick encodes & < > but NOT " or ', so a value placed
+  // in a double-quoted attribute (e.g. data-key="...") could break out of it.
+  // Encode quotes too, since esc() is used in attribute context below.
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  function refresh(){
+    api('/settings/ai/state').then(function(d){
+      if (!d.ok) return;
+      document.getElementById('ai-flag-enabled').checked = !!d.enabled;
+      document.getElementById('ai-flag-tools').checked = !!d.tools_on;
+      document.getElementById('ai-flag-external').checked = !!d.external_on;
+      document.getElementById('ai-tool-rounds').value = d.tool_rounds;
+      var list = document.getElementById('ai-provider-list');
+      list.innerHTML = '';
+      (d.providers||[]).forEach(function(p){
+        var row = document.createElement('div');
+        row.className = 'd-flex justify-content-between align-items-center py-1';
+        row.style.borderBottom = '1px solid var(--fw-border)';
+        row.innerHTML =
+          '<div><strong>' + esc(p.label) + '</strong> <span class="fw-badge fw-badge-secondary">' + esc(p.kind) + '</span>' +
+          (p.key === d.default_provider_key ? ' <span class="fw-badge fw-badge-success">default</span>' : '') +
+          (p.enabled === false ? ' <span class="fw-badge fw-badge-warning">disabled: edit and save to enable</span>' : '') +
+          '<div class="text-secondary" style="font-size:11.5px">' + esc(p.base_url) + ' &middot; ' + esc(p.model) +
+          (p.has_secret ? ' &middot; key set' : '') + '</div></div>' +
+          '<div class="d-flex gap-2">' +
+          (p.key === d.default_provider_key ? '' : '<button type="button" class="btn btn-sm btn-fw-outline" data-act="ai-default" data-key="' + esc(p.key) + '">Make default</button>') +
+          '<button type="button" class="btn btn-sm btn-fw-outline" data-act="ai-edit" data-key="' + esc(p.key) + '">Edit</button>' +
+          '<button type="button" class="btn btn-sm btn-fw-outline" data-act="ai-delete" data-key="' + esc(p.key) + '">Delete</button>' +
+          '</div>';
+        list.appendChild(row);
+      });
+      root.__providers = d.providers || [];
+      renderLogSources(d.log_sources || []);
+    });
+  }
+
+  function renderLogSources(rows){
+    var list = document.getElementById('ai-ls-list');
+    list.innerHTML = rows.length ? '' :
+      '<div class="text-secondary" style="font-size:12.5px">No external log source. Scout says so when it searches, instead of reading the silence as "no logs".</div>';
+    rows.forEach(function(s){
+      var row = document.createElement('div');
+      row.className = 'd-flex justify-content-between align-items-center py-1';
+      row.style.borderBottom = '1px solid var(--fw-border)';
+      row.innerHTML =
+        '<div><strong>' + esc(s.label) + '</strong> <span class="fw-badge fw-badge-secondary">' + esc(s.kind) + '</span>' +
+        (s.enabled === false ? ' <span class="fw-badge fw-badge-warning">disabled</span>' : '') +
+        (s.verify_tls === false ? ' <span class="fw-badge fw-badge-warning">TLS not verified</span>' : '') +
+        (s.verified ? '' : ' <span class="fw-badge fw-badge-secondary">unverified on a live instance</span>') +
+        '<div class="text-secondary" style="font-size:11.5px">' + esc(s.base_url) +
+        (s.search_prefix ? ' &middot; <code>' + esc(s.search_prefix) + '</code>' : '') +
+        (s.device_field ? ' &middot; device field ' + esc(s.device_field) : '') +
+        (s.has_secret ? ' &middot; token set' : ' &middot; <strong>no token</strong>') + '</div>' +
+        '<div class="text-secondary" style="font-size:11.5px" data-ls-out="' + esc(s.key) + '"></div></div>' +
+        '<div class="d-flex gap-2">' +
+        '<button type="button" class="btn btn-sm btn-fw-outline" data-act="ls-test" data-key="' + esc(s.key) + '">Test</button>' +
+        '<button type="button" class="btn btn-sm btn-fw-outline" data-act="ls-edit" data-key="' + esc(s.key) + '">Edit</button>' +
+        '<button type="button" class="btn btn-sm btn-fw-outline" data-act="ls-delete" data-key="' + esc(s.key) + '">Delete</button>' +
+        '</div>';
+      list.appendChild(row);
+    });
+    root.__logsources = rows;
+  }
+
+  function openLsForm(s){
+    document.getElementById('card-ai-ls-form').style.display = '';
+    document.getElementById('ai-ls-result').textContent = '';
+    document.getElementById('ai-ls-key').value = s ? s.key : '';
+    document.getElementById('ai-ls-key').disabled = !!s;
+    document.getElementById('ai-ls-label').value = s ? s.label : '';
+    document.getElementById('ai-ls-kind').value = s ? s.kind : 'splunk';
+    document.getElementById('ai-ls-url').value = s ? s.base_url : '';
+    document.getElementById('ai-ls-prefix').value = s ? (s.search_prefix || '') : '';
+    document.getElementById('ai-ls-field').value = s ? (s.device_field || '') : 'host';
+    document.getElementById('ai-ls-verify').checked = s ? s.verify_tls !== false : true;
+    document.getElementById('ai-ls-enabled').checked = s ? s.enabled !== false : true;
+    document.getElementById('ai-ls-token').value = '';
+    document.getElementById('ai-ls-timefield').value = s ? (s.time_field || '@timestamp') : '@timestamp';
+    document.getElementById('ai-ls-auth').value = s ? (s.auth || (s.kind === 'elastic' ? 'apikey' : 'bearer')) : 'bearer';
+  }
+
+  document.addEventListener('click', function(ev){
+    var t = ev.target.closest('[data-act^="ls-"]');
+    if (t) {
+      var act = t.getAttribute('data-act'), key = t.getAttribute('data-key');
+      if (act === 'ls-edit') {
+        openLsForm((root.__logsources || []).filter(function(x){ return x.key === key; })[0]);
+      } else if (act === 'ls-delete') {
+        if (confirm('Delete log source "' + key + '"? Its token is erased too.')) {
+          api('/settings/ai/logsource/' + encodeURIComponent(key) + '/delete', {method:'POST', body:'{}'}).then(refresh);
+        }
+      } else if (act === 'ls-test') {
+        var out = document.querySelector('[data-ls-out="' + CSS.escape(key) + '"]');
+        if (out) out.textContent = 'Testing…';
+        api('/settings/ai/logsource/' + encodeURIComponent(key) + '/test', {method:'POST', body:'{}'}).then(function(d){
+          if (out) out.textContent = d.ok ? ('OK — ' + d.detail) : ('Failed — ' + (d.error || 'error'));
+        }).catch(function(){ if (out) out.textContent = 'Failed — no answer from SATOM'; });
+      }
+    }
+    if (ev.target.id === 'ai-ls-new') openLsForm(null);
+    if (ev.target.id === 'ai-ls-cancel') document.getElementById('card-ai-ls-form').style.display = 'none';
+    if (ev.target.id === 'ai-ls-save') {
+      var body = {
+        key: document.getElementById('ai-ls-key').value.trim(),
+        label: document.getElementById('ai-ls-label').value.trim(),
+        kind: document.getElementById('ai-ls-kind').value,
+        base_url: document.getElementById('ai-ls-url').value.trim(),
+        search_prefix: document.getElementById('ai-ls-prefix').value.trim(),
+        device_field: document.getElementById('ai-ls-field').value.trim(),
+        verify_tls: document.getElementById('ai-ls-verify').checked,
+        enabled: document.getElementById('ai-ls-enabled').checked,
+        token: document.getElementById('ai-ls-token').value,
+        time_field: document.getElementById('ai-ls-timefield').value.trim() || '@timestamp',
+        auth: document.getElementById('ai-ls-auth').value,
+      };
+      api('/settings/ai/logsource/save', {method:'POST', body: JSON.stringify(body)}).then(function(d){
+        if (!d.ok) { document.getElementById('ai-ls-result').textContent = d.error || 'save failed'; return; }
+        document.getElementById('card-ai-ls-form').style.display = 'none';
+        refresh();
+      }).catch(function(){ document.getElementById('ai-ls-result').textContent = 'save failed — no answer from SATOM'; });
+    }
+  });
+
+  document.addEventListener('change', function(ev){
+    var t = ev.target;
+    if (!t.matches('[data-flag]')) return;
+    var body = {}; body[t.getAttribute('data-flag')] = t.checked;
+    api('/settings/ai/flags', {method:'POST', body: JSON.stringify(body)}).then(refresh);
+  });
+
+  document.getElementById('ai-tool-rounds').addEventListener('change', function(ev){
+    var out = document.getElementById('ai-tool-rounds-result');
+    api('/settings/ai/flags', {method:'POST', body: JSON.stringify({tool_rounds: ev.target.value})})
+      .then(function(d){ out.textContent = d.ok ? 'saved' : (d.error || 'not saved'); refresh(); })
+      .catch(function(){ out.textContent = 'not saved — no answer from SATOM'; });
+  });
+
+  function openForm(p){
+    document.getElementById('ai-provider-form-card').style.display = '';
+    document.getElementById('ai-p-result').textContent = '';
+    document.getElementById('ai-p-editing').value = p ? p.key : '';
+    document.getElementById('ai-p-key').value = p ? p.key : '';
+    document.getElementById('ai-p-key').disabled = !!p;
+    document.getElementById('ai-p-label').value = p ? p.label : '';
+    document.getElementById('ai-p-kind').value = p ? p.kind : 'ollama';
+    document.getElementById('ai-p-url').value = p ? p.base_url : '';
+    document.getElementById('ai-p-model').value = p ? p.model : '';
+    document.getElementById('ai-p-key-secret').value = '';
+  }
+
+  document.addEventListener('click', function(ev){
+    var t = ev.target.closest('[data-act]');
+    if (t) {
+      var act = t.getAttribute('data-act'), key = t.getAttribute('data-key');
+      if (act === 'ai-edit') {
+        var p = (root.__providers || []).filter(function(x){ return x.key === key; })[0];
+        openForm(p);
+      } else if (act === 'ai-delete') {
+        if (confirm('Delete provider "' + key + '"?')) {
+          api('/settings/ai/provider/' + encodeURIComponent(key) + '/delete', {method:'POST', body:'{}'}).then(refresh);
+        }
+      } else if (act === 'ai-default') {
+        api('/settings/ai/default', {method:'POST', body: JSON.stringify({key: key})}).then(refresh);
+      }
+    }
+    if (ev.target.id === 'ai-provider-new') openForm(null);
+    if (ev.target.id === 'ai-p-cancel') document.getElementById('ai-provider-form-card').style.display = 'none';
+    if (ev.target.id === 'ai-p-save') {
+      var body = {
+        key: document.getElementById('ai-p-key').value.trim(),
+        label: document.getElementById('ai-p-label').value.trim(),
+        kind: document.getElementById('ai-p-kind').value,
+        base_url: document.getElementById('ai-p-url').value.trim(),
+        model: document.getElementById('ai-p-model').value.trim(),
+        api_key: document.getElementById('ai-p-key-secret').value,
+      };
+      api('/settings/ai/provider/save', {method:'POST', body: JSON.stringify(body)}).then(function(d){
+        if (!d.ok) { document.getElementById('ai-p-result').textContent = d.error || 'save failed'; return; }
+        document.getElementById('ai-provider-form-card').style.display = 'none';
+        refresh();
+      });
+    }
+    if (ev.target.id === 'ai-p-test') {
+      document.getElementById('ai-p-result').textContent = 'Testing…';
+      var body = {
+        key: document.getElementById('ai-p-key').value.trim() || document.getElementById('ai-p-editing').value,
+        kind: document.getElementById('ai-p-kind').value,
+        base_url: document.getElementById('ai-p-url').value.trim(),
+        model: document.getElementById('ai-p-model').value.trim(),
+        api_key: document.getElementById('ai-p-key-secret').value,
+      };
+      api('/settings/ai/test', {method:'POST', body: JSON.stringify(body)}).then(function(d){
+        document.getElementById('ai-p-result').textContent = d.ok ? ('OK — ' + d.reply) : ('Failed — ' + d.error);
+      });
+    }
+  });
+
+  refresh();
+})();
+</script>

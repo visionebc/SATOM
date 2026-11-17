@@ -1,0 +1,1151 @@
+{% extends "base.html" %}
+{% from "partials/_cli_provenance.html" import prov_badge with context %}
+{% from "partials/_cli_probe_tools.html" import filter_box, test_btn, probe_bar with context %}
+{% from "registry/_apilib.html" import lib_selector, lib_source_badge, lib_status_badge, lib_compare_card, lib_drill_card with context %}
+{% block title %}API Versions{% endblock %}
+
+{# The kind of evidence a number rests on. THREE outcomes, not two: a record
+   that carries no ``origin`` at all is not schema evidence, and the ``else``
+   that used to say so turned a silence into a claim. #}
+{% macro origin_badge(o) -%}
+  {%- if o == 'sweep' -%}<span class="fw-badge fw-badge-info" title="Read off a live sweep: the raw collection the appliance put on the wire.">sweep</span>
+  {%- elif o == 'schema' -%}<span class="fw-badge fw-badge-secondary" title="Read off a harvested field schema, which strips the wire-only companions a sweep carries. That is why the two kinds are never subtracted from one another.">schema</span>
+  {%- elif o in ('vendor_doc', 'legacy_matrix', 'manual') -%}{{ lib_source_badge(o) }}
+  {%- else -%}<span class="text-muted dv-unmeasured" title="This record carries no evidence kind. Naming one would be a guess.">&mdash;</span>{%- endif -%}
+{%- endmacro %}
+
+{# ── column 2: WHICH KIND OF EVIDENCE (2026-09-16, operator's request) ──
+   The kind used to be printed inside both build columns, beside each count.
+   On every row but one the two sides hold the SAME kind — that is the
+   precondition for subtracting them at all — so it was the same word twice,
+   and the Evidence column is now its only author.
+
+   The exception is the whole reason the column cannot be a single badge:
+   an *incomparable* row is incomparable BECAUSE the two sides disagree, so it
+   names both and says which build holds which. Collapsing that to one badge
+   would erase the finding. #}
+{# The same NAME can reach this table through two buckets: ``user_group`` is
+   an endpoint a sweep asked about AND an object a harvest described. Nothing
+   said so, and an operator who had just run a sweep read the schema row's
+   "not measured on 8.0.5" as the sweep having failed (2026-09-17). Both rows
+   were right; neither admitted the other existed.
+
+   It goes in the EVIDENCE cell and not under the object name: this column
+   already answers "what kind of evidence is this row", and "there is another
+   kind, on another row" is the same question. The first column was emptied by
+   the operator two rounds ago and does not get refilled.
+
+   The link is a POINTER, never a merge. The two kinds are compared apart on
+   purpose — mixing them is what reported 56 removals that were nothing but a
+   filter — so the marker names the other row's evidence kind and stops. #}
+{% macro sibling_note(siblings) -%}
+  {%- if siblings -%}
+    <div class="dv-ev-also">{% for s in siblings %}<span class="dv-ev-peer" title="The same name is on another row of this table, filed as &laquo;{{ s.label }}&raquo;{% if s.origin %} and measured as {{ s.origin }} evidence{% endif %}. Two kinds of evidence answer two different questions about one name, so they are reported on separate rows and are never subtracted from one another{% if not s.is_change %}; that row is a gap in the evidence, not a change{% endif %}.">also: {{ s.origin or s.label }}</span>{% if not loop.last %} &middot; {% endif %}{% endfor %}</div>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro evidence_slot(o, siblings=None) -%}
+  <div class="dv-ev">{{ origin_badge(o) }}{{ sibling_note(siblings) }}</div>
+{%- endmacro %}
+
+{% macro evidence_split(base, base_origin, target, target_origin, siblings=None) -%}
+  <div class="dv-ev" title="The two builds are known here by different kinds of evidence. That disagreement IS the finding: both are reported and they are never subtracted — a gap a sweep cannot close, not a change.">
+    <div class="dv-ev-side"><span class="dv-ev-scope">{{ base }}</span> {{ origin_badge(base_origin) }}</div>
+    <div class="dv-ev-side"><span class="dv-ev-scope">{{ target }}</span> {{ origin_badge(target_origin) }}</div>
+    {{ sibling_note(siblings) }}
+  </div>
+{%- endmacro %}
+
+{# ── the row: ONE COLUMN PER BUILD ──────────────────────────
+   Every finding used to be crammed into one *Change* cell. The operator asked
+   (2026-09-16) for a column per build with the evidence indented under the
+   transport that produced it:
+
+     Endpoint / object │ Evidence │ URN │ 7.6.8        │ 8.0.5          │ Test
+       antivirus       │  sweep   │     │ API          │ API            │
+       8 → 14          │          │     │   8 field(s) │   14 field(s)  │
+                       │          │     │ CLI          │   +6 — names   │
+                       │          │     │   <verdict>  │ CLI            │
+                       │          │     │              │   <verdict>    │
+
+   Two later passes over the same table, both at the operator's request on
+   2026-09-16:
+
+   * the kind of evidence moved OUT of the two build columns into a column of
+     its own in second position. On every row but *incomparable* both sides
+     hold the same kind — that is the precondition for subtracting them — so
+     printing it per column was printing one word twice.
+   * the class labels left the identity column, in two steps. First
+     ``added on X`` / ``gone on X``, then — this round — the last three,
+     ``measured only on X``, ``fields known only on X`` and ``incomparable``,
+     with the ``partial`` caveat that shared the slot. **The first column is
+     the name and nothing else.** Every one of those labels restated a cell
+     already beside it: a row whose base column says ``absent`` and whose
+     target column says ``served`` IS the addition, and a row with ``not
+     measured on 7.6.8`` in a build column IS the one-sided set.
+
+     So the class of a row is now read off the columns, and each class has
+     exactly one marker that no other class can render:
+
+       change      both sides measured — ``absent``/``served`` opposed, or a
+                   field count on each side, and on a computed delta the
+                   signed tally ``dv-api-gap``.
+       gap         ONE build column says ``not measured on X`` (``dv-unmeasured``).
+                   No change row may ever show it: a change is a difference
+                   between two measurements.
+       incomparable the Evidence cell splits, naming a different kind per
+                   build (``dv-ev-side``). Nothing else in the table does.
+
+     Guarded from BOTH directions, as the badge rule was: half of it is worse
+     than none, because "no row says it is a gap" and "no row says it is a
+     change" look identical on a page that lost the distinction.
+
+     The three WORDS were not deleted from the page — that would merge a gap
+     into a change, the one misreading this table exists to prevent. They are
+     stated once, in the summary line above the table, instead of once per row
+     (eleven copies of one of them on the live matrix), and the sentence that
+     spells out "this proves nothing" rides in the ``title`` of the very cell
+     that is the gap.
+
+   Two things the split may NOT do.
+
+   1. **The CLI half is a VERDICT, never a field list.** The dump does carry
+      the ``set`` names of every block (``CliBlock.sets``, reaching the page as
+      ``rec.settings``) and it is tempting to subtract them column to column.
+      It would be a lie twice over: those are the fields somebody CONFIGURED on
+      one appliance, and the two columns are two different appliances —
+      subtracting them measures the operators, not the firmware; and a
+      configured field name is device configuration, which this page is not the
+      permission to read (``test_badges_render_without_backup…``). So there is
+      no "CLI added / CLI removed" here: that evidence does not exist.
+
+   2. **The finding stays in the identity column**, because it is about the
+      PAIR and not about either build: the gap badge, or — on a field delta —
+      the subtraction ``8 → 14``. That arrow is the only place on this page
+      where one number is taken from another. Pushing the two counts into the
+      two columns and leaving the arrow nowhere is exactly how that number
+      went missing the first time.
+
+   What survives the move, unchanged in force:
+
+     * a GAP never grows an arrow or a field fold. Only a computed delta earns
+       either, and since the label went that is the whole of what tells a
+       measurement from a gap.
+     * the sentence saying whether a row is a change or a gap rides in a
+       ``title`` — one sentence per class against 43 rows; printed per row it
+       was eleven copies of one of them.
+     * the names FOLD, tally on the fold: the live 7.6.8→8.0.5 delta prints 115
+       field names across 19 rows and one object accounts for 18 of them.
+     * each column's CLI head names the capture it answers from, and the two
+       columns can never cite the same one. A dump comes from one box running
+       one build; that is the whole reason this page has two columns. #}
+{# The field names, behind the same [+] window the CLI half uses.
+
+   ONE SIDE PER CALL since the columns split: the base column can only ever
+   show what the target LOST and the target what it GAINED, so the word is
+   decided by the column and never guessed from the data. The word is printed
+   as well as the colour — "added" and "removed" as two shades of one pill is
+   the distinction that disappears on a projector and for a colour-blind
+   reader.
+
+   The TALLY STAYS IN THE CELL. It is the number the rows are compared on, and
+   it is exactly what the operator had to count by eye back when the names were
+   dumped inline. Pushing it behind the click would put it back there.
+
+   A LOSS SAID OUT LOUD: the row filter matches ``tr.textContent``, so a field
+   name is no longer findable by typing it. The alternative is worse — a row
+   counted as a hit on text that lives in a window the filter cannot open. A
+   fold could be opened for that reason; a modal cannot. So the names leave the
+   matchable text on purpose, exactly as they did on the CLI half.
+
+   THE NOTE IS NOT THE CLI ONE. An API field set is what a build's catalog
+   serves — a property of the firmware, from that build's own sweep. The CLI
+   number is what somebody typed into a box. Handing this window the CLI caveat
+   would relabel a firmware fact as two operators' configuration, which is the
+   one confusion this page exists to prevent. #}
+{% macro api_names(names, cls, word, scope) -%}
+  {%- if names -%}
+  <span class="fw-badge fw-badge-{{ cls }} dv-api-gap" title="Both builds were measured with the same kind of evidence and their field sets differ. This one is a change — not a gap in the evidence.">{% if cls == 'success' %}+{% else %}&minus;{% endif %}{{ names|length }}</span> <span class="dv-fold-hint">{{ word }}</span> <button type="button" class="btn btn-sm btn-fw-outline py-0 px-1 dv-names-more"
+          data-names-list="{{ names|join(' ') }}"
+          data-names-heading="{{ scope }} &middot; {{ word }}"
+          data-names-note="Fields the {{ scope }} catalog serves for this object, measured by that build's own sweep — what the firmware exposes, not what an operator configured."
+          title="{{ _('List the field names') }}"
+          style="font-size:10.5px;"><i class="bi bi-plus-lg"></i></button>
+  {%- endif -%}
+{%- endmacro %}
+
+{# A build's CLI evidence. Rendered from the per-VERSION provenance, so a
+   capture taken on another build can never appear in this cell. #}
+{% macro cli_cell(P) -%}
+  {% if P and P.measured %}
+    <span class="fw-badge fw-badge-success">{{ P.counts.cli_blocks }} blocks</span>
+    <span class="text-muted">{{ P.device }} · {{ P.captured_at }}</span>
+    {% if P.counts.cli_only %}<br><span class="fw-badge fw-badge-danger">{{ P.counts.cli_only }} not in catalog</span>{% endif %}
+    {% if P.counts.catalog_gap %}<br><span class="fw-badge fw-badge-warning">{{ P.counts.catalog_gap }} catalog gap</span>{% endif %}
+  {% else %}
+    {# The row IS a build, and the cell says so. The reason travels in the
+       title, because "no dump" and "a dump taken on another build" are
+       different facts and only one of them is fixable by capturing here. #}
+    <span class="text-muted" title="{{ P.reason if P else '' }}">no dump captured on this build</span>
+  {% endif %}
+{%- endmacro %}
+
+{# Which capture a transport verdict answers from. It rides in a title since
+   2026-09-16 — the two legend blocks that used to say it above the table were
+   removed at the operator's request. It is not dropped: a badge whose capture
+   is unnamed cannot be told from a stale one, and a build with no capture at
+   all must say why its verdict is an em dash rather than a verdict.
+   (The badge VOCABULARY is spelled in _cli_provenance.html and nowhere else —
+   naming one of its labels here, even inside a comment, is what
+   test_no_consumer_page_spells_the_vocabulary_itself catches.) #}
+{% macro prov_hint(P, scope) -%}
+  {%- if P and P.measured -%}
+    CLI evidence for {{ scope }}: {{ P.device }}
+    {%- if P.line %} (firmware line {{ P.line }}){% endif %}, captured {{ P.captured_at }}.
+  {%- else -%}
+    {{ P.reason if P else 'no CLI evidence' }} — every verdict for this build is an
+    em dash: absent evidence, never a measured verdict.
+  {%- endif -%}
+{%- endmacro %}
+
+{# ── one build's own column ────────────────────────────────────
+   Everything inside was measured ON THIS BUILD. The API half is passed in by
+   the caller — it is the only part that differs per bucket; the CLI half is
+   always one shape: a verdict read from THIS build's capture, with the capture
+   named in the head's title.
+
+   Every argument is explicit. A macro that reached for ``delta`` or
+   ``base_prov`` from the block around it would resolve them from wherever it
+   was called, and this one is called from twelve places. #}
+{# The CLI half of one build's column: numbers, and a window for the names.
+
+   Three things it is not allowed to say, in the order they would be believed:
+
+   * **A zero.** An empty config table prints NO block, so "nothing was
+     configured" and "this build has no such block" arrive as the same absence.
+     With no block the cell keeps the transport verdict; only a build whose
+     dump really printed one gets a count.
+   * **A firmware change.** ``cd.note`` names both appliances, on the count, on
+     the signed number and again at the top of the window. The subtraction is
+     between two operators' configuration.
+   * **A comparison that never ran.** The signed number appears only when BOTH
+     builds printed a block — and then it appears even at zero, because
+     "compared, nothing differs" and "could not be compared" are the pair this
+     whole table keeps apart.
+
+   The names ride in a data- attribute and NOT in the row's text: the row
+   filter matches ``tr.textContent``, and a row counted as a hit on a name the
+   operator cannot see is worse than a miss. A fold can be opened for that
+   reason; a window cannot, so the names stay out of the match. #}
+{% macro cli_half(rec, cd, side, scope) -%}
+  {%- set n = (cd.base_count if side == 'base' else cd.target_count) if cd else None -%}
+  {%- if n is none -%}
+    {#- ``nested``: this badge sits under a head that already says CLI, with the
+        API line printed directly above it. The standalone wording answers for
+        BOTH transports there, which repeats the line above and answers a
+        question this head did not ask (operator, 2026-09-16). The wording
+        itself lives in _cli_provenance.html and nowhere else. -#}
+    {{ prov_badge(rec, nested=True) }}
+  {%- else -%}
+    {%- set names = (cd.removed if side == 'base' else cd.added) -%}
+    {%- set cls = 'danger' if side == 'base' else 'success' -%}
+    <span class="dv-count dv-cli-count" title="{{ n }} field(s) set directly in this block on this build{% if rec and rec.instances %}; {{ rec.instances }} edit row(s), whose own fields are nested a level deeper and are not counted here{% endif %}. {{ cd.note }}{% if rec and rec.why %} — {{ rec.why }}{% endif %}">{{ n }} set(s)</span>
+    {%- if cd.comparable %} <span class="fw-badge fw-badge-{{ cls }} dv-cli-gap" title="{{ cd.note }}">{% if side == 'base' %}&minus;{% else %}+{% endif %}{{ names|length }}</span>
+      {%- if names %} <button type="button" class="btn btn-sm btn-fw-outline py-0 px-1 dv-names-more"
+              data-names-list="{{ names|join(' ') }}"
+              data-names-heading="{{ scope }}"
+              data-names-note="{{ cd.note }}"
+              title="{{ _('List the field names') }}"
+              style="font-size:10.5px;"><i class="bi bi-plus-lg"></i></button>{% endif -%}
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro build_cell(scope, prov, rec, cd, side) -%}
+  <div class="dv-tree">
+    <div class="dv-t-head" title="Measured on {{ scope }} over REST: whether the catalog serves it there and how many fields that evidence carries.">API</div>
+    <div class="dv-t-body">{{ caller() }}</div>
+    <div class="dv-t-head dv-cli-scope" title="{{ prov_hint(prov, scope) }}">CLI</div>
+    <div class="dv-t-body">{{ cli_half(rec, cd, side, scope) }}</div>
+  </div>
+{%- endmacro %}
+
+{# The API half, one macro per shape of evidence, so the twelve call sites
+   cannot drift apart. ``api_blank`` is NOT ``api_absent``: "the build rejected
+   the URN" is a measured no and "nobody asked" is not an answer at all — the
+   pair this whole page exists to keep apart. #}
+{% macro api_served() -%}<span class="fw-badge fw-badge-success" title="This build was asked and answered: the catalog serves the URN here — a measured yes.">served</span>{%- endmacro %}
+{% macro api_absent() -%}<span class="fw-badge fw-badge-danger" title="This build was asked and rejected the URN — a measured no.">absent</span>{%- endmacro %}
+{# No evidence kind here since 2026-09-16: the *Evidence* column is its only
+   author. A count and its kind printed in both columns was one word twice on
+   every row whose sides agree — and on the row whose sides DISAGREE the kind
+   is the finding, which belongs in the column that states findings. #}
+{% macro api_fields(n) -%}<span class="dv-count">{{ n }} field(s)</span>{%- endmacro %}
+{# ``gap`` is the harvest's own record of why this side has no schema, read
+   from ``data/field_schemas/<product>/<line>/_coverage.json`` and NEVER
+   inferred from the absence. Without it the cell is honest but terminal: the
+   operator is told nothing was measured and has no way to learn whether that
+   is a defect, a property of the reference appliance, or a line nobody has
+   harvested yet. With it, the three are one hover apart.
+
+   The phrase does not change when a reason exists. "not measured on X" is
+   still exactly what happened, and a second wording for the same fact is how a
+   page grows two vocabularies for one state.
+
+   ``measured`` is the one thing that DOES change it, and only because it is a
+   different fact: the sweep asked this build about this very object and got an
+   answer. Leading with "not measured" there is false to the operator who just
+   ran that sweep (reported 2026-09-17). The verdict is rendered with the SAME
+   two badges the endpoint rows use — no third vocabulary — and the schema
+   statement survives beside it, because a served URN with no schema is the
+   commonest state on this page and the reason for it is not obvious: a
+   FortiWeb cmdb GET returns CONFIGURED ENTRIES, not a schema, so a table
+   nobody has populated has no field names to read. Measured against both
+   reference boxes 2026-09-17: there is no schema/default/meta action, every
+   such query parameter is ignored and the reply is the same empty list. #}
+{% macro api_blank(scope, gap=None, measured=None) -%}{% if measured %}{% if measured.verdict == "absent" %}<span class="fw-badge fw-badge-danger dv-swept" title="The sweep DID ask {{ scope }} for this object{% if measured.measured_at %} on {{ measured.measured_at[:10] }}{% endif %}{% if measured.devices %} ({{ measured.devices|join(', ') }}){% endif %} and the build REJECTED the URN — a measured no, not an unasked question. There is no field schema here because there is no object here.">absent</span>{% else %}<span class="fw-badge fw-badge-success dv-swept" title="The sweep DID ask {{ scope }} for this object{% if measured.measured_at %} on {{ measured.measured_at[:10] }}{% endif %}{% if measured.devices %} ({{ measured.devices|join(', ') }}){% endif %} and the build served the URN — a measured yes. There is still no field schema because a FortiWeb cmdb GET returns the entries somebody CONFIGURED, not a schema: a table with no rows has no field names to read, and this API offers no schema action.">served</span>{% endif %} <span class="text-muted dv-unmeasured" title="No field NAMES are known for this on {{ scope }}, which is a different statement from the verdict beside it. A sweep learns field names only from rows the operator configured, and a harvest describes only a table the reference appliance has populated: a build can serve a URN perfectly and still teach nobody a single field name. A side with no field names proves nothing about the other side's fields, so this row is a gap in the evidence and not a change.">no field names on {{ scope }}</span>{% else %}<span class="text-muted dv-unmeasured" title="Nothing has ever been measured for this on {{ scope }}. An unasked side is not a negative answer: the side nobody measured proves nothing, so this row is a gap in the evidence and not a change.">not measured on {{ scope }}</span>{% endif %}{% if gap %} <span class="dv-why" title="{{ gap.reason }}{% if gap.detail %} (recorded: {{ gap.detail }}){% endif %}">why</span>{% endif %}{%- endmacro %}
+
+{# The one caveat that used to sit under the object name. It is a fact about
+   THIS column — some builds of the rollup attested the URN and some stayed
+   silent — so it rides beside the verdict it qualifies, not in the identity
+   cell where it read as a class of finding. #}
+{# A disappearance, judged by a SECOND source.
+
+   Only ``endpoints_removed`` rows carry this: they are the only rows that
+   claim something used to be here and is not. The verdict is computed in the
+   view (``absence_corroboration``) and NEVER here -- the template cannot
+   reach the CLI provenance records the rule reads, and a template that
+   guessed would be inventing the one answer that decides whether somebody
+   edits the catalogue.
+
+   The unmeasured state renders as muted text and not as a badge, the same way
+   ``PROV_UNKNOWN`` does: a badge asserts a measurement, and "no dump was ever
+   captured for this build" is the absence of one. #}
+{% macro corroboration_badge(r) -%}
+{% if r.corroboration_label %}{% set L = r.corroboration_label %} {% if L[1] %}<span class="fw-badge {{ L[1] }} dv-corr" title="{{ L[2] }} What to do: {{ L[3] }}{% if r.proposed_path %} The dump on this build spells the path {{ r.proposed_path }} &mdash; evidence for a human, not a value to paste: either spelling could be the wrong one and a configuration file cannot decide which.{% endif %}">{{ L[0] }}</span>{% else %}<span class="text-muted dv-corr dv-corr-none" title="{{ L[2] }} What to do: {{ L[3] }}">{{ L[0] }}</span>{% endif %}{% endif %}
+{%- endmacro %}
+
+{# The LIFECYCLE LEDGER entry for a disappearance, and the way into reviewing
+   it. The badge beside this one is a MEASUREMENT (what two sources say right
+   now); this one is a RECORD (since when it has been true, and whether a
+   person has looked). They are never merged: a measurement that silently
+   inherited a review decision would let one accepted finding mark a different,
+   later one as settled.
+
+   It sits in the identity cell rather than in a build column because it is
+   about the PAIR, which is the rule this table already states for every other
+   finding-level fact. It is also the only thing in that cell: the labels the
+   operator emptied out of it on 2026-09-16 were restatements of neighbouring
+   cells, and this restates nothing on the page.
+
+   The chip is a BUTTON only while the finding is open. A row somebody already
+   decided renders as plain text -- offering a control that would only re-ask a
+   settled question is how a queue grows rows nobody trusts. #}
+{% macro ledger_chip(r, page_base, page_target) -%}
+{% if r.ledger %}{% set L = r.ledger_label %}{% set g = r.ledger %}
+{%- set scope_note = "Recorded against " ~ g.base_scope ~ " to " ~ g.target_scope ~
+   (". Those are the LEDGER's scopes, not the two compared above: a disappearance is recorded against the firmware LINE that removed it, so this record is shown here and is not restated as a claim about these two builds."
+    if (g.base_scope != page_base or g.target_scope != page_target)
+    else ". Those are the two scopes compared above.") -%}
+{%- set age_note = " First proved " ~ (g.first_seen_at.strftime("%Y-%m-%d %H:%M") if g.first_seen_at else "?") ~
+   ", re-proved " ~ (g.seen_count or 0) ~ " time(s), last " ~
+   (g.last_seen_at.strftime("%Y-%m-%d %H:%M") if g.last_seen_at else "?") ~ "." -%}
+{% if r.ledger_open %}<button type="button" class="fw-badge {{ L[1] }} dv-ledger dv-ledger-open"
+  data-lg-id="{{ g.id }}" data-lg-name="{{ r.endpoint }}"
+  data-lg-scope="{{ g.base_scope }} &rarr; {{ g.target_scope }}"
+  data-lg-borrowed="{{ 1 if (g.base_scope != page_base or g.target_scope != page_target) else 0 }}"
+  data-lg-state="{{ g.state }}" data-lg-urn="{{ g.urn }}"
+  data-lg-api="{{ g.api_detail }}"
+  data-lg-cli="{{ g.cli_base }} on {{ g.base_scope }} &rarr; {{ g.cli_target }} on {{ g.target_scope }}"
+  data-lg-device="{{ g.cli_device }}" data-lg-captured="{{ g.cli_captured_at }}"
+  data-lg-first="{{ g.first_seen_at.strftime('%Y-%m-%d %H:%M') if g.first_seen_at else '' }}"
+  data-lg-last="{{ g.last_seen_at.strftime('%Y-%m-%d %H:%M') if g.last_seen_at else '' }}"
+  data-lg-seen="{{ g.seen_count or 0 }}" data-lg-path="{{ g.proposed_path }}"
+  title="{{ L[2] }} {{ scope_note }}{{ age_note }} Click to review it.">{{ L[0] }}</button>
+{% else %}<span class="fw-badge {{ L[1] }} dv-ledger dv-ledger-done"
+  title="{{ L[2] }}{% if g.reviewed_by %} Decided by {{ g.reviewed_by }}{% if g.reviewed_at %} on {{ g.reviewed_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}.{% endif %} {{ scope_note }}{{ age_note }}">{{ L[0] }}{% if g.reviewed_by %} &middot; {{ g.reviewed_by }}{% endif %}</span>{% endif %}
+{% endif %}
+{%- endmacro %}
+
+{% macro api_partial(silent_on) -%}{% if silent_on %} <span class="fw-badge fw-badge-warning dv-partial" title="Only some builds of this rollup attested this. The column is a rollup of several builds and not every one of them answered.">partial</span>{% endif %}{%- endmacro %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-2 me-2 text-accent"></i>API versions
+      <span class="fw-badge fw-badge-secondary">{{ product_key }}</span></h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Two firmware builds can speak the <strong>same API version</strong> and still
+      not accept the same payload — and so can two builds of the <em>same line</em>:
+      <code>8.0.4</code> and <code>8.0.7</code> are both &ldquo;8.0&rdquo;.
+      {#- The example names a PRODUCT, so it is scoped to that product's page.
+          It is also the reason this condition is guarded: an early version lost
+          its quotes and became ``{% raw %}{% if product == fortiweb %}{% endraw %}`` — an undefined
+          name, which Jinja renders as falsy, so the sentence vanished from both
+          pages and nothing failed. -#}
+      {%- if product_key == 'fortiweb' %} FortiWeb 7.6 and 8.0 are both <code>v2.0</code>,
+      and 8.0 has more fields.{% endif %}
+      So the unit of evidence on this page is the <strong>full version</strong>.
+      The line (<code>8.0</code>) survives as a rollup you can still compare
+      against below, but it is not tabulated twice: it is called out only when
+      more than one build backs it.
+      Built {{ matrix.built_at or '—' }} (UTC) from the API library.
+    </p>
+    {{ lib_selector() }}
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for(hub_endpoint) }}">
+      <i class="bi bi-code-slash me-1"></i>API hub</a>
+    <form method="post" action="{{ url_for(rebuild_endpoint) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-sm btn-primary" type="submit">
+        <i class="bi bi-arrow-repeat me-1"></i>Rebuild</button>
+    </form>
+  </div>
+</div>
+
+{% if not matrix.sweepable %}
+<div class="alert alert-warning" style="font-size:13px;">
+  <strong>{{ product_key }} has no rediscovery sweep.</strong> Its catalog can only ever be
+  described here by harvested field schemas — no appliance of this product has ever
+  been asked, endpoint by endpoint, what it serves.
+</div>
+{% endif %}
+
+{# ── the builds ────────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><i class="bi bi-hdd-stack me-2"></i>Firmware versions
+    <span class="text-muted" style="font-weight:400;">— evidence held per build, from the API library</span></div>
+  <div class="table-responsive">
+    <table class="table fw-table mb-0" id="fwVersions">
+      <thead><tr>
+        <th>Version</th><th>Line</th><th>Known because</th>
+        <th class="text-end" title="{{ _('Evidence documents the library stored for this build') }}">{{ _('Evidence') }}</th>
+        <th>Witnesses</th>
+        <th class="text-end">Endpoints swept</th><th class="text-end">served</th>
+        <th class="text-end">absent</th><th class="text-end">with field evidence</th>
+        <th class="text-end">Schema objects</th>
+        <th>{{ _('First / last seen') }}</th>
+        <th>CLI evidence</th><th style="width:1%;"></th>
+      </tr></thead>
+      <tbody>
+      {#- One row per build the LIBRARY lists (``api_library.builds``): evidence,
+          vendor ranges, declarations and the builds the fleet runs. The counts
+          come from the matrix document for the same build; a line-only build
+          has no build-level document, and says so instead of printing zeros. -#}
+      {% for B in lib_builds %}
+        {% set v = B.version %}
+        {% set V = vdocs.get(v) or {} %}
+        <tr>
+          <td><code>{{ v }}</code>{% if B.build %} <span class="text-muted" style="font-size:11px;">{{ B.build }}</span>{% endif %}
+            {% if B.line_only %}<br><span class="fw-badge fw-badge-secondary"
+              title="Only the line was ever recorded for this evidence — the patch level is unknown. It is not the patch .0.">patch unknown</span>{% endif %}
+          </td>
+          <td><code class="text-muted">{{ B.line }}</code></td>
+          <td style="font-size:12px;">
+            {{ lib_status_badge(B.status) }}
+            {% for s in B.sources %}{{ lib_source_badge(s) }} {% endfor %}
+            {% for s in B.declared_sources %}
+              <span class="fw-badge fw-badge-secondary me-1"
+                    title="{{ source_label.get(s, s) }}">{{ s }}</span>
+            {% endfor %}
+            {% if B.in_fleet %}<span class="fw-badge fw-badge-success">in fleet</span>{% endif %}
+            {# RULE: declared is not measured. A build somebody registered and
+               nobody swept must never render as a measured build that happens
+               to be empty — an empty measured row reads as "no differences". #}
+            {% if not B.measured and B.declared %}
+              <span class="fw-badge fw-badge-warning">declared · unmeasured</span>
+            {% endif %}
+            {% if V.note %}<div class="text-muted">{{ V.note }}</div>{% endif %}
+          </td>
+          <td class="text-end">{{ B.evidence }}</td>
+          <td style="font-size:12px;">{{ (V.devices or [])|join(', ') or '—' }}</td>
+          {% if V.measured %}
+            <td class="text-end">{{ V.counts.swept }}</td>
+            <td class="text-end">{{ V.counts.ok }}</td>
+            <td class="text-end">{{ V.counts.absent }}</td>
+            <td class="text-end">{{ V.counts.endpoints_with_fields }}</td>
+          {% elif B.line_only and B.measured %}
+            <td class="text-end text-muted" colspan="4">{{ _('line-scoped evidence — it names no build, so it is counted in the %(l)s rollup only', l=B.line) }}</td>
+          {% elif B.vendor_only %}
+            <td class="text-end text-muted" colspan="4">{{ _('vendor_doc only — nothing of ours has swept this build') }}</td>
+          {% else %}
+            <td class="text-end text-muted" colspan="4">never swept — nothing has been
+              asked of a box running this build</td>
+          {% endif %}
+          <td class="text-end">{{ (V.counts or {}).schema_objects or 0 }}
+            {% if (V.counts or {}).schema_objects %}<br><span class="text-muted" style="font-size:11px;"
+              title="Field schemas are harvested per line, so they describe {{ B.line }}, not this build specifically.">line-granular</span>{% endif %}</td>
+          <td style="font-size:11.5px;" class="text-nowrap">{{ (B.first_seen or '')[:10] or '—' }}<br>{{ (B.last_seen or '')[:10] or '—' }}</td>
+          <td style="font-size:12px;">{{ cli_cell(ver_prov.get(v)) }}</td>
+          <td class="text-nowrap">
+            {# The row IS the build, so this is where the capture card is aimed
+               from: the link carries the build and the card below scopes its
+               evidence and its appliance list to it. It USED to promise a probe
+               of every candidate path; that half of the card was removed on
+               2026-09-17, so the tooltip says what the click still does rather
+               than what it used to. Guarded on the LOAD endpoint — the run
+               endpoint it named is no longer wired to anything on the page, so
+               reading it here would have hidden the link the day that route
+               goes. #}
+            {% if dr_load_endpoint %}
+            <a class="btn btn-sm {% if discover == v %}btn-primary{% else %}btn-outline-primary{% endif %}"
+               href="{{ url_for(page_endpoint, discover=v, base=base, target=target) }}#discoveryRun"
+               title="{{ _('Scope the capture card below to this build: its CLI evidence and the appliances it offers') }}">
+              <i class="bi bi-binoculars"></i></a>
+            {% endif %}
+            {% if 'manual' in B.declared_sources and forget_endpoint %}
+            <form method="post" action="{{ url_for(forget_endpoint) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="version" value="{{ v }}">
+              <button class="btn btn-sm btn-outline-secondary" type="submit"
+                      title="Forget the hand-written declaration. A build an image or an appliance proves stays listed.">
+                <i class="bi bi-x-lg"></i></button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="13" class="text-muted">No firmware version is known yet.
+          Sweep an appliance, upload a firmware image, or declare one below.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if declare_endpoint %}
+  <div class="p-3 border-top">
+    <form method="post" action="{{ url_for(declare_endpoint) }}"
+          class="d-flex gap-2 align-items-center flex-wrap mb-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="text-muted mb-0" style="font-size:12.5px;">Declare a version</label>
+      <input name="version" class="form-control form-control-sm" style="width:130px;"
+             placeholder="8.0.7" required>
+      <input name="note" class="form-control form-control-sm" style="max-width:340px;"
+             placeholder="why it matters (optional)">
+      <button class="btn btn-sm btn-outline-primary" type="submit">Declare</button>
+      <span class="text-muted" style="font-size:12px;">
+        Versions already proved by an uploaded image or by a box in the fleet appear
+        above on their own — they are derived on every read, so no upload path can
+        forget to register one. This form is for the builds nothing proves yet.
+      </span>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+{# ── the discovery run ────────────────────────────────────────
+   DIRECTLY under the table, because the table is what scopes it: a row's
+   Discovery-run link sets ?discover=<build> and this card answers about that
+   build. At the foot of the page — below the comparison and the preflight —
+   the operator had to scroll past two long cards to reach the control the row
+   had just aimed, and this card is also where the run's PROGRESS is read, so
+   distance from the row that starts a sweep was distance from its status.
+   Reported 2026-09-16.
+
+   ONE author for this markup (partials/_discovery_run.html), and ONE instance
+   on the page. Per-row panels would mean N pollers, N Stop buttons and N jobs
+   competing for one appliance's session limit; the row supplies the SCOPE and
+   this card answers about it. It moved here from the API hub because there a
+   run had no firmware to be about — see the scope banner inside. #}
+{% if dr_load_endpoint %}
+{% include "partials/_discovery_run.html" %}
+{% endif %}
+
+{# ── what the rollup did NOT duplicate ─────────────────────── #}
+{# The "Firmware lines" table was removed on 2026-09-16: with one measured
+   build per line it repeated the table above row for row, which is what the
+   operator reported. What it did NOT repeat is the disclosure below — an
+   endpoint attested by SOME builds of a line and not by others. That case can
+   only exist once a line holds two measured builds, which is exactly when the
+   table stopped being a duplicate, so the disclosure stays and renders only
+   when it has something to say. Deleting it along with the table would have
+   reinstated the false positive the per-build index was built to remove:
+   "the line serves it", asserted from one build's evidence. #}
+{% set mixed = (matrix.lines or {}).items()|selectattr('1.heterogeneous')|list %}
+{% if mixed %}
+<div class="alert alert-warning" style="font-size:13px;">
+  <strong>More than one build backs a line.</strong> Anything said about the
+  <em>line</em> is then a claim about a merge, not about any single box you
+  might write to.
+  {% for ln, L in mixed %}
+    <div class="mt-2"><code>{{ ln }}</code>
+      <span class="fw-badge fw-badge-warning">heterogeneous</span>
+      — merges {{ L.measured_versions|join(', ') }}.</div>
+    {% if L.partial_endpoints %}
+      <div><strong>Attested by only some builds of {{ ln }}</strong> — never
+        reported as served by the line:</div>
+      <ul class="mb-0">
+      {% for p in L.partial_endpoints %}
+        <li><code>{{ p.endpoint }}</code> — served on {{ p.attested_on|join(', ') }},
+            not on {{ p.silent_on|join(', ') }}</li>
+      {% endfor %}
+      </ul>
+    {% else %}
+      <div class="text-muted">Every endpoint measured on these builds agrees, so
+        the line asserts nothing that a single build does not.</div>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if matrix.notes %}
+<div class="alert alert-warning" style="font-size:13px;">
+  <strong>Witnesses excluded from the evidence:</strong>
+  <ul class="mb-0">
+    {% for n in matrix.notes %}
+      <li><code>{{ n.device }}</code>{% if n.version %} ({{ n.version }}){% elif n.line %} ({{ n.line }}){% endif %} — {{ n.skipped }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{# ── the comparison ────────────────────────────────────────────────────── #}
+{% if scopes|length > 1 %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span><i class="bi bi-arrow-left-right me-2"></i>What changes between two of them</span>
+    <form method="get" action="{{ url_for(page_endpoint) }}" class="d-flex gap-2 align-items-center mb-0">
+      <select name="base" class="form-select form-select-sm" style="width:auto;">
+        {% for s in scopes %}<option value="{{ s.key }}" {% if s.key == base %}selected{% endif %}>{{ s.key }}{% if s.kind == 'line' %} (line rollup){% endif %}</option>{% endfor %}
+      </select>
+      <span class="text-muted">→</span>
+      <select name="target" class="form-select form-select-sm" style="width:auto;">
+        {% for s in scopes %}<option value="{{ s.key }}" {% if s.key == target %}selected{% endif %}>{{ s.key }}{% if s.kind == 'line' %} (line rollup){% endif %}</option>{% endfor %}
+      </select>
+      <button class="btn btn-sm btn-outline-secondary" type="submit">Compare</button>
+    </form>
+    {# OUTSIDE the form on purpose, with the RENDERED pair baked into the href.
+       As a submit button with ``formaction`` it would export whatever the two
+       selects happen to say — and a select changed without pressing Compare
+       says something the table on screen does not. The export is of the table
+       you are looking at, or it is a different report wearing its name.
+
+       Only offered when there IS a comparison: a download that yields a header
+       row and nothing else reads as "no differences", which is the opposite of
+       "you have not picked two builds". #}
+    {% if delta and export_endpoint %}
+    <a class="btn btn-sm btn-fw-outline"
+       href="{{ url_for(export_endpoint, base=delta.base, target=delta.target) }}"
+       title="{{ _('Download every row of this comparison as CSV — including the field names that live behind the [+] windows.') }}"><i
+       class="bi bi-download me-1"></i>{{ _('Export CSV') }}</a>
+    {% endif %}
+    {# Same rendered pair, same rows, same column legend — a document instead
+       of a sheet. Both hrefs carry delta.base/delta.target for the reason
+       above: a changed selector must not be able to export a pair the table
+       on screen is not showing. #}
+    {% if delta and export_pdf_endpoint %}
+    <a class="btn btn-sm btn-fw-outline"
+       href="{{ url_for(export_pdf_endpoint, base=delta.base, target=delta.target) }}"
+       title="{{ _('Download this comparison as a PDF — every row, the field names behind the [+] windows, and a legend explaining every column.') }}"><i
+       class="bi bi-file-earmark-pdf me-1"></i>{{ _('Export PDF') }}</a>
+    {% endif %}
+  </div>
+
+  {% if not delta %}
+    <div class="p-3 text-muted" style="font-size:13px;">Pick two different builds (or rollups) to compare.</div>
+  {% else %}
+  <div class="p-3">
+    {% if delta.base_kind == 'line' or delta.target_kind == 'line' %}
+    <div class="alert alert-warning py-2" style="font-size:12.5px;">
+      At least one side of this comparison is a <strong>line rollup</strong>, not a build.
+      {% if delta.base_heterogeneous %}<code>{{ delta.base }}</code> merges
+        {{ delta.base_versions|join(', ') }}.{% endif %}
+      {% if delta.target_heterogeneous %}<code>{{ delta.target }}</code> merges
+        {{ delta.target_versions|join(', ') }}.{% endif %}
+      A difference found against a merge is a difference against the union of those
+      builds, not against any single box you might write to.
+    </div>
+    {% endif %}
+    {# ── how much of the CATALOG each side actually has ───────────────────
+       Schema evidence does not come from a sweep. It comes from a harvest
+       against ONE reference appliance per line, and a harvest can only
+       describe a table that appliance has populated: five objects have no 8.0
+       schema because those tables are empty on fortiweb17, and one because
+       8.0.5 rejects the URN. Every one of them renders below as "not measured
+       on 8.0.5" — literally true, and read on 2026-09-17 as a sweep that had
+       failed.
+
+       So the coverage is stated ONCE, above the rows, from the harvest's own
+       record. It is not computed here by counting files: "no schema" and "a
+       harvest that could not describe it, and why" are the distinction the
+       whole record exists to carry, and a file count cannot tell them apart.
+
+       Shown only when there IS a hole — a fully covered pair says nothing,
+       because a banner that appears on every comparison is one nobody reads by
+       the third. #}
+    {# Ledger pairs the product stopped tracking. Shown on EVERY comparison of
+       this product, not just on the pair concerned, because that pair is no
+       longer offered anywhere: the selector lists scopes and the ledger is
+       paired from adjacent LINES, so a line that appears between two recorded
+       ones removes its pair from the page while leaving its rows in the table.
+       Measured 2026-09-18: one inserted line took five decided rows to zero
+       visible rows without raising anything. A banner that only appeared on
+       the affected comparison would require the operator to already know which
+       comparison that is, which is the thing they cannot know. #}
+    {% if ledger_orphans %}
+    <div class="alert alert-warning py-2 dv-orphans" style="font-size:12.5px;">
+      <strong>Lifecycle ledger: {{ ledger_orphans|length }} pair(s) no longer
+      tracked.</strong> A firmware line now sits between the two halves of
+      {{ 'these pairs' if ledger_orphans|length > 1 else 'this pair' }}, so
+      nothing re-proves their findings and no comparison offers them any more.
+      {% for g in ledger_orphans %}
+        <div><code>{{ g.base }} &rarr; {{ g.target }}</code>:
+        <strong>{{ g.rows }}</strong> recorded &mdash;
+        <strong>{{ g.open }}</strong> still open ·
+        <strong>{{ g.decided }}</strong> already decided
+        ({{ g.names|join(', ') }}).</div>
+      {% endfor %}
+      <div class="mt-1">The rows are kept exactly as recorded and are still
+      readable on the comparison that produced them. They are deliberately
+      <strong>not</strong> re-filed under the new pairing: a decision was taken
+      about the pair it names, and moving it would put a reviewer's name on a
+      judgement they never made.</div>
+    </div>
+    {% endif %}
+    {% set SC = delta.schema_coverage %}
+    {% if SC and (SC.base.missing or SC.target.missing
+                  or not SC.base.harvested or not SC.target.harvested) %}
+    <div class="alert alert-info py-2 dv-coverage" style="font-size:12.5px;">
+      <strong>Schema coverage.</strong>
+      {% for side in (SC.base, SC.target) %}
+        {% if not side.harvested %}
+          <div><code>{{ side.scope }}</code>: <strong>no harvest has ever been
+          recorded</strong> for firmware line <code>{{ side.line }}</code>. Its objects
+          are unmeasured here, which is not the same claim as unchanged.</div>
+        {% else %}
+          <div><code>{{ side.scope }}</code>: <strong>{{ side.covered }}</strong> of
+          {{ side.catalog_size }} object(s) have a schema on line
+          <code>{{ side.line }}</code> ({{ side.appliance }}{% if side.harvested_at %},
+          harvested {{ side.harvested_at }}{% endif %}).
+          {% if side.missing %}<strong>{{ side.missing|length }}</strong> do not:
+            {% for m in side.missing %}<span class="dv-why" title="{{ m.reason }}{% if m.detail %} (recorded: {{ m.detail }}){% endif %}">{{ m.object }}</span>{% if not loop.last %}, {% endif %}{% endfor %}.
+          {% endif %}</div>
+        {% endif %}
+      {% endfor %}
+      <div class="mt-1">An object with no schema on one side is a hole in the
+      <strong>catalog</strong>, never a firmware change: its row below is filed as a
+      gap and is never counted as one of the field deltas. Hover a name for what the
+      harvest recorded when it tried.</div>
+    </div>
+    {% endif %}
+    <p class="mb-3" style="font-size:13px;">
+      <strong>{{ delta.totals.fields_added }}</strong> field(s) added and
+      <strong>{{ delta.totals.fields_removed }}</strong> removed going
+      <code>{{ delta.base }}</code> → <code>{{ delta.target }}</code>,
+      across {{ delta.fields_changed|length }} object(s).
+      A delta is only ever computed between the <em>same kind</em> of evidence —
+      a sweep field set is the raw dict the device puts on the wire (it carries the
+      <code>_val</code> companion of every enum), a schema field set is the curated,
+      operator-settable subset. Comparing one to the other invents dozens of
+      differences that are nothing but that filter.
+    </p>
+
+    {# ── every difference, in ONE table ──────────────────────────────────
+       Three tables used to say this: the field deltas, then the endpoint
+       provenance table, then the incomparable objects. Split like that,
+       `antivirus` (a sweep field set of 8 against 14) appeared in the first
+       and was simply ABSENT from the second — and an absent row reads as
+       "no finding here", which is the opposite of what it meant. Reported
+       2026-09-16. One row per finding now, and the Change column says which
+       KIND of finding it is.
+
+       The kinds stay apart in their WORDING, which is the part that matters:
+       a field delta is a measurement, "known on one side only" is a gap in
+       the evidence, and "incomparable" is a refusal to subtract two kinds of
+       evidence. Collapsing those words would reinstate the 56 phantom
+       removals that the sweep↔schema split exists to prevent; collapsing the
+       table does not — it only stops hiding rows from each other. #}
+    {% set one_sided = (delta.fields_unknown|length) + (delta.endpoints_unknown|length) %}
+    {% set has_rows = delta.endpoints_added or delta.endpoints_removed
+                      or delta.fields_changed or delta.fields_unknown
+                      or delta.endpoints_unknown or delta.fields_incomparable %}
+    <div class="text-muted mb-2" style="font-size:12.5px;">
+      <strong>{{ delta.endpoints_added|length }}</strong> endpoint(s) added ·
+      <strong>{{ delta.endpoints_removed|length }}</strong> gone ·
+      <strong>{{ delta.fields_changed|length }}</strong> with a field delta ·
+      <strong>{{ one_sided }}</strong> known on one side only ·
+      <strong>{{ delta.fields_incomparable|length }}</strong> incomparable.
+      The last two are <strong>not</strong> changes and are never counted as
+      one: the side nobody measured proves nothing, and two different kinds of
+      evidence are reported side by side, never subtracted.
+      {# The gone rows, split by what a SECOND source says about them. Printed
+         as its own sentence rather than folded into the tally above, because
+         it does not change any count: every one of these rows IS a gone row.
+         What it changes is who the finding is about. #}
+      {% if delta.corroboration_counts %}
+        <br>Of the <strong>{{ delta.endpoints_removed|length }}</strong> gone:
+        <strong>{{ delta.corroboration_counts.get('confirmed', 0) }}</strong>
+        corroborated by the build's own configuration dump ·
+        <strong>{{ delta.corroboration_counts.get('contradicted', 0) }}</strong>
+        where that dump still holds a block, so the path <strong>this catalogue
+        holds is wrong for that line</strong> and the finding is about SATOM, not
+        about the firmware ·
+        <strong>{{ delta.corroboration_counts.get('uncorroborated', 0) }}</strong>
+        on the API alone ·
+        <strong>{{ delta.corroboration_counts.get('unmeasured', 0) }}</strong>
+        with no dump captured for that build. The last two are
+        <strong>not</strong> doubts about the rejection &mdash; the build
+        answered &mdash; only about what a second source would add.
+      {% endif %}
+      {# The ledger, as its own sentence again and for the same reason: it
+         changes no count above. Every one of these rows is still a gone row
+         and still carries the verdict this page measured. What the ledger adds
+         is age and a decision -- the two things a derived comparison cannot
+         hold, because it is rebuilt from scratch on every sweep. #}
+      {% if delta.ledger %}
+        {% if delta.ledger.base %}
+          <br>In the <strong>lifecycle ledger</strong> for
+          <strong>{{ delta.ledger.base }} &rarr; {{ delta.ledger.target }}</strong>:
+          <strong>{{ delta.ledger.rows|length }}</strong> recorded &mdash;
+          <strong>{{ delta.ledger.open }}</strong> waiting for review ·
+          <strong>{{ delta.ledger.reviewed }}</strong> decided.
+          {% if delta.ledger.orphaned %}
+            <strong>This pair is no longer tracked.</strong>
+            {{ delta.ledger.note }}
+          {% endif %}
+          {% if delta.ledger.borrowed and not delta.ledger.orphaned %}
+            Those are the ledger's own scopes and not the two compared above: a
+            disappearance is recorded against the firmware <strong>line</strong>
+            that removed it, so a build-to-build comparison shows the
+            line-level record and <strong>says so</strong> rather than
+            restating it as a claim about these two builds.
+          {% endif %}
+          A record is <strong>not</strong> a second verdict: the badge on each
+          row is still the one measured from this build's own evidence. The
+          ledger only says since when it has been true and who has looked.
+        {% else %}
+          <br>No <strong>lifecycle ledger</strong> entry applies to this
+          comparison. {{ delta.ledger.note }}
+        {% endif %}
+      {% endif %}
+      {# How to read a row. The first column carries the NAME and nothing
+         else since the operator emptied it (2026-09-16): every class label
+         that used to sit under the object restated a cell already beside it.
+         The rule has to be stated ONCE somewhere or it is not learnable — and
+         once is the point: in the rows it was thirteen copies of it. #}
+      The first column is the <strong>name only</strong>. What kind of finding a
+      row is, is read off the columns that measured it: a <strong>change</strong>
+      shows <em>absent</em> on one side and <em>served</em> on the other, or a
+      field count on each side with the signed difference beside the one that
+      moved. A row where one build column says <em>not measured on</em> is a
+      <strong>gap</strong> — nobody asked that side. A row whose Evidence cell
+      names a <em>different kind per build</em> is <strong>incomparable</strong>
+      and is never subtracted.
+      {% if not delta.fields_changed %}
+        No object here is described by the same kind of evidence on both sides,
+        so no field delta could be computed — that is a gap, not a statement
+        that the two builds are identical.
+      {% endif %}
+    </div>
+
+    {% if has_rows %}
+    <div class="mb-2">{{ filter_box('versionDelta', _('Filter rows by name, URN or field…')) }}</div>
+    <div class="table-responsive">
+      <table class="table fw-table mb-0" id="versionDelta">
+        {# The capture behind each CLI verdict travels in that column's own CLI
+           head, inside the cell. It was two legend blocks above the table, then
+           two column headers, then two stacked lines in Change; it is now one
+           per build column (operator, 2026-09-16). Dropping it was never on the
+           table: a badge whose capture is unnamed cannot be told from a
+           two-month-old one, and an unmeasured build has to say why its verdict
+           is an em dash. #}
+        <thead><tr><th>Endpoint / object</th>
+          <th class="dv-evcol" title="Which kind of evidence this row rests on. A sweep is the raw collection the appliance put on the wire; a harvested schema strips the wire-only companions of every enum. The two are never subtracted from one another — comparing them once reported 56 removals that were nothing but that filter — so a row whose two sides hold different kinds is reported as incomparable and names both here.">Evidence</th>
+          <th>URN</th>
+          <th class="dv-build" title="Everything in this column was measured on {{ delta.base }} and none of it is borrowed from the other column: what the catalog was measured to serve there over REST, the fields only this build has, and the CLI verdict read from this build's own capture. The finding itself — which class it is, or the field subtraction — is in the first column, because it is about the pair and not about either build.">{{ delta.base }}{% if delta.base_kind == 'line' %} <span class="fw-badge fw-badge-secondary">line rollup</span>{% endif %}</th>
+          <th class="dv-build" title="Everything in this column was measured on {{ delta.target }} and none of it is borrowed from the other column: what the catalog was measured to serve there over REST, the fields only this build has, and the CLI verdict read from this build's own capture. The finding itself — which class it is, or the field subtraction — is in the first column, because it is about the pair and not about either build.">{{ delta.target }}{% if delta.target_kind == 'line' %} <span class="fw-badge fw-badge-secondary">line rollup</span>{% endif %}</th>
+          <th style="width:120px;">Test</th></tr></thead>
+        <tbody>
+        {% for r in delta.endpoints_added %}
+          {# Whitespace control is load-bearing: test_cli_provenance matches
+             this row structurally, cell by cell and both build columns, to
+             prove each column answers from its own capture. A stray newline
+             from a false {% raw %}{% if %}{% endraw %} is enough to make that
+             guard report "no row rendered" against a correct page. #}
+          {# NO class badge. ``added on <target>`` restated the two columns
+             beside it — absent on one, served on the other, both measured and
+             both saying so in their own titles — and the operator removed it
+             for that (2026-09-16). What is NOT lost with it is the change/gap
+             split: a badge here now MEANS "not a change", so a change row is
+             told from a gap row by the columns, where ``absent`` (a measured
+             no) and ``not measured on X`` (nobody asked) are different words
+             with different titles. #}
+          <tr><td><code>{{ r.endpoint }}</code>
+            </td>
+            <td>{{ evidence_slot(r.origin, r.siblings) }}</td>
+            <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
+            <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{{ api_absent() }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{{ api_served() }}{{ api_partial(r.silent_on) }}{% endcall %}</td>
+            <td>{{ test_btn(urn=r.urn) }}</td></tr>
+        {% endfor %}
+        {% for r in delta.endpoints_removed %}
+          <tr><td><code>{{ r.endpoint }}</code>
+            {{ ledger_chip(r, delta.base, delta.target) }}</td>
+            <td>{{ evidence_slot(r.origin, r.siblings) }}</td>
+            <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
+            <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{{ api_served() }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{{ api_absent() }}{{ corroboration_badge(r) }}{% endcall %}</td>
+            <td>{{ test_btn(urn=r.urn) }}</td></tr>
+        {% endfor %}
+        {% for c in delta.fields_changed %}
+          {# NOTHING under the name. The identity cell carried ``8 → 14`` until
+             the operator removed it this round: both of its numbers are already
+             printed, each in the column that measured it, and a third copy in
+             between was the only place on the page where one cell stated two
+             builds' numbers at once.
+
+             What is NOT lost with it — and what the guards now pin instead —
+             is the change/gap split. It never depended on the arrow: a gap row
+             carries a BADGE here and a change row does not, and a signed tally
+             (``dv-api-gap``) is rendered only by a delta that was actually
+             computed. Those two are the signal; the arrow was a third voice
+             saying what they already said. The rule is stated once, in the
+             legend above the table. #}
+          <tr><td><code>{{ c.key }}</code>
+            </td>
+            <td>{{ evidence_slot(c.origin, c.siblings) }}</td>
+            <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{{ api_fields(c.base_count) }}{{ api_names(c.removed, 'danger', 'removed', delta.base) }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{{ api_fields(c.target_count) }}{{ api_names(c.added, 'success', 'added', delta.target) }}{% endcall %}</td>
+            <td>{{ test_btn(urn=c.urn) }}</td></tr>
+        {% endfor %}
+        {% for r in delta.endpoints_unknown %}
+          <tr><td><code>{{ r.endpoint }}</code>
+            </td>
+            <td>{{ evidence_slot(r.origin, r.siblings) }}</td>
+            <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
+            <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{% if r.measured_on == delta.base %}{{ api_served() }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{% if r.measured_on == delta.target %}{{ api_served() }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
+            <td>{{ test_btn(urn=r.urn) }}</td></tr>
+        {% endfor %}
+        {% for c in delta.fields_unknown %}
+          {# No fold and no arrow, on purpose: only a computed delta earns
+             either, and this side was never compared against anything. #}
+          <tr><td><code>{{ c.key }}</code>
+            </td>
+            <td>{{ evidence_slot(c.origin, c.siblings) }}</td>
+            <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{% if c.known_on == delta.base %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.base, c.gap_reason, c.measured) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{% if c.known_on == delta.target %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.target, c.gap_reason, c.measured) }}{% endif %}{% endcall %}</td>
+            <td>{{ test_btn(urn=c.urn) }}</td></tr>
+        {% endfor %}
+        {% for c in delta.fields_incomparable %}
+          {# Both columns full, and NOTHING between them. Each side names the
+             kind of evidence it holds; the page refuses to subtract them. #}
+          <tr><td><code>{{ c.key }}</code>
+            </td>
+            {# The one row where the two sides hold DIFFERENT kinds, which is
+               why it is incomparable. The Evidence cell names both and says
+               which build holds which; one badge here would erase the
+               finding. #}
+            <td>{{ evidence_split(delta.base, c.base_origin, delta.target, c.target_origin, c.siblings) }}</td>
+            <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{{ api_fields(c.base_count) }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{{ api_fields(c.target_count) }}{% endcall %}</td>
+            <td>{{ test_btn(urn=c.urn) }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-muted" style="font-size:13px;">
+      Nothing differs between <code>{{ delta.base }}</code> and
+      <code>{{ delta.target }}</code> in the evidence held for them — which is
+      not the same as nothing differing on the appliances.
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ── preflight ─────────────────────────────────────────────────────────── #}
+<div class="fw-card">
+  <div class="fw-card-header"><i class="bi bi-shield-check me-2"></i>Preflight
+    <span class="text-muted" style="font-weight:400;">— would this payload be understood?</span></div>
+  <div class="p-3" style="font-size:13px;">
+    <p class="text-muted">
+      Before writing a payload built against one build to an appliance running another,
+      ask. <code>satom get api preflight &lt;appliance&gt; &lt;object&gt; &lt;field&gt;…</code>
+      answers from this matrix <strong>at the appliance's exact running build</strong>,
+      and the answer <strong>unmeasured</strong> is a real answer — it is never
+      reported as compatible.
+    </p>
+    <ul class="mb-0">
+      <li><code>ok</code> — every field is present on that build.</li>
+      <li><code>unknown_fields</code> — named fields that build has never been seen to serve.</li>
+      <li><code>absent</code> — the appliance rejected that URN on that build.</li>
+      <li><code>fields_unknown</code> — the endpoint exists, but it answered with an empty
+          collection, so nothing is known about its fields.</li>
+      <li><code>version_unmeasured</code> — <strong>that build</strong> has no evidence,
+          while other builds of its line do. It is never answered from them: 8.0.4 is not
+          8.0.7. The line-granular answer is reported <em>beside</em> it, labelled, so the
+          guard informs instead of merely blocking.</li>
+      <li><code>unmeasured</code> — no evidence at all. Sweep an appliance on that build,
+          or harvest its field schemas, before trusting a cross-build payload.</li>
+    </ul>
+  </div>
+</div>
+
+{# ── the API library, read directly ──────────────────────────────────────
+   The comparison above is the matrix view (one row per finding, CLI and
+   ledger beside it). These two cards ask the library itself: retyped and
+   renamed fields, which source each fact rests on, and "since which build"
+   for one field. Below the preflight legend on purpose: they are separate
+   cards, and the matrix comparison stays exactly one table. #}
+<div class="mt-3"></div>
+{{ lib_compare_card() }}
+{{ lib_drill_card() }}
+
+{# Rendered once: the appliance picker and the output panel every Test button
+   on this page writes into. A row with a Test button and no bar would look
+   broken rather than unmounted. #}
+{{ probe_bar(probe_appliances, live_endpoint=live_endpoint,
+             exec_endpoint=exec_endpoint) }}
+
+{# The names window. ONE per page, and since 2026-09-16 one for BOTH halves
+   — API and CLI — filled from the clicked button's data- attributes. 43 rows
+   with a modal each is 43 copies of the same markup and the same chance for
+   two of them to drift; two windows for two halves is the same bet, smaller.
+   The heading and the note come from the BUTTON, so the two halves can say
+   different things about their numbers without a second window to keep. #}
+{# Reviewing a recorded disappearance. ONE window per page, filled from the
+   clicked chip, for the same reason the names window is one: a form per row is
+   a copy per row and a chance for two of them to drift.
+
+   There are TWO verbs and there is deliberately no third. "Apply this path to
+   the catalogue" cannot be done correctly today -- the endpoint catalogue holds
+   one URN per name with no firmware dimension, and a contradicted finding is by
+   construction one whose base line is still served by the current URN, so
+   writing the other spelling would break that line every time. A button that
+   always refuses teaches the operator the page is broken, which is worse than
+   its absence. The reason is printed in the window instead. #}
+{% if review_endpoint %}
+<div class="modal fade" id="dvLedger" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0" id="dvLedgerTitle"></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <form method="post" action="{{ url_for(review_endpoint) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="row_id" id="dvLedgerId" value="">
+        {# The pair travels with the decision so the redirect lands back on the
+           comparison the operator was reading. A review that returns you to the
+           default pair makes the second decision harder than the first. #}
+        <input type="hidden" name="base" value="{{ delta.base }}">
+        <input type="hidden" name="target" value="{{ delta.target }}">
+        <div class="modal-body">
+          <p class="mb-2" id="dvLedgerScope" style="font-size:11.5px;"></p>
+          <dl class="row mb-2" style="font-size:11.5px;">
+            <dt class="col-sm-3">{{ _('Verdict') }}</dt><dd class="col-sm-9" id="dvLedgerState"></dd>
+            <dt class="col-sm-3">{{ _('REST path') }}</dt><dd class="col-sm-9"><code id="dvLedgerUrn" style="font-size:11px;"></code></dd>
+            <dt class="col-sm-3">{{ _('What the API said') }}</dt><dd class="col-sm-9" id="dvLedgerApi"></dd>
+            <dt class="col-sm-3">{{ _('What the dump said') }}</dt><dd class="col-sm-9" id="dvLedgerCli"></dd>
+            <dt class="col-sm-3">{{ _('Age') }}</dt><dd class="col-sm-9" id="dvLedgerAge"></dd>
+          </dl>
+          <p class="text-muted mb-2" id="dvLedgerPath" style="font-size:11px;"></p>
+          <label class="form-label" style="font-size:11.5px;" for="dvLedgerNote">{{ _('Note (optional)') }}</label>
+          <input type="text" class="form-control form-control-sm" name="note" id="dvLedgerNote"
+                 maxlength="400" placeholder="{{ _('What you checked, and where') }}">
+          <p class="text-muted mt-2 mb-0" style="font-size:11px;">
+            Neither verb writes the endpoint catalogue. <strong>Accept</strong>
+            records that the disappearance is taken as true of the firmware;
+            <strong>refuse</strong> records that a person looked and said no.
+            The row is kept either way &mdash; a finding deleted on refusal is
+            a refusal nobody can audit, and the next sweep would re-open it.
+          </p>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" name="decision" value="dismiss" class="btn btn-sm btn-outline-danger">{{ _('Refuse') }}</button>
+          <button type="submit" name="decision" value="acknowledge" class="btn btn-sm btn-primary">{{ _('Accept') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var el = document.getElementById('dvLedger');
+  if (!el || !window.bootstrap) { return; }
+  function put(id, text) { document.getElementById(id).textContent = text || '\u2014'; }
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('.dv-ledger-open') : null;
+    if (!btn) { return; }
+    var d = btn.dataset;
+    document.getElementById('dvLedgerId').value = d.lgId || '';
+    document.getElementById('dvLedgerTitle').textContent = d.lgName || '';
+    // The scope line is not decoration. The record is about a LINE pair and
+    // the table above may be comparing two builds; a window that showed the
+    // decision without its scope would let it read as a decision about the
+    // builds on screen.
+    var scope = 'Recorded against ' + (d.lgScope || '?');
+    if (d.lgBorrowed === '1') {
+      scope += ' \u2014 the ledger\u2019s own scopes, not the two compared in the table. '
+             + 'A disappearance is recorded against the firmware line that removed it.';
+    }
+    document.getElementById('dvLedgerScope').textContent = scope;
+    put('dvLedgerState', d.lgState);
+    put('dvLedgerUrn', d.lgUrn);
+    put('dvLedgerApi', d.lgApi);
+    put('dvLedgerCli', (d.lgCli || '') + (d.lgDevice ? ' (dump from ' + d.lgDevice
+        + (d.lgCaptured ? ', captured ' + d.lgCaptured : '') + ')' : ''));
+    put('dvLedgerAge', 'first proved ' + (d.lgFirst || '?') + ', re-proved '
+        + (d.lgSeen || '0') + ' time(s), last ' + (d.lgLast || '?'));
+    document.getElementById('dvLedgerPath').textContent = d.lgPath
+      ? ('The dump spells the path ' + d.lgPath + '. That is evidence for you to '
+         + 'check, not a value this page will write: the catalogue holds one URN '
+         + 'per name with no firmware dimension, so writing the other spelling '
+         + 'would break the line that is still served by the current one.')
+      : '';
+    document.getElementById('dvLedgerNote').value = '';
+    bootstrap.Modal.getOrCreateInstance(el).show();
+  });
+})();
+</script>
+{% endif %}
+
+<div class="modal fade" id="dvNames" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0" id="dvNamesTitle"></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted" id="dvNamesNote" style="font-size:11.5px;"></p>
+        <div id="dvNamesBody"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var el = document.getElementById('dvNames');
+  if (!el || !window.bootstrap) { return; }
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('.dv-names-more') : null;
+    if (!btn) { return; }
+    var names = (btn.dataset.namesList || '').split(' ').filter(Boolean);
+    document.getElementById('dvNamesTitle').textContent =
+      btn.dataset.namesHeading + ' \u00b7 ' + names.length + ' field(s)';
+    // The note is not decoration and it is not one sentence: the CLI half's
+    // list reads as a firmware change without it, and the API half's reads as
+    // somebody's configuration. Each button brings its own.
+    document.getElementById('dvNamesNote').textContent = btn.dataset.namesNote || '';
+    var body = document.getElementById('dvNamesBody');
+    body.textContent = '';
+    names.forEach(function (nm) {
+      var s = document.createElement('span');
+      s.className = 'fw-badge fw-badge-secondary me-1 mb-1 d-inline-block';
+      s.textContent = nm;   // textContent, never innerHTML: device dump text
+      body.appendChild(s);
+    });
+    bootstrap.Modal.getOrCreateInstance(el).show();
+  });
+})();
+</script>
+
+{% endblock %}

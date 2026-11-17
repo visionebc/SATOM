@@ -1,0 +1,482 @@
+"""Plugin Sandbox — safe rendering + the curated read-only data API.
+
+Two hard guarantees back the whole feature:
+
+1. **Sandboxed templating.** The author's body renders in an
+   ``ImmutableSandboxedEnvironment`` (jinja2.sandbox). Attribute access to
+   mutating methods, ``__class__``/``__mro__`` gadget chains, and unsafe
+   callables all raise ``SecurityError`` — the plugin can only read the data we
+   hand it, never touch app internals or the ORM.
+2. **Curated data only.** A plugin declares which DATASETS it wants; each is a
+   fixed SELECT-only query run through ``dbintrospect.run_query`` (the same
+   masked, read-only path the SQL console uses). There is NO way for a plugin to
+   run arbitrary SQL or reach a write.
+
+The rendered document is served ONLY inside a ``sandbox="allow-scripts"`` iframe
+without ``allow-same-origin`` (see views.plugins), so the plugin's JavaScript
+runs in an opaque origin and cannot read the app's cookies / DOM / session.
+"""
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+from jinja2.sandbox import ImmutableSandboxedEnvironment
+from jinja2 import TemplateError, StrictUndefined
+
+from . import dbintrospect
+
+
+# --- Curated datasets -------------------------------------------------------
+# key -> (label, description, SQL). The typed cache tables (device_server_*,
+# device_web_protection_profiles) hold one row per cache LAYER (config and
+# deep), so these read the config layer only: one row per object.
+# Every query is SELECT-only and runs through
+# dbintrospect.run_query (sensitive columns masked, row-capped). To offer a new
+# dataset, add a row here — never accept SQL from the plugin author.
+DATASETS: dict[str, tuple[str, str, str]] = {
+    # 2026-11-12 (Fleet Inventory 2.1.0): the inventory record and the last
+    # hardware scan are here, so a view never needs an administrator dataset
+    # someone must publish first. The first six columns never move (views read
+    # them by position in examples); no credential column, ever.
+    "fleet_appliances": (
+        "Fleet appliances",
+        "Every managed device: name, kind, firmware, host, port, and its "
+        "inventory record -- hostname and serial number read from the device, "
+        "model, hardware type, HA mode and virtual address, status and when it was last checked, "
+        "zone, department, line, tags, maintenance. No credential.",
+        "SELECT id, name, kind, firmware, host, port, device_hostname, model, serial, "
+        "serial_checked_at, hw_type, ha_mode, ha_vip, is_cluster, last_status, "
+        "last_checked_at, zone, department, line, tags, maintenance "
+        "FROM appliances ORDER BY kind, name",
+    ),
+    "fleet_hardware": (
+        "Fleet hardware",
+        "The last hardware scan of each device (over SSH, read-only; a device "
+        "never scanned has no row): vCPU count, CPU model, RAM in MB, disks "
+        "(JSON list of name and size_gb), the output of the scan's commands "
+        "(JSON: get system status, memory, disks) and when it ran. "
+        "Join on appliance_id = fleet_appliances.id.",
+        "SELECT appliance_id, cpu_count, cpu_model, mem_total_mb, disks_json, raw_json, "
+        "source, updated_at FROM device_hardware ORDER BY appliance_id",
+    ),
+    "server_policies": (
+        "Server policies (cached)",
+        "Cached FortiWeb server policies with their key columns.",
+        "SELECT p.appliance_id, p.name, p.deployment_mode, p.vserver, p.server_pool, p.status "
+        "FROM device_server_policies p JOIN device_objects o ON o.id = p.object_id "
+        "WHERE o.layer = 'config' ORDER BY p.appliance_id, p.name",
+    ),
+    "server_policies_full": (
+        "Server policies (rich)",
+        "Every cached server policy with traffic-log, WPP, monitor-mode, "
+        "comment AND the App ID parsed from the comment. This is the dataset "
+        "for traffic-log / App-ID / WAF-coverage views.",
+        "SELECT o.appliance_id, a.name AS device, o.mkey AS policy, "
+        "o.payload->>'deployment-mode' AS deployment_mode, "
+        "o.payload->>'vserver' AS vserver, "
+        "o.payload->>'server-pool' AS server_pool, "
+        "o.payload->>'web-protection-profile' AS wpp, "
+        "o.payload->>'status' AS status, "
+        "o.payload->>'tlog' AS traffic_log, "
+        "o.payload->>'monitor-mode' AS monitor_mode, "
+        "o.payload->>'https-service' AS https_service, "
+        "o.payload->>'service' AS service, "
+        "o.payload->>'comment' AS comment, "
+        "substring(o.payload->>'comment' from "
+        "'(?i)app[ _-]?id[ :=]+([A-Za-z0-9_.-]+)') AS appid "
+        "FROM device_objects o LEFT JOIN appliances a ON a.id = o.appliance_id "
+        "WHERE o.logical_name = 'server_policy' AND o.layer = 'config' "
+        "ORDER BY o.appliance_id, o.mkey",
+    ),
+    "server_pools": (
+        "Server pools + members",
+        "Cached back-end pools with their type/protocol columns.",
+        "SELECT p.appliance_id, p.name, p.type, p.protocol "
+        "FROM device_server_pools p JOIN device_objects o ON o.id = p.object_id "
+        "WHERE o.layer = 'config' ORDER BY p.appliance_id, p.name",
+    ),
+    "web_protection_profiles": (
+        "Web Protection Profiles",
+        "Cached WAF profiles (inline/offline) with their signature rule. "
+        "bot_policy is always empty: the cache does not keep it.",
+        "SELECT p.appliance_id, p.name, p.kind, p.signature_rule, NULL AS bot_policy "
+        "FROM device_web_protection_profiles p JOIN device_objects o ON o.id = p.object_id "
+        "WHERE o.layer = 'config' ORDER BY p.appliance_id, p.name",
+    ),
+    "certificates": (
+        "Managed certificates",
+        "Certificates tracked by the Certificate Manager (no key material): "
+        "common_name is the certificate's name, not_after its expiry.",
+        "SELECT id, name AS common_name, appliance_id, status, expires_at AS not_after "
+        "FROM managed_certificate ORDER BY expires_at",
+    ),
+    "audit_recent": (
+        "Recent audit activity",
+        "The 200 most recent audit-log rows.",
+        "SELECT timestamp, username, action, target, product "
+        "FROM audit_logs ORDER BY id DESC LIMIT 200",
+    ),
+    "fleet_counts": (
+        "Fleet counts",
+        "One-row summary: device / policy / certificate totals.",
+        "SELECT (SELECT COUNT(*) FROM appliances) AS devices, "
+        "(SELECT COUNT(*) FROM device_server_policies p JOIN device_objects o "
+        "ON o.id = p.object_id WHERE o.layer = 'config') AS server_policies, "
+        "(SELECT COUNT(*) FROM managed_certificate) AS certificates",
+    ),
+    "scheduled_actions": (
+        "Scheduled actions",
+        "Configured automation schedule (name, action, next run).",
+        "SELECT name, action AS action_key, schedule_kind, enabled, next_run, product "
+        "FROM scheduled_action ORDER BY next_run",
+    ),
+}
+
+
+def dataset_catalog() -> list[dict[str, str]]:
+    """List the offerable datasets for the editor picker."""
+    return [
+        {"key": k, "label": v[0], "description": v[1]}
+        for k, v in DATASETS.items()
+    ]
+
+
+def _select_items(sql: str) -> list[str]:
+    """The top-level items of the outer SELECT list (commas inside brackets
+    and quotes do not split)."""
+    m = re.match(r"\s*SELECT\s+", sql, re.I)
+    if not m:
+        return []
+    items, buf, depth, quote = [], "", 0, ""
+    i = m.end()
+    while i < len(sql):
+        ch = sql[i]
+        if quote:
+            buf += ch
+            if ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+            buf += ch
+        elif ch == "(":
+            depth += 1
+            buf += ch
+        elif ch == ")":
+            depth -= 1
+            buf += ch
+        elif depth == 0 and ch == ",":
+            items.append(buf.strip())
+            buf = ""
+        elif depth == 0 and re.match(r"\s+FROM\b", sql[i:], re.I):
+            break
+        else:
+            buf += ch
+        i += 1
+    if buf.strip():
+        items.append(buf.strip())
+    return items
+
+
+def dataset_columns(key: str) -> list[str]:
+    """The column names a dataset's rows carry, in order, read from its fixed
+    SQL (``x AS name`` -> ``name``; ``t.col`` -> ``col``). The SATOM Builder
+    shapes its test data with this, through the rules pack, so a view tested
+    there reads the same keys it reads here. Unknown dataset -> []."""
+    spec = DATASETS.get(key)
+    if spec is None:
+        return []
+    out = []
+    for item in _select_items(spec[2]):
+        alias = re.search(r"\bAS\s+\"?([A-Za-z_][A-Za-z0-9_-]*)\"?\s*$", item, re.I)
+        if alias:
+            out.append(alias.group(1))
+            continue
+        name = item.rsplit(".", 1)[-1].strip().strip('"')
+        out.append(name)
+    return out
+
+
+def _viewer_scope():
+    """What the person rendering may see: ``(visible appliance ids, ADOM key or
+    "" for Global, may read the audit log)``. ``None`` outside a request —
+    internal callers, which have no viewer to scope by.
+
+    The queries above are fixed and global; a published view is opened by
+    people with different reach (maintenance devices, other ADOMs, no audit
+    permission), so the rows are cut per viewer AFTER the query, never baked
+    into the SQL a plugin author picked."""
+    from flask import g, has_request_context
+    if not has_request_context():
+        return None
+    from flask_login import current_user
+    from ..models import visible_appliances
+    ids = {a.id for a in visible_appliances().all()}
+    product = (getattr(g, "product", "") or "").strip()
+    product = "" if product in ("", "global") else product
+    can = getattr(current_user, "can", None)
+    return ids, product, bool(can and can("audit.view"))
+
+
+def _scope_rows(key: str, cols: list, rows: list[dict], scope) -> list[dict]:
+    if scope is None:
+        return rows
+    ids, product, can_audit = scope
+    # run_query hands every cell back as text ("" for NULL), so compare text.
+    ids = {str(i) for i in ids}
+    if key == "audit_recent" and not can_audit:
+        return []
+    if key == "fleet_appliances":
+        return [r for r in rows if str(r.get("id")) in ids]
+    if "appliance_id" in cols:
+        # Rows bound to no device (an unattached certificate) stay visible.
+        return [r for r in rows if r.get("appliance_id") in (None, "")
+                or str(r.get("appliance_id")) in ids]
+    if product and "product" in cols:
+        return [r for r in rows if (r.get("product") or "") in ("", product)]
+    return rows
+
+
+def load_datasets(keys: list[str]) -> dict[str, Any]:
+    """Run each requested dataset's fixed query; return {key: {columns, rows}}.
+
+    A dataset the plugin isn't entitled to (not in DATASETS) is skipped. A query
+    that errors (e.g. a table absent on this deployment) yields an empty set with
+    an ``error`` note — it never raises into the caller. Inside a request the
+    rows are cut to what the viewer may see (:func:`_viewer_scope`).
+    """
+    out: dict[str, Any] = {}
+    scope = _viewer_scope()
+    for key in keys or []:
+        spec = DATASETS.get(key)
+        if not spec:
+            continue
+        _label, _desc, sql = spec
+        try:
+            # run_query is SELECT-only + masked + row-capped by construction.
+            res = dbintrospect.run_query(sql)
+            cols = res.get("columns") if isinstance(res, dict) else None
+            rows = res.get("rows") if isinstance(res, dict) else None
+            if isinstance(res, dict) and res.get("error"):
+                # A failed query is said, never shown as "no rows": until
+                # 2026-10-25 four datasets named columns their tables do not
+                # have and every view read them as empty, silently.
+                out[key] = {"columns": dataset_columns(key), "rows": [],
+                            "error": str(res["error"])[:200]}
+                continue
+            dict_rows = []
+            if cols and rows:
+                for r in rows:
+                    dict_rows.append({c: r[i] for i, c in enumerate(cols)})
+            dict_rows = _scope_rows(key, cols or [], dict_rows, scope)
+            out[key] = {"columns": cols or [], "rows": dict_rows}
+        except Exception as exc:  # noqa: BLE001 — never fatal to the render
+            out[key] = {"columns": [], "rows": [], "error": str(exc)[:200]}
+    return out
+
+
+# --- Sandboxed render -------------------------------------------------------
+_SANDBOX = ImmutableSandboxedEnvironment(autoescape=True, undefined=StrictUndefined)
+
+
+def render_body(jinja_src: str, data: dict[str, Any],
+                params: dict[str, Any] | None = None) -> str:
+    """Render the plugin body in the immutable sandbox. Raises on error.
+
+    ``params`` (the resolved input-selector values) is exposed to the body as
+    ``params`` so the author can filter the curated data. Filters are OPTIONAL
+    by design — a body that never reads ``params`` renders exactly as before.
+    """
+    template = _SANDBOX.from_string(jinja_src or "")
+    return template.render(data=data, params=params or {}, **data)
+
+
+def safe_render(jinja_src: str, data: dict[str, Any],
+                params: dict[str, Any] | None = None) -> tuple[str, str | None]:
+    """Render, but convert any failure into an error card string.
+
+    Returns (html, error_message). A broken plugin can therefore never take the
+    host page down — the worst case is a visible red card.
+    """
+    try:
+        return render_body(jinja_src, data, params), None
+    except TemplateError as exc:
+        msg = f"{type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001 — sandbox SecurityError et al.
+        msg = f"{type(exc).__name__}: {exc}"
+    card = (
+        '<div style="border:1px solid rgba(220,53,69,.45);background:rgba(220,53,69,.08);'
+        'border-radius:8px;padding:16px;color:#8B1C2A;font-family:monospace;'
+        'font-size:13px;white-space:pre-wrap">Plugin render error:\n'
+        + _escape(msg) + "</div>"
+    )
+    return card, msg
+
+
+def _escape(s: str) -> str:
+    return (s.replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def slugify(name: str) -> str:
+    s = _SLUG_RE.sub("-", (name or "").strip().lower()).strip("-")
+    return s or "plugin"
+
+
+# --- Input parameters (author-defined selectors) ----------------------------
+# A plugin may declare INPUT PARAMETERS so the consumer of the view can filter
+# it (pick a device, a status, type a name...). Definitions are curated by the
+# author; the VALUES are supplied at view time (?p_<name>=..) and reach the body
+# as ``params.<name>``. Values NEVER touch SQL — the datasets stay fixed — so a
+# param can only filter data already loaded, never widen access.
+_PARAM_TYPES = ("device", "select", "text", "number", "date")
+
+
+def clean_param_defs(raw: Any) -> list[dict[str, Any]]:
+    """Validate + normalise author param definitions (JSON text or a list).
+
+    Drops malformed entries and duplicate names; never raises. Returns a list of
+    {name,label,type,options,default,required} with safe, length-capped values.
+    """
+    try:
+        data = raw if isinstance(raw, list) else json.loads(raw or "[]")
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in data if isinstance(data, list) else []:
+        if not isinstance(item, dict):
+            continue
+        name = slugify(str(item.get("name") or "")).replace("-", "_")[:40]
+        if not name or name in seen:
+            continue
+        typ = item.get("type")
+        if typ not in _PARAM_TYPES:
+            typ = "text"
+        opts: list[dict[str, str]] = []
+        for o in (item.get("options") or []):
+            if isinstance(o, dict):
+                v = str(o.get("value", "")).strip()
+                lbl = (str(o.get("label", "")).strip() or v)
+            else:
+                v = str(o).strip()
+                lbl = v
+            if v:
+                opts.append({"value": v[:120], "label": lbl[:120]})
+        out.append({
+            "name": name,
+            "label": (str(item.get("label") or name))[:80],
+            "type": typ,
+            "options": opts if typ == "select" else [],
+            "default": (str(item.get("default") or ""))[:120],
+            "required": bool(item.get("required")),
+        })
+        seen.add(name)
+    return out
+
+
+def _coerce(raw: Any, typ: str, d: dict[str, Any]) -> Any:
+    s = str(raw)[:120]
+    if typ == "number":
+        if s == "":
+            return ""
+        try:
+            f = float(s)
+            return int(f) if f.is_integer() else f
+        except ValueError:
+            return ""
+    if typ == "select":
+        opts = [str(o.get("value")) for o in (d.get("options") or [])]
+        if opts and s not in opts:
+            return str(d.get("default") or "")
+        return s
+    # device / text / date -> string
+    return s
+
+
+def param_args(inputs) -> dict[str, Any]:
+    """Values given by param NAME (``{"zone": "dmz"}``: a Builder rehearsal,
+    the Builder's test runs) as the request arguments :func:`resolve_params`
+    reads (``p_<name>``). Passed as they were, every value was ignored and the
+    view rendered with its defaults."""
+    out: dict[str, Any] = {}
+    for k, v in (inputs or {}).items():
+        k = str(k)
+        out[k if k.startswith("p_") else "p_" + k] = v
+    return out
+
+
+def resolve_params(defs: list[dict[str, Any]], args: Any) -> dict[str, Any]:
+    """Coerce raw request values (``p_<name>``) into a {name: value} map.
+
+    ``args`` is any mapping with ``.get`` (Flask ``request.args``/``request.form``
+    or a plain dict). Unknown args are ignored; a missing/blank value falls back
+    to the def's ``default``; wrong-typed values fall back too. Never raises.
+    """
+    out: dict[str, Any] = {}
+    for d in defs or []:
+        name = d.get("name")
+        if not name:
+            continue
+        typ = d.get("type", "text")
+        raw = args.get("p_" + name) if hasattr(args, "get") else None
+        if raw is None or str(raw) == "":
+            out[name] = _coerce(d.get("default", ""), typ, d)
+        else:
+            out[name] = _coerce(raw, typ, d)
+    return out
+
+
+def _appliance_options(product: str | None = None) -> list[dict[str, str]]:
+    """Live appliance list for a ``device`` selector, scoped by product.
+
+    Read through the same masked/read-only path as every dataset. ANY concrete
+    product filters by device kind; ``global``/empty = all.
+
+    The concrete products are read from the ADOM registry rather than listed
+    here: the old ``product in ("fortiweb", "fortiadc")`` test skipped the
+    filter entirely for every later ADOM, so a plugin running in the FortiADC
+    or FortiAuthenticator ADOM was offered the WHOLE fleet in its device
+    selector.
+    """
+    from .product_scope import concrete_products
+    _concrete = concrete_products()
+    try:
+        res = dbintrospect.run_query(
+            "SELECT id, name, kind FROM appliances ORDER BY kind, name")
+        cols = res.get("columns") or []
+        rows = res.get("rows") or []
+        idx = {c: i for i, c in enumerate(cols)}
+        if "id" not in idx or "name" not in idx:
+            return []
+        out = []
+        for r in rows:
+            kind = r[idx["kind"]] if "kind" in idx else ""
+            if product in _concrete and kind != product:
+                continue
+            aid = r[idx["id"]]
+            out.append({"value": str(aid),
+                        "label": r[idx["name"]] or f"device {aid}"})
+        return out
+    except Exception:
+        return []
+
+
+def param_options(defs: list[dict[str, Any]],
+                  product: str | None = None) -> list[dict[str, Any]]:
+    """A render-ready copy of the param defs with ``device`` selectors' options
+    populated from the live appliance list (scoped by product)."""
+    devices: list[dict[str, str]] | None = None
+    out = []
+    for d in defs or []:
+        d2 = dict(d)
+        if d2.get("type") == "device":
+            if devices is None:
+                devices = _appliance_options(product)
+            d2["options"] = devices
+        out.append(d2)
+    return out

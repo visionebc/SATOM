@@ -1,0 +1,274 @@
+from flask import request, jsonify, current_app
+from flask_login import login_required, current_user
+from . import bp
+from ..models import Appliance, db, Permission, visible_appliances, visible_appliance_or_404
+from ..models import clean_tls_name
+from ..auth.decorators import require_permission
+from ..services.audit import log_action
+from ..services import product_scope
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+
+
+_STATUS_TTL_SECONDS = 20  # re-probe a cached status once it is older than this
+
+
+def _is_stale(a):
+    if a.last_checked_at is None:
+        return True
+    return (datetime.utcnow() - a.last_checked_at).total_seconds() >= _STATUS_TTL_SECONDS
+
+
+def _probe_in_own_context(app, appliance_id):
+    """Probe ONE appliance from a pool thread, with its own context.
+
+    A new thread starts with EMPTY ContextVars, so it does not inherit the
+    request's app context — and the credential path reaches the DB
+    (services.secret_backend, since a secret can live in a vault).
+    Without a context that read fails, the vault looks switched off, and a
+    credential that lives only in the vault resolves to the local sentinel:
+    probe_status swallows the error and ALL the badges come out "offline".
+    Measured on 2026-09-14 against the live DB: the 3 appliances offline in the
+    pool, the same 3 online in the main thread, with the same code and the same
+    timeout.
+
+    The row is RE-READ by id instead of sharing the request's ORM instance:
+    each app_context() has its own session, and an object from another one
+    arrives here detached.
+    """
+    with app.app_context():
+        a = db.session.get(Appliance, appliance_id)
+        if a is None:  # deleted between the listing and the probe
+            return "unknown"
+        return a.probe_status(timeout=6.0)
+
+
+@bp.route('/appliances', methods=['GET'])
+@login_required
+@require_permission('appliances.view')
+def list_appliances():
+    """List appliances with a live-but-cached connectivity status.
+
+    ``status`` is what the badge poller (main.js) renders. Stale appliances are
+    probed concurrently (network only -- no DB writes inside the threads); the
+    cache is then persisted with a single bulk UPDATE that does NOT bump
+    ``updated_at`` (a status poll must not look like a config edit — this
+    docstring claimed it before it was true; see the explicit self-assign
+    below)."""
+    appliances = visible_appliances().order_by(Appliance.name).all()
+    status_map = {a.id: (a.last_status or 'unknown') for a in appliances}
+
+    stale = [a for a in appliances if _is_stale(a)]
+    if stale:
+        # The application object, not the proxy: the proxy resolves through a
+        # ContextVar and inside the thread it points at nothing.
+        app = current_app._get_current_object()
+        ids = [a.id for a in stale]
+        with ThreadPoolExecutor(max_workers=min(8, len(stale))) as pool:
+            probed = dict(zip(ids, pool.map(
+                lambda i: _probe_in_own_context(app, i), ids)))
+        now = datetime.utcnow()
+        for a in stale:
+            st = probed.get(a.id, 'unknown')
+            status_map[a.id] = st
+            db.session.query(Appliance).filter(Appliance.id == a.id).update(
+                {'last_status': st, 'last_checked_at': now,
+                 # updated_at is assigned to ITSELF so that it does NOT fire
+                 # the column's onupdate: a status probe is not a config
+                 # edit. Without this every poll marked the row as edited
+                 # every 60 s and 'when was this config changed' no longer
+                 # had an answer.
+                 'updated_at': Appliance.updated_at},
+                synchronize_session=False,
+            )
+        db.session.commit()
+
+    return jsonify([
+        {
+            'id': a.id,
+            'name': a.name,
+            'kind': a.kind,
+            'host': a.host,
+            'port': a.port,
+            'status': status_map[a.id],
+        }
+        for a in appliances
+    ])
+
+
+@bp.route('/appliances', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def create_appliance():
+    data = request.get_json(force=True) or {}
+    name = data.get('name', '').strip()
+    kind = data.get('kind', 'fortiweb').strip()
+    host = data.get('host', '').strip()
+    port = int(data.get('port', 443))
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    verify_ssl = bool(data.get('verify_ssl', False))
+    vdom = data.get('vdom', '').strip()
+    tags = data.get('tags', '').strip()
+    department = data.get('department', '').strip()
+    zone = data.get('zone', '').strip()
+
+    if not name or not host:
+        return jsonify({'error': 'name and host are required'}), 400
+    tls_name, tls_err = clean_tls_name(data.get('tls_server_name'))
+    if tls_err:
+        return jsonify({'error': tls_err}), 400
+    # Same rule as the web form (appliances.create): a posted kind is not a
+    # way into another ADOM.
+    if not product_scope.may_assign_kind(kind):
+        return jsonify({'error': f'kind {kind!r} cannot be created in this ADOM'}), 400
+
+    if Appliance.query.filter_by(name=name).first():
+        return jsonify({'error': f'Appliance with name {name!r} already exists'}), 409
+
+    appliance = Appliance(
+        name=name,
+        kind=kind,
+        host=host,
+        port=port,
+        username=username,
+        verify_ssl=verify_ssl,
+        vdom=vdom,
+        tags=tags,
+        department=department,
+        zone=zone,
+    )
+    appliance.set_password(password)
+    db.session.add(appliance)
+    db.session.commit()
+    log_action('api.appliance.create', appliance_id=appliance.id, detail=f'Created appliance {name}')
+    # Same seam as the web form: without it a device added over the API had
+    # metrics (the Collection sweep backfills targets) and no thresholds.
+    from ..services.monitoring_provision import provision_monitoring
+    provision_monitoring(appliance)
+    return jsonify({
+        'id': appliance.id,
+        'name': appliance.name,
+        'kind': appliance.kind,
+        'host': appliance.host,
+        'port': appliance.port,
+    }), 201
+
+
+@bp.route('/appliances/<int:id>', methods=['PUT'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def update_appliance(id):
+    appliance = visible_appliance_or_404(id)
+    data = request.get_json(force=True) or {}
+
+    # Same rule as the edit form (views.appliances.edit_save): the stored
+    # credentials follow the row, so retargeting it is only accepted together
+    # with the password it would otherwise carry to the new endpoint. This API
+    # cannot set the SSH password, so a row holding one is retargeted in the UI.
+    def _changed(key, current):
+        return key in data and str(data[key]).strip() != str(current or '').strip()
+    host_or_user = _changed('host', appliance.host) or _changed('username', appliance.username)
+    retarget = (host_or_user or _changed('port', appliance.port)
+                or ('kind' in data and str(data['kind']).strip().lower()
+                    != (appliance.kind or '').lower()))
+    if retarget and not data.get('password'):
+        return jsonify({'error': 'changing host, port, username or kind '
+                                 'requires the password'}), 400
+    if host_or_user and appliance.has_ssh_password:
+        return jsonify({'error': 'this appliance has a separate SSH password; '
+                                 'change its host or username in the UI'}), 400
+
+    if 'name' in data:
+        appliance.name = data['name'].strip()
+    if 'kind' in data:
+        new_kind = data['kind'].strip()
+        if new_kind != appliance.kind and not product_scope.may_assign_kind(new_kind):
+            return jsonify({'error': f'kind {new_kind!r} cannot be assigned in this ADOM'}), 400
+        appliance.kind = new_kind
+    if 'host' in data:
+        appliance.host = data['host'].strip()
+    if 'port' in data:
+        appliance.port = int(data['port'])
+    if 'username' in data:
+        appliance.username = data['username'].strip()
+    if 'password' in data and data['password']:
+        appliance.set_password(data['password'])
+    if 'verify_ssl' in data:
+        if appliance.verify_ssl_inherited:
+            return jsonify({'error': 'verify_ssl of a cluster member follows its '
+                            'cluster; change it on %s' % appliance.parent.name}), 400
+        appliance.verify_ssl = bool(data['verify_ssl'])
+    if 'tls_server_name' in data:
+        if appliance.verify_ssl_inherited:
+            return jsonify({'error': 'tls_server_name of a cluster member follows its '
+                            'cluster; change it on %s' % appliance.parent.name}), 400
+        tls_name, tls_err = clean_tls_name(data.get('tls_server_name'))
+        if tls_err:
+            return jsonify({'error': tls_err}), 400
+        appliance.tls_name = tls_name
+    if 'vdom' in data:
+        appliance.vdom = data['vdom'].strip()
+    if 'tags' in data:
+        appliance.tags = data['tags'].strip()
+    if 'department' in data:
+        appliance.department = data['department'].strip()
+    if 'zone' in data:
+        appliance.zone = data['zone'].strip()
+
+    db.session.commit()
+    log_action('api.appliance.update', appliance_id=appliance.id, detail=f'Updated appliance {appliance.name}')
+    return jsonify({
+        'id': appliance.id,
+        'name': appliance.name,
+        'kind': appliance.kind,
+        'host': appliance.host,
+        'port': appliance.port,
+    })
+
+
+@bp.route('/appliances/<int:id>', methods=['DELETE'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def delete_appliance(id):
+    appliance = visible_appliance_or_404(id)
+    from ..services import device_identity as _ident
+    # Same delete as the UI: identity retired and datasheet removed too.
+    name = _ident.deregister(appliance)
+    log_action('api.appliance.delete', detail=f'Deleted appliance {name}')
+    return jsonify({'deleted': True, 'id': id})
+
+
+@bp.route('/appliances/<int:id>/test', methods=['POST'])
+@login_required
+@require_permission('appliances.view')
+def test_appliance(id):
+    """Connectivity check used by the appliances list UI (api.js).
+    Returns {status: 'online'|'offline'} so the status badge updates."""
+    from ..clients import client_for
+    appliance = visible_appliance_or_404(id)
+    try:
+        # A cluster node 0 has no connection of its own in per-node mode:
+        # build_client() asks its live primary, with the cluster's TLS
+        # setting (SA-0012). Anything else: the row's own client.
+        client = (appliance.build_client() if appliance.is_cluster
+                  else client_for(appliance))
+        client.status_check()
+        status, ok, detail = 'online', True, None
+    except Exception as exc:
+        status, ok, detail = 'offline', False, str(exc)
+
+    db.session.query(Appliance).filter(Appliance.id == id).update(
+        {'last_status': status, 'last_checked_at': datetime.utcnow(),
+         # Same reason as in list_appliances: pressing the test button is
+         # looking at the device, not editing its configuration.
+         'updated_at': Appliance.updated_at},
+        synchronize_session=False,
+    )
+    db.session.commit()
+    log_action('api.appliance.test', appliance_id=appliance.id,
+               detail=f'Tested {appliance.name}: {status}' + (f' ({detail})' if detail else ''))
+    resp = {'ok': ok, 'status': status}
+    if detail:
+        resp['detail'] = detail
+    return jsonify(resp)

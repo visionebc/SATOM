@@ -1,0 +1,40 @@
+{# ============================================================================
+   Monitoring submenu — ONE definition, four call sites (Global, FortiWeb,
+   FortiADC and FortiAnalyzer ADOMs). Added 2026-07-28.
+
+   Why a partial and not four copies: the group had drifted before (Metrics was
+   a bare Fleet item in the ADOMs while Global had the three-entry submenu). An
+   entry added here now appears in EVERY ADOM in the same commit — it cannot be
+   added to Global and forgotten elsewhere.
+
+   Scoping is NOT done here. All pages filter their rows through
+   ``visible_appliances()`` (ADOM -> device kind), so the FortiWeb ADOM sees
+   FortiWeb devices and their probes, the ADC ADOM its own, and anything created
+   from the Global ADOM against a device of this product shows up here with no
+   extra bookkeeping. ``_adom`` pins the ADOM on hard (non-Turbo) navigations,
+   which cannot carry the X-ADOM header.
+
+   2026-08-05: "Fleet health" became a nested submenu holding SATOM health (this
+   installation) and Device health (the appliances). SATOM health is Global-only
+   and the route enforces it — the entry is simply not offered elsewhere.
+   2026-10-14: the "Fleet health" submenu is gone. Device health is a direct
+   Monitoring entry in every ADOM (in a device ADOM the submenu held only it);
+   SATOM health follows it as a direct entry in Global.
+   Collection moved OUT of here into Administrator (partials/nav_collection.html):
+   it sets collection policy, it does not display a measurement.
+   2026-10-03: a config_write holder WITHOUT user_manage (no Administrator group)
+   gets the same partial at the end of this submenu, since editing collection
+   needs config_write and the page was otherwise reachable only by URL.
+   2026-11-17: Monitoring MOVED into the Observability area (operator: "everything
+   in the Monitoring menu goes into /observability, with its style"). Its pages
+   live at /observability/monitoring/ and are drawn in the Observability shell
+   with the area's own menu (app/observability_nav.py). What is left here is
+   ONE entry into the area, offered when the account holds observability.access
+   (may_open asks the route stamp AND that gate). Collection stays reachable
+   from Administrator, and from the area's menu for a config_write holder
+   without user management.
+   ========================================================================= #}
+{% if may_open('monitoring.index') %}
+<a class="fw-nav-item" href="{{ url_for('monitoring.index', _adom=product.key) }}" data-turbo="false">
+  <i class="bi bi-activity fw-nav-icon"></i><span>{{ _('Observability') }}</span></a>
+{% endif %}

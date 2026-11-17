@@ -1,0 +1,374 @@
+{#
+   Sentinel context, as ONE section.
+
+   Rendered by two surfaces from this one file: the standalone page
+   (/sentinel/context, still reachable by deep link, the concept map and the
+   manual) and the Admin Console pane Settings -> Sentinel -> Context.
+
+   `sn_inline` is the only difference between them, and every use of it answers
+   one question: a control drawn inside the Admin Console must not silently
+   take the operator out of it.  Every form here posts `return_to`, so each of
+   its POSTs -- trust, windows, topology, border map, arming -- comes back to
+   the surface it was fired from.  The CVE mirror (sync, manual CVE) left this
+   section on 2026-11-01 for Operations › Sentinel › Overview: it is
+   intelligence the scorer reads, not configuration.
+
+   Context is NOT decoration.  `trusted_source` is worth -35 points, the single
+   largest weight in the whole table in either direction, and it is the only
+   thing that separates an authorised scanner from an intrusion: the two
+   produce a byte-for-byte identical attack log.  Without these levers Sentinel
+   scores your own scans as hostile.
+#}
+{% from "partials/_hint.html" import hint %}
+{% set sn_inline = sn_inline | default(false) %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-sliders me-2"></i>Sentinel context</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    Trusted sources, maintenance windows, the VM/host topology map and the border map.
+    Together these are what stop a correct detection from becoming a wrong conclusion.
+  </p>
+</div>
+
+{# ── trusted sources ────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3" id="card-trusted-sources-every-entry-expires-an">
+  <div class="fw-card-header"><strong><i class="bi bi-person-check me-1"></i>Trusted sources</strong>{{ hint(sn_hint('context.trusted')) }}</div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      Every entry expires. An authorisation granted in March is not an authorisation in September,
+      and a trust list without an end date is a permanent blind spot nobody remembers creating.
+      Trust lowers an incident's score and forbids blocking — it never suppresses detection.
+    </p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>CIDR</th><th>Kind</th><th>Label</th><th>Expires</th><th>State</th><th></th></tr></thead>
+      <tbody>
+      {% for t in trusted %}
+        <tr class="{{ '' if t.active else 'text-muted' }}">
+          <td class="font-monospace small">{{ t.cidr }}</td>
+          <td class="small">{{ t.kind }}</td>
+          <td class="small">{{ t.label }}<div class="text-muted" style="font-size:11px;">{{ t.note }}</div></td>
+          <td class="small">{{ t.expires_at or '—' }}</td>
+          <td>{% if t.active %}<span class="fw-badge fw-badge-success">active</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">expired — no longer trusted</span>{% endif %}</td>
+          <td class="text-end">
+            <form method="post" action="{{ url_for('sentinel.trusted_delete', tid=t.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+              <button class="btn btn-fw-outline btn-sm">Remove</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="small text-muted">No trusted sources. Every scanner will be scored as hostile.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <form method="post" action="{{ url_for('sentinel.trusted_add') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+      <div class="col-md-2"><label class="form-label small">CIDR</label>
+        <input class="form-control form-control-sm" name="cidr" placeholder="192.0.2.60/32" required></div>
+      <div class="col-md-2"><label class="form-label small">Kind</label>
+        <select class="form-select form-select-sm" name="kind">
+          {% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+        </select></div>
+      <div class="col-md-3"><label class="form-label small">Label</label>
+        <input class="form-control form-control-sm" name="label" placeholder="pentest LXC 213"></div>
+      <div class="col-md-3"><label class="form-label small">Expires (ISO, blank = 30 days)</label>
+        <input class="form-control form-control-sm" name="expires_at" placeholder="2026-09-30T00:00"></div>
+      <div class="col-md-2"><button class="btn btn-fw-primary btn-sm w-100">Add</button></div>
+    </form>
+  </div>
+</div>
+
+{# ── maintenance windows ────────────────────────────────────────────────── #}
+<div class="fw-card mb-3" id="card-maintenance-windows-a-window-suppresses-actions">
+  <div class="fw-card-header"><strong><i class="bi bi-calendar-event me-1"></i>Maintenance windows</strong>{{ hint(sn_hint('context.maintenance')) }}</div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      A window suppresses <em>actions</em> and freezes <em>baseline learning</em>.
+      It never suppresses detection: if an authorised pentest saturates the appliance, that is an
+      incident regardless of intent — and hiding it would hide the one result the pentest was run to produce.
+    </p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Label</th><th>Scope</th><th>From</th><th>To</th><th>Effects</th><th></th></tr></thead>
+      <tbody>
+      {% for w in windows %}
+        <tr>
+          <td class="small">{{ w.label }}<div class="text-muted" style="font-size:11px;">{{ w.note }}</div></td>
+          <td class="small">{{ w.scope_device or 'all devices' }}</td>
+          <td class="small font-monospace">{{ w.starts_at }}</td>
+          <td class="small font-monospace">{{ w.ends_at }}</td>
+          <td class="small">
+            {% if w.suppress_actions %}<span class="fw-badge fw-badge-secondary">no actions</span>{% endif %}
+            {% if w.freeze_baseline %}<span class="fw-badge fw-badge-secondary">baseline frozen</span>{% endif %}
+          </td>
+          <td class="text-end">
+            <form method="post" action="{{ url_for('sentinel.window_delete', wid=w.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+              <button class="btn btn-fw-outline btn-sm">Remove</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="small text-muted">None.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <form method="post" action="{{ url_for('sentinel.window_add') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+      <div class="col-md-3"><label class="form-label small">Label</label>
+        <input class="form-control form-control-sm" name="label" placeholder="Q3 authorised pentest"></div>
+      <div class="col-md-2"><label class="form-label small">Device (blank = all)</label>
+        <input class="form-control form-control-sm" name="scope_device"></div>
+      <div class="col-md-2"><label class="form-label small">Start (ISO)</label>
+        <input class="form-control form-control-sm" name="starts_at" placeholder="2026-08-25T22:00" required></div>
+      <div class="col-md-2"><label class="form-label small">End (ISO)</label>
+        <input class="form-control form-control-sm" name="ends_at" placeholder="2026-08-26T06:00" required></div>
+      <div class="col-md-2 small">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="suppress_actions" checked>
+          <label class="form-check-label">Suppress actions</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="freeze_baseline" checked>
+          <label class="form-check-label">Freeze baseline</label></div>
+      </div>
+      <div class="col-md-1"><button class="btn btn-fw-primary btn-sm w-100">Add</button></div>
+    </form>
+  </div>
+</div>
+
+{# ── topology ───────────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3" id="card-topology-appliance-vm">
+  <div class="fw-card-header"><strong><i class="bi bi-hdd-stack me-1"></i>Topology — appliance ↔ VM ↔ host ↔ backend</strong>{{ hint(sn_hint('context.topology')) }}</div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      This map is the join that makes cross-layer correlation possible. Without a complete row the
+      VM and hypervisor layers are reported as <strong>unknown</strong> on every incident for that
+      device — never as healthy. Backends are one per line as <code>name|cpe</code>; the CPE is what
+      lets an incident answer “does this CVE affect what this target actually runs”.
+    </p>
+    {% if not hypervisors %}
+      <div class="alert alert-warning small">
+        No hypervisor target is configured, so the VM and host layers cannot be collected at all.
+        Add one under Settings → Provisioning first.
+      </div>
+    {% endif %}
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Appliance</th><th>Hypervisor</th><th>VM id</th><th>Node</th><th>Backends</th><th>State</th><th></th></tr></thead>
+      <tbody>
+      {% for a in appliances %}
+        {% set t = topology.get(a.id) %}
+        <tr>
+          <td class="small font-monospace">{{ a.name }}
+            <form id="topo-{{ a.id }}" method="post" action="{{ url_for('sentinel.topology_save') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+              <input type="hidden" name="appliance_id" value="{{ a.id }}">
+            </form>
+          </td>
+          <td><select class="form-select form-select-sm" name="hypervisor_target_id" form="topo-{{ a.id }}">
+              <option value="">—</option>
+              {% for h in hypervisors %}
+                <option value="{{ h.id }}" {{ 'selected' if t and t.hypervisor_target_id == h.id }}>{{ h.name }}</option>
+              {% endfor %}
+            </select></td>
+          <td><input class="form-control form-control-sm" name="vm_id" form="topo-{{ a.id }}"
+                     value="{{ t.vm_id if t else '' }}" placeholder="352" style="width:90px;"></td>
+          <td><input class="form-control form-control-sm" name="node" form="topo-{{ a.id }}"
+                     value="{{ t.node if t else '' }}" placeholder="hypervisor06" style="width:120px;"></td>
+          <td><textarea class="form-control form-control-sm" name="backends" form="topo-{{ a.id }}" rows="1"
+                        placeholder="web-cluster-2|cpe:2.3:a:apache:http_server">{% if t %}{% for b in t.backends %}{{ b.name }}|{{ b.cpe }}
+{% endfor %}{% endif %}</textarea></td>
+          <td>{% if t and t.complete %}<span class="fw-badge fw-badge-success">complete</span>
+              {% else %}<span class="fw-badge fw-badge-warning">VM/host layers unknown</span>{% endif %}</td>
+          <td class="text-end"><button class="btn btn-fw-outline btn-sm" form="topo-{{ a.id }}">Save</button></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── border map ──────────────────────────────────────── #}
+{# Every form in this card carries return_to, including the per-row ones. A    #}
+{# form drawn once per appliance is invisible to a check that reads rendered   #}
+{# output with an empty table, so the guard reads this file's SOURCE too.      #}
+<div class="fw-card mb-3" id="card-border-map-appliance-fortianalyzer">
+  <div class="fw-card-header"><strong><i class="bi bi-shield-lock me-1"></i>Border map &mdash; appliance &harr; FortiAnalyzer &harr; FortiGate &harr; VDOM</strong>{{ hint(sn_hint('context.edge')) }}</div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      FortiWeb reports the source of an attack, but <em>which</em> source depends on whether the
+      policy reads <code>X-Forwarded-For</code>: the true client, or the CDN in front of it. Nothing
+      in the attack log tells those apart &mdash; the border can, because a firewall only logs
+      addresses that actually opened a connection to it. A confirmed source adds evidence
+      (<code>edge_corroboration</code>, and <code>edge_multi_target</code> when it reached many
+      destinations); an address the border never logged is <strong>vetoed</strong> from any border
+      blocklist, because blocking it is inert at best and removes every client behind a shared
+      egress at worst. Silence at the border never subtracts points: an attack behind a CDN is
+      still an attack.
+    </p>
+    <p class="small text-muted">
+      Without a complete row the border layer is reported as <strong>not evaluated</strong> &mdash;
+      never as clean. <code>FortiGate</code> empty means every device in the ADOM and
+      <code>VDOM</code> empty means every VDOM on it; both are valid, and both widen the question.
+    </p>
+    {% if not edge_enabled %}
+      <div class="alert alert-warning small">
+        Border corroboration is <strong>disabled</strong> in Settings &rarr; Sentinel &rarr; Border
+        corroboration. These maps are saved but nothing is queried.
+      </div>
+    {% endif %}
+    {% if not analyzers %}
+      <div class="alert alert-warning small">
+        No FortiAnalyzer is registered, so nothing can be mapped. Add one under Appliances first
+        &mdash; and note that an analyzer in maintenance, or on a <code>.invalid</code> host, is
+        never probed.
+      </div>
+    {% endif %}
+    <div class="alert alert-secondary small">
+      <strong>Unverified mechanism.</strong> <code>{{ edge_mechanism }}</code>
+      This route has not been proved against a live FortiAnalyzer, so use <em>Test</em> before
+      trusting a verdict: a wrong ADOM, a wrong device name and a clock offset all return zero rows,
+      which looks exactly like a source the border never saw. Nothing here writes to any device.
+    </div>
+    {% if edge_probe %}
+      <div class="alert {{ 'alert-danger' if edge_probe.error else ('alert-success' if edge_probe.hits else 'alert-warning') }} small">
+        <strong>Test lookup &mdash; {{ edge_probe.tested_ip }}</strong>
+        {% if edge_probe.error %}
+          <div class="font-monospace mt-1">{{ edge_probe.error }}</div>
+        {% elif edge_probe.checked %}
+          <div class="mt-1">{{ edge_probe.scope }} &mdash;
+            <strong>{{ edge_probe.hits }}</strong> row(s) with this address as source,
+            {{ edge_probe.distinct_dst }} distinct destination(s),
+            {{ edge_probe.denied }} denied.</div>
+          {% if edge_probe.rows %}
+            <pre class="small mb-0 mt-1">{% for r in edge_probe.rows %}{{ r }}
+{% endfor %}</pre>
+          {% endif %}
+        {% else %}
+          <div class="mt-1">{{ edge_probe.reason }}</div>
+        {% endif %}
+      </div>
+    {% endif %}
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Appliance</th><th>Analyzer</th><th>ADOM</th><th>FortiGate</th><th>VDOM</th><th>Log type</th><th>State</th><th></th></tr></thead>
+      <tbody>
+      {% for a in appliances %}
+        {% set e = edge_maps.get(a.id) %}
+        <tr>
+          <td class="small font-monospace">{{ a.name }}
+            <form id="edge-{{ a.id }}" method="post" action="{{ url_for('sentinel.edge_save') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+              <input type="hidden" name="appliance_id" value="{{ a.id }}">
+            </form>
+          </td>
+          <td><select class="form-select form-select-sm" name="analyzer_id" form="edge-{{ a.id }}">
+              <option value="">&mdash;</option>
+              {% for an in analyzers %}
+                <option value="{{ an.id }}" {{ 'selected' if e and e.analyzer_id == an.id }}>{{ an.name }}</option>
+              {% endfor %}
+            </select></td>
+          <td><input class="form-control form-control-sm" name="adom" form="edge-{{ a.id }}"
+                     value="{{ e.adom if e else 'root' }}" placeholder="root" style="width:110px;"></td>
+          <td><input class="form-control form-control-sm" name="fortigate" form="edge-{{ a.id }}"
+                     value="{{ e.fortigate if e else '' }}" placeholder="all devices" style="width:140px;"></td>
+          <td><input class="form-control form-control-sm" name="vdom" form="edge-{{ a.id }}"
+                     value="{{ e.vdom if e else '' }}" placeholder="all vdoms" style="width:120px;"></td>
+          <td><select class="form-select form-select-sm" name="logtype" form="edge-{{ a.id }}">
+              {% for lt in edge_logtypes %}
+                <option value="{{ lt }}" {{ 'selected' if e and e.logtype == lt }}>{{ lt }}</option>
+              {% endfor %}
+            </select></td>
+          <td>
+            {% if e and e.complete %}<span class="fw-badge fw-badge-success">mapped</span>
+            {% elif e %}<span class="fw-badge fw-badge-warning">incomplete &mdash; border unevaluated</span>
+            {% else %}<span class="fw-badge fw-badge-secondary">not mapped</span>{% endif %}
+            {% if e and e.last_error %}<div class="small text-danger mt-1">{{ e.last_error }}</div>
+            {% elif e and e.last_ok_at %}<div class="small text-muted mt-1">last ok {{ e.last_ok_at }}</div>{% endif %}
+          </td>
+          <td class="text-end text-nowrap">
+            <button class="btn btn-fw-outline btn-sm" form="edge-{{ a.id }}">Save</button>
+            {% if e %}
+              <form method="post" action="{{ url_for('sentinel.edge_test', mid=e.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+                <input class="form-control form-control-sm d-inline-block" name="test_ip"
+                       placeholder="203.0.113.7" style="width:130px;" required>
+                <button class="btn btn-fw-outline btn-sm">Test</button>
+              </form>
+              <form method="post" action="{{ url_for('sentinel.edge_delete', mid=e.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+                <button class="btn btn-fw-outline btn-sm text-danger">Remove</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="small text-muted mb-0">
+      Border corroboration is currently
+      <strong>{{ 'required' if edge_require else 'NOT required' }}</strong> before an address may
+      enter a border blocklist. With it not required, an entry may be a shared egress &mdash; that
+      is an operator decision, and it is recorded on every action it permits.
+    </p>
+  </div>
+</div>
+
+<div class="fw-card mt-3" id="card-response-arming-which-policies-sentinel">
+  <div class="fw-card-header">
+    <strong><i class="bi bi-shield-lock me-1"></i>Response arming — which policies Sentinel may enforce on</strong>{{ hint(sn_hint('context.arming')) }}
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-muted mb-2">
+      A FortiWeb server policy does not name an IP list. It names a web
+      protection profile, and the <em>profile</em> names the list. Until that
+      reference exists, adding a source to Sentinel's list is accepted by the
+      appliance, counts up on the device, and <strong>blocks nothing</strong>.
+      The response runner refuses to act in that state rather than report a
+      block it did not achieve — and it will not create the reference itself,
+      because an agent that binds its own enforcement point can widen its own
+      authority.
+    </p>
+    <p class="small text-muted mb-3">
+      Arming writes <code>ip-list-policy = {{ sentinel_list }}</code> (or, for
+      country blocking, <code>geo-block-list-policy</code>) onto the named
+      policy's profile, creating the list if needed with a device-side block
+      period. The two are armed separately on purpose — a country block affects
+      every client in a market, and it stays a <em>recommendation</em> at any
+      confidence even once armed. It reaches the appliance, so it is a deliberate POST and it
+      is recorded in the audit log as <em>your</em> decision. It is safe to
+      re-run: it is idempotent and it verifies by reading the profile back.
+    </p>
+    <form method="post" action="{{ url_for('sentinel.arm') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+      <div class="col-md-4">
+        <label class="form-label small mb-1">Appliance</label>
+        <select name="device" class="form-select form-select-sm" required>
+          {% for a in appliances %}<option value="{{ a.name }}">{{ a.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Server policy</label>
+        <input name="policy" class="form-control form-control-sm"
+               placeholder="pol-root-shop" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Mechanism</label>
+        <select name="mechanism" class="form-select form-select-sm">
+          <option value="ip">Address blocking (one source)</option>
+          <option value="geo">Country blocking (a whole market)</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-shield-check me-1"></i>Arm
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+

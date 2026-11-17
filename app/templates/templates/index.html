@@ -1,0 +1,948 @@
+{% extends "base.html" %}
+{% import "partials/_template_compat.html" as tcx with context %}
+
+{% block title %}Templates — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Templates') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-collection me-2 text-accent"></i>{{ _('Templates') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Reusable desired-state profiles (Web Protection, System, Server Policy, Structure) — authored once, pushed on demand') }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    {% if current_user and current_user.can('user_manage') %}
+    <a class="btn btn-outline-secondary position-relative" href="{{ url_for('section_catalog.index') }}" title="Browse approved templates grouped by FortiWeb section{% if pending_template_count %} — {{ pending_template_count }} pending approval{% endif %}">
+      <i class="bi bi-sliders me-1"></i>FortiWeb Sections
+      {% if pending_template_count %}
+      <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark" style="font-size:10px;">
+        {{ pending_template_count }}<span class="visually-hidden">{{ _('pending') }}</span>
+      </span>
+      {% endif %}
+    </a>
+    {% endif %}
+    {% if may_open('factory_catalog.index') %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('factory_catalog.index') }}" title="{{ _('Vendor-predefined Web Protection Profiles per firmware build and API version; save one as a template') }}">
+      <i class="bi bi-box-seam me-1"></i>{{ _('Factory catalog') }}
+    </a>
+    {% endif %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('templates.matrix') }}" title="{{ _('Every template against every firmware build of this ADOM') }}"><i class="bi bi-grid-3x3 me-1"></i>{{ _('Compatibility matrix') }}</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('provisioning.compare') }}" title="{{ _('A template against a newer one, on a build or a device') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Compare') }}</a>
+    <button class="btn btn-fw-primary" data-bs-toggle="modal" data-bs-target="#modalAddTemplate">
+      <i class="bi bi-plus-lg me-1"></i>{{ _('New Template') }}
+    </button>
+  </div>
+</div>
+
+<!-- Kind filter -->
+<div class="fw-toolbar">
+  <div class="fw-search-box">
+    <i class="bi bi-search search-icon"></i>
+    <input type="text" id="tplSearch" placeholder="{{ _('Search templates…') }}">
+  </div>
+  <div class="d-flex gap-1 flex-wrap">
+    <a href="{{ url_for('templates.index') }}" class="btn btn-sm {{ 'btn-fw-primary' if not active_kind and not active_status else 'btn-outline-secondary' }}">{{ _('All') }}</a>
+    {% for k in kinds %}
+    <a href="{{ url_for('templates.index', kind=k) }}"
+       class="btn btn-sm {{ 'btn-fw-primary' if active_kind == k else 'btn-outline-secondary' }}">{{ kind_labels[k] }}</a>
+    {% endfor %}
+  </div>
+  <div class="d-flex gap-1 flex-wrap ms-md-2">
+    <a href="{{ url_for('templates.index', kind=active_kind, status='pending') }}"
+       class="btn btn-sm {{ 'btn-fw-primary' if active_status == 'pending' else 'btn-outline-secondary' }}">
+       Pending{% if pending_template_count %} <span class="badge bg-warning text-dark">{{ pending_template_count }}</span>{% endif %}</a>
+    <a href="{{ url_for('templates.index', kind=active_kind, status='approved') }}"
+       class="btn btn-sm {{ 'btn-fw-primary' if active_status == 'approved' else 'btn-outline-secondary' }}">{{ _('Approved') }}</a>
+  </div>
+</div>
+
+<!-- Templates table -->
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="tplTable">
+    <thead>
+      <tr>
+        <th>{{ _('Kind') }}</th>
+        <th>{{ _('Name') }}</th>
+        <th>{{ _('Version') }}</th>
+        <th>{{ _('Firmware') }}</th>
+        <th>{{ _('Status') }}</th>
+        <th>{{ _('Note') }}</th>
+        <th>{{ _('Author') }}</th>
+        <th>{{ _('Created') }}</th>
+        <th class="actions-col">{{ _('Actions') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if templates %}
+        {% for t in templates %}
+        <tr>
+          <td><span class="fw-badge fw-badge-primary">{{ kind_labels.get(t.kind, t.kind) }}</span></td>
+          <td><strong>{{ t.name }}</strong>{% if t.locked %} <i class="bi bi-lock-fill text-muted" title="{{ _('Locked') }}"></i>{% endif %}</td>
+          <td>v{{ t.version }}</td>
+          <td style="white-space:nowrap;">{{ tcx.stamp_badge(t) }} {{ tcx.check_badge(t) }}</td>
+          <td>
+            {% if t.status == 'approved' %}
+              <span class="fw-badge fw-badge-success" title="Approved by {{ t.reviewed_by or '—' }}">{{ _('approved') }}</span>
+            {% elif t.status == 'rejected' %}
+              <span class="fw-badge fw-badge-danger" title="{{ t.reject_reason or 'rejected' }}">{{ _('rejected') }}</span>
+            {% else %}
+              <span class="fw-badge fw-badge-info">{{ _('pending') }}</span>
+            {% endif %}
+          </td>
+          <td style="font-size:13px; min-width:200px; max-width:280px;" class="note-cell">
+            {% if t.note %}
+              {% if t.note|length > 70 %}
+                <span class="note-short">{{ t.note[:70] }}…</span><span class="note-full" style="display:none; white-space:pre-wrap; word-break:break-word;">{{ t.note }}</span>
+                <a href="#" class="note-toggle" style="font-size:11px; white-space:nowrap;">{{ _('see more') }}</a>
+              {% else %}
+                <span style="white-space:pre-wrap; word-break:break-word;">{{ t.note }}</span>
+              {% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td style="font-size:13px;">{{ t.author or '—' }}</td>
+          <td style="font-size:13px; white-space:nowrap;">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
+          <td class="actions-col">
+            <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Compare with a newer version') }}" href="{{ url_for('provisioning.compare', a=t.id) }}"><i class="bi bi-arrow-left-right"></i></a>
+            <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="{{ _('View') }}"
+                    data-js="view-template" data-tpl-id="{{ t.id }}"><i class="bi bi-eye"></i></button>
+            <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Approval history (who approved / rejected)') }}"
+                    data-js="open-history" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"><i class="bi bi-clock-history"></i></button>
+            {% if current_user.can('operations.template_approve') and t.status == 'pending' %}
+            {% if t.kind == 'web-protection-profile' %}
+            {# A WPP deploys on approval: the dialog asks which devices the
+               family governs (fleet | selected, views/templates.py approve). #}
+            {% set _ws = (wpp_scopes|default({})).get(t.id, {}) %}
+            <button type="button" class="btn btn-sm btn-outline-success btn-sm-icon me-1" title="{{ _('Approve (make fleet-deployable)') }}"
+                    data-js="open-approve-wpp" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}" data-tpl-version="{{ t.version }}"
+                    data-scope="{{ _ws.get('scope', 'fleet') }}" data-bound="{{ _ws.get('bound', 0) }}"><i class="bi bi-check2-circle"></i></button>
+            {% else %}
+            <form method="POST" action="{{ url_for('templates.approve', template_id=t.id) }}" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-success btn-sm-icon me-1" title="{{ _('Approve (make fleet-deployable)') }}"><i class="bi bi-check2-circle"></i></button>
+            </form>
+            {% endif %}
+            <button class="btn btn-sm btn-outline-danger btn-sm-icon me-1" title="{{ _('Reject') }}"
+                    data-js="open-reject" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"><i class="bi bi-x-circle"></i></button>
+            {% endif %}
+            {% if current_user.can('operations.template_approve') and t.status == 'approved' %}
+            <form method="POST" action="{{ url_for('templates.unapprove', template_id=t.id) }}" style="display:inline;"
+                  data-fw-confirm-form="Revoke approval for '{{ t.name }}' (v{{ t.version }})? It returns to pending and is no longer fleet-deployable.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" title="{{ _('Revoke approval (back to pending)') }}"><i class="bi bi-arrow-counterclockwise"></i></button>
+            </form>
+            {% endif %}
+            {% if current_user.can('operations.template_apply') %}
+            <button class="btn btn-sm btn-fw-primary btn-sm-icon me-1" title="{{ _('Apply to devices') }}"
+                    data-js="open-apply" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"
+                    data-approved="{{ (t.status == 'approved')|tojson }}"><i class="bi bi-upload"></i></button>
+            {% endif %}
+            {% if current_user.can('operations.template_save') %}
+            <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Edit (saves a new version)') }}"
+                    data-js="edit-template" data-tpl-id="{{ t.id }}"><i class="bi bi-pencil"></i></button>
+            <form method="POST" action="{{ url_for('templates.clone', template_id=t.id) }}" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Clone') }}"><i class="bi bi-files"></i></button>
+            </form>
+            <form method="POST" action="{{ url_for('templates.delete', template_id=t.id) }}" style="display:inline;"
+                  data-fw-confirm-form="Delete template '{{ t.name }}' (v{{ t.version }})? This cannot be undone.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="{{ _('Delete') }}"
+                      {{ 'disabled' if t.locked else '' }}><i class="bi bi-trash"></i></button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="9">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-collection"></i></div>
+              <div class="fw-empty-state-title">{{ _('No templates yet') }}</div>
+              <div class="fw-empty-state-text">{{ _('Create a reusable desired-state profile to push to your appliances on demand.') }}</div>
+              <button class="btn btn-fw-primary mt-2" data-bs-toggle="modal" data-bs-target="#modalAddTemplate">
+                <i class="bi bi-plus-lg me-1"></i>{{ _('New Template') }}
+              </button>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ADD TEMPLATE MODAL -->
+<div class="modal fade fw-modal" id="modalAddTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-plus-lg me-2"></i>{{ _('New Template') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('templates.create') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-5">
+              <label class="fw-form-label">{{ _('Kind') }} <span class="text-danger">*</span></label>
+              <select class="form-select" name="kind" required>
+                {% for k in kinds %}<option value="{{ k }}">{{ kind_labels[k] }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-7">
+              <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" name="name" placeholder="{{ _('e.g. baseline-wpp') }}" required autocomplete="off">
+            </div>
+            <div class="col-md-12">
+              {{ tcx.firmware_select(firmware_choices, '', required=True) }}
+            </div>
+          </div>
+          <div class="mb-2 mt-3">
+            <label class="fw-form-label">{{ _('Note') }}</label>
+            <input type="text" class="form-control" name="note" placeholder="{{ _('Optional description') }}">
+          </div>
+          <div class="mb-2">
+            <label class="fw-form-label">{{ _('Body (JSON)') }} <span class="text-danger">*</span></label>
+            <textarea class="form-control" name="body" rows="10" spellcheck="false"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{}</textarea>
+            <div class="form-text">{{ _('Desired-state payload. Validated as JSON on save. Secrets are entered at apply-time, never stored here.') }}</div>
+          </div>
+          <div class="mb-1">
+            <label class="fw-form-label">{{ _('Exceptions (JSON)') }}</label>
+            <textarea class="form-control" name="exceptions" rows="4" spellcheck="false"
+                      placeholder="Optional — JSON object or array of exception rules"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"></textarea>
+            <div class="form-text">{{ _('Optional exception rules carried with the template (validated as JSON when present).') }}</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save Template') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW TEMPLATE MODAL -->
+<div class="modal fade fw-modal" id="modalViewTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-eye me-2"></i><span id="vt-title">{{ _('Template') }}</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2 text-muted" style="font-size:13px;" id="vt-meta"></div>
+        <div class="fw-card mb-3">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-cpu me-1"></i>{{ _('Firmware & API compatibility') }}</span></div>
+          <div class="fw-card-body" style="font-size:13px;">
+            <div id="vt-stamp" class="mb-2"></div>
+            {% if current_user.can('operations.template_approve') %}
+            <div id="vt-stamp-legacy" class="mb-2" style="display:none;">
+              <div class="fw-alert fw-alert-warning mb-1">{{ _('No firmware is recorded for this template (saved before builds were recorded), so newer builds cannot be judged against it. Record the build its body fits best:') }}</div>
+              <button type="button" class="btn btn-sm btn-fw-outline" data-js="vt-stamp-preview">{{ _('Find the build it fits') }}</button>
+              <button type="button" class="btn btn-sm btn-fw-primary" data-js="vt-stamp-save" id="vt-stamp-save" disabled>{{ _('Record that build') }}</button>
+              <div id="vt-stamp-out" class="mt-2"></div>
+            </div>
+            {% endif %}
+            <label class="fw-form-label">{{ _('Checked against its own build when saved') }}</label>
+            <div id="vt-selfcheck" class="mb-2"></div>
+            <label class="fw-form-label">{{ _('Validated builds (approval)') }}</label>
+            <div id="vt-validated" class="mb-2"></div>
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+              <button type="button" class="btn btn-sm btn-fw-outline" data-js="vt-check"><i class="bi bi-search me-1"></i>{{ _('Check against fleet builds') }}</button>
+              {% if current_user.can('operations.template_approve') %}
+              <button type="button" class="btn btn-sm btn-outline-success" data-js="vt-validate" id="vt-validate-btn"><i class="bi bi-patch-check me-1"></i>{{ _('Revalidate for fleet builds') }}</button>
+              {% endif %}
+            </div>
+            <div id="vt-check-out" class="mt-2"></div>
+            {% if current_user.can('operations.template_save') %}
+            <div class="row g-2 align-items-end mt-2">
+              <div class="col-md-5">
+                <label class="fw-form-label" for="vt-adapt-build">{{ _('Adapt to firmware') }}</label>
+                <select class="form-select form-select-sm" id="vt-adapt-build">
+                  <option value="">{{ _('— target build —') }}</option>
+                  {% for b in firmware_choices %}<option value="{{ b.version }}">{{ b.version }}{% if b.in_fleet %} · {{ _('in fleet') }}{% endif %}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-7 d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-fw-outline" data-js="vt-adapt-preview">{{ _('Preview') }}</button>
+                <button type="button" class="btn btn-sm btn-fw-primary" data-js="vt-adapt-save" id="vt-adapt-save" disabled>{{ _('Save adapted version') }}</button>
+              </div>
+            </div>
+            <div id="vt-adapt-out" class="mt-2"></div>
+            <div id="vt-decide" class="mt-2"></div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="fw-card mb-3">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-link-45deg me-1"></i>{{ _('Devices this template governs') }}</span></div>
+          <div class="fw-card-body" style="font-size:13px;">
+            <div id="vt-bindings" class="mb-2"></div>
+            <div id="vt-placeholders" class="text-muted small mb-2"></div>
+            {% if current_user.can('operations.template_save') %}
+            <div class="row g-2 align-items-end">
+              <div class="col-md-4">
+                <label class="fw-form-label" for="vt-bind-dev">{{ _('Device') }}</label>
+                <select class="form-select form-select-sm" id="vt-bind-dev">
+                  {% for a in appliances %}<option value="{{ a.id }}" data-kind="{{ a.kind }}">{{ a.name }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-2">
+                <label class="fw-form-label" for="vt-bind-ver">{{ _('Version') }}</label>
+                <select class="form-select form-select-sm" id="vt-bind-ver"></select>
+              </div>
+              <div class="col-md-4">
+                <label class="fw-form-label" for="vt-bind-vars">{{ _('Variables (JSON)') }}</label>
+                <input class="form-control form-control-sm" id="vt-bind-vars" placeholder='{"vip": "192.0.2.10"}'>
+              </div>
+              <div class="col-md-2"><button type="button" class="btn btn-sm btn-fw-primary" data-js="vt-bind">{{ _('Bind') }}</button></div>
+            </div>
+            <div id="vt-bind-out" class="mt-2"></div>
+            {% endif %}
+          </div>
+        </div>
+        <label class="fw-form-label">{{ _('Body') }}</label>
+        <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px; max-height:340px; overflow:auto; font-size:12.5px;"><code id="vt-body"></code></pre>
+        <div id="vt-exc-wrap" style="display:none;">
+          <label class="fw-form-label">{{ _('Exceptions') }}</label>
+          <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px; max-height:200px; overflow:auto; font-size:12.5px;"><code id="vt-exc"></code></pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Close') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT TEMPLATE MODAL (saves a NEW version of the same kind/name) -->
+<div class="modal fade fw-modal" id="modalEditTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>{{ _('Edit Template') }} <span class="text-muted" style="font-weight:normal;font-size:13px;">{{ _('→ saves a new version') }}</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="editForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-5">
+              <label class="fw-form-label">{{ _('Kind') }}</label>
+              <input type="text" class="form-control" id="et-kind" readonly>
+            </div>
+            <div class="col-md-7">
+              <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" name="name" id="et-name" required autocomplete="off">
+            </div>
+            <div class="col-md-12">
+              {{ tcx.firmware_select(firmware_choices, '', required=False, id='et-firmware') }}
+            </div>
+          </div>
+          <div class="mb-2 mt-3">
+            <label class="fw-form-label">{{ _('Note') }}</label>
+            <input type="text" class="form-control" name="note" id="et-note" placeholder="{{ _('Optional description') }}">
+          </div>
+          <div class="mb-2">
+            <label class="fw-form-label">{{ _('Body (JSON)') }} <span class="text-danger">*</span></label>
+            <textarea class="form-control" name="body" id="et-body" rows="10" spellcheck="false"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"></textarea>
+          </div>
+          <div class="mb-1">
+            <label class="fw-form-label">{{ _('Exceptions (JSON)') }}</label>
+            <textarea class="form-control" name="exceptions" id="et-exceptions" rows="4" spellcheck="false"
+                      placeholder="Optional — JSON object or array of exception rules"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save New Version') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- APPLY TO DEVICES MODAL (dry-run preview -> confirm live write) -->
+<div class="modal fade fw-modal" id="modalApplyTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="POST" id="applyForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirm" value="1">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-upload me-2"></i>{{ _('Apply') }} <span id="ap-name"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="ap-status-note" class="fw-alert fw-alert-warning" style="display:none; font-size:13px;"></div>
+          <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span style="font-size:13px;"><strong>{{ _('Live write.') }}</strong> {{ _('Confirm performs a real config push (canary device first; the rest only if the canary succeeds). Preview first.') }}</span>
+          </div>
+          <label class="fw-form-label">{{ _('Target devices') }} <span class="text-danger">*</span></label>
+          {% if appliances %}
+          <select class="form-select" name="device_ids" id="ap-devices" multiple size="6" required>
+            {% for a in appliances %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+          </select>
+          <div class="form-text">{{ _('Hold Ctrl/Cmd to select several. The first selected device is the canary.') }}</div>
+          {% else %}
+          <div class="text-muted" style="font-size:13px;">{{ _('No appliances are configured.') }}</div>
+          {% endif %}
+          <div class="mt-3">
+            <button type="button" class="btn btn-fw-outline btn-sm" data-js="apply-preview">
+              <i class="bi bi-search me-1"></i>{{ _('Dry-run preview') }}
+            </button>
+          </div>
+          <div id="ap-preview" class="mt-3" style="display:none;">
+            <label class="fw-form-label">{{ _('Dry-run preview') }}</label>
+            <div id="ap-preview-box" style="max-height:260px; overflow:auto; border:1px solid var(--fw-border,#dee2e6); border-radius:8px; padding:8px; font-size:12.5px;"></div>
+          </div>
+          <div id="ap-compat"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-danger" id="ap-confirm" disabled>
+            <i class="bi bi-upload me-1"></i>{{ _('Confirm live apply') }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Approval HISTORY modal (who approved / who rejected, full timeline) -->
+<div class="modal fade fw-modal" id="modalHistoryTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-clock-history me-2"></i>{{ _('Approval history —') }} <span id="ht-title">{{ _('Template') }}</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3 text-muted" id="ht-meta" style="font-size:13px;"></div>
+        <div id="ht-timeline"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Close') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Approve a Web Protection Profile template: which devices it governs -->
+<div class="modal fade fw-modal" id="modalApproveWpp" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" id="approveWppForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-check2-circle me-2"></i>{{ _('Approve') }} <span id="aw-name"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2" style="font-size:13px;">{{ _('An approved Web Protection Profile template is deployed to the devices it governs, and is read-only on them. Which devices does this template govern?') }}</p>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="radio" name="rollout_scope" value="fleet" id="aw-fleet">
+            <label class="form-check-label" for="aw-fleet"><strong>{{ _('Every FortiWeb in this ADOM') }}</strong><br>
+              <span class="text-muted" style="font-size:12px;">{{ _('Deployed to all of them now, and again on every approved version.') }}</span></label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="rollout_scope" value="selected" id="aw-selected">
+            <label class="form-check-label" for="aw-selected"><strong>{{ _('Only the devices I pick in Mass Deploy') }}</strong><br>
+              <span class="text-muted" style="font-size:12px;">{{ _('Nothing is deployed now. Operations › Automation › Mass Deploy binds each device it deploys to, and later approved versions go to those devices only.') }}</span></label>
+          </div>
+          <div class="fw-alert fw-alert-info mt-3 mb-0" id="aw-bound" style="display:none; font-size:12px;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check2-circle me-1"></i>{{ _('Approve template') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Reject reason modal -->
+<div class="modal fade fw-modal" id="modalRejectTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" id="rejectForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-x-circle me-2"></i>{{ _('Reject') }} <span id="rj-name"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label class="fw-form-label" for="rj-reason">{{ _('Reason (shown to the author)') }}</label>
+          <textarea class="form-control" id="rj-reason" name="reason" rows="3"
+                    placeholder="Why is this template being rejected?"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-danger"><i class="bi bi-x-circle me-1"></i>{{ _('Reject template') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/template_compat.js') }}" nonce="{{ csp_nonce }}"></script>
+<script nonce="{{ csp_nonce }}">
+function toggleNote(a) {
+  var td = a.closest('td');
+  var s = td.querySelector('.note-short'), f = td.querySelector('.note-full');
+  var showFull = (f.style.display === 'none');
+  f.style.display = showFull ? 'inline' : 'none';
+  s.style.display = showFull ? 'none' : 'inline';
+  a.textContent = showFull ? 'see less' : 'see more';
+  return false;
+}
+
+function htStatusBadge(s) {
+  if (s === 'approved') return '<span class="fw-badge fw-badge-success">approved</span>';
+  if (s === 'rejected') return '<span class="fw-badge fw-badge-danger">rejected</span>';
+  return '<span class="fw-badge fw-badge-info">pending</span>';
+}
+function htActionBadge(a) {
+  if (a === 'approve') return '<span class="fw-badge fw-badge-success">approved</span>';
+  if (a === 'reject') return '<span class="fw-badge fw-badge-danger">rejected</span>';
+  if (a === 'unapprove') return '<span class="fw-badge fw-badge-warning text-dark">revoked</span>';
+  return '<span class="fw-badge">' + vtEsc(a) + '</span>';
+}
+
+function openHistory(id, name) {
+  document.getElementById('ht-title').textContent = name;
+  document.getElementById('ht-meta').textContent = '';
+  var tl = document.getElementById('ht-timeline');
+  tl.innerHTML = '<div class="text-muted" style="font-size:13px;">Loading…</div>';
+  showModal('modalHistoryTemplate');
+  fetch('/templates/' + id, {headers: {'Accept': 'application/json'}})
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (t) {
+      document.getElementById('ht-meta').innerHTML =
+        'Current status: ' + htStatusBadge(t.status) +
+        (t.reviewed_by ? ' · last reviewed by <strong>' + vtEsc(t.reviewed_by) + '</strong>' : '');
+      var ev = t.history || [];
+      if (!ev.length) {
+        tl.innerHTML = '<div class="text-muted" style="font-size:13px;">No approval activity yet — this template is still awaiting its first review.</div>';
+        return;
+      }
+      var html = '<ul style="list-style:none; margin:0; padding:0;">';
+      ev.forEach(function (e) {
+        var when = (e.created_at || '').replace('T', ' ').substring(0, 16);
+        html += '<li style="padding:8px 2px; border-bottom:1px solid var(--fw-border,#1e2a3f);">' +
+                htActionBadge(e.action) + ' by <strong>' + vtEsc(e.reviewer || '—') + '</strong>' +
+                ' <span class="text-muted" style="font-size:12px;">' + vtEsc(when) + '</span>' +
+                (e.reason ? '<div style="font-size:12.5px; margin-top:3px; white-space:pre-wrap; word-break:break-word;"><i class="bi bi-chat-left-text me-1 text-muted"></i>' + vtEsc(e.reason) + '</div>' : '') +
+                '</li>';
+      });
+      html += '</ul>';
+      tl.innerHTML = html;
+    })
+    .catch(function (e) { tl.innerHTML = '<span class="text-danger">Could not load history: ' + vtEsc(e.message) + '</span>'; });
+}
+
+function filterTemplates(q) {
+  q = (q || '').toLowerCase();
+  document.querySelectorAll('#tplTable tbody tr').forEach(function (row) {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function vtEsc(v) {
+  var d = document.createElement('div');
+  d.textContent = (v === null || v === undefined) ? '' : String(v);
+  return d.innerHTML;
+}
+
+function showModal(id) {
+  if (window.API && API.openModal) { API.openModal(id); }
+  else if (window.bootstrap) { new bootstrap.Modal(document.getElementById(id)).show(); }
+}
+
+function viewTemplate(id) {
+  fetch('/templates/' + id, {headers: {'Accept': 'application/json'}})
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (t) {
+      document.getElementById('vt-title').textContent = t.name + ' (v' + t.version + ')';
+      document.getElementById('vt-meta').innerHTML =
+        'Kind: <strong>' + vtEsc(t.kind) + '</strong> · Author: ' + vtEsc(t.author || '—') +
+        ' · Created: ' + vtEsc((t.created_at || '').replace('T', ' ').substring(0, 16)) +
+        (t.note ? '<br>Note: ' + vtEsc(t.note) : '');
+      document.getElementById('vt-body').textContent = t.body;
+      var excWrap = document.getElementById('vt-exc-wrap');
+      if (t.exceptions) { document.getElementById('vt-exc').textContent = t.exceptions; excWrap.style.display = ''; }
+      else { excWrap.style.display = 'none'; }
+      vtRenderCompat(t);
+      showModal('modalViewTemplate');
+    })
+    .catch(function (e) { alert('Could not load template: ' + e.message); });
+}
+
+var VT_ID = null;
+function vtRenderCompat(t) {
+  VT_ID = t.id;
+  document.getElementById('vt-stamp').innerHTML = TplCompat.stamp(t);
+  var sc = t.compat_check || {};
+  var scMap = {};
+  if (sc.state) { scMap[sc.target_version || t.source_firmware || '—'] = sc; }
+  document.getElementById('vt-selfcheck').innerHTML = TplCompat.buildsTable(scMap, 'Not checked.');
+  document.getElementById('vt-validated').innerHTML = TplCompat.buildsTable(t.validated_builds,
+    t.status === 'approved' ? 'No build recorded for this approval — revalidate it.' : 'Validated when approved.');
+  document.getElementById('vt-check-out').innerHTML = '';
+  var vb = document.getElementById('vt-validate-btn');
+  if (vb) vb.style.display = (t.status === 'approved') ? '' : 'none';
+  var ao = document.getElementById('vt-adapt-out'); if (ao) ao.innerHTML = '';
+  var as = document.getElementById('vt-adapt-save'); if (as) as.disabled = true;
+  var dc = document.getElementById('vt-decide'); if (dc) dc.innerHTML = '';
+  var sl = document.getElementById('vt-stamp-legacy');
+  if (sl) sl.style.display = t.source_firmware ? 'none' : '';
+  var so = document.getElementById('vt-stamp-out'); if (so) so.innerHTML = '';
+  var ss = document.getElementById('vt-stamp-save'); if (ss) ss.disabled = true;
+  vtRenderBindings(t);
+}
+
+// --- bindings: the devices this template governs -------------------------
+function vtRenderBindings(t) {
+  var el = document.getElementById('vt-bindings');
+  var rows = t.bindings || [];
+  if (!rows.length) {
+    el.innerHTML = '<span class="text-muted">' + (t.kind === 'web-protection-profile'
+      ? 'No binding: an approved version governs (and locks) this profile on every device of the ADOM.'
+      : 'No binding: applied only where someone pushes it.') + '</span>';
+  } else {
+    el.innerHTML = '<table class="fw-table"><thead><tr><th>Device</th><th>Follows</th><th>Build</th><th>Verdict</th><th>Compliance</th><th>Variables</th><th></th></tr></thead><tbody>' +
+      rows.map(function (b) {
+        // Compliance: the cached device objects against the rendered template
+        // (met / deviates / unmeasured); the reason is the tooltip.
+        var comp = b.compliance || 'unmeasured';
+        var compCls = comp === 'met' ? 'fw-badge-success' : (comp === 'deviates' ? 'fw-badge-danger' : 'fw-badge-secondary');
+        var compCell = '<span class="fw-badge ' + compCls + '" data-compliance="' + vtEsc(comp) + '" title="' + vtEsc(b.compliance_reason || '') + '">' + vtEsc(comp) + '</span>' +
+          (comp === 'deviates' && b.compliance_deviations ? ' <span class="small">' + vtEsc(b.compliance_deviations) + ' object(s)</span>' : '');
+        return '<tr><td>' + vtEsc(b.appliance) + '</td><td>' + (b.pinned_version ? 'v' + vtEsc(b.pinned_version) : 'newest approved' + (b.version ? ' (v' + vtEsc(b.version) + ')' : '')) +
+          '</td><td>' + vtEsc(b.build || '—') + '</td><td>' + (b.blocking ? '<span class="fw-badge fw-badge-danger">does not fit</span> ' : (b.state === 'blind' || b.state === 'unmeasured' ? '<span class="fw-badge fw-badge-secondary" data-binding-verdict="' + vtEsc(b.state) + '">served, fields not measured</span> ' : '<span class="fw-badge fw-badge-success">fits</span> ')) +
+          '<span class="small">' + vtEsc(b.reason) + '</span></td><td>' + compCell + '</td><td class="small">' + vtEsc(JSON.stringify(b.variables || {})) +
+          '</td><td><button type="button" class="btn btn-sm btn-outline-danger btn-sm-icon" data-unbind="' + b.id + '" title="Remove binding"><i class="bi bi-x-lg"></i></button></td></tr>';
+      }).join('') + '</tbody></table>';
+    el.querySelectorAll('[data-unbind]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (!confirm('Remove this binding?')) return;
+        var fd = new FormData(); fd.append('csrf_token', vtCsrf());
+        fetch('/templates/bindings/' + btn.dataset.unbind + '/delete', {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+          .then(function (r) { return r.json(); }).then(function () { viewTemplate(VT_ID); });
+      });
+    });
+  }
+  var ph = document.getElementById('vt-placeholders');
+  if (ph) ph.textContent = (t.placeholders || []).length
+    ? 'The body asks each device for: ' + t.placeholders.join(', ') + ' (write \x7b\x7b name \x7d\x7d in a value; set it per device here).'
+    : 'The body has no \x7b\x7b variable \x7d\x7d placeholder: every bound device receives the same values.';
+  var ver = document.getElementById('vt-bind-ver');
+  if (ver) {
+    ver.innerHTML = '<option value="">newest approved</option>' + (t.versions || []).map(function (v) {
+      return '<option value="' + v.version + '">v' + v.version + ' · ' + vtEsc(v.status) + '</option>';
+    }).join('');
+  }
+  var dev = document.getElementById('vt-bind-dev');
+  if (dev) Array.prototype.forEach.call(dev.options, function (o) { o.hidden = o.dataset.kind !== (t.product || 'fortiweb'); });
+}
+
+function vtBind() {
+  var out = document.getElementById('vt-bind-out');
+  var fd = new FormData(); fd.append('csrf_token', vtCsrf());
+  fd.append('appliance_id', document.getElementById('vt-bind-dev').value);
+  fd.append('pinned_version', document.getElementById('vt-bind-ver').value);
+  fd.append('variables', document.getElementById('vt-bind-vars').value || '{}');
+  fetch('/templates/' + VT_ID + '/bindings', {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j.ok) { out.innerHTML = '<span class="text-danger">' + vtEsc(j.error) + '</span>'; return; }
+      out.innerHTML = '<span class="text-success">Bound ' + vtEsc(j.binding.appliance) + '.</span>';
+      viewTemplate(VT_ID);
+    })
+    .catch(function (e) { out.innerHTML = '<span class="text-danger">' + vtEsc(e.message) + '</span>'; });
+}
+
+// --- legacy stamp ---------------------------------------------------------
+var VT_STAMP = '';
+function vtStamp(confirm) {
+  var out = document.getElementById('vt-stamp-out');
+  var fd = new FormData(); fd.append('csrf_token', vtCsrf());
+  if (confirm) { fd.append('confirm', '1'); fd.append('build', VT_STAMP); }
+  fetch('/templates/' + VT_ID + '/stamp', {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j.ok) { out.innerHTML = '<span class="text-danger">' + vtEsc(j.error) + '</span>'; return; }
+      if (j.mode === 'preview') {
+        var c = j.candidates || [];
+        VT_STAMP = (c[0] && !c[0].blocking) ? c[0].build : '';
+        out.innerHTML = '<table class="fw-table"><thead><tr><th>Build</th><th>Fit</th></tr></thead><tbody>' +
+          c.map(function (x, i) { return '<tr><td>' + vtEsc(x.build) + (i === 0 && !x.blocking ? ' <span class="fw-badge fw-badge-success">best fit</span>' : '') +
+            '</td><td>' + vtEsc(x.text) + '</td></tr>'; }).join('') + '</tbody></table>' +
+          (VT_STAMP ? '' : '<span class="text-danger">No measured build fits this body: re-capture it from a device.</span>');
+        document.getElementById('vt-stamp-save').disabled = !VT_STAMP;
+      } else {
+        out.innerHTML = '<span class="text-success">Recorded ' + vtEsc(j.build) + '.</span>';
+        setTimeout(function () { location.reload(); }, 1000);
+      }
+    })
+    .catch(function (e) { out.innerHTML = '<span class="text-danger">' + vtEsc(e.message) + '</span>'; });
+}
+
+// --- decisions for the fields the target build adds -------------------------
+function vtRenderDecisions(plan) {
+  var el = document.getElementById('vt-decide');
+  if (!el) return;
+  var nf = plan.new_fields || {};
+  var keys = Object.keys(nf);
+  if (!keys.length) {
+    el.innerHTML = (plan.new_fields_unknown || []).length
+      ? '<div class="text-muted small">Fields added by ' + vtEsc(plan.target_version) + ' could not be computed for ' + vtEsc(plan.new_fields_unknown.join(', ')) +
+        (plan.source_firmware ? '' : ' (no firmware is recorded for this template)') + '.</div>' : '';
+    return;
+  }
+  var html = '<label class="fw-form-label">' + vtEsc(plan.target_version) + ' adds these fields — decide each one</label>' +
+    '<table class="fw-table"><thead><tr><th>Object</th><th>Field</th><th>Decision</th><th>Value</th></tr></thead><tbody>';
+  keys.forEach(function (k) {
+    nf[k].forEach(function (f) {
+      var spec = ((plan.new_field_specs || {})[k] || {})[f] || {};
+      // a template never stores a secret (services.template_compat._is_secret_field)
+      var secret = /(secret|passw|psk|private|passphrase|-key$|^key$)/i.test(f) ||
+                   ['password', 'secret'].indexOf(String(spec.type || '').toLowerCase()) >= 0;
+      var opts = spec.options || spec.choices || [];
+      var input = opts.length
+        ? '<select class="form-select form-select-sm" data-dval>' + opts.map(function (o) { return '<option>' + vtEsc(o) + '</option>'; }).join('') + '</select>'
+        : '<input class="form-control form-control-sm" data-dval placeholder="' + vtEsc(spec.type || '') + '">';
+      html += '<tr data-dkey="' + vtEsc(k) + '" data-dfield="' + vtEsc(f) + '"><td><code>' + vtEsc(k) + '</code></td><td>' + vtEsc(f) +
+        '</td><td><select class="form-select form-select-sm" data-dmode><option value="default">keep device default</option>' +
+        (secret ? '' : '<option value="set">set a value</option>') + '</select></td><td>' +
+        (secret ? '<span class="text-muted small">secret: set it on the device</span>' : input) + '</td></tr>';
+    });
+  });
+  el.innerHTML = html + '</tbody></table>';
+}
+
+function vtCollectDecisions() {
+  var out = {};
+  document.querySelectorAll('#vt-decide tr[data-dkey]').forEach(function (tr) {
+    var mode = tr.querySelector('[data-dmode]').value;
+    var d = {mode: mode};
+    if (mode === 'set') d.value = tr.querySelector('[data-dval]').value;
+    (out[tr.dataset.dkey] = out[tr.dataset.dkey] || {})[tr.dataset.dfield] = d;
+  });
+  return out;
+}
+
+function vtCsrf() { return document.querySelector('#applyForm input[name=csrf_token]').value; }
+
+function vtCheck() {
+  var out = document.getElementById('vt-check-out');
+  out.innerHTML = '<span class="text-muted">Checking…</span>';
+  fetch('/templates/' + VT_ID + '/check', {headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) { out.innerHTML = TplCompat.buildsTable(j.reports, 'No appliance of this product reports a firmware.'); })
+    .catch(function (e) { out.innerHTML = '<span class="text-danger">' + vtEsc(e.message) + '</span>'; });
+}
+
+function vtValidate() {
+  var fd = new FormData(); fd.append('csrf_token', vtCsrf());
+  fetch('/templates/' + VT_ID + '/validate', {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j.ok) { document.getElementById('vt-check-out').innerHTML = '<span class="text-danger">' + vtEsc(j.error) + '</span>'; return; }
+      document.getElementById('vt-validated').innerHTML = TplCompat.buildsTable(j.verdicts, 'No build to validate.');
+      document.getElementById('vt-check-out').innerHTML = j.not_fitting.length
+        ? '<span class="text-danger">Does not fit: ' + vtEsc(j.not_fitting.join(', ')) + ' — adapt it for those builds.</span>'
+        : '<span class="text-success">Validated.</span>';
+    })
+    .catch(function (e) { alert('Validation failed: ' + e.message); });
+}
+
+function vtAdapt(confirm) {
+  var build = document.getElementById('vt-adapt-build').value;
+  var out = document.getElementById('vt-adapt-out');
+  if (!build) { out.innerHTML = '<span class="text-danger">Choose the target build.</span>'; return; }
+  var fd = new FormData(); fd.append('csrf_token', vtCsrf()); fd.append('build', build);
+  if (confirm) { fd.append('confirm', '1'); fd.append('decisions', JSON.stringify(vtCollectDecisions())); }
+  fetch('/templates/' + VT_ID + '/adapt', {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j.ok) { out.innerHTML = '<span class="text-danger">' + vtEsc(j.error) + '</span>'; document.getElementById('vt-adapt-save').disabled = true; return; }
+      if (j.mode === 'preview') {
+        out.innerHTML = TplCompat.adaptPlan(j.plan);
+        vtRenderDecisions(j.plan);
+        document.getElementById('vt-adapt-save').disabled = !(j.plan.changes > 0 && !(j.plan.absent_keys || []).length);
+      } else {
+        out.innerHTML = '<span class="text-success">Saved v' + vtEsc(j.version) + ' (pending approval).</span>';
+        setTimeout(function () { location.reload(); }, 1200);
+      }
+    })
+    .catch(function (e) { out.innerHTML = '<span class="text-danger">' + vtEsc(e.message) + '</span>'; });
+}
+
+function editTemplate(id) {
+  fetch('/templates/' + id, {headers: {'Accept': 'application/json'}})
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (t) {
+      document.getElementById('editForm').action = '/templates/' + id + '/edit';
+      document.getElementById('et-kind').value = t.kind;
+      document.getElementById('et-name').value = t.name;
+      document.getElementById('et-note').value = t.note || '';
+      document.getElementById('et-body').value = t.body;
+      document.getElementById('et-exceptions').value = t.exceptions || '';
+      var fw = document.getElementById('et-firmware');
+      if (fw) {
+        fw.value = t.source_firmware || '';
+        // A version with a recorded build keeps it unless changed; one without
+        // (saved before builds were recorded) must name it now.
+        fw.required = !t.source_firmware;
+      }
+      showModal('modalEditTemplate');
+    })
+    .catch(function (e) { alert('Could not load template: ' + e.message); });
+}
+
+function openApply(id, name, approved) {
+  var form = document.getElementById('applyForm');
+  form.action = '/templates/' + id + '/apply';
+  document.getElementById('ap-name').textContent = name;
+  document.getElementById('ap-preview').style.display = 'none';
+  document.getElementById('ap-preview-box').innerHTML = '';
+  document.getElementById('ap-compat').innerHTML = '';
+  document.getElementById('ap-confirm').disabled = true;
+  var note = document.getElementById('ap-status-note');
+  if (note) {
+    note.style.display = approved ? 'none' : 'block';
+    note.textContent = approved ? '' :
+      'This template is not approved yet — you can apply it to ONE device, but a multi-device (fleet) rollout is blocked until an admin approves it.';
+  }
+  showModal('modalApplyTemplate');
+}
+
+function openApproveWpp(btn) {
+  var d = btn.dataset;
+  document.getElementById('aw-name').textContent = d.tplName + ' v' + d.tplVersion;
+  document.getElementById('aw-fleet').checked = d.scope !== 'selected';
+  document.getElementById('aw-selected').checked = d.scope === 'selected';
+  var bound = parseInt(d.bound || '0', 10), box = document.getElementById('aw-bound');
+  box.style.display = bound ? '' : 'none';
+  box.textContent = bound ? ('This template is bound to ' + bound + ' device(s): it governs those, and approval deploys to the ones that follow the newest version, whichever option is chosen.') : '';
+  document.getElementById('approveWppForm').action = '/templates/' + d.tplId + '/approve';
+  showModal('modalApproveWpp');
+}
+
+function openReject(id, name) {
+  document.getElementById('rj-name').textContent = name;
+  document.getElementById('rj-reason').value = '';
+  document.getElementById('rejectForm').action = '/templates/' + id + '/reject';
+  showModal('modalRejectTemplate');
+}
+
+function applySelectedIds() {
+  var sel = document.getElementById('ap-devices');
+  var ids = [];
+  if (sel) { for (var i = 0; i < sel.options.length; i++) { if (sel.options[i].selected) ids.push(sel.options[i].value); } }
+  return ids;
+}
+
+function applyPreview() {
+  var form = document.getElementById('applyForm');
+  var ids = applySelectedIds();
+  if (!ids.length) { alert('Select at least one target device.'); return; }
+  var fd = new FormData();
+  fd.append('csrf_token', form.querySelector('input[name=csrf_token]').value);
+  fd.append('format', 'json');
+  ids.forEach(function (v) { fd.append('device_ids', v); });
+  fetch(form.action, {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+    .then(function (res) {
+      var box = document.getElementById('ap-preview-box');
+      if (!res.ok || !res.j.ok) { box.innerHTML = '<span class="text-danger">' + vtEsc(res.j.error || 'Preview failed') + '</span>'; }
+      else {
+        box.innerHTML = renderPreview(res.j);
+        var c = res.j.compat;
+        document.getElementById('ap-compat').innerHTML = TplCompat.applyPanel(c, res.j.can_override);
+        document.getElementById('ap-confirm').disabled = !!(c && c.blocked && !res.j.can_override);
+      }
+      document.getElementById('ap-preview').style.display = '';
+    })
+    .catch(function (e) { alert('Preview failed: ' + e.message); });
+}
+
+function renderPreview(j) {
+  var html = '<div class="mb-2 text-muted">' + j.item_count + ' push item(s) per device · ' + j.preview.length + ' device(s)</div>';
+  j.preview.forEach(function (d) {
+    html += '<div class="mb-2"><strong>' + vtEsc(d.appliance || ('device ' + d.appliance_id)) + '</strong> ' +
+            (d.ok ? '<span class="fw-badge fw-badge-success">ok</span>' : '<span class="fw-badge fw-badge-danger">error</span>') + '<ul style="margin:.25rem 0 .25rem 1rem;padding:0;">';
+    (d.results || []).forEach(function (r) {
+      var req = r.request || {};
+      html += '<li><span class="mono">' + vtEsc(r.action) + ' ' + vtEsc(req.method || '') + ' ' + vtEsc(req.path || r.endpoint || '') + '</span>' +
+              (r.error ? ' <span class="text-danger">' + vtEsc(r.error) + '</span>' : '') + '</li>';
+    });
+    html += '</ul></div>';
+  });
+  return html;
+}
+
+{% if edit_template_id %}document.addEventListener('DOMContentLoaded', function () { editTemplate({{ edit_template_id }}); });{% endif %}
+
+// ── Event bindings (CSP: no inline handlers) ───────────────────────────────
+(function () {
+  var search = document.getElementById('tplSearch');
+  if (search) search.addEventListener('input', function (event) { filterTemplates(this.value); });
+
+  document.querySelectorAll('#tplTable a.note-toggle').forEach(function (a) {
+    a.addEventListener('click', function (event) {
+      var r = toggleNote(this);
+      if (r === false) event.preventDefault();
+    });
+  });
+
+  document.querySelectorAll('[data-js="view-template"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { viewTemplate(this.dataset.tplId); });
+  });
+  document.querySelectorAll('[data-js="open-history"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openHistory(this.dataset.tplId, this.dataset.tplName); });
+  });
+  document.querySelectorAll('[data-js="open-approve-wpp"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openApproveWpp(this); });
+  });
+  document.querySelectorAll('[data-js="open-reject"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openReject(this.dataset.tplId, this.dataset.tplName); });
+  });
+  document.querySelectorAll('[data-js="open-apply"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      openApply(this.dataset.tplId, this.dataset.tplName, this.dataset.approved === 'true');
+    });
+  });
+  document.querySelectorAll('[data-js="edit-template"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { editTemplate(this.dataset.tplId); });
+  });
+
+  var preview = document.querySelector('[data-js="apply-preview"]');
+  if (preview) preview.addEventListener('click', function (event) { applyPreview(); });
+
+  var bind = function (sel, fn) { var el = document.querySelector(sel); if (el) el.addEventListener('click', fn); };
+  bind('[data-js="vt-check"]', function () { vtCheck(); });
+  bind('[data-js="vt-validate"]', function () { vtValidate(); });
+  bind('[data-js="vt-adapt-preview"]', function () { vtAdapt(false); });
+  bind('[data-js="vt-adapt-save"]', function () { vtAdapt(true); });
+  bind('[data-js="vt-stamp-preview"]', function () { vtStamp(false); });
+  bind('[data-js="vt-stamp-save"]', function () { vtStamp(true); });
+  bind('[data-js="vt-bind"]', function () { vtBind(); });
+})();
+</script>
+{% endblock %}

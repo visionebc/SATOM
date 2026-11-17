@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{{ _('Sign In — SATOM') }}</title>
+
+  {# Vendored, not a CDN: this product ships offline installers for isolated
+     management networks, where a sign-in page that needs public internet to
+     lay itself out is a sign-in page nobody can read. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/fortiweb.css') }}">
+  <link rel="icon" href="{{ theme_favicon_url or url_for('static', filename='img/favicon.png') }}">
+  {% if theme_css %}<style nonce="{{ csp_nonce }}">{{ theme_css }}</style>{% endif %}
+
+  <style nonce="{{ csp_nonce }}">
+    html {
+      background: var(--fw-sidebar-bg);
+      background-image: var(--fw-gradient-brand);
+      background-repeat: no-repeat;
+      min-height: 100%;
+    }
+    body {
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      font-family: var(--fw-font);
+    }
+
+    .login-wrapper {
+      width: 100%;
+      max-width: 420px;
+      padding: 20px;
+    }
+
+    .login-card {
+      background: #FFFFFF;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+      overflow: hidden;
+    }
+
+    .login-header {
+      background: var(--fw-topbar-bg);
+      background-image: var(--fw-gradient-brand);
+      padding: 32px 32px 28px;
+      text-align: center;
+    }
+
+    .login-logo {
+      width: 72px;
+      height: 72px;
+      display: block;
+      object-fit: contain;
+      margin: 0 auto 16px;
+      /* transparent mark on a dark card — halo, not a plate */
+      filter: drop-shadow(0 0 10px rgba(18, 184, 255, .55))
+              drop-shadow(0 0 3px rgba(255, 212, 90, .35));
+    }
+
+    .login-brand-text {
+      color: #FFFFFF;
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0 0 4px;
+      letter-spacing: 0.2px;
+    }
+
+    .login-subtitle {
+      color: var(--fw-sidebar-text);
+      font-size: 13px;
+      margin: 0;
+    }
+
+    .login-body {
+      padding: 32px;
+    }
+
+    .login-body .form-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #495057;
+      margin-bottom: 5px;
+    }
+
+    .login-body .form-control {
+      border: 1px solid #DEE2E6;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 14px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .login-body .form-control:focus {
+      border-color: var(--fw-accent);
+      box-shadow: 0 0 0 3px var(--fw-accent-light);
+    }
+
+    .login-body .input-group .input-group-text {
+      background: #F8F9FA;
+      border: 1px solid #DEE2E6;
+      color: #6C757D;
+    }
+
+    .btn-login {
+      background: var(--fw-accent);
+      background-image: var(--fw-gradient-brand);
+      border-color: var(--fw-accent);
+      color: #FFFFFF;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 10px;
+      border-radius: 6px;
+      width: 100%;
+      transition: background 0.2s, border-color 0.2s, transform 0.1s;
+    }
+
+    .btn-login:hover {
+      background: var(--fw-accent-hover);
+      border-color: var(--fw-accent-hover);
+      color: #FFFFFF;
+      transform: translateY(-1px);
+    }
+
+    .btn-login:active { transform: translateY(0); }
+
+    .login-footer {
+      padding: 14px 32px;
+      background: #F8F9FA;
+      border-top: 1px solid #DEE2E6;
+      text-align: center;
+    }
+
+    .login-footer p {
+      margin: 0;
+      font-size: 11.5px;
+      color: #6C757D;
+    }
+
+    .alert-login {
+      border: none;
+      border-left: 4px solid var(--fw-danger);
+      background: rgba(220,53,69,0.06);
+      color: #9B1C2A;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .password-toggle {
+      cursor: pointer;
+      background: #F8F9FA;
+      border: 1px solid #DEE2E6;
+      border-left: none;
+      padding: 10px 12px;
+      color: #6C757D;
+      border-radius: 0 6px 6px 0;
+    }
+
+    .password-toggle:hover { color: var(--fw-accent); }
+  </style>
+</head>
+<body>
+
+<div class="login-wrapper">
+  <div class="login-card">
+
+    <!-- Header -->
+    <div class="login-header">
+      <img class="login-logo" src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}" alt="{{ _('SATOM') }}">
+      <p class="login-brand-text">{{ _('SATOM') }}</p>
+      <p class="login-subtitle">System Automation &amp; Task Orchestration Manager</p>
+    </div>
+
+    <!-- Body -->
+    <div class="login-body">
+
+      {% with messages = get_flashed_messages(with_categories=True) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert-login">
+              <i class="bi bi-exclamation-triangle-fill"></i>
+              {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      {% if error %}
+        <div class="alert-login">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          {{ error }}
+        </div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('auth.login') }}" novalidate>
+        {{ form.hidden_tag() if form and form.hidden_tag else '' }}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="mb-3">
+          <label for="username" class="form-label">{{ _('Username') }}</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-person"></i></span>
+            <input
+              type="text"
+              class="form-control"
+              id="username"
+              name="username"
+              placeholder="{{ _('Enter username') }}"
+              value="{{ request.form.get('username', '') if request else '' }}"
+              autocomplete="username"
+              autofocus
+              required>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label for="password" class="form-label">{{ _('Password') }}</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-lock"></i></span>
+            <input
+              type="password"
+              class="form-control"
+              id="password"
+              name="password"
+              placeholder="{{ _('Enter password') }}"
+              autocomplete="current-password"
+              required>
+            <button type="button" class="password-toggle" id="pw-toggle" tabindex="-1">
+              <i class="bi bi-eye" id="pw-icon"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="mb-3 d-flex align-items-center justify-content-between">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="remember" name="remember">
+            <label class="form-check-label" for="remember" style="font-size:13px;">
+              {{ _('Remember me') }}
+            </label>
+          </div>
+          <a href="{{ url_for('auth.forgot_password') }}" style="font-size:13px; color:var(--fw-accent); text-decoration:none;">{{ _('Forgot password?') }}</a>
+        </div>
+
+        <button type="submit" class="btn btn-login">
+          <i class="bi bi-box-arrow-in-right me-2"></i>{{ _('Sign In') }}
+        </button>
+      </form>
+    </div>
+
+    <!-- Footer -->
+    <div class="login-footer">
+      <p>SATOM &nbsp;&bull;&nbsp; Authorized users only</p>
+      <p style="margin-top:6px; display:flex; gap:16px; justify-content:center; flex-wrap:wrap;">
+        <a href="{{ docs_url() }}" target="_blank" rel="noopener noreferrer"
+           style="font-size:12.5px; color:var(--fw-accent); text-decoration:none;">
+          <i class="bi bi-book me-1"></i>{{ _('Documentation') }}
+        </a>
+        <a href="{{ docs_url('api') }}" target="_blank" rel="noopener noreferrer"
+           style="font-size:12.5px; color:var(--fw-accent); text-decoration:none;">
+          <i class="bi bi-code-slash me-1"></i>{{ _('API documentation') }}
+        </a>
+      </p>
+    </div>
+
+  </div>
+
+  <p class="text-center mt-3" style="color: rgba(255,255,255,0.4); font-size: 11.5px;">
+    &copy; 2026 SATOM &mdash; All rights reserved
+  </p>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+<script nonce="{{ csp_nonce }}">
+  // Password visibility toggle
+  document.getElementById('pw-toggle')?.addEventListener('click', function () {
+    const pw   = document.getElementById('password');
+    const icon = document.getElementById('pw-icon');
+    if (pw.type === 'password') {
+      pw.type = 'text';
+      icon.className = 'bi bi-eye-slash';
+    } else {
+      pw.type = 'password';
+      icon.className = 'bi bi-eye';
+    }
+  });
+</script>
+</body>
+</html>

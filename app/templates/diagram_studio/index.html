@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% set cfg = ds_config or {} %}
+{% block title %}{{ _('Diagram Studio') }} — SATOM{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/diagram_studio.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Diagrams') }}</span>
+  <span class="separator">/</span>
+  <span>{{ _('Diagram Studio') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header mb-3">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent" aria-hidden="true"></i>{{ _('Diagram Studio') }}</h1>
+    <p class="text-muted mb-0 small">{{ _('Import diagrams from draw.io, Visio, SVG, PDF, images, Mermaid or DOT, review what was recognised, edit them, publish them to the Diagrams menu and export them again.') }}</p>
+  </div>
+  <div class="ds-btnrow">
+    <a href="{{ url_for('diagram_studio.libraries') }}" class="btn btn-sm btn-fw-secondary"><i class="bi bi-boxes me-1" aria-hidden="true"></i>{{ _('Symbol libraries') }}</a>
+    {% if cfg.get('mayImport') %}<a href="{{ url_for('diagram_studio.import_page') }}" class="btn btn-sm btn-fw-secondary" id="dsImportBtn"><i class="bi bi-upload me-1" aria-hidden="true"></i>{{ _('Import') }}</a>{% endif %}
+    {% if cfg.get('mayEdit') %}<button type="button" class="btn btn-sm btn-fw-primary" id="dsNewBtn"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>{{ _('New diagram') }}</button>{% endif %}
+  </div>
+</div>
+
+<div class="ds-library" id="dsLibraryPage">
+  <section class="fw-card" aria-labelledby="dsFoldersTitle">
+    <div class="ds-panel-head">
+      <i class="bi bi-folder2" aria-hidden="true"></i><h2 id="dsFoldersTitle" class="me-auto">{{ _('Folders') }}</h2>
+      {% if cfg.get('mayEdit') %}<button type="button" class="btn btn-sm ds-icon-btn" id="dsNewFolder" title="{{ _('New folder') }}" aria-label="{{ _('New folder') }}"><i class="bi bi-folder-plus" aria-hidden="true"></i></button>{% endif %}
+    </div>
+    <div class="ds-panel-body">
+      <ul class="ds-tree" id="dsTree" role="tree" aria-labelledby="dsFoldersTitle"></ul>
+      {% if cfg.get('mayEdit') %}<p class="small ds-muted mt-2 mb-0">{{ _('Drag a folder onto another to move it, or a diagram row onto a folder to file it.') }}</p>{% endif %}
+    </div>
+  </section>
+
+  <section class="fw-card" aria-labelledby="dsListTitle">
+    <div class="fw-card-body">
+      <h2 id="dsListTitle" class="visually-hidden">{{ _('Diagrams') }}</h2>
+      <div class="ds-filters mb-3" role="search">
+        <div class="ds-search-input">
+          <label for="dsQ" class="form-label small mb-1">{{ _('Search') }}</label>
+          <input type="search" id="dsQ" class="form-control form-control-sm" placeholder="{{ _('Name, description, owner…') }}">
+        </div>
+        <div>
+          <label for="dsPub" class="form-label small mb-1">{{ _('Published') }}</label>
+          <select id="dsPub" class="form-select form-select-sm">
+            <option value="">{{ _('All') }}</option>
+            <option value="yes">{{ _('Published') }}</option>
+            <option value="no">{{ _('Not published') }}</option>
+          </select>
+        </div>
+        <div>
+          <label for="dsSort" class="form-label small mb-1">{{ _('Sort by') }}</label>
+          <select id="dsSort" class="form-select form-select-sm">
+            <option value="name">{{ _('Name') }}</option>
+            <option value="-updated_at">{{ _('Last updated') }}</option>
+            <option value="-elements">{{ _('Most elements') }}</option>
+            <option value="folder">{{ _('Folder') }}</option>
+          </select>
+        </div>
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" id="dsSub" checked>
+          <label class="form-check-label small" for="dsSub">{{ _('Include sub-folders') }}</label>
+        </div>
+      </div>
+      <div id="dsListStatus" class="small ds-muted mb-2" role="status" aria-live="polite">{{ _('Loading…') }}</div>
+      <div class="fw-table-wrapper">
+        <table class="fw-table ds-table" id="dsTable">
+          <thead>
+            <tr>
+              <th scope="col" data-sort="name" aria-sort="ascending"><button type="button" class="ds-sort">{{ _('Name') }}</button></th>
+              <th scope="col" data-sort="folder" aria-sort="none"><button type="button" class="ds-sort">{{ _('Folder') }}</button></th>
+              <th scope="col" data-keep>{{ _('Published') }}</th>
+              <th scope="col" data-sort="updated_at" aria-sort="none"><button type="button" class="ds-sort">{{ _('Updated') }}</button></th>
+              <th scope="col" data-priority="4">{{ _('Owner') }}</th>
+              <th scope="col" data-sort="elements" aria-sort="none" data-priority="4"><button type="button" class="ds-sort">{{ _('Elements') }}</button></th>
+              <th scope="col" data-priority="5">{{ _('Versions') }}</th>
+              <th scope="col" class="actions-col"><span class="visually-hidden">{{ _('Actions') }}</span></th>
+            </tr>
+          </thead>
+          <tbody id="dsRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script type="application/json" id="dsUrls">{{ {'base': url_for('diagram_studio.index'), 'importUrl': url_for('diagram_studio.import_page')}|tojson }}</script>
+<script type="application/json" id="dsConfig">{{ cfg|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/diagram_studio_core.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_routing.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_render.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_library.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

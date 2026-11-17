@@ -1,0 +1,257 @@
+# SATOM — base stack. Runnable as-is (development); production layers
+# deploy/docker/compose.prod.yaml on top.
+#
+#   dev   docker compose -f compose.yaml up -d
+#   prod  docker compose -f compose.yaml -f compose.prod.yaml up -d
+#
+# Use deploy/docker/satom-docker.sh so the -f order is not something anyone has
+# to remember: with the files reversed the production overrides are the BASE
+# and the development defaults win, which brings up a production node bound to
+# a development configuration and reports success.
+#
+# WHAT THIS STACK IS NOT
+# A host install also runs satom-updater(.path), satom-integrations(.path),
+# satom-reconciler and satom-cert-renew. They are absent on purpose, not
+# forgotten -- see app/runtime.py, and the four capabilities it subtracts.
+
+name: satom
+
+# The environment is its OWN anchor, separate from the service anchor.
+#
+# Not style: in Compose a service-level `environment:` REPLACES the mapping
+# inherited through `<<:`, it does not merge into it. Written the obvious way
+# (one anchor carrying both), giving `scheduler` its `SATOM_ROLE` would have
+# dropped SQLALCHEMY_DATABASE_URI, RATELIMIT_STORAGE_URI and SATOM_METRICS_URL
+# from that container -- and the scheduler would then have fallen back to
+# whatever .env carries, which on a node copied from a host install is
+# 127.0.0.1. It would have started, connected to nothing, and logged normally.
+x-app-env: &app-env
+  # These OVERRIDE .env on purpose. .env is normally copied from a host node
+  # where both endpoints are 127.0.0.1 -- and 127.0.0.1 inside a container is
+  # the container itself, so the app would quietly run with no rate-limit
+  # backend and no metrics store.
+  SQLALCHEMY_DATABASE_URI: postgresql+psycopg://${POSTGRES_USER:-satom}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-satom}
+  RATELIMIT_STORAGE_URI: redis://redis:6379/0
+  SATOM_METRICS_URL: http://victoria-metrics:8428
+  TZ: ${TZ:-Europe/Zurich}
+
+x-app: &app
+  image: ${SATOM_IMAGE:-satom:local}
+  restart: unless-stopped
+  env_file:
+    - .env
+  volumes:
+    # data/ holds the device vault, system-backup bundles, the SoT object store
+    # and reports/. On a host install it is ~1.4 GB and it is the only thing in
+    # the tree that is irreplaceable: the image can be rebuilt, this cannot.
+    - satom-data:/opt/satom/data
+    - satom-state:/opt/satom/state
+    - satom-instance:/opt/satom/instance
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_started
+  networks:
+    - satom
+
+services:
+  postgres:
+    image: postgres:15-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-satom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-satom}
+      TZ: ${TZ:-Europe/Zurich}
+    volumes:
+      - satom-pgdata:/var/lib/postgresql/data
+    # No published port. The database is reachable only from this stack's
+    # network; an operator who needs psql runs it through `docker compose exec`.
+    networks:
+      - satom
+    healthcheck:
+      # -U/-d on purpose: bare pg_isready answers "accepting connections"
+      # during the initdb bootstrap, before the application role and database
+      # exist, and the app then fails its first connection with an
+      # authentication error that reads like a wrong password.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-satom} -d ${POSTGRES_DB:-satom} -q"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Rate-limit counters only. They are derivable state, so no volume: losing
+    # them on restart resets a window, it does not lose data. Flask-Limiter
+    # falls back to in-memory with a warning if this is unreachable, which is
+    # why it is a real service and not an optional one -- per-worker in-memory
+    # counters mean the documented limit is silently multiplied by the worker
+    # count.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - satom
+
+  victoria-metrics:
+    # Pinned to the SAME version as a host install (deploy/metrics-store.env
+    # VM_VERSION). tests/test_container_runtime.py fails if the two drift: a
+    # container node and a host node answering different MetricsQL is a
+    # difference that only shows up as an empty dashboard panel.
+    image: victoriametrics/victoria-metrics:v1.148.0
+    restart: unless-stopped
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--retentionPeriod=396d"
+      - "--httpListenAddr=:8428"
+    volumes:
+      - satom-metrics:/victoria-metrics-data
+    # DELIBERATELY NO `ports:`. VictoriaMetrics has NO AUTHENTICATION -- on a
+    # host install the 127.0.0.1 bind is the only thing protecting the fleet's
+    # metrics. Here that role is played by the absence of a published port:
+    # the service is reachable on the compose network and nowhere else.
+    # There is a test for this.
+    networks:
+      - satom
+
+  # TLS provisioning. Runs to completion before the proxy starts, in the SATOM
+  # image (it carries openssl and deploy/tls-bootstrap.sh), as root because the
+  # volumes are created empty and root-owned on first `up` and the app account
+  # is uid 999.
+  #
+  # Idempotent: an already-valid certificate is reused, and one an operator
+  # IMPORTED is left untouched -- so `up` after a certificate replacement does
+  # not quietly put the self-signed one back.
+  tls-init:
+    image: ${SATOM_IMAGE:-satom:local}
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/opt/satom/deploy/docker/proxy-init.sh"]
+    environment:
+      SATOM_SERVED_NAMES: ${SATOM_SERVED_NAMES:-}
+      SATOM_PROXY_UPSTREAM: web:8000
+      TZ: ${TZ:-Europe/Zurich}
+    volumes:
+      - satom-pki:/opt/satom/pki
+      - satom-proxy-conf:/out
+      - satom-acme:/var/www/satom-acme
+    networks:
+      - satom
+
+  # The TLS terminator. Stock nginx:alpine with nothing added -- everything
+  # node-specific is generated by tls-init into the volumes below, so an
+  # air-gapped delivery is still one app tarball plus stock images.
+  #
+  # THIS SERVICE IS NOT OPTIONAL. The image runs FLASK_ENV=production, which
+  # sets SESSION_COOKIE_SECURE=True: served over plain HTTP the browser never
+  # returns the session cookie, the login POST arrives with no CSRF token and
+  # is rejected before the password is compared. A node in that state answers
+  # /healthz 200 and refuses every credential.
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      tls-init:
+        condition: service_completed_successfully
+      web:
+        condition: service_started
+    # conf.d IS pre-populated from the image on the first `up` -- Docker copies
+    # it when this container is CREATED, which happens before tls-init runs.
+    # The leftover default.conf then wins :80 on parse order and answers the
+    # nginx welcome page while :443 works, so nothing looks broken. tls-init
+    # deletes it and claims default_server on both listeners; it cannot be done
+    # from here because this mount is read-only, which is the correct state for
+    # it. Measured on the dev node, 2026-08-31, not anticipated.
+    volumes:
+      - satom-pki:/opt/satom/pki:ro
+      - satom-proxy-conf:/etc/nginx/conf.d:ro
+      - satom-acme:/var/www/satom-acme:ro
+    networks:
+      satom:
+        # A STATIC address, because TRUSTED_PROXIES below matches exact IPs and
+        # not ranges (app/extensions.py). Container-to-container traffic arrives
+        # from the proxy's own address, not from the bridge gateway, so a
+        # dynamic address would mean the app never recognises its own proxy:
+        # X-Forwarded-For is ignored, every user lands in one rate-limit bucket
+        # and every audit entry records the proxy as the actor. It fails
+        # quietly, which is why it is pinned.
+        ipv4_address: ${SATOM_PROXY_IP:-172.28.0.10}
+    ports:
+      # HTTPS is the published surface. :80 exists because ACME http-01 is
+      # ALWAYS validated over plain :80, even for a host that only serves TLS;
+      # everything else on it is a 301.
+      - "${SATOM_HTTPS_BIND:-0.0.0.0:443}:443"
+      - "${SATOM_REDIRECT_BIND:-0.0.0.0:80}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  web:
+    <<: *app
+    environment:
+      <<: *app-env
+      SATOM_ROLE: web
+      # The proxy is the only hop in front of the app, and it is inside this
+      # stack. Left EMPTY, real_client_ip() falls back to the peer address --
+      # which in a container is always the bridge gateway, so every user shares
+      # one rate-limit bucket and every audit entry records the same actor.
+      # An operator who puts a further proxy in front overrides this in .env.
+      # The default MUST equal SATOM_PROXY_IP's default; satom-docker.sh
+      # refuses to start the stack if the two disagree.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.28.0.10}
+    # DELIBERATELY NO `ports:`. The application is reached through `proxy`.
+    # Publishing gunicorn directly is publishing the plain-HTTP shape this
+    # stack exists to stop shipping.
+    expose:
+      - "8000"
+
+  scheduler:
+    <<: *app
+    environment:
+      <<: *app-env
+      SATOM_ROLE: scheduler
+    # The image HEALTHCHECK curls :8000. This role does not listen, so it was
+    # pinned at "starting" and would have settled on "unhealthy" forever. A
+    # health signal that is always red for a working container is worse than
+    # none: it teaches the operator to ignore the column meant to carry the
+    # alarm. Disabled rather than replaced, matching the host install --
+    # systemd does not health-check satom-scheduler.service either.
+    healthcheck:
+      disable: true
+
+  cron:
+    <<: *app
+    environment:
+      <<: *app-env
+      SATOM_ROLE: cron
+    healthcheck:
+      disable: true
+
+volumes:
+  satom-data:
+  satom-state:
+  satom-instance:
+  satom-pgdata:
+  satom-metrics:
+  # The node PKI. A VOLUME and not a bind mount or an image layer: the
+  # certificate outlives the image, so replacing the image tag must not throw
+  # away a certificate an operator installed, and `docker compose down` (which
+  # keeps volumes) must not either.
+  satom-pki:
+  satom-proxy-conf:
+  satom-acme:
+
+networks:
+  satom:
+    driver: bridge
+    ipam:
+      config:
+        # Pinned so the proxy can have a static address (see `proxy` above).
+        # If this range collides with something on the host, `up` fails loudly
+        # -- which is the correct outcome; overriding it means overriding
+        # SATOM_PROXY_IP and TRUSTED_PROXIES to match, and satom-docker.sh
+        # checks that they do.
+        - subnet: ${SATOM_NETWORK_SUBNET:-172.28.0.0/16}

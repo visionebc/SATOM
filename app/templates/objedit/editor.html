@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ 'New' if create else 'Edit' }} {{ title }} — {{ appliance.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="{{ _('breadcrumb') }}" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('server_objects.overview', id=appliance.id) }}">{{ appliance.name }}</a></li>
+    <li class="breadcrumb-item active">{{ 'New ' ~ title if create else title }}{% if mkey %} · {{ mkey }}{% endif %}</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+{# The edit-lease guard lives in _body.html so the inline (?partial=1) editor
+   takes and shows the lease exactly like this page does. #}
+{% include "objedit/_body.html" %}
+{% endblock %}

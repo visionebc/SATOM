@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Sentinel — Security correlation{% endblock %}
+
+{#
+   The Sentinel console.
+
+   Light chrome ONLY. This product's theme is fortiweb.css — white .fw-card on
+   #F4F5F7, orange accent, and the .fw-badge-* palette calibrated against
+   white. The fleet's dark glassmorphism is NOT the standard here: applying it
+   on 2026-07-28 produced grey slabs and status pills at ~1.4:1 contrast, where
+   a badge could read "crit" and be illegible.
+
+   The four health tiles are not decoration. Without them a page full of
+   incidents looks healthy while detecting nothing: a stopped pipeline, a
+   baseline that has not matured, a stale CVE mirror and an unarmed response
+   engine all render as "no incidents".
+#}
+{% block content %}
+{% include "sentinel/_console_section.html" %}
+{% endblock %}

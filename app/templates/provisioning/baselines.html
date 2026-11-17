@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+{% block title %}Combos — Provisioning{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-grid-3x3-gap me-2 text-accent"></i>{{ _('Combos') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('One card per') }}
+      <strong>{{ _('zone × line × department') }}</strong> {{ _('permutation. Open a combo to assign the approved templates it should carry; a template can live in several combos. Each combo applies to the devices that match its scope.') }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <form method="post" class="d-inline"
+          action="{{ url_for('provisioning.baseline_generate') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn {{ 'btn-fw-primary' if missing_count else 'btn-fw-secondary' }}"
+              {% if missing_count %}style="animation:fwPulse 1.6s ease-in-out infinite;"{% endif %}>
+        <i class="bi bi-arrow-repeat me-1"></i>Generate missing combos
+        {% if missing_count %}<span class="badge bg-light text-dark ms-1">{{ missing_count }}</span>{% endif %}
+      </button>
+    </form>
+  </div>
+</div>
+
+<style nonce="{{ csp_nonce }}">
+@keyframes fwPulse { 0%,100%{opacity:1;} 50%{opacity:.62;} }
+.fw-flabel { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.04em; opacity:.7; margin-bottom:3px; }
+.fw-combo-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+  gap:14px; margin-bottom:30px; }
+.fw-combo-card { display:block; text-decoration:none; color:inherit;
+  border-radius:14px; padding:14px 16px; position:relative; transition:transform .12s ease, box-shadow .12s ease; }
+.fw-combo-card:hover { transform:translateY(-2px); }
+.fw-combo-card .scope-line { font-size:12px; margin-bottom:10px; }
+.fw-combo-card .counters { display:flex; gap:10px; align-items:center; }
+.fw-combo-card .ct { display:flex; align-items:center; gap:5px; font-size:12px; }
+.fw-combo-card .ct .n { font-size:20px; font-weight:700; line-height:1; }
+.fw-combo-empty .n { opacity:.45; }
+</style>
+
+<form method="get" class="fw-card fw-card-shadow fw-baseline-filter"
+      style="padding:12px 14px; margin-bottom:16px;">
+  <div class="d-flex flex-wrap gap-2 align-items-end">
+    <div>
+      <label class="fw-flabel">{{ _('Zone') }}</label>
+      <select name="zone" class="form-select form-select-sm">
+        <option value="">{{ _('All zones') }}</option>
+        {% for z in zones %}<option value="{{ z }}" {{ 'selected' if filters.zone == z }}>{{ z }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="fw-flabel">{{ _('Line') }}</label>
+      <select name="line" class="form-select form-select-sm">
+        <option value="">{{ _('All lines') }}</option>
+        {% for l in lines %}<option value="{{ l }}" {{ 'selected' if filters.line == l }}>{{ l }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="fw-flabel">{{ _('Department') }}</label>
+      <select name="department" class="form-select form-select-sm">
+        <option value="">{{ _('All departments') }}</option>
+        {% for d in departments %}<option value="{{ d }}" {{ 'selected' if filters.department == d }}>{{ d }}</option>{% endfor %}
+      </select>
+    </div>
+    <div style="flex:1; min-width:160px;">
+      <label class="fw-flabel">{{ _('Search name') }}</label>
+      <input type="text" name="q" value="{{ filters.q }}" class="form-control form-control-sm"
+             placeholder="{{ _('combo name…') }}" autocomplete="off">
+    </div>
+    <div class="form-check" style="margin-bottom:7px;" title="{{ _('Remember this filter for my account') }}">
+      <input class="form-check-input" type="checkbox" name="save" value="1" id="saveFilters"
+             {{ 'checked' if filters_saved }}>
+      <label class="form-check-label" for="saveFilters" style="font-size:12px;">{{ _('Save to my profile') }}</label>
+    </div>
+    <div class="d-flex gap-2" style="margin-bottom:1px;">
+      <button class="btn btn-fw-primary btn-sm" type="submit"><i class="bi bi-funnel me-1"></i>{{ _('Filter') }}</button>
+      <a class="btn btn-fw-secondary btn-sm" href="{{ url_for('provisioning.baselines', clear=1) }}"><i class="bi bi-x-lg me-1"></i>{{ _('Clear') }}</a>
+    </div>
+  </div>
+</form>
+
+{% if filters_active %}
+<div class="text-muted mb-2" style="font-size:12px;">
+  <i class="bi bi-funnel-fill me-1"></i>{{ _('Showing') }} <strong>{{ shown_total }}</strong> of {{ filtered_total }} combo(s).
+  {% if filters_saved %}<span class="fw-badge fw-badge-primary ms-1">{{ _('saved to profile') }}</span>{% endif %}
+</div>
+{% endif %}
+
+{% if missing_count %}
+<div class="alert alert-info py-2" style="font-size:13px;">
+  <i class="bi bi-info-circle me-1"></i>{{ missing_count }} permutation(s) have no combo yet.
+  Click <strong>{{ _('Generate missing combos') }}</strong> {{ _('to create them (also use this after adding new zones, lines or departments).') }}
+</div>
+{% endif %}
+
+{% if not baselines %}
+  <div class="fw-empty-state">
+    <div class="fw-empty-state-icon"><i class="bi bi-grid-3x3-gap"></i></div>
+    <div class="fw-empty-state-title">{{ _('No combos yet') }}</div>
+    <div class="fw-empty-state-text">{{ _('Generate the zone × line × department permutations to get started.') }}</div>
+    <form method="post" class="mt-2" action="{{ url_for('provisioning.baseline_generate') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-fw-primary"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Generate combos') }}</button>
+    </form>
+  </div>
+{% else %}
+<div class="fw-combo-grid">
+  {% for b in baselines %}
+  {% set ac = assigned_counts.get(b.id, 0) %}
+  <a class="fw-combo-card fw-card fw-card-shadow fw-card-shadow-hover"
+     href="{{ url_for('provisioning.baseline_detail', baseline_id=b.id) }}">
+    <div class="scope-line">
+      <span class="fw-badge fw-badge-primary me-1">{{ b.zone or 'Any' }}</span>
+      <span class="fw-badge fw-badge-secondary me-1">{{ b.line or 'Any' }}</span>
+      <span class="fw-badge fw-badge-secondary">{{ b.department or 'Any' }}</span>
+    </div>
+    <div class="counters">
+      <div class="ct {{ 'fw-combo-empty' if not ac }}" title="{{ _('Assigned templates') }}">
+        <span class="n">{{ ac }}</span><i class="bi bi-collection"></i>
+      </div>
+      <div class="ct text-muted" title="{{ _('Matching devices') }}">
+        <span class="n">{{ device_counts.get(b.id, 0) }}</span><i class="bi bi-hdd-network"></i>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- The "things" being created: approved templates assignable to combos -->
+<div class="fw-page-header" style="margin-top:10px;">
+  <div>
+    <h2 class="fw-page-title" style="font-size:18px;"><i class="bi bi-collection me-2 text-accent"></i>{{ _('Approved templates') }}</h2>
+    <p class="text-muted mb-0" style="font-size:12px;">{{ _('The building blocks assignable to combos. Author and approve them in') }} <a href="{{ url_for('provisioning.index') }}">{{ _('System Provisioning') }}</a>.</p>
+  </div>
+</div>
+
+{% if not approved %}
+  <div class="alert alert-secondary py-2" style="font-size:13px;">
+    {{ _('No approved templates yet. Create a profile in') }}
+    <a href="{{ url_for('provisioning.index') }}">{{ _('System Provisioning') }}</a> {{ _('and approve it — then it becomes assignable here.') }}</div>
+{% else %}
+{% for key, label, items in grouped %}
+<div class="fw-section-group" style="margin-bottom:18px;">
+  <h3 style="font-size:14px; margin:6px 0 8px;">
+    <i class="bi bi-folder2-open me-2 text-accent"></i>{{ label }}
+    <span class="text-muted" style="font-size:12px; font-weight:400;">({{ items|length }})</span>
+  </h3>
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Version') }}</th><th>{{ _('Assigned to combos') }}</th><th style="width:1%; white-space:nowrap;"></th></tr></thead>
+      <tbody>
+      {% for t in items %}
+        <tr>
+          <td class="fw-semibold">{{ t.name }}</td>
+          <td style="font-size:12px;">{{ t.kind }}</td>
+          <td>v{{ t.version }}</td>
+          <td>
+            {% set chips = combo_chips.get(t.id, []) %}
+            {% if chips %}
+              {% for c in chips %}
+                <a class="fw-badge fw-badge-secondary me-1 mb-1 d-inline-block" style="text-decoration:none;"
+                   href="{{ url_for('provisioning.baseline_detail', baseline_id=c.id) }}">{{ c.name }}</a>
+              {% endfor %}
+            {% else %}
+              <span class="text-muted" style="font-size:12px;">{{ _('- not assigned -') }}</span>
+            {% endif %}
+          </td>
+          <td style="white-space:nowrap;">
+            <button type="button" class="btn btn-sm btn-fw-secondary fw-view-tpl me-1"
+                    data-tname="{{ t.name }}"
+                    data-tbody="{{ t.body | e }}"
+                    title="{{ _('View template content') }}">
+              <i class="bi bi-eye"></i>
+            </button>
+            {% if all_combos %}
+            <button type="button" class="btn btn-fw-primary fw-assign-combos"
+                    style="min-width:90px;"
+                    data-bs-toggle="modal" data-bs-target="#assignCombosModal"
+                    data-tid="{{ t.id }}" data-tname="{{ t.name }}"
+                    data-assigned="{{ template_combos.get(t.id, [])|tojson }}">
+              <i class="bi bi-grid-3x3-gap me-1"></i>{{ _('Assign') }}
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+<!-- View template content modal -->
+<div class="modal fade" id="viewTplModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content" style="background:var(--fw-surface); border:1px solid var(--fw-border); color:var(--fw-text-primary);">
+      <div class="modal-header" style="background:var(--fw-surface-alt); border-bottom:1px solid var(--fw-border);">
+        <h5 class="modal-title" style="color:var(--fw-text-primary);"><i class="bi bi-eye me-2 text-accent"></i><span id="vtmName"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body p-0">
+        <pre id="vtmBody" style="margin:0; padding:16px; font-size:12px; background:#1E2D3D; color:#C9D1D9; border-radius:0; max-height:60vh; overflow:auto; white-space:pre-wrap; word-break:break-all;"></pre>
+      </div>
+      <div class="modal-footer" style="background:var(--fw-surface-alt); border-top:1px solid var(--fw-border);">
+        <button type="button" class="btn btn-fw-secondary" data-bs-dismiss="modal">{{ _('Close') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if all_combos %}
+<style nonce="{{ csp_nonce }}">
+.fw-combo-checks { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; }
+.fw-combo-check { display:flex; align-items:center; gap:8px; padding:7px 9px;
+  border:1px solid rgba(148,163,184,.18); border-radius:10px; cursor:pointer; font-size:12px; }
+.fw-combo-check input { flex:none; }
+</style>
+<div class="modal fade" id="assignCombosModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <form method="post" id="assignCombosForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Assign to combos &mdash; <span id="acTemplateName"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted" style="font-size:12px;">Tick the combos (zone &times; line &times; department)
+            this template should belong to. Unticking one removes the template from that combo.</p>
+          <div class="d-flex flex-wrap gap-2 mb-2 align-items-end" id="acFilters">
+            <div>
+              <label class="fw-flabel" style="font-size:10px;">{{ _('Zone') }}</label>
+              <select id="acFZone" class="form-select form-select-sm" style="min-width:110px;">
+                <option value="">{{ _('All zones') }}</option>
+                {% for z in zones %}<option value="{{ z }}">{{ z }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="fw-flabel" style="font-size:10px;">{{ _('Line') }}</label>
+              <select id="acFLine" class="form-select form-select-sm" style="min-width:110px;">
+                <option value="">{{ _('All lines') }}</option>
+                {% for l in lines %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="fw-flabel" style="font-size:10px;">{{ _('Department') }}</label>
+              <select id="acFDept" class="form-select form-select-sm" style="min-width:120px;">
+                <option value="">{{ _('All departments') }}</option>
+                {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="d-flex gap-2 align-self-end">
+              <button type="button" class="btn btn-sm btn-fw-secondary" id="acAll">{{ _('Select all') }}</button>
+              <button type="button" class="btn btn-sm btn-fw-secondary" id="acNone">{{ _('Clear all') }}</button>
+            </div>
+          </div>
+          <div id="acCount" class="text-muted mb-2" style="font-size:11px; display:none;"></div>
+          <div class="fw-combo-checks" id="acChecks">
+          {% for b in all_combos %}
+            <label class="fw-combo-check"
+                   data-zone="{{ b.zone or '' }}"
+                   data-line="{{ b.line or '' }}"
+                   data-dept="{{ b.department or '' }}">
+              <input type="checkbox" name="combo_ids" value="{{ b.id }}">
+              <span>
+                <span class="fw-badge fw-badge-primary me-1">{{ b.zone or 'Any' }}</span>
+                <span class="fw-badge fw-badge-secondary me-1">{{ b.line or 'Any' }}</span>
+                <span class="fw-badge fw-badge-secondary">{{ b.department or 'Any' }}</span>
+              </span>
+            </label>
+          {% endfor %}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-fw-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check2 me-1"></i>{{ _('Save assignments') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  var modalEl = document.getElementById('assignCombosModal');
+  if(!modalEl) return;
+  var form = document.getElementById('assignCombosForm');
+  var nameSpan = document.getElementById('acTemplateName');
+  var labels = modalEl.querySelectorAll('.fw-combo-check');
+  var checks = modalEl.querySelectorAll('input[name="combo_ids"]');
+  var base = "{{ url_for('provisioning.template_set_combos', template_id=0) }}";
+  var fZone = document.getElementById('acFZone');
+  var fLine = document.getElementById('acFLine');
+  var fDept = document.getElementById('acFDept');
+  var countEl = document.getElementById('acCount');
+
+  function applyFilter(){
+    var z = fZone ? fZone.value : '';
+    var l = fLine ? fLine.value : '';
+    var d = fDept ? fDept.value : '';
+    var vis = 0, tot = labels.length;
+    labels.forEach(function(lbl){
+      var show = (!z || lbl.getAttribute('data-zone') === z)
+              && (!l || lbl.getAttribute('data-line') === l)
+              && (!d || lbl.getAttribute('data-dept') === d);
+      lbl.style.display = show ? '' : 'none';
+      if(show) vis++;
+    });
+    if(countEl){
+      if(z || l || d){
+        countEl.textContent = vis + ' of ' + tot + ' combo(s)';
+        countEl.style.display = '';
+      } else {
+        countEl.style.display = 'none';
+      }
+    }
+  }
+
+  function visibleChecks(){
+    return Array.prototype.filter.call(checks, function(c){
+      return c.closest('.fw-combo-check').style.display !== 'none';
+    });
+  }
+
+  [fZone, fLine, fDept].forEach(function(sel){
+    if(sel) sel.addEventListener('change', applyFilter);
+  });
+
+  document.querySelectorAll('.fw-assign-combos').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var tid = this.getAttribute('data-tid');
+      var assigned = [];
+      try { assigned = JSON.parse(this.getAttribute('data-assigned') || '[]'); } catch(e){ assigned = []; }
+      var set = {}; assigned.forEach(function(x){ set[String(x)] = true; });
+      form.setAttribute('action', base.replace('/0/', '/' + tid + '/'));
+      nameSpan.textContent = this.getAttribute('data-tname') || '';
+      checks.forEach(function(c){ c.checked = !!set[c.value]; });
+      // reset filters when opening
+      if(fZone) fZone.value = '';
+      if(fLine) fLine.value = '';
+      if(fDept) fDept.value = '';
+      applyFilter();
+    });
+  });
+
+  var a = document.getElementById('acAll'), n = document.getElementById('acNone');
+  if(a) a.addEventListener('click', function(){ visibleChecks().forEach(function(c){ c.checked = true; }); });
+  if(n) n.addEventListener('click', function(){ visibleChecks().forEach(function(c){ c.checked = false; }); });
+
+  // Eye button: view template content
+  document.querySelectorAll('.fw-view-tpl').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var name = this.getAttribute('data-tname') || '';
+      var body = this.getAttribute('data-tbody') || '{}';
+      var pretty;
+      try { pretty = JSON.stringify(JSON.parse(body), null, 2); } catch(e){ pretty = body; }
+      document.getElementById('vtmName').textContent = name;
+      document.getElementById('vtmBody').textContent = pretty;
+      var m = new bootstrap.Modal(document.getElementById('viewTplModal'));
+      m.show();
+    });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

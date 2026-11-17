@@ -1,0 +1,477 @@
+{% from "workspace/_fields.html" import fld %}
+{% from "_not_in_gui.html" import nig_editable %}
+{# ===================================================================== #}
+{#  Object editor BODY — shared by the full page (objedit/editor.html)   #}
+{#  AND the inline panel served with ?partial=1 (loaded by AJAX into the  #}
+{#  Configuration / Server Objects list, so editing happens in place).    #}
+{# ===================================================================== #}
+<div class="fw-objedit" data-fw-objedit data-collection="{{ collection }}"
+     data-mkey="{{ mkey }}" data-title="{{ title }}"{% if create %} data-create="1"{% endif %}>
+{% if not create and not error %}
+<div class="fw-lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ collection }}:{{ mkey }}"></div>
+{% endif %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">{{ 'New ' ~ title if create else title }} <span class="text-muted">{{ mkey }}</span></h4>
+  <code class="small text-muted">{{ collection }}</code>
+</div>
+
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if data_src == 'cache' %}
+<div class="alert alert-info py-2 small">
+  <i class="bi bi-database me-1"></i>{{ _('Showing locally cached data') }}
+  <span class="fw-bold">({{ freshness or 'DB' }})</span> {{ _('— the device did not answer the live read (offline or license-locked). Fields stay editable; Save still writes to the device.') }}
+</div>
+{% endif %}
+
+{# ── FortiWeb context: what this object does + how the device reacts ───── #}
+{% if help_info and (help_info.what or help_info.backend_reaction) %}
+<div class="alert alert-secondary py-2 small mb-3 fw-help">
+  <div><i class="bi bi-info-circle me-1"></i>{{ help_info.what }}</div>
+  {% if help_info.backend_reaction %}
+    <div class="mt-1"><strong>{{ _('Device behavior:') }}</strong> {{ help_info.backend_reaction }}</div>
+  {% endif %}
+  {% if help_info.gotchas %}
+    <ul class="mb-0 mt-1">{% for gtx in help_info.gotchas %}<li>{{ gtx }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if help_info.url %}<a class="small" href="{{ help_info.url }}" target="_blank" rel="noopener">{{ _('FortiWeb admin guide ↗') }}</a>{% endif %}
+</div>
+{% endif %}
+
+{# ── object scalar fields ─────────────────────────────────────────────── #}
+<div class="card mb-3">
+  <div class="card-header"><strong>{{ _('Settings') }}</strong></div>
+  <div class="card-body">
+    <div class="fw-scope" data-collection="{{ collection }}" data-mkey="{{ mkey }}">
+      {% if create %}
+        <div class="mb-3">
+          <label class="form-label small fw-bold">{{ _('Name') }} <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="fw-new-name" placeholder="{{ _('object name') }}" autocomplete="off">
+          <div class="form-text">{{ _('The object\'s unique name (mkey). Sub-tables (members, rules…) are added after it\'s created.') }}</div>
+        </div>
+      {% endif %}
+      {% for sec in obj_groups %}
+        <details class="fw-group" {{ 'open' if loop.first }}>
+          <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
+          <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, true) }}{% endfor %}</div>
+        </details>
+      {% else %}
+        {% if not create %}<p class="text-muted mb-0">{{ _('This object exposes no editable scalar fields.') }}</p>{% endif %}
+      {% endfor %}
+      {{ nig_editable(not_in_gui, create, mkey, collection) }}
+      <div class="mt-2">
+        {% if create %}
+          <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-create">
+            <i class="bi bi-plus-circle me-1"></i>Review &amp; create</button>
+        {% elif obj_groups or (not_in_gui and not_in_gui.fields) %}
+          <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-save">
+            <i class="bi bi-check2-circle me-1"></i>Review &amp; save</button>
+        {% endif %}
+      </div>
+      <div class="fw-result"></div>
+    </div>
+  </div>
+</div>
+
+{# ── by-parent sub-tables (pool→members, vserver→VIPs, SNI→members, …) ─── #}
+{% for st in subtables %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>{{ st.label }}</strong>
+    <span class="text-muted small">{{ st.rows|length }} row(s) · <code>{{ st.seg }}</code></span>
+  </div>
+  <div class="card-body">
+    {% for row in st.rows %}
+      <details class="fw-row-scope mb-2 border rounded p-2" data-collection="{{ st.collection }}"
+               data-parent="{{ mkey }}" data-sub-id="{{ row.sub_id }}">
+        <summary class="fw-group-head">{{ row.label or ('row ' ~ row.sub_id) }}</summary>
+        {% for sec in row.groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, true) }}{% endfor %}</div>{% endfor %}
+        {{ nig_editable(row.not_in_gui, false, row.sub_id, st.collection, mkey) }}
+        <div class="mt-2">
+          <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-save-row">{{ _('Save row') }}</button>
+          <button type="button" class="btn btn-sm btn-fw-danger" data-js="objedit-delete-row">{{ _('Delete') }}</button>
+        </div>
+        <div class="fw-result"></div>
+      </details>
+    {% else %}
+      <p class="text-muted">{{ _('No rows yet.') }}</p>
+    {% endfor %}
+
+    <details class="fw-row-scope fw-row-new mt-2 border rounded p-2 border-primary-subtle"
+             data-collection="{{ st.collection }}" data-parent="{{ mkey }}">
+      <summary class="fw-group-head text-primary">＋ Add {{ st.label }} row</summary>
+      {% if st.blank_groups %}
+        {% for sec in st.blank_groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, true) }}{% endfor %}</div>{% endfor %}
+        {{ nig_editable(st.blank_not_in_gui, true) }}
+        <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-create-row">{{ _('Create row') }}</button></div>
+      {% else %}
+        <p class="text-muted small mb-0 mt-2">{{ _('No field template is known for this sub-table yet (no curated form and nothing cached). Run a rediscovery / deep capture of a device that already has rows here, then reopen.') }}</p>
+      {% endif %}
+      <div class="fw-result"></div>
+    </details>
+  </div>
+</div>
+{% endfor %}
+
+<script src="{{ url_for('static', filename='js/regex_lab.js') }}" nonce="{{ csp_nonce }}"></script>
+<script nonce="{{ csp_nonce }}">
+// OBJEDIT_AID is global so the inline-injected editor and the full page share it.
+window.OBJEDIT_AID = {{ appliance.id }};
+// Action → device-behavior explanations (FortiWeb admin guide, waf_specs).
+window.FW_ACTION_EXPLAIN = {{ (action_explain or {})|tojson }};
+function fwCollectChanged(scope){
+  const out = {};
+  scope.querySelectorAll('.fw-input').forEach(function(el){
+    const k = el.dataset.key; if (!k) return;
+    // A field hidden by a show_when rule is NOT APPLICABLE to the current
+    // selection (mirrors the FortiWeb GUI): never send its (stale) value.
+    const wrap = el.closest('.fw-fld');
+    if (wrap && wrap.style.display === 'none') return;
+    if (el.value !== el.dataset.orig) out[k] = el.value;
+  });
+  return out;
+}
+// The value each sent field showed when the form loaded: the server refuses
+// the save when the device has meanwhile changed it (someone else, a job, the
+// device's own GUI) instead of overwriting that change unseen.
+function fwCollectExpected(scope, fields){
+  const out = {};
+  scope.querySelectorAll('.fw-input').forEach(function(el){
+    const k = el.dataset.key;
+    if (k && Object.prototype.hasOwnProperty.call(fields, k)) out[k] = el.dataset.orig || '';
+  });
+  return out;
+}
+// This tab's edit lease (lock.js): another tab of the same operator is refused.
+function fwLeaseTok(node){ return window.fwLeaseToken ? window.fwLeaseToken(node) : ''; }
+// ── show_when visibility (FortiWeb-style field gating) ─────────────────────
+// rule = {t:'eq', key:<controlling field>, vals:[allowed…]} on .fw-fld[data-vis];
+// the controlling field lives in the SAME scope (.fw-scope / .fw-row-scope).
+function fwEvalScopeVis(scopeEl){
+  scopeEl.querySelectorAll('.fw-fld[data-vis]').forEach(function(w){
+    let rule = null; try { rule = JSON.parse(w.getAttribute('data-vis')); } catch(e){}
+    if (!rule || rule.t !== 'eq') return;
+    const ctrl = scopeEl.querySelector('.fw-input[data-key="' + rule.key + '"]');
+    const show = !ctrl || (rule.vals || []).indexOf(ctrl.value) >= 0;
+    w.style.display = show ? '' : 'none';
+  });
+}
+window.fwRefreshVis = function(root){
+  (root || document).querySelectorAll('.fw-scope, .fw-row-scope').forEach(fwEvalScopeVis);
+};
+if (!window.__fwObjeditVisBound){
+  window.__fwObjeditVisBound = true;
+  document.addEventListener('change', function(ev){
+    const scope = ev.target.closest && ev.target.closest('.fw-scope, .fw-row-scope');
+    if (scope) fwEvalScopeVis(scope);
+    if (ev.target.matches && ev.target.matches('select[data-fw-action]')) fwExplainAction(ev.target);
+  }, true);
+  document.addEventListener('click', function(ev){
+    const b = ev.target.closest && ev.target.closest('.fw-drill');
+    if (b){
+      const sel = b.closest('.fw-ref').querySelector('select.fw-ref-select');
+      const val = sel ? sel.value : '';
+      if (!val){ if (window.FW) FW.toast('Nothing selected to open', 'info'); return; }
+      const coll = (b.dataset.ref || '').split('|')[0];
+      if (!coll) return;
+      // FortiWeb-style: open in the right slide-over panel, never leave the page.
+      if (window.FWDrawer){ FWDrawer.openEdit(coll, val, {opener: sel}); return; }
+      location.href = '/objedit/' + window.OBJEDIT_AID + '/edit?collection='
+        + encodeURIComponent(coll) + '&mkey=' + encodeURIComponent(val);
+    }
+    const rx = ev.target.closest && ev.target.closest('.fw-rx-btn');
+    if (rx && window.FWRegexLab){
+      FWRegexLab.open(rx.closest('.fw-rx-wrap').querySelector('.fw-input'), rx.dataset.rxContext || '');
+    }
+  });
+}
+// ── "how will the device react" hint under every Action dropdown ───────────
+function fwExplainAction(sel){
+  const box = sel.parentElement.querySelector('.fw-action-explain[data-for="' + sel.dataset.key + '"]');
+  if (!box) return;
+  const ex = (window.FW_ACTION_EXPLAIN || {})[sel.value];
+  box.textContent = ex || '';
+}
+function fwExplainAllActions(root){
+  (root || document).querySelectorAll('select[data-fw-action]').forEach(fwExplainAction);
+}
+function fwPost(url, payload){
+  return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)}).then(function(r){ return r.json(); });
+}
+// Build compatibility of this write (services.build_compat): what the device's
+// exact build lacks (skipped), only has by CLI, or refuses. Text is escaped.
+function fwCompatHtml(c){
+  if (!c || !c.messages || !c.messages.length) return '';
+  const esc = function(t){ const d = document.createElement('div'); d.textContent = String(t); return d.innerHTML; };
+  const cls = c.blocking ? 'danger' : 'warning';
+  return '<div class="fw-alert fw-alert-'+cls+' mb-2 small" data-build-compat><i class="bi bi-cpu me-1"></i>'
+    + c.messages.map(esc).join('<br>') + '</div>';
+}
+function fwEsc(s){
+  return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
+}
+// CLI half of a save (services.cli_writer): the script that will run for the
+// fields only the CLI serves on this build, and — after apply — the readback.
+function fwCliHtml(j){
+  const c = j.cli; let h = '';
+  if (j.channel_warnings && j.channel_warnings.length){
+    h += '<div class="small text-warning mb-1">Not known on this build (sent by REST as before): '
+      + j.channel_warnings.map(fwEsc).join('; ') + '</div>';
+  }
+  if (!c) return h;
+  h += '<div class="fw-card p-2 mb-2" data-cli-write>'
+    + '<div class="small fw-bold mb-1">CLI script — fields this build serves only by CLI'
+    + (c.dialect_verified ? '' : ' <span class="fw-badge-warning">dialect not lab-verified</span>') + '</div>'
+    + '<pre class="mb-1 small" style="max-height:200px;overflow:auto">' + fwEsc((c.script || []).join('\n')) + '</pre>';
+  if (!c.dry_run){
+    const err = c.error || {};
+    if (err.pattern){
+      h += '<div class="small text-danger">CLI refused: ' + fwEsc(err.line || err.pattern)
+        + (err.command ? ' (at <code>' + fwEsc(err.command) + '</code>)' : '')
+        + (c.aborted ? ' — the pending change was discarded with abort' : '')
+        + (c.nothing_applied === true ? '; readback confirms nothing was applied' :
+           c.nothing_applied === false ? '; <b>readback shows the object changed</b>' : '') + '</div>';
+    }
+    const rb = c.readback || {};
+    ['cli', 'rest'].forEach(function(ch){
+      const r = rb[ch]; if (!r) return;
+      let rows = '';
+      Object.keys(r.fields || {}).forEach(function(f){
+        const v = r.fields[f]; const good = /^ok|^deleted|present \(secret/.test(v);
+        rows += '<tr><td class="small">' + fwEsc(f) + '</td><td class="small"><span class="fw-badge-'
+          + (good ? 'success' : 'warning') + '">' + fwEsc(v) + '</span></td></tr>';
+      });
+      h += '<div class="small fw-bold mt-1">Readback (' + ch.toUpperCase() + ')'
+        + (r.skipped ? ': ' + fwEsc(r.skipped) : '') + '</div>'
+        + (rows ? '<table class="table table-sm mb-1"><tbody>' + rows + '</tbody></table>' : '');
+    });
+    (c.diff || []).forEach(function(d){
+      h += '<div class="small text-danger">' + fwEsc(d.channel) + ' ' + fwEsc(d.field)
+        + ': expected ' + fwEsc(JSON.stringify(d.expected)) + ', read ' + fwEsc(JSON.stringify(d.got)) + '</div>';
+    });
+  }
+  return h + '</div>';
+}
+function fwReloadFrom(el){
+  const panel = el.closest && el.closest('.fw-drawer');
+  if (panel && window.FWDrawer){ FWDrawer.reload(panel); } else { location.reload(); }
+}
+// A save refused because the device changed since the form loaded: what it
+// holds now, and the two ways on -- Reload (take theirs) or Overwrite (mine).
+function fwShowConflict(el, j, overwriteFn){
+  let rows = '';
+  Object.keys(j.conflict || {}).forEach(function(k){
+    const c = j.conflict[k] || {};
+    rows += '<tr><td class="small fw-bold">'+fwEsc(k)+'</td><td class="small text-muted">'+fwEsc(c.loaded)
+      + '</td><td class="small">'+fwEsc(c.device)+'</td><td class="small">'+fwEsc(c.yours)+'</td></tr>';
+  });
+  el.innerHTML = '<div class="alert alert-warning mt-2 mb-0" data-stale-conflict>'
+    + '<div class="small fw-bold mb-1">Changed on the device since you opened it. Nothing was sent.</div>'
+    + '<table class="table table-sm mb-2"><thead><tr><th class="small">Field</th><th class="small">You loaded</th>'
+    + '<th class="small">Device now</th><th class="small">Yours</th></tr></thead><tbody>' + rows + '</tbody></table>'
+    + '<button type="button" class="btn btn-sm btn-outline-secondary fw-reload">Reload</button> '
+    + (overwriteFn ? '<button type="button" class="btn btn-sm btn-fw-danger fw-overwrite">Overwrite with mine</button>' : '')
+    + '</div>';
+  el.querySelector('.fw-reload').onclick = function(){ fwReloadFrom(el); };
+  if (overwriteFn) el.querySelector('.fw-overwrite').onclick = overwriteFn;
+}
+function fwShow(el, j, applyFn, overwriteFn){
+  if (!j.ok && j.conflict){ fwShowConflict(el, j, overwriteFn); return; }
+  if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+fwEsc(j.error||'failed')
+    + (j.cli ? fwCliHtml(j) : '') + '</div>'; return; }
+  if (j.dry_run){
+    const req = j.request || {};
+    let diffHtml = '';
+    if (j.diff && Object.keys(j.diff).length){
+      let rows = '';
+      Object.keys(j.diff).forEach(function(k){
+        const d = j.diff[k];
+        rows += '<tr><td class="small fw-bold">'+fwEsc(k)+'</td>'
+          + '<td class="small text-muted"><del>'+(d.before===null||d.before===undefined?'∅':fwEsc(JSON.stringify(d.before)))+'</del></td>'
+          + '<td class="small text-success">'+fwEsc(JSON.stringify(d.after))+'</td></tr>';
+      });
+      diffHtml = '<div class="small fw-bold mb-1">Changes vs local source of truth</div>'
+        + '<table class="table table-sm mb-2"><thead><tr><th class="small">Field</th><th class="small">Before</th><th class="small">After</th></tr></thead><tbody>'
+        + rows + '</tbody></table>';
+    }
+    el.innerHTML = '<div class="alert alert-info mt-2 mb-0">'
+      + fwCompatHtml(j.build_compat)
+      + diffHtml
+      + (j.request ? '<div class="small text-muted mb-1">'+fwEsc(req.method)+' '+fwEsc(req.path)+'</div>'
+         + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+fwEsc(JSON.stringify(req.body, null, 2))+'</pre>' : '')
+      + fwCliHtml(j)
+      + '<button type="button" class="btn btn-sm btn-fw-danger fw-apply">Apply to device</button></div>';
+    el.querySelector('.fw-apply').onclick = applyFn;
+  } else if (j.cli){
+    // Keep the CLI readback on screen: no automatic reload.
+    el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Applied to device.' + fwCliHtml(j) + '</div>';
+    if (window.FW) FW.toast('Saved to device (CLI readback verified)', 'success');
+  } else {
+    el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Applied to device.</div>';
+    if (window.FW) FW.toast('Saved to device', 'success');
+    // Inside a slide-over panel: refresh JUST the panel (the page below keeps
+    // its state — the FortiWeb behavior); on the base page, reload as before.
+    const panel = el.closest && el.closest('.fw-drawer');
+    if (panel && window.FWDrawer){ setTimeout(function(){ FWDrawer.reload(panel); }, 800); }
+    else { setTimeout(function(){ location.reload(); }, 800); }
+  }
+}
+function saveObject(btn, overwrite){
+  const scope = btn.closest('.fw-scope'), el = scope.querySelector('.fw-result');
+  const fields = fwCollectChanged(scope);
+  if (!Object.keys(fields).length){ el.innerHTML = '<div class="text-muted mt-2">No changes to save.</div>'; return; }
+  const base = {collection: scope.dataset.collection, mkey: scope.dataset.mkey, fields: fields,
+                expected: fwCollectExpected(scope, fields), lease_token: fwLeaseTok(scope)};
+  if (overwrite) base.overwrite = true;
+  const again = function(){ saveObject(btn, true); };
+  fwPost('/objedit/'+window.OBJEDIT_AID+'/save-object', base).then(function(j){
+    fwShow(el, j, function(){ fwPost('/objedit/'+window.OBJEDIT_AID+'/save-object',
+      Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2, null, again); }); }, again);
+  });
+}
+// ── Create a NEW top-level object, then open it in the editor to add sub-tables.
+function createObject(btn){
+  const scope = btn.closest('.fw-scope'), el = scope.querySelector('.fw-result');
+  const nameEl = scope.querySelector('#fw-new-name');
+  const name = (nameEl ? nameEl.value : '').trim();
+  if (!name){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">Name is required.</div>'; if(nameEl) nameEl.focus(); return; }
+  const coll = scope.dataset.collection;
+  const base = {collection: coll, mkey: name, fields: fwCollectChanged(scope)};
+  fwPost('/objedit/'+window.OBJEDIT_AID+'/create-object', base).then(function(j){
+    if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+fwEsc(j.error||'failed')+'</div>'; return; }
+    const req = j.request || {};
+    el.innerHTML = '<div class="alert alert-info mt-2 mb-0">'
+      + fwCompatHtml(j.build_compat)
+      + '<div class="small text-muted mb-1">'+fwEsc(req.method)+' '+fwEsc(req.path)+'</div>'
+      + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+fwEsc(JSON.stringify(req.body, null, 2))+'</pre>'
+      + '<button type="button" class="btn btn-sm btn-fw-danger fw-apply">Create on device</button></div>';
+    el.querySelector('.fw-apply').onclick = function(){
+      fwPost('/objedit/'+window.OBJEDIT_AID+'/create-object', Object.assign({}, base, {apply:true})).then(function(j2){
+        if (!j2.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+fwEsc(j2.error||'failed')+'</div>'; return; }
+        el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Created. Opening editor…</div>';
+        if (window.FW) FW.toast('Created on device', 'success');
+        const ctx = scope.closest('[data-fw-objedit]');
+        const ttl = ctx ? (ctx.dataset.title || '') : '';
+        const panel = scope.closest('.fw-drawer');
+        // In a slide-over: promote THIS panel to the new object's edit view (so
+        // its sub-tables can be filled) and select the name back in the opener
+        // dropdown — the FortiWeb create-in-place flow. Full page: navigate.
+        if (panel && window.FWDrawer){
+          setTimeout(function(){ FWDrawer.createdObject(panel, coll, name, ttl); }, 700);
+          return;
+        }
+        setTimeout(function(){
+          location.href = '/objedit/'+window.OBJEDIT_AID+'/edit?collection='+encodeURIComponent(coll)
+            + '&mkey='+encodeURIComponent(name)+'&title='+encodeURIComponent(ttl);
+        }, 700);
+      });
+    };
+  });
+}
+function fwRowBase(scope){
+  const fields = fwCollectChanged(scope);
+  return {collection: scope.dataset.collection, parent: scope.dataset.parent,
+          sub_id: scope.dataset.subId || '', fields: fields,
+          expected: scope.dataset.subId ? fwCollectExpected(scope, fields) : {},
+          lease_token: fwLeaseTok(scope)};
+}
+function saveRow(btn, overwrite){
+  const scope = btn.closest('.fw-row-scope'), el = scope.querySelector('.fw-result');
+  const base = fwRowBase(scope);
+  if (!Object.keys(base.fields).length){ el.innerHTML = '<div class="text-muted mt-2">No changes to save.</div>'; return; }
+  if (overwrite) base.overwrite = true;
+  const again = function(){ saveRow(btn, true); };
+  fwPost('/objedit/'+window.OBJEDIT_AID+'/save-row', base).then(function(j){
+    fwShow(el, j, function(){ fwPost('/objedit/'+window.OBJEDIT_AID+'/save-row',
+      Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2, null, again); }); }, again);
+  });
+}
+function createRow(btn){ saveRow(btn); }
+// Populate every reference <select> from the device so bindings are CHANGEABLE
+// (the current value is already an option; we only append the rest). Best-effort
+// — a dead device just leaves the select with its current value. Exposed as a
+// function so the inline-injected editor can re-run it on its own subtree.
+window.objeditPopulateRefs = function(root){
+  (root || document).querySelectorAll('select.fw-ref-select[data-ref]').forEach(function(sel){
+    const ref = sel.dataset.ref; if (!ref) return;
+    fetch('/objedit/'+window.OBJEDIT_AID+'/ref-options?endpoint='+encodeURIComponent(ref))
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        (j.names || []).forEach(function(n){
+          if (Array.prototype.some.call(sel.options, function(o){ return o.value === n; })) return;
+          const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o);
+        });
+      }).catch(function(){});
+  });
+};
+document.addEventListener('DOMContentLoaded', function(){
+  window.objeditPopulateRefs(document);
+  window.fwRefreshVis(document);
+  fwExplainAllActions(document);
+});
+// The inline-injected (partial) editor has no DOMContentLoaded — run now too;
+// harmless double-run on a full page load (both are idempotent).
+window.fwRefreshVis(document);
+fwExplainAllActions(document);
+// "Not in GUI, but in CLI": read the CLI-only values of one object over a
+// read-only SSH session and fill the inputs (value AND data-orig, so an
+// unchanged field is never sent back).
+function nigReadCli(btn){
+  const sec = btn.closest('[data-nig]'), out = sec.querySelector('.fw-nig-read');
+  const names = Array.prototype.map.call(sec.querySelectorAll('[data-channel="CLI"]'),
+    function(el){ return el.dataset.nigKey; });
+  out.textContent = 'reading…';
+  fwPost('/objedit/'+window.OBJEDIT_AID+'/cli-values', {collection: sec.dataset.collection,
+    mkey: sec.dataset.mkey, parent: sec.dataset.parent || '', names: names}).then(function(j){
+    if (!j.ok){ out.textContent = j.error || 'CLI read failed'; return; }
+    Object.keys(j.values || {}).forEach(function(k){
+      const el = sec.querySelector('[data-nig-key="'+k+'"] .fw-input');
+      const v = j.values[k] == null ? '' : String(j.values[k]);
+      if (el){ el.value = v; el.dataset.orig = v; }
+    });
+    (j.secret || []).forEach(function(k){
+      const el = sec.querySelector('[data-nig-key="'+k+'"] .fw-input');
+      if (el){ el.placeholder = 'secret — not shown'; }
+    });
+    out.textContent = 'read over CLI';
+  });
+}
+function deleteRow(btn){
+  const scope = btn.closest('.fw-row-scope'), el = scope.querySelector('.fw-result');
+  const base = {collection: scope.dataset.collection, parent: scope.dataset.parent, sub_id: scope.dataset.subId || '',
+                lease_token: fwLeaseTok(scope)};
+  if (!base.sub_id){ el.innerHTML = '<div class="text-muted mt-2">Row not saved yet.</div>'; return; }
+  if (!confirm('Delete this row?')) return;
+  fwPost('/objedit/'+window.OBJEDIT_AID+'/delete-row', base).then(function(j){
+    fwShow(el, j, function(){ fwPost('/objedit/'+window.OBJEDIT_AID+'/delete-row',
+      Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2); }); });
+  });
+}
+// CSP (script-src-attr 'none'): ONE delegated listener for the action buttons.
+// Delegation (vs per-node binding) matters now that several editor fragments
+// can be alive at once — the base page plus each stacked slide-over panel —
+// re-running this script per fragment must never double-bind lower panels.
+(function(){
+  if (window.__fwObjeditActionsBound) return;
+  window.__fwObjeditActionsBound = true;
+  const FNS = {
+    'objedit-create': function(b){ createObject(b); },
+    'objedit-save': function(b){ saveObject(b); },
+    'objedit-save-row': function(b){ saveRow(b); },
+    'objedit-delete-row': function(b){ deleteRow(b); },
+    'objedit-create-row': function(b){ createRow(b); },
+    'nig-read-cli': function(b){ nigReadCli(b); }
+  };
+  document.addEventListener('click', function(ev){
+    const btn = ev.target.closest && ev.target.closest('[data-js]');
+    if (!btn) return;
+    const fn = FNS[btn.dataset.js];
+    if (fn) fn(btn);
+  });
+})();
+</script>
+{% if not create and not error %}
+<script src="{{ url_for('static', filename='js/lock.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endif %}
+</div>{# /.fw-objedit #}

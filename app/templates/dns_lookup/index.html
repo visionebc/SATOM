@@ -1,0 +1,1347 @@
+{% extends "base.html" %}
+
+{% block title %}DNS & LB Lookup — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>DNS &amp; LB Lookup</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-globe2 me-2 text-accent"></i>DNS &amp; LB Lookup</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Resolve hostnames/IPs against the configured DNS servers and match them to the
+      {{ 'fleet' if adom == 'global' else adom }} load-balancing config (server policies,
+      VIPs, pools, members, certificates, WAF) — data comes from the device cache.
+    </p>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Query panel -->
+  <div class="col-lg-3">
+    <div class="fw-card">
+      <div class="fw-card-header"><i class="bi bi-search me-1"></i>{{ _('Lookup') }}</div>
+      <div class="fw-card-body">
+        <form method="POST" id="dnsForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="fw-form-label">{{ _('Hostnames / IPs — one per line') }}
+            <span class="text-muted">(optionally «name TYPE», e.g. <code>app.example.com CNAME</code>)</span></label>
+          <textarea name="entries" rows="8" class="form-control fw-form-control font-monospace"
+                    style="font-size:12px;"
+                    placeholder="app.example.com&#10;*.example.com&#10;192.0.2.10">{{ entries_raw }}</textarea>
+          <label class="fw-form-label mt-2" for="optMode">{{ _('Lookup') }}</label>
+          <select name="mode" id="optMode" class="form-select form-select-sm fw-form-control"
+                  title="{{ _('Automatic: an address is searched in the address fields, a host name is resolved and its addresses searched, anything else is searched in the configuration text.') }}">
+            {% for value, label in [('auto', _('Automatic (per entry)')),
+                                    ('element', _('Element (configuration text)')),
+                                    ('ip', _('IP address (address fields)')),
+                                    ('fqdn', _('FQDN (resolve, then search the addresses)'))] %}
+            <option value="{{ value }}" {{ 'selected' if mode == value }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <hr class="my-3" style="opacity:.15;">
+          <label class="fw-form-label">{{ _('Options') }}</label>
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="lb" id="optLb" {{ 'checked' if opts.lb }}>
+            <label class="form-check-label" for="optLb" style="font-size:13px;">{{ _('Show LB matches') }}</label></div>
+          <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="quick" id="optQuick" {{ 'checked' if opts.quick }}>
+            <label class="form-check-label" for="optQuick" style="font-size:13px;">{{ _('Quick LB (gateway only)') }}</label></div>
+          <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary btn-sm flex-fill" href="{{ url_for('dns_tool.index') }}">{{ _('Reset') }}</a>
+            <button type="submit" class="btn btn-primary btn-sm flex-fill"><i class="bi bi-search me-1"></i>{{ _('Search') }}</button>
+          </div>
+          <button type="button" class="btn btn-outline-secondary btn-sm w-100 mt-2" id="spoRegexBtn"
+                  title="{{ _('How server policy names become the FQDN they publish: an FQDN then finds its policy by name, and a policy says which name it serves') }}">
+            <i class="bi bi-regex me-1"></i>{{ _('SPO Regex') }}
+            {% if spo_rules %}<span class="fw-badge fw-badge-info ms-1">{{ spo_rules|selectattr('enabled')|list|length }}</span>{% endif %}</button>
+        </form>
+        <hr class="my-3" style="opacity:.15;">
+        <div style="font-size:12px;" class="text-muted">
+          <div class="mb-1 fw-semibold" style="font-size:11px; letter-spacing:.05em; text-transform:uppercase;">{{ _('DNS servers') }}</div>
+          {% for s in servers %}
+          <div><i class="bi bi-hdd-network me-1"></i>{{ s.name }} <span class="opacity-50">— {{ s.server }}</span></div>
+          {% else %}
+          <div class="text-warning">{{ _('No DNS servers configured.') }}</div>
+          {% endfor %}
+          {% if current_user.can('user_manage') %}
+          <a href="{{ url_for('dns_tool.resolvers') }}" class="d-inline-block mt-2" style="font-size:12px;">
+            <i class="bi bi-gear me-1"></i>{{ _('DNS Lookup — resolver servers') }}</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="col-lg-9">
+    <div class="fw-card">
+      <div class="fw-card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-table me-1"></i>{{ _('Results') }}</span>
+        <span class="d-flex gap-2">
+          {% if can_manage_records and dns_backends %}
+          <button type="button" class="btn btn-sm btn-primary" id="dnsRecBtnHeader"
+                  data-entry="{{ results[0].resolved if results else '' }}">
+            <i class="bi bi-plus-lg me-1"></i>{{ _('DNS Records') }}</button>
+          {% endif %}
+          {% if results %}
+          <button type="button" class="btn btn-sm btn-outline-warning" id="copyDnsBtn">{{ _('Copy DNS') }}</button>
+          <button type="button" class="btn btn-sm btn-outline-success" id="copyLbBtn">{{ _('Copy LB') }}</button>
+          {% endif %}
+        </span>
+      </div>
+      <div class="fw-card-body p-0">
+        {% if lb_error %}
+        <div class="alert alert-danger m-3 mb-0" style="font-size:13px;">LB matching failed: {{ lb_error }}</div>
+        {% endif %}
+        {% if not searched %}
+        <div class="text-center text-muted py-5" style="font-size:13px;">
+          {{ _('Enter values on the left and press') }} <strong>{{ _('Search') }}</strong>.
+        </div>
+        {% elif not results %}
+        <div class="text-center text-muted py-5" style="font-size:13px;">{{ _('No valid entries.') }}</div>
+        {% else %}
+        {# SA-0029 (2nd round, the operator): the main table shows the DNS side
+           only -- Entry, one column per resolver -- and Actions: Expand opens
+           the entry's LB matches with every detail (Gateway, policy, Service
+           IP / name, Backends, Edit, Delete, each match's Field | Value table),
+           Show opens the dialog with the live check (a picker when an entry
+           has several matches). The details live in a <template>, so nothing
+           long is drawn until asked. A server policy cached on several members
+           of one cluster is ONE match, on the member every action targets
+           (dns_tool.collapse_clusters). #}
+        <style nonce="{{ csp_nonce }}">
+          .dl-table td, .dl-table th { vertical-align: top; }
+          .dl-table .dl-trunc { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .dl-table .dl-nowrap, .dl-table .dl-actions { white-space: nowrap; }
+          .dl-table .dl-entry { position: sticky; left: 0; background: #fff; z-index: 1; min-width: 170px; border-right: 1px solid var(--fw-border); }
+          .dl-table .dl-count { font-size: 11px; margin-top: 2px; }
+          .dl-table tr.dl-detail > td { background: var(--fw-surface-alt); padding: 10px 16px 14px 16px; }
+          .dl-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+          .dl-toggle { color: var(--fw-text-secondary); line-height: 1; }
+          .dl-fields { table-layout: fixed; width: 100%; }
+          .dl-fields thead th:first-child, .dl-fields tbody th { width: 200px; }
+          .dl-fields tbody th { font-weight: 500; color: var(--fw-text-secondary); }
+          .dl-fields td { white-space: pre-wrap; word-break: break-word; }
+          .dl-table tr.dl-lb > td { background: var(--fw-surface-alt); padding: 8px 12px 12px 12px; }
+          .dl-lbtable { background: #fff; }
+          /* width 0 + min-width 100%: the matches scroll inside their cell
+             instead of widening the DNS table */
+          .dl-lbwrap { width: 0; min-width: 100%; overflow-x: auto; }
+          .dl-lbtable td, .dl-lbtable th { vertical-align: top; }
+          .dl-section { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600; margin: 12px 0 4px; }
+        </style>
+        {% set st_colors = {'enable': '#15692A', 'enabled': '#15692A',
+                            'disable': '#8B1C2A', 'disabled': '#8B1C2A',
+                            'maintain': '#7A5700', 'maintenance': '#7A5700'} %}
+        {% set mode_labels = {'element': _('Element'), 'ip': _('IP'), 'fqdn': _('FQDN')} %}
+        {% set mode_help = {'element': _('Searched in the configuration text; the Name is the PTR of the service IP.'),
+                            'ip': _('Searched in the address fields of every server policy: VIP, pool members and other address fields.'),
+                            'fqdn': _('Resolved (A and AAAA) on every resolver; each address searched in the address fields, and the name in the configuration text.')} %}
+        {% set lb_cols = 5 if opts.lb else 0 %}
+        {% set ncols = 1 + servers|length + (1 if opts.quick else 0) + (1 if opts.lb else 0) %}
+        <div class="d-flex justify-content-end gap-2 px-3 py-2">
+          {% if opts.lb %}
+          <button type="button" class="btn btn-sm btn-fw-secondary" id="dlExpandAll">
+            <i class="bi bi-arrows-expand me-1"></i>{{ _('Expand all') }}</button>
+          <button type="button" class="btn btn-sm btn-fw-secondary" id="dlCollapseAll">
+            <i class="bi bi-arrows-collapse me-1"></i>{{ _('Collapse all') }}</button>
+          {% endif %}
+        </div>
+        <div class="table-responsive">
+          <table class="table fw-table mb-0 dl-table" style="font-size:12px;">
+            <thead>
+              <tr>
+                {# data-keep: main.js fit-to-width hides columns from the right when
+                   the table is too wide; Quick LB (right before Actions) was the
+                   first to go and looked broken (SA-0029). These never hide. #}
+                <th class="dl-entry" data-keep>{{ _('Entry') }}</th>
+                {% for s in servers %}<th data-keep>{{ s.name }}</th>{% endfor %}
+                {% if opts.quick %}<th data-keep>{{ _('Quick LB') }}</th>{% endif %}
+                {% if opts.lb %}<th class="dl-actions">{{ _('Actions') }}</th>{% endif %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in results %}
+              {% set ri = loop.index %}
+              <tr class="dl-entry-row">
+                <td class="dl-entry">
+                  <span class="fw-semibold font-monospace">{{ r.entry }}</span>
+                  <span class="fw-badge fw-badge-secondary" title="{{ mode_help.get(r.mode, '') }}">{{ mode_labels.get(r.mode, r.mode) }}</span>
+                  {% if r.is_wildcard %}
+                  <span class="fw-badge fw-badge-warning">&rarr; {{ r.resolved }}</span>
+                  {% endif %}
+                  {% if can_manage_records and dns_backends %}
+                  <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 dns-rec-btn"
+                          data-entry="{{ r.resolved }}" title="{{ _('Manage DNS records for this name') }}"
+                          style="font-size:10px;"><i class="bi bi-pencil-square"></i></button>
+                  {% endif %}
+                  {% if r.dns_via == 'vip' %}
+                  <div><span class="fw-badge fw-badge-info" title="{{ _('Not a DNS name: the resolvers were asked for the VIP of what it matched (reverse lookup)') }}">{{ _('DNS: reverse lookup of the VIP') }}</span></div>
+                  {% elif r.dns_via == 'no_vip' %}
+                  <div><span class="fw-badge fw-badge-warning">{{ _('No VIP in what it matched: nothing to look up in DNS') }}</span></div>
+                  {% endif %}
+                  {% if r.mode == 'fqdn' %}
+                    {% if r.dns_state == 'no_answer' %}
+                    <div><span class="fw-badge fw-badge-warning">{{ _('Does not resolve: no A or AAAA answer') }}</span></div>
+                    {% elif r.dns_state == 'error' %}
+                    <div><span class="fw-badge fw-badge-danger">{{ _('DNS error') }}: {{ r.dns_errors|join(', ') }}</span></div>
+                    {% elif r.dns_state == 'no_resolver' %}
+                    <div><span class="fw-badge fw-badge-warning">{{ _('No DNS resolver configured: the name cannot be resolved') }}</span></div>
+                    {% endif %}
+                  {% elif r.dns_errors %}
+                    <div><span class="fw-badge fw-badge-danger">{{ _('DNS error') }}: {{ r.dns_errors|join(', ') }}</span></div>
+                  {% endif %}
+                  {% if opts.lb %}
+                  <div class="text-muted dl-count">{{ _('Matches') }}: {{ r.matches|length }}</div>
+                  {% endif %}
+                </td>
+                {% for s in servers %}
+                <td>
+                  {% for val in r.dns[s.name] %}
+                  {% set ans = val.split(' → ')[-1] %}
+                  <span class="fw-badge font-monospace d-inline-block mb-1 {{ 'fw-badge-danger' if ans in ('timeout','error') else ('fw-badge-secondary' if ans in ('No result', 'invalid name', 'invalid server') else 'fw-badge-info') }}">{{ val }}</span><br>
+                  {% endfor %}
+                </td>
+                {% endfor %}
+                {% if opts.quick %}
+                <td>
+                  {% for gw in r.gateways %}<span class="fw-badge fw-badge-primary d-inline-block mb-1">{{ gw }}</span><br>{% else %}<span class="text-muted">—</span>{% endfor %}
+                </td>
+                {% endif %}
+                {% if opts.lb %}
+                <td class="dl-actions">
+                  {% if r.matches %}
+                  <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 dl-expand"
+                          style="font-size:10px;" aria-expanded="false" data-slot="dle-{{ ri }}"
+                          title="{{ _('The LB matches of this entry, with every detail') }}">
+                    <i class="bi bi-chevron-right"></i> {{ _('Expand') }}</button>
+                  {% set picks = [] %}
+                  {% for m in r.matches %}{% set _x = picks.append({'tpl': 'dlm-%d-%d' % (ri, loop.index),
+                       'aid': m['_aid'] or '', 'kind': m['_kind'] or '', 'policy': m['policy'],
+                       'gateway': m.gateway, 'label': m.gateway ~ ' / ' ~ m['policy']}) %}{% endfor %}
+                  <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 dl-show-btn"
+                          style="font-size:10px;" data-picks="{{ picks | tojson | forceescape }}">
+                    <i class="bi bi-eye"></i> {{ _('Show') }}</button>
+                  {# SA-0029: Edit (a new window) and Delete on the entry's row; with
+                     several matches each one is a menu of them #}
+                  {% set edits = [] %}{% set dels = [] %}
+                  {% for m in r.matches %}
+                    {% if m['policy'] and m['_aid'] %}
+                      {% if m['_kind'] == 'fortiadc' %}
+                        {% set u = url_for('adc.use_device', id=m['_aid'], next=url_for('adc.object_detail', logical='load_balance_virtual_server', mkey=m['policy'])) %}
+                      {% else %}
+                        {% set u = url_for('workspace.policy_detail', appliance_id=m['_aid'], name=m['policy']) %}
+                      {% endif %}
+                      {% set _x = edits.append((m, u)) %}
+                    {% endif %}
+                    {% if can_decommission and m['_aid'] and m['policy'] and m['_kind'] in ('fortiweb', 'fortiadc') %}{% set _x = dels.append(m) %}{% endif %}
+                  {% endfor %}
+                  {% if edits|length == 1 %}
+                  <a href="{{ edits[0][1] }}" target="_blank" rel="noopener"
+                     class="btn btn-sm btn-outline-primary py-0 px-2 dl-edit" style="font-size:10px;"
+                     title="{{ _('Open the policy to edit it, in a new window') }}">
+                    <i class="bi bi-pencil"></i> {{ _('Edit') }}</a>
+                  {% elif edits %}
+                  <div class="btn-group">
+                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 dropdown-toggle"
+                            style="font-size:10px;" data-bs-toggle="dropdown" aria-expanded="false"
+                            data-bs-popper-config='{"strategy":"fixed"}'
+                            title="{{ _('Open the policy to edit it, in a new window') }}">
+                      <i class="bi bi-pencil"></i> {{ _('Edit') }}</button>
+                    <ul class="dropdown-menu dropdown-menu-end" style="font-size:12px;">
+                      {% for m, u in edits %}
+                      <li><a class="dropdown-item dl-edit" href="{{ u }}" target="_blank" rel="noopener">{{ m.gateway }} / {{ m['policy'] }}</a></li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                  {% endif %}
+                  {% if dels|length == 1 %}
+                  <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 dns-decom-btn"
+                          style="font-size:10px;"
+                          title="{{ _('Decommission: preview first, nothing is deleted until you confirm the plan') }}"
+                          data-aid="{{ dels[0]['_aid'] }}" data-policy="{{ dels[0]['policy'] }}"
+                          data-hostname="{{ r.resolved }}" data-gateway="{{ dels[0].gateway }}">
+                    <i class="bi bi-trash3"></i> {{ _('Delete') }}</button>
+                  {% elif dels %}
+                  <div class="btn-group">
+                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 dropdown-toggle"
+                            style="font-size:10px;" data-bs-toggle="dropdown" aria-expanded="false"
+                            data-bs-popper-config='{"strategy":"fixed"}'
+                            title="{{ _('Decommission: preview first, nothing is deleted until you confirm the plan') }}">
+                      <i class="bi bi-trash3"></i> {{ _('Delete') }}</button>
+                    <ul class="dropdown-menu dropdown-menu-end" style="font-size:12px;">
+                      {% for m in dels %}
+                      <li><button type="button" class="dropdown-item dns-decom-btn"
+                                  data-aid="{{ m['_aid'] }}" data-policy="{{ m['policy'] }}"
+                                  data-hostname="{{ r.resolved }}" data-gateway="{{ m.gateway }}">{{ m.gateway }} / {{ m['policy'] }}</button></li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                  {% endif %}
+                  {% endif %}
+                </td>
+                {% endif %}
+              </tr>
+              {% if opts.lb and r.matches %}
+              <tr class="dl-lb" id="dle-{{ ri }}" hidden>
+                <td colspan="{{ ncols }}"><div class="dl-lbwrap">
+                  <table class="table fw-table table-sm mb-0 dl-lbtable" style="font-size:12px;">
+                    <thead>
+                      <tr>
+                        <th class="dl-actions">{{ _('Actions') }}</th>
+                        <th>{{ _('Gateway') }}</th>
+                        <th>{{ _('Server Policy / Virtual Server') }}</th>
+                        <th>{{ _('Service IP / name') }}</th>
+                        <th>{{ _('Backends') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for m in r.matches %}
+                      {% set mi = loop.index %}
+                      <tr class="dl-match">
+                        {% set c = m['_cluster'] %}
+                        {% if not m['policy'] or not m['_aid'] %}
+                          {% set pol_url = none %}
+                        {% elif m['_kind'] == 'fortiadc' %}
+                          {% set pol_url = url_for('adc.use_device', id=m['_aid'],
+                               next=url_for('adc.object_detail', logical='load_balance_virtual_server', mkey=m['policy'])) %}
+                        {% else %}
+                          {% set pol_url = url_for('workspace.policy_detail', appliance_id=m['_aid'], name=m['policy']) %}
+                        {% endif %}
+                        {% set pcol = st_colors.get((m['status'] or '')|lower, '#3D4550') %}
+                        {% set ns = m['_name_state'] %}
+                        {% set ptr_names = (m['service_name'] or '').split(', ') | reject('equalto', '') | list %}
+                        {% set names = ([m['_fwd_name']] if m['_fwd_name'] else []) + (ptr_names | reject('equalto', m['_fwd_name']) | list) %}
+                        {% set spo = m['_spo_fqdn'] %}
+                        <td class="dl-actions">
+                          {% if pol_url %}
+                          <a href="{{ pol_url }}" target="_blank" rel="noopener"
+                             class="btn btn-sm btn-outline-primary py-0 px-2 dl-edit" style="font-size:10px;"
+                             title="{{ _('Open the policy to edit it, in a new window') }}{% if c %} ({{ m.gateway }}){% endif %}">
+                            <i class="bi bi-pencil"></i> {{ _('Edit') }}</a>
+                          {% endif %}
+                          {% if can_decommission and m['_aid'] and m['policy']
+                                and m['_kind'] in ('fortiweb', 'fortiadc') %}
+                          <button type="button"
+                                  class="btn btn-sm btn-outline-danger py-0 px-2 dns-decom-btn"
+                                  style="font-size:10px;"
+                                  title="{{ _('Decommission: preview first, nothing is deleted until you confirm the plan') }}"
+                                  data-aid="{{ m['_aid'] }}"
+                                  data-policy="{{ m['policy'] }}"
+                                  data-hostname="{{ r.resolved }}"
+                                  data-gateway="{{ m.gateway }}">
+                            <i class="bi bi-trash3"></i> {{ _('Delete') }}</button>
+                          {% endif %}
+                          <template id="dlm-{{ ri }}-{{ mi }}">
+                            <div class="fw-semibold mb-2" style="font-size:12px;">
+                              {{ r.entry }} &rarr; {{ m.product }} · {{ m.gateway }} · {{ m['policy'] }}</div>
+                            {% if c %}
+                            <div class="fw-card mb-2 px-2 py-1" style="font-size:12px;">
+                              <strong>{{ _('Cluster') }} {{ c.name }}</strong> — {{ c.source }}.
+                              {{ _('Members') }}: {{ c.members|join(', ') }}.
+                              {{ _('This server policy is cached on') }}: {{ c.seen_on|join(', ') }}.
+                              {% if c.role == 'primary' %}{{ _('Shown once, on the primary SATOM records (role set on the appliance, not read live): Edit, Delete and the live check act on it.') }}
+                              {% elif c.role in ('vip', 'cluster') %}{{ _('Shown once, on the cluster itself: Edit, Delete and the live check go to the member that is primary when they run.') }}
+                              {% else %}{{ _('SATOM has no primary recorded for this cluster: shown once, on the first member by name. Edit, Delete and the live check act on that member only.') }}{% endif %}
+                            </div>
+                            {% endif %}
+                            {# SA-0029: the data as a table, field | value #}
+                            <table class="table fw-table table-sm mb-0 dl-fields" style="font-size:12px;">
+                              <thead><tr><th>{{ _('Field') }}</th><th>{{ _('Value') }}</th></tr></thead>
+                              <tbody>
+                                <tr><th>{{ _('Lookup') }}</th><td>{{ mode_labels.get(m['_mode'], m['_mode']) }}</td></tr>
+                                <tr><th>{{ _('Matched on') }}</th><td>{{ m['_match_field'] or '—' }}</td></tr>
+                                {% for key, label in columns %}
+                                {% if key == 'service_ip' %}
+                                <tr><th>{{ label }}</th><td class="font-monospace">{% if m[key] %}{{ m[key] }}{% else %}— <span class="text-muted">({{ m['_vip_note'] or _('no service IP') }})</span>{% endif %}</td></tr>
+                                {% elif key == 'service_name' %}
+                                <tr><th>{{ label }}</th>
+                                  <td>{{ names|join(', ') }}{% if not ptr_names %}{% if names %} {% endif %}{% if ns == 'no_ptr' %}({{ _('no PTR') }}){% elif ns == 'error' %}({{ _('PTR error') }}: {{ m['_name_error'] }}){% elif ns == 'no_resolver' %}({{ _('no resolver configured') }}){% elif ns == 'no_ip' %}({{ _('no service IP') }}){% endif %}{% endif %}</td></tr>
+                                {% if spo %}
+                                <tr><th>{{ _('SPO Regex FQDN') }}</th><td>{{ spo }}{% if m['_spo_ips'] %} &rarr; <span class="font-monospace">{{ m['_spo_ips']|join(', ') }}</span>{% endif %}</td></tr>
+                                {% endif %}
+                                {% elif m[key] and key != 'app_id' %}
+                                <tr><th>{{ label }}</th>
+                                  <td class="{{ 'text-danger fw-semibold' if key == 'status' and m[key] == 'disable' }}">{{ m[key] }}</td></tr>
+                                {% endif %}
+                                {% endfor %}
+                              </tbody>
+                            </table>
+                            {# SA-0029: the AppID, always (no option): every catalog
+                               column under the AppIDs page's names, and its source #}
+                            {% set ai = m['_appid'] %}
+                            <div class="dl-section">{{ _('AppID') }}</div>
+                            <table class="table fw-table table-sm mb-0 dl-fields dl-appid" style="font-size:12px;">
+                              <tbody>
+                                {% if ai %}
+                                {% for k, label in appid_cols %}
+                                <tr><th>{{ label }}</th><td>{{ (ai.fields or {}).get(k) or '—' }}</td></tr>
+                                {% endfor %}
+                                <tr><th>{{ _('AppID source') }}</th><td>{{ ai.source }}</td></tr>
+                                {% else %}
+                                <tr class="dl-none"><td colspan="2" class="text-muted fst-italic">{{ _('No AppID: the policy is not bound in the AppID catalog and its comment names none') }}</td></tr>
+                                {% endif %}
+                              </tbody>
+                            </table>
+                            <div class="dl-section">{{ _('Backends') }}{% if m['pool'] %} — {{ _('pool') }} <span class="font-monospace">{{ m['pool'] }}</span>{% endif %}</div>
+                            <table class="table fw-table table-sm mb-0 dl-backends" style="font-size:12px;">
+                              <thead><tr><th>{{ _('Member') }}</th><th>{{ _('Weight') }}</th><th>{{ _('Configured') }}</th><th>{{ _('Live health') }}</th></tr></thead>
+                              <tbody>
+                                {% for b in m['_backends'] %}
+                                {% set bcol = st_colors.get((b.status or '')|lower, '#3D4550') %}
+                                <tr data-backend="{{ b.ip or b.domain }}:{{ b.port }}">
+                                  <td class="font-monospace">{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %}</td>
+                                  <td>{{ b.weight or '—' }}</td>
+                                  <td><span class="dl-dot me-1" style="background:{{ bcol }};"></span>{{ b.status or 'unknown' }}</td>
+                                  <td class="dl-live text-muted">—</td>
+                                </tr>
+                                {% else %}
+                                <tr class="dl-none"><td colspan="4" class="text-muted fst-italic">{{ m['_backends_note'] or _('no backends in cache') }}</td></tr>
+                                {% endfor %}
+                              </tbody>
+                            </table>
+                          </template>
+                        </td>
+                        <td class="dl-nowrap" title="{{ m.product }} · {{ m.gateway }}">
+                          <button type="button" class="btn btn-sm btn-link p-0 me-1 dl-toggle" aria-expanded="false"
+                                  data-tpl="dlm-{{ ri }}-{{ mi }}" data-slot="dls-{{ ri }}-{{ mi }}"
+                                  title="{{ _('Details') }}"><i class="bi bi-chevron-right"></i></button>
+                          <span class="text-muted" style="font-size:10px;">{{ m.product }}</span> {{ m.gateway }}
+                          {% if c %}
+                          <br><span class="fw-badge fw-badge-info dl-cluster"
+                                title="{{ c.source }} · {{ _('Members') }}: {{ c.members|join(', ') }} · {{ _('Cached on') }}: {{ c.seen_on|join(', ') }}">
+                            {% if c.role == 'primary' %}{{ _('Cluster: %(name)s (primary %(node)s, %(n)s members)', name=c.name, node=c.node, n=c.count) }}
+                            {% elif c.role in ('vip', 'cluster') %}{{ _('Cluster: %(name)s (primary resolved by the cluster, %(n)s members)', name=c.name, n=c.count) }}
+                            {% else %}{{ _('Cluster: %(name)s (role unknown, showing %(node)s, %(n)s members)', name=c.name, node=c.node, n=c.count) }}{% endif %}</span>
+                          {% endif %}
+                        </td>
+                        <td class="dl-trunc" title="{{ m['policy'] }} ({{ m['status'] or 'unknown' }})">
+                          <span class="dl-dot me-1" style="background:{{ pcol }};"></span>{{ m['policy'] }}</td>
+                        <td class="dl-trunc dl-name" title="{{ m['service_ip'] or m['_vip_note'] }}{% if names %} — {{ names|join(', ') }}{% endif %}{% if m['_name_error'] %} — {{ m['_name_error'] }}{% endif %}">
+                          {% if m['service_ip'] %}<span class="font-monospace">{{ m['service_ip'] }}</span>
+                          {% else %}<span class="fw-badge fw-badge-secondary" title="{{ m['_vip_note'] }}">{{ _('no service IP') }}</span>{% endif %}
+                          {% if names %}<br><span class="text-muted">{{ names|join(', ') }}</span>
+                          {% elif m['service_ip'] %}
+                            {% if ns == 'no_ptr' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no PTR') }}</span>
+                            {% elif ns == 'error' %}<br><span class="fw-badge fw-badge-danger">{{ _('PTR error') }}</span>
+                            {% elif ns == 'no_resolver' %}<br><span class="fw-badge fw-badge-secondary">{{ _('no resolver configured') }}</span>{% endif %}
+                          {% endif %}
+                          {% if spo and spo not in names %}<br><span class="text-muted" title="{{ _('From the server policy name (SPO Regex)') }}"><i class="bi bi-regex"></i> {{ spo }}{% if m['_spo_ips'] %} &rarr; <span class="font-monospace">{{ m['_spo_ips']|join(', ') }}</span>{% endif %}</span>{% endif %}
+                        </td>
+                        {% set bs = m['_backends'] or [] %}
+                        <td class="dl-nowrap" title="{% for b in bs %}{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %} ({{ b.status or 'unknown' }}){% if not loop.last %}; {% endif %}{% else %}{{ m['_backends_note'] or _('no backends in cache') }}{% endfor %}">
+                          {% if m['pool'] %}<span class="font-monospace">{{ m['pool'] }}</span>{% endif %}
+                          {% if bs %}
+                          <span class="text-muted">({{ bs|length }})</span>
+                          {% for b in bs[:2] %}<span class="font-monospace ms-1"><span class="dl-dot me-1" style="background:{{ st_colors.get((b.status or '')|lower, '#3D4550') }};"></span>{{ b.ip or b.domain }}{% if b.port %}:{{ b.port }}{% endif %}</span>{% endfor %}{% if bs|length > 2 %} <span class="text-muted">+{{ bs|length - 2 }}</span>{% endif %}
+                          {% else %}
+                          <span class="text-muted fst-italic">{{ _('no members in cache') }}</span>
+                          {% endif %}
+                        </td>
+                      </tr>
+                      <tr class="dl-detail" id="dls-{{ ri }}-{{ mi }}" hidden>
+                        <td colspan="{{ lb_cols }}"><div class="dl-slot"></div></td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div></td>
+              </tr>
+              {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if not_found %}
+        <div class="alert alert-warning m-3" style="font-size:12px;">
+          <strong>{{ _('Not found in any source:') }}</strong> {{ not_found|join(', ') }}
+        </div>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<textarea id="clipDns" class="d-none" readonly>{{ clip_dns }}</textarea>
+<textarea id="clipLb" class="d-none" readonly>{{ clip_lb }}</textarea>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  function wire(btnId, srcId, label) {
+    var btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var src = document.getElementById(srcId);
+      navigator.clipboard.writeText(src ? src.value : '').then(function () {
+        var old = btn.textContent;
+        btn.textContent = label + ' copied!';
+        setTimeout(function () { btn.textContent = old; }, 1600);
+      });
+    });
+  }
+  wire('copyDnsBtn', 'clipDns', 'DNS');
+  wire('copyLbBtn', 'clipLb', 'LB');
+
+  // Collapsed by default (SA-0028): a row's details are cloned from its
+  // <template> the first time it opens.
+  function setOpen(btn, open) {
+    var row = document.getElementById(btn.getAttribute('data-slot'));
+    if (!row) return;
+    if (open && !row.getAttribute('data-filled')) {
+      var tpl = document.getElementById(btn.getAttribute('data-tpl'));
+      if (tpl) row.querySelector('.dl-slot').appendChild(tpl.content.cloneNode(true));
+      row.setAttribute('data-filled', '1');
+    }
+    row.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.querySelector('i').className = open ? 'bi bi-chevron-down' : 'bi bi-chevron-right';
+  }
+  var toggles = document.querySelectorAll('.dl-toggle');
+  toggles.forEach(function (b) {
+    b.addEventListener('click', function () { setOpen(b, b.getAttribute('aria-expanded') !== 'true'); });
+  });
+  // Expand (SA-0029, 2nd round): an entry's LB matches, each with its details open.
+  function setEntry(btn, open) {
+    var row = document.getElementById(btn.getAttribute('data-slot'));
+    if (!row) return;
+    row.hidden = !open;
+    row.querySelectorAll('.dl-toggle').forEach(function (b) { setOpen(b, open); });
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.querySelector('i').className = open ? 'bi bi-chevron-down' : 'bi bi-chevron-right';
+  }
+  var expands = document.querySelectorAll('.dl-expand');
+  expands.forEach(function (b) {
+    b.addEventListener('click', function () { setEntry(b, b.getAttribute('aria-expanded') !== 'true'); });
+  });
+  var ex = document.getElementById('dlExpandAll'), co = document.getElementById('dlCollapseAll');
+  if (ex) ex.addEventListener('click', function () { expands.forEach(function (b) { setEntry(b, true); }); });
+  if (co) co.addEventListener('click', function () { expands.forEach(function (b) { setEntry(b, false); }); });
+})();
+</script>
+
+<!-- Show: the whole match (SA-0027), out of the table so it never widens it -->
+<div class="modal fade" id="dlShowModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-eye me-2"></i>{{ _('LB match') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2" hidden>
+          <label class="fw-form-label" for="dlShowPick">{{ _('Match') }}</label>
+          <select id="dlShowPick" class="form-select form-select-sm fw-form-control"></select>
+        </div>
+        <div id="dlShowBody"></div>
+        {# The live check is a visible STEP: what was read from SATOM's copy,
+           what the device was asked, what it answered (audited by the
+           endpoint, workspace.policy_health). #}
+        <div class="dl-section">{{ _('Live check') }}</div>
+        <ol class="mb-0 ps-3" id="dlLiveSteps" style="font-size:12px;"></ol>
+      </div>
+      <div class="modal-footer">
+        <span class="text-muted me-auto" style="font-size:12px;" id="dlLiveMsg"></span>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="dlLiveBtn">
+          <i class="bi bi-activity me-1"></i>{{ _('Check live health') }}</button>
+        <button type="button" class="btn btn-sm btn-outline-success" id="dlCopyBtn">{{ _('Copy') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var modalEl = document.getElementById('dlShowModal');
+  if (!modalEl) return;
+  var body = document.getElementById('dlShowBody');
+  var steps = document.getElementById('dlLiveSteps');
+  var liveBtn = document.getElementById('dlLiveBtn');
+  var liveMsg = document.getElementById('dlLiveMsg');
+  var copyBtn = document.getElementById('dlCopyBtn');
+  var current = null;
+  var T = {
+    cached: {{ _("Members in SATOM's copy") | tojson }},
+    asking: {{ _("Asking the device for each member's health (policystatus.detail)…") | tojson }},
+    reported: {{ _('Members the device reported') | tojson }},
+    failed: {{ _('Live health failed:') | tojson }},
+    audited: {{ _('Recorded in the audit log.') | tojson }},
+    fwOnly: {{ _('Live health is read from FortiWeb only.') | tojson }},
+    notReported: {{ _('not reported by the device') | tojson }},
+    notCached: {{ _("not in SATOM's copy") | tojson }},
+    noCheck: {{ _('no health check') | tojson }},
+    now: {{ _('Live health read from the device now.') | tojson }}
+  };
+  // Live health is a DEVICE read (policystatus.detail), so it runs only when
+  // asked; the table and this dialog show the cached configured status.
+  var healthUrl = {{ url_for('workspace.policy_health', appliance_id=0, name='__P__') | tojson }};
+  function step(text, cls) {
+    var li = document.createElement('li');
+    li.textContent = text;
+    if (cls) li.className = cls;
+    steps.appendChild(li);
+    return li;
+  }
+  // Show (SA-0029, 2nd round): one per entry; an entry with several matches
+  // picks which one the dialog (and its live check) is about.
+  var pick = document.getElementById('dlShowPick');
+  var picks = [];
+  function render(i) {
+    var p = picks[i] || {};
+    var tpl = document.getElementById(p.tpl);
+    body.innerHTML = '';
+    steps.innerHTML = '';
+    if (tpl) body.appendChild(tpl.content.cloneNode(true));
+    current = {aid: p.aid, kind: p.kind, policy: p.policy, gateway: p.gateway};
+    step(T.cached + ': ' + body.querySelectorAll('tr[data-backend]').length);
+    var canLive = current.kind === 'fortiweb' && current.aid && current.policy;
+    liveBtn.disabled = !canLive;
+    liveMsg.textContent = canLive ? '' : T.fwOnly;
+  }
+  pick.addEventListener('change', function () { render(+pick.value); });
+  function open(btn) {
+    try { picks = JSON.parse(btn.getAttribute('data-picks') || '[]'); } catch (e) { picks = []; }
+    pick.innerHTML = '';
+    picks.forEach(function (p, i) {
+      var o = document.createElement('option'); o.value = i; o.textContent = p.label; pick.appendChild(o);
+    });
+    pick.parentNode.hidden = picks.length < 2;
+    render(0);
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+  document.querySelectorAll('.dl-show-btn').forEach(function (b) {
+    b.addEventListener('click', function () { open(b); });
+  });
+  function liveCell(cell, m) {
+    var txt = {up: 'UP', down: 'DOWN', na: T.noCheck}[m.health] || m.raw;
+    cell.textContent = txt + (m.pool ? ' (' + m.pool + ')' : '');
+    cell.className = 'dl-live fw-semibold ' + (m.health === 'up' ? 'text-success'
+                     : m.health === 'down' ? 'text-danger' : 'text-muted');
+  }
+  liveBtn.addEventListener('click', function () {
+    if (!current) return;
+    liveBtn.disabled = true;
+    liveMsg.textContent = '';
+    var ask = step(current.gateway + ': ' + T.asking);
+    var url = healthUrl.replace('/0/', '/' + encodeURIComponent(current.aid) + '/')
+                       .replace('__P__', encodeURIComponent(current.policy));
+    fetch(url, {credentials: 'same-origin', headers: {'Accept': 'application/json'}})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        liveBtn.disabled = false;
+        if (!d.ok) {
+          // A refusal is an ERROR, never "all down" and never blank.
+          ask.className = 'text-danger';
+          step(T.failed + ' ' + (d.error || '') + ' ' + T.audited, 'text-danger');
+          body.querySelectorAll('.dl-live').forEach(function (c) {
+            c.textContent = 'error'; c.className = 'dl-live text-danger'; });
+          return;
+        }
+        var tbody = body.querySelector('table.dl-backends tbody');
+        var seen = {};
+        (d.members || []).forEach(function (m) {
+          var key = m.ip + ':' + m.port;
+          seen[key] = true;
+          var tr = body.querySelector('tr[data-backend="' + key.replace(/"/g, '') + '"]');
+          if (!tr && tbody) {
+            // The device has a member SATOM's copy does not: list it.
+            var none = tbody.querySelector('tr.dl-none');
+            if (none) none.remove();
+            tr = document.createElement('tr');
+            tr.setAttribute('data-backend', key);
+            tr.innerHTML = '<td class="font-monospace"></td><td>—</td><td class="text-muted"></td><td class="dl-live"></td>';
+            tr.children[0].textContent = key;
+            tr.children[2].textContent = T.notCached;
+            tbody.appendChild(tr);
+          }
+          if (tr) liveCell(tr.querySelector('.dl-live'), m);
+        });
+        body.querySelectorAll('tr[data-backend]').forEach(function (tr) {
+          if (seen[tr.getAttribute('data-backend')]) return;
+          var cell = tr.querySelector('.dl-live');
+          cell.textContent = T.notReported; cell.className = 'dl-live text-muted';
+        });
+        step(T.reported + ': ' + (d.members || []).length + '. ' + T.audited, 'text-success');
+        liveMsg.textContent = T.now;
+      })
+      .catch(function (e) {
+        liveBtn.disabled = false;
+        step(T.failed + ' ' + e, 'text-danger');
+      });
+  });
+  copyBtn.addEventListener('click', function () {
+    var lines = [];
+    body.querySelectorAll('table.dl-fields tbody tr').forEach(function (tr) {
+      var th = tr.querySelector('th'), td = tr.querySelector('td');
+      if (th && td) lines.push(th.textContent.trim() + '\t' + td.textContent.replace(/\s+/g, ' ').trim());
+    });
+    body.querySelectorAll('tr[data-backend]').forEach(function (tr) {
+      var t = tr.querySelectorAll('td');
+      lines.push('Backend\t' + t[0].textContent.trim() + ' weight=' + t[1].textContent.trim()
+                 + ' configured=' + t[2].textContent.trim() + ' live=' + t[3].textContent.trim());
+    });
+    navigator.clipboard.writeText(lines.join('\n')).then(function () {
+      var old = copyBtn.textContent; copyBtn.textContent = 'Copied!';
+      setTimeout(function () { copyBtn.textContent = old; }, 1600);
+    });
+  });
+})();
+</script>
+
+<!-- SPO Regex (SA-0029): server policy / virtual server name -> the FQDN it publishes -->
+<div class="modal fade" id="spoRegexModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-regex me-2"></i>{{ _('SPO Regex') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body" style="font-size:12px;">
+        <p class="text-muted mb-2">{{ _('Rules that turn a server policy or virtual server name into the FQDN it publishes, tried in order; the first that gives an FQDN wins. A lookup by FQDN then also finds the policy named after it, and a lookup by policy name shows that FQDN and the address it resolves to.') }}</p>
+        <p class="text-muted mb-2">{{ _('Pattern: a regular expression searched in the name (case-insensitive). Result: the replacement (\\1, \\g<name>); empty = the group named fqdn, else group 1, else the whole match. Underscores to dots turns www_example_com into www.example.com.') }}
+          {{ _('Example') }}: <code>^spo[-_](.+?)(?:[-_](?:80|443|https?))?$</code> &rarr; <code>\1</code> + {{ _('Underscores to dots') }}.</p>
+        <table class="table fw-table table-sm align-middle mb-2">
+          <thead><tr><th style="width:36px;">#</th><th>{{ _('Pattern') }}</th><th style="width:180px;">{{ _('Result') }}</th>
+            <th style="width:130px;">{{ _('Underscores to dots') }}</th><th style="width:70px;">{{ _('On') }}</th><th style="width:40px;"></th></tr></thead>
+          <tbody id="spoRules"></tbody>
+        </table>
+        {% if can_edit_spo %}
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="spoAdd"><i class="bi bi-plus-lg me-1"></i>{{ _('Add rule') }}</button>
+        {% else %}
+        <div class="text-muted">{{ _('You can try the rules here; changing them needs the administrator permission.') }}</div>
+        {% endif %}
+        <div class="dl-section">{{ _('Try it') }}</div>
+        <div class="row g-2">
+          <div class="col-md-4">
+            <label class="fw-form-label" for="spoNames">{{ _('Policy names — one per line') }}</label>
+            <textarea id="spoNames" rows="6" class="form-control fw-form-control font-monospace" style="font-size:12px;">{% for r in results %}{% for m in r.matches %}{{ m['policy'] }}
+{% endfor %}{% endfor %}</textarea>
+            <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="spoTest"><i class="bi bi-play me-1"></i>{{ _('Test') }}</button>
+          </div>
+          <div class="col-md-8">
+            <table class="table fw-table table-sm mb-0">
+              <thead><tr><th>{{ _('Name') }}</th><th>FQDN</th><th>{{ _('Rule') }}</th></tr></thead>
+              <tbody id="spoOut"><tr><td colspan="3" class="text-muted">—</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span class="text-muted me-auto" id="spoMsg"></span>
+        {% if can_edit_spo %}
+        <button type="button" class="btn btn-sm btn-primary" id="spoSave"><i class="bi bi-check-lg me-1"></i>{{ _('Save') }}</button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var btn = document.getElementById('spoRegexBtn'), modalEl = document.getElementById('spoRegexModal');
+  if (!btn || !modalEl) return;
+  var CSRF = {{ csrf_token() | tojson }};
+  var URL_SAVE = {{ url_for('dns_tool.spo_regex_save') | tojson }};
+  var URL_TEST = {{ url_for('dns_tool.spo_regex_test') | tojson }};
+  var CAN_EDIT = {{ 'true' if can_edit_spo else 'false' }};
+  var MAX = {{ spo_rules_max }};
+  var rules = {{ spo_rules | tojson }};
+  var T = { saved: {{ _('Saved. Search again to apply.') | tojson }}, max: {{ _('No more rules can be added.') | tojson }},
+            noFqdn: {{ _('no FQDN') | tojson }}, failed: {{ _('Failed:') | tojson }}, none: {{ _('No rule yet.') | tojson }} };
+  var tbody = document.getElementById('spoRules'), out = document.getElementById('spoOut'), msg = document.getElementById('spoMsg');
+  function cell(tr, node) { var td = document.createElement('td'); if (node) td.appendChild(node); tr.appendChild(td); return td; }
+  function inp(type, value, cls) {
+    var i = document.createElement('input'); i.type = type; i.disabled = !CAN_EDIT;
+    if (type === 'checkbox') { i.className = 'form-check-input'; i.checked = !!value; }
+    else { i.className = 'form-control form-control-sm fw-form-control font-monospace ' + (cls || ''); i.value = value || ''; i.maxLength = type === 'text' ? 300 : 200; }
+    return i;
+  }
+  function read() {
+    var rows = [];
+    tbody.querySelectorAll('tr[data-rule]').forEach(function (tr) {
+      var f = tr.querySelectorAll('input');
+      rows.push({ pattern: f[0].value, replace: f[1].value, dots: f[2].checked, enabled: f[3].checked });
+    });
+    return rows;
+  }
+  function draw() {
+    tbody.innerHTML = '';
+    if (!rules.length) { var e = document.createElement('tr'); var td = cell(e); td.colSpan = 6; td.className = 'text-muted'; td.textContent = T.none; tbody.appendChild(e); }
+    rules.forEach(function (r, i) {
+      var tr = document.createElement('tr'); tr.setAttribute('data-rule', i);
+      cell(tr).textContent = i + 1;
+      cell(tr, inp('text', r.pattern)); cell(tr, inp('search', r.replace));
+      cell(tr, inp('checkbox', r.dots)); cell(tr, inp('checkbox', r.enabled !== false));
+      var del = null;
+      if (CAN_EDIT) {
+        del = document.createElement('button'); del.type = 'button'; del.className = 'btn btn-sm btn-outline-danger py-0 px-1';
+        del.innerHTML = '<i class="bi bi-trash"></i>';
+        del.addEventListener('click', function () { rules = read(); rules.splice(i, 1); draw(); });
+      }
+      cell(tr, del);
+      tbody.appendChild(tr);
+    });
+  }
+  function post(url, body) {
+    return fetch(url, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF, 'Accept': 'application/json' },
+      body: JSON.stringify(body) }).then(function (r) { return r.json(); });
+  }
+  btn.addEventListener('click', function () { msg.textContent = ''; draw(); bootstrap.Modal.getOrCreateInstance(modalEl).show(); });
+  var add = document.getElementById('spoAdd');
+  if (add) add.addEventListener('click', function () {
+    rules = read();
+    if (rules.length >= MAX) { msg.textContent = T.max; return; }
+    rules.push({ pattern: '', replace: '', dots: false, enabled: true }); draw();
+  });
+  document.getElementById('spoTest').addEventListener('click', function () {
+    var names = document.getElementById('spoNames').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    post(URL_TEST, { names: names, rules: read() }).then(function (d) {
+      out.innerHTML = '';
+      if (!d.ok) { msg.textContent = T.failed + ' ' + (d.error || ''); return; }
+      d.results.forEach(function (x) {
+        var tr = document.createElement('tr');
+        var a = cell(tr); a.className = 'font-monospace'; a.textContent = x.name;
+        var b = cell(tr); b.className = x.fqdn ? 'font-monospace fw-semibold' : 'text-muted'; b.textContent = x.fqdn || T.noFqdn;
+        var c = cell(tr); c.className = 'text-muted'; c.textContent = x.fqdn ? '#' + x.rule : x.why.join('; ');
+        out.appendChild(tr);
+      });
+    }).catch(function (e) { msg.textContent = T.failed + ' ' + e; });
+  });
+  var save = document.getElementById('spoSave');
+  if (save) save.addEventListener('click', function () {
+    post(URL_SAVE, { rules: read() }).then(function (d) {
+      if (!d.ok) { msg.textContent = T.failed + ' ' + (d.error || ''); return; }
+      rules = d.rules; draw(); msg.textContent = T.saved;
+    }).catch(function (e) { msg.textContent = T.failed + ' ' + e; });
+  });
+})();
+</script>
+
+{% if can_manage_records and dns_backends %}
+<!-- +DNS Records modal — CRUD against the configured IPAM/DDI provider -->
+<div class="modal fade" id="dnsRecModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>{{ _('DNS Records') }}
+          <span class="badge text-bg-primary ms-2" id="dnsRecProviderBadge"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        {# Shown ONLY when there is a choice to make. One backend is not a
+           choice, and a select with a single option teaches the operator to
+           click past it without reading — which is how they would click past
+           it when a second backend appears. #}
+        {% if dns_backends|length > 1 %}
+        <div class="mb-3">
+          <label class="fw-form-label">{{ _('Backend') }}</label>
+          <select id="dnsRecBackend" class="form-select fw-form-control form-select-sm">
+            {% for b in dns_backends %}
+            <option value="{{ b.id }}">{{ b.name }} — {{ b.provider_label }}{% if b.zones %} ({{ b.zones|join(', ') }}){% else %} ({{ _('any zone') }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% else %}
+        <input type="hidden" id="dnsRecBackend" value="{{ dns_backends[0].id }}">
+        {% endif %}
+        <div class="alert alert-secondary py-2" id="dnsRecNotes" style="font-size:12.5px;"></div>
+        <div class="row g-2 align-items-end mb-3">
+          <div class="col">
+            <label class="fw-form-label">{{ _('Name (FQDN)') }}</label>
+            <input type="text" id="dnsRecName" class="form-control fw-form-control form-control-sm font-monospace">
+          </div>
+          <div class="col-auto dnsRec-zone" style="display:none;">
+            <label class="fw-form-label">{{ _('Zone') }}</label>
+            <input type="text" id="dnsRecZone" class="form-control fw-form-control form-control-sm font-monospace" style="width:170px;">
+          </div>
+          <div class="col-auto dnsRec-view" style="display:none;">
+            <label class="fw-form-label">{{ _('View') }}</label>
+            <input type="text" id="dnsRecView" class="form-control fw-form-control form-control-sm font-monospace" style="width:130px;">
+          </div>
+          <div class="col-auto">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="dnsRecLoadBtn">
+              <i class="bi bi-search me-1"></i>{{ _('Load') }}</button>
+          </div>
+        </div>
+
+        <div id="dnsRecMsg" class="mb-2" style="font-size:12.5px;"></div>
+
+        <div class="table-responsive">
+          <table class="table fw-table table-sm align-middle mb-0" style="font-size:12px;">
+            <thead><tr><th>{{ _('Type') }}</th><th>{{ _('Name') }}</th><th>{{ _('Value') }}</th><th>TTL</th><th class="text-end dnsRec-actions-col">{{ _('Actions') }}</th></tr></thead>
+            <tbody id="dnsRecRows">
+              <tr><td colspan="5" class="text-muted text-center py-3">{{ _('Press') }} <strong>{{ _('Load') }}</strong> {{ _('to list records.') }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div id="dnsRecEditor" class="mt-3 p-3 rounded" style="background:rgba(59,130,246,.06); border-left:3px solid #3b82f6; display:none;">
+          <div class="fw-semibold mb-2" style="font-size:12px; color:#3b82f6;" id="dnsRecEditorTitle">{{ _('ADD RECORD') }}</div>
+          <input type="hidden" id="dnsRecId">
+          <div class="row g-2">
+            <div class="col-auto">
+              <label class="fw-form-label">{{ _('Type') }}</label>
+              <select id="dnsRecType" class="form-select fw-form-control form-select-sm" style="width:110px;"></select>
+            </div>
+            <div class="col">
+              <label class="fw-form-label">{{ _('Value') }}</label>
+              <input type="text" id="dnsRecValue" class="form-control fw-form-control form-control-sm font-monospace"
+                     placeholder="{{ _('e.g. 192.0.2.10 · MX: \'10 mail.host\'') }}">
+            </div>
+            <div class="col-auto">
+              <label class="fw-form-label">TTL</label>
+              <input type="text" id="dnsRecTtl" class="form-control fw-form-control form-control-sm" style="width:90px;" placeholder="3600">
+            </div>
+          </div>
+          <div class="d-flex gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-primary" id="dnsRecSaveBtn"><i class="bi bi-check-lg me-1"></i>{{ _('Save record') }}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="dnsRecClearBtn">{{ _('New') }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var CSRF = "{{ csrf_token() }}";
+  var URLS = {
+    schema: "{{ url_for('dns_tool.records_schema') }}",
+    list: "{{ url_for('dns_tool.records_list') }}",
+    crud: "{{ url_for('dns_tool.records_create') }}"
+  };
+  var modalEl = document.getElementById('dnsRecModal');
+  var modal = new bootstrap.Modal(modalEl);
+  // Capabilities are cached PER BACKEND, never in one shared `caps`. Two
+  // backends genuinely differ (one writes records, one only lists them), so a
+  // single cached answer would render the editor for a backend that cannot
+  // write, or hide it for one that can.
+  var capsCache = {};
+  var caps = null;
+  var el = function (id) { return document.getElementById(id); };
+  function backendId() {
+    var b = el('dnsRecBackend');
+    return b ? String(b.value || '') : '';
+  }
+
+  function setMsg(text, kind) {
+    var m = el('dnsRecMsg');
+    m.textContent = text || '';
+    m.style.color = kind === 'err' ? '#ef4444' : (kind === 'ok' ? '#10b981' : '#94a3b8');
+  }
+
+  function api(method, body) {
+    var url = (method === 'GET')
+      ? URLS.list + '?name=' + encodeURIComponent(el('dnsRecName').value.trim())
+                  + '&zone=' + encodeURIComponent(el('dnsRecZone').value.trim())
+                  + '&backend_id=' + encodeURIComponent(backendId())
+      : URLS.crud;
+    var opts = { method: method, headers: { 'X-CSRFToken': CSRF } };
+    if (method !== 'GET') {
+      var payload = {};
+      for (var k in (body || {})) payload[k] = body[k];
+      // Stamped here rather than at each call site: three of them build the
+      // body and one forgetting is a write aimed at whichever backend the
+      // server would have fallen back to.
+      payload.backend_id = backendId();
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(payload);
+    }
+    return fetch(url, opts).then(function (r) {
+      return r.json().then(function (d) {
+        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        return d;
+      });
+    });
+  }
+
+  function applyCaps() {
+    el('dnsRecProviderBadge').textContent = caps.label;
+    el('dnsRecRows').innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">Press <strong>Load</strong> to list records.</td></tr>';
+    el('dnsRecNotes').textContent = caps.notes || '';
+    document.querySelector('.dnsRec-zone').style.display = caps.needs_zone ? '' : 'none';
+    document.querySelector('.dnsRec-view').style.display = caps.needs_view ? '' : 'none';
+    var editor = el('dnsRecEditor');
+    editor.style.display = caps.can_write ? '' : 'none';
+    document.querySelectorAll('.dnsRec-actions-col').forEach(function (c) {
+      c.style.display = caps.can_write ? '' : 'none';
+    });
+    var typeSel = el('dnsRecType');
+    typeSel.innerHTML = '';
+    (caps.record_types || []).forEach(function (t) {
+      var o = document.createElement('option'); o.value = t; o.textContent = t; typeSel.appendChild(o);
+    });
+  }
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+
+  function renderRows(records) {
+    var tb = el('dnsRecRows');
+    tb.innerHTML = '';
+    if (!records.length) {
+      tb.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">No records found.</td></tr>';
+      return;
+    }
+    records.forEach(function (rec) {
+      var tr = document.createElement('tr');
+      var actions = '';
+      if (caps.can_write && rec.id) {
+        actions = '<button class="btn btn-sm btn-outline-primary py-0 px-1 me-1 dnsRec-edit" style="font-size:10px;"><i class="bi bi-pencil"></i></button>'
+                + '<button class="btn btn-sm btn-outline-danger py-0 px-1 dnsRec-del" style="font-size:10px;"><i class="bi bi-trash"></i></button>';
+      }
+      tr.innerHTML = '<td><span class="badge text-bg-secondary">' + esc(rec.type) + '</span></td>'
+        + '<td class="font-monospace">' + esc(rec.name) + '</td>'
+        + '<td class="font-monospace">' + esc(rec.value) + '</td>'
+        + '<td>' + esc(rec.ttl == null ? '' : rec.ttl) + '</td>'
+        + '<td class="text-end dnsRec-actions-col"' + (caps.can_write ? '' : ' style="display:none;"') + '>' + actions + '</td>';
+      var e = tr.querySelector('.dnsRec-edit');
+      if (e) e.addEventListener('click', function () { fillEditor(rec); });
+      var d = tr.querySelector('.dnsRec-del');
+      if (d) d.addEventListener('click', function () { delRecord(rec); });
+      tb.appendChild(tr);
+    });
+  }
+
+  function loadRecords() {
+    if (!el('dnsRecName').value.trim()) { setMsg('Enter a name.', 'err'); return; }
+    setMsg('Loading…');
+    api('GET').then(function (d) { setMsg(''); renderRows(d.records || []); })
+              .catch(function (e) { setMsg(e.message, 'err'); });
+  }
+
+  function fillEditor(rec) {
+    el('dnsRecId').value = rec.id || '';
+    el('dnsRecType').value = rec.type || (caps.record_types[0] || 'A');
+    el('dnsRecValue').value = rec.value || '';
+    el('dnsRecTtl').value = rec.ttl == null ? '' : rec.ttl;
+    if (rec.zone) el('dnsRecZone').value = rec.zone;
+    el('dnsRecEditorTitle').textContent = rec.id ? ('EDIT RECORD #' + rec.id) : 'ADD RECORD';
+  }
+
+  function clearEditor() { fillEditor({}); }
+
+  function saveRecord() {
+    var body = {
+      id: el('dnsRecId').value.trim(),
+      name: el('dnsRecName').value.trim(),
+      type: el('dnsRecType').value,
+      value: el('dnsRecValue').value.trim(),
+      ttl: el('dnsRecTtl').value.trim(),
+      zone: el('dnsRecZone').value.trim(),
+      view: el('dnsRecView').value.trim()
+    };
+    if (!body.name || !body.value) { setMsg('Name and value are required.', 'err'); return; }
+    var method = body.id ? 'PUT' : 'POST';
+    setMsg('Saving…');
+    api(method, body).then(function () { setMsg('Record saved.', 'ok'); clearEditor(); loadRecords(); })
+                     .catch(function (e) { setMsg(e.message, 'err'); });
+  }
+
+  function delRecord(rec) {
+    if (!window.confirm('Delete ' + rec.type + ' ' + rec.name + ' -> ' + rec.value + ' ?')) return;
+    setMsg('Deleting…');
+    api('DELETE', rec).then(function () { setMsg('Record deleted.', 'ok'); loadRecords(); })
+                      .catch(function (e) { setMsg(e.message, 'err'); });
+  }
+
+  function openModal(entry) {
+    el('dnsRecName').value = (entry || '').replace(/^\*\./, '');
+    el('dnsRecRows').innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">Press <strong>Load</strong> to list records.</td></tr>';
+    setMsg('');
+    clearEditor();
+    modal.show();
+    loadSchema(true);
+  }
+
+  function loadSchema(thenList) {
+    var bid = backendId();
+    if (capsCache[bid]) {
+      caps = capsCache[bid]; applyCaps();
+      if (thenList && el('dnsRecName').value) loadRecords();
+      return;
+    }
+    setMsg('Loading backend…');
+    fetch(URLS.schema + '?backend_id=' + encodeURIComponent(bid),
+          { headers: { 'X-CSRFToken': CSRF } })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || r.status); return d; }); })
+      .then(function (d) {
+        capsCache[bid] = d.capabilities; caps = d.capabilities;
+        setMsg(''); applyCaps();
+        if (thenList && el('dnsRecName').value) loadRecords();
+      })
+      .catch(function (e) { setMsg('Backend error: ' + e.message, 'err'); });
+  }
+
+  document.querySelectorAll('.dns-rec-btn, #dnsRecBtnHeader').forEach(function (b) {
+    b.addEventListener('click', function () { openModal(b.getAttribute('data-entry') || ''); });
+  });
+  var backendSel = el('dnsRecBackend');
+  if (backendSel && backendSel.tagName === 'SELECT') {
+    // Switching backend clears the listing rather than leaving the previous
+    // backend's records on screen under the new backend's name.
+    backendSel.addEventListener('change', function () { loadSchema(false); });
+  }
+  el('dnsRecLoadBtn').addEventListener('click', loadRecords);
+  el('dnsRecSaveBtn').addEventListener('click', saveRecord);
+  el('dnsRecClearBtn').addEventListener('click', clearEditor);
+})();
+</script>
+{% endif %}
+
+{% if can_decommission %}
+<!-- Decommission modal — the preview IS the feature: Apply stays disabled
+     until the plan has been shown, every warning acknowledged, and the policy
+     name typed back. -->
+<div class="modal fade" id="dnsDecomModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-trash3 me-2"></i>{{ _('Decommission service') }}
+          <span class="text-muted" style="font-size:12px;" id="decomTarget"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <div id="decomMsg" class="mb-2" style="font-size:12px;"></div>
+        <div id="decomWarnings"></div>
+        <div id="decomPlan"></div>
+        <div id="decomResults"></div>
+      </div>
+      <div class="modal-footer d-block">
+        <div id="decomConfirmRow" class="d-none">
+          <div class="form-check mb-2" id="decomAckRow">
+            <input class="form-check-input" type="checkbox" id="decomAck">
+            <label class="form-check-label" for="decomAck" style="font-size:12px;">
+              {{ _('I have read the warnings above and accept the shared dependencies they name.') }}</label>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <input type="text" class="form-control form-control-sm" id="decomType"
+                   style="max-width:280px;" autocomplete="off"
+                   placeholder="{{ _('type the policy name to confirm') }}">
+            <button type="button" class="btn btn-sm btn-danger" id="decomApplyBtn" disabled>
+              <i class="bi bi-trash3 me-1"></i>{{ _('Delete everything listed') }}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto"
+                    data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var CSRF = "{{ csrf_token() }}";
+  var URLS = {
+    plan: "{{ url_for('dns_tool.decommission_plan') }}",
+    apply: "{{ url_for('dns_tool.decommission_apply') }}"
+  };
+  var STAGE_TITLES = {};
+  var el = function (id) { return document.getElementById(id); };
+  var modalEl = el('dnsDecomModal');
+  if (!modalEl) { return; }
+  var modal = new bootstrap.Modal(modalEl);
+  var current = null;   // {aid, policy, hostname, fingerprint}
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+
+  function setMsg(text, kind) {
+    var m = el('decomMsg');
+    m.className = kind === 'err' ? 'mb-2 text-danger' : (kind === 'ok' ? 'mb-2 text-success' : 'mb-2 text-muted');
+    m.style.fontSize = '12px';
+    m.textContent = text || '';
+  }
+
+  function post(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().then(function (d) { d._status = r.status; return d; });
+    });
+  }
+
+  var BADGE = { 'delete': 'text-bg-danger', 'unbind': 'text-bg-warning', 'keep': 'text-bg-secondary' };
+
+  function renderPlan(plan) {
+    STAGE_TITLES = {};
+    (plan.stages || []).forEach(function (s) { STAGE_TITLES[s.key] = s.title; });
+    var host = plan.target.hostname ? (' · ' + plan.target.hostname) : '';
+    el('decomTarget').textContent = plan.target.product + ' · ' + plan.target.appliance +
+      ' · ' + plan.target.policy + host;
+
+    var warn = el('decomWarnings');
+    warn.innerHTML = '';
+    (plan.warnings || []).forEach(function (w) {
+      var div = document.createElement('div');
+      div.className = 'alert ' + (w.blocking ? 'alert-danger' : 'alert-warning') + ' py-2 px-3 mb-2';
+      div.style.fontSize = '12px';
+      div.innerHTML = '<strong>' + esc(w.code) + '</strong> — ' + esc(w.text);
+      warn.appendChild(div);
+    });
+
+    var box = el('decomPlan');
+    box.innerHTML = '';
+    var byStage = {};
+    (plan.items || []).forEach(function (it) {
+      (byStage[it.stage] = byStage[it.stage] || []).push(it);
+    });
+    (plan.stages || []).forEach(function (s) {
+      var rows = byStage[s.key];
+      if (!rows || !rows.length) { return; }
+      var h = document.createElement('div');
+      h.className = 'fw-semibold mt-2 mb-1';
+      h.style.fontSize = '11px';
+      h.style.letterSpacing = '.05em';
+      h.textContent = s.title.toUpperCase();
+      box.appendChild(h);
+      var tbl = document.createElement('table');
+      tbl.className = 'table table-sm mb-0';
+      tbl.style.fontSize = '12px';
+      var body = document.createElement('tbody');
+      rows.forEach(function (it) {
+        var tr = document.createElement('tr');
+        var holders = (it.holders || []).length
+          ? ' <span class="text-muted">(' + esc((it.holders || []).join(', ')) + ')</span>' : '';
+        tr.innerHTML =
+          '<td style="width:92px;"><span class="badge ' + (BADGE[it.action] || 'text-bg-light') + '">' +
+            esc(it.action) + '</span></td>' +
+          '<td>' + esc(it.label) + '</td>' +
+          '<td class="text-muted">' + esc(it.reason || '') + holders + '</td>';
+        body.appendChild(tr);
+      });
+      tbl.appendChild(body);
+      box.appendChild(tbl);
+    });
+
+    var c = plan.counts || {};
+    setMsg((c['delete'] || 0) + ' to delete, ' + (c.unbind || 0) + ' to unbind, ' +
+           (c.keep || 0) + ' kept.');
+
+    el('decomAckRow').className = (plan.warnings || []).length ? 'form-check mb-2' : 'form-check mb-2 d-none';
+    el('decomAck').checked = false;
+    el('decomType').value = '';
+    el('decomConfirmRow').className = '';
+    el('decomApplyBtn').disabled = true;
+    el('decomApplyBtn').className = 'btn btn-sm btn-danger';
+    if (plan.blocked) {
+      el('decomConfirmRow').className = 'd-none';
+      setMsg('This plan is blocked and cannot be applied.', 'err');
+    }
+    current = {
+      aid: plan.target.appliance_id, policy: plan.target.policy,
+      hostname: plan.target.hostname, fingerprint: plan.fingerprint,
+      warned: (plan.warnings || []).length > 0
+    };
+    gate();
+  }
+
+  function gate() {
+    if (!current) { return; }
+    var typed = el('decomType').value.trim() === current.policy;
+    var acked = !current.warned || el('decomAck').checked;
+    el('decomApplyBtn').disabled = !(typed && acked);
+  }
+
+  function renderResults(res) {
+    var box = el('decomResults');
+    box.innerHTML = '';
+    var h = document.createElement('div');
+    h.className = 'fw-semibold mt-3 mb-1';
+    h.style.fontSize = '11px';
+    h.textContent = 'RESULT';
+    box.appendChild(h);
+    var tbl = document.createElement('table');
+    tbl.className = 'table table-sm mb-0';
+    tbl.style.fontSize = '12px';
+    var body = document.createElement('tbody');
+    (res.results || []).forEach(function (r) {
+      var tr = document.createElement('tr');
+      // A step the device re-read: "ok" means it is gone from the box; an
+      // accepted delete nothing could re-read says "not verified" and why.
+      var unv = r.ok && r.verify === 'unverified';
+      tr.innerHTML =
+        '<td style="width:92px;"><span class="badge ' +
+          (unv ? 'text-bg-warning' : (r.ok ? 'text-bg-success' : 'text-bg-danger')) + '">' +
+          (unv ? 'not verified' : (r.ok ? 'ok' : 'failed')) + '</span></td>' +
+        '<td>' + esc(r.label) + '</td>' +
+        '<td class="text-muted">' + esc(r.error || (unv ? r.verify_label : '') || r.action || '') + '</td>';
+      body.appendChild(tr);
+    });
+    tbl.appendChild(body);
+    box.appendChild(tbl);
+  }
+
+  function loadPlan(btn) {
+    el('decomPlan').innerHTML = '';
+    el('decomResults').innerHTML = '';
+    el('decomWarnings').innerHTML = '';
+    el('decomConfirmRow').className = 'd-none';
+    el('decomTarget').textContent = '';
+    setMsg('Building the plan — reading the device…');
+    modal.show();
+    post(URLS.plan, {
+      appliance_id: btn.getAttribute('data-aid'),
+      policy: btn.getAttribute('data-policy'),
+      hostname: btn.getAttribute('data-hostname')
+    }).then(function (d) {
+      if (!d.ok) { setMsg(d.error || ('HTTP ' + d._status), 'err'); return; }
+      renderPlan(d);
+    }).catch(function (e) { setMsg(String(e), 'err'); });
+  }
+
+  function applyPlan() {
+    if (!current) { return; }
+    el('decomApplyBtn').disabled = true;
+    setMsg('Applying…');
+    post(URLS.apply, {
+      appliance_id: current.aid, policy: current.policy,
+      hostname: current.hostname, confirm: current.fingerprint,
+      acknowledge: el('decomAck').checked
+    }).then(function (d) {
+      if (d.plan) {
+        // The device moved under us (or the acknowledgement was missing):
+        // re-render the NEW plan rather than retrying the stale one.
+        renderPlan(d.plan);
+        setMsg(d.error || 'The plan changed — review it again.', 'err');
+        return;
+      }
+      renderResults(d);
+      setMsg(d.ok ? 'Done.' : (d.error || 'Some steps failed.'), d.ok ? 'ok' : 'err');
+      el('decomConfirmRow').className = 'd-none';
+    }).catch(function (e) { setMsg(String(e), 'err'); gate(); });
+  }
+
+  document.querySelectorAll('.dns-decom-btn').forEach(function (b) {
+    b.addEventListener('click', function () { loadPlan(b); });
+  });
+  // SA-0029: Edit opens the policy in a NEW WINDOW, not a tab of this one.
+  document.querySelectorAll('a.dl-edit').forEach(function (a) {
+    a.addEventListener('click', function (ev) {
+      if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button !== 0) return;
+      ev.preventDefault();
+      var w = Math.min(1500, screen.availWidth - 40), h = Math.min(950, screen.availHeight - 40);
+      window.open(a.href, '_blank', 'noopener,popup,width=' + w + ',height=' + h);
+    });
+  });
+  el('decomType').addEventListener('input', gate);
+  el('decomAck').addEventListener('change', gate);
+  el('decomApplyBtn').addEventListener('click', applyPlan);
+})();
+</script>
+{% endif %}
+{% if current_user.can('user_manage') %}
+<script nonce="{{ csp_nonce }}">
+  /* The resolver card sat here (#resolvers) until 2026-10-23; it is now
+     Administrator › Objects › DNS Resolvers. Old links land there. */
+  if (window.location.hash === '#resolvers') {
+    window.location.replace({{ url_for('dns_tool.resolvers') | tojson }});
+  }
+</script>
+{% endif %}
+{% endblock %}

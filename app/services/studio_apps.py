@@ -1,0 +1,2482 @@
+"""Python Studio > Apps -- a form, a diagram and an output, published into
+Operations > Plugins for the ADOMs and the people the administrator picks.
+
+LIFECYCLE
+---------
+The administrator edits a DRAFT (form, diagram, output actions) and tests it
+from the editor -- optionally as a rehearsal, where steps that write are only
+described. **Publish** freezes the draft as version N; the menu entry and
+every operator run use that frozen version until the next Publish, so editing
+never changes what operators run. **Unpublish** takes the entry out of the
+menu; the versions stay.
+
+WHO SEES IT, WHERE
+------------------
+Where: the ADOMs the administrator ticked (``["*"]`` = every ADOM, Global
+included). Who: the users and the user groups the administrator picked, plus
+every Studio author (``studio.script_library``). Nobody else -- an app with an
+empty list is visible to its authors only. Both answers come from here
+(:func:`menu`, :func:`can_use`); the sidebar and the pages ask, they never
+decide on their own.
+
+ACTIONS ON THE OUTPUT
+---------------------
+A finished run offers the app's actions: save to a data store, download
+(CSV/JSON), send to a connection, run another app with the output, or raise a
+**change request**. An ACTION never changes a device: it becomes a draft change
+request through ``views.change_requests.create_change_request`` (the one
+implementation of "raise a change") and goes through the existing approval.
+
+DEVICE WRITES FROM A DIAGRAM
+----------------------------
+Two kinds of STEP may write to an appliance, both only in an armed run and
+only for a user who holds ``config_write`` (the permission every other armed
+write asks for): *Walk a process* and the SATOM steps that issue a
+certificate or create / remove a server policy (``services.studio_satom``).
+An armed run whose diagram writes is also a job (:func:`_job_for`), so the
+change is followed on the Jobs page like every other one.
+"""
+from __future__ import annotations
+
+import base64
+import csv
+import io
+import json
+import re
+import threading
+import time
+from datetime import datetime, timedelta
+from urllib.parse import quote, quote_plus
+
+from ..extensions import db
+from ..models_studio import StudioApp, StudioAppRun, StudioFolder, UserGroup, user_group_members
+from . import studio_flow as F
+from . import studio_pages as SP
+
+AUTHOR = "studio.script_library"
+FIELD_TYPES = ("text", "textarea", "number", "select", "checkbox", "password", "date",
+               "store_select", "api_select", "satom_select", "file")
+#: A File field (FA-0016, 2026-11-11: "import the JSON with the format I gave
+#: you") carries the TEXT of the file the person chose -- an inventory export
+#: is megabytes, where every other field stops at 64 KiB. It is never kept in
+#: the run (shown_inputs says only its size): a step reads it (Read a JSON file).
+MAX_FILE_CHARS = 20 * 1024 * 1024    # = script_library.MAX_FILE_CHARS (a test holds them equal)
+#: The list types; any of them may add a search box over its choices (``search``).
+LIST_TYPES = ("select", "store_select", "api_select", "satom_select")
+ACTION_KINDS = ("save_store", "download", "send", "run_app", "change_request", "copy",
+                "open_app")
+#: Text a Copy action may put on the clipboard.
+MAX_COPY = 512 * 1024
+MAX_FIELDS = 40
+MAX_ACTIONS = 20
+MAX_OPTIONS = 500
+#: The stored diagram, as JSON.
+MAX_GRAPH_BYTES = 512 * 1024
+RUN_VARS_CAP = 256 * 1024
+#: Runs in progress at once: per user, and on the whole node. Every run is a
+#: thread of the web process; an operator holding the Run button must not be
+#: able to take every worker (finding 2026-10-20).
+MAX_RUNS_PER_USER = 2
+MAX_RUNS_TOTAL = 8
+#: Run records are kept this long.
+RUN_KEEP_DAYS = 90
+#: A list field fed by an API is fetched at most once per this many seconds
+#: (form opened, form submitted, the next operator...).
+OPTIONS_TTL = 60.0
+_OPTIONS_CACHE: dict = {}
+_OPTIONS_LOCK = threading.Lock()
+#: Actions that may run again on the same run: they change nothing.
+REPEATABLE_ACTIONS = ("download", "copy", "open_app")
+#: Drawn in the browser from what ``run_json`` hands over; never POSTed.
+CLIENT_ACTIONS = ("copy", "open_app")
+#: Test seam: run in the request thread instead of a background thread.
+RUN_INLINE = False
+
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,47}$")
+_FIELD_RE = re.compile(r"^[a-z_][a-z0-9_]{0,63}$")
+_ICON_RE = re.compile(r"^bi-[a-z0-9-]{1,28}$")
+_ACTION_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
+#: A menu group (StudioApp.menu_group): a word character first, then words,
+#: spaces and . & ( ) + , ' - ; up to 48 characters. Not a path: no / or >.
+_GROUP_RE = re.compile(r"^\w[\w .&()+,'-]{0,47}$")
+
+#: Node / action parameters that name another Studio object.
+REF_PARAMS = {"store": ("store",), "connection": ("connection",), "script": ("script",),
+              "app": ("app",)}
+
+
+class AppError(ValueError):
+    pass
+
+
+# --------------------------------------------------------------------------- #
+#  references                                                                  #
+# --------------------------------------------------------------------------- #
+def _refs(graph: dict, actions: list, fields: list, kind: str) -> set:
+    names = REF_PARAMS.get(kind, ())
+    out = set()
+    for n in (graph or {}).get("nodes") or []:
+        p = n.get("params") or {}
+        for k in names:
+            if p.get(k):
+                out.add(str(p[k]))
+    for a in actions or []:
+        p = a.get("params") or {}
+        for k in names:
+            if p.get(k):
+                out.add(str(p[k]))
+    for f in fields or []:
+        for k in names:
+            if f.get(k):
+                out.add(str(f[k]))
+    return out
+
+
+def used_by(kind: str, slug: str) -> list[str]:
+    """Apps whose draft or published version names *slug* (a data store,
+    connection, script or app). Deleting it would break them."""
+    hits = []
+    for a in StudioApp.query.order_by(StudioApp.slug).all():
+        pub = a.published
+        if slug in _refs(a.graph, a.actions, a.fields, kind) or slug in _refs(
+                pub.get("graph") or {}, pub.get("actions") or [], pub.get("fields") or [], kind):
+            if not (kind == "app" and a.slug == slug):
+                hits.append(a.slug)
+    return hits
+
+
+def choices() -> dict:
+    """What the pickers offer: existing data stores, connections, published
+    scripts, published apps, change types."""
+    from . import studio_store as SS
+    from . import studio_connections as SC
+    from . import script_library as SL
+    out = {"stores": [s["slug"] for s in SS.list_stores()],
+           "http": [c.slug for c in SC.list_connections("http")],
+           "pg": [c.slug for c in SC.list_connections("postgres")],
+           "server": [c.slug for c in SC.list_connections("server")],
+           # script apps run from their script's page, not as "run another app"
+           "scripts": [], "apps": [a.slug for a in StudioApp.query.order_by(StudioApp.slug).all()
+                                   if a.kind != "script"],
+           "cr_actions": []}
+    try:
+        out["scripts"] = [s["slug"] for s in SL.list_scripts() if s.get("published")]
+    except Exception:  # noqa: BLE001 -- a broken library dir must not break the editor
+        pass
+    from . import studio_server as SV
+    out["server_ops"] = sorted(SV.OPERATIONS)
+    from . import studio_apis as SAPI
+    out["catalog"] = SAPI.choices()
+    from . import studio_satom as S
+    out.update(S.choices())
+    out["satom_sources"] = [{"key": k, "label": lab} for k, lab in S.SOURCES]
+    try:
+        from ..views.change_requests import cr_type_entries
+        out["cr_actions"] = [e["key"] for e in cr_type_entries()]
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  the form                                                                    #
+# --------------------------------------------------------------------------- #
+def clean_fields(fields, ch: dict | None = None) -> list[dict]:
+    ch = ch or {}
+    if not isinstance(fields, list):
+        raise AppError("the form is a list of fields")
+    if len(fields) > MAX_FIELDS:
+        raise AppError("at most %d fields" % MAX_FIELDS)
+    out, seen = [], set()
+    for f in fields:
+        if not isinstance(f, dict):
+            raise AppError("each field is an object")
+        name = str(f.get("name") or "").strip()
+        if not _FIELD_RE.match(name):
+            raise AppError("field %r: lowercase letters, digits and _" % name)
+        if name in seen:
+            raise AppError("field %s is listed twice" % name)
+        seen.add(name)
+        typ = str(f.get("type") or "text")
+        if typ not in FIELD_TYPES:
+            raise AppError("field %s: unknown type %r" % (name, typ))
+        c = {"name": name, "label": str(f.get("label") or name).strip()[:120] or name,
+             "type": typ, "required": bool(f.get("required")),
+             "help": str(f.get("help") or "").strip()[:500],
+             "default": "" if typ == "password" else str(f.get("default") or "")[:2000]}
+        if typ == "select":
+            raw = f.get("options")
+            if isinstance(raw, (list, tuple)):
+                # a list is the options, never their text (it was saved as the ONE
+                # option "['a', 'b']" until 2026-11-05: migration selopts01)
+                raw = "\n".join("" if o is None else str(o) for o in raw)
+            opts = [o.strip() for o in str(raw or "").splitlines() if o.strip()]
+            if not opts:
+                raise AppError('field %s: a select needs "options", a text with one option per '
+                               'line%s' % (name, ' (not "choices")' if "choices" in f else ""))
+            c["options"] = "\n".join(opts[:MAX_OPTIONS])
+        if typ == "store_select":
+            for k in ("store", "value_col"):
+                if not str(f.get(k) or "").strip():
+                    raise AppError("field %s: pick the data store and the value column" % name)
+            if ch.get("stores") is not None and f.get("store") not in ch.get("stores", []):
+                raise AppError("field %s: data store %r does not exist" % (name, f.get("store")))
+            c.update(store=str(f["store"]), value_col=str(f["value_col"]).strip(),
+                     label_col=str(f.get("label_col") or "").strip())
+        if typ == "api_select":
+            if ch.get("http") is not None and f.get("connection") not in ch.get("http", []):
+                raise AppError("field %s: HTTP connection %r does not exist" % (name, f.get("connection")))
+            c.update(connection=str(f.get("connection") or ""), path=str(f.get("path") or "")[:500],
+                     list_path=str(f.get("list_path") or "")[:200],
+                     value_key=str(f.get("value_key") or "")[:100],
+                     label_key=str(f.get("label_key") or "")[:100])
+        if typ == "satom_select":
+            from . import studio_satom as S
+            src = str(f.get("source") or "")
+            if src not in S.SOURCE_KEYS:
+                raise AppError("field %s: pick what the SATOM list shows -- source is one of %s%s"
+                               % (name, ", ".join(S.SOURCE_KEYS),
+                                  " (not %r)" % src if src else ""))
+            c["source"] = src
+        if typ in LIST_TYPES and f.get("search"):
+            c["search"] = True
+        out.append(c)
+    return out
+
+
+def options_for(field: dict) -> tuple[list[dict], str]:
+    """``([{value, label}], problem)`` of a list field, read now."""
+    typ = field.get("type")
+    if typ == "select":
+        return [{"value": o, "label": o} for o in (field.get("options") or "").splitlines() if o], ""
+    if typ == "store_select":
+        from . import studio_store as SS
+        st = SS.get(field.get("store") or "")
+        if st is None:
+            return [], "data store %s does not exist" % field.get("store")
+        try:
+            rows = SS.query(st, limit=MAX_OPTIONS, order_by=field.get("label_col") or field["value_col"])
+        except SS.StoreError as exc:
+            return [], str(exc)
+        out, seen = [], set()
+        for r in rows:
+            v = r.get(field["value_col"])
+            if v is None or str(v) in seen:
+                continue
+            seen.add(str(v))
+            out.append({"value": str(v), "label": str(r.get(field.get("label_col") or "") or v)})
+        return out, ""
+    if typ == "satom_select":
+        from . import studio_satom as S
+        try:
+            return S.source_options(field.get("source") or "")
+        except Exception as exc:  # noqa: BLE001 -- a broken source must not break the form
+            return [], "%s: %s" % (field.get("source"), exc)
+    if typ == "api_select":
+        key = tuple(str(field.get(k) or "") for k in
+                    ("connection", "path", "list_path", "value_key", "label_key"))
+        now = time.monotonic()
+        with _OPTIONS_LOCK:
+            hit = _OPTIONS_CACHE.get(key)
+            if hit and now - hit[0] < OPTIONS_TTL:
+                return list(hit[1]), hit[2]
+        opts, problem = _api_options(field)
+        with _OPTIONS_LOCK:
+            if len(_OPTIONS_CACHE) > 500:
+                _OPTIONS_CACHE.clear()
+            _OPTIONS_CACHE[key] = (now, opts, problem)
+        return list(opts), problem
+    return [], ""
+
+
+def _api_options(field: dict) -> tuple[list[dict], str]:
+    from . import studio_connections as SC
+    c = SC.get(field.get("connection") or "")
+    if c is None or c.kind != "http":
+        return [], "connection %s does not exist" % field.get("connection")
+    try:
+        r = SC.http_call(c, "GET", field.get("path") or "")
+    except SC.ConnectionError_ as exc:
+        return [], str(exc)
+    if not r["ok"]:
+        return [], "HTTP %d from %s" % (r["status"], c.slug)
+    items = SC.json_path(r.get("json"), field.get("list_path") or "")
+    if not isinstance(items, list):
+        return [], "the JSON path %r is not a list" % (field.get("list_path") or "$")
+    out = []
+    for it in items[:MAX_OPTIONS]:
+        if isinstance(it, dict):
+            v = it.get(field.get("value_key") or "")
+            lab = it.get(field.get("label_key") or "") or v
+        else:
+            v = lab = it
+        if v is not None:
+            out.append({"value": str(v), "label": str(lab)})
+    return out, ""
+
+
+def form_view(fields: list) -> list[dict]:
+    """The fields as the form draws them, list options resolved."""
+    out = []
+    for f in fields:
+        v = dict(f)
+        if f["type"] in ("select", "store_select", "api_select", "satom_select"):
+            v["choices"], v["problem"] = options_for(f)
+        out.append(v)
+    return out
+
+
+def resolve_inputs(fields: list, raw) -> dict:
+    raw = raw if isinstance(raw, dict) else {}
+    out = {}
+    for f in fields:
+        name, typ = f["name"], f["type"]
+        v = raw.get(name)
+        if typ == "checkbox":
+            out[name] = v in (True, "1", "true", "on", "yes", 1)
+            continue
+        s = "" if v is None else str(v)
+        if len(s) > (MAX_FILE_CHARS if typ == "file" else 64 * 1024):
+            raise AppError("%s is too long%s" % (
+                f["label"], " (a file is at most %d MiB)" % (MAX_FILE_CHARS // 1024 // 1024)
+                if typ == "file" else ""))
+        if not s.strip():
+            if f["required"]:
+                raise AppError("%s is required" % f["label"])
+            out[name] = None if typ in ("number", "date") else ""
+            continue
+        if typ == "number":
+            try:
+                n = float(s)
+            except ValueError:
+                raise AppError("%s: a number is expected" % f["label"]) from None
+            out[name] = int(n) if n.is_integer() and "." not in s else n
+        elif typ == "date":
+            try:
+                out[name] = datetime.strptime(s[:10], "%Y-%m-%d").date().isoformat()
+            except ValueError:
+                raise AppError("%s: a date (YYYY-MM-DD) is expected" % f["label"]) from None
+        elif typ in ("select", "store_select", "api_select", "satom_select"):
+            opts, problem = options_for(f)
+            if s not in {o["value"] for o in opts}:
+                raise AppError("%s: %r is not one of the choices%s"
+                               % (f["label"], s, (" (" + problem + ")") if problem else ""))
+            out[name] = s
+        else:
+            out[name] = s
+    return out
+
+
+def shown_inputs(fields: list, inputs: dict) -> dict:
+    """What a run keeps of its inputs: a password as ********, a File field as
+    its size only -- the file itself is never stored with the run."""
+    kinds = {f["name"]: f["type"] for f in fields}
+    out = {}
+    for k, v in inputs.items():
+        if kinds.get(k) == "password" and v:
+            out[k] = "********"
+        elif kinds.get(k) == "file" and v:
+            out[k] = "(a file of %d characters)" % len(str(v))
+        else:
+            out[k] = v
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  actions                                                                     #
+# --------------------------------------------------------------------------- #
+def action_schema(ch: dict | None = None) -> list[dict]:
+    ch = ch or {}
+    T = lambda n, l, h="", d="", k="text", c=(): {"name": n, "label": l, "help": h, "default": d,  # noqa: E731
+                                                   "kind": k, "choices": list(c)}
+    return [
+        {"key": "save_store", "label": "Save to a data store", "params": [
+            T("store", "Data store", k="select", c=ch.get("stores", ())),
+            T("mode", "Mode", k="select", c=("insert", "upsert"), d="insert"),
+            T("match", "Upsert on columns", "Comma-separated: rows with the same values are updated."),
+            T("rows", "Rows", "A row (object) or a list of rows.", "{{ outputs[0].value }}")]},
+        {"key": "download", "label": "Download", "params": [
+            T("format", "Format", k="select", c=("csv", "json"), d="csv"),
+            T("value", "Value", "", "{{ outputs[0].value }}"),
+            T("filename", "File name", d="output")]},
+        {"key": "send", "label": "Send to a connection", "params": [
+            T("connection", "Connection", k="select", c=ch.get("http", ())),
+            T("method", "Method", k="select", c=("POST", "PUT", "PATCH"), d="POST"),
+            T("path", "Path"),
+            T("body", "Body (JSON)", "", '{"data": "{{ outputs[0].value }}"}', "json")]},
+        {"key": "run_app", "label": "Run another app with the output", "params": [
+            T("app", "App", k="select", c=ch.get("apps", ())),
+            T("inputs", "Its form values (JSON)", "", '{}', "json")]},
+        {"key": "open_app", "label": "Open another app's form here", "params": [
+            T("app", "App", k="select", c=ch.get("apps", ())),
+            T("inputs", "Filled in with (JSON)", "The form opens over this page with these "
+              "values; the person checks them and presses Run.", '{}', "json")]},
+        {"key": "copy", "label": "Copy to the clipboard", "params": [
+            T("format", "Format", "text: the value as it is; tsv: a table as tab-separated "
+              "lines with a header (spreadsheet paste); json.", k="select",
+              c=("text", "tsv", "json"), d="text"),
+            T("value", "Value", "", "{{ outputs[0].value }}")]},
+        {"key": "change_request", "label": "Raise a change request", "params": [
+            T("action", "Change type", k="select", c=ch.get("cr_actions", ())),
+            T("title", "Title", d="{{ run.user }}: change from an app"),
+            T("reason", "Reason", k="textarea"),
+            T("devices", "Device ids", "A list of appliance ids, e.g. {{ outputs[0].value | map(attribute='id') | list }}"),
+            T("risk", "Risk", k="select", c=("low", "medium", "high"), d="medium")]},
+    ]
+
+
+def clean_actions(actions, ch: dict | None = None) -> list[dict]:
+    if not isinstance(actions, list):
+        raise AppError("actions are a list")
+    if len(actions) > MAX_ACTIONS:
+        raise AppError("at most %d actions" % MAX_ACTIONS)
+    schema = {s["key"]: s for s in action_schema(ch)}
+    out, seen = [], set()
+    for a in actions:
+        if not isinstance(a, dict):
+            raise AppError("each action is an object")
+        key = str(a.get("key") or "").strip()
+        if not _ACTION_RE.match(key) or key in seen:
+            raise AppError("action key %r: lowercase letters, digits, - and _, unique" % key)
+        seen.add(key)
+        kind = a.get("kind")
+        if kind not in schema:
+            raise AppError("action %s: unknown kind %r" % (key, kind))
+        params = {}
+        for p in schema[kind]["params"]:
+            v = (a.get("params") or {}).get(p["name"], p["default"])
+            v = "" if v is None else str(v)
+            if p["kind"] == "select" and p["choices"] and v not in p["choices"]:
+                raise AppError("action %s: %s %r does not exist" % (key, p["label"], v))
+            if p["kind"] == "json" and v.strip():
+                try:
+                    F.parse_json_param(v, p["label"])
+                except F.FlowError as exc:
+                    raise AppError("action %s: %s" % (key, exc)) from None
+            params[p["name"]] = v[:4000]
+        out.append({"key": key, "label": str(a.get("label") or key).strip()[:80] or key,
+                    "kind": kind, "confirm": bool(a.get("confirm")), "params": params})
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  CRUD and publishing                                                         #
+# --------------------------------------------------------------------------- #
+STARTER_GRAPH = {"nodes": [
+    {"key": "start", "kind": "start", "label": "Start", "params": {}, "x": 80, "y": 40},
+    {"key": "show", "kind": "output", "label": "Show the form", "x": 80, "y": 160,
+     "params": {"value": "{{ form }}", "title": "You entered", "view": "keyvalue"}},
+    {"key": "end", "kind": "end", "label": "End", "params": {}, "x": 80, "y": 280}],
+    "edges": [{"src": "start", "dst": "show", "branch": "always"},
+              {"src": "show", "dst": "end", "branch": "always"}]}
+
+
+def get(slug: str) -> StudioApp | None:
+    return StudioApp.query.filter_by(slug=slug).first()
+
+
+def create(slug: str, name: str, by: str, group: str = "") -> StudioApp:
+    slug = (slug or "").strip()
+    if not _SLUG_RE.match(slug):
+        raise AppError("Id: lowercase letters, digits, - and _, 2 to 48 characters.")
+    if get(slug) is not None:
+        raise AppError("an app with id %s already exists" % slug)
+    name = (name or "").strip()[:120]
+    if not name:
+        raise AppError("a name is required")
+    a = StudioApp(slug=slug, name=name, created_by=by, updated_by=by,
+                  fields_json=json.dumps([{"name": "name", "label": "Name", "type": "text",
+                                           "required": True, "help": "", "default": ""}]),
+                  graph_json=json.dumps(STARTER_GRAPH))
+    file_under(a, group, by)
+    db.session.add(a)
+    db.session.commit()
+    return a
+
+
+def save_settings(a: StudioApp, form: dict, adom_keys, by: str) -> None:
+    a.name = (form.get("name") or a.name).strip()[:120] or a.name
+    a.description = (form.get("description") or "").strip()[:2000]
+    icon = (form.get("icon") or "bi-app-indicator").strip()
+    if not _ICON_RE.match(icon):
+        raise AppError("icon: a Bootstrap icon name such as bi-app-indicator")
+    from . import bootstrap_icons
+    if not bootstrap_icons.is_known(icon):
+        raise AppError("icon: %s is not in the icon set (pick one with the icon picker)" % icon)
+    a.icon = icon
+    adoms = [str(x) for x in form.get("adoms") or []]
+    allowed = set(adom_keys) | {"*", "global"}
+    bad = [x for x in adoms if x not in allowed]
+    if bad:
+        raise AppError("unknown ADOM(s): %s" % ", ".join(bad))
+    a.adoms_json = json.dumps(["*"] if "*" in adoms else sorted(set(adoms)))
+    set_access(a, form.get("access") or {})
+    if "group" in form:                 # absent (Examples, older callers): the group stays
+        file_under(a, form.get("group"), by)
+    a.updated_by = by
+    db.session.commit()
+
+
+def clean_group(value, a: StudioApp | None = None) -> str:
+    """A menu group as stored: spaces collapsed, at most 48 characters of
+    :data:`_GROUP_RE`, "" for none. A name that differs from an existing
+    group only in case takes that group's spelling, so "netops" typed by one
+    author files the app under the "NetOps" another one made."""
+    g = _folder_name(value)
+    if not g:
+        return ""
+    for other in groups(exclude=a):
+        if other.lower() == g.lower():
+            return other
+    return g
+
+
+def file_under(a: StudioApp, value, by: str = "") -> str:
+    """File *a* under the folder *value* ("" = none), making the folder when
+    no folder has that name yet (no grants), so an import or an older caller
+    that names a new group still files the app. Not committed: the caller's
+    commit stores both (2026-11-06)."""
+    g = clean_group(value, a)
+    if g:
+        f = folder(g)
+        if f is None:
+            db.session.add(StudioFolder(name=g, created_by=by, updated_by=by))
+            _forget_folders()
+        elif f.name != g:
+            # only reachable when groups() left it out: *a* is its one app and
+            # it grants nothing, so the folder takes the new spelling with it
+            f.name = g
+            _forget_folders()
+    a.menu_group = g
+    return g
+
+
+def _folder_name(value) -> str:
+    g = " ".join(str(value or "").split())
+    if g and not _GROUP_RE.match(g):
+        raise AppError("folder: up to 48 letters, digits, spaces and . & ( ) + , ' - "
+                       "(it starts with a letter or a digit)")
+    return g
+
+
+def groups(exclude: StudioApp | None = None) -> list[str]:
+    """Every folder (Plugin Studio > Folders, empty ones included) and every
+    menu group some app is filed under, sorted as people read them. With
+    *exclude*, a folder only that app is in and that has no grants is left
+    out, so its one app may rename it in another case."""
+    q = db.session.query(StudioApp.menu_group).filter(StudioApp.menu_group != "")
+    if exclude is not None and exclude.id is not None:
+        q = q.filter(StudioApp.id != exclude.id)
+    names = {g for (g,) in q.distinct().all()}
+    mine = (exclude.menu_group or "") if exclude is not None else ""
+    for f in StudioFolder.query.all():
+        if f.name == mine and f.name not in names and not (f.adoms or f.group_ids):
+            continue
+        names.add(f.name)
+    return sorted(names, key=str.lower)
+
+
+# --------------------------------------------------------------------------- #
+#  folders (2026-11-06)                                                        #
+# --------------------------------------------------------------------------- #
+#: The key of the folder grants cached on ``flask.g`` for one request.
+_FOLDER_CACHE = "_studio_folder_grants"
+
+
+def folder(name: str) -> StudioFolder | None:
+    """The folder named *name*, in any case; ``None`` for "" or none."""
+    name = " ".join(str(name or "").split())
+    if not name:
+        return None
+    return StudioFolder.query.filter(db.func.lower(StudioFolder.name) == name.lower()).first()
+
+
+def folders() -> list[StudioFolder]:
+    return sorted(StudioFolder.query.all(), key=lambda f: f.name.lower())
+
+
+def folder_rows() -> list[dict]:
+    """Plugin Studio > Folders: every folder with its apps (flow and script)."""
+    apps = {}
+    for a in StudioApp.query.filter(StudioApp.menu_group != "").order_by(StudioApp.name).all():
+        apps.setdefault(a.menu_group, []).append(a)
+    return [{"f": f, "apps": apps.get(f.name, [])} for f in folders()]
+
+
+def folder_apps(f: StudioFolder) -> list[StudioApp]:
+    return StudioApp.query.filter(StudioApp.menu_group == f.name).order_by(StudioApp.name).all()
+
+
+def _forget_folders() -> None:
+    try:
+        from flask import g
+        g.pop(_FOLDER_CACHE, None)
+    except RuntimeError:          # no application context: nothing is cached
+        pass
+
+
+def _folder_grants() -> dict:
+    """``{folder name: (adoms, group ids)}`` of the folders that grant
+    anything, read once per request (the sidebar asks for every app)."""
+    try:
+        from flask import g
+        got = g.get(_FOLDER_CACHE)
+    except RuntimeError:
+        g, got = None, None
+    if got is None:
+        got = {f.name: (set(f.adoms), set(f.group_ids)) for f in StudioFolder.query.all()
+               if f.adoms or f.group_ids}
+        if g is not None:
+            setattr(g, _FOLDER_CACHE, got)
+    return got
+
+
+def folder_adoms(a: StudioApp) -> set:
+    return set(_folder_grants().get(a.menu_group or "", (set(), set()))[0])
+
+
+def folder_groups(a: StudioApp) -> set:
+    return set(_folder_grants().get(a.menu_group or "", (set(), set()))[1])
+
+
+def effective_adoms(a: StudioApp) -> list[str]:
+    """The ADOMs the app is drawn in: its own plus its folder's."""
+    own = a.adoms
+    extra = [x for x in sorted(folder_adoms(a)) if x not in own]
+    return own + extra
+
+
+def create_folder(name, by: str, description: str = "") -> StudioFolder:
+    g = _folder_name(name)
+    if not g:
+        raise AppError("a folder needs a name")
+    if folder(g) is not None:
+        raise AppError("a folder named %s already exists" % folder(g).name)
+    f = StudioFolder(name=g, description=(description or "").strip()[:2000],
+                     created_by=by, updated_by=by)
+    db.session.add(f)
+    db.session.commit()
+    _forget_folders()
+    return f
+
+
+def save_folder(f: StudioFolder, form: dict, adom_keys, by: str) -> StudioFolder:
+    """Rename *f* (its apps follow), and set its description, the ADOMs and
+    the user groups it hands to every app inside."""
+    name = _folder_name(form.get("name", f.name))
+    if not name:
+        raise AppError("a folder needs a name")
+    other = folder(name)
+    if other is not None and other.id != f.id:
+        raise AppError("a folder named %s already exists" % other.name)
+    adoms = [str(x) for x in form.get("adoms") or []]
+    allowed = set(adom_keys) | {"*", "global"}
+    bad = [x for x in adoms if x not in allowed]
+    if bad:
+        raise AppError("unknown ADOM(s): %s" % ", ".join(bad))
+    gids = sorted({int(x) for x in form.get("groups") or [] if str(x).isdigit()})
+    if gids and UserGroup.query.filter(UserGroup.id.in_(gids)).count() != len(gids):
+        raise AppError("a user group in the list does not exist")
+    if name != f.name:
+        StudioApp.query.filter(StudioApp.menu_group == f.name).update(
+            {StudioApp.menu_group: name}, synchronize_session=False)
+        f.name = name
+    if "description" in form:
+        f.description = str(form.get("description") or "").strip()[:2000]
+    f.adoms_json = json.dumps(["*"] if "*" in adoms else sorted(set(adoms)))
+    f.groups_json = json.dumps(gids)
+    f.updated_by = by
+    db.session.commit()
+    _forget_folders()
+    db.session.expire_all()       # the apps renamed in SQL are read again
+    return f
+
+
+def delete_folder(f: StudioFolder) -> list[str]:
+    """Delete *f*; its apps stay, with no folder. Returns their ids."""
+    slugs = [a.slug for a in StudioApp.query.filter(StudioApp.menu_group == f.name).all()]
+    StudioApp.query.filter(StudioApp.menu_group == f.name).update(
+        {StudioApp.menu_group: ""}, synchronize_session=False)
+    db.session.delete(f)
+    db.session.commit()
+    _forget_folders()
+    db.session.expire_all()
+    return slugs
+
+
+def set_group(a: StudioApp, value, by: str) -> str:
+    """File *a* (a flow or a script app) under a menu group; "" takes it out."""
+    file_under(a, value, by)
+    a.updated_by = by
+    db.session.commit()
+    return a.menu_group
+
+
+def grouped(items: list[dict]) -> list[dict]:
+    """*items* (each with a ``group`` key) as the sidebar draws them: one
+    ``{"group": name, "items": [...]}`` per menu group, sorted, then the
+    entries without a group as ``{"group": "", "items": [...]}``. The order
+    inside each keeps the order of *items*."""
+    by, loose = {}, []
+    for m in items:
+        g = m.get("group") or ""
+        (by.setdefault(g, []) if g else loose).append(m)
+    out = [{"group": g, "items": by[g]} for g in sorted(by, key=str.lower)]
+    if loose:
+        out.append({"group": "", "items": loose})
+    return out
+
+
+def set_access(a: StudioApp, acc: dict) -> None:
+    """The app's access list (users and user groups), checked; not committed."""
+    gids = sorted({int(x) for x in acc.get("groups") or [] if str(x).isdigit()})
+    uids = sorted({int(x) for x in acc.get("users") or [] if str(x).isdigit()})
+    from ..models import User
+    if gids and UserGroup.query.filter(UserGroup.id.in_(gids)).count() != len(gids):
+        raise AppError("a group in the access list does not exist")
+    if uids and User.query.filter(User.id.in_(uids)).count() != len(uids):
+        raise AppError("a user in the access list does not exist")
+    perm = str(acc.get("permission") or "").strip()
+    if perm:
+        from ..permissions import COARSE_KEYS, is_valid_key
+        if not (is_valid_key(perm) or perm in COARSE_KEYS):
+            raise AppError("%r is not a SATOM permission" % perm)
+    out = {"groups": gids, "users": uids}
+    if perm:
+        out["permission"] = perm
+    a.access_json = json.dumps(out)
+
+
+def clean_graph(graph) -> dict:
+    """The diagram as stored: an object of nodes and edges, at most
+    :data:`MAX_GRAPH_BYTES`. Its steps are judged by ``studio_flow.validate_graph``."""
+    if not isinstance(graph, dict) or len(json.dumps(graph)) > MAX_GRAPH_BYTES:
+        raise AppError("the diagram is not an object, or is larger than 512 KiB")
+    nodes, edges = graph.get("nodes") or [], graph.get("edges") or []
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        raise AppError("the diagram's nodes and edges are lists")
+    for i, n in enumerate(nodes):
+        if not isinstance(n, dict):
+            raise AppError("step %d of the diagram is not an object" % (i + 1))
+        params = n.get("params")
+        if params is not None and not isinstance(params, dict):
+            raise AppError("step %s: params is an object of name: value, such as "
+                           "{\"store\": \"cmdb\"} (it is a %s)"
+                           % (n.get("key") or i + 1, type(params).__name__))
+    for i, e in enumerate(edges):
+        if not isinstance(e, dict):
+            raise AppError("arrow %d of the diagram is not an object" % (i + 1))
+    return {"nodes": nodes, "edges": edges}
+
+
+def form_ref_problems(fields: list, graph) -> list[str]:
+    """``form.<name>`` the diagram reads that is not a field of the form.
+    *graph* is the diagram or its stored JSON text."""
+    names = {f.get("name") for f in fields or [] if isinstance(f, dict)}
+    text = graph if isinstance(graph, str) else json.dumps(graph)
+    return ["the diagram reads form.%s, which is not a field of the form" % m.group(1)
+            for m in re.finditer(r"form\.([a-z_][a-z0-9_]*)", text or "")
+            if m.group(1) not in names]
+
+
+def save_draft(a: StudioApp, *, fields=None, graph=None, actions=None, design=None,
+               by: str) -> list[str]:
+    """Save what was sent. Returns the diagram problems (a draft with problems
+    is saved -- half-built work is never lost -- but cannot be published)."""
+    from . import studio_design as D
+    ch = choices()
+    if fields is not None:
+        a.fields_json = json.dumps(clean_fields(fields, ch))
+    if graph is not None:
+        a.graph_json = json.dumps(clean_graph(graph))
+    if actions is not None:
+        a.actions_json = json.dumps(clean_actions(actions, ch))
+    if design is not None:
+        try:
+            a.design_json = json.dumps(D.clean(design))
+        except D.DesignError as exc:
+            raise AppError("design: %s" % exc) from None
+    a.updated_by = by
+    db.session.commit()
+    return F.validate_graph(a.graph, ch)
+
+
+def problems(a: StudioApp) -> list[str]:
+    ch = choices()
+    errs = F.validate_graph(a.graph, ch)
+    try:
+        clean_fields(a.fields, ch)
+        clean_actions(a.actions, ch)
+    except AppError as exc:
+        errs.append(str(exc))
+    errs += form_ref_problems(a.fields, a.graph_json or "")
+    from . import studio_design as D
+    try:
+        errs += D.problems(D.clean(a.design), a.fields, a.graph, D.asset_keys(a.id))
+    except D.DesignError as exc:
+        errs.append("design: %s" % exc)
+    errs += secret_problems(a)
+    from . import studio_view as SV
+    try:
+        errs += SV.problems(SV.clean(a.view, kinds=F.kind_map(ch)), app_slug=a.slug)
+    except SV.ViewError as exc:
+        errs.append("view: %s" % exc)
+    return sorted(set(errs))
+
+
+def save_view(a: StudioApp, view, by: str) -> dict:
+    """Save the app's own view (services.studio_view; the route checks
+    studio_view.VIEW_PERMISSION). ``{}`` removes it: the designed page again."""
+    from . import studio_view as SV
+    if a.kind != "flow":
+        raise AppError("only a flow app has a view")
+    try:
+        clean = SV.clean(view, kinds=F.kind_map(choices()))
+    except SV.ViewError as exc:
+        raise AppError("view: %s" % exc) from None
+    a.view_json = json.dumps(clean)
+    a.updated_by = by
+    db.session.commit()
+    return clean
+
+
+def secret_problems(a: StudioApp) -> list[str]:
+    """A connection the app uses that needs a secret and has none: the app
+    cannot be published until someone types it here (an imported package
+    creates its connections WITHOUT their secrets)."""
+    from . import studio_connections as SC
+    out = []
+    for slug in sorted(_refs(a.graph, a.actions, a.fields, "connection")):
+        c = SC.get(slug)
+        if c is not None and SC.needs_secret(c) and not SC.has_secret(slug):
+            out.append("connection %s has no secret yet (%s): set it in Plugin Studio › "
+                       "Connections" % (slug, SC.secret_text(c.kind, c.auth, c.username or "")))
+    return out
+
+
+def publish(a: StudioApp, note: str, by: str) -> int:
+    if a.kind == "page":
+        raise AppError("%s is a page plugin: there is nothing to publish -- its menu entry "
+                       "follows its ADOMs and whether it is enabled" % a.slug)
+    errs = problems(a)
+    if errs:
+        raise AppError("not published: " + " · ".join(errs))
+    a.version = (a.version or 0) + 1
+    a.published_json = json.dumps({"version": a.version, "fields": a.fields, "graph": a.graph,
+                                   "actions": a.actions, "design": a.design, "view": a.view,
+                                   "at": datetime.utcnow().isoformat(timespec="seconds"),
+                                   "by": by, "note": (note or "")[:200]})
+    a.status = "published"
+    a.published_at = datetime.utcnow()
+    a.updated_by = by
+    db.session.commit()
+    return a.version
+
+
+def unpublish(a: StudioApp, by: str) -> None:
+    a.status = "draft"
+    a.updated_by = by
+    db.session.commit()
+
+
+def delete(a: StudioApp) -> None:
+    from . import studio_design as D
+    from . import token_grants
+    D.delete_assets(a.id)  # SQLite (tests) does not cascade
+    token_grants.forget("app", a.id, a.slug)  # API tokens granted it lose the grant
+    from . import plugin_automations as PA
+    PA.delete_for_app(a.slug)   # an automation of a missing app fails nightly
+    db.session.delete(a)
+    db.session.commit()
+
+
+# --------------------------------------------------------------------------- #
+#  every plugin is an app (2026-10-23, operator: "everything created should    #
+#  be an app, even if it is only a script")                                    #
+# --------------------------------------------------------------------------- #
+#: "flow": a form and a diagram, run here. "script": the entry of a Script
+#: Library script -- its code, form, versions and audience stay in
+#: data/scripts/<script_slug>, because the sandbox runner that executes it
+#: must never hold a database connection (services.script_library). "page":
+#: a plugin whose menu entry opens a SATOM page (services.studio_pages); it
+#: comes only from a package and has nothing to publish or run (2026-11-08).
+KINDS = ("flow", "script", "page")
+
+
+def script_app(script_slug: str) -> StudioApp | None:
+    return StudioApp.query.filter_by(kind="script", script_slug=script_slug).first()
+
+
+def script_disabled(script_slug: str) -> bool:
+    """Whether the app of this script is disabled. A lookup that fails says
+    False: the script library must keep working without the table."""
+    try:
+        a = script_app(script_slug)
+    except Exception:  # noqa: BLE001 -- no table, or no app context at all
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+    return a is not None and not a.enabled
+
+
+def _free_slug(base: str) -> str:
+    if get(base) is None:
+        return base
+    for i in range(1, 100):
+        cand = ("%s-%d" % (base[:44], i))
+        if get(cand) is None:
+            return cand
+    raise AppError("no free app id for %s" % base)
+
+
+def ensure_script_app(script_slug: str, by: str) -> StudioApp:
+    """The app of a script, created when missing (same id when it is free)."""
+    from . import script_library as SL
+    a = script_app(script_slug)
+    if a is not None:
+        return a
+    meta = SL.get(script_slug) or {}
+    a = StudioApp(slug=_free_slug(script_slug), name=(meta.get("name") or script_slug)[:120],
+                  description=(meta.get("description") or "")[:2000], icon="bi-filetype-py",
+                  kind="script", script_slug=script_slug, adoms_json=json.dumps(["global"]),
+                  status="published" if meta.get("published") else "draft",
+                  created_by=by, updated_by=by)
+    db.session.add(a)
+    db.session.commit()
+    return a
+
+
+def adopt_scripts(by: str = "system") -> list[str]:
+    """Give every script that has no app its app. Idempotent; called where
+    apps are listed, so a script made before 2026-10-23 (or restored from a
+    backup) is never left outside the app list."""
+    from . import script_library as SL
+    have = {s for (s,) in db.session.query(StudioApp.script_slug)
+            .filter(StudioApp.kind == "script").all()}
+    made = []
+    for s in SL.list_scripts():
+        if s["slug"] not in have:
+            made.append(ensure_script_app(s["slug"], by).slug)
+    return made
+
+
+def script_meta(a: StudioApp) -> dict:
+    from . import script_library as SL
+    try:
+        return SL._read_json(SL._dir(a.script_slug) / "meta.json") or {}
+    except Exception:  # noqa: BLE001 -- a missing or bad id reads as no script
+        return {}
+
+
+def is_template(a: StudioApp) -> bool:
+    """Templates are the objects of Plugin Studio > Examples: they can be
+    disabled, reset and downloaded, never deleted (operator, 2026-10-23)."""
+    from . import studio_examples as EX
+    if a.kind == "script":
+        return EX.is_template("script", a.script_slug or "")
+    return EX.is_template("app", a.slug)
+
+
+def script_users() -> dict[str, list[str]]:
+    """{script id: the flow apps whose draft or published version runs it}.
+
+    A script an app runs is that app's DEPENDENCY, not an app of its own
+    (operator, 2026-11-13: "eso sería una dependencia ... un elemento que se
+    llame Code"): Plugin Studio > Code lists it with the apps that use it,
+    and Apps, the Plugins menu, the Apps-only portal and Operations > Scripts
+    do not draw it as a second plugin. The names are read the way the app's
+    Dependencies tab reads them (studio_app_deps._names), so both say the
+    same thing. A script no app runs stays an app of its own."""
+    from . import studio_app_deps as D
+    out: dict[str, list[str]] = {}
+    for a in StudioApp.query.order_by(StudioApp.slug).all():
+        if (a.kind or "flow") != "flow":
+            continue
+        draft = D._names({"graph": a.graph, "actions": a.actions, "fields": a.fields,
+                          "view": a.view})["scripts"]
+        for s in sorted(draft | D._names(a.published or {})["scripts"]):
+            out.setdefault(s, []).append(a.slug)
+    return out
+
+
+def is_dependency(a: StudioApp, users: dict | None = None) -> bool:
+    """Whether *a* is the app row of a script some flow app runs."""
+    if a is None or a.kind != "script" or not a.script_slug:
+        return False
+    return a.script_slug in (script_users() if users is None else users)
+
+
+#: The note a package writes on the script version it installs
+#: (studio_app_package.install): "installed from the package <slug> <version>".
+_PKG_NOTE = "installed from the package "
+
+
+def _script_package(meta: dict) -> tuple[str, str]:
+    """(package, version) that installed the script's published version, or
+    ("", "") when it was written or edited here."""
+    pub = str(meta.get("published") or "")
+    for v in meta.get("versions") or []:
+        if isinstance(v, dict) and str(v.get("n")) == pub:
+            note = str(v.get("note") or "")
+            if note.startswith(_PKG_NOTE):
+                parts = note[len(_PKG_NOTE):].split()
+                return (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else "")
+    return "", ""
+
+
+def code_rows(users: dict | None = None) -> list[dict]:
+    """Plugin Studio > Code: every Script Library script, with the apps that
+    run it (its dependants) and the package that installed it. ``app`` is the
+    script's own app row (enable / disable act on it)."""
+    from . import script_library as SL
+    users = script_users() if users is None else users
+    apps = {a.script_slug: a for a in StudioApp.query.filter_by(kind="script").all()}
+    out = []
+    for s in SL.list_scripts():
+        slug = s["slug"]
+        try:
+            meta = SL.get(slug) or {}
+        except SL.ScriptError:
+            meta = {}
+        vs = [int(v.get("n") or 0) for v in meta.get("versions") or [] if isinstance(v, dict)]
+        pkg, pkg_v = _script_package(meta)
+        a = apps.get(slug)
+        out.append({"slug": slug, "name": meta.get("name") or slug,
+                    "description": meta.get("description") or "",
+                    "published": meta.get("published"), "latest": max(vs) if vs else None,
+                    "draft_changed": bool(meta.get("draft_changed")),
+                    "audience": meta.get("audience") or "admins",
+                    "used_by": list(users.get(slug) or []), "package": pkg,
+                    "package_version": pkg_v, "app": a,
+                    "enabled": bool(a.enabled) if a is not None else True,
+                    "updated_at": a.updated_at if a is not None else None,
+                    "template": is_template(a) if a is not None else False})
+    return sorted(out, key=lambda r: r["name"].lower())
+
+
+def list_rows() -> list[dict]:
+    """Plugin Studio > Apps: every app, flow and script alike, with what its
+    row shows. A script app reads its version and audience from the script.
+    A script a flow app runs is that app's dependency: it is listed under
+    Code (code_rows), not here."""
+    out = []
+    users = script_users()
+    for a in StudioApp.query.order_by(StudioApp.name).all():
+        if is_dependency(a, users):
+            continue
+        r = {"a": a, "kind": a.kind or "flow", "template": is_template(a),
+             "enabled": a.enabled, "group": a.menu_group or "",
+             "edit_endpoint": "studio.app_edit", "edit_slug": a.slug}
+        if a.kind == "script":
+            meta = script_meta(a)
+            vs = [int(v.get("n") or 0) for v in meta.get("versions") or [] if isinstance(v, dict)]
+            # name and description are edited in the script editor
+            r.update(name=meta.get("name") or a.name, description=meta.get("description") or "",
+                     published=meta.get("published"), latest=max(vs) if vs else None,
+                     missing=not meta, audience=meta.get("audience") or "admins",
+                     edit_endpoint="script_library.edit", edit_slug=a.script_slug)
+        elif a.kind == "page":
+            page = SP.get(a.page_key)
+            r.update(name=a.name, description=a.description or "", published=None,
+                     latest=None, missing=page is None, audience="", page=page)
+        else:
+            r.update(name=a.name, description=a.description or "",
+                     published=a.version if a.status == "published" else None,
+                     latest=a.version or None, missing=False, audience="")
+        out.append(r)
+    return out
+
+
+def set_enabled(a: StudioApp, enabled: bool, by: str) -> None:
+    a.enabled = bool(enabled)
+    a.updated_by = by
+    db.session.commit()
+
+
+def stores_of(a: StudioApp) -> tuple[list[str], list[str]]:
+    """(stores only this app uses, stores other apps use too) -- from the
+    draft and the published version."""
+    if a.kind == "script":
+        return [], []
+    pub = a.published
+    names = _refs(a.graph, a.actions, a.fields, "store") | _refs(
+        pub.get("graph") or {}, pub.get("actions") or [], pub.get("fields") or [], "store")
+    own, shared = [], []
+    for s in sorted(names):
+        (shared if [x for x in used_by("store", s) if x != a.slug] else own).append(s)
+    return own, shared
+
+
+def reset(a: StudioApp) -> dict:
+    """Delete the app's data: its run history and the rows of the data stores
+    only it uses. Shared stores are left alone and listed. The design, the
+    versions, the connections and the settings stay."""
+    from . import script_library as SL
+    from . import studio_store as SS
+    from ..models_studio import StudioRow
+    if a.kind == "script":
+        return {"runs": SL.delete_runs(a.script_slug), "rows": 0, "stores": [], "shared": []}
+    running = StudioAppRun.query.filter_by(app_id=a.id, status="running").count()
+    if running:
+        raise AppError("%d run(s) of this app are in progress; reset when they end" % running)
+    runs = StudioAppRun.query.filter_by(app_id=a.id).delete(synchronize_session=False)
+    own, shared = stores_of(a)
+    rows = 0
+    for slug in own:
+        st = SS.get(slug)
+        if st is not None:
+            rows += StudioRow.query.filter_by(store_id=st.id).delete(synchronize_session=False)
+    db.session.commit()
+    return {"runs": runs, "rows": rows, "stores": own, "shared": shared}
+
+
+def data_zip(a: StudioApp) -> tuple[str, bytes]:
+    """Everything the app holds, as a zip: its runs (runs.json, or one JSON
+    per script run) and a CSV per data store it uses."""
+    import zipfile
+    from . import script_library as SL
+    from . import studio_store as SS
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        info = {"app": a.slug, "name": a.name, "kind": a.kind,
+                "exported_at": datetime.utcnow().isoformat(timespec="seconds") + "Z"}
+        if a.kind == "script":
+            info["script"] = a.script_slug
+            runs = SL.runs_full(a.script_slug)
+            for r in runs:
+                z.writestr("runs/%s.json" % r.get("request_id", "run"),
+                           json.dumps(r, indent=1, default=str))
+            info["runs"] = len(runs)
+        else:
+            runs = StudioAppRun.query.filter_by(app_id=a.id).order_by(StudioAppRun.id).all()
+            z.writestr("runs.json", json.dumps([{
+                "id": r.id, "status": r.status, "error": r.error, "version": r.version,
+                "armed": r.armed, "user": r.user, "product": r.product, "inputs": r.inputs,
+                "outputs": r.outputs, "steps": r.steps,
+                "started_at": r.started_at.isoformat(timespec="seconds") if r.started_at else None,
+                "finished_at": r.finished_at.isoformat(timespec="seconds") if r.finished_at else None}
+                for r in runs], indent=1, default=str))
+            info["runs"] = len(runs)
+            own, shared = stores_of(a)
+            info["stores"] = own + shared
+            for slug in own + shared:
+                st = SS.get(slug)
+                if st is not None:
+                    z.writestr("stores/%s.csv" % slug, SS.to_csv(st))
+        z.writestr("app.json", json.dumps(info, indent=1))
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    return "%s-data-%s.zip" % (a.slug, stamp), buf.getvalue()
+
+
+# --------------------------------------------------------------------------- #
+#  clone (2026-11-04, operator: "plugins can be cloned; the clone asks for     #
+#  everything or only the structure, without the data -- and the apps must    #
+#  be able to write in their data section")                                    #
+# --------------------------------------------------------------------------- #
+#: What a clone copies: "all" = the structure and the rows of the data stores;
+#: "structure" = the same stores, empty; "shared" = no copy: the clone uses
+#: the original's stores, so a row or a column one of them changes, the other
+#: sees (operator, 2026-11-04: "an option to use everything but add more
+#: things -- the original's database, so a change is shared").
+CLONE_MODES = ("all", "structure", "shared")
+
+
+def _clone_store_slug(store: str, src_app: str, new_app: str, taken: set) -> str:
+    """The id of a store's copy: the app's id swapped when the store's id
+    starts with it (``dns-records-hosts`` -> ``dns-lab-hosts``), else the new
+    app's id appended; ``-2``, ``-3``... when that is taken."""
+    from . import studio_examples as EX
+    from . import studio_store as SS
+    if store.startswith(src_app) and store != src_app:
+        base = new_app + store[len(src_app):]
+    else:
+        base = "%s-%s" % (store, new_app)
+    base = base[:48].rstrip("-_") or new_app
+    cand, i = base, 1
+    while (cand in taken or SS.get(cand) is not None or EX.is_template("store", cand)
+           or not _SLUG_RE.match(cand)):
+        i += 1
+        cand = "%s-%d" % (base[:44].rstrip("-_"), i)
+        if i > 99:
+            raise AppError("no free data store id for the copy of %s" % store)
+    taken.add(cand)
+    return cand
+
+
+def _remap(items, key: str, mapping: dict, in_params: bool) -> list:
+    """*items* (nodes, actions or fields) with ``key`` renamed by *mapping*."""
+    out = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            out.append(it)
+            continue
+        it = json.loads(json.dumps(it))
+        holder = it.get("params") if in_params else it
+        if isinstance(holder, dict) and str(holder.get(key) or "") in mapping:
+            holder[key] = mapping[str(holder[key])]
+        out.append(it)
+    return out
+
+
+def clone_plan(a: StudioApp) -> dict:
+    """What a clone of *a* would copy, for the dialog: the stores only it uses
+    (copied), the stores other apps use too (kept shared unless asked), with
+    their row counts."""
+    from . import studio_store as SS
+    if a.kind == "script":
+        return {"kind": "script", "own": [], "shared": []}
+    names = _refs(a.graph, a.actions, a.fields, "store")
+    own, shared = [], []
+    for s in sorted(names):
+        st = SS.get(s)
+        entry = {"slug": s, "rows": SS.count(st) if st is not None else 0,
+                 "missing": st is None}
+        (shared if [x for x in used_by("store", s) if x != a.slug] else own).append(entry)
+    return {"kind": "flow", "own": own, "shared": shared}
+
+
+def clone(a: StudioApp, new_slug: str, new_name: str, *, mode: str = "structure",
+          copy_shared: bool = False, by: str) -> dict:
+    """A new DRAFT app from *a*'s draft, in ONE transaction (nothing is left
+    behind when a step is refused).
+
+    A flow app gets its OWN copy of every data store its draft names, with
+    the form, diagram and actions pointed at the copies: the clone reads and
+    writes its own data, never the original's. ``mode="all"`` copies the rows,
+    ``"structure"`` the columns only. A store other apps use too stays shared
+    (the clone keeps reading and writing it) unless *copy_shared*.
+    ``mode="shared"`` copies no store: the clone reads and writes the
+    original's stores (rows and columns are common to both; the form,
+    diagram and actions are not -- each app keeps its own, and the clone may
+    add steps and stores of its own). *copy_shared* is ignored there.
+
+    Copied: form, diagram, actions, design and its images, icon, description,
+    menu group, ADOMs, access list. Not copied: the published versions (the
+    clone starts at v0, a draft), runs, automations, the app's sign-in rules,
+    API token grants, and every secret -- connections, scripts and APIs are
+    shared, not duplicated.
+
+    A script app gets a new Script Library script with the source script's
+    DRAFT files and settings; credentials are declared but their values stay
+    in the source's vault (typed again on the copy). Saved runs stay behind.
+    """
+    from . import studio_examples as EX
+    from . import studio_store as SS
+    from sqlalchemy import literal, select
+    from ..models_studio import StudioAppAsset, StudioDataStore, StudioRow
+    if mode not in CLONE_MODES:
+        raise AppError("mode is all, structure or shared")
+    if a.kind == "page":        # two entries opening the same page would be one page twice
+        raise AppError("%s is a page plugin: it opens a SATOM page, there is nothing to clone"
+                       % a.slug)
+    new_slug = (new_slug or "").strip()
+    if not _SLUG_RE.match(new_slug):
+        raise AppError("Id: lowercase letters, digits, - and _, 2 to 48 characters.")
+    if get(new_slug) is not None:
+        raise AppError("an app with id %s already exists" % new_slug)
+    if EX.is_template("app", new_slug):
+        raise AppError("%s is the id of a template (Plugin Studio > Examples)" % new_slug)
+    new_name = (new_name or "").strip()[:120] or ("%s (copy)" % a.name)[:120]
+    if a.kind == "script":
+        return _clone_script(a, new_slug, new_name, by)
+
+    plan = clone_plan(a)
+    if mode == "shared":
+        to_copy = []
+        kept = [s["slug"] for s in plan["own"] + plan["shared"] if not s["missing"]]
+    else:
+        to_copy = [s["slug"] for s in plan["own"] + (plan["shared"] if copy_shared else [])
+                   if not s["missing"]]
+        kept = [s["slug"] for s in plan["shared"] if not copy_shared and not s["missing"]]
+    missing = [s["slug"] for s in plan["own"] + plan["shared"] if s["missing"]]
+    if StudioDataStore.query.count() + len(to_copy) > SS.MAX_STORES:
+        raise AppError("the copy needs %d new data store(s) and a node keeps at most %d"
+                       % (len(to_copy), SS.MAX_STORES))
+    taken: set = set()
+    mapping = {s: _clone_store_slug(s, a.slug, new_slug, taken) for s in to_copy}
+    apps = {a.slug: new_slug}            # an action that opens the app itself
+    graph = a.graph
+    nodes = _remap(_remap(graph.get("nodes") or [], "store", mapping, True),
+                   "app", apps, True)
+    actions = _remap(_remap(a.actions, "store", mapping, True), "app", apps, True)
+    fields = _remap(a.fields, "store", mapping, False)
+    stores = []
+    try:
+        b = StudioApp(slug=new_slug, name=new_name, icon=a.icon, kind="flow",
+                      description=a.description or "", status="draft", version=0,
+                      adoms_json=a.adoms_json or "[]", access_json=a.access_json or "{}",
+                      fields_json=json.dumps(fields),
+                      graph_json=json.dumps({**graph, "nodes": nodes}),
+                      actions_json=json.dumps(actions), design_json=a.design_json or "{}",
+                      view_json=a.view_json or "{}",
+                      menu_group=a.menu_group or "", published_json="{}",
+                      login_json="{}", enabled=True, created_by=by, updated_by=by)
+        db.session.add(b)
+        db.session.flush()
+        for row in StudioAppAsset.query.filter_by(app_id=a.id).all():
+            db.session.add(StudioAppAsset(app_id=b.id, sha256=row.sha256, mime=row.mime,
+                                          name=row.name, size=row.size, data=row.data,
+                                          created_by=by, created_at=datetime.utcnow()))
+        for src_slug, dst_slug in mapping.items():
+            src = SS.get(src_slug)
+            dst = StudioDataStore(slug=dst_slug, name=("%s · %s" % (src.name, new_slug))[:120],
+                                  description=src.description or "",
+                                  columns_json=src.columns_json, created_by=by, updated_by=by)
+            db.session.add(dst)
+            db.session.flush()
+            rows = 0
+            if mode == "all":
+                t = StudioRow.__table__
+                cols = ("data_json", "created_by", "updated_by", "created_at", "updated_at")
+                db.session.execute(t.insert().from_select(
+                    ("store_id",) + cols,
+                    select(literal(dst.id), *(t.c[c] for c in cols))
+                    .where(t.c.store_id == src.id).order_by(t.c.id)))
+                rows = SS.count(dst)
+            stores.append({"from": src_slug, "to": dst_slug, "rows": rows})
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    todo = ["review the copy and Publish it (Plugin Studio › Apps › %s)" % new_slug]
+    if kept and mode == "shared":
+        todo.append("the copy reads and writes the original's data store(s) %s: a change "
+                    "made by either app is seen by both" % ", ".join(kept))
+    elif kept:
+        todo.append("the copy still writes the shared data store(s) %s" % ", ".join(kept))
+    return {"app": b, "kind": "flow", "mode": mode, "stores": stores, "shared": kept,
+            "missing": missing, "todo": todo}
+
+
+def _clone_script(a: StudioApp, new_slug: str, new_name: str, by: str) -> dict:
+    from . import script_library as SL
+    src = SL.get(a.script_slug or "")
+    if src is None:
+        raise AppError("the script of %s is missing; there is nothing to copy" % a.slug)
+    if SL.exists(new_slug):
+        raise AppError("a script with id %s already exists" % new_slug)
+    settings = {k: src.get(k) for k in ("description", "network", "audience", "timeout",
+                                        "fields", "credentials", "connections")}
+    settings["name"] = new_name
+    try:
+        SL.create(new_slug, new_name, by)
+        SL.save_draft(new_slug, src.get("files") or {}, settings, by, kind="save",
+                      note="cloned from %s" % a.script_slug)
+    except SL.ScriptError as exc:
+        if SL.exists(new_slug):
+            SL.delete(new_slug)
+        raise AppError(str(exc)) from None
+    b = ensure_script_app(new_slug, by)
+    b.menu_group = a.menu_group or ""
+    b.icon = a.icon
+    db.session.commit()
+    todo = ["review the copy and Publish it (Script Library › %s)" % new_slug]
+    creds = [c["name"] for c in src.get("credentials") or []]
+    if creds:
+        todo.append("type the credential values of the copy: %s" % ", ".join(creds))
+    return {"app": b, "kind": "script", "mode": "structure", "stores": [], "shared": [],
+            "missing": [], "todo": todo}
+
+
+def remove(a: StudioApp) -> dict:
+    """Delete an app for good. Refused for a template (Examples) and for an
+    app another app runs. A flow app takes its runs and the data stores only
+    it uses; a script app takes the script, its versions, saved runs, run
+    records and vaulted credentials. Connections and APIs are never deleted
+    here: they are shared and hold secrets."""
+    if is_template(a):
+        raise AppError("%s is a template (Plugin Studio > Examples): disable or reset it; "
+                       "templates are not deleted" % a.slug)
+    users = used_by("app", a.slug)
+    if users:
+        raise AppError("other app(s) run it: %s" % ", ".join(users))
+    if a.kind == "script":
+        from . import script_library as SL
+        from . import script_schedules as SSch
+        from . import script_vault as SV
+        callers = used_by("script", a.script_slug)
+        if callers:
+            raise AppError("app(s) %s run this script in a step" % ", ".join(callers))
+        meta = script_meta(a)
+        names = [c["name"] for c in meta.get("credentials") or []]
+        for s in SSch.all_schedules():
+            if s.get("slug") == a.script_slug:
+                SSch.delete(s)
+        runs = SL.delete_runs(a.script_slug)
+        if meta:
+            SL.delete(a.script_slug)
+            SV.forget(a.script_slug, names)
+        from . import plugin_automations as PA
+        from . import token_grants
+        token_grants.forget("app", a.id, a.slug)
+        autos = PA.delete_for_app(a.slug)   # an automation of a missing app fails nightly
+        db.session.delete(a)
+        db.session.commit()
+        return {"script": a.script_slug, "runs": runs, "credentials": names,
+                "automations": autos}
+    from . import studio_examples as EX
+    from . import studio_store as SS
+    from ..models_studio import StudioRow
+    own, shared = stores_of(a)
+    from . import studio_design as D
+    runs = StudioAppRun.query.filter_by(app_id=a.id).delete(synchronize_session=False)
+    D.delete_assets(a.id)
+    from . import token_grants
+    token_grants.forget("app", a.id, a.slug)  # API tokens granted it lose the grant
+    from . import plugin_automations as PA
+    autos = PA.delete_for_app(a.slug)   # an automation of a missing app fails nightly
+    db.session.delete(a)
+    db.session.flush()
+    gone = []
+    for slug in own:
+        st = SS.get(slug)
+        # still unused once this app is gone (used_by reads the table), and
+        # never a template's
+        if st is not None and not used_by("store", slug) and not EX.is_template("store", slug):
+            StudioRow.query.filter_by(store_id=st.id).delete(synchronize_session=False)
+            db.session.delete(st)
+            gone.append(slug)
+    db.session.commit()
+    return {"runs": runs, "stores": gone, "shared": shared, "automations": autos}
+
+
+# --------------------------------------------------------------------------- #
+#  who, where                                                                  #
+# --------------------------------------------------------------------------- #
+def group_ids_of(user) -> set:
+    uid = getattr(user, "id", None)
+    if uid is None:
+        return set()
+    rows = db.session.query(user_group_members.c.group_id).filter(
+        user_group_members.c.user_id == uid).all()
+    return {r[0] for r in rows}
+
+
+def is_author(user) -> bool:
+    try:
+        return bool(user is not None and user.is_authenticated and user.can(AUTHOR))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def can_use(user, a: StudioApp) -> bool:
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if is_author(user):
+        return True
+    acc = a.access
+    if user.id in acc["users"]:
+        return True
+    if acc.get("permission") and getattr(user, "can", None) and user.can(acc["permission"]):
+        return True                     # everyone holding the app's permission
+    mine = group_ids_of(user)
+    if mine & set(acc["groups"]):
+        return True
+    if mine & folder_groups(a):         # given with its whole folder
+        return True
+    # An account an app's sign-in made: this session signed in through *a*
+    # and its grant stands (services.app_signin).
+    from . import app_signin
+    return app_signin.may_use_by_signin(user, a)
+
+
+def page_allowed(user, page_key) -> bool:
+    """Whether *user* passes the permission the route of a page plugin's page
+    asks (services.studio_pages): that, not the app's access list, decides
+    who sees the entry and who is sent on to the page."""
+    page = SP.get(page_key)
+    if page is None or user is None or not getattr(user, "is_authenticated", False):
+        return False
+    from flask import current_app
+    from .concept_map import required_permission, user_passes
+    return user_passes(user, required_permission(page["endpoint"], current_app))
+
+
+def page_built(page_key) -> dict | None:
+    """How a page plugin's page is made, for Plugin Studio (read-only): the
+    link its entry opens, every route of the page's blueprint with its methods,
+    permission and what it does, and the source files (services.studio_pages).
+    Read off the running app (url_map, the ``require_permission`` stamp, the
+    view's docstring), never re-declared. Needs an app context."""
+    import os
+    from flask import current_app
+    from .concept_map import required_permission
+    page = SP.get(page_key)
+    if page is None:
+        return None
+
+    def perm(endpoint):
+        p = required_permission(endpoint, current_app)
+        return str(getattr(p, "value", p) or "") if p is not None else ""
+
+    routes = []
+    for rule in current_app.url_map.iter_rules():
+        if rule.endpoint.split(".", 1)[0] != page["blueprint"]:
+            continue
+        fn = current_app.view_functions.get(rule.endpoint)
+        doc = " ".join(((fn.__doc__ or "").strip().split("\n\n", 1)[0]).split()) if fn else ""
+        routes.append({"rule": rule.rule, "endpoint": rule.endpoint,
+                       "methods": sorted(m for m in rule.methods if m not in ("HEAD", "OPTIONS")),
+                       "permission": perm(rule.endpoint), "doc": doc,
+                       "entry": rule.endpoint == page["endpoint"]})
+    routes.sort(key=lambda r: (not r["entry"], r["rule"]))
+    root = os.path.dirname(current_app.root_path)
+    files = []
+    for f in SP.files(page_key):
+        full = os.path.join(root, f["path"])
+        try:
+            with open(full, "rb") as fh:
+                data = fh.read()
+            f.update(lines=data.count(b"\n"), size=len(data), present=True)
+        except OSError:
+            f.update(lines=0, size=0, present=False)
+        files.append(f)
+    return {"key": page_key, "name": page["name"], "endpoint": page["endpoint"],
+            "blueprint": page["blueprint"], "not_active": list(page.get("not_active") or ()),
+            "permission": perm(page["endpoint"]), "routes": routes, "files": files}
+
+
+def shown_in(a: StudioApp, product_key: str) -> bool:
+    """Drawn in this ADOM by its own ADOMs or by its folder's."""
+    key = product_key or "global"
+    for adoms in (a.adoms, folder_adoms(a)):
+        if "*" in adoms or key in adoms:
+            return True
+    return False
+
+
+def menu(user, product_key: str) -> list[dict]:
+    """The enabled, published apps *user* may open in this ADOM, for the
+    sidebar and the Plugins page: flow apps by their ADOMs and access list,
+    script apps (Global only, like scripts always were) by the script's
+    audience (script_schedules.can_run) and operations.scripts_run, the key
+    of their run page, page apps by their ADOMs and the permission of the
+    SATOM page they open (services.studio_pages; ``target`` is "" and
+    ``blueprint`` / ``not_active`` say when the entry is the current page).
+    ``endpoint`` / ``target`` build the link; ``group``
+    is the menu group the sidebar files it under (:func:`grouped`)."""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return []
+    if getattr(user, "is_apps_only", False):
+        return [m for m in portal_apps(user) if not m["needs_signin"]]
+    try:
+        adopt_scripts()
+    except Exception:  # noqa: BLE001 -- a read-only standby cannot write; list what is there
+        db.session.rollback()
+    out = []
+    users = script_users()
+    for a in StudioApp.query.filter_by(enabled=True).order_by(StudioApp.name).all():
+        if a.kind == "script":
+            if (product_key or "global") != "global" or not user.can("operations.scripts_run"):
+                continue
+            if is_dependency(a, users):     # the app that runs it has the entry
+                continue
+            from . import script_schedules as SSch
+            meta = script_meta(a)
+            if SSch.can_run(user, meta):
+                out.append({"slug": a.slug, "name": meta.get("name") or a.name,
+                            "description": meta.get("description") or "",
+                            "icon": a.icon, "kind": "script", "group": a.menu_group or "",
+                            "endpoint": "scripts.run_page", "target": a.script_slug})
+        elif a.kind == "page":
+            # the page's own permission, not the access list (studio_pages)
+            page = SP.get(a.page_key)
+            if page is not None and shown_in(a, product_key) and page_allowed(user, a.page_key):
+                out.append({"slug": a.slug, "name": a.name, "description": a.description or "",
+                            "icon": a.icon, "kind": "page", "group": a.menu_group or "",
+                            "endpoint": page["endpoint"], "target": "",
+                            "blueprint": page["blueprint"],
+                            "not_active": list(page.get("not_active") or ())})
+        elif a.status == "published" and a.published and shown_in(a, product_key) \
+                and can_use(user, a):
+            out.append({"slug": a.slug, "name": a.name, "description": a.description or "",
+                        "icon": a.icon, "kind": "flow", "group": a.menu_group or "",
+                        "endpoint": "apps.page", "target": a.slug})
+    # by name as people read it: the database's order puts "Zeta" before "alpha"
+    return sorted(out, key=lambda m: m["name"].lower())
+
+
+def _runnable_app(a: StudioApp) -> bool:
+    if not a.enabled:
+        return False
+    if a.kind == "script":
+        meta = script_meta(a)
+        return bool(meta.get("published"))
+    if a.kind == "page":        # a console page: an Apps-only account has no console
+        return False
+    return a.status == "published" and bool(a.published)
+
+
+def portal_apps(user) -> list[dict]:
+    """An Apps-only account's apps (the portal's "My apps", and its menu):
+    every enabled, published app it may use now, plus the apps a sign-in
+    granted it that this session has not signed in to yet (``needs_signin``:
+    the link is the app's sign-in page). ADOMs do not apply: the account has
+    no console to be in an ADOM of."""
+    from flask import url_for
+    from . import app_signin
+    out, seen = [], set()
+    granted = {a.id for a in app_signin.apps_granted_to(user)}
+    users = script_users()
+    for a in StudioApp.query.filter_by(enabled=True).order_by(StudioApp.name).all():
+        if not _runnable_app(a) or is_dependency(a, users):
+            continue
+        usable = can_use(user, a)
+        if not usable and not (a.id in granted and app_signin.is_open(a)):
+            continue
+        if a.id in seen:
+            continue
+        seen.add(a.id)
+        if a.kind == "script":
+            meta = script_meta(a)
+            name, desc = meta.get("name") or a.name, meta.get("description") or ""
+            endpoint, target = "scripts.run_page", a.script_slug
+        else:
+            name, desc = a.name, a.description or ""
+            endpoint, target = "apps.page", a.slug
+        url = (url_for(endpoint, slug=target) if usable
+               else url_for("apps_portal.login", slug=a.slug))
+        out.append({"slug": a.slug, "name": name, "description": desc, "icon": a.icon,
+                    "kind": a.kind, "endpoint": endpoint, "target": target, "url": url,
+                    "group": a.menu_group or "", "needs_signin": not usable})
+    return sorted(out, key=lambda m: m["name"].lower())
+
+
+def run_product(a: StudioApp, session_product: str) -> str:
+    """The ADOM an Apps-only account's run executes in: the session's when the
+    app is drawn there, else the app's first ADOM (the account has no switcher
+    to pick one with)."""
+    if shown_in(a, session_product):
+        return session_product or "global"
+    return next((x for x in effective_adoms(a) if x not in ("*",)), "global")
+
+
+# --------------------------------------------------------------------------- #
+#  runs                                                                        #
+# --------------------------------------------------------------------------- #
+def definition(a: StudioApp, draft: bool) -> dict:
+    if draft:
+        return {"version": 0, "fields": a.fields, "graph": a.graph, "actions": a.actions,
+                "design": a.design, "view": a.view}
+    pub = a.published
+    if not pub:
+        raise AppError("%s is not published" % a.slug)
+    return pub
+
+
+def _running_query():
+    since = datetime.utcnow() - timedelta(seconds=F.RUN_TIMEOUT + 120)
+    return StudioAppRun.query.filter(StudioAppRun.status == "running",
+                                     StudioAppRun.started_at >= since)
+
+
+def _room_for_run(username: str) -> None:
+    mine = _running_query().filter(StudioAppRun.user == username).count()
+    if mine >= MAX_RUNS_PER_USER:
+        raise AppError("you already have %d app runs in progress; wait for one to finish"
+                       % mine)
+    total = _running_query().count()
+    if total >= MAX_RUNS_TOTAL:
+        raise AppError("%d app runs are in progress on this node; try again in a moment"
+                       % total)
+
+
+def _prune_runs() -> None:
+    sweep_stale_runs()
+    cutoff = datetime.utcnow() - timedelta(days=RUN_KEEP_DAYS)
+    StudioAppRun.query.filter(StudioAppRun.started_at < cutoff,
+                              StudioAppRun.status != "running").delete(synchronize_session=False)
+
+
+def sweep_stale_runs(limit: int = 200) -> int:
+    """Close every run still "running" past the run limit. Its worker died
+    (a restart, or the short-lived process that started it exited); until
+    now only opening the run said so, and the run lists kept showing it as
+    running for days. Also closes a published run "waiting" on a version the
+    app has since replaced: answer() refuses it, so it would wait forever.
+    Returns how many were closed."""
+    since = datetime.utcnow() - timedelta(seconds=F.RUN_TIMEOUT + 120)
+    n = 0
+    for r in (StudioAppRun.query.filter(StudioAppRun.status == "running",
+                                        StudioAppRun.started_at < since)
+              .order_by(StudioAppRun.id).limit(limit).all()):
+        if refresh_stale(r).status != "running":
+            n += 1
+    closed = 0
+    for r, slug, current in (db.session.query(StudioAppRun, StudioApp.slug, StudioApp.version)
+                             .join(StudioApp, StudioApp.id == StudioAppRun.app_id)
+                             .filter(StudioAppRun.status == "waiting",
+                                     StudioAppRun.version > 0,
+                                     StudioAppRun.version != StudioApp.version)
+                             .order_by(StudioAppRun.id).limit(limit).all()):
+        r.status = "failed"
+        r.error = ("closed: %s was published again (v%s) while this run waited on v%s; "
+                   "an answer cannot continue it -- start a new run" % (slug, current, r.version))
+        r.finished_at = datetime.utcnow()
+        closed += 1
+    if closed:
+        db.session.commit()
+    return n + closed
+
+
+def start_run(a: StudioApp, *, user, product: str, raw_inputs, draft: bool = False,
+              armed: bool = True, rehearsal: bool = False, inline: bool = False,
+              event: dict | None = None, scenario: dict | None = None) -> StudioAppRun:
+    """Start a run. ``rehearsal`` forces even a published version to record
+    its writes instead of executing them (an event automation that is not
+    armed). ``inline`` runs in the caller's thread -- the event automation's
+    job worker, which is already off the request. ``event`` is the payload of
+    the event that started the run, ``{{ event }}`` in the diagram.
+    ``scenario`` (studio_flow.clean_scenario) is a simulation's answers: it
+    picks the arrows, so it is accepted only for a rehearsal."""
+    if scenario and (bool(armed or not draft) and not rehearsal):
+        raise AppError("a simulation scenario runs only as a rehearsal")
+    if not draft and not a.enabled:
+        raise AppError("%s is disabled" % a.slug)
+    if a.kind == "script":
+        raise AppError("%s is a script app: it runs from its own page" % a.slug)
+    if a.kind == "page":
+        raise AppError("%s is a page plugin: it opens a SATOM page and has nothing to run"
+                       % a.slug)
+    d = definition(a, draft)
+    _room_for_run(getattr(user, "username", ""))
+    _prune_runs()
+    fields = d.get("fields") or []
+    inputs = resolve_inputs(fields, raw_inputs)
+    run = StudioAppRun(app_id=a.id, version=d.get("version") or 0,
+                       armed=bool(armed or not draft) and not rehearsal,
+                       user=getattr(user, "username", ""), product=product or "",
+                       inputs_json=json.dumps(shown_inputs(fields, inputs), default=str))
+    db.session.add(run)
+    db.session.commit()
+    passwords = [str(inputs[f["name"]]) for f in fields
+                 if f["type"] == "password" and inputs.get(f["name"])]
+    if RUN_INLINE or inline:
+        execute(run.id, getattr(user, "id", None), inputs, d, passwords, event=event,
+                scenario=scenario)
+        db.session.refresh(run)
+    else:
+        from flask import current_app
+        flask_app = current_app._get_current_object()
+        threading.Thread(target=_bg, args=(flask_app, run.id, getattr(user, "id", None),
+                                           inputs, d, passwords, event, scenario),
+                         name="studio-app-run-%d" % run.id, daemon=True).start()
+    return run
+
+
+def _bg(flask_app, run_id, user_id, inputs, d, passwords, event=None, scenario=None):
+    with flask_app.app_context():
+        try:
+            execute(run_id, user_id, inputs, d, passwords, event=event, scenario=scenario)
+        finally:
+            db.session.remove()
+
+
+def _spellings(secrets) -> list[str]:
+    """Each password as typed and as the usual filters write it (urlencode,
+    tojson, base64), longest first: ``{{ form.pw | urlencode }}`` copied
+    into an output must not show it either."""
+    out = set()
+    for s_ in secrets:
+        if not s_:
+            continue
+        out.update({s_, quote(s_, safe=""), quote(s_, safe="/"), quote_plus(s_),
+                    json.dumps(s_)[1:-1], base64.b64encode(s_.encode()).decode()})
+    return sorted((x for x in out if len(x) >= 3), key=len, reverse=True)
+
+
+def _mask(obj, secrets):
+    if not secrets:
+        return obj
+    if isinstance(obj, str):
+        for s in secrets:
+            obj = obj.replace(s, "********")
+        return obj
+    if isinstance(obj, list):
+        return [_mask(x, secrets) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _mask(v, secrets) for k, v in obj.items()}
+    return obj
+
+
+def _capped(obj) -> str:
+    s = json.dumps(obj, default=str)
+    if len(s) > RUN_VARS_CAP:
+        return json.dumps({"_truncated": "larger than %d KiB" % (RUN_VARS_CAP // 1024)})
+    return s
+
+
+def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=(),
+            event: dict | None = None, resume: dict | None = None,
+            scenario: dict | None = None) -> None:
+    from ..models import User
+    run = db.session.get(StudioAppRun, run_id)
+    if run is None:
+        return
+    user_obj = db.session.get(User, user_id) if user_id else None
+    ctx = F.Ctx(form=inputs, armed=run.armed, user=run.user, user_obj=user_obj, run_id=run.id)
+    if resume is not None:
+        ctx.vars = {k: v for k, v in run.vars.items() if k != SEGMENT_VAR}
+        ctx.outputs = list(run.outputs)
+    if event is not None:
+        ctx.vars["event"] = event
+    if scenario and resume is None and not run.armed:
+        ctx.vars[F.SCENARIO_VAR] = scenario
+    secrets = _spellings([p for p in passwords if len(p) >= 3])
+    job_id = _job_for(run, d) if resume is None else ""
+    total = max(1, len((d.get("graph") or {}).get("nodes") or []))
+
+    def persist(steps, c):
+        run.steps_json = json.dumps(_mask(steps, secrets), default=str)
+        run.outputs_json = json.dumps(_mask(c.outputs, secrets), default=str)
+        run.vars_json = _capped(_mask(c.vars, secrets))
+        db.session.commit()
+        # The job log gets each step once, when it is over; the live
+        # "running" row and its progress ticks are for the run page only.
+        if job_id and steps and steps[-1].get("outcome") != "running":
+            last = _mask(steps[-1], secrets)
+            _job_step(job_id, min(95, int(100 * len(steps) / total)), last)
+
+    try:
+        res = F.walk(d.get("graph") or {}, ctx, on_step=persist, resume=resume)
+    except Exception as exc:  # noqa: BLE001 -- never leave a run "running" forever
+        db.session.rollback()
+        steps = run.steps
+        if steps and steps[-1].get("outcome") == "running":
+            steps[-1]["outcome"] = "error"
+            steps[-1]["detail"] = "internal error: %s" % str(exc)[:300]
+        res = {"status": "failed", "error": "internal error: %s" % exc, "steps": steps}
+    _settle(run, res, ctx, secrets)
+    if job_id:
+        _job_end(job_id, run)
+
+
+def _settle(run: StudioAppRun, res: dict, ctx, secrets) -> None:
+    run.status = res["status"]
+    run.error = _mask(res.get("error") or "", secrets)[:4000]
+    run.steps_json = json.dumps(_mask(res.get("steps") or [], secrets), default=str)
+    run.outputs_json = json.dumps(_mask(ctx.outputs, secrets), default=str)
+    run.vars_json = _capped(_mask(ctx.vars, secrets))
+    # A run parked on "Ask a person" has not finished.
+    run.finished_at = None if run.status == "waiting" else datetime.utcnow()
+    db.session.commit()
+
+
+#: Where a resumed run records when its current segment started: the run
+#: limit (refresh_stale) counts from there, not from a start hours ago.
+SEGMENT_VAR = "_segment_started"
+
+
+def waiting_step(run: StudioAppRun) -> dict | None:
+    if run.status != "waiting":
+        return None
+    for st in reversed(run.steps):
+        if st.get("outcome") == "waiting":
+            return st
+    return None
+
+
+def gate_of(run: StudioAppRun, st: dict | None) -> dict:
+    """What the waiting Ask step's answer must respect: ``{acknowledge,
+    blockers, confirm_text}`` (``studio_checks.ASK_GATE``), empty when it set
+    none -- plus the page it links to (``link``, ``link_label``)."""
+    from . import studio_checks as C
+    g = run.vars.get(C.ASK_GATE) if st is not None else None
+    if not isinstance(g, dict) or g.get("key") != st.get("key"):
+        return {"acknowledge": [], "blockers": [], "confirm_text": "", "link": "",
+                "link_label": ""}
+    return {"acknowledge": list(g.get("acknowledge") or []),
+            "blockers": list(g.get("blockers") or []),
+            "confirm_text": str(g.get("confirm_text") or ""),
+            "link": C.satom_path(g.get("link")),
+            "link_label": str(g.get("link_label") or "Open")}
+
+
+def answer(a: StudioApp, run: StudioAppRun, value: str, *, user, note: str = "",
+           acks=None, typed: str = "") -> StudioAppRun:
+    """Answer the "Ask a person" step a run waits on and keep walking.
+
+    The walk is rebuilt from what the run SAVED: its form values, its
+    variables and its outputs -- and the definition it started with. A draft
+    run follows the draft as it is now; a published run refuses to continue
+    on a version other than its own (a diagram edited under a waiting run
+    would resume in a step that may no longer exist)."""
+    if value not in ("yes", "no"):
+        raise AppError("the answer is yes or no")
+    st = waiting_step(run)
+    if st is None:
+        raise AppError("run #%d is not waiting for an answer" % run.id)
+    d = definition(a, run.version == 0)
+    if run.version and int(d.get("version") or 0) != int(run.version):
+        raise AppError("%s was published again (v%s) while run #%d waited on v%s; start a "
+                       "new run" % (a.slug, d.get("version"), run.id, run.version))
+    vars_ = run.vars
+    if "_truncated" in vars_:
+        raise AppError("run #%d saved more data than a waiting run can keep; start a new run"
+                       % run.id)
+    gate = gate_of(run, st)
+    try:
+        ticked = sorted({int(i) for i in (acks or [])})
+    except (TypeError, ValueError):
+        raise AppError("acknowledgements are the numbers of the ticked warnings") from None
+    every = ticked == list(range(len(gate["acknowledge"])))
+    if value == "yes" and gate["blockers"]:
+        raise AppError("Yes is blocked: " + "; ".join(gate["blockers"]))
+    if value == "yes" and not every:
+        raise AppError("tick every warning before answering %s" % (st.get("label") or "Yes"))
+    if value == "yes" and gate["confirm_text"] and str(typed or "").strip() != gate["confirm_text"]:
+        raise AppError("type %s to confirm" % gate["confirm_text"])
+    vars_["last_answer"] = {
+        "step": st.get("key"), "answer": value, "by": getattr(user, "username", ""),
+        "note": note, "all_acknowledged": value == "yes" and every,
+        "acknowledged": [gate["acknowledge"][i] for i in ticked
+                         if 0 <= i < len(gate["acknowledge"])]}
+    run.status = "running"
+    vars_[SEGMENT_VAR] = datetime.utcnow().isoformat(timespec="seconds")
+    run.vars_json = json.dumps(vars_, default=str)
+    db.session.commit()
+    resume = {"steps": run.steps, "key": st.get("key"), "answer": value, "note": note}
+    if RUN_INLINE:
+        execute(run.id, getattr(user, "id", None), run.inputs, d, resume=resume)
+        db.session.refresh(run)
+    else:
+        from flask import current_app
+        flask_app = current_app._get_current_object()
+        threading.Thread(target=_bg_resume, args=(flask_app, run.id, getattr(user, "id", None),
+                                                  run.inputs, d, resume),
+                         name="studio-app-answer-%d" % run.id, daemon=True).start()
+    return run
+
+
+def _bg_resume(flask_app, run_id, user_id, inputs, d, resume):
+    with flask_app.app_context():
+        try:
+            execute(run_id, user_id, inputs, d, resume=resume)
+        finally:
+            db.session.remove()
+
+
+def _job_for(run: StudioAppRun, d: dict) -> str:
+    """An ARMED run whose diagram writes is also a job (Jobs page and the
+    global toast), so a change made from an app is followed where every other
+    change is -- with one log line per step: where it failed, and why. A
+    read-only run or a rehearsal changes nothing and stays a run record."""
+    graph = d.get("graph") or {}
+    if not run.armed or not any(F.step_writes(n) for n in graph.get("nodes") or []):
+        return ""
+    try:
+        from . import jobs
+        a = db.session.get(StudioApp, run.app_id)
+        job = jobs.create_job("studio_app", "%s — run #%d" % (a.name if a else "app", run.id),
+                              by=run.user, cancelable=False,
+                              meta={"app": a.slug if a else "", "run_id": run.id,
+                                    "url": "/apps/runs/%d" % run.id, "steps": []})
+        jobs.update_job(job["id"], status="running")
+        return job["id"]
+    except Exception:  # noqa: BLE001 -- the run itself must not depend on the job store
+        return ""
+
+
+def _job_step(job_id: str, pct: int, step: dict) -> None:
+    try:
+        from . import jobs
+        line = "%s: %s%s" % (step.get("label") or step.get("key"), step.get("outcome"),
+                             (" — " + str(step.get("detail"))[:300]) if step.get("detail") else "")
+
+        def add(stt):
+            # The Jobs page draws meta.steps as the job's step list.
+            stt.setdefault("meta", {}).setdefault("steps", []).append(
+                {"key": step.get("key"), "label": line[:500], "outcome": step.get("outcome"),
+                 "ok": step.get("outcome") != "error", "ms": step.get("ms"),
+                 "at": datetime.utcnow().isoformat(timespec="seconds"),
+                 "detail": str(step.get("detail") or "")[:2000]})
+        jobs.mutate_job(job_id, add)
+        jobs.set_progress(job_id, pct, line)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _job_end(job_id: str, run: StudioAppRun) -> None:
+    try:
+        from . import jobs
+        if run.status == "done":
+            jobs.finish_success(job_id, message="run #%d done" % run.id,
+                                result={"run_id": run.id, "outputs": len(run.outputs)})
+        elif run.status == "waiting":
+            jobs.finish_success(job_id, message="run #%d waits for a person: answer it on "
+                                "the run page" % run.id, result={"run_id": run.id})
+        else:
+            jobs.finish_error(job_id, run.error or "run #%d failed" % run.id)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def refresh_stale(run: StudioAppRun) -> StudioAppRun:
+    """A run still "running" long after the run limit died with its worker
+    (a service restart): say so instead of spinning forever."""
+    began = run.started_at
+    seg = run.vars.get(SEGMENT_VAR) if run.status == "running" else None
+    if seg:
+        try:
+            began = datetime.fromisoformat(str(seg))
+        except ValueError:
+            pass
+    if run.status == "running" and began and \
+            datetime.utcnow() - began > timedelta(seconds=F.RUN_TIMEOUT + 120):
+        run.status = "failed"
+        run.error = ("interrupted: the worker running it stopped (a service restart, "
+                     "or the process that started it exited)")
+        run.finished_at = datetime.utcnow()
+        db.session.commit()
+    return run
+
+
+def may_see_run(user, run: StudioAppRun) -> bool:
+    return is_author(user) or (getattr(user, "username", None) == run.user)
+
+
+def run_json(run: StudioAppRun, a: StudioApp, user) -> dict:
+    author = is_author(user)
+    d = {"id": run.id, "status": run.status, "error": run.error, "version": run.version,
+         "armed": run.armed, "user": run.user, "inputs": run.inputs, "outputs": run.outputs,
+         "steps": run.steps if author else operator_steps(run.steps),
+         "started_at": run.started_at.isoformat(timespec="seconds") + "Z",
+         "finished_at": run.finished_at.isoformat(timespec="seconds") + "Z" if run.finished_at else None}
+    if author:
+        d["vars"] = run.vars
+    # The incident an *Open incident* step raised: a link on the run page.
+    from .incidents import for_run
+    inc = for_run(run.id)
+    if inc is not None:
+        d["incident"] = {"ref": inc.ref, "status": inc.status, "url": "/incidents/%d" % inc.id}
+    d["layout"] = result_layout(a, run.version)
+    try:
+        graph = definition(a, run.version == 0).get("graph") or {}
+    except AppError:
+        graph = {}
+    nodes = {n.get("key"): n for n in graph.get("nodes") or []}
+    # Who did each step, where its answer led, what the run never reached
+    # (FA-0015). Computed on the full record, then cut for a non-author.
+    full, d["path"] = explain_path(run.steps, graph, run.status in FINAL_STATES)
+    d["steps"] = full if author else operator_steps(full)
+    # The procedure's own text per step (Instructions / Responsible / time).
+    d["docs"] = {}
+    for k, n in nodes.items():
+        p = n.get("params") or {}
+        doc = {f: str(p.get(f) or "").strip() for f in ("doc", "role", "time")}
+        if any(doc.values()):
+            d["docs"][k] = doc
+    st = waiting_step(run)
+    if st is not None:
+        p = (nodes.get(st.get("key")) or {}).get("params") or {}
+        d["waiting"] = {"key": st.get("key"), "label": st.get("label"),
+                        "prompt": str(st.get("detail") or ""),
+                        "pass_label": str(p.get("pass_label") or "Yes"),
+                        "fail_label": str(p.get("fail_label") or "No"),
+                        "buttons": str(p.get("buttons") or "two"),
+                        "can_answer": may_see_run(user, run),
+                        **gate_of(run, st),
+                        **d["docs"].get(st.get("key"), {})}
+    if run.status == "done" and run.armed:
+        try:
+            acts = definition(a, run.version == 0).get("actions") or []
+        except AppError:
+            acts = []
+        d["actions"] = [_action_json(a, x, run, user) for x in acts]
+    return d
+
+
+def _action_json(a: StudioApp, act: dict, run: StudioAppRun, user) -> dict:
+    """An action as the run page draws it. Copy and Open app happen in the
+    browser, so what they need is rendered here, from the run the person
+    already sees: the clipboard text, the app and its filled-in values --
+    after the same checks as an action the server runs (:func:`_action`)."""
+    out = {"key": act["key"], "label": act["label"], "kind": act["kind"],
+           "confirm": act.get("confirm", False)}
+    if act["kind"] not in CLIENT_ACTIONS:
+        return out
+    try:
+        p = _action(a, run, act["key"]).get("params") or {}
+        if act["kind"] == "copy":
+            out["text"] = copy_text(_r(p.get("value") or "{{ outputs[0].value }}", _scope(run)),
+                                    p.get("format") or "text")
+        else:
+            other = get(p.get("app") or "")
+            if other is None or not can_use(user, other) or other.kind == "script":
+                out["error"] = "app %s is not yours to open" % (p.get("app") or "?")
+            else:
+                inputs = _r(F.parse_json_param(p.get("inputs") or "{}", "Filled in with"),
+                            _scope(run)) or {}
+                if not isinstance(inputs, dict):
+                    raise AppError("the values to fill in are an object")
+                out.update(app=other.slug, inputs=inputs)
+    except (AppError, F.FlowError) as exc:
+        out["error"] = str(exc)
+    return out
+
+
+def _visible_cols(rows: list) -> list:
+    """The columns of a table as it is shown: ``_`` columns (row buttons,
+    ids an app keeps for itself) are the app's, not the reader's."""
+    cols = []
+    for r in rows:
+        for k in r:
+            if k not in cols and not str(k).startswith("_"):
+                cols.append(k)
+    return cols
+
+
+def _cell(v) -> str:
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, default=str)
+    return "" if v is None else str(v)
+
+
+def copy_text(value, fmt: str) -> str:
+    """What a Copy action puts on the clipboard."""
+    if fmt == "json":
+        s = json.dumps(value, indent=2, default=str)
+    elif fmt == "tsv":
+        rows = value if isinstance(value, list) else [value]
+        rows = [r if isinstance(r, dict) else {"value": r} for r in rows]
+        cols = _visible_cols(rows)
+        clean = lambda v: _cell(v).replace("\t", " ").replace("\r", " ").replace("\n", " ")  # noqa: E731
+        s = "\n".join(["\t".join(cols)] + ["\t".join(clean(r.get(c)) for c in cols) for r in rows])
+    elif isinstance(value, str):
+        s = value
+    elif isinstance(value, list) and all(not isinstance(x, (dict, list)) for x in value):
+        s = "\n".join(_cell(x) for x in value)
+    else:
+        s = json.dumps(value, indent=2, default=str)
+    if len(s) > MAX_COPY:
+        raise AppError("more than %d KiB to copy: use a download" % (MAX_COPY // 1024))
+    return s
+
+
+def result_layout(a: StudioApp, version: int) -> str:
+    """The designed result of the version a run used ("" = the standard
+    one). A run of an older published version keeps the layout it was
+    published with only while it is the current one: older snapshots are not
+    kept, so it falls back to the current published design."""
+    from . import studio_design as D
+    try:
+        d = definition(a, version == 0)
+    except AppError:
+        return ""
+    design = d.get("design") or {}
+    if D.is_empty(design, "result"):
+        return ""
+    try:
+        return D.render_result(D.clean(design), graph=d.get("graph") or {}, app=a)
+    except D.DesignError:
+        return ""
+
+
+def operator_steps(steps: list) -> list[dict]:
+    """What a non-author sees of the steps: which ran, how they ended and how
+    long they took. The detail of a step (a decision prints both values it
+    compared, a query its row count) is the author's debugging view and can
+    hold data the app never chose to OUTPUT (finding 2026-10-20). Kept: the
+    message of a Fail step and of an action, which are written for the user,
+    and what a runbook check found (FA-0015): its sentence is written for the
+    person working the procedure ("HTTP 200 in 22 ms", "Traceroute: reached in
+    1 hop"). The raw output stays for authors, except a ping / traceroute,
+    which is network evidence the operator is asked to judge."""
+    from . import studio_checks as C
+    out = []
+    for st in steps or []:
+        kind = st.get("kind")
+        keep = kind in ("fail", "action") or kind in C.KIND_KEYS or kind in OPERATOR_DETAIL_KINDS
+        row = {"key": st.get("key"), "label": st.get("label"), "kind": kind,
+               "outcome": st.get("outcome"), "ms": st.get("ms"),
+               "detail": st.get("detail", "") if keep else ""}
+        if kind in OPERATOR_OUTPUT_KINDS and st.get("output"):
+            row["output"] = st["output"]
+        for f in ("really", "by", "then", "via"):
+            if f in st:
+                row[f] = st[f]
+        out.append(row)
+    return out
+
+
+#: Raw output a non-author sees: network evidence, never a CLI dump.
+OPERATOR_OUTPUT_KINDS = ("connection_test", "appliance_ping")
+#: Steps whose detail a non-author sees: SATOM writes it from counts and
+#: timings, never from the answer (FA-0016: an operator who presses Sync now
+#: must see where a slow sync spends its time -- sign-in, first byte,
+#: download, parse).
+OPERATOR_DETAIL_KINDS: tuple = ()
+#: Who did a step, as the run page says it (FA-0015). ``satom``: SATOM
+#: checked or did it itself; ``person``: a person answered; ``note``: text
+#: of the procedure, nothing was checked; ``flow``: start / end / fail.
+NOTE_KINDS = ("activity",)
+PERSON_KINDS = ("ask",)
+FLOW_KINDS = ("start", "end", "fail")
+#: Run states after which the path is final: what was not walked was not run.
+FINAL_STATES = ("done", "failed", "interrupted")
+
+
+def step_actor(kind) -> str:
+    if kind in PERSON_KINDS:
+        return "person"
+    if kind in NOTE_KINDS:
+        return "note"
+    if kind in FLOW_KINDS:
+        return "flow"
+    return "satom"
+
+
+def explain_path(steps: list, graph: dict, final: bool) -> tuple[list, dict]:
+    """The run's steps with who did each one and where its answer led, and --
+    once the run is over -- the steps of the diagram it never reached, each
+    under the decision whose other arrow leads to it (FA-0015: "1.1 HTTPS
+    answered yes, so 1.3 Ping, 1.4 SSH … were not run").
+
+    Returns ``(steps, path)``; *path* is ``{}`` while the run is not over,
+    else ``{"skipped": [{key, label, answer, branch, steps: [label…]}],
+    "unreached": [label…]}``."""
+    nodes = {n.get("key"): n for n in graph.get("nodes") or [] if isinstance(n, dict)}
+    edges = [e for e in graph.get("edges") or [] if isinstance(e, dict)]
+    out = []
+    trail = [st for st in steps or [] if isinstance(st, dict)]
+    for i, st in enumerate(trail):
+        st = dict(st)
+        st["by"] = "satom" if st.get("kind") == "action" else step_actor(st.get("kind"))
+        nxt = trail[i + 1] if i + 1 < len(trail) else None
+        if (nxt is not None and st.get("key") in nodes and nxt.get("key") in nodes
+                and st.get("outcome") not in ("running", "waiting")):
+            st["then"] = nxt.get("label") or nxt.get("key")
+            branches = {e.get("branch") or "always" for e in edges if e.get("src") == st.get("key")}
+            if len(branches) > 1:
+                st["via"] = st.get("outcome")
+        out.append(st)
+    if not final:
+        return out, {}
+    walked = {st.get("key") for st in trail}
+    taken = {(a.get("key"), b.get("key")) for a, b in zip(trail, trail[1:])}
+    claimed, skipped = set(walked), []
+
+    def reach(start: str) -> list:
+        found, todo = [], [start]
+        while todo:
+            k = todo.pop(0)
+            if k in claimed or k not in nodes:
+                continue
+            claimed.add(k)
+            if nodes[k].get("kind") not in ("start", "end"):
+                found.append(k)
+            todo.extend(e.get("dst") for e in edges if e.get("src") == k)
+        return found
+
+    seen_at = set()
+    for st in trail:
+        k = st.get("key")
+        if k not in nodes or k in seen_at:
+            continue
+        seen_at.add(k)
+        for e in edges:
+            if e.get("src") != k or (k, e.get("dst")) in taken:
+                continue
+            ks = reach(e.get("dst"))
+            if ks:
+                skipped.append({"key": k, "label": st.get("label") or k,
+                                "answer": st.get("outcome"), "branch": e.get("branch") or "always",
+                                "steps": [nodes[x].get("label") or x for x in ks]})
+    unreached = [n.get("label") or k for k, n in nodes.items()
+                 if k not in claimed and n.get("kind") not in ("start", "end")]
+    return out, {"skipped": skipped, "unreached": unreached}
+
+
+def recent_runs(a: StudioApp, user, limit: int = 15) -> list[StudioAppRun]:
+    q = StudioAppRun.query.filter_by(app_id=a.id)
+    if not is_author(user):
+        q = q.filter_by(user=user.username)
+    return q.order_by(StudioAppRun.id.desc()).limit(limit).all()
+
+
+# --------------------------------------------------------------------------- #
+#  actions on a finished run                                                   #
+# --------------------------------------------------------------------------- #
+def _action(a: StudioApp, run: StudioAppRun, key: str) -> dict:
+    if run.status != "done":
+        raise AppError("only a finished run can be acted on")
+    if not run.armed:
+        raise AppError("a rehearsal run has nothing real to act on")
+    d = definition(a, run.version == 0)
+    if run.version and int(d.get("version") or 0) != int(run.version):
+        # The published version moved on: its actions are not the ones this
+        # run was made for (a new action could act on an old output).
+        raise AppError("this run used version %s and the app is now at version %s: "
+                       "run it again to act on the output" % (run.version, d.get("version")))
+    acts = d.get("actions") or []
+    act = next((x for x in acts if x["key"] == key), None)
+    if act is None:
+        raise AppError("action %s does not exist in version %s" % (key, run.version or "draft"))
+    if act["kind"] not in REPEATABLE_ACTIONS and any(
+            st.get("key") == "action:" + key and st.get("outcome") == "ok" for st in run.steps):
+        raise AppError("%s was already done for this run" % act["label"])
+    return act
+
+
+def _scope(run: StudioAppRun) -> dict:
+    s = dict(run.vars)
+    s.update({"form": run.inputs, "vars": run.vars, "outputs": run.outputs,
+              "run": {"id": run.id, "user": run.user}})
+    return s
+
+
+def _r(value, scope):
+    try:
+        return F.render(value, scope)
+    except F.FlowError as exc:
+        raise AppError(str(exc)) from None
+
+
+def _log_action(run: StudioAppRun, act: dict, ok: bool, detail: str) -> None:
+    steps = run.steps
+    steps.append({"key": "action:" + act["key"], "label": act["label"], "kind": "action",
+                  "outcome": "ok" if ok else "error", "detail": detail[:2000], "ms": 0})
+    run.steps_json = json.dumps(steps, default=str)
+    db.session.commit()
+
+
+def download(a: StudioApp, run: StudioAppRun, key: str) -> tuple[str, bytes, str]:
+    """``(filename, body, mimetype)`` of a download action."""
+    act = _action(a, run, key)
+    if act["kind"] != "download":
+        raise AppError("%s is not a download" % key)
+    p = act["params"]
+    value = _r(p.get("value") or "{{ outputs[0].value }}", _scope(run))
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(_r(p.get("filename") or "output", _scope(run))))[:80] or "output"
+    if p.get("format") == "json":
+        return name + ".json", json.dumps(value, indent=2, default=str).encode(), "application/json"
+    from .csv_safe import spreadsheet_safe
+    rows = value if isinstance(value, list) else [value]
+    rows = [r if isinstance(r, dict) else {"value": r} for r in rows]
+    cols = _visible_cols(rows)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(cols)
+    for r in rows:
+        w.writerow([spreadsheet_safe(json.dumps(r.get(c), default=str) if isinstance(r.get(c), (dict, list))
+                                     else ("" if r.get(c) is None else r.get(c))) for c in cols])
+    _log_action(run, act, True, "downloaded %s (%d rows)" % (name, len(rows)))
+    return name + ".csv", buf.getvalue().encode(), "text/csv"
+
+
+def run_action(a: StudioApp, run: StudioAppRun, key: str, *, user, product: str) -> dict:
+    """Every action but download. ``{ok, message, url?}``."""
+    act = _action(a, run, key)
+    p, scope = act["params"], _scope(run)
+    kind = act["kind"]
+    if kind in CLIENT_ACTIONS:
+        raise AppError("%s happens in the browser" % act["label"])
+    try:
+        if kind == "save_store":
+            from . import studio_store as SS
+            st = SS.get(p.get("store") or "")
+            if st is None:
+                raise AppError("data store %s does not exist" % p.get("store"))
+            rows = _r(p.get("rows") or "{{ outputs[0].value }}", scope)
+            rows = rows if isinstance(rows, list) else [rows]
+            if not all(isinstance(r, dict) for r in rows):
+                raise AppError("the rows to save must be objects of column: value")
+            keys = [k.strip() for k in (p.get("match") or "").split(",") if k.strip()]
+            n = 0
+            for r in rows:
+                clean = {k: v for k, v in r.items() if not str(k).startswith("_")}
+                if p.get("mode") == "upsert" and keys:
+                    SS.upsert(st, {k: clean.get(k) for k in keys}, clean, run.user)
+                else:
+                    SS.insert(st, clean, run.user)
+                n += 1
+            msg = "%d row(s) saved to %s" % (n, st.name)
+            _log_action(run, act, True, msg)
+            return {"ok": True, "message": msg}
+        if kind == "send":
+            from . import studio_connections as SC
+            c = SC.get(p.get("connection") or "")
+            if c is None or c.kind != "http":
+                raise AppError("connection %s does not exist" % p.get("connection"))
+            body = _r(F.parse_json_param(p.get("body") or "", "Body"), scope)
+            try:
+                path = F.render_path(p.get("path") or "", scope)
+            except F.FlowError as exc:
+                raise AppError(str(exc)) from None
+            r = SC.http_call(c, p.get("method") or "POST", str(path), body=body)
+            msg = "%s answered HTTP %d" % (c.name, r["status"])
+            _log_action(run, act, r["ok"], msg)
+            return {"ok": r["ok"], "message": msg}
+        if kind == "run_app":
+            other = get(p.get("app") or "")
+            if other is None or not other.published or other.status != "published":
+                raise AppError("app %s is not published" % p.get("app"))
+            if not can_use(user, other):
+                raise AppError("you may not use the app %s" % other.name)
+            raw = _r(F.parse_json_param(p.get("inputs") or "{}", "Its form values"), scope) or {}
+            new = start_run(other, user=user, product=product, raw_inputs=raw)
+            from flask import url_for
+            _log_action(run, act, True, "started %s run #%d" % (other.slug, new.id))
+            return {"ok": True, "message": "Started %s." % other.name,
+                    "url": url_for("apps.run_page", rid=new.id)}
+        if kind == "change_request":
+            from ..views.change_requests import create_change_request
+            devices = _r(p.get("devices") or "", scope)
+            if isinstance(devices, str):
+                devices = [x for x in re.split(r"[\s,]+", devices) if x]
+            if not isinstance(devices, list):
+                devices = [devices]
+            title = str(_r(p.get("title") or "", scope))[:200]
+            reason = str(_r(p.get("reason") or "", scope))
+            reason += "\n\nRaised from the app %s (run #%d by %s)." % (a.name, run.id, run.user)
+            cr, err = create_change_request({
+                "title": title, "action": p.get("action") or "", "device_ids": devices,
+                "risk": p.get("risk") or "medium", "reason": reason.strip(),
+                "requested_by": run.user, "params": {"studio_app": a.slug, "studio_run": run.id}})
+            if cr is None:
+                raise AppError(err)
+            from flask import url_for
+            msg = "Change request %s raised as a draft: it needs approval before anything runs" % (cr.ref or cr.id)
+            _log_action(run, act, True, msg)
+            return {"ok": True, "message": msg, "url": url_for("change_requests.detail", id=cr.id)}
+        raise AppError("%s is not run this way" % kind)
+    except AppError as exc:
+        _log_action(run, act, False, str(exc))
+        raise
+    except Exception as exc:  # noqa: BLE001 -- store/connection errors
+        _log_action(run, act, False, str(exc))
+        raise AppError(str(exc)) from None
+
+
+# --------------------------------------------------------------------------- #
+#  groups                                                                      #
+# --------------------------------------------------------------------------- #
+def save_group(group: UserGroup | None, name: str, description: str, member_ids) -> UserGroup:
+    from ..models import User
+    name = (name or "").strip()[:64]
+    if not name:
+        raise AppError("a group needs a name")
+    clash = UserGroup.query.filter(UserGroup.name == name).first()
+    if clash is not None and (group is None or clash.id != group.id):
+        raise AppError("a group named %s already exists" % name)
+    ids = sorted({int(x) for x in member_ids or [] if str(x).isdigit()})
+    members = User.query.filter(User.id.in_(ids)).all() if ids else []
+    if len(members) != len(ids):
+        raise AppError("a member does not exist")
+    if group is None:
+        group = UserGroup(name=name)
+        db.session.add(group)
+    group.name = name
+    group.description = (description or "").strip()[:2000]
+    group.members = members
+    db.session.commit()
+    return group
+
+
+def apps_using_group(gid: int) -> list[str]:
+    """The apps that share with user group *gid*, and the folders that hand
+    it their apps (as "folder <name>")."""
+    out = [a.slug for a in StudioApp.query.order_by(StudioApp.slug).all() if gid in a.access["groups"]]
+    return out + ["folder %s" % f.name for f in folders() if gid in f.group_ids]

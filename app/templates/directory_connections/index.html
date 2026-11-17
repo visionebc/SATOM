@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Directory connections{% endblock %}
+{% block content %}
+{# Administrator > Access > Directory connections (views.directory_connections). #}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-2 me-2 text-accent"></i>{{ _('Directory connections') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Directory servers an app\'s own sign-in can prove people against: Active Directory, LDAP or RADIUS (FortiAuthenticator). Each one has its own address, bind account and secret, independent of the console sign-in (Settings > Authentication), which they never change. Which groups may use which app is set per app in App sign-in.') }}</p>
+  </div>
+</div>
+{% include "directory_connections/_manage.html" %}
+{% endblock %}

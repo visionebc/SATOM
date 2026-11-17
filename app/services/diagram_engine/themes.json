@@ -1,0 +1,1780 @@
+{
+ "schema": "satom.diagram.themes/1",
+ "families": [
+  "network",
+  "infra",
+  "security",
+  "flow",
+  "uml",
+  "bpmn",
+  "software",
+  "generic"
+ ],
+ "shapes": [
+  "diamond",
+  "terminator",
+  "cylinder",
+  "cloud",
+  "document",
+  "note",
+  "table",
+  "actor"
+ ],
+ "connector_kinds": [
+  "default",
+  "ethernet",
+  "fiber",
+  "wireless",
+  "vpn",
+  "wan",
+  "data_flow",
+  "control_flow",
+  "message",
+  "association",
+  "dependency",
+  "yes",
+  "no"
+ ],
+ "themes": [
+  {
+   "id": "satom-aurora",
+   "name": "SATOM Aurora",
+   "description": "Product blue accents, soft tints, subtle gradients and shadows.",
+   "gradient": true,
+   "shadow": true,
+   "families": {
+    "network": {
+     "fill": "#DDE4F2",
+     "fill2": "#B6C5E2",
+     "stroke": "#0A3F9F",
+     "font": "#041C48"
+    },
+    "infra": {
+     "fill": "#DDEBEF",
+     "fill2": "#B7D4DC",
+     "stroke": "#0F6E8C",
+     "font": "#07313F"
+    },
+    "security": {
+     "fill": "#F4E0DF",
+     "fill2": "#E8BDBA",
+     "stroke": "#B42318",
+     "font": "#51100B"
+    },
+    "flow": {
+     "fill": "#DFE6FA",
+     "fill2": "#BBCAF3",
+     "stroke": "#1D4ED8",
+     "font": "#0D2361"
+    },
+    "uml": {
+     "fill": "#E8E4F3",
+     "fill2": "#CEC5E5",
+     "stroke": "#5B3FA8",
+     "font": "#291C4C"
+    },
+    "bpmn": {
+     "fill": "#DDECE9",
+     "fill2": "#B7D7CF",
+     "stroke": "#0E7A5F",
+     "font": "#06372B"
+    },
+    "software": {
+     "fill": "#ECE6DD",
+     "fill2": "#D7CAB6",
+     "stroke": "#7A4E0B",
+     "font": "#372305"
+    },
+    "generic": {
+     "fill": "#E5E7EA",
+     "fill2": "#C8CCD2",
+     "stroke": "#475569",
+     "font": "#20262F"
+    }
+   },
+   "shapes": {
+    "diamond": {
+     "fill": "#DFE6FA",
+     "fill2": "#BBCAF3",
+     "stroke": "#1D4ED8",
+     "font": "#0D2361"
+    },
+    "terminator": {
+     "fill": "#DFE6FA",
+     "fill2": "#BBCAF3",
+     "stroke": "#1D4ED8",
+     "font": "#0D2361"
+    },
+    "cylinder": {
+     "fill": "#DDEBEF",
+     "fill2": "#B7D4DC",
+     "stroke": "#0F6E8C",
+     "font": "#07313F"
+    },
+    "cloud": {
+     "fill": "#DDEBEF",
+     "fill2": "#B7D4DC",
+     "stroke": "#0F6E8C",
+     "font": "#07313F"
+    },
+    "document": {
+     "fill": "#ECE6DD",
+     "fill2": "#D7CAB6",
+     "stroke": "#7A4E0B",
+     "font": "#372305"
+    },
+    "table": {
+     "fill": "#ECE6DD",
+     "fill2": "#D7CAB6",
+     "stroke": "#7A4E0B",
+     "font": "#372305"
+    },
+    "actor": {
+     "fill": "#E8E4F3",
+     "fill2": "#CEC5E5",
+     "stroke": "#5B3FA8",
+     "font": "#291C4C"
+    },
+    "note": {
+     "fill": "#FEF7D6",
+     "fill2": "#FCE9A6",
+     "stroke": "#A16207",
+     "font": "#5B3A04"
+    }
+   },
+   "text": {
+    "font": "#111827"
+   },
+   "container": {
+    "stroke": "#0A3F9F",
+    "font": "#0B1F4D"
+   },
+   "layers": [
+    "#F3F7FE",
+    "#EEF6F3",
+    "#FBF4EC",
+    "#F6F2FC"
+   ],
+   "connectors": {
+    "default": {
+     "stroke": "#0A3F9F",
+     "font": "#0B1F4D"
+    },
+    "ethernet": {
+     "stroke": "#0A3F9F",
+     "font": "#0B1F4D"
+    },
+    "fiber": {
+     "stroke": "#B45309",
+     "font": "#0B1F4D"
+    },
+    "wireless": {
+     "stroke": "#0F6E8C",
+     "font": "#0B1F4D"
+    },
+    "vpn": {
+     "stroke": "#7C3AED",
+     "font": "#0B1F4D"
+    },
+    "wan": {
+     "stroke": "#334155",
+     "font": "#0B1F4D"
+    },
+    "data_flow": {
+     "stroke": "#0A3F9F",
+     "font": "#0B1F4D"
+    },
+    "control_flow": {
+     "stroke": "#0A3F9F",
+     "font": "#0B1F4D"
+    },
+    "message": {
+     "stroke": "#5B3FA8",
+     "font": "#0B1F4D"
+    },
+    "association": {
+     "stroke": "#475569",
+     "font": "#0B1F4D"
+    },
+    "dependency": {
+     "stroke": "#475569",
+     "font": "#0B1F4D"
+    },
+    "yes": {
+     "stroke": "#15803D",
+     "font": "#0B1F4D"
+    },
+    "no": {
+     "stroke": "#B42318",
+     "font": "#0B1F4D"
+    }
+   }
+  },
+  {
+   "id": "classic",
+   "name": "Classic",
+   "description": "The familiar diagram palette: pale fills, mid-tone outlines, black text.",
+   "gradient": false,
+   "shadow": false,
+   "families": {
+    "network": {
+     "fill": "#DAE8FC",
+     "fill2": "#B9D1F5",
+     "stroke": "#6C8EBF",
+     "font": "#1A1A1A"
+    },
+    "infra": {
+     "fill": "#D5E8D4",
+     "fill2": "#B5D6B3",
+     "stroke": "#82B366",
+     "font": "#1A1A1A"
+    },
+    "security": {
+     "fill": "#F8CECC",
+     "fill2": "#EEAAA7",
+     "stroke": "#B85450",
+     "font": "#1A1A1A"
+    },
+    "flow": {
+     "fill": "#FFF2CC",
+     "fill2": "#FCE29A",
+     "stroke": "#D6B656",
+     "font": "#1A1A1A"
+    },
+    "uml": {
+     "fill": "#E1D5E7",
+     "fill2": "#CDB9D8",
+     "stroke": "#9673A6",
+     "font": "#1A1A1A"
+    },
+    "bpmn": {
+     "fill": "#FFE6CC",
+     "fill2": "#FCCFA0",
+     "stroke": "#D79B00",
+     "font": "#1A1A1A"
+    },
+    "software": {
+     "fill": "#F5F5F5",
+     "fill2": "#E0E0E0",
+     "stroke": "#666666",
+     "font": "#1A1A1A"
+    },
+    "generic": {
+     "fill": "#FFFFFF",
+     "fill2": "#EDEDED",
+     "stroke": "#000000",
+     "font": "#000000"
+    }
+   },
+   "shapes": {
+    "diamond": {
+     "fill": "#FFF2CC",
+     "fill2": "#FCE29A",
+     "stroke": "#D6B656",
+     "font": "#1A1A1A"
+    },
+    "terminator": {
+     "fill": "#FFF2CC",
+     "fill2": "#FCE29A",
+     "stroke": "#D6B656",
+     "font": "#1A1A1A"
+    },
+    "cylinder": {
+     "fill": "#D5E8D4",
+     "fill2": "#B5D6B3",
+     "stroke": "#82B366",
+     "font": "#1A1A1A"
+    },
+    "cloud": {
+     "fill": "#D5E8D4",
+     "fill2": "#B5D6B3",
+     "stroke": "#82B366",
+     "font": "#1A1A1A"
+    },
+    "document": {
+     "fill": "#F5F5F5",
+     "fill2": "#E0E0E0",
+     "stroke": "#666666",
+     "font": "#1A1A1A"
+    },
+    "table": {
+     "fill": "#F5F5F5",
+     "fill2": "#E0E0E0",
+     "stroke": "#666666",
+     "font": "#1A1A1A"
+    },
+    "actor": {
+     "fill": "#E1D5E7",
+     "fill2": "#CDB9D8",
+     "stroke": "#9673A6",
+     "font": "#1A1A1A"
+    },
+    "note": {
+     "fill": "#FFF2CC",
+     "fill2": "#FCE29A",
+     "stroke": "#D6B656",
+     "font": "#1A1A1A"
+    }
+   },
+   "text": {
+    "font": "#000000"
+   },
+   "container": {
+    "stroke": "#666666",
+    "font": "#1A1A1A"
+   },
+   "layers": [
+    "#FAFAFA",
+    "#F2F7FD",
+    "#F4FAF3",
+    "#FFF9EE"
+   ],
+   "connectors": {
+    "default": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "ethernet": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "fiber": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "wireless": {
+     "stroke": "#82B366",
+     "font": "#000000"
+    },
+    "vpn": {
+     "stroke": "#6C8EBF",
+     "font": "#000000"
+    },
+    "wan": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "data_flow": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "control_flow": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "message": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "association": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "dependency": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "yes": {
+     "stroke": "#2D7600",
+     "font": "#000000"
+    },
+    "no": {
+     "stroke": "#B20000",
+     "font": "#000000"
+    }
+   }
+  },
+  {
+   "id": "network-blue",
+   "name": "Network Blue",
+   "description": "Blues and slate for network and infrastructure maps.",
+   "gradient": true,
+   "shadow": false,
+   "families": {
+    "network": {
+     "fill": "#DFE6FA",
+     "fill2": "#BBCAF3",
+     "stroke": "#1D4ED8",
+     "font": "#0D2361"
+    },
+    "infra": {
+     "fill": "#DCEAF2",
+     "fill2": "#B3D2E3",
+     "stroke": "#0369A1",
+     "font": "#012F48"
+    },
+    "security": {
+     "fill": "#F2DEE3",
+     "fill2": "#E2B8C4",
+     "stroke": "#9F1239",
+     "font": "#48081A"
+    },
+    "flow": {
+     "fill": "#E0E9FC",
+     "fill2": "#BED0F9",
+     "stroke": "#2563EB",
+     "font": "#112D6A"
+    },
+    "uml": {
+     "fill": "#E5E3F8",
+     "fill2": "#C7C3EF",
+     "stroke": "#4338CA",
+     "font": "#1E195B"
+    },
+    "bpmn": {
+     "fill": "#DDECEF",
+     "fill2": "#B7D5DE",
+     "stroke": "#0E7490",
+     "font": "#063441"
+    },
+    "software": {
+     "fill": "#E2E4E7",
+     "fill2": "#C2C6CC",
+     "stroke": "#334155",
+     "font": "#171D26"
+    },
+    "generic": {
+     "fill": "#E5E7EA",
+     "fill2": "#C8CCD2",
+     "stroke": "#475569",
+     "font": "#20262F"
+    }
+   },
+   "shapes": {
+    "diamond": {
+     "fill": "#E0E9FC",
+     "fill2": "#BED0F9",
+     "stroke": "#2563EB",
+     "font": "#112D6A"
+    },
+    "terminator": {
+     "fill": "#E0E9FC",
+     "fill2": "#BED0F9",
+     "stroke": "#2563EB",
+     "font": "#112D6A"
+    },
+    "cylinder": {
+     "fill": "#DCEAF2",
+     "fill2": "#B3D2E3",
+     "stroke": "#0369A1",
+     "font": "#012F48"
+    },
+    "cloud": {
+     "fill": "#DCEAF2",
+     "fill2": "#B3D2E3",
+     "stroke": "#0369A1",
+     "font": "#012F48"
+    },
+    "document": {
+     "fill": "#E2E4E7",
+     "fill2": "#C2C6CC",
+     "stroke": "#334155",
+     "font": "#171D26"
+    },
+    "table": {
+     "fill": "#E2E4E7",
+     "fill2": "#C2C6CC",
+     "stroke": "#334155",
+     "font": "#171D26"
+    },
+    "actor": {
+     "fill": "#E5E3F8",
+     "fill2": "#C7C3EF",
+     "stroke": "#4338CA",
+     "font": "#1E195B"
+    },
+    "note": {
+     "fill": "#FEF9C3",
+     "fill2": "#FDE68A",
+     "stroke": "#A16207",
+     "font": "#422006"
+    }
+   },
+   "text": {
+    "font": "#0F172A"
+   },
+   "container": {
+    "stroke": "#1E3A8A",
+    "font": "#0F172A"
+   },
+   "layers": [
+    "#F1F5FB",
+    "#EFF6FF",
+    "#F0F9FF",
+    "#F8FAFC"
+   ],
+   "connectors": {
+    "default": {
+     "stroke": "#1E3A8A",
+     "font": "#0F172A"
+    },
+    "ethernet": {
+     "stroke": "#1E3A8A",
+     "font": "#0F172A"
+    },
+    "fiber": {
+     "stroke": "#C2410C",
+     "font": "#0F172A"
+    },
+    "wireless": {
+     "stroke": "#0E7490",
+     "font": "#0F172A"
+    },
+    "vpn": {
+     "stroke": "#7E22CE",
+     "font": "#0F172A"
+    },
+    "wan": {
+     "stroke": "#334155",
+     "font": "#0F172A"
+    },
+    "data_flow": {
+     "stroke": "#1E3A8A",
+     "font": "#0F172A"
+    },
+    "control_flow": {
+     "stroke": "#1E3A8A",
+     "font": "#0F172A"
+    },
+    "message": {
+     "stroke": "#1E3A8A",
+     "font": "#0F172A"
+    },
+    "association": {
+     "stroke": "#1E3A8A",
+     "font": "#0F172A"
+    },
+    "dependency": {
+     "stroke": "#1E3A8A",
+     "font": "#0F172A"
+    },
+    "yes": {
+     "stroke": "#15803D",
+     "font": "#0F172A"
+    },
+    "no": {
+     "stroke": "#B91C1C",
+     "font": "#0F172A"
+    }
+   }
+  },
+  {
+   "id": "security-red",
+   "name": "Security Red",
+   "description": "Threat-model palette: red for controls and boundaries, neutral elsewhere.",
+   "gradient": false,
+   "shadow": true,
+   "families": {
+    "network": {
+     "fill": "#E2E4E7",
+     "fill2": "#C2C6CC",
+     "stroke": "#334155",
+     "font": "#171D26"
+    },
+    "infra": {
+     "fill": "#E5E7EA",
+     "fill2": "#C8CCD2",
+     "stroke": "#475569",
+     "font": "#20262F"
+    },
+    "security": {
+     "fill": "#F5DFDF",
+     "fill2": "#EABBBB",
+     "stroke": "#B91C1C",
+     "font": "#530D0D"
+    },
+    "flow": {
+     "fill": "#F1E3DE",
+     "fill2": "#E1C2B8",
+     "stroke": "#9A3412",
+     "font": "#451708"
+    },
+    "uml": {
+     "fill": "#EAE0F3",
+     "fill2": "#D3BCE5",
+     "stroke": "#6B21A8",
+     "font": "#300F4C"
+    },
+    "bpmn": {
+     "fill": "#F2DEE3",
+     "fill2": "#E2B8C4",
+     "stroke": "#9F1239",
+     "font": "#48081A"
+    },
+    "software": {
+     "fill": "#E5E4E4",
+     "fill2": "#C7C6C4",
+     "stroke": "#44403C",
+     "font": "#1F1D1B"
+    },
+    "generic": {
+     "fill": "#E7E7E8",
+     "fill2": "#CBCBCE",
+     "stroke": "#52525B",
+     "font": "#252529"
+    }
+   },
+   "shapes": {
+    "diamond": {
+     "fill": "#F1E3DE",
+     "fill2": "#E1C2B8",
+     "stroke": "#9A3412",
+     "font": "#451708"
+    },
+    "terminator": {
+     "fill": "#F1E3DE",
+     "fill2": "#E1C2B8",
+     "stroke": "#9A3412",
+     "font": "#451708"
+    },
+    "cylinder": {
+     "fill": "#E5E7EA",
+     "fill2": "#C8CCD2",
+     "stroke": "#475569",
+     "font": "#20262F"
+    },
+    "cloud": {
+     "fill": "#E5E7EA",
+     "fill2": "#C8CCD2",
+     "stroke": "#475569",
+     "font": "#20262F"
+    },
+    "document": {
+     "fill": "#E5E4E4",
+     "fill2": "#C7C6C4",
+     "stroke": "#44403C",
+     "font": "#1F1D1B"
+    },
+    "table": {
+     "fill": "#E5E4E4",
+     "fill2": "#C7C6C4",
+     "stroke": "#44403C",
+     "font": "#1F1D1B"
+    },
+    "actor": {
+     "fill": "#EAE0F3",
+     "fill2": "#D3BCE5",
+     "stroke": "#6B21A8",
+     "font": "#300F4C"
+    },
+    "note": {
+     "fill": "#FFF7ED",
+     "fill2": "#FFEDD5",
+     "stroke": "#C2410C",
+     "font": "#431407"
+    }
+   },
+   "text": {
+    "font": "#1C1917"
+   },
+   "container": {
+    "stroke": "#B91C1C",
+    "font": "#450A0A"
+   },
+   "layers": [
+    "#FEF6F6",
+    "#FAFAF9",
+    "#FFF7ED",
+    "#F8FAFC"
+   ],
+   "connectors": {
+    "default": {
+     "stroke": "#7F1D1D",
+     "font": "#1C1917"
+    },
+    "ethernet": {
+     "stroke": "#7F1D1D",
+     "font": "#1C1917"
+    },
+    "fiber": {
+     "stroke": "#7F1D1D",
+     "font": "#1C1917"
+    },
+    "wireless": {
+     "stroke": "#9A3412",
+     "font": "#1C1917"
+    },
+    "vpn": {
+     "stroke": "#B91C1C",
+     "font": "#1C1917"
+    },
+    "wan": {
+     "stroke": "#44403C",
+     "font": "#1C1917"
+    },
+    "data_flow": {
+     "stroke": "#B91C1C",
+     "font": "#1C1917"
+    },
+    "control_flow": {
+     "stroke": "#7F1D1D",
+     "font": "#1C1917"
+    },
+    "message": {
+     "stroke": "#7F1D1D",
+     "font": "#1C1917"
+    },
+    "association": {
+     "stroke": "#7F1D1D",
+     "font": "#1C1917"
+    },
+    "dependency": {
+     "stroke": "#7F1D1D",
+     "font": "#1C1917"
+    },
+    "yes": {
+     "stroke": "#166534",
+     "font": "#1C1917"
+    },
+    "no": {
+     "stroke": "#B91C1C",
+     "font": "#1C1917"
+    }
+   }
+  },
+  {
+   "id": "monochrome",
+   "name": "Monochrome",
+   "description": "Greys only: reads the same printed in black and white.",
+   "gradient": false,
+   "shadow": false,
+   "families": {
+    "network": {
+     "fill": "#FAFAFA",
+     "fill2": "#E4E4E7",
+     "stroke": "#27272A",
+     "font": "#18181B"
+    },
+    "infra": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "security": {
+     "fill": "#E4E4E7",
+     "fill2": "#D4D4D8",
+     "stroke": "#18181B",
+     "font": "#09090B"
+    },
+    "flow": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "uml": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "bpmn": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "software": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "generic": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    }
+   },
+   "shapes": {
+    "diamond": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "terminator": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "cylinder": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "cloud": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "document": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "table": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "actor": {
+     "fill": "#F4F4F5",
+     "fill2": "#E4E4E7",
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "note": {
+     "fill": "#FAFAFA",
+     "fill2": "#E4E4E7",
+     "stroke": "#71717A",
+     "font": "#18181B"
+    }
+   },
+   "text": {
+    "font": "#18181B"
+   },
+   "container": {
+    "stroke": "#52525B",
+    "font": "#18181B"
+   },
+   "layers": [
+    "#FAFAFA",
+    "#F4F4F5",
+    "#F5F5F5",
+    "#FCFCFC"
+   ],
+   "connectors": {
+    "default": {
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "ethernet": {
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "fiber": {
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "wireless": {
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "vpn": {
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "wan": {
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "data_flow": {
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "control_flow": {
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "message": {
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "association": {
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "dependency": {
+     "stroke": "#3F3F46",
+     "font": "#18181B"
+    },
+    "yes": {
+     "stroke": "#18181B",
+     "font": "#18181B"
+    },
+    "no": {
+     "stroke": "#52525B",
+     "font": "#18181B"
+    }
+   }
+  },
+  {
+   "id": "high-contrast",
+   "name": "High contrast",
+   "description": "Black on white with strong outlines, for projectors and low vision.",
+   "gradient": false,
+   "shadow": false,
+   "families": {
+    "network": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#0033A0",
+     "font": "#000000"
+    },
+    "infra": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "security": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#B00000",
+     "font": "#000000"
+    },
+    "flow": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "uml": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "bpmn": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "software": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "generic": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    }
+   },
+   "shapes": {
+    "diamond": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "terminator": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "cylinder": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "cloud": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "document": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "table": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "actor": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "note": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#000000",
+     "font": "#000000"
+    }
+   },
+   "text": {
+    "font": "#000000"
+   },
+   "container": {
+    "stroke": "#000000",
+    "font": "#000000"
+   },
+   "layers": [
+    "#FFFFFF",
+    "#FFFFFF",
+    "#FFFFFF",
+    "#FFFFFF"
+   ],
+   "connectors": {
+    "default": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "ethernet": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "fiber": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "wireless": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "vpn": {
+     "stroke": "#0033A0",
+     "font": "#000000"
+    },
+    "wan": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "data_flow": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "control_flow": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "message": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "association": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "dependency": {
+     "stroke": "#000000",
+     "font": "#000000"
+    },
+    "yes": {
+     "stroke": "#005A00",
+     "font": "#000000"
+    },
+    "no": {
+     "stroke": "#B00000",
+     "font": "#000000"
+    }
+   }
+  },
+  {
+   "id": "print",
+   "name": "Dark on light (print)",
+   "description": "White fills, dark outlines, no effects: clean on paper and toner-friendly.",
+   "gradient": false,
+   "shadow": false,
+   "families": {
+    "network": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#1F3B73",
+     "font": "#111111"
+    },
+    "infra": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#1E4D3A",
+     "font": "#111111"
+    },
+    "security": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#7A1A1A",
+     "font": "#111111"
+    },
+    "flow": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#333333",
+     "font": "#111111"
+    },
+    "uml": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#3B2A5C",
+     "font": "#111111"
+    },
+    "bpmn": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#4A3A12",
+     "font": "#111111"
+    },
+    "software": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#2E2E2E",
+     "font": "#111111"
+    },
+    "generic": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#333333",
+     "font": "#111111"
+    }
+   },
+   "shapes": {
+    "diamond": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#333333",
+     "font": "#111111"
+    },
+    "terminator": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#333333",
+     "font": "#111111"
+    },
+    "cylinder": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#1E4D3A",
+     "font": "#111111"
+    },
+    "cloud": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#1E4D3A",
+     "font": "#111111"
+    },
+    "document": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#2E2E2E",
+     "font": "#111111"
+    },
+    "table": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#2E2E2E",
+     "font": "#111111"
+    },
+    "actor": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#3B2A5C",
+     "font": "#111111"
+    },
+    "note": {
+     "fill": "#FFFFFF",
+     "fill2": "#FFFFFF",
+     "stroke": "#555555",
+     "font": "#111111"
+    }
+   },
+   "text": {
+    "font": "#111111"
+   },
+   "container": {
+    "stroke": "#444444",
+    "font": "#111111"
+   },
+   "layers": [
+    "#FFFFFF",
+    "#FAFAFA",
+    "#F7F7F7",
+    "#FFFFFF"
+   ],
+   "connectors": {
+    "default": {
+     "stroke": "#222222",
+     "font": "#111111"
+    },
+    "ethernet": {
+     "stroke": "#222222",
+     "font": "#111111"
+    },
+    "fiber": {
+     "stroke": "#222222",
+     "font": "#111111"
+    },
+    "wireless": {
+     "stroke": "#222222",
+     "font": "#111111"
+    },
+    "vpn": {
+     "stroke": "#222222",
+     "font": "#111111"
+    },
+    "wan": {
+     "stroke": "#222222",
+     "font": "#111111"
+    },
+    "data_flow": {
+     "stroke": "#222222",
+     "font": "#111111"
+    },
+    "control_flow": {
+     "stroke": "#222222",
+     "font": "#111111"
+    },
+    "message": {
+     "stroke": "#222222",
+     "font": "#111111"
+    },
+    "association": {
+     "stroke": "#222222",
+     "font": "#111111"
+    },
+    "dependency": {
+     "stroke": "#222222",
+     "font": "#111111"
+    },
+    "yes": {
+     "stroke": "#1E4D3A",
+     "font": "#111111"
+    },
+    "no": {
+     "stroke": "#7A1A1A",
+     "font": "#111111"
+    }
+   }
+  },
+  {
+   "id": "ocean",
+   "name": "Ocean",
+   "description": "Teals and deep blues with gentle gradients.",
+   "gradient": true,
+   "shadow": false,
+   "families": {
+    "network": {
+     "fill": "#DDECEF",
+     "fill2": "#B7D5DE",
+     "stroke": "#0E7490",
+     "font": "#063441"
+    },
+    "infra": {
+     "fill": "#DEE8EC",
+     "fill2": "#B9CFD6",
+     "stroke": "#155E75",
+     "font": "#092A35"
+    },
+    "security": {
+     "fill": "#F6DEE4",
+     "fill2": "#ECB8C4",
+     "stroke": "#BE123C",
+     "font": "#55081B"
+    },
+    "flow": {
+     "fill": "#DCEAF2",
+     "fill2": "#B3D2E3",
+     "stroke": "#0369A1",
+     "font": "#012F48"
+    },
+    "uml": {
+     "fill": "#E3E2F2",
+     "fill2": "#C3C1E3",
+     "stroke": "#3730A3",
+     "font": "#191649"
+    },
+    "bpmn": {
+     "fill": "#DCECE7",
+     "fill2": "#B4D6CD",
+     "stroke": "#047857",
+     "font": "#023627"
+    },
+    "software": {
+     "fill": "#E0E4F4",
+     "fill2": "#BCC6E7",
+     "stroke": "#1E40AF",
+     "font": "#0E1D4F"
+    },
+    "generic": {
+     "fill": "#DDECEB",
+     "fill2": "#B7D6D4",
+     "stroke": "#0F766E",
+     "font": "#073531"
+    }
+   },
+   "shapes": {
+    "diamond": {
+     "fill": "#DCEAF2",
+     "fill2": "#B3D2E3",
+     "stroke": "#0369A1",
+     "font": "#012F48"
+    },
+    "terminator": {
+     "fill": "#DCEAF2",
+     "fill2": "#B3D2E3",
+     "stroke": "#0369A1",
+     "font": "#012F48"
+    },
+    "cylinder": {
+     "fill": "#DEE8EC",
+     "fill2": "#B9CFD6",
+     "stroke": "#155E75",
+     "font": "#092A35"
+    },
+    "cloud": {
+     "fill": "#DEE8EC",
+     "fill2": "#B9CFD6",
+     "stroke": "#155E75",
+     "font": "#092A35"
+    },
+    "document": {
+     "fill": "#E0E4F4",
+     "fill2": "#BCC6E7",
+     "stroke": "#1E40AF",
+     "font": "#0E1D4F"
+    },
+    "table": {
+     "fill": "#E0E4F4",
+     "fill2": "#BCC6E7",
+     "stroke": "#1E40AF",
+     "font": "#0E1D4F"
+    },
+    "actor": {
+     "fill": "#E3E2F2",
+     "fill2": "#C3C1E3",
+     "stroke": "#3730A3",
+     "font": "#191649"
+    },
+    "note": {
+     "fill": "#ECFEFF",
+     "fill2": "#CFFAFE",
+     "stroke": "#0E7490",
+     "font": "#083344"
+    }
+   },
+   "text": {
+    "font": "#083344"
+   },
+   "container": {
+    "stroke": "#155E75",
+    "font": "#083344"
+   },
+   "layers": [
+    "#F0FDFA",
+    "#ECFEFF",
+    "#EFF6FF",
+    "#F0F9FF"
+   ],
+   "connectors": {
+    "default": {
+     "stroke": "#155E75",
+     "font": "#083344"
+    },
+    "ethernet": {
+     "stroke": "#155E75",
+     "font": "#083344"
+    },
+    "fiber": {
+     "stroke": "#B45309",
+     "font": "#083344"
+    },
+    "wireless": {
+     "stroke": "#0E7490",
+     "font": "#083344"
+    },
+    "vpn": {
+     "stroke": "#3730A3",
+     "font": "#083344"
+    },
+    "wan": {
+     "stroke": "#155E75",
+     "font": "#083344"
+    },
+    "data_flow": {
+     "stroke": "#155E75",
+     "font": "#083344"
+    },
+    "control_flow": {
+     "stroke": "#155E75",
+     "font": "#083344"
+    },
+    "message": {
+     "stroke": "#155E75",
+     "font": "#083344"
+    },
+    "association": {
+     "stroke": "#155E75",
+     "font": "#083344"
+    },
+    "dependency": {
+     "stroke": "#155E75",
+     "font": "#083344"
+    },
+    "yes": {
+     "stroke": "#047857",
+     "font": "#083344"
+    },
+    "no": {
+     "stroke": "#BE123C",
+     "font": "#083344"
+    }
+   }
+  },
+  {
+   "id": "forest",
+   "name": "Forest",
+   "description": "Greens and earth tones, calm and natural.",
+   "gradient": true,
+   "shadow": true,
+   "families": {
+    "network": {
+     "fill": "#DEE9E3",
+     "fill2": "#B9D1C2",
+     "stroke": "#166534",
+     "font": "#0A2D17"
+    },
+    "infra": {
+     "fill": "#E4E9DE",
+     "fill2": "#C5D0B8",
+     "stroke": "#3F6212",
+     "font": "#1C2C08"
+    },
+    "security": {
+     "fill": "#F2DEE3",
+     "fill2": "#E2B8C4",
+     "stroke": "#9F1239",
+     "font": "#48081A"
+    },
+    "flow": {
+     "fill": "#DEEDE4",
+     "fill2": "#B9D9C5",
+     "stroke": "#15803D",
+     "font": "#093A1B"
+    },
+    "uml": {
+     "fill": "#E6EDDD",
+     "fill2": "#CAD8B7",
+     "stroke": "#4D7C0F",
+     "font": "#233807"
+    },
+    "bpmn": {
+     "fill": "#DCE9E5",
+     "fill2": "#B4CFC8",
+     "stroke": "#065F46",
+     "font": "#032B20"
+    },
+    "software": {
+     "fill": "#ECE3DD",
+     "fill2": "#D6C2B7",
+     "stroke": "#78350F",
+     "font": "#361807"
+    },
+    "generic": {
+     "fill": "#E7E7E6",
+     "fill2": "#CDCBCA",
+     "stroke": "#57534E",
+     "font": "#272523"
+    }
+   },
+   "shapes": {
+    "diamond": {
+     "fill": "#DEEDE4",
+     "fill2": "#B9D9C5",
+     "stroke": "#15803D",
+     "font": "#093A1B"
+    },
+    "terminator": {
+     "fill": "#DEEDE4",
+     "fill2": "#B9D9C5",
+     "stroke": "#15803D",
+     "font": "#093A1B"
+    },
+    "cylinder": {
+     "fill": "#E4E9DE",
+     "fill2": "#C5D0B8",
+     "stroke": "#3F6212",
+     "font": "#1C2C08"
+    },
+    "cloud": {
+     "fill": "#E4E9DE",
+     "fill2": "#C5D0B8",
+     "stroke": "#3F6212",
+     "font": "#1C2C08"
+    },
+    "document": {
+     "fill": "#ECE3DD",
+     "fill2": "#D6C2B7",
+     "stroke": "#78350F",
+     "font": "#361807"
+    },
+    "table": {
+     "fill": "#ECE3DD",
+     "fill2": "#D6C2B7",
+     "stroke": "#78350F",
+     "font": "#361807"
+    },
+    "actor": {
+     "fill": "#E6EDDD",
+     "fill2": "#CAD8B7",
+     "stroke": "#4D7C0F",
+     "font": "#233807"
+    },
+    "note": {
+     "fill": "#FEFCE8",
+     "fill2": "#FEF08A",
+     "stroke": "#854D0E",
+     "font": "#422006"
+    }
+   },
+   "text": {
+    "font": "#052E16"
+   },
+   "container": {
+    "stroke": "#166534",
+    "font": "#052E16"
+   },
+   "layers": [
+    "#F0FDF4",
+    "#F7FEE7",
+    "#FAFAF9",
+    "#ECFDF5"
+   ],
+   "connectors": {
+    "default": {
+     "stroke": "#14532D",
+     "font": "#052E16"
+    },
+    "ethernet": {
+     "stroke": "#14532D",
+     "font": "#052E16"
+    },
+    "fiber": {
+     "stroke": "#14532D",
+     "font": "#052E16"
+    },
+    "wireless": {
+     "stroke": "#3F6212",
+     "font": "#052E16"
+    },
+    "vpn": {
+     "stroke": "#78350F",
+     "font": "#052E16"
+    },
+    "wan": {
+     "stroke": "#14532D",
+     "font": "#052E16"
+    },
+    "data_flow": {
+     "stroke": "#14532D",
+     "font": "#052E16"
+    },
+    "control_flow": {
+     "stroke": "#14532D",
+     "font": "#052E16"
+    },
+    "message": {
+     "stroke": "#14532D",
+     "font": "#052E16"
+    },
+    "association": {
+     "stroke": "#14532D",
+     "font": "#052E16"
+    },
+    "dependency": {
+     "stroke": "#14532D",
+     "font": "#052E16"
+    },
+    "yes": {
+     "stroke": "#15803D",
+     "font": "#052E16"
+    },
+    "no": {
+     "stroke": "#9F1239",
+     "font": "#052E16"
+    }
+   }
+  },
+  {
+   "id": "sunset",
+   "name": "Sunset",
+   "description": "Warm oranges, ambers and plums.",
+   "gradient": true,
+   "shadow": true,
+   "families": {
+    "network": {
+     "fill": "#F6E4DD",
+     "fill2": "#EDC6B6",
+     "stroke": "#C2410C",
+     "font": "#4A1905"
+    },
+    "infra": {
+     "fill": "#F4E7DD",
+     "fill2": "#E8CBB5",
+     "stroke": "#B45309",
+     "font": "#442003"
+    },
+    "security": {
+     "fill": "#F2DEE3",
+     "fill2": "#E2B8C4",
+     "stroke": "#9F1239",
+     "font": "#3C0716"
+    },
+    "flow": {
+     "fill": "#FCE8DD",
+     "fill2": "#F9CDB6",
+     "stroke": "#EA580C",
+     "font": "#592105"
+    },
+    "uml": {
+     "fill": "#EEDFEF",
+     "fill2": "#DBBADD",
+     "stroke": "#86198F",
+     "font": "#330A36"
+    },
+    "bpmn": {
+     "fill": "#F2E9DC",
+     "fill2": "#E3D0B5",
+     "stroke": "#A16207",
+     "font": "#3D2503"
+    },
+    "software": {
+     "fill": "#F1DFE6",
+     "fill2": "#E2B9CA",
+     "stroke": "#9D174D",
+     "font": "#3C091D"
+    },
+    "generic": {
+     "fill": "#ECEBEA",
+     "fill2": "#D6D4D3",
+     "stroke": "#78716C",
+     "font": "#2E2B29"
+    }
+   },
+   "shapes": {
+    "diamond": {
+     "fill": "#FCE8DD",
+     "fill2": "#F9CDB6",
+     "stroke": "#EA580C",
+     "font": "#592105"
+    },
+    "terminator": {
+     "fill": "#FCE8DD",
+     "fill2": "#F9CDB6",
+     "stroke": "#EA580C",
+     "font": "#592105"
+    },
+    "cylinder": {
+     "fill": "#F4E7DD",
+     "fill2": "#E8CBB5",
+     "stroke": "#B45309",
+     "font": "#442003"
+    },
+    "cloud": {
+     "fill": "#F4E7DD",
+     "fill2": "#E8CBB5",
+     "stroke": "#B45309",
+     "font": "#442003"
+    },
+    "document": {
+     "fill": "#F1DFE6",
+     "fill2": "#E2B9CA",
+     "stroke": "#9D174D",
+     "font": "#3C091D"
+    },
+    "table": {
+     "fill": "#F1DFE6",
+     "fill2": "#E2B9CA",
+     "stroke": "#9D174D",
+     "font": "#3C091D"
+    },
+    "actor": {
+     "fill": "#EEDFEF",
+     "fill2": "#DBBADD",
+     "stroke": "#86198F",
+     "font": "#330A36"
+    },
+    "note": {
+     "fill": "#FFFBEB",
+     "fill2": "#FDE68A",
+     "stroke": "#B45309",
+     "font": "#451A03"
+    }
+   },
+   "text": {
+    "font": "#431407"
+   },
+   "container": {
+    "stroke": "#9A3412",
+    "font": "#431407"
+   },
+   "layers": [
+    "#FFF7ED",
+    "#FFFBEB",
+    "#FDF2F8",
+    "#FEF2F2"
+   ],
+   "connectors": {
+    "default": {
+     "stroke": "#9A3412",
+     "font": "#431407"
+    },
+    "ethernet": {
+     "stroke": "#9A3412",
+     "font": "#431407"
+    },
+    "fiber": {
+     "stroke": "#9A3412",
+     "font": "#431407"
+    },
+    "wireless": {
+     "stroke": "#B45309",
+     "font": "#431407"
+    },
+    "vpn": {
+     "stroke": "#86198F",
+     "font": "#431407"
+    },
+    "wan": {
+     "stroke": "#9A3412",
+     "font": "#431407"
+    },
+    "data_flow": {
+     "stroke": "#9A3412",
+     "font": "#431407"
+    },
+    "control_flow": {
+     "stroke": "#9A3412",
+     "font": "#431407"
+    },
+    "message": {
+     "stroke": "#9A3412",
+     "font": "#431407"
+    },
+    "association": {
+     "stroke": "#9A3412",
+     "font": "#431407"
+    },
+    "dependency": {
+     "stroke": "#9A3412",
+     "font": "#431407"
+    },
+    "yes": {
+     "stroke": "#15803D",
+     "font": "#431407"
+    },
+    "no": {
+     "stroke": "#9F1239",
+     "font": "#431407"
+    }
+   }
+  }
+ ]
+}

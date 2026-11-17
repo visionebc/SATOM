@@ -1,0 +1,2940 @@
+import hmac
+import os
+
+from werkzeug.utils import secure_filename
+
+from flask import (
+    Blueprint, render_template, request, jsonify, flash, redirect, url_for,
+    send_file, abort, current_app,
+)
+from flask_login import login_required, current_user
+from ..auth.decorators import require_permission, require_device_scope
+from sqlalchemy.exc import IntegrityError
+from ..models import clean_tls_name
+from ..models import (
+    Appliance, ApplianceInterface, AuditLog, db, Permission,
+    INTERFACE_ROLES, clean_interface_role,
+    visible_appliances, visible_appliance_or_404,
+)
+from ..models_backup import ConfigBackup
+from ..clients.fortiweb import FortiWebClient
+from ..errors import log_exception
+from ..clients import client_for
+from ..services.audit import log_action
+from ..services import settings_store as store
+from ..services import datasheets
+from ..services import product_scope
+from ..services import job_progress
+
+HW_TYPES = ("hardware", "vm", "unknown")
+HA_MODES = ("per_node", "vip")
+
+
+def _provision_monitoring(appliance):
+    """Give a newly saved appliance BOTH halves of monitoring immediately.
+
+    Scrape targets (the time-series layer) and baseline probes (the threshold
+    layer that feeds Fleet health). Until 2026-08-06 only the first ran here:
+    a device added through this form collected metrics but carried no
+    thresholds, because ``ensure_baseline`` was reachable only from the
+    *Discover* button. Both now come from one seam — see
+    ``services/monitoring_provision``.
+
+    Never fails the save: monitoring is downstream of device inventory, so a
+    hiccup here must not cost the operator the device row.
+    """
+    try:
+        from ..services.monitoring_provision import provision_monitoring
+        return provision_monitoring(appliance)
+    except Exception as exc:            # noqa: BLE001 - inventory must survive
+        db.session.rollback()
+        log_exception(exc, context='monitoring.provision')
+        return {"targets": 0, "probes": [], "errors": [str(exc)[:120]]}
+
+
+def _parse_ha(form):
+    """Return (is_cluster, ha_mode, ha_vip) from a posted appliance form."""
+    is_cluster = form.get("is_cluster") == "on"
+    if not is_cluster:
+        return False, None, None
+    mode = (form.get("ha_mode", "") or "").strip().lower()
+    if mode not in HA_MODES:
+        mode = "per_node"
+    vip = (form.get("ha_vip", "") or "").strip() or None
+    return True, mode, (vip if mode == "vip" else None)
+
+
+def _clean_hw_type(raw: str) -> str:
+    raw = (raw or "").strip().lower()
+    return raw if raw in HW_TYPES else "unknown"
+
+
+def _rebuild_interfaces(appliance) -> None:
+    """Replace-all the appliance's documented interfaces from the posted form
+    arrays (if_name[]/if_type[]/if_role[]/if_segment[]/if_connected[]/if_ip[]/
+    if_notes[]). Rows whose name is blank are skipped.
+
+    The parallel-array read is index-based, so a column the browser did NOT
+    post (an older cached page, a client that only knows the pre-role form)
+    simply yields short lists and every missing cell degrades to the column
+    default — it must never shift a value onto the wrong row."""
+    names = request.form.getlist("if_name")
+    types = request.form.getlist("if_type")
+    roles = request.form.getlist("if_role")
+    segments = request.form.getlist("if_segment")
+    conns = request.form.getlist("if_connected")
+    ips = request.form.getlist("if_ip")
+    notes = request.form.getlist("if_notes")
+
+    def cell(arr, i, limit=None):
+        if i >= len(arr):
+            return None
+        val = (arr[i] or "").strip()
+        if not val:
+            return None
+        return val[:limit] if limit else val
+
+    ApplianceInterface.query.filter_by(appliance_id=appliance.id).delete()
+    order = 0
+    for i, raw_name in enumerate(names):
+        name = (raw_name or "").strip()
+        if not name:
+            continue
+        db.session.add(ApplianceInterface(
+            appliance_id=appliance.id,
+            name=name[:64],
+            if_type=cell(types, i, 64),
+            role=clean_interface_role(roles[i] if i < len(roles) else ""),
+            segment=cell(segments, i, 128),
+            connected_to=cell(conns, i, 256),
+            ip_address=cell(ips, i, 64),
+            notes=cell(notes, i),
+            sort_order=order,
+        ))
+        order += 1
+
+bp = Blueprint('appliances', __name__, url_prefix='/appliances')
+
+
+@bp.context_processor
+def _inject_interface_roles():
+    """Expose the interface-role vocabulary to every appliances template.
+
+    One source: the tuple in ``models``. Passing it per-render was the other
+    option and it is how a page ends up offering a role the save path rejects —
+    whichever render_template call nobody remembered to update."""
+    return {"interface_roles": INTERFACE_ROLES}
+
+
+def _chassis_groups(rows):
+    """Fold a page of appliance rows into (device, [its other ADOMs]).
+
+    One physical FortiWeb in ADOM mode is several rows (the auth token carries
+    exactly one ADOM), and a flat list prints it as several devices — which is
+    what made the roster read as a fleet three times its size. The device row
+    anchors the group and the rest render nested under it.
+
+    Grouped over the CURRENT PAGE only, deliberately: pulling siblings from
+    other pages would print the same row twice, and the guard that matters
+    (``require_device_scope``) is on the route, not on this layout. A chassis
+    split across a page boundary therefore degrades to a row that stands alone
+    and still says which ADOM it is — never to a row that silently offers a
+    device-wide verb it does not own.
+    """
+    from ..models import chassis_key, chassis_device_row
+    groups, by_key = [], {}
+    for row in rows:
+        key = chassis_key(row)
+        if key is None:                       # standalone / HA node 0
+            groups.append({'device': row, 'adoms': []})
+            continue
+        group = by_key.get(key)
+        if group is None:
+            group = {'device': row, 'adoms': []}
+            by_key[key] = group
+            groups.append(group)
+        else:
+            group['adoms'].append(row)
+    for group in groups:
+        if not group['adoms']:
+            continue
+        members = [group['device']] + group['adoms']
+        owner = chassis_device_row(group['device'])
+        # Anchor on the row that OWNS the device verbs, not on whichever row
+        # the name sort happened to put first: the buttons and the parent row
+        # must be the same row, or the tree points at a dead end.
+        anchor = next((m for m in members
+                       if owner is not None and m.id == owner.id), members[0])
+        group['device'] = anchor
+        group['adoms'] = [m for m in members if m.id != anchor.id]
+    return groups
+
+
+@bp.route('/')
+@login_required
+@require_permission('appliances.view')
+def index():
+    # Top-level rows only: standalones + cluster node 0. Member nodes are
+    # rendered nested under their cluster, never as standalone entries.
+    # Server-side pagination: with a 1000-device fleet this page must never
+    # materialise (and render) every appliance per request.
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (TypeError, ValueError):
+        page = 1
+    q = (request.args.get('q') or '').strip()
+
+    base = visible_appliances().filter(Appliance.parent_id.is_(None))
+    if q:
+        from sqlalchemy import or_
+        like = f'%{q}%'
+        base = base.filter(or_(Appliance.name.ilike(like),
+                               Appliance.host.ilike(like),
+                               Appliance.tags.ilike(like)))
+    pagination = (base.order_by(Appliance.name)
+                  .paginate(page=page, per_page=100, error_out=False))
+
+    # Fleet-wide stats (independent of the current page / search filter).
+    from sqlalchemy import func
+    from ..models import chassis_tally
+    # Six columns, not whole ORM objects: this counts the FLEET, and the list
+    # above is paginated precisely so a 1000-device roster is never
+    # materialised per request. Counting rows in SQL was not an option that
+    # stays honest -- the fold rule lives in chassis_key, and a second
+    # implementation of it in SQL is a rule that can drift from the tree.
+    tally_rows = (visible_appliances(db.session.query(
+                      Appliance.id, Appliance.kind, Appliance.host,
+                      Appliance.port, Appliance.is_cluster, Appliance.vdom))
+                  .filter(Appliance.parent_id.is_(None)).all())
+    device_count, adom_count = chassis_tally(tally_rows)
+    kinds_count = (visible_appliances(db.session.query(func.count(func.distinct(Appliance.kind))))
+                   .filter(Appliance.parent_id.is_(None)).scalar() or 0)
+
+    from ..services import rediscovery
+    return render_template('appliances/index.html',
+                           appliances=pagination.items,
+                           groups=_chassis_groups(pagination.items),
+                           pagination=pagination, q=q,
+                           device_count=device_count, adom_count=adom_count,
+                           kinds_count=kinds_count,
+                           kind_options=product_scope.creatable_kinds(),
+                           default_kind=store.general().get('default_kind', ''),
+                           classification=store.all_classification(),
+                           has_snapshot=rediscovery.has_snapshot)
+
+
+@bp.route('/<int:id>/members/roles')
+@login_required
+@require_permission('appliances.view')
+def member_roles(id):
+    """Live HA role per member (read-only JSON for the cluster sub-cards)."""
+    node0 = visible_appliance_or_404(id)
+    from ..services import ha
+    return jsonify({str(m.id): ha.member_role(m, timeout=5.0) for m in node0.members})
+
+
+@bp.route('/<int:id>')
+@login_required
+@require_permission('appliances.view')
+def detail(id):
+    appliance = visible_appliance_or_404(id)
+    recent_audit = AuditLog.query.filter(
+        AuditLog.target.like(f'%{appliance.name}%')
+    ).order_by(AuditLog.timestamp.desc()).limit(20).all()
+    from ..services import rediscovery
+    from ..services.bookmarks import device_link
+    device_url, device_note = device_link(appliance)
+    return render_template('appliances/detail.html', appliance=appliance, audit_entries=recent_audit,
+                           has_snapshot=rediscovery.has_snapshot,
+                           device_url=device_url, device_note=device_note)
+
+
+@bp.route('/', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def create():
+    name = request.form.get('name', '').strip()
+    kind = request.form.get('kind', '').strip().lower()
+    # An ADOM creates its OWN product and nothing else. Trusting the posted
+    # field lets one field move a device into an ADOM the creator cannot see,
+    # which reads as a save that silently did nothing.
+    if not product_scope.may_assign_kind(kind):
+        allowed = ', '.join(n for _, n in product_scope.creatable_kinds())
+        flash(f'This ADOM can only add {allowed} appliances.', 'danger')
+        return redirect(url_for('appliances.index'))
+    host = request.form.get('host', '').strip()
+    port = int(request.form.get('port', 443) or 443)
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '')
+    verify_ssl = request.form.get('verify_ssl') == 'on'
+    tls_name, tls_err = clean_tls_name(request.form.get('tls_server_name'))
+    if tls_err:
+        flash(tls_err, 'danger')
+        return redirect(url_for('appliances.index'))
+    vdom = request.form.get('vdom', '').strip() or None
+    tags = request.form.get('tags', '').strip() or None
+    department = request.form.get('department', '').strip() or None
+    zone = request.form.get('zone', '').strip() or None
+    line = request.form.get('line', '').strip() or None
+    hw_type = _clean_hw_type(request.form.get('hw_type', 'unknown'))
+    model = request.form.get('model', '').strip() or None
+    # Only a user who can SEE maintenance devices may set the flag (operators
+    # cannot even render the field; ignore a forged value from them).
+    maintenance = (request.form.get('maintenance') == 'on'
+                   and current_user.can('appliances.view_maintenance'))
+    is_cluster, ha_mode, ha_vip = _parse_ha(request.form)
+
+    # VIP cluster: the shared VIP is the connection target.
+    if is_cluster and ha_mode == 'vip':
+        if not ha_vip:
+            flash('A VIP-mode cluster needs the shared VIP address.', 'danger')
+            return redirect(url_for('appliances.index'))
+        host = host or ha_vip
+    # A per-node cluster node 0 has no connection of its own (members do).
+    host_required = not (is_cluster and ha_mode == 'per_node')
+    if not name or (host_required and not host):
+        flash('Name and host are required.', 'danger')
+        return redirect(url_for('appliances.index'))
+
+    appliance = Appliance(
+        name=name, kind=kind, host=host, port=port,
+        username=username, verify_ssl=verify_ssl,
+        vdom=vdom, tags=tags, department=department, zone=zone, line=line,
+        hw_type=hw_type, model=model, maintenance=maintenance,
+        is_cluster=is_cluster, ha_mode=ha_mode, ha_vip=ha_vip,
+        password_enc='placeholder',
+    )
+    appliance.tls_name = tls_name
+    appliance.set_password(password)
+    db.session.add(appliance)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash(f'Appliance name {name!r} already exists.', 'danger')
+        return redirect(url_for('appliances.index'))
+    log_action('appliance.create', target=name)
+    # Interfaces declared in the Add dialog. AFTER the commit on purpose: the
+    # rows carry appliance_id, so they cannot be written before the appliance
+    # has an id, and a failure here must not cost the operator the device row.
+    try:
+        _rebuild_interfaces(appliance)
+        db.session.commit()
+    except Exception as exc:  # noqa: BLE001 — inventory must survive
+        db.session.rollback()
+        log_exception(exc, context='appliance.create.interfaces')
+    prov = _provision_monitoring(appliance)
+    # Report BOTH halves. A device with collectors but no threshold probes is
+    # graphed and unalerted, and that difference is invisible on every page.
+    bits = []
+    if prov.get('targets'):
+        bits.append(f"{prov['targets']} metrics collector(s)")
+    if prov.get('probes'):
+        bits.append(f"{len(prov['probes'])} threshold probe(s)")
+    if prov.get('system_automations'):
+        # The node's first device: SATOM armed its own housekeeping.
+        bits.append(f"{len(prov['system_automations'])} system automation(s)")
+    flash(f'Appliance {name} created.'
+          + (' ' + ' and '.join(bits) + ' provisioned.' if bits else '')
+          + (' Monitoring warning: ' + '; '.join(prov['errors'])
+             if prov.get('errors') else ''),
+          'warning' if prov.get('errors') else 'success')
+    if request.form.get('apply_baseline') in ('1', 'on'):
+        # Shows what the device's classification pulls in; nothing is written
+        # until the operator previews and confirms there.
+        return redirect(url_for('provisioning.device_baseline', appliance_id=appliance.id))
+    return redirect(url_for('appliances.detail', id=appliance.id))
+
+
+@bp.route('/<int:id>/edit')
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def edit(id):
+    appliance = visible_appliance_or_404(id)
+    return render_template('appliances/edit.html', appliance=appliance,
+                           kind_options=product_scope.creatable_kinds(),
+                           classification=store.all_classification())
+
+
+@bp.route('/<int:id>/edit', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def edit_save(id):
+    appliance = visible_appliance_or_404(id)
+    # Stored credentials follow the row, not the form: an editor never sees
+    # them, so pointing the row at another host/port/login/platform would hand
+    # them to whatever answers there on the next sync. Such a change is only
+    # accepted together with the password(s) it would otherwise carry along.
+    new_host = request.form.get('host', appliance.host).strip()
+    new_port = int(request.form.get('port', appliance.port) or 443)
+    new_username = request.form.get('username', appliance.username).strip()
+    new_kind = request.form.get('kind', appliance.kind or '').strip().lower()
+    kind_changed = bool(new_kind) and new_kind != (appliance.kind or '').lower()
+    ha_posted = bool(request.form.get('ha_present')) or 'is_cluster' in request.form
+    if not appliance.is_cluster_member and ha_posted:
+        is_cluster, ha_mode, ha_vip = _parse_ha(request.form)
+        if is_cluster and ha_mode == 'vip' and ha_vip:
+            new_host = ha_vip
+    # Moving onto the row's OWN stored VIP is not a retarget: that VIP was
+    # itself only ever set through this guard (or at creation, with the password).
+    own_vip = (appliance.ha_vip or '') if (appliance.is_cluster
+                                          and appliance.ha_mode == 'vip') else ''
+    host_changed = (new_host != (appliance.host or '').strip()
+                    and not (own_vip and new_host == own_vip))
+    user_changed = new_username != (appliance.username or '').strip()
+    password = request.form.get('password', '')
+    ssh_password = request.form.get('ssh_password', '')
+    ssh_clear = request.form.get('ssh_password_clear') == 'on'
+    # Relaxing TLS verification is a retarget of the TRUST, not the address:
+    # with verify_ssl off the next sync will hand the stored API password to
+    # whatever presents a certificate on that host, so a MITM on the path can
+    # capture it. Turning it from on to OFF therefore demands the password be
+    # re-entered, exactly like pointing the row somewhere new.
+    # A cluster member has no setting of its own (Appliance.verify_ssl): it
+    # follows its cluster, so whatever a member's form posts is not read.
+    if appliance.verify_ssl_inherited:
+        new_verify_ssl = appliance.verify_ssl
+    else:
+        new_verify_ssl = request.form.get('verify_ssl') == 'on'
+    verify_ssl_relaxed = bool(appliance.verify_ssl) and not new_verify_ssl
+    # TLS certificate name (SA-0015): a member follows its cluster, like
+    # verify_ssl; only a form that renders the field changes it (the list's
+    # quick-edit does not). Not a credential retarget: the request still goes
+    # to the same host, and the certificate must still chain to the trust
+    # store -- only the name it is checked against changes.
+    tls_posted = ('tls_server_name' in request.form
+                  and not appliance.verify_ssl_inherited)
+    new_tls_name, tls_err = clean_tls_name(request.form.get('tls_server_name'))
+    if tls_posted and tls_err:
+        flash(tls_err, 'danger')
+        return redirect(url_for('appliances.edit', id=appliance.id))
+    api_retarget = (host_changed or user_changed or kind_changed
+                    or new_port != appliance.port or verify_ssl_relaxed)
+    # The separate SSH user (``ssh_username``; empty = the API user). Only a
+    # form that renders the field may change it — the quick-edit dialog on the
+    # list does not, and its absence must not read as "cleared". A different
+    # effective SSH login while a separate SSH password is stored is a user
+    # change: that password belonged to the old login, so it must be
+    # re-entered (or removed) like on a host or username change.
+    ssh_user_posted = 'ssh_username' in request.form
+    new_ssh_username = ((request.form.get('ssh_username') or '').strip() or None
+                        if ssh_user_posted else appliance.ssh_username)
+    old_ssh_login = (appliance.ssh_username or '').strip() or (appliance.username or '').strip()
+    new_ssh_login = (new_ssh_username or '').strip() or new_username
+    ssh_user_changed = new_ssh_login != old_ssh_login
+    ssh_retarget = ((host_changed or user_changed or ssh_user_changed)
+                    and appliance.has_ssh_password)
+    if (api_retarget and not password) or (
+            ssh_retarget and not (ssh_password or ssh_clear)):
+        flash('Changing the host, port or username — or turning off SSL '
+              'certificate verification — requires re-entering the password.',
+              'danger')
+        return redirect(url_for('appliances.edit', id=appliance.id))
+    # On a cluster the switch also relaxes every member's connection, and each
+    # member sends its OWN stored password. Re-entering node 0's proves
+    # nothing about theirs, so the password typed must be the one every member
+    # stores (an HA pair keeps its admin password in sync).
+    if verify_ssl_relaxed and appliance.is_cluster:
+        differ = _members_with_other_password(appliance, password)
+        if differ:
+            flash('Turning off SSL certificate verification on a cluster turns it '
+                  'off for every member, so the password must be the one each '
+                  'member stores. It does not match: %s. Update those members '
+                  'first.' % ', '.join(differ), 'danger')
+            return redirect(url_for('appliances.edit', id=appliance.id))
+
+    appliance.name = request.form.get('name', appliance.name).strip()
+    # Guard the CHANGE, not the field: an unchanged kind is always allowed,
+    # so a legacy row whose kind no ADOM claims stays editable from Global.
+    if kind_changed:
+        if not product_scope.may_assign_kind(new_kind):
+            flash('This ADOM cannot move an appliance to another platform.',
+                  'danger')
+            return redirect(url_for('appliances.edit', id=appliance.id))
+        appliance.kind = new_kind
+    appliance.host = new_host
+    appliance.port = new_port
+    appliance.username = new_username
+    appliance.ssh_username = new_ssh_username
+    if not appliance.verify_ssl_inherited:
+        appliance.verify_ssl = new_verify_ssl
+    if tls_posted:
+        appliance.tls_name = new_tls_name
+    appliance.vdom = request.form.get('vdom', appliance.vdom or '').strip() or None
+    appliance.tags = request.form.get('tags', appliance.tags or '').strip() or None
+    appliance.department = request.form.get('department', appliance.department or '').strip() or None
+    appliance.zone = request.form.get('zone', appliance.zone or '').strip() or None
+    appliance.line = request.form.get('line', appliance.line or '').strip() or None
+    appliance.hw_type = _clean_hw_type(request.form.get('hw_type', appliance.hw_type or 'unknown'))
+    appliance.model = request.form.get('model', appliance.model or '').strip() or None
+    # Preserve maintenance unless the editor can see it (an operator editing a
+    # normal device never submits the hidden field -> value kept).
+    if current_user.can('appliances.view_maintenance') and request.form.get('maintenance_present'):
+        appliance.maintenance = request.form.get('maintenance') == 'on'
+    # HA: a member node's identity is managed from its cluster, not here; only
+    # a top-level row (standalone or node 0) toggles cluster/mode/vip.
+    # Only a form that RENDERS the HA block may change it: the quick-edit
+    # dialog on the list has no HA fields, and reading their absence as
+    # "unchecked" dissolved every cluster edited from there.
+    # (``ha_posted`` and the VIP-as-host rule are resolved above, before the
+    # credential guard, so a VIP change counts as a host change.)
+    if not appliance.is_cluster_member and ha_posted:
+        appliance.is_cluster = is_cluster
+        appliance.ha_mode = ha_mode
+        appliance.ha_vip = ha_vip
+    if password:
+        appliance.set_password(password)
+    if ssh_password:
+        appliance.set_ssh_password(ssh_password)
+    elif ssh_clear:
+        appliance.set_ssh_password(None)
+    # SNMP polling (services/snmp_collect): only a form that renders the block
+    # may change it — the quick-edit dialog posts none, and an absent block is
+    # not "switched off". The community follows the SSH password's rules:
+    # blank keeps, the checkbox removes.
+    snmp_posted = request.form.get('snmp_present') == '1'
+    if snmp_posted:
+        appliance.snmp_enabled = request.form.get('snmp_enabled') == 'on'
+        port_raw = (request.form.get('snmp_port') or '').strip()
+        if port_raw.isdigit() and 1 <= int(port_raw) <= 65535:
+            appliance.snmp_port = int(port_raw)
+        elif not port_raw:
+            appliance.snmp_port = None
+        else:
+            db.session.rollback()
+            flash('SNMP port must be a number between 1 and 65535.', 'danger')
+            return redirect(url_for('appliances.edit', id=appliance.id))
+        snmp_community = request.form.get('snmp_community', '')
+        if snmp_community:
+            appliance.set_snmp_community(snmp_community)
+        elif request.form.get('snmp_community_clear') == 'on':
+            appliance.set_snmp_community(None)
+        if appliance.snmp_enabled and not appliance.has_snmp_community:
+            db.session.rollback()
+            flash('SNMP polling needs a community string.', 'danger')
+            return redirect(url_for('appliances.edit', id=appliance.id))
+
+    # -- datasheet PDF: remove, replace, or keep --------------------------
+    if request.form.get('datasheet_remove') == 'on':
+        datasheets.delete(appliance.id)
+        appliance.datasheet_filename = None
+    upload = request.files.get('datasheet')
+    if upload and (upload.filename or '').strip():
+        try:
+            appliance.datasheet_filename = datasheets.save(appliance.id, upload)
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+            return redirect(url_for('appliances.edit', id=appliance.id))
+
+    # -- physical interfaces: replace-all from posted rows ----------------
+    # Same rule as HA: only a form that carries the interface table replaces
+    # it. The list dialog posts none, and an absent table is not an empty one.
+    if request.form.get('interfaces_present') or 'if_name' in request.form:
+        _rebuild_interfaces(appliance)
+
+    db.session.commit()
+    log_action('appliance.update', target=appliance.name)
+    # An edit can make a device collectable that was not: maintenance cleared,
+    # product changed, host filled in. Existing targets are never touched.
+    _provision_monitoring(appliance)
+    if snmp_posted:
+        # The one exception to "existing targets are never touched": the snmp
+        # target follows the appliance's own switch (off = disabled, not red).
+        try:
+            from ..services import snmp_collect
+            snmp_collect.sync_target(appliance)
+        except Exception as exc:  # noqa: BLE001 - never lose the saved row
+            current_app.logger.warning('snmp target sync for %s: %s', appliance.name, exc)
+    flash(f'Appliance {appliance.name} updated.', 'success')
+    return redirect(url_for('appliances.detail', id=appliance.id))
+
+
+# ---------------------------------------------------------------------------
+# Maintenance mode as a verb of its own (inventory row + device page)
+# ---------------------------------------------------------------------------
+
+@bp.route('/<int:id>/maintenance', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def set_maintenance(id):
+    """Set or clear ``Appliance.maintenance`` without going through the edit form.
+
+    Two things this route MUST keep in step with :func:`edit_save`, because the
+    two are now writers of one fact:
+
+    * the same permission PAIR gates it — ``config_write`` to change the row,
+      ``appliances.view_maintenance`` to touch this particular field. A user who
+      cannot SEE maintenance devices must not be able to make one, or they hide
+      a device from themselves with no way back.
+    * clearing the flag can make a device collectable that was not, so the same
+      ``_provision_monitoring`` seam runs here. Without it this button would
+      leave a device visible but silently uncollected — which is the exact
+      failure mode maintenance mode already specialises in.
+
+    The form posts the DESIRED state, never a flip: a stale tab (or a second
+    operator) toggling "the other way" is a silent state change on a device that
+    hides itself from operators. Re-posting the state a row is already in is a
+    no-op — no write, no audit row, no monitoring pass.
+    """
+    appliance = visible_appliance_or_404(id)
+    if not current_user.can('appliances.view_maintenance'):
+        # The row is visible to this caller either way, so 403 leaks nothing
+        # that a 404 would hide — and it says what actually went wrong.
+        abort(403)
+
+    want = request.form.get('maintenance') == 'on'
+    # Whitelist the destination. NEVER request.referrer / a raw next= value:
+    # it is attacker-supplied and this is a POST that already passed CSRF.
+    dest = (url_for('appliances.detail', id=appliance.id)
+            if (request.form.get('back') or '').strip() == 'detail'
+            else url_for('appliances.index'))
+
+    if bool(appliance.maintenance) == want:
+        flash(f'{appliance.name} is already '
+              f'{"in" if want else "out of"} maintenance mode.', 'info')
+        return redirect(dest)
+
+    appliance.maintenance = want
+    db.session.commit()
+    log_action('appliance.maintenance', target=appliance.name,
+               extra={'maintenance': want})
+    _provision_monitoring(appliance)
+    if want:
+        flash(f'{appliance.name} is now in maintenance mode — hidden from '
+              f'operators and read-only users, and skipped by scheduled probes '
+              f'and metric collection.', 'success')
+    else:
+        flash(f'{appliance.name} is out of maintenance mode.', 'success')
+    return redirect(dest)
+
+@bp.route('/<int:id>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def delete(id):
+    appliance = visible_appliance_or_404(id)
+    from ..services import device_identity as _ident
+    # Identity retired, datasheet removed, row deleted -- the same helper the
+    # REST delete uses.
+    name = _ident.deregister(appliance)
+    log_action('appliance.delete', target=name)
+    flash(f'Appliance {name} deleted. Its identity, configuration history and '
+          f'backups on the server are kept — see Administration → Stored Assets.',
+          'success')
+    return redirect(url_for('appliances.index'))
+
+
+@bp.route('/<int:id>/datasheet')
+@login_required
+@require_permission('appliances.view')
+def datasheet(id):
+    """Serve the appliance's datasheet PDF inline (read-only, any logged-in user)."""
+    appliance = visible_appliance_or_404(id)
+    if not appliance.datasheet_filename:
+        abort(404)
+    path = datasheets.path_for(appliance.id)
+    if not os.path.exists(path):
+        abort(404)
+    return send_file(
+        path,
+        mimetype='application/pdf',
+        as_attachment=False,
+        download_name=appliance.datasheet_filename,
+    )
+
+
+@bp.route('/<int:id>/not-in-gui')
+@login_required
+@require_permission('appliances.view')
+def not_in_gui(id):
+    """"Not in GUI, but in CLI" for one device: every object and field its
+    exact build has outside the Fortinet GUI (permanent rule, every product)."""
+    appliance = visible_appliance_or_404(id)
+    from ..services import not_in_gui as nig
+    try:
+        inv = nig.device_inventory(appliance)
+        error = None
+    except Exception as exc:  # noqa: BLE001 — the page explains, never 500s
+        inv, error = None, str(exc)
+    return render_template('appliances/not_in_gui.html', appliance=appliance, inv=inv,
+                           error=error)
+
+
+@bp.route('/<int:id>/not-in-gui/rows')
+@login_required
+@require_permission('protection.view')
+def not_in_gui_rows(id):
+    """The rows of ONE object the device's GUI does not draw (an HTML
+    fragment the per-device page loads into its card). Read only, through
+    the product's GUI adapter -- the permission of the pages that draw the
+    same rows; an object outside that list is a 404, never a read."""
+    appliance = visible_appliance_or_404(id)
+    from ..services import gui_pages, not_in_gui as nig
+    got = nig.absent_rows(appliance, (request.args.get('ep') or '').strip())
+    if got is None:
+        abort(404)
+    return render_template('appliances/_nig_rows.html', appliance=appliance, cell=gui_pages.cell,
+                           **got)
+
+
+def _nig_body():
+    body = request.get_json(silent=True) or {}
+    endpoint = str(body.get('endpoint') or '').strip()
+    parent = str(body.get('parent') or '').strip()
+    return body, endpoint, (str(body.get('mkey')).strip() or None
+                            if body.get('mkey') not in (None, '') else None), \
+        ([parent] if parent else ())
+
+
+@bp.route('/<int:id>/not-in-gui/read', methods=['POST'])
+@login_required
+@require_permission('appliances.view')
+def not_in_gui_read(id):
+    """Current values of an object's CLI-only fields, over a read-only SSH
+    session (``show full-configuration``). Any product, any object the
+    device's build has; secrets are never returned."""
+    appliance = visible_appliance_or_404(id)
+    body, endpoint, mkey, parents = _nig_body()
+    names = [str(n) for n in (body.get('names') or []) if n][:200]
+    if not endpoint or not names:
+        return jsonify(ok=False, error='name the object and its fields'), 400
+    from ..services import not_in_gui as nig
+    return jsonify(**nig.cli_values(appliance, endpoint, mkey, names, parent_mkeys=parents))
+
+
+@bp.route('/<int:id>/not-in-gui/save', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def not_in_gui_save(id):
+    """Preview (default) or apply a change to an object's CLI-only fields from
+    the "Not in GUI, but in CLI" section of any product view. Only fields the
+    build serves by CLI alone are written (``cli_writer``: transaction, abort
+    on the first error, readback in a fresh session, audit row)."""
+    appliance = visible_appliance_or_404(id)
+    body, endpoint, mkey, parents = _nig_body()
+    fields = body.get('fields') or {}
+    if not endpoint or not isinstance(fields, dict):
+        return jsonify(ok=False, error='name the object and its fields'), 400
+    if len(fields) > 200:
+        return jsonify(ok=False, error='too many fields in one write'), 400
+    from ..services import not_in_gui as nig
+    do_apply = bool(body.get('apply'))
+    res = nig.save(appliance, endpoint, mkey, fields, parent_mkeys=parents, apply=do_apply)
+    if do_apply:
+        log_action('appliance.not_in_gui.save', target=appliance.name,
+                   detail='%s %s fields=%s ok=%s' % (endpoint, mkey or '', ','.join(sorted(
+                       str(k) for k in fields)), res.get('ok')))
+    return jsonify(**res)
+
+
+@bp.route('/<int:id>/test', methods=['POST'])
+@login_required
+@require_permission('appliances.view')
+def test_connection(id):
+    """Every address SATOM uses for this row, with the method picked: API,
+    TCP port (what telnet is used for), ping or traceroute (SA-0017).
+
+    A per-node cluster has no connection of its own, so its members are
+    tested (SA-0012); a VIP cluster is tested on the VIP AND each member, and
+    says so when only the members answer (SA-0018). A member is tested on its
+    own from its page or from its card on the cluster page (SA-0016). Each
+    failure carries the next step (services/conn_test: TLS name, trust
+    store, per-node mode)."""
+    from ..services import conn_test
+    appliance = visible_appliance_or_404(id)
+    body = request.get_json(silent=True) or {}
+    method = conn_test.clean_method(body.get('method') or request.form.get('method'))
+    res = conn_test.run(appliance, method, client_for=client_for)
+    for r in res['results']:
+        exc = r.pop('exc', None)
+        if exc is not None:
+            r['error_id'] = log_exception(exc, context='appliances.test_connection')
+    if len(res['results']) == 1 and res['results'][0].get('error_id'):
+        res['error_id'] = res['results'][0]['error_id']
+    log_action('appliance.test', target=appliance.name,
+               detail=('%s · method=%s ok=%s' % (res['label'], method, res['ok'])
+                       + ('' if res['ok'] else ' · ' + res['status'][:400])))
+    return jsonify(res)
+
+
+def _members_with_other_password(node0, password):
+    """Names of the members whose stored password is not ``password``
+    (one that cannot be read counts as different: refuse, never assume)."""
+    out = []
+    typed = (password or '').encode()
+    for m in node0.cluster_members():
+        try:
+            same = hmac.compare_digest((m.password or '').encode(), typed)
+        except Exception:  # noqa: BLE001
+            same = False
+        if not same:
+            out.append(m.name)
+    return out
+
+
+# ===========================================================================
+# HA cluster membership
+# ===========================================================================
+
+def _clean_role_hint(raw):
+    raw = (raw or '').strip().lower()
+    return raw if raw in ('primary', 'secondary') else None
+
+
+@bp.route('/<int:id>/members', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def add_member(id):
+    """Attach an existing standalone appliance, or create a new member node,
+    under a cluster node 0."""
+    node0 = visible_appliance_or_404(id)
+    if not node0.is_cluster:
+        flash('This appliance is not an HA cluster.', 'warning')
+        return redirect(url_for('appliances.detail', id=id))
+    role_hint = _clean_role_hint(request.form.get('ha_role_hint'))
+    attach_id = (request.form.get('attach_id') or '').strip()
+
+    if attach_id:
+        # Scoped like node0: attaching re-parents the member, so a device the
+        # session cannot see must not be reachable by typing its id.
+        m = (visible_appliances().filter(Appliance.id == int(attach_id)).first()
+             if attach_id.isdigit() else None)
+        if m is None or not m.is_standalone or m.id == node0.id:
+            flash('Pick an existing standalone appliance to attach.', 'danger')
+            return redirect(url_for('appliances.detail', id=id))
+        m.parent_id = node0.id
+        m.is_cluster_member = True
+        m.ha_role_hint = role_hint
+    else:
+        mname = (request.form.get('member_name') or '').strip()
+        mhost = (request.form.get('member_host') or '').strip()
+        if not mname or not mhost:
+            flash('Member name and host are required.', 'danger')
+            return redirect(url_for('appliances.detail', id=id))
+        m = Appliance(
+            name=mname, kind=node0.kind, host=mhost,
+            port=int(request.form.get('member_port', 443) or 443),
+            username=(request.form.get('member_username') or '').strip(),
+            verify_ssl=node0.verify_ssl, vdom=node0.vdom,
+            zone=node0.zone, line=node0.line, department=node0.department,
+            is_cluster_member=True, parent_id=node0.id, ha_role_hint=role_hint,
+            password_enc='placeholder',
+        )
+        m.set_password(request.form.get('member_password', ''))
+        db.session.add(m)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash('A member with that name already exists.', 'danger')
+        return redirect(url_for('appliances.detail', id=id))
+    log_action('appliance.member_add', target=node0.name)
+    _provision_monitoring(m)   # a member node is a real device with its own host
+    flash('Cluster member added.', 'success')
+    return redirect(url_for('appliances.detail', id=id))
+
+
+@bp.route('/<int:id>/members/<int:mid>/detach', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def detach_member(id, mid):
+    """Detach a member (back to standalone) or delete it outright (delete=1)."""
+    node0 = visible_appliance_or_404(id)
+    m = visible_appliance_or_404(mid)
+    if m.parent_id != node0.id:
+        flash('That appliance is not a member of this cluster.', 'warning')
+        return redirect(url_for('appliances.detail', id=id))
+    if request.form.get('delete') == '1':
+        db.session.delete(m)
+        msg = 'Cluster member deleted.'
+    else:
+        # A member follows its cluster's TLS setting; once standalone its own
+        # stored value would take over unseen. Carry the one it ran with.
+        m.verify_ssl = node0.verify_ssl
+        m.parent_id = None
+        m.is_cluster_member = False
+        m.ha_role_hint = None
+        msg = 'Cluster member detached (now standalone).'
+    db.session.commit()
+    log_action('appliance.member_detach', target=node0.name)
+    flash(msg, 'success')
+    return redirect(url_for('appliances.detail', id=id))
+
+
+# ===========================================================================
+# Appliance actions (ported from the desktop app): Policy Inspector,
+# Rediscovery, Console, Upgrade Preparation, Upgrade, Boot Partition. Every one
+# serves BOTH kinds; the FortiADC side lives in services/adc_ops (the firmware
+# transport since 2026-10-11, read off the FortiADC 7.6.7 GUI).
+# ===========================================================================
+
+def _flashable_or_404(id):
+    appliance = visible_appliance_or_404(id)
+    if appliance.kind not in ('fortiweb', 'fortiadc'):
+        flash('Firmware actions are available for FortiWeb and FortiADC appliances only.',
+              'warning')
+        return None, appliance
+    return appliance, appliance
+
+
+def _managed_or_404(id):
+    """An appliance whose kind has the action services wired (both today)."""
+    appliance = visible_appliance_or_404(id)
+    if appliance.kind not in ('fortiweb', 'fortiadc'):
+        flash('This action is not available for this appliance kind.', 'warning')
+        return None
+    return appliance
+
+
+# -- 1. Policy Inspector (FortiWeb) / VS Inspector (FortiADC) -----------------
+@bp.route('/<int:id>/inspector')
+@login_required
+@require_permission('appliances.view')
+def inspector(id):
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    if appliance.kind == 'fortiadc':
+        from ..services import adc_ops as insp
+    else:
+        from ..services import inspector as insp
+    policy = request.args.get('policy', '').strip()
+    result, error, capture = None, None, None
+    if appliance.kind == 'fortiadc' and request.args.get('source') == 'capture':
+        # The tree out of the last rediscovery + its depth capture: no device
+        # call, so it also answers for a box that is down right now.
+        from ..services import adc_vstree, rediscovery
+        snap = rediscovery.latest_snapshot(appliance.id)
+        deep = rediscovery.adc_deep(appliance.id)
+        if not snap:
+            error = 'No rediscovery snapshot on this node yet: run a rediscovery first.'
+        else:
+            vss = adc_vstree.trees(adc_vstree.index_from_capture(snap, deep),
+                                   only=policy)
+            result = {'policies': vss, 'errors': [], 'count': len(vss)}
+            capture = {'sweep': snap.get('generated_at'),
+                       'deep': (deep or {}).get('generated_at'),
+                       'deep_sweep': (deep or {}).get('sweep_generated_at')}
+        return render_template('appliances/inspector.html', appliance=appliance,
+                               result=result, error=error, one_policy=policy,
+                               capture=capture)
+    try:
+        client = appliance.build_client()
+        if policy:
+            one = insp.inspect_vs(client, policy) if appliance.kind == 'fortiadc' \
+                else insp.inspect_policy(client, policy)
+            result = {'policies': [one], 'errors': [], 'count': 1}
+        else:
+            result = insp.inspect_all(client)
+        log_action('appliance.inspect', target=appliance.name,
+                   extra={'policies': result.get('count'), 'one': policy or None})
+    except Exception as exc:
+        error = f'{type(exc).__name__}: {exc}'
+    return render_template('appliances/inspector.html', appliance=appliance,
+                           result=result, error=error, one_policy=policy)
+
+
+# -- 2. Rediscovery ----------------------------------------------------------
+@bp.route('/<int:id>/rediscover')
+@login_required
+@require_permission('appliances.view')
+def rediscover(id):
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import rediscovery, analysis
+    is_adc = appliance.kind == 'fortiadc'
+    # The ADC depth is its child tables, kept beside the sweep snapshot; the
+    # FortiWeb depth is the WPP/policy layer of the cache.
+    deep_fresh = rediscovery.adc_deep_meta(appliance.id) if is_adc \
+        else analysis.deep_freshness([appliance.id]).get(str(appliance.id))
+    # What the CLI switch will ACTUALLY do, answered by the same function the
+    # worker obeys. Asking it here is the whole point: a page that computed its
+    # own preview could promise a capture the sweep then declines to take.
+    from ..services import cli_coverage
+    cli_decision = rediscovery.cli_capture_decision(
+        requested=True, kind=appliance.kind or 'fortiweb',
+        appliance_id=appliance.id,
+        maintenance=bool(getattr(appliance, 'maintenance', False)),
+        may_write_vault=current_user.can(Permission.BACKUP))
+    return render_template('appliances/rediscover.html', appliance=appliance,
+                           progress=rediscovery.status(appliance.id),
+                           snapshot=rediscovery.latest_snapshot_meta(appliance.id),
+                           deep_fresh=deep_fresh, allow_deep=True,
+                           cli_decision=cli_decision,
+                           allow_cli=(appliance.kind or 'fortiweb')
+                                     in cli_coverage.SUPPORTED_PRODUCTS,
+                           plan_size=len(rediscovery.plan_for(appliance)))
+
+
+@bp.route('/<int:id>/rediscover/start', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+def rediscover_start(id):
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return jsonify({'started': False, 'reason': 'unsupported appliance kind'}), 400
+    from ..services import rediscovery
+    from flask_login import current_user
+    deep = (request.form.get('deep') or request.args.get('deep') or '').lower() \
+        in ('1', 'true', 'on', 'yes')
+    cli = (request.form.get('cli') or request.args.get('cli') or '').lower() \
+        in ('1', 'true', 'on', 'yes')
+    # Read every predefined WPP in full (and refresh the factory catalog)
+    # instead of replaying it. Only meaningful with the deep pass.
+    factory_full = deep and (request.form.get('factory_full') or '').lower() \
+        in ('1', 'true', 'on', 'yes')
+    # The route gates ONE thing the worker cannot: the CLI dump is written to
+    # the configuration vault, and this endpoint only requires
+    # ``appliances.apply``. Dropping the flag SILENTLY would let a user create
+    # vault rows through a door that never mentions the vault — so the refusal
+    # is returned, not swallowed.
+    cli_refused = ''
+    if cli and not current_user.can(Permission.BACKUP):
+        cli, cli_refused = False, rediscovery.CLI_SKIP_NO_PERMISSION
+    res = rediscovery.start(appliance, by=getattr(current_user, 'username', ''),
+                            deep=deep, cli=cli, factory_full=factory_full)
+    if cli_refused:
+        res['cli_skipped'] = cli_refused
+    if res.get('started'):
+        log_action('appliance.rediscover', target=appliance.name,
+                   extra={'deep': bool(deep), 'cli': bool(cli),
+                          'factory_full': bool(factory_full)})
+    return jsonify(res)
+
+
+@bp.route('/<int:id>/rediscover/stop', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+def rediscover_stop(id):
+    """Same permission as Start: whoever may launch a sweep may cancel it."""
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return jsonify({'stopped': False, 'reason': 'unsupported appliance kind'}), 400
+    from ..services import rediscovery
+    from flask_login import current_user
+    res = rediscovery.request_stop(appliance.id,
+                                   by=getattr(current_user, 'username', ''))
+    if res.get('stopped'):
+        log_action('appliance.rediscover_stop', target=appliance.name,
+                   extra={'pending': bool(res.get('pending'))})
+    return jsonify(res), (200 if res.get('stopped') else 409)
+
+
+@bp.route('/<int:id>/rediscover/status')
+@login_required
+@require_permission('appliances.view')
+def rediscover_status(id):
+    appliance = visible_appliance_or_404(id)
+    from ..services import rediscovery
+    st = rediscovery.status(id) or {'state': 'idle'}
+    if st.get('state') == 'done':
+        # Auto-fill physical inventory from the snapshot, once per snapshot.
+        try:
+            inv = rediscovery.maybe_apply_inventory(appliance)
+            if inv:
+                st['inventory'] = inv
+        except Exception as exc:  # noqa: BLE001 — sync must never break the poll
+            st['inventory'] = {'applied': False, 'reason': str(exc)[:120]}
+    return jsonify(st)
+
+
+# -- 3. Console (read-only SSH) ---------------------------------------------
+@bp.route('/<int:id>/console')
+@login_required
+@require_permission('appliances.view')
+@require_device_scope
+def console(id):
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import ssh_ops
+    if appliance.kind == 'fortiadc':
+        from ..services.adc_ops import TROUBLESHOOT_ADC as presets
+    else:
+        presets = ssh_ops.TROUBLESHOOT
+    return render_template('appliances/console.html', appliance=appliance,
+                           presets=presets)
+
+
+@bp.route('/<int:id>/console/run', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def console_run(id):
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return jsonify({'ok': False, 'error': 'unsupported appliance kind'}), 400
+    from ..services import ssh_ops
+    command = (request.json or {}).get('command', '') if request.is_json \
+        else request.form.get('command', '')
+    try:
+        cmd = ssh_ops.assert_readonly(command)  # fail fast, before connecting
+    except ssh_ops.ReadOnlyViolation as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    try:
+        output = ssh_ops.run_command(appliance, cmd)
+        log_action('appliance.console', target=appliance.name, extra={'cmd': cmd})
+        return jsonify({'ok': True, 'command': cmd, 'output': output})
+    except Exception as exc:
+        eid = log_exception(exc, context='appliances.console_run')
+        return jsonify({'ok': False, 'error': f'{type(exc).__name__}: {exc}', 'error_id': eid})
+
+
+# -- 4. Upgrade Preparation (read-only) -------------------------------------
+@bp.route('/<int:id>/upgrade/prep')
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def upgrade_prep(id):
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import prep_store
+    return render_template('appliances/upgrade_prep.html', appliance=appliance,
+                           runs=prep_store.recent(appliance.id, 10))
+
+
+@bp.route('/<int:id>/upgrade/prep/run', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def upgrade_prep_run(id):
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return jsonify({'ok': False, 'error': 'unsupported appliance kind'}), 400
+    from ..services import prep_store
+    opts = request.json or {}
+    try:
+        # ONE implementation of the pre-upgrade, shared with the scheduled
+        # action (services.scheduled_actions._do_upgrade_prep). It runs
+        # upgrade.prepare(), captures the affected-service inventory and
+        # persists the row; a storage failure must not discard a pre-flight
+        # that already ran against the device, so it returns the result either
+        # way and reports the failure through on_store_error.
+        result, prep = prep_store.run_for(
+            appliance,
+            do_backup=opts.get('backup', True),
+            do_health=opts.get('health', True),
+            do_services=opts.get('services', True),
+            created_by=getattr(current_user, 'username', '') or '',
+            on_store_error=lambda exc: log_exception(
+                exc, context='appliances.upgrade_prep_store'),
+        )
+        log_action('appliance.upgrade_prep', target=appliance.name,
+                   detail=(f'prep #{prep.id} ok={prep.ok}' if prep else 'not stored'))
+        # 'result' is passed through from the live call, not re-read from the
+        # row: a storage failure must still paint what actually ran.
+        return jsonify({'ok': True, 'result': result,
+                        **_prep_payload(prep, result=result, stored=False)})
+    except Exception as exc:
+        eid = log_exception(exc, context='appliances.upgrade_prep_run')
+        return jsonify({'ok': False, 'error': f'{type(exc).__name__}: {exc}', 'error_id': eid})
+
+
+def _adom_arg() -> dict:
+    """``{'_adom': <this request's ADOM>}``, or nothing at all.
+
+    ``g.product`` is the per-request resolution (URL scope > X-ADOM header >
+    form field > session); the session is only the fallback. Reading the
+    session alone would disagree with the page the link is printed on, which is
+    the class of bug this exists to avoid.
+
+    An UNRESOLVED scope yields an empty dict, never ``_adom=``: a scope
+    parameter with no value is not the same request as one with no scope
+    parameter — it is a parameter that names nothing, and the gate would have
+    to decide what it meant.
+    """
+    from flask import g as _g, session as _session
+    scope = (getattr(_g, 'product', None) or _session.get('product') or '')
+    return {'_adom': scope} if scope else {}
+
+
+def _prep_payload(prep, *, result=None, stored=True) -> dict:
+    """The wire form of ONE pre-flight, live or recorded.
+
+    Both endpoints answer with this and the page paints both with the same
+    renderer. A recorded run rendered by a second, parallel renderer would drift
+    from the live one silently — both would still render, and the operator would
+    have no way to tell which description of the evidence is the true one.
+
+    ``stored`` is not cosmetic. The panel is the same panel, so a run read back
+    from the database MUST announce itself; a two-day-old health battery that
+    looks exactly like one taken thirty seconds ago is how somebody upgrades a
+    box on the strength of a pre-flight that predates the fault.
+    """
+    from ..services import prep_store, settings_store
+    if prep is None:
+        # The pre-flight ran but could not be stored. It still has to be shown:
+        # the numbers on screen were measured against the device.
+        return {'stored': False, 'prep_id': None, 'prep_ok': None,
+                'prep_summary': '', 'inventory': [], 'inventory_count': 0,
+                'created_at': '', 'created_by': '', 'cr_id': None, 'cr_url': ''}
+    # The AppID each policy is bound to in the catalog now (SA-0027): the
+    # field catalog below names it, so every row carries it.
+    from ..services import change_requests as cr_svc
+    rows = cr_svc.with_appids(prep.inventory_list)
+    return {
+        'stored': bool(stored),
+        'prep_id': prep.id,
+        'prep_ok': prep.ok,
+        'prep_summary': prep.summary or '',
+        'result': (result if result is not None else prep.result_dict),
+        'inventory': rows,
+        'inventory_count': len(rows),
+        'inventory_fields': [{'key': k, 'label': v} for k, v in prep_store.FIELDS],
+        # One timezone conversion path for the whole product (settings_store),
+        # and the SAME format string the ``localtime`` filter defaults to — the
+        # banner and the table row it was opened from name the same instant, so
+        # they must not spell it two ways.
+        'created_at': settings_store.to_local(prep.created_at,
+                                              '%Y-%m-%d %H:%M:%S'),
+        'created_by': prep.created_by or '',
+        'cr_id': prep.cr_id,
+        # Into the WINDOWED flow, carrying this appliance and this run.
+        # The single-change form is still reachable from Change Requests; what
+        # it is not is the place a pre-flight leads to, because a change raised
+        # from one box's evidence while the window covers forty is the defect
+        # the flow exists to remove.
+        # Same link as the table row's, spelled ONCE the same way: the ADOM
+        # travels with it. Without `_adom` this button lands in whatever scope
+        # the session cookie happens to hold — usually Global — so the operator
+        # who pressed it inside the FortiWeb console arrives somewhere else,
+        # with the chrome, the nav and the visible inventory all changed under
+        # them. Two spellings of one link is the drift, not the scope.
+        'cr_url': ('' if prep.cr_id else
+                   url_for('upgrade_flow.index', device=prep.appliance_id,
+                           prep=prep.id, **_adom_arg())),
+    }
+
+
+@bp.route('/<int:id>/upgrade/prep/<int:prep_id>.json')
+@login_required
+@require_permission('appliances.apply')
+def upgrade_prep_show(id, prep_id):
+    """Read back one RECORDED pre-flight run.
+
+    Until this existed the runs were stored, listed and citable — but not
+    readable. The table said "passed, 12 services"; the health battery, the
+    backup filename and the per-policy probe baseline that produced that verdict
+    were in the row and had no way out. Evidence you cannot open is a receipt,
+    not evidence.
+
+    The appliance is part of the lookup key rather than decoration: a prep id
+    belonging to another device would otherwise render under THIS device's
+    heading, and a pre-flight attributed to the wrong box is worse than none.
+    """
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return jsonify({'ok': False, 'error': 'unsupported appliance kind'}), 400
+    from ..services import prep_store
+    prep = prep_store.get(prep_id)
+    if prep is None or prep.appliance_id != appliance.id:
+        return jsonify({'ok': False,
+                        'error': 'no such recorded pre-flight for this appliance'}), 404
+    return jsonify({'ok': True, **_prep_payload(prep, stored=True)})
+
+
+# -- 5. Upgrade (firmware push from the repository — WRITE, dry-run default) --
+def _change_authorization(appliance, action='upgrade'):
+    """``(cr, ok, reason)`` — the approved change request that authorizes a LIVE
+    run of ``action`` against this appliance right now.
+
+    This page was the hole. The headless executor has refused to flash outside
+    an approved window since the gate was generalised, but the button a human
+    actually clicks went straight to ``push_firmware`` with nothing but
+    ``CONFIG_WRITE`` and a typed device name: the path that works had no gate
+    and the path with the gate was a stub. A change-control regime that only
+    binds the unused code path is decoration.
+
+    Picks the SOONEST-STARTING runnable candidate rather than the newest row,
+    so an operator who raised two changes does not silently consume the wrong
+    window. A dry run is never gated — validating an image changes nothing.
+    """
+    from datetime import datetime
+    from ..models import ChangeRequest
+    from ..services import change_requests as crsvc
+    candidates = [cr for cr in
+                  ChangeRequest.query.filter(
+                      ChangeRequest.action == action,
+                      ChangeRequest.status.in_(('approved', 'scheduled',
+                                                'in_progress'))).all()
+                  if appliance.id in cr.device_ids_list]
+    if not candidates:
+        return None, False, ('no approved change request names this appliance '
+                             f'for {action}')
+    reasons: list[str] = []
+    runnable = []
+    for cr in candidates:
+        ok, why = crsvc.cr_runnable(cr)
+        if ok:
+            runnable.append(cr)
+        else:
+            reasons.append(f'{cr.ref or ("CR #%d" % cr.id)}: {why}')
+    if not runnable:
+        # Name the closest one and WHY it does not authorize, never just "no".
+        return candidates[0], False, '; '.join(reasons[:3])
+    runnable.sort(key=lambda c: (c.window_start or datetime.max))
+    return runnable[0], True, 'inside an approved maintenance window'
+
+
+def _upgrade_authorization(appliance):
+    """The firmware-flash reading of :func:`_change_authorization`."""
+    return _change_authorization(appliance, 'upgrade')
+
+
+def _selected_compatible_image(appliance, image_id):
+    """Resolve a posted image_id to a FirmwareImage that is actually compatible
+    with this appliance (defence against a tampered / stale form). Returns the
+    row, or None when the id is missing, unknown, or not compatible."""
+    from ..models_firmware import FirmwareImage
+    from ..services import upgrade as upg
+    try:
+        iid = int(image_id)
+    except (TypeError, ValueError):
+        return None
+    if iid not in {fw.id for fw in upg.compatible_images(appliance)}:
+        return None
+    return db.session.get(FirmwareImage, iid)
+
+
+def _scout_for(appliance, image, *, asked=True, current=None):
+    """Scout's reading of installing ``image`` on ``appliance``.
+
+    The view's ONLY entry point into the advisory, so the panel rendered beside
+    the button, the panel refreshed when the image changes and the verdict
+    recorded with the flash are the same computation. Three callers building
+    their own arguments is how one of them ends up reviewing a different move
+    than the one that runs."""
+    from ..services import upgrade_scout
+    target = getattr(image, 'version', '') if image is not None else ''
+    cur = current if current is not None else (getattr(appliance, 'firmware', '') or '')
+    return upgrade_scout.review(appliance, target, cur, asked=asked)
+
+
+@bp.route('/<int:id>/upgrade/advisory')
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def upgrade_advisory(id):
+    """Scout's panel for ONE candidate image, as an HTML fragment.
+
+    Same permission and same device scope as the page that embeds it — a review
+    of a firmware move names the appliance, its running version and the vendor's
+    warnings about it, so widening the gate here would leak through a fragment
+    what the page itself refuses to show.
+
+    HTML, not JSON, on purpose: the findings carry vendor prose verbatim, and
+    the fragment puts every one of them through the template's autoescape. A
+    JSON feed would need a second renderer in JavaScript and hand it the same
+    strings unescaped."""
+    appliance, _ = _flashable_or_404(id)
+    if appliance is None:
+        abort(404)
+    image = _selected_compatible_image(appliance, request.args.get('image_id'))
+    asked = (request.args.get('scout_check') or 'on') in ('on', '1', 'true')
+    return render_template('appliances/_scout_advisory.html', appliance=appliance,
+                           scout=_scout_for(appliance, image, asked=asked))
+
+
+@bp.route('/<int:id>/upgrade')
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def upgrade(id):
+    appliance, _ = _flashable_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import upgrade as upg
+    fw = ''
+    try:
+        fw = upg.firmware_version(appliance.build_client(timeout=8))
+    except Exception:
+        fw = ''
+    _persist_firmware(appliance, fw)
+    images = upg.compatible_images(appliance)
+    from ..services import prep_store
+    cr, cr_ok, cr_reason = _upgrade_authorization(appliance)
+    # The panel is rendered for images[0] because that is the option the picker
+    # has selected on arrival — reviewing anything else would put a verdict for
+    # one version next to a button that flashes another. JS re-fetches it on
+    # change; with JS off the page still carries a real review of what will post.
+    scout = _scout_for(appliance, images[0] if images else None, current=fw)
+    return render_template('appliances/upgrade.html', appliance=appliance,
+                           firmware=fw, images=images,
+                           cr=cr, cr_ok=cr_ok, cr_reason=cr_reason,
+                           scout=scout,
+                           prep=prep_store.latest_for(appliance.id))
+
+
+@bp.route('/<int:id>/upgrade', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def upgrade_push(id):
+    appliance, _ = _flashable_or_404(id)
+    if appliance is None:
+        flash('Firmware actions need a FortiWeb or FortiADC appliance.', 'danger')
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import upgrade as upg
+
+    image = _selected_compatible_image(appliance, request.form.get('image_id'))
+    if image is None:
+        flash('Select a compatible firmware image from the repository first.', 'danger')
+        return redirect(url_for('appliances.upgrade', id=id))
+    dry_run = request.form.get('dry_run') == 'on'
+    confirm_maturity = request.form.get('confirm_maturity') == 'on'
+
+    # SCOUT. Runs for a dry run and for a live push alike: the dry run is where
+    # an operator decides, so withholding the vendor's warnings there would put
+    # them on the only screen nobody reads twice. It runs BEFORE the image is
+    # sent — a warning delivered after the reboot is not a warning. It is
+    # advisory and never refuses: see services/upgrade_scout.
+    scout = _scout_for(appliance, image,
+                       asked=request.form.get('scout_check') == 'on')
+    if scout.asked and scout.verdict in ('blocker', 'caution'):
+        # Recorded whether or not the operator reads the panel, so "we were told"
+        # is answerable afterwards from the audit log alone.
+        log_action('appliance.upgrade_scout', target=appliance.name,
+                   detail='%s %s -> %s (%s)' % (scout.verdict, scout.current,
+                                                scout.target,
+                                                'dry run' if dry_run else 'live'))
+
+    # CHANGE CONTROL. A live flash needs an approved change request naming this
+    # appliance whose maintenance window is open right now. A dry run does not:
+    # it sends nothing to the device, and gating it would push operators to skip
+    # the validation step entirely.
+    cr = None
+    if not dry_run:
+        cr, cr_ok, cr_reason = _upgrade_authorization(appliance)
+        if not cr_ok:
+            msg = ('Live upgrade refused — change control: ' + cr_reason
+                   + '. Run the upgrade preparation, raise a change request '
+                     'from it, get it approved, and flash inside its window.')
+            log_action('appliance.upgrade_refused', target=appliance.name,
+                       detail=cr_reason)
+            if _wants_json():
+                return jsonify({'ok': False, 'error': msg,
+                                'needs_change_request': True}), 403
+            flash(msg, 'danger')
+            return redirect(url_for('appliances.upgrade', id=id))
+
+    if _wants_json():
+        return _spawn_flash_job(appliance, image, 'upgrade', dry_run,
+                                confirm_maturity, cr=cr, scout=scout)
+
+    # A live push requires typing the exact appliance name (defence against a
+    # mis-click rebooting the wrong box).
+    if not dry_run and request.form.get('confirm_name', '').strip() != appliance.name:
+        flash('Live upgrade requires typing the exact appliance name to confirm.', 'danger')
+        return redirect(url_for('appliances.upgrade', id=id))
+
+    try:
+        image_bytes = upg.read_image_bytes(image)
+    except Exception as exc:
+        flash(f'Firmware file problem: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.upgrade', id=id))
+
+    from ..services import change_requests as crsvc
+    if cr is not None:
+        crsvc.start(cr, by=getattr(current_user, 'username', '') or 'operator',
+                    detail=f'Synchronous flash of {image.filename}')
+    try:
+        result = upg.push_firmware(
+            appliance, image_bytes, image.filename,
+            dry_run=dry_run, confirm_maturity=confirm_maturity,
+        )
+    except Exception as exc:
+        if cr is not None:
+            crsvc.finish_device(cr, appliance.id, 'error', by='operator',
+                                summary=f'{type(exc).__name__}: {exc}'[:2000])
+        flash(f'Upgrade failed: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.upgrade', id=id))
+    if cr is not None:
+        # Per appliance: a change naming several appliances closes once each
+        # of them has a result, not after the first one.
+        crsvc.finish_device(cr, appliance.id,
+                            'ok' if result.get('ok') else 'error', by='operator',
+                            summary=(result.get('message') or '')[:2000])
+
+    images = upg.compatible_images(appliance)
+    return render_template('appliances/upgrade.html', appliance=appliance,
+                           firmware=result.get('firmware_before', ''),
+                           result=result, images=images, selected_id=image.id,
+                           scout=scout)
+
+
+# -- Async firmware flash (upgrade/downgrade) via the background-jobs framework -
+def _wants_json() -> bool:
+    """AJAX path \u2014 the browser's fetch sets this header (or an ajax=1 field)."""
+    return (request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            or (request.form.get("ajax") or "") in ("1", "true"))
+
+
+def _persist_firmware(appliance, fw):
+    """Best-effort: record the appliance's last-known OS version so the UI
+    reflects reality after a flash. Never blocks anything."""
+    try:
+        from ..extensions import db
+        fw = (fw or '').strip()
+        if fw and getattr(appliance, 'firmware', None) != fw:
+            appliance.firmware = fw
+            db.session.commit()
+    except Exception:  # noqa: BLE001
+        try:
+            from ..extensions import db
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _visible_appliance_ids() -> set[int]:
+    return {a.id for a in visible_appliances().all()}
+
+
+@bp.route('/flash-report/<job_id>', methods=['GET'])
+@login_required
+@require_permission('appliances.view')
+def flash_report_view(job_id):
+    """Serve the self-contained before/after firmware-flash report for a job.
+    Served from DISK so it survives the ephemeral job record; any operator
+    may open any firmware report of a device they can see."""
+    from ..services import flash_report as _fr
+    from flask import g
+    # Fleet-wide, but not past the visibility boundary: a report about a
+    # device this user cannot see (maintenance, another ADOM) is a 404 too.
+    meta = _fr.report_meta(job_id)
+    if meta and meta.get("appliance_id") and \
+            meta["appliance_id"] not in _visible_appliance_ids():
+        abort(404)
+    page = _fr.read_report(job_id)
+    if page is None:
+        abort(404)
+    # The report is a self-contained page with an inline <style> block written
+    # to disk (no nonce). CSP style-src-elem lacks 'unsafe-inline', so stamp the
+    # request nonce onto the tag at serve time or the report renders unstyled.
+    nonce = getattr(g, 'csp_nonce', '')
+    if nonce and '<style>' in page:
+        page = page.replace('<style>', f'<style nonce="{nonce}">', 1)
+    return page
+
+
+@bp.route('/flash-reports', methods=['GET'])
+@login_required
+@require_permission('appliances.view')
+def flash_reports():
+    """History of every firmware-flash before/after report (upgrade + downgrade),
+    newest first. Optional ?appliance_id= focuses one box."""
+    from ..services import flash_report as _fr
+    try:
+        aid = int(request.args.get('appliance_id') or 0) or None
+    except (TypeError, ValueError):
+        aid = None
+    visible = _visible_appliance_ids()
+    reports = [r for r in _fr.list_reports(appliance_id=aid)
+               if not r.get("appliance_id") or r["appliance_id"] in visible]
+    focus = visible_appliance_or_404(aid) if aid else None
+    return render_template('appliances/flash_reports.html',
+                           reports=reports, focus=focus)
+
+
+def _flash_under_change(app, job_id, cr_id, run, appliance_id=None):
+    """Run a live flash INSIDE its change request and close that change with the
+    real outcome.
+
+    One seam instead of instrumenting every exit of the worker. The worker has
+    six terminal paths (rejected image, no recovery, silent no-op flash,
+    success, and two exception funnels); stamping the change at each of them is
+    how one of them eventually gets missed and leaves a change parked at
+    ``in_progress`` forever — the precise stall the terminal transitions were
+    added to remove. The job's own final status is the authority: it is what the
+    operator sees, so grading the change from anything else would let the two
+    records disagree.
+    """
+    from ..services import change_requests as crsvc, jobs as jobsvc
+    if not cr_id:
+        run()
+        return
+    with app.app_context():
+        try:
+            crsvc.start(cr_id, by='firmware-job',
+                        detail=f'Firmware flash job {job_id} started')
+        except Exception as exc:  # noqa: BLE001 - never block an authorized flash
+            log_exception(exc, context='appliances.flash_cr_start')
+    try:
+        run()
+    finally:
+        with app.app_context():
+            try:
+                job = jobsvc.get_job(job_id) or {}
+                status = job.get('status')
+                outcome = 'ok' if status == jobsvc.SUCCESS else (status or 'unknown')
+                summary = (job.get('error') or job.get('message') or '')[:2000]
+                crsvc.finish_device(cr_id, appliance_id, outcome,
+                                    by='firmware-job',
+                                    summary=summary or f'firmware job {status}')
+            except Exception as exc:  # noqa: BLE001
+                log_exception(exc, context='appliances.flash_cr_finish')
+
+
+def _flash_worker(app, job_id, appliance_id, image_id, filename,
+                  dry_run, confirm_maturity, kind, user_id, link, cr_id=None):
+    """Background firmware flash: read image \u2192 push \u2192 monitor reboot/recovery
+    \u2192 basic health checks \u2192 bell notification. kind \u2208 'upgrade' | 'downgrade'.
+
+    ``cr_id`` is the change request that authorized a live flash. Every exit
+    from this worker closes it with the real outcome; a change left at
+    'in_progress' because the box never came back is a stall this product has
+    already paid for once."""
+    from ..models_firmware import FirmwareImage
+    from ..services import upgrade as upg, jobs as jobsvc
+    from ..services import notifications as notify
+    K = notify.Notification
+    verb = 'Downgrade' if kind == 'downgrade' else 'Upgrade'
+
+    def _audit_failed(appliance, msg):
+        # The outcome of a live flash is audited either way; a failure used to
+        # leave only the job record.
+        try:
+            log_action(f'appliance.{kind}.failed', target=appliance.name,
+                       extra={'outcome': 'failure', 'image_id': image_id,
+                              'error': (msg or '')[:300]})
+        except Exception:  # noqa: BLE001
+            pass
+
+    with app.app_context():
+        appliance = db.session.get(Appliance, appliance_id)
+        image = db.session.get(FirmwareImage, image_id)
+        if appliance is None or image is None:
+            jobsvc.finish_error(job_id, "appliance or image no longer exists")
+            return
+        try:
+            jobsvc.set_progress(job_id, 3, "Reading firmware image\u2026")
+            image_bytes = upg.read_image_bytes(image)
+
+            # Downgrade (esp. cross-branch, e.g. 8.0->7.6) must target the ALTERNATE
+            # partition and answer the box's maturity + downgrade confirmations,
+            # mirroring the GUI "Upload and Reboot". A same-branch upgrade keeps part=0.
+            fw_part, fw_active, confirm_dg = 0, 0, False
+            if kind == 'downgrade':
+                try:
+                    _pt = upg.read_partitions(appliance)
+                    _alt = _pt.get('alternate') or {}
+                    fw_part = int(_alt.get('partition') or 0)
+                    fw_active = int(bool(_alt.get('active')))
+                    confirm_dg = True
+                    confirm_maturity = True
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if dry_run:
+                jobsvc.set_progress(job_id, 40, "Validating image + maintenance permission\u2026")
+                result = upg.push_firmware(appliance, image_bytes, filename,
+                                           dry_run=True, confirm_maturity=confirm_maturity,
+                                           confirm_downgrade=confirm_dg,
+                                           part=fw_part, active=fw_active)
+                jobsvc.finish_success(job_id, message=result.get("message", "Validated."),
+                                      result={"phase": "dry_run"})
+                return
+
+            # Runbook pre-flight for BOTH upgrade and downgrade: safety backup +
+            # SSH health battery + published-service baseline before the flash,
+            # each step announced. Read-only + best-effort (never blocks a flash).
+            before_snap = None
+            try:
+                before_snap = upg.prepare(
+                    appliance, do_backup=True, do_health=True, do_services=True,
+                    created_by=(jobsvc.get_job(job_id) or {}).get("by") or "",
+                    progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
+            except Exception:  # noqa: BLE001 - best-effort; never blocks an authorized flash
+                before_snap = {"error": "pre-flight incomplete"}
+
+            jobsvc.set_progress(job_id, 16,
+                                f"Uploading {image.size_mb()} MB and triggering the flash\u2026")
+            result = upg.push_firmware(appliance, image_bytes, filename,
+                                       dry_run=False, confirm_maturity=confirm_maturity,
+                                       confirm_downgrade=confirm_dg,
+                                       part=fw_part, active=fw_active)
+            image_bytes = None  # free ~300 MB
+            fw_before = result.get("firmware_before", "")
+
+            if not result.get("ok"):
+                msg = result.get("message", "the appliance did not accept the flash")
+                jobsvc.finish_error(job_id, msg)
+                _audit_failed(appliance, msg)
+                if user_id:
+                    notify.push(user_id, f"{verb} not started: {appliance.name}",
+                                kind=K.KIND_ERROR, body=msg[:400], link=link)
+                return
+
+            jobsvc.set_progress(job_id, 45, "Image accepted \u2014 the appliance is rebooting\u2026")
+            rec = upg.monitor_recovery(
+                appliance,
+                progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
+
+            if not rec.get("recovered"):
+                msg = (f"{appliance.name} did not come back online within the wait window "
+                       f"(~{int(rec.get('elapsed_s', 0))}s). The flash may still be in progress "
+                       f"\u2014 check the console.")
+                jobsvc.finish_error(job_id, msg)
+                _audit_failed(appliance, msg)
+                if user_id:
+                    notify.push(user_id, f"{verb}: {appliance.name} not back yet",
+                                kind=K.KIND_WARNING, body=msg[:400], link=link)
+                return
+
+            # A flash that neither dropped the box NOR changed the firmware did not take
+            # (the box rejected/ignored the image). Do not report a false win.
+            fw_now = rec.get("firmware_after") or ""
+            if not rec.get("went_down") and fw_before and fw_now and fw_now == fw_before:
+                msg = (f"{appliance.name} never rebooted and is still on {fw_now}. The image was "
+                       f"uploaded but NOT installed - the box did not accept this flash / "
+                       f"upgrade path, so the firmware is unchanged.")
+                jobsvc.finish_error(job_id, msg)
+                _audit_failed(appliance, msg)
+                if user_id:
+                    notify.push(user_id, f"{verb} not applied: {appliance.name}",
+                                kind=K.KIND_ERROR, body=msg[:400], link=link)
+                return
+
+            # Same runbook AFTER the flash (both kinds): re-test services + SSH
+            # health and diff them against the pre-flight baseline, each announced.
+            after_snap = None
+            try:
+                after_snap = upg.postflight(
+                    appliance, before_snap,
+                    progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
+            except Exception:  # noqa: BLE001
+                after_snap = {"error": "post-flight incomplete"}
+
+            jobsvc.set_progress(job_id, 96, "Back online \u2014 running basic system checks\u2026")
+            health = upg.post_flash_checks(appliance)
+            fw_after = rec.get("firmware_after") or health.get("firmware", "")
+            svc = health.get("services") or {}
+            svc_txt = (f" \u00b7 services {svc['up']}/{svc['total']} reachable"
+                       if isinstance(svc, dict) and "up" in svc else "")
+            done = (f"{appliance.name} is back online on {fw_after or 'the new firmware'} "
+                    f"(was {fw_before or '?'}){svc_txt}. Recovered in "
+                    f"{int(rec.get('elapsed_s', 0))}s.")
+            if isinstance(before_snap, dict):
+                _bk = before_snap.get("backup") or {}
+                if _bk.get("ok"):
+                    done += f" Pre-{kind} backup: {_bk.get('name')}."
+            if fw_after:
+                jobsvc.set_progress(job_id, 98,
+                                    f"Recording new firmware version {fw_after} on the appliance\u2026")
+                _persist_firmware(appliance, fw_after)
+            # Render the before/after service + SSH-battery report (both kinds).
+            report_url = ""
+            try:
+                from ..services import flash_report
+                _bk_name = (((before_snap or {}).get("backup") or {}).get("name")
+                            if isinstance(before_snap, dict) else None)
+                report_url = flash_report.write_report(
+                    job_id,
+                    {"appliance": appliance.name, "appliance_id": appliance.id,
+                     "kind": kind, "job_id": job_id,
+                     "firmware_before": fw_before, "firmware_after": fw_after,
+                     "reachable_after": bool(health.get("api_ok")), "image": filename,
+                     "by": (jobsvc.get_job(job_id) or {}).get("by") or "",
+                     "downtime_s": rec.get("elapsed_s"), "backup": _bk_name},
+                    before_snap, after_snap)
+            except Exception:  # noqa: BLE001 - a report failure never sinks a completed flash
+                report_url = ""
+            if report_url:
+                done += " Full before/after report available."
+            # Final step (both kinds): a full rediscovery sweep so the manager's
+            # cached view of the box reflects the just-flashed firmware. Writes a
+            # fresh _config.json snapshot + refreshes the device inventory, and its
+            # progress shows on the appliance Rediscovery page. Best-effort: a
+            # rediscovery failure never sinks an already-completed flash.
+            redisc = None
+            try:
+                from ..services import rediscovery
+                jobsvc.set_progress(job_id, 99,
+                                    "Rediscovering the appliance (full config sweep)\u2026")
+                _rsnap = rediscovery._client_snapshot(appliance)
+                rediscovery._run(_rsnap, by=f"post-{kind}", deep=False)
+                _st = rediscovery.status(appliance.id) or {}
+                redisc = {"objects": _st.get("objects"),
+                          "sections": _st.get("section_count"),
+                          "errors": len(_st.get("errors") or []),
+                          "summary": _st.get("summary")}
+                try:
+                    rediscovery.maybe_apply_inventory(appliance)
+                except Exception:  # noqa: BLE001
+                    pass
+                if _st.get("summary"):
+                    done += f" Rediscovery: {_st['summary']}."
+            except Exception as exc:  # noqa: BLE001 - never sinks a completed flash
+                redisc = {"error": f"{type(exc).__name__}: {exc}"[:200]}
+            jobsvc.finish_success(job_id, message=done,
+                                  result={"phase": "done", "firmware_before": fw_before,
+                                          "firmware_after": fw_after, "recovery": rec,
+                                          "health": health, "reload": True,
+                                          "report_url": report_url,
+                                          "rediscovery": redisc,
+                                          "runbook": {"before": before_snap, "after": after_snap}})
+            try:
+                _extra = {"from": fw_before, "to": fw_after, "image_id": image_id}
+                if kind == 'downgrade' and isinstance(before_snap, dict):
+                    _extra["backup"] = (before_snap.get("backup") or {}).get("name")
+                if isinstance(redisc, dict) and not redisc.get("error"):
+                    _extra["rediscovered"] = redisc.get("objects")
+                _extra["outcome"] = "success"
+                log_action(f'appliance.{kind}.complete', target=appliance.name,
+                           extra=_extra)
+            except Exception:  # noqa: BLE001
+                pass
+            if user_id:
+                notify.push(user_id,
+                            f"{verb} complete: {appliance.name} \u2192 {fw_after or image.version}",
+                            kind=K.KIND_SUCCESS if health.get("api_ok") else K.KIND_WARNING,
+                            body=done[:400], link=(report_url or link))
+        except Exception as exc:  # noqa: BLE001
+            jobsvc.finish_error(job_id, f"{type(exc).__name__}: {exc}"[:300])
+            if not dry_run:
+                _audit_failed(appliance, f"{type(exc).__name__}: {exc}")
+            if user_id:
+                notify.push(user_id, f"{verb} failed: {getattr(appliance, 'name', '?')}",
+                            kind=K.KIND_ERROR, body=str(exc)[:400], link=link)
+    return None
+
+
+def _spawn_flash_job(appliance, image, kind, dry_run, confirm_maturity, cr=None,
+                     scout=None):
+    """Create the background flash job and return {job_id} JSON (the toast then
+    polls /jobs/<id>). Name-confirm is enforced here for the AJAX path.
+
+    ``cr`` is the change request that authorized a LIVE flash (None for a dry
+    run or a downgrade). It is carried into the job meta so the worker can move
+    the change to in_progress and close it with the real outcome: a flash that
+    ran outside its own change record is a change nobody can audit."""
+    from ..services import jobs as jobsvc
+    verb = 'Downgrade' if kind == 'downgrade' else 'Upgrade'
+    if not dry_run and (request.form.get('confirm_name', '') or '').strip() != appliance.name:
+        return jsonify({"error":
+                        f"Type the exact appliance name to authorise the live {kind}."}), 400
+    title = (f"Validate {image.version} for {appliance.name}" if dry_run
+             else f"{verb} {appliance.name} \u2192 {image.version}")
+    user_id = getattr(current_user, 'id', 0) or 0
+    link = url_for(f'appliances.{kind}', id=appliance.id)
+    # Computed ONCE and used twice — stamped on the job record and echoed to the
+    # caller. The job meta is the copy that outlives the page: a flash whose
+    # advisory existed only in a browser tab leaves nobody able to answer, after
+    # the reboot, what Scout had said before it. ``summary`` carries the verdict,
+    # the counts and the reason, never the vendor prose — that is rendered
+    # server-side by the fragment route, through the template's autoescape.
+    from ..services import upgrade_scout as _us
+    scout_meta = _us.summary(scout) if scout is not None else None
+    job = jobsvc.create_job(f'firmware_{kind}', title, cancelable=False,
+                            by=getattr(current_user, 'username', '') or '',
+                            meta={"appliance_id": appliance.id, "image_id": image.id,
+                                  "dry_run": dry_run, "scout": scout_meta,
+                                  "change_request_id": (cr.id if cr is not None else None)})
+    cr_id = cr.id if cr is not None else None
+    jobsvc.run_async(
+        current_app._get_current_object(), job["id"],
+        lambda app, jid: _flash_under_change(
+            app, jid, cr_id,
+            lambda: _flash_worker(app, jid, appliance.id, image.id, image.filename,
+                                  dry_run, confirm_maturity, kind, user_id, link,
+                                  cr_id),
+            appliance_id=appliance.id))
+    return jsonify({"job_id": job["id"], "scout": scout_meta})
+
+
+# -- 6. Downgrade / rollback (real in-app firmware push of an OLDER image) ----
+def _downgrade_context(appliance):
+    """Picker context for the downgrade page: current firmware, the per-image
+    relation vs. current (older/same/newer/unknown), the natural rollback default
+    (newest image strictly OLDER than current) and whether any older image exists.
+    The push mechanism is version-agnostic (same firmwareupgradedowngrade endpoint
+    as Upgrade) — this only frames/selects for rollback."""
+    from ..services import upgrade as upg
+    fw = ''
+    try:
+        fw = upg.firmware_version(appliance.build_client(timeout=8))
+    except Exception:
+        fw = ''
+    _persist_firmware(appliance, fw)
+    images = upg.compatible_images(appliance)   # all product/model matches, newest-first
+    cur = upg._version_key(fw) if fw else None
+    relations, default_id, older_exists = {}, None, False
+    for img in images:
+        if cur is None:
+            relations[img.id] = 'unknown'
+            continue
+        k = upg._version_key(img.version)
+        if k < cur:
+            relations[img.id] = 'older'
+            older_exists = True
+            if default_id is None:      # images newest-first → first older = best rollback
+                default_id = img.id
+        elif k > cur:
+            relations[img.id] = 'newer'
+        else:
+            relations[img.id] = 'same'
+    if default_id is None and images:   # nothing older (or fw unknown) → newest
+        default_id = images[0].id
+    return fw, images, relations, default_id, older_exists
+
+
+@bp.route('/<int:id>/downgrade')
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def downgrade(id):
+    appliance, _ = _flashable_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    fw, images, relations, default_id, older_exists = _downgrade_context(appliance)
+    parts, parts_error = _partition_table(appliance)
+    return render_template('appliances/downgrade.html', appliance=appliance,
+                           firmware=fw, images=images, relations=relations,
+                           selected_id=default_id, older_exists=older_exists,
+                           partitions=parts, partitions_error=parts_error)
+
+
+def _partition_table(appliance):
+    """``(table, error)`` for the Boot Partition page. FortiADC only: its
+    partition table is what decides whether "boot the other partition" is a
+    rollback or a reboot into nothing, so the page shows it."""
+    if appliance.kind != 'fortiadc':
+        return None, ''
+    from ..services import upgrade as upg
+    try:
+        return upg.read_partitions(appliance), ''
+    except Exception as exc:  # noqa: BLE001 — the page still renders
+        return None, f'{type(exc).__name__}: {exc}'[:200]
+
+
+@bp.route('/<int:id>/downgrade/boot-alternate', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def boot_alternate(id):
+    """Reboot a FortiADC into its inactive partition (no image sent).
+
+    Same gates as the Boot Partition flash: the emergency path needs no change
+    request, so a live run needs the acknowledgement AND the typed appliance
+    name, and every attempt is audited with its outcome. A dry run reads the
+    partition table and sends nothing."""
+    appliance, _ = _flashable_or_404(id)
+    if appliance is None or appliance.kind != 'fortiadc':
+        msg = 'Booting the alternate partition is available for FortiADC appliances only.'
+        if _wants_json():
+            return jsonify({'error': msg}), 400
+        flash(msg, 'warning')
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import upgrade as upg
+    dry_run = request.form.get('dry_run') == 'on'
+    back = url_for('appliances.downgrade', id=id)
+
+    def _answer(msg, ok, code=200):
+        if _wants_json():
+            return jsonify({'ok': ok, 'message': msg} if ok else {'error': msg}), code
+        flash(msg, 'success' if ok else 'danger')
+        return redirect(back)
+
+    if dry_run:
+        try:
+            res = upg.boot_alternate_partition(appliance, dry_run=True)
+        except Exception as exc:  # noqa: BLE001
+            return _answer(f'Partition check failed: {type(exc).__name__}: {exc}', False, 502)
+        return _answer(res['message'], bool(res.get('ok')), 200 if res.get('ok') else 409)
+
+    ack = request.form.get('ack_no_change_control') == 'on'
+    named = (request.form.get('confirm_name', '') or '').strip() == appliance.name
+    if not ack or not named:
+        reason = ('change-control bypass not acknowledged' if not ack
+                  else 'appliance name not typed')
+        log_action('appliance.boot_alternate', target=appliance.name,
+                   extra={'outcome': 'refused', 'reason': reason})
+        return _answer('A live partition boot reboots the appliance and bypasses change '
+                       'control: tick the acknowledgement and type the exact appliance '
+                       'name.', False, 400)
+    from ..services import jobs as jobsvc
+    log_action('appliance.boot_alternate', target=appliance.name,
+               extra={'outcome': 'started',
+                      'change_control': 'bypassed (emergency path, acknowledged)'})
+    job = jobsvc.create_job('firmware_boot_alternate',
+                            f'Boot alternate partition — {appliance.name}',
+                            cancelable=False,
+                            by=getattr(current_user, 'username', '') or '',
+                            meta={'appliance_id': appliance.id})
+    user_id = getattr(current_user, 'id', 0) or 0
+    jobsvc.run_async(current_app._get_current_object(), job['id'],
+                     lambda app, jid: _boot_alt_worker(app, jid, appliance.id,
+                                                       user_id, back))
+    if _wants_json():
+        return jsonify({'job_id': job['id']})
+    flash('Partition boot started — follow it in the jobs panel.', 'info')
+    return redirect(back)
+
+
+def _boot_alt_worker(app, job_id, appliance_id, user_id, link):
+    """Background partition boot: send the swap → watch the reboot → check the
+    box came back on the OTHER build → rediscover. Every exit is audited."""
+    from ..services import upgrade as upg, jobs as jobsvc
+    from ..services import notifications as notify
+    K = notify.Notification
+
+    def _fail(appliance, msg):
+        jobsvc.finish_error(job_id, msg)
+        log_action('appliance.boot_alternate', target=appliance.name,
+                   extra={'outcome': 'failure', 'error': msg[:300]})
+        if user_id:
+            notify.push(user_id, f'Partition boot failed: {appliance.name}',
+                        kind=K.KIND_ERROR, body=msg[:400], link=link)
+
+    with app.app_context():
+        appliance = db.session.get(Appliance, appliance_id)
+        if appliance is None:
+            jobsvc.finish_error(job_id, 'appliance no longer exists')
+            return
+        try:
+            jobsvc.set_progress(job_id, 5, 'Reading the partition table…')
+            res = upg.boot_alternate_partition(appliance, dry_run=False)
+            if not res.get('ok'):
+                return _fail(appliance, res.get('message') or 'refused')
+            fw_before, target = res.get('firmware_before', ''), res.get('target', '')
+            jobsvc.set_progress(job_id, 40, f'Accepted — rebooting into {target}…')
+            rec = upg.monitor_recovery(
+                appliance, progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
+            if not rec.get('recovered'):
+                return _fail(appliance, f'{appliance.name} did not come back within '
+                                        f'~{int(rec.get("elapsed_s", 0))}s — check the console.')
+            fw_after = rec.get('firmware_after') or ''
+            if fw_before and fw_after == fw_before:
+                return _fail(appliance, f'{appliance.name} is still on {fw_after}: the '
+                                        f'partition boot did not take.')
+            jobsvc.set_progress(job_id, 92, 'Back online — running basic checks…')
+            health = upg.post_flash_checks(appliance)
+            _persist_firmware(appliance, fw_after)
+            try:
+                from ..services import rediscovery
+                jobsvc.set_progress(job_id, 97, 'Rediscovering the appliance…')
+                rediscovery._run(rediscovery._client_snapshot(appliance),
+                                 by='post-boot-alternate', deep=False)
+                rediscovery.maybe_apply_inventory(appliance)
+            except Exception:  # noqa: BLE001 — never sinks a completed boot
+                pass
+            done = (f'{appliance.name} is back online on {fw_after or "?"} (was '
+                    f'{fw_before or "?"}). Recovered in {int(rec.get("elapsed_s", 0))}s.')
+            jobsvc.finish_success(job_id, message=done,
+                                  result={'phase': 'done', 'firmware_before': fw_before,
+                                          'firmware_after': fw_after, 'recovery': rec,
+                                          'health': health, 'reload': True})
+            log_action('appliance.boot_alternate', target=appliance.name,
+                       extra={'outcome': 'success', 'from': fw_before, 'to': fw_after})
+            if user_id:
+                notify.push(user_id, f'Partition boot complete: {appliance.name}',
+                            kind=K.KIND_SUCCESS if health.get('api_ok') else K.KIND_WARNING,
+                            body=done[:400], link=link)
+        except Exception as exc:  # noqa: BLE001
+            _fail(appliance, f'{type(exc).__name__}: {exc}'[:300])
+
+
+@bp.route('/<int:id>/downgrade', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def downgrade_push(id):
+    appliance, _ = _flashable_or_404(id)
+    if appliance is None:
+        flash('Firmware actions need a FortiWeb or FortiADC appliance.', 'danger')
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import upgrade as upg
+
+    image = _selected_compatible_image(appliance, request.form.get('image_id'))
+    if image is None:
+        flash('Select a firmware image from the repository first.', 'danger')
+        return redirect(url_for('appliances.downgrade', id=id))
+    dry_run = request.form.get('dry_run') == 'on'
+    confirm_maturity = request.form.get('confirm_maturity') == 'on'
+
+    # Boot Partition is the EMERGENCY path: unlike Upgrade and HA failover it
+    # needs no approved change request (owner decision 2026-10-03), so a live
+    # flash requires an explicit acknowledgement that it bypasses change
+    # control, and the decision is audited with its outcome.
+    if not dry_run:
+        ack = request.form.get('ack_no_change_control') == 'on'
+        named = (request.form.get('confirm_name', '') or '').strip() == appliance.name
+        if not ack:
+            log_action('appliance.downgrade', target=appliance.name,
+                       extra={'outcome': 'refused', 'image_id': image.id,
+                              'version': image.version,
+                              'reason': 'change-control bypass not acknowledged'})
+            msg = ('A live boot-partition flash bypasses change control. Tick the '
+                   'acknowledgement to proceed.')
+            if _wants_json():
+                return jsonify({"error": msg}), 400
+            flash(msg, 'danger')
+            return redirect(url_for('appliances.downgrade', id=id))
+        if named:
+            log_action('appliance.downgrade', target=appliance.name,
+                       extra={'outcome': 'started', 'image_id': image.id,
+                              'version': image.version,
+                              'change_control': 'bypassed (emergency path, acknowledged)'})
+
+    if _wants_json():
+        return _spawn_flash_job(appliance, image, 'downgrade', dry_run, confirm_maturity)
+
+    # A live push requires typing the exact appliance name (mis-click guard).
+    if not dry_run and request.form.get('confirm_name', '').strip() != appliance.name:
+        flash('Live downgrade requires typing the exact appliance name to confirm.', 'danger')
+        return redirect(url_for('appliances.downgrade', id=id))
+
+    try:
+        image_bytes = upg.read_image_bytes(image)
+    except Exception as exc:
+        flash(f'Firmware file problem: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.downgrade', id=id))
+
+    fw_part = fw_active = 0
+    confirm_dg = False
+    if not dry_run:
+        try:
+            _pt = upg.read_partitions(appliance)
+            _alt = _pt.get('alternate') or {}
+            fw_part = int(_alt.get('partition') or 0)
+            fw_active = int(bool(_alt.get('active')))
+            confirm_dg = True
+            confirm_maturity = True
+        except Exception:
+            pass
+    try:
+        result = upg.push_firmware(
+            appliance, image_bytes, image.filename,
+            dry_run=dry_run, confirm_maturity=confirm_maturity,
+            confirm_downgrade=confirm_dg, part=fw_part, active=fw_active,
+        )
+    except Exception as exc:
+        flash(f'Downgrade failed: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.downgrade', id=id))
+
+    if not dry_run:
+        log_action('appliance.downgrade', target=appliance.name,
+                   extra={'outcome': 'success' if result.get('ok') else 'failure',
+                          'image_id': image.id, 'version': image.version,
+                          'from': result.get('firmware_before', ''),
+                          'change_control': 'bypassed (emergency path, acknowledged)'})
+    fw, images, relations, default_id, older_exists = _downgrade_context(appliance)
+    parts, parts_error = _partition_table(appliance)
+    return render_template('appliances/downgrade.html', appliance=appliance,
+                           firmware=result.get('firmware_before', '') or fw,
+                           result=result, images=images, relations=relations,
+                           selected_id=image.id, older_exists=older_exists,
+                           partitions=parts, partitions_error=parts_error)
+
+
+# ===========================================================================
+#  Restore — admin-only config restore from the backup vault or an uploaded
+#  .conf. Destructive (the box applies the config + reboots): dry_run default,
+#  hostname hard-confirm, automatic pre-restore backup, audit. Every route needs
+#  users.manage AND backups.restore (owner decision 2026-10-03: the key gates
+#  restore; the seeded admin holds both, the operator does not hold users.manage).
+# ===========================================================================
+def _restore_context(appliance):
+    """Current firmware (best-effort, no failure) + this appliance's vault entries."""
+    from ..services import upgrade as upg
+    fw = ''
+    try:
+        fw = upg.firmware_version(appliance.build_client(timeout=8))
+    except Exception:
+        fw = ''
+    backups = (ConfigBackup.query
+               .filter_by(appliance_id=appliance.id)
+               .order_by(ConfigBackup.created_at.desc()).all())
+    return fw, backups
+
+
+@bp.route('/<int:id>/restore')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def restore(id):
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    fw, backups = _restore_context(appliance)
+    return render_template('appliances/restore.html', appliance=appliance,
+                           firmware=fw, backups=backups)
+
+
+@bp.route('/<int:id>/restore/upload', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def restore_upload(id):
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import backup as backup_svc
+    up = request.files.get('config_file')
+    if up is None or not up.filename:
+        flash('Choose a .conf configuration file to upload into the vault.', 'warning')
+        return redirect(url_for('appliances.restore', id=id))
+    data = up.read()
+    if not data:
+        flash('The uploaded file is empty.', 'warning')
+        return redirect(url_for('appliances.restore', id=id))
+    try:
+        cb = backup_svc.store_bytes(
+            appliance_id=appliance.id, appliance_name=appliance.name, data=data,
+            filename=up.filename, source='upload',
+            created_by=getattr(current_user, 'username', '') or '',
+            note=(request.form.get('note') or '').strip() or None)
+    except Exception as exc:
+        flash(f'Could not store the upload: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.restore', id=id))
+    log_action('appliance.backup_upload', target=appliance.name,
+               extra={'filename': cb.filename, 'size': cb.size_bytes, 'encrypted': cb.encrypted})
+    flash(f'Stored "{cb.filename}" in the vault ({cb.size_kb()} KB'
+          f'{", encrypted" if cb.encrypted else ""}).', 'success')
+    return redirect(url_for('appliances.restore', id=id))
+
+
+@bp.route('/<int:id>/restore/fetch', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def restore_fetch(id):
+    """Pull a fresh backup off the device into the vault (best-effort)."""
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import backup as backup_svc
+    try:
+        cb = backup_svc.fetch_device_backup_auto(
+            appliance, created_by=getattr(current_user, 'username', '') or '')
+    except Exception as exc:
+        flash(f'Could not fetch a backup from {appliance.name}: {type(exc).__name__}: {exc}. '
+              f'You can upload a .conf manually instead.', 'warning')
+        return redirect(url_for('appliances.restore', id=id))
+    log_action('appliance.backup_fetch', target=appliance.name, extra={'filename': cb.filename})
+    flash(f'Pulled "{cb.filename}" from {appliance.name} into the vault.', 'success')
+    return redirect(url_for('appliances.restore', id=id))
+
+
+@bp.route('/<int:id>/restore/<int:backup_id>/download')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def restore_download(id, backup_id):
+    cb = ConfigBackup.query.filter_by(id=backup_id, appliance_id=id).first()
+    if cb is None or not cb.stored_path or not os.path.exists(cb.stored_path):
+        abort(404)
+    return send_file(cb.stored_path, as_attachment=True, download_name=cb.filename)
+
+
+@bp.route('/<int:id>/restore/<int:backup_id>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def restore_delete(id, backup_id):
+    from ..services import backup as backup_svc
+    cb = ConfigBackup.query.filter_by(id=backup_id, appliance_id=id).first()
+    if cb is None:
+        abort(404)
+    meta = cb.filename
+    backup_svc.delete_vault(cb)
+    log_action('appliance.backup_delete', target=str(id), extra={'filename': meta})
+    flash(f'Deleted backup "{meta}" from the vault.', 'success')
+    return redirect(url_for('appliances.restore', id=id))
+
+
+@bp.route('/<int:id>/restore/run', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def restore_run(id):
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import backup as backup_svc
+
+    dry_run = request.form.get('dry_run') == 'on'
+    password = (request.form.get('password') or '').strip() or None
+
+    # Source: an existing vault entry OR a freshly uploaded .conf.
+    backup_id = request.form.get('backup_id')
+    up = request.files.get('config_file')
+    data, filename = None, 'config.conf'
+    if up and up.filename:
+        data = up.read()
+        filename = secure_filename(up.filename) or "config.conf"
+        if data:
+            try:  # retain the source in the vault
+                backup_svc.store_bytes(
+                    appliance_id=appliance.id, appliance_name=appliance.name, data=data,
+                    filename=filename, source='upload',
+                    created_by=getattr(current_user, 'username', '') or '')
+            except Exception:
+                pass
+    elif backup_id:
+        cb = ConfigBackup.query.filter_by(id=int(backup_id), appliance_id=appliance.id).first()
+        if cb is None:
+            flash('Selected backup not found in the vault.', 'danger')
+            return redirect(url_for('appliances.restore', id=id))
+        try:
+            data = backup_svc.read_vault_bytes(cb)
+        except Exception as exc:
+            flash(f'Stored backup unreadable: {type(exc).__name__}: {exc}', 'danger')
+            return redirect(url_for('appliances.restore', id=id))
+        filename = cb.filename
+    if not data:
+        flash('Choose a stored backup or upload a .conf file to restore.', 'warning')
+        return redirect(url_for('appliances.restore', id=id))
+
+    # A live restore requires typing the exact appliance name (mis-click guard).
+    if not dry_run and request.form.get('confirm_name', '').strip() != appliance.name:
+        flash('Live restore requires typing the exact appliance name to confirm.', 'danger')
+        return redirect(url_for('appliances.restore', id=id))
+
+    # FortiADC exposes no REST configuration-restore endpoint (verified live on
+    # 8.0.3: only /api/platform/version + /reboot). The file stays in the vault;
+    # applying it is a GUI/CLI step on the box.
+    if appliance.kind == 'fortiadc':
+        result = {
+            'dry_run': dry_run, 'filename': filename, 'size': len(data),
+            'endpoint': '(FortiADC — no REST restore endpoint)',
+            'encrypted': backup_svc.is_encrypted(data), 'ok': False,
+            'message': ('FortiADC 8.0.3 exposes no REST configuration-restore endpoint, so the '
+                        'manager cannot apply this backup automatically. It is kept in the vault — '
+                        'download it and apply via the FortiADC GUI (System > Settings > Restore) '
+                        'or CLI (execute restore config).'),
+        }
+        fw, backups = _restore_context(appliance)
+        return render_template('appliances/restore.html', appliance=appliance, firmware=fw,
+                               backups=backups, result=result, pre_backup=None)
+
+    # A FortiWeb in HA answers a restore by handing the file to its HA
+    # configuration-update flow (the GUI's ha_upgrade page), which SATOM does
+    # not drive: the restore would sit half-done on the cluster. Refused before
+    # anything is sent.
+    if not dry_run and (appliance.is_cluster or appliance.is_cluster_member):
+        log_action('appliance.restore', target=appliance.name,
+                   extra={'outcome': 'refused', 'filename': filename,
+                          'reason': 'HA cluster: FortiWeb hands a cluster restore to its '
+                                    'HA configuration-update flow'})
+        flash(f'{appliance.name} is registered as an HA cluster. A FortiWeb cluster takes a '
+              f'restore through its HA configuration-update flow, which SATOM does not drive, '
+              f'so nothing was sent. Restore through the FortiWeb GUI on the primary unit.',
+              'danger')
+        return redirect(url_for('appliances.restore', id=id))
+
+    try:
+        client = appliance.build_client(timeout=600)
+    except Exception as exc:
+        flash(f'Cannot connect to {appliance.name}: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.restore', id=id))
+
+    # Automatic pre-restore backup -- the rollback net (live runs only): the
+    # box's own CLI backup, kept in the vault. It is also the template a CLI
+    # dump is converted with. If it cannot be taken the live restore is
+    # ABORTED, unless the operator explicitly ticked "Restore without a
+    # pre-restore backup" -- which is audited either way.
+    pre_backup = None
+    skipped_pre = ''
+    template = None
+    without_pre = request.form.get('skip_pre_backup') == 'on'
+    if not dry_run:
+        job_progress.step('Pre-restore backup', 10)
+        try:
+            pre, template = backup_svc.fetch_restore_point(
+                client, appliance_id=appliance.id, appliance_name=appliance.name,
+                created_by=getattr(current_user, 'username', '') or '')
+            pre_backup = pre.filename
+        except Exception as exc:
+            why = f'{type(exc).__name__}: {exc}'[:200]
+            if not without_pre:
+                log_action('appliance.restore', target=appliance.name,
+                           extra={'outcome': 'refused', 'filename': filename,
+                                  'pre_backup_error': why,
+                                  'reason': 'pre-restore backup failed'})
+                flash(f'Live restore aborted: the pre-restore backup could not be '
+                      f'taken ({why}). Nothing was sent to {appliance.name}. Fix the '
+                      f'device backup, or tick "Restore without a pre-restore backup" '
+                      f'to proceed without a rollback copy.', 'danger')
+                return redirect(url_for('appliances.restore', id=id))
+            skipped_pre = why
+            pre_backup = f'(none: {type(exc).__name__}; restored without a pre-restore backup)'
+    elif backup_svc.classify(data) == backup_svc.pkg.KIND_CLI_DUMP:
+        # A dry run of a CLI dump validates the conversion against the box's
+        # current backup -- a read, nothing is sent.
+        try:
+            template, _name = backup_svc.cli_backup(client)
+        except Exception:
+            template = None
+
+    job_progress.step('Sending the configuration' if not dry_run else 'Validating', 30)
+    try:
+        result = backup_svc.restore(client, data, filename, password=password,
+                                    dry_run=dry_run, template=template)
+    except Exception as exc:
+        if not dry_run:
+            log_action('appliance.restore', target=appliance.name,
+                       extra={'outcome': 'refused', 'filename': filename,
+                              'pre_backup': pre_backup,
+                              'error': f'{type(exc).__name__}: {exc}'[:300]})
+        flash(f'Restore failed: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.restore', id=id))
+
+    # Post-check: an "applying" answer is a promise, not a result. Wait for the
+    # reboot and read the configuration back (services.backup.verify_restore).
+    if not dry_run and result.get('ok'):
+        job_progress.step('Waiting for the reboot, then reading the configuration back', 45)
+        check = backup_svc.verify_restore(
+            appliance, data, progress=lambda pct, msg: job_progress.step(msg, pct))
+        result['verify'] = check
+        result['ok'] = bool(check.get('verified'))
+        result['message'] = f"{result['message']}; {check.get('message', '')}"
+
+    if not dry_run:
+        check = result.get('verify') or {}
+        if not result.get('accepted'):
+            outcome = 'failure'
+        elif check.get('verified'):
+            outcome = 'success'
+        else:
+            outcome = 'unverified'
+        log_action('appliance.restore', target=appliance.name,
+                   extra={'outcome': outcome,
+                          'filename': filename, 'pre_backup': pre_backup,
+                          'converted': result.get('converted'),
+                          'without_pre_backup': bool(skipped_pre),
+                          'pre_backup_error': skipped_pre or None,
+                          'device_answer': result.get('message', '')[:300],
+                          'mismatches': (check.get('mismatches') or [])[:20],
+                          'ok': result.get('ok')})
+    fw, backups = _restore_context(appliance)
+    return render_template('appliances/restore.html', appliance=appliance, firmware=fw,
+                           backups=backups, result=result, pre_backup=pre_backup)
+
+
+# --------------------------------------------------------------------------- #
+#  Migrate — another FortiWeb's configuration into this one                     #
+#                                                                               #
+#  The routes hang off the TARGET: it is the box that is written, so the        #
+#  device-job queue (keyed on the URL's appliance) serialises the right one.    #
+#  The planner is services/fwb_migrate.py; sending and reading back are the     #
+#  restore's own (services/backup.py).                                          #
+# --------------------------------------------------------------------------- #
+def _migrate_target_or_none(id):
+    target = _managed_or_404(id)
+    if target is not None and target.kind != 'fortiweb':
+        flash('Configuration migration is available between FortiWeb appliances only.', 'warning')
+        return None
+    return target
+
+
+def _migrate_sources(target):
+    """FortiWeb rows the user can see, other than the target, that speak for
+    their box (one row per chassis -- an ADOM row is not a box)."""
+    from ..models import owns_device_scope
+    rows = (visible_appliances(Appliance.query.filter(Appliance.kind == 'fortiweb',
+                                                       Appliance.id != target.id))
+            .order_by(Appliance.name).all())
+    return [a for a in rows if owns_device_scope(a)]
+
+
+def _migrate_source_backups(source):
+    if source is None:
+        return []
+    rows = (ConfigBackup.query.filter_by(appliance_id=source.id)
+            .order_by(ConfigBackup.created_at.desc()).all())
+    return [b for b in rows if not b.encrypted]
+
+
+def _migrate_default_map(src_domains, tgt_domains):
+    """Same-named domains pair up; one domain on each side pairs up whatever
+    the names (an ADOM onto a box without ADOMs, or the other way round)."""
+    src = [d for d in src_domains if d != 'global']
+    tgt = [d for d in tgt_domains if d != 'global']
+    out = {d: d for d in src if d in tgt}
+    if not out and len(src) == 1 and len(tgt) == 1:
+        out = {src[0]: tgt[0]}
+    return out
+
+
+@bp.route('/<int:id>/migrate')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def migrate(id):
+    target = _migrate_target_or_none(id)
+    if target is None:
+        return redirect(url_for('appliances.detail', id=id))
+    sources = _migrate_sources(target)
+    sid = request.args.get('source', type=int)
+    source = next((s for s in sources if s.id == sid), None)
+    from ..services import clone_rules
+    return render_template('appliances/migrate.html', appliance=target, sources=sources,
+                           source=source, backups=_migrate_source_backups(source),
+                           selected_backup=request.args.get('backup', type=int),
+                           dummy_rules=clone_rules.rules_summary())
+
+
+@bp.route('/<int:id>/migrate/capture', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def migrate_capture(id):
+    """A fresh backup of the SOURCE into its vault (REST, SSH fallback)."""
+    target = _migrate_target_or_none(id)
+    if target is None:
+        return redirect(url_for('appliances.detail', id=id))
+    sid = request.form.get('source_id', type=int)
+    source = next((s for s in _migrate_sources(target) if s.id == sid), None)
+    if source is None:
+        flash('Choose a source FortiWeb first.', 'warning')
+        return redirect(url_for('appliances.migrate', id=id))
+    from ..services import backup as backup_svc
+    try:
+        cb = backup_svc.capture_source(source, created_by=getattr(current_user, 'username', '') or '')
+    except Exception as exc:
+        flash(f'Could not take a backup of {source.name}: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.migrate', id=id, source=source.id))
+    log_action('appliance.backup_fetch', target=source.name,
+               extra={'filename': cb.filename, 'purpose': f'migration source for {target.name}'})
+    flash(f'Stored "{cb.filename}" from {source.name} in its vault.', 'success')
+    return redirect(url_for('appliances.migrate', id=id, source=source.id, backup=cb.id))
+
+
+@bp.route('/<int:id>/migrate/run', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
+@require_device_scope
+def migrate_run(id):
+    target = _migrate_target_or_none(id)
+    if target is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import backup as backup_svc, clone_rules
+    from ..services import fwb_config_package as fwb_pkg, fwb_migrate
+
+    sources = _migrate_sources(target)
+    sid = request.form.get('source_id', type=int)
+    source = next((s for s in sources if s.id == sid), None)
+    cb = (ConfigBackup.query.filter_by(id=request.form.get('backup_id', type=int),
+                                       appliance_id=source.id).first() if source else None)
+    if source is None or cb is None:
+        flash('Choose a source FortiWeb and one of its stored backups.', 'warning')
+        return redirect(url_for('appliances.migrate', id=id, source=sid or ''))
+    back = url_for('appliances.migrate', id=id, source=source.id, backup=cb.id)
+    try:
+        data = backup_svc.read_vault_bytes(cb)
+    except Exception as exc:
+        flash(f'Stored backup unreadable: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(back)
+    kind = backup_svc.classify(data)
+    if kind not in (fwb_pkg.KIND_PACKAGE, fwb_pkg.KIND_CLI_DUMP):
+        flash(f'"{cb.filename}" is neither a FortiWeb backup (.zip) nor a CLI dump, so it cannot '
+              f'be split into tables. Take a fresh backup of {source.name}.', 'danger')
+        return redirect(back)
+
+    analyze = request.form.get('analyze') == '1'
+    dry_run = analyze or request.form.get('dry_run') == 'on'
+    if not dry_run:
+        if request.form.get('confirm_name', '').strip() != target.name:
+            flash('A live migration requires typing the exact target name to confirm.', 'danger')
+            return redirect(back)
+        if target.is_cluster or target.is_cluster_member:
+            log_action('appliance.migrate', target=target.name,
+                       extra={'outcome': 'refused', 'source': source.name,
+                              'reason': 'HA cluster target'})
+            flash(f'{target.name} is registered as an HA cluster. A FortiWeb cluster takes a '
+                  f'configuration through its HA configuration-update flow, which SATOM does not '
+                  f'drive, so nothing was sent.', 'danger')
+            return redirect(back)
+    try:
+        client = target.build_client(timeout=600)
+    except Exception as exc:
+        flash(f'Cannot connect to {target.name}: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(back)
+
+    pre_backup = None
+    try:
+        if dry_run:
+            job_progress.step('Reading the target configuration', 20)
+            tgt_backup, _name = backup_svc.cli_backup(client)
+        else:
+            # The rollback copy AND the base of the package: no "without" option.
+            job_progress.step('Pre-migration backup of the target', 10)
+            pre, tgt_backup = backup_svc.fetch_restore_point(
+                client, appliance_id=target.id, appliance_name=target.name,
+                created_by=getattr(current_user, 'username', '') or '')
+            pre_backup = pre.filename
+    except Exception as exc:
+        why = f'{type(exc).__name__}: {exc}'[:200]
+        if not dry_run:
+            log_action('appliance.migrate', target=target.name,
+                       extra={'outcome': 'refused', 'source': source.name,
+                              'reason': 'target backup failed', 'error': why})
+        flash(f'The configuration of {target.name} could not be read ({why}). It is the base '
+              f'of the migration and its rollback copy, so nothing was sent.', 'danger')
+        return redirect(back)
+
+    try:
+        inventory = fwb_migrate.inventory(data)
+        tgt_domains = list(fwb_pkg.package_sections(tgt_backup))
+    except (fwb_migrate.MigrationError, fwb_pkg.PackageError) as exc:
+        flash(f'Cannot read the configurations: {exc}', 'danger')
+        return redirect(back)
+    if analyze:
+        domains = _migrate_default_map(inventory, tgt_domains)
+        exclude, copy_global, dummy_on = set(), True, True
+        picks, only_picked = {}, set()
+    else:
+        domains = {k[5:]: v for k, v in request.form.items() if k.startswith('map__') and v}
+        # per table: mode__<dom>:<table> = all | excl | pick (+ pick__<dom>:<table> names)
+        modes = {k[6:]: v for k, v in request.form.items() if k.startswith('mode__')}
+        exclude = {k for k, v in modes.items() if v == 'excl'} | set(request.form.getlist('excl'))
+        picks = {k: set(request.form.getlist('pick__' + k)) for k, v in modes.items()
+                 if v == 'pick'}
+        picks = {k: v for k, v in picks.items() if v}
+        only_picked = {k[6:] for k in request.form if k.startswith('only__')}
+        copy_global = request.form.get('copy_global') == 'on'
+        dummy_on = request.form.get('dummy') == 'on'
+    cfg = clone_rules.config()
+    dummy = (lambda ip: clone_rules.dummy_ip(ip, cfg)) if dummy_on else None
+
+    report, plan_error, payload = None, '', b''
+    try:
+        payload, report = fwb_migrate.plan(data, tgt_backup, domains=domains,
+                                           copy_global=copy_global, exclude=exclude,
+                                           dummy=dummy, picks=picks, only_picked=only_picked)
+    except (fwb_migrate.MigrationError, fwb_pkg.PackageError) as exc:
+        plan_error = str(exc)
+
+    cap_rows = []
+    if report is not None:
+        from ..services import capacity
+        try:
+            cap_rows = capacity.migration_check(target, fwb_migrate.inventory(payload))
+        except Exception as exc:
+            plan_error = f'Capacity could not be checked: {type(exc).__name__}: {exc}'
+            report = None
+    over_factory = [r for r in cap_rows if r['over_factory']]
+    over_cap = [r for r in cap_rows if r['over_cap'] and not r['over_factory']]
+    ctx = dict(appliance=target, sources=sources, source=source,
+               backups=_migrate_source_backups(source), selected_backup=cb.id, backup=cb,
+               dummy_rules=clone_rules.rules_summary(), inventory=inventory,
+               tgt_domains=tgt_domains, domains=domains, exclude=exclude,
+               picks=picks, only_picked=only_picked,
+               entry_names=fwb_migrate.names_inventory(data),
+               copy_global=copy_global, dummy_on=dummy_on, report=report,
+               plan_error=plan_error, is_identity=fwb_migrate.is_identity,
+               dry_run=dry_run, result=None, pre_backup=pre_backup,
+               capacity_rows=cap_rows, over_factory=over_factory, over_cap=over_cap)
+    if not dry_run and report is not None and (
+            over_factory or (over_cap and request.form.get('over_cap_ok') != 'on')):
+        why = ('over the device limit' if over_factory else "over the admin's limit")
+        log_action('appliance.migrate', target=target.name,
+                   extra={'outcome': 'refused', 'source': source.name, 'reason': why,
+                          'capacity': [f"{r['label']}{' (' + r['domain'] + ')' if r['domain'] else ''}: "
+                                       f"{r['after']} > {r['factory'] if r['over_factory'] else r['cap']}"
+                                       for r in (over_factory or over_cap)]})
+        flash('Nothing was sent: ' + ('the migrated configuration holds more objects than '
+              f'{target.name} can take, and the device would drop some.' if over_factory else
+              f"the migrated configuration is over the admin's capacity limit on {target.name}. "
+              'Tick "Exceed the admin limit" to go ahead anyway (recorded in the audit log).'),
+              'danger')
+        return render_template('appliances/migrate.html', **ctx)
+    if dry_run or report is None:
+        if not dry_run:
+            log_action('appliance.migrate', target=target.name,
+                       extra={'outcome': 'refused', 'source': source.name,
+                              'reason': plan_error[:300]})
+        return render_template('appliances/migrate.html', **ctx)
+
+    job_progress.step('Sending the migrated configuration', 35)
+    send_name = f"{source.name}_to_{target.name}_migrate.conf.zip"
+    try:
+        result = backup_svc.restore(client, payload, send_name, dry_run=False)
+    except Exception as exc:
+        result = {'ok': False, 'accepted': False, 'message': f'{type(exc).__name__}: {exc}'[:300]}
+    if result.get('ok'):
+        job_progress.step('Waiting for the reboot, then reading the configuration back', 45)
+        check = backup_svc.verify_restore(
+            target, payload, progress=lambda pct, msg: job_progress.step(msg, pct),
+            expected=report['expected_counts'],
+            expected_names=report['expected_names'],
+            expected_kept=report['expected_kept'],
+            readback='ssh' if kind == fwb_pkg.KIND_CLI_DUMP else 'rest',
+            hostname=backup_svc._hostname_of(fwb_pkg.package_sections(tgt_backup)))
+        result['verify'] = check
+        result['ok'] = bool(check.get('verified'))
+        result['message'] = f"{result['message']}; {check.get('message', '')}"
+    check = result.get('verify') or {}
+    outcome = ('failure' if not result.get('accepted')
+               else 'success' if check.get('verified') else 'unverified')
+    log_action('appliance.migrate', target=target.name,
+               extra={'outcome': outcome, 'source': source.name, 'source_backup': cb.filename,
+                      'pre_backup': pre_backup, 'domains': domains,
+                      'excluded': sorted(exclude)[:50], 'copy_global': copy_global,
+                      'picked': {k: sorted(v)[:50] for k, v in picks.items()},
+                      'only_picked': sorted(only_picked),
+                      'dependencies': len(report['dependencies']),
+                      'renamed_vips': len(report['renamed_vips']),
+                      'over_admin_cap': [r['label'] for r in over_cap],
+                      'conflicts': len(report['conflicts']),
+                      'dummy_ips': len(report['dummy_ips']), 'objects': report['objects'],
+                      'tables': len(report['copied']), 'dangling': len(report['dangling']),
+                      'device_answer': result.get('message', '')[:300],
+                      'mismatches': (check.get('mismatches') or [])[:20],
+                      'ok': result.get('ok')})
+    ctx['result'] = result
+    return render_template('appliances/migrate.html', **ctx)
+
+
+# --------------------------------------------------------------------------- #
+#  HA failover — the device-page surface of the ``ha_failover`` action          #
+# --------------------------------------------------------------------------- #
+FAILOVER_ACTION = 'ha_failover'
+
+
+def _failover_or_404(id):
+    """``(node0, '')`` for a row this product can fail over, else ``(row, why)``.
+
+    "Cluster" here means SATOM's OWN model of one — node 0 (``is_cluster``) or a
+    member node (``is_cluster_member``) — because that is the only thing this
+    page can decide from the database. Asking the box instead would put an SSH
+    round-trip on every appliance page render and still be wrong for an
+    unreachable device.
+
+    A row that is neither is refused with a message that NAMES what to do. The
+    refusal is on the ROUTE, not only on the button: a page that merely hides a
+    link is decoration, and the URL is guessable (the lesson ``require_device_scope``
+    already records in this module).
+    """
+    appliance = visible_appliance_or_404(id)
+    if not (appliance.is_cluster or appliance.is_cluster_member):
+        return appliance, (
+            f'{appliance.name} is not registered as an HA cluster, so there is no '
+            'peer to hand the primary role to. Mark it as a cluster (or attach it '
+            'to one as a member node) under Edit, then plan the failover here.')
+    return appliance, ''
+
+
+def _failover_state(appliance):
+    """Everything the failover page can state WITHOUT touching the appliance.
+
+    Read out of :data:`scheduled_actions.FAILOVER_TRANSPORT` rather than restated
+    here. That table is the single record of which command exists on which
+    product from which release, and a second copy of it on a page is how a page
+    ends up promising a command the executor refuses to send.
+    """
+    from ..services import scheduled_actions as sa
+    kind = (appliance.kind or 'fortiweb').strip().lower()
+    transport = sa.FAILOVER_TRANSPORT.get(kind)
+    state = {
+        'kind': kind,
+        'supported': transport is not None,
+        'products': sorted(sa.FAILOVER_TRANSPORT),
+        'set_cmd': transport.set_cmd if transport else '',
+        'unset_cmd': transport.unset_cmd if transport else '',
+        'floor': ('.'.join(str(n) for n in transport.min_version)
+                  if transport else ''),
+        'sticky': (not transport.clears_on_reboot) if transport else False,
+        'provenance': transport.provenance if transport else '',
+        # Per-node clusters resolve the target LIVE (the member reporting
+        # primary), so the version that will be checked is not knowable from
+        # here. Saying "unknown until the readiness check runs" is the honest
+        # answer; naming node 0's own firmware would name a row that never
+        # receives the command.
+        'target_known': not (appliance.is_cluster
+                             and (appliance.ha_mode or '').lower() != 'vip'),
+        'recorded_firmware': (appliance.firmware or '').strip(),
+    }
+    return state
+
+
+@bp.route('/<int:id>/failover')
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def failover(id):
+    appliance, why = _failover_or_404(id)
+    if why:
+        flash(why, 'warning')
+        return redirect(url_for('appliances.detail', id=id))
+    cr, cr_ok, cr_reason = _change_authorization(appliance, FAILOVER_ACTION)
+    return render_template('appliances/failover.html', appliance=appliance,
+                           state=_failover_state(appliance), tz_name=store.tz_name(),
+                           cr=cr, cr_ok=cr_ok, cr_reason=cr_reason)
+
+
+@bp.route('/<int:id>/failover/preflight', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def failover_preflight(id):
+    """Readiness check. Runs the action's OWN dry run, which sends nothing.
+
+    Deliberately not a second implementation of "is this cluster ready": the
+    dry-run path of ``_do_ha_failover`` already walks every refusal in order
+    (product, firmware floor, write-target resolution, live role) and phrases
+    each one for a human. A page-local copy would drift from the executor, and
+    the operator would be told the failover is ready by one of them and refused
+    by the other.
+
+    NOT gated on a change request: a dry run reads the box and writes nothing,
+    and gating it would push operators to skip the check entirely.
+    """
+    appliance, why = _failover_or_404(id)
+    if why:
+        return jsonify({'ok': False, 'summary': why, 'log': ''}), 409
+    direction = _failover_direction(request.form.get('direction'))
+    if direction is None:
+        return jsonify({'ok': False, 'log': '',
+                        'summary': 'Pick set (hand the role over) or unset '
+                                   '(give it back). Nothing was sent.'}), 400
+    from ..services import scheduled_actions as sa
+    result = sa.run_action(sa.get_spec(FAILOVER_ACTION), appliance,
+                           {'direction': direction}, dry_run=True)
+    log_action('appliance.failover_preflight', target=appliance.name,
+               extra={'direction': direction, 'ok': bool(result.get('ok'))})
+    return jsonify({'ok': bool(result.get('ok')),
+                    'summary': result.get('summary') or '',
+                    'log': result.get('log') or ''})
+
+
+def _failover_direction(raw):
+    """``'set'`` | ``'unset'`` | ``None``. An unrecognised value is NEVER coerced.
+
+    Defaulting a missing direction to ``set`` would turn a glitched form into the
+    disruptive half of this action; the two directions are not interchangeable
+    and only one of them takes a cluster down."""
+    value = (raw or '').strip().lower()
+    return value if value in ('set', 'unset') else None
+
+
+@bp.route('/<int:id>/failover', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def failover_run(id):
+    """Fail over NOW — only inside an approved change request's open window.
+
+    The headless executor has refused to run ``ha_failover`` unbound since the
+    action was registered (``ActionSpec.requires_change_request``). The button a
+    human clicks carries the SAME gate, from the same helper: a change-control
+    regime that only binds the unused code path is decoration — the defect this
+    module already paid for once on the firmware page.
+    """
+    appliance, why = _failover_or_404(id)
+    if why:
+        flash(why, 'warning')
+        return redirect(url_for('appliances.detail', id=id))
+    direction = _failover_direction(request.form.get('direction'))
+    if direction is None:
+        flash('Pick set (hand the role over) or unset (give it back). '
+              'Nothing was sent.', 'danger')
+        return redirect(url_for('appliances.failover', id=id))
+
+    cr, cr_ok, cr_reason = _change_authorization(appliance, FAILOVER_ACTION)
+    if not cr_ok:
+        msg = ('Live failover refused — change control: ' + cr_reason
+               + '. Plan it below, get the change approved, and run it inside '
+                 'its window. The readiness check still works — it sends nothing.')
+        log_action('appliance.failover_refused', target=appliance.name,
+                   detail=cr_reason)
+        flash(msg, 'danger')
+        return redirect(url_for('appliances.failover', id=id))
+
+    # Typing the exact name is the defence against a mis-click draining the
+    # wrong cluster — the same confirmation the live firmware push demands.
+    if (request.form.get('confirm_name') or '').strip() != appliance.name:
+        flash('A live failover requires typing the exact appliance name to '
+              'confirm. Nothing was sent.', 'danger')
+        return redirect(url_for('appliances.failover', id=id))
+
+    from ..services import scheduled_actions as sa
+    from ..services import change_requests as crsvc
+    crsvc.start(cr, by=getattr(current_user, 'username', '') or 'operator',
+                detail=f'Interactive HA failover ({direction}) of {appliance.name}')
+    result = sa.run_action(sa.get_spec(FAILOVER_ACTION), appliance,
+                           {'direction': direction}, dry_run=False)
+    crsvc.finish_device(cr, appliance.id, 'ok' if result.get('ok') else 'error',
+                        by='operator',
+                        summary=(result.get('summary') or '')[:2000])
+    log_action('appliance.failover', target=appliance.name,
+               extra={'direction': direction, 'cr': cr.ref or cr.id,
+                      'ok': bool(result.get('ok'))})
+    return render_template('appliances/failover.html', appliance=appliance,
+                           state=_failover_state(appliance), tz_name=store.tz_name(),
+                           cr=cr, cr_ok=False,
+                           cr_reason=f'{cr.ref or ("CR #%d" % cr.id)} has been '
+                                     f'closed by this run',
+                           result=result, result_direction=direction)
+
+
+@bp.route('/<int:id>/failover/schedule', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def failover_schedule(id):
+    """Plan the failover: raise a change request for THIS cluster.
+
+    Calls ``change_requests.create_change_request`` — the one implementation of
+    "what a legal change is" — exactly as the calendar does. A scheduling path
+    of its own here would be a second author of that rule, and the two would
+    disagree the first time somebody approves from the Change Requests page.
+    """
+    appliance, why = _failover_or_404(id)
+    if why:
+        flash(why, 'warning')
+        return redirect(url_for('appliances.detail', id=id))
+    direction = _failover_direction(request.form.get('direction'))
+    if direction is None:
+        flash('Pick set (hand the role over) or unset (give it back). '
+              'Nothing was created.', 'danger')
+        return redirect(url_for('appliances.failover', id=id))
+
+    from .change_requests import _parse_dt, create_change_request
+    title = (request.form.get('title') or '').strip() or (
+        f'HA failover ({direction}) — {appliance.name}')
+    reason = (request.form.get('reason') or '').strip()
+    reason = (reason + ('\n\n' if reason else '')
+              + f'Planned from the {appliance.name} device page. '
+                f'Direction: {direction}.')
+    cr, error = create_change_request({
+        'title': title,
+        'action': FAILOVER_ACTION,
+        'risk': request.form.get('risk') or 'high',
+        'reason': reason,
+        'device_ids': [appliance.id],
+        'prep_ids': [],
+        # The direction rides on the CHANGE, not on the action row: the bound
+        # action is (re)built from the CR by schedule_change_request, so a
+        # direction stored only on the action would be silently reset to the
+        # default the next time the change is rescheduled.
+        'params': {'direction': direction},
+        'window_start': _parse_dt(request.form.get('window_start')),
+        'window_end': _parse_dt(request.form.get('window_end')),
+        'rollback': request.form.get('rollback'),
+        'notify_to': request.form.get('notify_to'),
+        'owner': request.form.get('owner'),
+        'doc_lang': request.form.get('doc_lang'),
+        'requested_by': getattr(current_user, 'username', ''),
+        'approval_mode': request.form.get('approval_mode'),
+    })
+    if cr is None:
+        flash(error, 'danger')
+        return redirect(url_for('appliances.failover', id=id))
+    log_action('appliance.failover_plan', target=appliance.name,
+               detail=f'{cr.ref} / {direction}')
+    flash(f'{cr.ref} raised as a draft — approve and schedule it to make it run.',
+          'success')
+    return redirect(url_for('change_requests.detail', id=cr.id))

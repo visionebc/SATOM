@@ -1,0 +1,1314 @@
+"""Package check -- every rule a ``satom.plugin/1`` package must pass, in one call.
+
+``check(data, target, policy)`` answers, without writing anything, whether
+this server (described by ``target``, the ``GET /api/v1/builder/target``
+snapshot) would accept the package, and what an import would create and keep.
+It is the ONE implementation of those rules: the import page and the Builder
+API call it here, and the SATOM Builder runs the very same file from the
+rules pack (``services.rules_pack``), so a rule can never drift between the
+two sides.
+
+PURE ON PURPOSE
+---------------
+No Flask, no database, no models: the rules pack runs this module in a plain
+Python process with jinja2, markupsafe and cryptography only. Every rule is
+REUSED from the module that owns it -- ``plugin_package.read_package``,
+``studio_apps.clean_fields`` / ``clean_actions`` / ``clean_graph`` /
+``form_ref_problems``, ``studio_flow.validate_graph``, ``studio_design``,
+``studio_store``, ``studio_api_spec``, ``studio_connections.clean_definition``,
+``script_library`` -- imported inside the functions that use them, and only
+their database-free parts are called. What this module adds is the policy
+(which rule refuses, under which policy) and the script scan (section 7 of
+the contract): a packaged script may not use ``secret`` or ``tcp``, pass
+``write=True``, open the network or declare credentials.
+
+POLICIES
+--------
+``import`` for packages Vision EBC signed; ``builder`` for everything else
+that arrives through the Builder API (the Builder always checks with it).
+``RULES`` lists every rule with its scope: ``all`` refuses under both
+policies, ``builder`` refuses under ``builder`` and warns under ``import``,
+``warning`` never refuses.
+
+A malformed package is a problem, never an exception: ``check`` does not
+raise for anything the package holds.
+"""
+from __future__ import annotations
+
+import ast
+import base64
+import binascii
+import copy
+import hashlib
+import json
+import re
+
+POLICIES = ("builder", "import")
+#: Bumped when check()'s output shape changes.
+CHECK_VERSION = 1
+
+#: Connection keys that would carry a secret. A package never does: secrets
+#: are typed into this server (import wizard, or the import call's secrets).
+SECRET_KEYS = ("password", "secret", "token", "api_key", "client_secret")
+#: What a packaged script may not reach in the SDK, in any spelling.
+SCRIPT_FORBIDDEN = ("secret", "tcp")
+SDK_MODULES = ("satom_script", "satom_sdk")
+#: What a packaged script may use from the SDK.
+#: Device-object dataset keys start with their product (services.plugin_datasets).
+_OBJECT_PRODUCTS = ("fortiweb", "fortigate", "fortiadc", "fortianalyzer", "fortiauthenticator")
+
+SCRIPT_SDK = ("inputs", "result", "log", "connection", "satom", "store")
+#: The kinds a package may hold, and what of an app package travels.
+OBJECT_KINDS = ("app", "store", "connection", "script")
+
+ALL, BUILDER, WARNING = "all", "builder", "warning"
+
+#: id -> (scope, rule). The author guide and the user guide are written from
+#: this table; every id has a test in tests/test_package_check.py.
+RULES = (
+    ("package.format", ALL, "The file is a readable satom.plugin/1 package: only the members "
+     "plugin.json lists, each matching its sha256, sizes capped, and a signature (when there "
+     "is one) by a key this server trusts."),
+    ("package.min_satom", ALL, "min_satom is not newer than this server's version."),
+    ("code.builder", BUILDER, "A code plugin is refused, whoever signed it: custom logic is a "
+     "script app."),
+    ("code.signature", ALL, "A code plugin is signed by Vision EBC; unsigned code is never "
+     "installed and a publisher can never sign code."),
+    ("view.template", BUILDER, "body.jinja parses in SATOM's plugin sandbox."),
+    ("view.datasets", WARNING, "Datasets this server does not offer are dropped on import, "
+     "unless the package carries their definition (an administrator dataset): then the import "
+     "creates it pending until an administrator publishes it."),
+    ("view.datasets_adom", BUILDER, "A dataset the view reads lives in another ADOM of this "
+     "server (the target's elsewhere): the package installs in the ADOM that offers every "
+     "dataset it reads, or in Global when it reads more than one ADOM -- never where the "
+     "import would drop the dataset."),
+    ("view.params", WARNING, "Input parameters that are malformed or repeated are dropped on "
+     "import."),
+    ("css.lint", BUILDER, "style.css passes the plugin CSS rules (its errors)."),
+    ("css.warning", WARNING, "style.css warnings of the plugin CSS rules."),
+    ("app.definition", ALL, "app.json is well formed: the app id, the form, the actions, the "
+     "diagram (an object of at most 512 KiB) and the design are valid -- what install would "
+     "otherwise fail on."),
+    ("app.template", ALL, "A package never replaces or creates a template (Plugin Studio > "
+     "Examples, ex-*): app, data store, connection or script."),
+    ("app.script_app", ALL, "A package never replaces a script app."),
+    ("app.kind", ALL, "A page plugin package never replaces a flow app, nor a flow app package "
+     "a page plugin."),
+    ("app.page", ALL, "A page plugin (app.kind \"page\") opens a SATOM page of the closed list "
+     "(services.studio_pages) and carries nothing else: no form, diagram, actions, design, "
+     "image, data store, connection, API, script, automation or sign-in."),
+    ("app.view", ALL, "The app's own view (app.view, services.studio_view) is well formed: "
+     "a template, CSS and JavaScript within their sizes, uses naming app ids, and context "
+     "steps that only read."),
+    ("app.downgrade", WARNING, "A package older than the installed app needs Allow downgrade."),
+    ("app.diagram", BUILDER, "The diagram has no problem (studio_flow.validate_graph), with the "
+     "data stores, connections and scripts this server has plus those the package creates."),
+    ("app.form_refs", BUILDER, "Every form.<field> the diagram reads is a field of the form."),
+    ("app.design", BUILDER, "The design places existing fields, Output steps and images."),
+    ("design.contrast", WARNING, "Colour pairs of the design that are hard to read."),
+    ("app.automations", ALL, "Each automation (app.json automations, at most 10) has a name, "
+     "a recurring schedule (interval of 5 minutes or more, daily, weekly, monthly or cron) and "
+     "inputs that are fields of the form, with every required field given."),
+    ("app.automations_off", WARNING, "Automations arrive switched off: an administrator turns "
+     "them on in Automations once the app is published."),
+    ("app.signin", ALL, "The app's own sign-in (app.json signin, at most 10 rules) names each "
+     "directory connection by id and kind (ad, ldap, radius) or is local, with only the keys of "
+     "its kind: LDAP filter and group DNs for AD/LDAP, groups for RADIUS -- never a server, an "
+     "account or a secret."),
+    ("app.signin_off", WARNING, "The sign-in arrives switched off: an administrator turns it on "
+     "in the app's Sign-in tab once the app is published."),
+    ("app.signin_connection", WARNING, "A rule whose directory connection this server does not "
+     "have, or has with another kind, is left out on import; an app that has sign-in rules here "
+     "keeps them."),
+    ("asset.name", ALL, "Every assets/* image matches its SHA-256 name."),
+    ("asset.image", ALL, "Every assets/* member is a PNG, JPEG, GIF or WebP image within the "
+     "size and count limits."),
+    ("store.definition", ALL, "A data store has a valid id and valid columns (at least one)."),
+    ("store.rows", ALL, "Every seed row fits the store's columns and the size limits."),
+    ("store.seed_limit", BUILDER, "A data store carries at most 500 seed rows (import installs "
+     "the first 500)."),
+    ("store.columns", WARNING, "A column that exists here with another type keeps this "
+     "server's type."),
+    ("connection.secret", ALL, "A connection never carries a secret (non-empty password, "
+     "secret, token, api_key or client_secret)."),
+    ("connection.postgres", ALL, "A postgres connection never travels in an app package."),
+    ("connection.server", ALL, "A server connection never travels in an app package."),
+    ("connection.definition", ALL, "A connection has a valid id, base URL and authentication."),
+    ("connection.pin", ALL, "A connection is pinned to an API version that the package carries "
+     "or that is published on this server."),
+    ("connection.pin_missing", WARNING, "A connection pinned to an API version nobody has is "
+     "created without a pin."),
+    ("api.definition", ALL, "An API version has a valid id, version and endpoint list."),
+    ("api.empty", ALL, "An API version has at least one endpoint."),
+    ("script.definition", ALL, "A packaged script has a valid id, files and settings "
+     "(script_library limits); its entry is main.py."),
+    ("script.syntax", ALL, "Every .py file of a packaged script compiles."),
+    ("script.network", ALL, "A packaged script has no network (network absent or none)."),
+    ("script.credentials", ALL, "A packaged script declares no credentials."),
+    ("script.sdk", ALL, "No source file uses secret or tcp from satom_script / satom_sdk "
+     "(imports, attribute access and bare names)."),
+    ("script.write", ALL, "No call in a packaged script passes write=True."),
+    ("script.db_fields", ALL, "A packaged script has no database fields (lookup, "
+     "lookup_multi, dataset): they query this server's database."),
+    ("script.connections", ALL, "A packaged script declares only HTTP connections that exist "
+     "on this server or that the package creates."),
+    ("script.audience", WARNING, "An installed script is for admins until an administrator "
+     "changes it."),
+    ("script.kept", WARNING, "A script that exists here is kept as it is; a step runs its "
+     "published version."),
+    ("check.internal", ALL, "The check itself failed on this package."),
+)
+_SCOPE = {rid: scope for rid, scope, _t in RULES}
+
+
+class _Report:
+    def __init__(self, policy: str):
+        self.policy = policy
+        self.problems: list[dict] = []
+        self.warnings: list[dict] = []
+
+    def add(self, rule: str, where: str, message: str) -> None:
+        scope = _SCOPE[rule]
+        refuses = scope == ALL or (scope == BUILDER and self.policy == "builder")
+        item = {"where": where, "message": str(message), "rule": rule}
+        dest = self.problems if refuses else self.warnings
+        if item not in dest:
+            dest.append(item)
+
+    def result(self, summary: dict) -> dict:
+        return {"ok": not self.problems, "problems": self.problems,
+                "warnings": self.warnings, "summary": summary}
+
+
+def _summary() -> dict:
+    return {"kind": "", "slug": "", "version": "", "signer": "", "signed_by": "none",
+            "creates": [], "keeps": [], "needs_secrets": [], "lands_in": "draft"}
+
+
+def _keys(target: dict) -> dict:
+    """The keys a signature may come from: TRUSTED_KEYS plus the target's
+    enabled publishers (``{"key_id", "public_key": base64}``)."""
+    from . import plugin_package as P
+    keys = P.trusted_keys()
+    for p in target.get("publishers") or []:
+        if not isinstance(p, dict) or p.get("enabled") is False:
+            continue
+        try:
+            raw = base64.b64decode(str(p.get("public_key") or ""), validate=True)
+        except (binascii.Error, ValueError):
+            continue
+        if len(raw) == 32 and hashlib.sha256(raw).hexdigest() == p.get("key_id"):
+            keys.setdefault(p["key_id"], raw)
+    return keys
+
+
+# --------------------------------------------------------------------------- #
+#  the entry points                                                            #
+# --------------------------------------------------------------------------- #
+def check(data: bytes, target: dict, policy: str = "builder") -> dict:
+    """``{ok, problems, warnings, summary}`` for package *data* on the server
+    *target* describes. See the module doc and contract section 3.2."""
+    if policy not in POLICIES:
+        raise ValueError("policy must be one of %s" % ", ".join(POLICIES))
+    from . import plugin_package as P
+    target = target if isinstance(target, dict) else {}
+    r, summary = _Report(policy), _summary()
+    try:
+        pk = P.read_package(data, _keys(target))
+    except P.PackageError as exc:
+        r.add("package.format", "package", str(exc))
+        return r.result(summary)
+    except Exception as exc:  # noqa: BLE001 -- a broken zip member, a bad type
+        r.add("package.format", "package", "the package cannot be read: %s" % exc)
+        return r.result(summary)
+    _check_package(pk, target, r, summary)
+    return r.result(summary)
+
+
+def install_guard(pk_or_bytes, target: dict, policy: str) -> list[dict]:
+    """The problems that refuse an import -- what the importer asks before
+    it installs. Takes the package bytes, or a ``plugin_package.Package``
+    already read (and its signature already checked) by the caller."""
+    if isinstance(pk_or_bytes, (bytes, bytearray)):
+        return check(bytes(pk_or_bytes), target, policy)["problems"]
+    if policy not in POLICIES:
+        raise ValueError("policy must be one of %s" % ", ".join(POLICIES))
+    r = _Report(policy)
+    _check_package(pk_or_bytes, target if isinstance(target, dict) else {}, r, _summary())
+    return r.problems
+
+
+def app_preflight(body: dict, files: dict | None = None) -> list[dict]:
+    """The problems of an app package that need no server state -- what
+    ``studio_app_package.install`` refuses before it writes anything."""
+    r = _Report("import")
+    try:
+        _app_rules(body, files or {}, None, r, None)
+    except Exception as exc:  # noqa: BLE001
+        r.add("check.internal", "app.json", "the package could not be checked: %s" % exc)
+    return r.problems
+
+
+def objects(body: dict) -> list[tuple[str, str]]:
+    """``[(kind, slug)]`` of everything an app package installs: the app,
+    its data stores, connections and scripts."""
+    out = []
+    spec = body.get("app") if isinstance(body, dict) else None
+    if isinstance(spec, dict) and spec.get("slug"):
+        out.append(("app", str(spec["slug"]).strip()))
+    for kind, key in (("store", "stores"), ("connection", "connections"),
+                      ("script", "scripts")):
+        items = body.get(key) if isinstance(body, dict) else None
+        for it in items if isinstance(items, list) else []:
+            if isinstance(it, dict) and it.get("slug"):
+                out.append((kind, str(it["slug"])))
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  per kind                                                                    #
+# --------------------------------------------------------------------------- #
+def _check_package(pk, target: dict, r: _Report, summary: dict) -> None:
+    from . import plugin_package as P
+    summary.update(kind=pk.kind, slug=pk.slug, version=pk.version, signer=pk.signer or "",
+                   signed_by=("vision-ebc" if pk.signer in P.TRUSTED_KEYS
+                              else "publisher" if pk.signer else "none"))
+    try:
+        need = pk.manifest.get("min_satom")
+        have = str(target.get("satom_version") or "")
+        if need and P.version_tuple(need) > P.version_tuple(have):
+            r.add("package.min_satom", "manifest",
+                  "%s %s needs SATOM %s or newer (this server runs %s)"
+                  % (pk.slug, pk.version, need, have or "an unknown version"))
+        if pk.kind == "code":
+            # a code plugin is loaded at the next restart-all, never "draft"
+            summary["lands_in"] = "restart"
+            _check_code(pk, summary, r)
+        elif pk.kind == "app":
+            summary["lands_in"] = "draft"
+            body = json.loads(pk.files[P.APP_FILE].decode("utf-8"))
+            _app_rules(body, pk.files, target, r, summary)
+        else:
+            _check_view(pk, target, r, summary)
+    except Exception as exc:  # noqa: BLE001 -- problems never raise
+        r.add("check.internal", "package", "the package could not be checked: %s" % exc)
+
+
+def _check_code(pk, summary: dict, r: _Report) -> None:
+    if r.policy == "builder":
+        r.add("code.builder", "manifest", "a code plugin is refused: build a script app instead")
+    else:
+        r.add("code.builder", "manifest",
+              "a code plugin runs inside SATOM: accepted only signed by Vision EBC; a SATOM "
+              "Builder package can never carry code (build a script app instead)")
+    if summary["signed_by"] != "vision-ebc":
+        r.add("code.signature", "manifest",
+              "a code plugin must be signed by Vision EBC: unsigned code is never installed "
+              "and a publisher can never sign code")
+
+
+def _check_view(pk, target: dict, r: _Report, summary: dict) -> None:
+    from . import plugin_sandbox as PS
+    summary["lands_in"] = "testing" if pk.signer else "draft"
+    summary["creates"] = ["%s %s (or the same slug updated in place)" % (pk.kind, pk.slug)]
+    try:
+        PS._SANDBOX.parse(pk.text("body.jinja"))
+    except Exception as exc:  # noqa: BLE001 -- TemplateSyntaxError and kin
+        line = getattr(exc, "lineno", None)
+        r.add("view.template", "body.jinja", ("line %s: %s" % (line, exc)) if line else str(exc))
+    known = set((target.get("choices") or {}).get("datasets") or [])
+    defined = {str(d.get("key")) for d in pk.manifest.get("dataset_defs") or []
+               if isinstance(d, dict)}
+    away = (target.get("elsewhere") or {}).get("datasets") or {}
+    away = away if isinstance(away, dict) else {}
+    here = str(target.get("product") or "") or "global"
+    for k in pk.manifest.get("datasets") or []:
+        if str(k) in known:
+            continue
+        if str(k) in defined:
+            r.add("view.datasets", "datasets",
+                  "dataset %s comes with the package: it lands pending until an administrator "
+                  "publishes it (Administrator › Database › Plugin datasets)" % k)
+            summary.setdefault("pending_datasets", []).append(str(k))
+        elif str(k) in away:
+            adom = str(away[str(k)])
+            r.add("view.datasets_adom", "datasets",
+                  "dataset %s lives in ADOM %s, not in ADOM %s where this package would "
+                  "install: install it in ADOM %s, or in Global when it reads more than one "
+                  "ADOM" % (k, adom, here, adom))
+            summary.setdefault("other_adoms", {})[str(k)] = adom
+        else:
+            r.add("view.datasets", "datasets",
+                  "dataset %s is not offered by this server: the import drops it" % k)
+    raw = pk.manifest.get("params") or []
+    kept = {p["name"] for p in PS.clean_param_defs(raw)}
+    seen = set()
+    for item in raw:
+        name = PS.slugify(str(item.get("name") or "")).replace("-", "_")[:40] \
+            if isinstance(item, dict) else ""
+        if not name or name not in kept or name in seen:
+            r.add("view.params", "params",
+                  "parameter %r is malformed or repeated: the import drops it"
+                  % ((item or {}).get("name") if isinstance(item, dict) else item))
+        seen.add(name)
+    from . import plugin_css
+    for it in plugin_css.lint(pk.text("style.css")) or []:
+        where = "style.css:%s" % it.get("line") if it.get("line") else "style.css"
+        r.add("css.lint" if it.get("level") == "error" else "css.warning", where,
+              it.get("message") or "")
+
+
+# --------------------------------------------------------------------------- #
+#  app packages                                                                #
+# --------------------------------------------------------------------------- #
+def _list(body: dict, key: str, r: _Report) -> list[dict]:
+    v = body.get(key)
+    if v in (None, ""):
+        return []
+    if not isinstance(v, list):
+        r.add("app.definition", key, "%s must be a list" % key)
+        return []
+    out = []
+    for i, it in enumerate(v):
+        if isinstance(it, dict):
+            out.append(it)
+        else:
+            r.add("app.definition", "%s[%d]" % (key, i), "each entry is an object")
+    return out
+
+
+def _twice(items: list[dict], key: str, r: _Report, what: str) -> None:
+    seen = set()
+    for it in items:
+        k = it.get("slug") if key == "slug" else (it.get("slug"), it.get("version"))
+        if k in seen:
+            r.add("app.definition", what, "%s %s is listed twice" % (what, k))
+        seen.add(k)
+
+
+def _app_rules(body, files: dict, target: dict | None, r: _Report, summary: dict | None) -> None:
+    """Every rule of an app package. ``target`` None = the server-free rules
+    only (install's preflight); then nothing is added to a summary."""
+    from . import studio_api_spec as S
+    from . import studio_apis as SAPI
+    from . import studio_app_package as SAP
+    from . import studio_apps as SA
+    from . import studio_connections as SC
+    from . import studio_store as SS
+
+    if not isinstance(body, dict) or not isinstance(body.get("app"), dict):
+        r.add("app.definition", "app.json", "app.json has no 'app' object")
+        return
+    creates, keeps, secrets = [], [], []
+    ex = (target or {}).get("existing") or {}
+    ex_apps, ex_stores = ex.get("apps") or {}, ex.get("stores") or {}
+    ex_conns, ex_scripts = ex.get("connections") or {}, ex.get("scripts") or {}
+    ex_versions = {(str(v[0]), str(v[1])): str(v[2]) for v in ex.get("api_versions") or []
+                   if isinstance(v, (list, tuple)) and len(v) >= 3}
+
+    if target is not None:
+        tmpl = target.get("templates") or {}
+        for kind, slug in objects(body):
+            if slug in (tmpl.get(kind + "s") or []):
+                r.add("app.template", "%ss[%s]" % (kind, slug) if kind != "app" else "app",
+                      "%s %s is a template (Plugin Studio > Examples): a package can never "
+                      "replace or create it" % (kind, slug))
+
+    # API Catalog versions ---------------------------------------------------
+    apis = _list(body, "apis", r)
+    _twice(apis, "version", r, "API")
+    pkg_ops = {}
+    for api in apis:
+        slug, ver = str(api.get("slug") or ""), str(api.get("version") or "")
+        where = "apis[%s %s]" % (slug, ver)
+        if not SAPI._SLUG_RE.match(slug.strip()):
+            r.add("api.definition", where, "API id %r: lowercase letters, digits, - and _, "
+                  "2 to 48 characters" % slug)
+            continue
+        if not SAPI._VERSION_RE.match(ver.strip()):
+            r.add("api.definition", where, "version %r: letters, digits and . _ + -, up to 32 "
+                  "characters" % ver)
+            continue
+        try:
+            SAPI.clean_docs_url(api.get("docs_url"))
+            ops = S.clean_operations(api.get("operations") or [])
+            if str(api.get("base_path") or "").strip().rstrip("/"):
+                S.clean_path(str(api["base_path"]).strip().rstrip("/"))
+        except (S.SpecError, SAPI.ApiError) as exc:
+            r.add("api.definition", where, str(exc))
+            continue
+        if not ops:
+            r.add("api.empty", where, "API %s %s has no endpoints: a version is published with "
+                  "its endpoints, so it cannot be empty" % (slug, ver))
+            continue
+        pkg_ops[(slug, ver)] = ops
+        if (slug, ver) in ex_versions:
+            keeps.append("API %s %s (exists, %s)" % (slug, ver, ex_versions[(slug, ver)]))
+        else:
+            creates.append("API %s %s (%d endpoints, published)" % (slug, ver, len(ops)))
+
+    # connections -------------------------------------------------------------
+    conns = _list(body, "connections", r)
+    _twice(conns, "slug", r, "connection")
+    created_http, catalog, pkg_conn_kind = [], {}, {}
+    for c in conns:
+        slug = str(c.get("slug") or "")
+        where = "connections[%s]" % slug
+        kind = c.get("kind") or "http"
+        pkg_conn_kind[slug] = kind
+        if not SC._SLUG_RE.match(slug.strip()):
+            r.add("connection.definition", where, "connection id %r: lowercase letters, digits, "
+                  "- and _, 2 to 48 characters" % slug)
+            continue
+        if kind == "postgres":
+            r.add("connection.postgres", where, "connection %s is a postgres connection: an app "
+                  "package carries HTTP connections only (external databases are this "
+                  "server's own connections)" % slug)
+            continue
+        if kind == "server":
+            r.add("connection.server", where, "connection %s is a server connection: an app "
+                  "package carries HTTP connections only (the servers SATOM manages, their "
+                  "SSH key and their pinned host key are this SATOM's own)" % slug)
+            continue
+        carried = [k for k in SECRET_KEYS if c.get(k) not in (None, "")]
+        if carried:
+            r.add("connection.secret", where, "connection %s carries a secret (%s): a package "
+                  "never holds one -- it is typed on the server that imports it"
+                  % (slug, ", ".join(carried)))
+        try:
+            d = SC.clean_definition({**SAP.connection_form(c), "kind": kind})
+        except SC.ConnectionError_ as exc:
+            r.add("connection.definition", where, str(exc))
+            continue
+        exists = slug in ex_conns
+        if c.get("api"):
+            key = (str(c.get("api")), str(c.get("api_version") or ""))
+            if target is not None and not exists and ex_versions.get(key) == "draft":
+                r.add("connection.pin", where, "connection %s is pinned to API %s %s, a draft "
+                      "on this server: publish it there first" % ((slug,) + key))
+            elif key in pkg_ops:
+                catalog[slug] = {"api": key[0], "version": key[1],
+                                 "ops": [dict({k: o[k] for k in ("id", "method", "path", "summary")},
+                                              **({"rpc": o["rpc"]} if o.get("rpc") else {}))
+                                         for o in pkg_ops[key]]}
+            elif target is not None and not exists and key not in ex_versions:
+                r.add("connection.pin_missing", where, "API %s %s is neither in the package nor "
+                      "on this server: connection %s is created without a pin" % (key + (slug,)))
+        if target is None:
+            continue
+        if exists:
+            keeps.append("connection %s (exists: its URL and secret are this server's)" % slug)
+        else:
+            creates.append("connection %s" % slug)
+            created_http.append(slug)
+            if d["auth"] != "none":
+                secrets.append(slug)
+
+    # data stores ---------------------------------------------------------------
+    stores = _list(body, "stores", r)
+    _twice(stores, "slug", r, "data store")
+    created_stores = []
+    for st in stores:
+        slug = str(st.get("slug") or "")
+        where = "stores[%s]" % slug
+        try:
+            SS.validate_slug(slug)
+            cols = SS.clean_columns(st.get("columns") or [])
+            if not cols:
+                raise SS.StoreError("a data store needs at least one column")
+        except SS.StoreError as exc:
+            r.add("store.definition", where, str(exc))
+            continue
+        rows = st.get("rows") or []
+        if not isinstance(rows, list):
+            r.add("store.rows", where, "the seed rows are a list")
+            rows = []
+        if len(rows) > SAP.MAX_SEED_ROWS:
+            r.add("store.seed_limit", where, "%d seed rows: a package carries at most %d (the "
+                  "import installs the first %d)" % (len(rows), SAP.MAX_SEED_ROWS,
+                                                    SAP.MAX_SEED_ROWS))
+        total = 0
+        for i, row in enumerate(rows[:SAP.MAX_SEED_ROWS], 1):
+            try:
+                total += len(SS._encoded(SS.clean_row(cols, row)))
+            except SS.StoreError as exc:
+                r.add("store.rows", where, "row %d: %s" % (i, exc))
+        if total > SS.MAX_STORE_BYTES:
+            r.add("store.rows", where, "the seed rows are larger than %d MiB"
+                  % (SS.MAX_STORE_BYTES // 1024 // 1024))
+        if target is None:
+            continue
+        if slug in ex_stores:
+            have = [c for c in (ex_stores[slug] or {}).get("columns") or [] if isinstance(c, dict)]
+            names = {c.get("name"): c.get("type") for c in have}
+            more = [c for c in cols if c["name"] not in names]
+            for c in cols:
+                if c["name"] in names and names[c["name"]] != c["type"]:
+                    r.add("store.columns", where, "column %s is %s here and %s in the package: "
+                          "this server's type is kept" % (c["name"], names[c["name"]], c["type"]))
+            try:
+                SS.clean_columns(have + more)
+            except SS.StoreError as exc:
+                r.add("store.definition", where, "adding the package's columns: %s" % exc)
+            keeps.append("data store %s (exists: rows kept%s)" % (
+                slug, ", adds " + ", ".join(c["name"] for c in more) if more else ""))
+        else:
+            creates.append("data store %s (%d rows)" % (slug, min(len(rows), SAP.MAX_SEED_ROWS)))
+            created_stores.append(slug)
+
+    # scripts ---------------------------------------------------------------------
+    scripts = _list(body, "scripts", r)
+    _twice(scripts, "slug", r, "script")
+    created_scripts = []
+    for sc in scripts:
+        ok = _script_rules(sc, r, target, ex_conns, pkg_conn_kind,
+                           {str(s.get("slug") or "") for s in stores}, ex_stores)
+        slug = str(sc.get("slug") or "")
+        if target is None or not ok:
+            continue
+        if slug in ex_scripts:
+            keeps.append("script %s (exists: kept as it is here)" % slug)
+            if not (ex_scripts[slug] or {}).get("published"):
+                r.add("script.kept", "scripts[%s]" % slug, "script %s exists here but is not "
+                      "published: the step that runs it waits for that" % slug)
+        else:
+            creates.append("script %s v1 (published, for admins)" % slug)
+            created_scripts.append(slug)
+
+    # images -------------------------------------------------------------------------
+    from . import studio_design as D
+    assets = set()
+    for name in sorted(n for n in files if n.startswith("assets/")):
+        data = files[name]
+        sha = name.split("/", 1)[1].split(".", 1)[0]
+        if hashlib.sha256(data).hexdigest() != sha:
+            r.add("asset.name", name, "%s does not match its SHA-256 name" % name)
+            continue
+        if not D.sniff(data):
+            r.add("asset.image", name, "%s is not a PNG, JPEG, GIF or WebP image" % name)
+        elif len(data) > D.ASSET_MAX:
+            r.add("asset.image", name, "%s is larger than %d KiB" % (name, D.ASSET_MAX // 1024))
+        assets.add(sha)
+    if len(assets) > D.MAX_ASSETS:
+        r.add("asset.image", "assets", "an app holds at most %d images" % D.MAX_ASSETS)
+
+    # the app ---------------------------------------------------------------------------
+    spec = body["app"]
+    slug = str(spec.get("slug") or "").strip()
+    if not SA._SLUG_RE.match(slug):
+        r.add("app.definition", "app", "app id %r: lowercase letters, digits, - and _, 2 to 48 "
+              "characters" % slug)
+    if spec.get("kind") not in (None, "", "page"):
+        r.add("app.definition", "app.kind", "kind %r: an app package holds a flow app (no "
+              "kind) or a page plugin (\"page\")" % spec.get("kind"))
+    if spec.get("kind") == "page":
+        _page_app_rules(body, files, spec, slug, target, ex_apps, r, summary,
+                        creates, keeps, secrets)
+        return
+    if target is not None and slug in ex_apps:
+        cur = ex_apps[slug] or {}
+        if cur.get("kind") == "script":
+            r.add("app.script_app", "app", "%s is a script app here: a package can never "
+                  "replace it" % slug)
+        if cur.get("kind") == "page":
+            r.add("app.kind", "app", "%s is a page plugin here: a flow app package can never "
+                  "replace it" % slug)
+        from . import plugin_package as P
+        if summary and cur.get("pkg_version") and \
+                P.version_tuple(summary["version"]) < P.version_tuple(cur["pkg_version"]):
+            r.add("app.downgrade", "app", "%s %s is installed and %s is older: the import needs "
+                  "Allow downgrade" % (slug, cur["pkg_version"], summary["version"]))
+        keeps.append("app %s: draft replaced, published version and access unchanged" % slug)
+    elif target is not None:
+        creates.append("app %s (draft)" % slug)
+
+    ch = None
+    if target is not None:
+        ch = copy.deepcopy(target.get("choices") or {})
+        for key, more in (("stores", created_stores), ("http", created_http),
+                          ("scripts", created_scripts), ("apps", [slug])):
+            ch[key] = list(ch.get(key) or []) + [x for x in more if x not in (ch.get(key) or [])]
+        ch["catalog"] = {**(ch.get("catalog") or {}), **catalog}
+    fields = []
+    try:
+        fields = SA.clean_fields(spec.get("fields") or [], ch)
+    except SA.AppError as exc:
+        r.add("app.definition", "app.fields", str(exc))
+        # The cross checks below still see the fields the author wrote: an
+        # empty form made every {{ form.x }} "not a field" and buried the one
+        # real problem under false ones (found 2026-10-25).
+        raw = spec.get("fields")
+        fields = [f for f in raw if isinstance(f, dict) and f.get("name")] \
+            if isinstance(raw, list) else []
+    try:
+        SA.clean_actions(spec.get("actions") or [], ch)
+    except SA.AppError as exc:
+        r.add("app.definition", "app.actions", str(exc))
+    graph = None
+    try:
+        graph = SA.clean_graph(spec.get("graph") or {})
+    except SA.AppError as exc:
+        r.add("app.definition", "app.graph", str(exc))
+    design = None
+    try:
+        design = D.clean(spec.get("design") or {})
+    except D.DesignError as exc:
+        r.add("app.definition", "app.design", "design: %s" % exc)
+    ap = spec.get("access_permission")
+    if ap not in (None, "") and not (isinstance(ap, str)
+                                     and re.match(r"^[a-z_]{2,32}(\.[a-z_]{2,32})?$", ap)):
+        r.add("app.definition", "app.access_permission",
+              "access_permission %r: a SATOM permission key such as network.view" % (ap,))
+    if spec.get("view"):
+        from . import studio_view as SV
+        try:
+            from . import studio_flow as F
+            SV.clean(spec.get("view"), kinds=F.kind_map(ch) if ch is not None else None)
+        except SV.ViewError as exc:
+            r.add("app.view", "app.view", str(exc))
+    if target is not None and graph is not None:
+        from . import studio_flow as F
+        for p in F.validate_graph(graph, ch):
+            r.add("app.diagram", "app.graph", p)
+        for p in SA.form_ref_problems(fields, graph):
+            r.add("app.form_refs", "app.graph", p)
+        if design is not None:
+            for p in D.problems(design, fields, graph, assets):
+                r.add("app.design", "app.design", p)
+            for w in D.warnings(design):
+                r.add("design.contrast", "app.design", w)
+    # automations (contract section 18) ------------------------------------------
+    from . import plugin_automations as PA
+    autos, bad = PA.clean_entries(body.get("automations"))
+    for where, msg in bad:
+        r.add("app.automations", where, msg)
+    for where, msg in PA.input_problems(autos, fields):
+        r.add("app.automations", where, msg)
+    if autos:
+        r.add("app.automations_off", "automations",
+              "%d automation(s) arrive switched off: an administrator turns them on in "
+              "Automations once the app is published" % len(autos))
+        creates += ["automation %s (%s, off)" % (e["name"], PA.describe(e["schedule_kind"],
+                                                                          e["schedule"]))
+                    for e in autos]
+    # sign-in (contract section 20) ----------------------------------------------
+    from . import app_signin_rules as AS
+    signin, bad = AS.clean_package(body.get("signin"))
+    for where, msg in bad:
+        r.add("app.signin", where, msg)
+    if signin and signin["rules"]:
+        r.add("app.signin_off", "signin",
+              "the sign-in (%d rule(s)) arrives switched off: an administrator turns it on in "
+              "the app's Sign-in tab once the app is published" % len(signin["rules"]))
+        if target is not None:
+            dirs = ex.get("directory_connections")
+            for i, rule in enumerate(signin["rules"]):
+                if rule["kind"] == "local" or not isinstance(dirs, dict):
+                    continue          # a SATOM older than section 20 lists none: say nothing
+                have = dirs.get(rule["connection"])
+                if not isinstance(have, dict):
+                    r.add("app.signin_connection", "signin.rules[%d]" % i,
+                          "directory connection %s does not exist on this server: the rule is "
+                          "left out on import (create it in Plugin Studio > Sign-in directories)"
+                          % rule["connection"])
+                elif have.get("kind") != rule["kind"]:
+                    r.add("app.signin_connection", "signin.rules[%d]" % i,
+                          "directory connection %s is %s on this server, not %s: the rule is "
+                          "left out on import" % (rule["connection"], have.get("kind"),
+                                                  rule["kind"]))
+            if slug in ex_apps and (ex_apps[slug] or {}).get("signin"):
+                keeps.append("sign-in of app %s (exists: this server's rules are kept)" % slug)
+            else:
+                creates.append("sign-in of app %s (%d rule(s), off)" % (slug,
+                                                                        len(signin["rules"])))
+    if summary is not None:
+        creates += ["image %s" % n.split("/", 1)[1] for n in sorted(files)
+                    if n.startswith("assets/")]
+        summary.update(creates=creates, keeps=keeps, needs_secrets=secrets)
+
+
+#: what a page plugin's app.json may hold besides "app" -- nothing that runs
+_PAGE_EMPTY = ("stores", "connections", "apis", "scripts", "automations", "signin")
+_PAGE_APP_KEYS = {"slug", "name", "icon", "description", "kind", "page", "group"}
+
+
+def _page_app_rules(body, files, spec, slug, target, ex_apps, r: _Report, summary,
+                    creates, keeps, secrets) -> None:
+    """A page plugin (services.studio_pages): it names a SATOM page of the
+    closed list and carries nothing else -- no form, diagram, actions,
+    design, image, store, connection, API, script, automation or sign-in."""
+    from . import studio_pages as SPG
+    why = SPG.problem(spec.get("page"))
+    if why:
+        r.add("app.page", "app.page", why)
+    extra = sorted(k for k in spec if k not in _PAGE_APP_KEYS and spec.get(k))
+    if extra:
+        r.add("app.page", "app", "a page plugin opens a SATOM page and carries nothing else: "
+              "remove %s" % ", ".join(extra))
+    for key in _PAGE_EMPTY:
+        if body.get(key):
+            r.add("app.page", key, "a page plugin carries no %s" % key)
+    if any(n.startswith("assets/") for n in files or {}):
+        r.add("app.page", "assets", "a page plugin carries no images")
+    if target is not None and slug in ex_apps:
+        cur = ex_apps[slug] or {}
+        if (cur.get("kind") or "flow") != "page":
+            r.add("app.kind", "app", "%s is a %s app here: a page plugin can never replace it"
+                  % (slug, cur.get("kind") or "flow"))
+        from . import plugin_package as P
+        if summary and cur.get("pkg_version") and \
+                P.version_tuple(summary["version"]) < P.version_tuple(cur["pkg_version"]):
+            r.add("app.downgrade", "app", "%s %s is installed and %s is older: the import needs "
+                  "Allow downgrade" % (slug, cur["pkg_version"], summary["version"]))
+        keeps.append("app %s: page, name and icon replaced; ADOMs, folder and on/off unchanged"
+                     % slug)
+    elif target is not None:
+        creates.append("app %s (page plugin: opens %s; drawn in no ADOM until you tick them)"
+                       % (slug, (SPG.get(spec.get("page")) or {}).get("name", spec.get("page"))))
+    if summary is not None:
+        summary.update(creates=creates, keeps=keeps, needs_secrets=secrets)
+
+
+# --------------------------------------------------------------------------- #
+#  scripts (contract section 7)                                                #
+# --------------------------------------------------------------------------- #
+def _script_rules(sc: dict, r: _Report, target, ex_conns: dict, pkg_conn_kind: dict,
+                  pkg_stores: set | None = None, ex_stores: dict | None = None) -> bool:
+    """The rules of one packaged script. False when it is unusable."""
+    from . import script_library as SL
+    slug = str(sc.get("slug") or "")
+    where = "scripts[%s]" % slug
+    try:
+        SL.validate_slug(slug)
+        files = SL.validate_files(sc.get("files"))
+    except SL.ScriptError as exc:
+        r.add("script.definition", where, str(exc))
+        return False
+    settings = sc.get("settings") if isinstance(sc.get("settings"), dict) else {}
+    # A SATOM = {...} block in main.py decides the settings when the script is
+    # saved (script_library.save_draft): the rules judge what WILL be in force,
+    # never only what the package's settings claim -- else a block asking for
+    # network or credentials would walk past the two rules below.
+    try:
+        man = SL.manifest_of(files)
+    except SL.ScriptError as exc:
+        r.add("script.definition", where, str(exc))
+        return False
+    if man is not None:
+        settings = dict(settings, **{k: v for k, v in man.items() if k != "id"})
+    ok = True
+    if str(settings.get("network") or "none") != "none":
+        r.add("script.network", where, "script %s asks for network %r: a packaged script runs "
+              "with no network" % (slug, settings.get("network")))
+        ok = False
+    if settings.get("credentials"):
+        r.add("script.credentials", where, "script %s declares credentials: a packaged script "
+              "reaches an API only through its declared connections" % slug)
+        ok = False
+    if settings.get("entry") not in (None, "", SL.ENTRY):
+        r.add("script.definition", where, "the entry of a script is %s" % SL.ENTRY)
+        ok = False
+    fields = settings.get("fields") or []
+    db_fields = [f.get("name") for f in fields if isinstance(f, dict)
+                 and f.get("type") in SL.DB_FIELD_TYPES] if isinstance(fields, list) else []
+    if db_fields:
+        r.add("script.db_fields", where, "script %s has database fields (%s): they query this "
+              "server's database and cannot travel in a package" % (slug, ", ".join(
+                  str(x) for x in db_fields)))
+        ok = False
+    else:
+        try:
+            clean = SL.clean_settings({"name": sc.get("name") or slug,
+                                       "description": sc.get("description") or "",
+                                       "fields": fields, "timeout": settings.get("timeout"),
+                                       "connections": settings.get("connections"),
+                                       "satom": settings.get("satom"),
+                                       "network": "none", "audience": "admins"})
+        except SL.ScriptError as exc:
+            r.add("script.definition", where, str(exc))
+            return False
+        for cs in clean["connections"]:
+            if cs in pkg_conn_kind:
+                good = pkg_conn_kind[cs] == "http"
+            elif target is not None:
+                good = (ex_conns.get(cs) or {}).get("kind") == "http"
+            else:
+                good = True             # install: the server's own are checked at run time
+            if not good:
+                r.add("script.connections", where, "script %s declares connection %s, which is "
+                      "neither an HTTP connection of the package nor of this server" % (slug, cs))
+                ok = False
+        for op in clean["satom"]:
+            if not op.startswith(SL.MF.STORE_PREFIX):
+                continue
+            ss = op[len(SL.MF.STORE_PREFIX):]
+            if ss in (pkg_stores or set()) or (target is not None and ss in (ex_stores or {})) \
+                    or target is None and pkg_stores is None:
+                continue
+            if target is None:
+                # install: a store this server has is fine too (checked again at run time)
+                from . import studio_store as SS
+                if SS.get(ss) is not None:
+                    continue
+            r.add("script.connections", where, "script %s writes data store %s, which is "
+                  "neither a data store of the package nor of this server" % (slug, ss))
+            ok = False
+    if settings.get("audience") not in (None, "", "admins"):
+        r.add("script.audience", where, "script %s is installed for admins (the package says "
+              "%s): an administrator widens it" % (slug, settings.get("audience")))
+    for p in SL.syntax_problems(files):
+        r.add("script.syntax", "%s.files[%s]" % (where, p["file"]),
+              "line %s: %s" % (p["line"], p["message"]))
+        ok = False
+    for path in sorted(files):
+        if not path.endswith(".py"):
+            continue
+        for rule, line, msg in scan_script(files[path]):
+            r.add(rule, "%s.files[%s]" % (where, path), "line %d: %s" % (line, msg))
+            ok = False
+    return ok
+
+
+def scan_script(src: str) -> list[tuple[str, int, str]]:
+    """``[(rule, line, message)]``: what a packaged script's source may not
+    do. Checked on the syntax tree, so a comment or a string never counts and
+    every spelling does: ``from satom_sdk import tcp``, ``import satom_script
+    as s; s.secret(...)``, a bare ``secret``, ``getattr(sdk, "tcp")``, a star
+    import (which would hide the name), and any call passing ``write=`` other
+    than ``False``. Source that does not parse returns nothing (the syntax
+    rule reports it)."""
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        return []
+    out = []
+    bad = set(SCRIPT_FORBIDDEN)
+    for node in ast.walk(tree):
+        line = getattr(node, "lineno", 0) or 0
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and \
+                (node.module or "").split(".")[0] in SDK_MODULES:
+            for a in node.names:
+                if a.name == "*":
+                    out.append(("script.sdk", line, "from %s import * is refused: import the "
+                                "names you use (%s)" % (node.module, ", ".join(SCRIPT_SDK))))
+                elif a.name in bad:
+                    out.append(("script.sdk", line, "%s() is not available to a packaged "
+                                "script" % a.name))
+        elif isinstance(node, ast.Attribute) and node.attr in bad:
+            out.append(("script.sdk", line, "%s is not available to a packaged script" % node.attr))
+        elif isinstance(node, ast.Name) and node.id in bad:
+            out.append(("script.sdk", line, "%s is not available to a packaged script" % node.id))
+        elif isinstance(node, ast.Call):
+            fn = node.func
+            if isinstance(fn, ast.Name) and fn.id in ("getattr", "hasattr") and \
+                    len(node.args) >= 2 and isinstance(node.args[1], ast.Constant) and \
+                    node.args[1].value in bad:
+                out.append(("script.sdk", line, "%s is not available to a packaged script"
+                            % node.args[1].value))
+            for kw in node.keywords:
+                if kw.arg == "write" and not (isinstance(kw.value, ast.Constant)
+                                              and kw.value.value is False):
+                    out.append(("script.write", line, "write= is refused: a packaged script "
+                                "reads, it never writes through a connection"))
+    return sorted(set(out), key=lambda x: (x[1], x[0], x[2]))
+
+
+# --------------------------------------------------------------------------- #
+#  schema and author guide                                                     #
+# --------------------------------------------------------------------------- #
+def limits() -> dict:
+    """Every numeric limit a package meets, by name."""
+    from . import plugin_package as P
+    from . import script_library as SL
+    from . import studio_api_spec as S
+    from . import studio_app_package as SAP
+    from . import studio_apps as SA
+    from . import studio_connections as SC
+    from . import studio_design as D
+    from . import studio_flow as F
+    from . import studio_store as SS
+    return {
+        "package_bytes": P.MAX_PACKAGE, "package_member_bytes": P.MAX_FILE,
+        "package_expanded_bytes": P.MAX_TOTAL, "package_members": P.MAX_FILES,
+        "form_fields": SA.MAX_FIELDS, "actions": SA.MAX_ACTIONS, "select_options": SA.MAX_OPTIONS,
+        "diagram_bytes": SA.MAX_GRAPH_BYTES, "run_steps": F.MAX_STEPS,
+        "run_seconds": F.RUN_TIMEOUT, "value_bytes": F.MAX_VALUE_BYTES,
+        "store_columns": SS.MAX_COLUMNS, "store_rows": SS.MAX_ROWS,
+        "store_value_chars": SS.MAX_VALUE_CHARS, "store_row_bytes": SS.MAX_ROW_BYTES,
+        "store_bytes": SS.MAX_STORE_BYTES, "seed_rows": SAP.MAX_SEED_ROWS,
+        "connection_timeout": SC.MAX_TIMEOUT, "api_endpoints": S.MAX_OPERATIONS,
+        "design_blocks": D.MAX_BLOCKS, "design_depth": D.MAX_DEPTH, "design_columns": D.MAX_COLUMNS,
+        "design_tabs": D.MAX_TABS, "design_bytes": D.MAX_JSON, "images": D.MAX_ASSETS,
+        "image_bytes": D.ASSET_MAX,
+        "script_files": SL.MAX_FILES, "script_file_bytes": SL.MAX_FILE_BYTES,
+        "script_bytes": SL.MAX_TOTAL_BYTES, "script_depth": SL.MAX_DEPTH,
+        "script_fields": SL.MAX_FIELDS, "script_connections": SL.MAX_CONNECTIONS,
+        "script_timeout_min": SL.TIMEOUT_MIN, "script_timeout_max": SL.TIMEOUT_MAX,
+    }
+
+
+def schema(target: dict) -> dict:
+    """What an editor (or a model) builds from: contract section 3.2,
+    computed with the target server's choices."""
+    from . import plugin_sandbox as PS
+    from . import script_library as SL
+    from . import studio_apps as SA
+    from . import studio_connections as SC
+    from . import studio_design as D
+    from . import studio_flow as F
+    from . import studio_satom as SAT
+    from . import studio_store as SS
+    target = target if isinstance(target, dict) else {}
+    ch = target.get("choices") or {}
+    sources = ch.get("satom_sources") or [{"key": k, "label": lab} for k, lab in SAT.SOURCES]
+    return {
+        "field_types": list(SA.FIELD_TYPES), "list_types": list(SA.LIST_TYPES),
+        "satom_sources": sources,
+        "step_kinds": json.loads(json.dumps(F.kinds_json(ch), default=list)),
+        "branches": [dict(b) for b in F.BRANCHES],
+        "action_kinds": json.loads(json.dumps(SA.action_schema(ch), default=list)),
+        "column_types": list(SS.COLUMN_TYPES),
+        "connection": {"kinds": ["http"], "auth": list(SC.HTTP_AUTH)},
+        "design": json.loads(json.dumps(D.schema(), default=list)),
+        "datasets": list(ch.get("datasets") or []),
+        "param_types": list(PS._PARAM_TYPES),
+        "script": {"field_types": [t for t in SL.FIELD_TYPES if t not in SL.DB_FIELD_TYPES],
+                   "sdk": list(SCRIPT_SDK), "max_timeout": SL.TIMEOUT_MAX,
+                   # read-only SATOM data a script may declare (satom.<op>(),
+                   # contract section 22); the Builder offers exactly these
+                   "satom_ops": list(SL.MF.SATOM_OPS),
+                   # and store:<slug> -- replace the rows of a data store the
+                   # package brings (store("<slug>").replace(rows))
+                   "store_prefix": SL.MF.STORE_PREFIX},
+        "limits": limits(),
+        # the editors' input checks, read from the same constants the rules use
+        "methods": list(_api_spec().METHODS), "param_in": list(_api_spec().PARAM_IN),
+        "reserved_vars": list(F.RESERVED_VARS),
+        "patterns": patterns(),
+        "automations": _automation_schema(),
+        "signin": _signin_schema(target),
+    }
+
+
+def _signin_schema(target: dict) -> dict:
+    """Contract section 20: what an app package's ``signin`` may hold, and the
+    directory connections and Apps only profiles this server has (names and
+    kinds only -- never a server, an account or a secret)."""
+    from . import app_signin_rules as AS
+    ex = (target or {}).get("existing") or {}
+    return {"kinds": list(AS.PACKAGE_KINDS), "max_rules": AS.MAX_RULES,
+            "max_groups": AS.MAX_GROUPS,
+            "keys": {k: list(v) for k, v in AS.KIND_KEYS.items()},
+            "kind_labels": dict(AS.KIND_LABELS, local="Local SATOM accounts"),
+            "connection_pattern": AS.SLUG_RE.pattern,
+            "connections": ex.get("directory_connections") or {},
+            "profiles": list(ex.get("apps_only_profiles") or []),
+            "arrive": "off"}
+
+
+def _automation_schema() -> dict:
+    """Contract section 18: what an app package's ``automations`` may hold."""
+    from . import plugin_automations as PA
+    return {"schedule_kinds": list(PA.PACKAGE_KINDS), "max": PA.MAX_PER_APP,
+            "min_interval_minutes": PA.MIN_INTERVAL_MINUTES,
+            "units": ["minutes", "hours", "days"], "weekdays": "0 = Monday ... 6 = Sunday",
+            "shapes": {"interval": {"every": 1, "unit": "hours"}, "daily": {"time": "02:00"},
+                       "weekly": {"weekday": 0, "time": "02:00"},
+                       "monthly": {"day": 1, "time": "02:00"},
+                       "cron": {"expr": "0 2 * * *"}},
+            "arrive": "off"}
+
+
+def _api_spec():
+    from . import studio_api_spec as S
+    return S
+
+
+def patterns() -> dict:
+    """The name patterns an editor checks as the author types: the regexes of
+    the modules that enforce them (never restated)."""
+    from . import plugin_package as P
+    from . import studio_apps as SA
+    from . import studio_connections as SC
+    from . import studio_flow as F
+    from . import studio_store as SS
+    return {"slug": P.SLUG_RE.pattern, "version": P.VERSION_RE.pattern,
+            "icon": P.ICON_RE.pattern, "field": SA._FIELD_RE.pattern,
+            "action_key": SA._ACTION_RE.pattern, "app_slug": SA._SLUG_RE.pattern,
+            "store_slug": SS._SLUG_RE.pattern, "column": SS._COL_RE.pattern,
+            "connection_slug": SC._SLUG_RE.pattern, "step_key": F._KEY_RE.pattern,
+            "variable": F._VAR_RE.pattern, "operation_id": _api_spec()._ID_RE.pattern}
+
+
+#: A pinned connection's endpoints are listed in the guide up to this many.
+GUIDE_MAX_OPS = 60
+
+
+def author_guide(target: dict) -> str:
+    """Markdown generated FROM the rules and limits above, never written by
+    hand: the fixed part of every AI prompt the Builder sends."""
+    target = target if isinstance(target, dict) else {}
+    sc = schema(target)
+    ch = target.get("choices") or {}
+    L = []
+    w = L.append
+    w("# Building a SATOM plugin for SATOM %s" % (target.get("satom_version") or "?"))
+    w("")
+    w("A package is a `satom.plugin/1` zip: `plugin.json` (format, slug, name, version X.Y.Z, "
+      "kind, icon bi-*, description, datasets, params, min_satom, files {member: sha256}) and "
+      "the members it lists. Kinds: `view` and `widget` (body.jinja, style.css, script.js) "
+      "and `app` (app.json plus assets/<sha256>.<png|jpg|gif|webp>). `code` is refused.")
+    w("")
+    from . import plugin_package as PKG
+    w("## Which kind")
+    w("")
+    for k in PKG.KIND_ORDER:
+        g = PKG.KIND_GUIDE[k]
+        w("- `%s`: %s For: %s. Example: \"%s\"." % (k, g["what"], g["use_for"], g["example"]))
+    w("- Rule of thumb: %s An app that acts on SATOM's devices reads them with the "
+      "`satom_appliances` step; if a request only SHOWS other SATOM data (rules, policies, "
+      "objects) and the package is an app, say a view does that; never say the data does not "
+      "exist." % PKG.KIND_RULE)
+    w("")
+    w("## Rules the importer applies")
+    w("")
+    w("| Rule | Refuses | What it requires |")
+    w("|---|---|---|")
+    scope = {ALL: "always", BUILDER: "Builder packages", WARNING: "never (warning)"}
+    for rid, sc_, text in RULES:
+        if rid != "check.internal":
+            w("| `%s` | %s | %s |" % (rid, scope[sc_], text))
+    w("")
+    w("## Views and widgets")
+    w("")
+    w("- body.jinja renders in an immutable Jinja sandbox with autoescape and StrictUndefined; "
+      "each dataset is a variable `{{ <dataset>.rows }}` / `.columns`, input values are "
+      "`{{ params.<name> }}`.")
+    named, objects = [], {}
+    for d in sc["datasets"]:
+        prod = d.split("_", 1)[0]
+        if prod in _OBJECT_PRODUCTS:
+            objects.setdefault(prod, []).append(d)
+        else:
+            named.append(d)
+    here = str(target.get("product") or "") or "global"
+    w("- Datasets this package can read in ADOM %s: %s." % (
+        here, ", ".join("`%s`" % d for d in named) or "none"))
+    if objects:
+        w("- Device-object datasets (one per object type the device cache holds; columns `id`, "
+          "`appliance_id`, `device`, `mkey`, `parent_id` + the object's fields, `-` read as `_`; "
+          "the Library lists every one): %s." % "; ".join(
+              "%s: %d (e.g. %s)" % (p, len(v), ", ".join("`%s`" % k for k in v[:3]))
+              for p, v in sorted(objects.items())))
+    away = (target.get("elsewhere") or {}).get("datasets") or {}
+    if isinstance(away, dict) and away:
+        by_adom: dict = {}
+        for k, a in sorted(away.items()):
+            by_adom.setdefault(str(a), []).append(k)
+        w("- Datasets that exist on this server in OTHER ADOMs (a package installed in ADOM %s "
+          "cannot read them; never say they do not exist -- say which ADOM has them: the "
+          "project must move to that ADOM, or to Global to read more than one ADOM): %s." % (
+              here, "; ".join("%s: %d (e.g. %s)" % (a, len(v), ", ".join(
+                  "`%s`" % k for k in v[:3])) for a, v in sorted(by_adom.items()))))
+    w("- Parameter types: %s." % ", ".join("`%s`" % t for t in sc["param_types"]))
+    w("- style.css follows the plugin CSS rules; script.js runs in a sandboxed frame.")
+    w("")
+    w("## Apps (app.json)")
+    w("")
+    w("`{\"app\": {slug, name, icon, description, fields, graph, actions, design}, "
+      "\"stores\": [...], \"connections\": [...], \"apis\": [...], \"scripts\": [...], "
+      "\"automations\": [...]}`")
+    w("")
+    w("### Form fields")
+    w("")
+    w("Types: %s. List types (`search` allowed): %s. `satom_select` sources: %s." % (
+        ", ".join("`%s`" % t for t in sc["field_types"]),
+        ", ".join("`%s`" % t for t in sc["list_types"]),
+        ", ".join("`%s`" % s["key"] for s in sc["satom_sources"])))
+    w("")
+    w("A field is `{name, label, type, required, help, default}` plus, by type: `select` -> "
+      "`options` (ONE text, one option per line -- not a list, not `choices`); "
+      "`satom_select` -> `source`; `store_select` -> `store`, `value_col`, `label_col`; "
+      "`api_select` -> `connection`, `path`, `list_path`, `value_key`, `label_key`.")
+    w("")
+    w("### Diagram")
+    w("")
+    w("`graph = {\"nodes\": [{key, kind, label, params, x, y}], \"edges\": [{src, dst, "
+      "branch}]}`; exactly one `start`. Branches: %s. Templates are Jinja in a sandbox with "
+      "StrictUndefined over `form`, `vars`, every saved variable by name and `run`."
+      % ", ".join("`%s`" % b["key"] for b in sc["branches"]))
+    w("")
+    w("A step's `params` is an object of name: value with the parameters of its kind listed "
+      "below -- never a list of {name, value} pairs. A form field is read as "
+      "`{{ form.<field> }}`, a saved variable by its name. For example:")
+    w("")
+    w("`{\"key\": \"find\", \"kind\": \"store_query\", \"label\": \"Find rows\", \"params\": "
+      "{\"store\": \"<store>\", \"filter\": {\"ip\": \"{{ form.ip }}\"}, "
+      "\"save_as\": \"rows\"}, \"x\": 200, \"y\": 0}`")
+    w("")
+    w("Parameters of kind `json` (body, query, values, filter, inputs...) are parsed as JSON "
+      "BEFORE any template is rendered: a template goes only INSIDE a JSON string, never "
+      "around keys or items (`{\"name\": \"{{ form.ip }}\"}`, not `{% for %}` building JSON). "
+      "A string that is exactly one expression keeps the value's type, so a list is sent as "
+      "`{\"member\": \"{{ members }}\"}`; build that list first with a `set` step, e.g. "
+      "`{\"key\": \"members\", \"kind\": \"set\", \"params\": {\"name\": \"members\", "
+      "\"value\": \"{{ appliances | selectattr('ip') | map(attribute='ip') | list }}\"}}`. "
+      "One call per item is a loop in the diagram (a `set` counter, a `decision`, the step, "
+      "the counter + 1) or a script step: the counter starts as `\"{{ 0 }}\"` (a literal "
+      "`\"0\"` is the TEXT '0', which cannot index a list nor add 1), grows with "
+      "`\"{{ i + 1 }}\"` and reads an item as `{{ ips[i] }}`. `connection`, `store` and `script` name an object "
+      "of the package or the server: a literal name, never a template. A json parameter may "
+      "also be ONE expression for the whole value (`\"body\": \"{{ payload }}\"`, with "
+      "`payload` an object a `set` step built); `| tojson` is not needed.")
+    w("")
+    for k in sc["step_kinds"]:
+        w("- `%s` -- %s (%s%s). %s" % (k["key"], k["label"], k["group"],
+                                       ", writes" if k["writes"] else "", k["summary"]))
+        for p in k["params"]:
+            extra = []
+            if p.get("required"):
+                extra.append("required")
+            if p.get("choices"):
+                extra.append("one of " + ", ".join("`%s`" % c for c in p["choices"]))
+            if p.get("default"):
+                extra.append("default `%s`" % p["default"])
+            w("  - `%s` (%s%s)" % (p["name"], p["kind"], "; " + "; ".join(extra) if extra else ""))
+    w("")
+    w("### Actions on the output")
+    w("")
+    for a in sc["action_kinds"]:
+        w("- `%s` -- %s: %s" % (a["key"], a["label"],
+                                 ", ".join("`%s`" % p["name"] for p in a["params"])))
+    w("")
+    au = sc["automations"]
+    w("### Automations (the app on a schedule)")
+    w("")
+    w("An app that must run on its own -- every day, every hour -- carries `\"automations\": "
+      "[{name, schedule_kind, schedule, inputs, description}]` in app.json (at most %d). "
+      "`schedule_kind` is one of %s; `schedule` is %s (times are HH:MM on the server's clock; "
+      "weekday %s; an interval is at least %d minutes). `inputs` fills the form, because "
+      "nobody is there to type it: every key is a field, every required field without a "
+      "default is given. On the server each one is an automation of Automations (action "
+      "\"Run a Plugin Studio app\") that runs the PUBLISHED app as the user who imported "
+      "it; it arrives switched off. To act on the devices SATOM manages, start the diagram "
+      "with a `satom_appliances` step (the device list, e.g. every FortiWeb with its `ip`) "
+      "and compare it with what the other system has before writing, so a second run "
+      "changes nothing."
+      % (au["max"], ", ".join("`%s`" % k for k in au["schedule_kinds"]),
+         "; ".join("%s `%s`" % (k, json.dumps(v)) for k, v in au["shapes"].items()),
+         au["weekdays"], au["min_interval_minutes"]))
+    w("")
+    si = sc["signin"]
+    w("### Sign-in (people outside SATOM)")
+    w("")
+    w("An app some people without a SATOM console account must use -- another team, a "
+      "supplier -- carries `\"signin\": {rules, profile, require_approval}` in app.json: the "
+      "app gets its own sign-in page and those people see that app and nothing else of SATOM. "
+      "`rules` (at most %d, tried in order, the first that accepts wins) are "
+      "`{connection, kind, require_2fa, ...}`: `kind` %s; `connection` is the id of a "
+      "directory connection of that kind on the server (for `local`: `\"local\"`, SATOM's own "
+      "accounts). AD/LDAP rules may add `ldap_filter` (one filter in parentheses) and "
+      "`group_dns` (member of any; AD counts nested groups); RADIUS rules `radius_groups` "
+      "(FortiAuthenticator Fortinet-Group-Name). `profile` names an Apps only profile for "
+      "the accounts a sign-in creates. Never a server, a bind account or a secret: the "
+      "administrator keeps those on the server. It arrives switched off." % (
+          si["max_rules"], ", ".join("`%s`" % k for k in si["kinds"])))
+    if si["connections"]:
+        w("- Directory connections on this server: %s." % ", ".join(
+            "`%s` (%s)" % (k, (v or {}).get("kind")) for k, v in sorted(si["connections"].items())))
+    if si["profiles"]:
+        w("- Apps only profiles on this server: %s." % ", ".join("`%s`" % p for p in si["profiles"]))
+    w("- Only when the request asks for it: an app without `signin` is used by SATOM users the "
+      "app is shared with.")
+    w("")
+    w("### Data stores, connections, API versions")
+    w("")
+    w("- Store: `{slug, name, description, columns: [{name, label, type, required}], rows}`; "
+      "column types %s." % ", ".join("`%s`" % t for t in sc["column_types"]))
+    w("- Connection: `{slug, name, kind: \"http\", base_url, auth, username, header_name, "
+      "token_url, scope, verify_tls, timeout, api, api_version}`; auth %s. Never a secret."
+      % ", ".join("`%s`" % t for t in sc["connection"]["auth"]))
+    w("- API version: `{slug, name, owner, docs_url, description, version, base_path, "
+      "operations: [{id, method, path, summary, params, body}]}`, at least one endpoint.")
+    w("")
+    from . import studio_api_library as LIB
+    w("### Calling a Fortinet device (SATOM's API library)")
+    w("")
+    w("- Pin the HTTP connection to SATOM's API library: `\"api\": \"<product>\", "
+      "\"api_version\": \"<firmware build>\"` with product %s (the builds are in the Library; "
+      "use the one the fleet runs). The package's `apis` entry for it is that build exactly as "
+      "SATOM serves it (`GET /api/v1/builder/library/fortinet/<product>/<build>/catalog`; the "
+      "Builder adds it, never write it by hand). Every `api_call` method + path must then be an "
+      "endpoint of that build, or the package is refused -- never invent a path."
+      % ", ".join("`%s`" % k for k in LIB.STYLES))
+    w("- FortiGate, `/api/v2/cmdb/<path>`, auth `bearer` (a REST API administrator's token): a "
+      "table is GET/POST `<path>` and GET/PUT/DELETE `<path>/{<mkey>}`; a settings object is "
+      "GET/PUT `<path>`; `?vdom=<name>` in the query picks the VDOM. A PUT that sends a list "
+      "field (an address group's `member`) REPLACES the whole list: to add ONE item POST "
+      "`{\"name\": \"<item>\"}` to the child table `<path>/{<mkey>}/<list>` "
+      "(`/api/v2/cmdb/firewall/addrgrp/{name}/member`), GET "
+      "`<path>/{<mkey>}/<list>/{<item>}` answers 404 when the item is not in the list, and "
+      "DELETE there removes one; the others stay. A group lists address "
+      "objects by name, so the address exists first: POST `/api/v2/cmdb/firewall/address` "
+      "`{\"name\": \"<name>\", \"subnet\": \"<ip> 255.255.255.255\"}`. A POST of a name "
+      "that exists fails, so read first: GET `<path>/{<mkey>}` answering 404 takes the step's "
+      "`error` arrow (the status is in `last_response.status`). Results are in `results` "
+      "(`\"extract\": \"results\"`).")
+    w("- FortiWeb `/api/v2.0/cmdb/<path>`: the entry's key is the query `?mkey=<key>` on the "
+      "same path (GET one, PUT, DELETE); POST adds. A sub-table is its own path "
+      "(`/api/v2.0/cmdb/server-policy/server-pool/pserver-list?mkey=<pool>`). Results are in "
+      "`results` (a list, or one object with `?mkey=`); an entry that does not exist answers "
+      "HTTP 500 `{\"results\": {\"errcode\": -3}}` (the step's `error` arrow).")
+    w("- FortiADC `/api/<name>`: `?mkey=<key>` like FortiWeb, results in `payload`. A child "
+      "table is its own path with the parent entry in `?pkey=`: a real server into a pool is "
+      "POST `/api/load_balance_pool_child_pool_member?pkey=<pool>`, one row "
+      "`?pkey=<pool>&mkey=<id>`. An entry that does not exist answers HTTP 200 with "
+      "`{\"payload\": null}` -- NOT the error arrow: read first and test the payload "
+      "(`{{ resp.payload }}` empty). A write answers a number in `payload` (negative = refused).")
+    w("- FortiAuthenticator `/api/v1/<resource>/`, in the shape the build serves (the Library "
+      "says which): a collection is `<resource>/` (`objects` + `meta`; `?limit=` pages, default "
+      "20) and `<resource>/{id}/` with only the methods it allows (`localusers`: PATCH, not PUT, "
+      "on one user); a single object (`systeminfo`) is read and changed at `<resource>/`; an "
+      "action (`auth`) only takes its writes. A missing id answers 404.")
+    w("- FortiAnalyzer speaks JSON-RPC: pin the connection to `fortianalyzer` like the others "
+      "and every call is POST `/jsonrpc` with body `{\"method\": \"get\", \"params\": "
+      "[{\"url\": \"/dvmdb/adom/{{ form.adom }}/device\"}]}` (`set`/`add`/`update`/"
+      "`delete`/`exec` write; `data` beside `url`). Each `url` must be one the build serves "
+      "(the Library lists them; any ADOM as `adom/<name>`). The answer is HTTP 200 "
+      "`{\"result\": [{\"status\": {\"code\": 0}, \"data\": ...}]}` also when it "
+      "failed: test `result[0].status.code` (-3 = does not exist).")
+    w("")
+    w("### Scripts")
+    w("")
+    w("`{slug, name, description, files: {\"main.py\": ...}, settings: {fields, timeout, "
+      "audience, connections, satom, entry}}`. Field types: %s. The SDK: `from satom_script "
+      "import %s`. No `secret`, no `tcp`, no `write=True`, no network, no credentials; timeout "
+      "at most %d s. `main.py` may instead start with a `SATOM = {...}` block (literals only: "
+      "`inputs` = {name: {label, type, required, default, help, options}}, `connections`, "
+      "`satom` = read-only SATOM data: `devices`, `lb_lookup`, `dns_lookup`, `timeout`, "
+      "`name`, `description`): it IS the form and settings, and the rules judge it." % (", ".join("`%s`" % t for t in sc["script"]["field_types"]),
+                      ", ".join(SCRIPT_SDK), sc["script"]["max_timeout"]))
+    w("")
+    w("## On this server")
+    w("")
+    for key, label in (("stores", "Data stores"), ("http", "HTTP connections"),
+                       ("scripts", "Published scripts"), ("apps", "Apps")):
+        w("- %s: %s" % (label, ", ".join("`%s`" % x for x in ch.get(key) or []) or "none"))
+    for conn, cat in sorted((ch.get("catalog") or {}).items()):
+        ops = cat.get("ops") or []
+        if len(ops) > GUIDE_MAX_OPS:
+            # a library build is thousands of endpoints: the Library lists them
+            w("- `%s` is pinned to API %s %s: %d endpoints (the Library lists them)"
+              % (conn, cat.get("api"), cat.get("version"), len(ops)))
+            continue
+        w("- `%s` is pinned to API %s %s: %s" % (conn, cat.get("api"), cat.get("version"), ", ".join(
+            "`%s` %s %s" % (o.get("id"), o.get("method"), o.get("path"))
+            + (" (JSON-RPC: the body's params[].url is one of %d urls; the Library lists them)"
+               % len(o["rpc"]) if o.get("rpc") else "")
+            for o in ops)))
+    w("")
+    w("## Limits")
+    w("")
+    for k, v in sorted(sc["limits"].items()):
+        w("- `%s`: %s" % (k, v))
+    return "\n".join(L) + "\n"

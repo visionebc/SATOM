@@ -1,0 +1,22 @@
+{% extends "apps_portal/layout.html" %}
+{% block title %}{{ a.name }} — {{ _('Sign in') }}{% endblock %}
+{% block content %}
+{# An app's own sign-in page (views.apps_portal.login), in the app's colours. #}
+<div class="ap-login" style="{{ theme }}">
+  <div class="fw-card"><div class="fw-card-body">
+    <div class="text-center mb-3">
+      <i class="bi {{ a.icon }} ap-login-icon"></i>
+      <h1 class="fw-page-title mt-2 mb-1" style="font-size:20px;">{{ a.name }}</h1>
+      <div class="text-muted" style="font-size:12px;">{{ _('Sign in to use this app') }}</div>
+    </div>
+    <form method="post" action="{{ url_for('apps_portal.login', slug=a.slug) }}" autocomplete="on">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="fw-form-label" for="ap-user">{{ _('Username') }}</label>
+      <input class="form-control mb-2" id="ap-user" name="username" autocomplete="username" required autofocus>
+      <label class="fw-form-label" for="ap-pass">{{ _('Password') }}</label>
+      <input class="form-control mb-3" id="ap-pass" name="password" type="password" autocomplete="current-password" required>
+      <button class="btn btn-fw-primary w-100" type="submit"><i class="bi bi-box-arrow-in-right me-1"></i>{{ _('Sign in') }}</button>
+    </form>
+  </div></div>
+</div>
+{% endblock %}

@@ -1,0 +1,155 @@
+{# Sentinel settings.
+
+   Rendered generically from ``config.SPEC`` — the SAME list the code reads its
+   values through. That is the whole point: this product has already shipped a
+   setting (``metrics.vm_url``) that appeared in a form and was never actually
+   read, because the accessor name was wrong and a broad ``except`` ate it. A
+   form generated from the accessor's own catalog cannot drift from it.
+
+   Grouped by concern, and the ordering is the safety argument: detection knobs
+   first, the response kill switch last, because that is the order in which an
+   operator should think about turning any of this on.
+
+   Every control carries a "?" whose text comes from the SAME catalog the
+   control does (``config.SPEC[*].hint``) or, for the parts that are not
+   settings, from ``config.UI_HINTS``. Writing the prose in this template
+   instead would put the explanation and the thing it explains in two files
+   that nothing keeps in agreement — and a stale explanation of a switch that
+   arms a firewall is worse than no explanation at all.
+#}
+{% from "partials/_hint.html" import hint %}
+{% set ui_hints = sentinel_ui_hints or {} %}
+<div class="fw-card" id="card-sentinel-settings">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <h2 class="fw-card-title">{{ _('Sentinel — security correlation') }}</h2>
+    <span class="d-inline-flex align-items-center">
+      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.docs') }}">
+        <i class="bi bi-book me-1"></i>{{ _('Architecture') }}</a>
+      {{ hint(ui_hints['link.architecture'], _('About the architecture document')) }}
+    </span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-secondary" style="font-size:13px">
+      Sentinel correlates attack signatures, HTTP outcomes, appliance counters, VM and hypervisor
+      metrics and vulnerability intelligence into single incidents. Defaults make a fresh
+      installation <strong>observant but inert</strong>: detection on, actions off, and no traffic
+      to any third party. Turning Sentinel on is deliberately <em>not</em> the same act as
+      authorising it to change a firewall — that is the “Response engine armed” switch, and it is
+      the last one on this page.
+    </p>
+
+    <form method="post" action="{{ url_for('settings.save_sentinel') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {# Where the form was RENDERED decides where the save lands.  Bouncing an
+         operator who opened the pane onto the standalone page is exactly the
+         indirection this section was flattened to remove. #}
+      <input type="hidden" name="return_to" value="{{ 'pane' if sentinel_inline else 'page' }}">
+      {% for gkey, glabel, rows in sentinel_settings %}
+        <h6 class="mt-3 mb-2">{{ glabel }}{{ hint(ui_hints['group.' ~ gkey], _('About this group')) }}</h6>
+        <div class="row g-3">
+        {% for r in rows %}
+          <div class="col-md-6">
+            {% if r.kind == 'bool' %}
+              <div class="form-check form-switch">
+                {# The unchecked box must still POST, or a switch can be turned
+                   on and never off: an absent checkbox is indistinguishable
+                   from "field not on this form". #}
+                <input type="hidden" name="{{ r.key }}__present" value="1">
+                <input class="form-check-input" type="checkbox" role="switch"
+                       id="sn-{{ r.key }}" name="{{ r.key }}" value="1"
+                       {{ 'checked' if r.value }}>
+                <label class="form-check-label" for="sn-{{ r.key }}">{{ r.label }}</label>{{ hint(r.hint, r.label) }}
+              </div>
+            {% elif r.kind == 'choice' %}
+              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>{{ hint(r.hint, r.label) }}
+              <select class="form-select form-select-sm" id="sn-{{ r.key }}" name="{{ r.key }}">
+                {% for c in r.choices %}
+                  <option value="{{ c }}" {{ 'selected' if r.value == c }}>{{ c }}</option>
+                {% endfor %}
+              </select>
+            {% elif r.kind == 'text' %}
+              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>{{ hint(r.hint, r.label) }}
+              <textarea class="form-control form-control-sm" id="sn-{{ r.key }}"
+                        name="{{ r.key }}" rows="4">{{ r.value }}</textarea>
+            {% elif r.kind == 'secret' %}
+              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>{{ hint(r.hint, r.label) }}
+              <input class="form-control form-control-sm" type="password" id="sn-{{ r.key }}"
+                     name="{{ r.key }}" placeholder="{{ 'stored — leave blank to keep' if r.value else 'not set' }}">
+            {% else %}
+              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>{{ hint(r.hint, r.label) }}
+              <input class="form-control form-control-sm"
+                     type="{{ 'number' if r.kind in ('int','float') else 'text' }}"
+                     {% if r.kind == 'float' %}step="0.1"{% endif %}
+                     {% if r.min is defined %}min="{{ r.min }}"{% endif %}
+                     {% if r.max is defined %}max="{{ r.max }}"{% endif %}
+                     id="sn-{{ r.key }}" name="{{ r.key }}" value="{{ r.value }}">
+            {% endif %}
+            {% if r.help %}<div class="form-text" style="font-size:11.5px;">{{ r.help }}</div>{% endif %}
+            <div class="text-muted" style="font-size:11px;"><code>sentinel.{{ r.key }}</code></div>
+          </div>
+        {% endfor %}
+        </div>
+      {% endfor %}
+
+      <div class="mt-3 d-flex gap-2">
+        <button class="btn btn-fw-primary btn-sm">{{ _('Save Sentinel settings') }}</button>
+        <span class="d-inline-flex align-items-center">
+          <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.policies') }}">
+            {{ _('Per-action response policy') }}</a>
+          {{ hint(ui_hints['link.policies'], _('About per-action response policy')) }}
+        </span>
+        <span class="d-inline-flex align-items-center">
+          <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.context') }}">
+            {{ _('Trusted sources, windows, topology') }}</a>
+          {{ hint(ui_hints['link.context'], _('About trusted sources, windows and topology')) }}
+        </span>
+      </div>
+    </form>
+
+    <hr>
+    <h6 class="mt-3">{{ _('Extra configuration this module needs') }}</h6>
+    <p class="text-secondary" style="font-size:13px">
+      These live outside this form because they are not single values. Each one is a real
+      prerequisite, and each degrades honestly rather than silently when it is missing.
+    </p>
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th style="width:230px;">{{ _('Prerequisite') }}</th><th>{{ _('Why, and what happens without it') }}</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="small"><a href="{{ url_for('sentinel.context') }}">Topology map</a></td>
+          <td class="small">Binds each appliance to its VM id and hypervisor node. Without it the
+            <code>vm</code> and <code>host</code> layers report <strong>unknown</strong> on every
+            incident for that device — never “no impact”.</td>
+        </tr>
+        <tr>
+          <td class="small">Hypervisor target<br><span class="text-muted">(Settings → Hypervisors)</span></td>
+          <td class="small">The Proxmox/ESXi credentials the <code>infra</code> collector reads
+            through. Absent, that collector fails loudly per target rather than publishing zeros.</td>
+        </tr>
+        <tr>
+          <td class="small"><a href="{{ url_for('metrics_admin.index') }}">Collection targets</a></td>
+          <td class="small">Sentinel adds two collectors — <code>http_status</code> (response classes
+            from the traffic log) and <code>infra</code>. Their cadence is edited on the same page as
+            every other collector, on purpose: a second collection settings page is how two cadence
+            models drift apart.</td>
+        </tr>
+        <tr>
+          <td class="small"><a href="{{ url_for('scheduled_actions.index') }}">System Automations</a></td>
+          <td class="small"><code>sentinel_sweep</code> every 3 minutes, <code>sentinel_baseline</code>
+            nightly, <code>sentinel_vuln_sync</code> daily. Without the sweep nothing is detected, and
+            the console says “never run” rather than showing an empty, healthy-looking list.</td>
+        </tr>
+        <tr>
+          <td class="small">Local model host</td>
+          <td class="small">Only for the narrative. If it is unreachable the incident keeps its
+            deterministic score, its evidence and its policy decision — it loses the prose.</td>
+        </tr>
+        <tr>
+          <td class="small">CVE mirror content</td>
+          <td class="small">Sync (needs the outbound switch above) or enter CVEs by hand under
+            <a href="{{ url_for('sentinel.overview') }}">Operations › Sentinel › Overview</a>. An empty mirror means CVE factors simply do not apply; it never fabricates one.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

@@ -1,0 +1,496 @@
+{% extends "base.html" %}
+
+{% block title %}Web Protection Profile — {{ appliance.name }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('web_protection.index') }}">{{ _('Web Protection') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Web Protection Profile') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-12">
+    <div class="fw-page-header">
+      <div>
+        <h1 class="fw-page-title"><i class="bi bi-shield-fill-check me-2 text-accent"></i>{{ _('Web Protection Profile') }}</h1>
+        <p class="text-muted mb-0" style="font-size:13px;">
+          Policy &gt; Web Protection Profile on <strong>{{ appliance.name }}</strong>
+        </p>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        {% if may_open('factory_catalog.index') %}
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('factory_catalog.index') }}" title="{{ _('Predefined profiles per firmware build and API version') }}"><i class="bi bi-box-seam me-1"></i>{{ _('Factory catalog') }}</a>
+        {% endif %}
+        <span class="badge bg-dark border" title="{{ _('Served from the local source of truth') }}">
+          <i class="bi bi-database me-1"></i>{{ freshness or 'no local data' }}</span>
+        {% set _can_write = current_user.can('config_write') %}
+        {% if _can_write %}
+        <form method="post" action="{{ url_for('web_protection.refresh', id=appliance.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('web_protection.overview', id=appliance.id) }}">
+          <button type="submit" class="btn btn-outline-light btn-sm" title="{{ _('Pull live config from the device into the cache') }}">
+            <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="fw-alert fw-alert-danger d-flex align-items-center gap-2 mb-3">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <div>{{ _('Could not load web protection data from') }} <strong>{{ appliance.name }}</strong>: {{ error }}</div>
+    </div>
+    {% endif %}
+
+    {# FortiWeb's own tabs: Inline Protection Profile | Offline Protection Profile #}
+    <ul class="nav nav-tabs mb-3" role="tablist">
+      <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-inline" type="button">
+          {{ _('Inline Protection Profile') }}
+          <span class="fw-badge fw-badge-secondary ms-1">{{ wpp_profiles|length if wpp_profiles else 0 }}</span>
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-offline" type="button">
+          {{ _('Offline Protection Profile') }}
+          <span class="fw-badge fw-badge-secondary ms-1">{{ offline_profiles|length if offline_profiles else 0 }}</span>
+        </button>
+      </li>
+    </ul>
+
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="tab-inline">
+        <div class="fw-toolbar mb-2 d-flex align-items-center gap-3 flex-wrap">
+          {% if _can_write %}
+          <a class="btn btn-fw-primary btn-sm"
+             href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.inline-protection', title='Web Protection Profile', create=1) }}">
+            <i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}
+          </a>
+          {% endif %}
+          <div class="fw-search-box">
+            <i class="bi bi-search search-icon"></i>
+            <input type="text" id="wpp-search" placeholder="{{ _('Search profiles…') }}">
+          </div>
+          <label class="d-flex align-items-center gap-2 mb-0" style="font-size:13px;cursor:pointer;user-select:none;"
+                 title="{{ _('Hide the FortiWeb predefined (default) profiles, leaving only your custom profiles. Saved to your preferences.') }}">
+            <input type="checkbox" id="hide-default-toggle" class="form-check-input mt-0"
+                   {% if hide_default %}checked{% endif %}>
+            {{ _('Hide default (predefined) profiles') }}
+          </label>
+        </div>
+        <div class="fw-table-wrapper">
+          <table class="fw-table" id="profiles-table">
+            <thead>
+              <tr>
+                <th>{{ _('Name') }}</th>
+                <th>{{ _('Signatures') }}</th>
+                <th>{{ _('Bot Mitigation') }}</th>
+                <th>{{ _('DoS Protection') }}</th>
+                <th>{{ _('Actions') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if wpp_profiles %}
+                {% for p in wpp_profiles %}
+                {% set pname = p.get('name') or p.get('mkey') or '' %}
+                {% set is_default = (p.get('can_view') == 1) %}
+                {% set is_managed = pname and pname in managed_names %}
+                <tr data-default="{{ 1 if is_default else 0 }}">
+                  <td>
+                    {% if pname %}
+                    <a class="fw-semibold text-decoration-none"
+                       href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.inline-protection', mkey=pname, title='Web Protection Profile') }}">{{ pname }}</a>
+                    {% else %}—{% endif %}
+                    {% if is_default %}<span class="fw-badge fw-badge-secondary ms-1" title="{{ _('FortiWeb predefined profile') }}">{{ _('Default') }}</span>{% endif %}
+                    {% if is_managed %}<span class="fw-badge fw-badge-warning ms-1"
+                       title="{{ _('Template-managed: read-only here. Edit in Administrator → Template Library — approving a change there deploys it to ALL devices.') }}"><i class="bi bi-lock-fill me-1"></i>{{ _('Template') }}</span>{% endif %}
+                  </td>
+                  <td>
+                    {% if p.get('signature-rule') or p.get('signature_rule') %}
+                      <span class="fw-badge fw-badge-primary">{{ p.get('signature-rule') or p.get('signature_rule') }}</span>
+                    {% else %}<span class="text-muted">{{ _('None') }}</span>{% endif %}
+                  </td>
+                  <td>{{ p.get('bot-mitigate-policy') or '—' }}</td>
+                  <td>{{ p.get('application-layer-dos-prevention') or '—' }}</td>
+                  <td>
+                    {% if pname %}
+                    {% if is_managed %}
+                    <a href="{{ url_for('templates.index', kind='web-protection-profile') }}"
+                       class="btn btn-sm btn-outline-warning" title="{{ _('Template-managed: edit in Administrator → Template Library (deploys to ALL devices)') }}">
+                      <i class="bi bi-lock"></i>
+                    </a>
+                    {% else %}
+                    <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.inline-protection', mkey=pname, title='Web Protection Profile') }}"
+                       class="btn btn-sm btn-outline-secondary" title="{{ _('Edit profile (FortiWeb-style form, all ~40 sub-policies)') }}">
+                      <i class="bi bi-pencil"></i>
+                    </a>
+                    {% endif %}
+                    {% if _can_write %}
+                    <button type="button" class="btn btn-sm btn-outline-info"
+                            title="{{ _('Deep-clone this profile on this device') }}"
+                            data-js="open-clone-modal" data-profile="{{ pname }}">
+                      <i class="bi bi-files"></i>
+                    </button>
+                    {% endif %}
+                    <button type="button" class="btn btn-sm btn-outline-warning"
+                            title="{{ _('Save as a template (admin approval, then fleet deploy)') }}"
+                            data-js="open-template-modal" data-profile="{{ pname }}">
+                      <i class="bi bi-bookmark-plus"></i>
+                    </button>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr><td colspan="5"><div class="fw-empty-state py-4">
+                  <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi bi-shield-exclamation"></i></div>
+                  <div class="fw-empty-state-title">{{ _('No inline protection profiles found') }}</div>
+                </div></td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="tab-offline">
+        <div class="fw-toolbar mb-2 d-flex align-items-center gap-3 flex-wrap">
+          {% if _can_write %}
+          <a class="btn btn-fw-primary btn-sm"
+             href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.offline-protection', title='Offline Protection Profile', create=1) }}">
+            <i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}
+          </a>
+          {% endif %}
+        </div>
+        <div class="fw-table-wrapper">
+          <table class="fw-table">
+            <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Signatures') }}</th><th>{{ _('Actions') }}</th></tr></thead>
+            <tbody>
+              {% if offline_profiles %}
+                {% for p in offline_profiles %}
+                {% set pname = p.get('name') or p.get('mkey') or '' %}
+                {% set is_managed = pname and pname in managed_names %}
+                <tr>
+                  <td class="fw-semibold">{{ pname or '—' }}
+                    {% if p.get('can_view') == 1 %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('Default') }}</span>{% endif %}
+                    {% if is_managed %}<span class="fw-badge fw-badge-warning ms-1"
+                       title="{{ _('Template-managed: read-only here. Edit in Administrator → Template Library.') }}"><i class="bi bi-lock-fill me-1"></i>{{ _('Template') }}</span>{% endif %}
+                  </td>
+                  <td>{{ p.get('signature-rule') or '—' }}</td>
+                  <td>
+                    {% if pname %}
+                    {% if is_managed %}
+                    <a href="{{ url_for('templates.index', kind='web-protection-profile') }}"
+                       class="btn btn-sm btn-outline-warning" title="{{ _('Template-managed: edit in Administrator → Template Library') }}"><i class="bi bi-lock"></i></a>
+                    {% else %}
+                    <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.offline-protection', mkey=pname, title='Offline Protection Profile') }}"
+                       class="btn btn-sm btn-outline-secondary" title="{{ _('Edit profile') }}"><i class="bi bi-pencil"></i></a>
+                    {% endif %}
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr><td colspan="3" class="text-center text-muted py-3">{{ _('No offline protection profiles') }}</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Clone / Save-as-template modal -->
+<div class="modal fade fw-modal" id="modalCloneWpp" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-files me-2"></i>{{ _('Clone Web Protection Profile') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted" style="font-size:13px;">
+          {{ _('Source profile:') }} <strong id="clone-source"></strong>
+          <a id="clone-source-view" href="#" target="_blank" rel="noopener" class="ms-1"
+             title="{{ _('Open the profile\'s form (fields + sub-policies) in a new tab') }}">
+            <i class="bi bi-search"></i> {{ _('view contents') }}</a>
+          &mdash; on <strong>{{ appliance.name }}</strong>{{ _('. A') }} <strong>{{ _('deep clone') }}</strong> {{ _('walks the whole profile (its ~40 sub-policies and their rules); objects that already exist on this device are validated and reused, only the missing ones are created.') }}
+        </p>
+        <div class="mb-3">
+          <label class="fw-form-label">{{ _('New name') }} <span class="text-danger">*</span></label>
+          <input type="text" class="form-control fw-form-control" id="clone-new-name"
+                 placeholder="{{ _('e.g. WPP-Ecommerce-Strict-copy') }}">
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap mb-3">
+          <button type="button" class="btn btn-outline-info btn-sm" id="clone-preview-btn">
+            <i class="bi bi-search me-1"></i>{{ _('Preview plan') }}
+          </button>
+          <button type="button" class="btn btn-fw-primary btn-sm" id="clone-apply-btn" disabled>
+            <i class="bi bi-diagram-3 me-1"></i>{{ _('Deep clone on this device') }}
+          </button>
+          <button type="button" class="btn btn-outline-light btn-sm" id="clone-tpl-btn">
+            <i class="bi bi-bookmark-plus me-1"></i>{{ _('Save as template (needs admin approval)') }}
+          </button>
+        </div>
+
+        <div id="clone-status" class="mb-2" style="font-size:13px;"></div>
+        <pre id="clone-plan" class="mb-0" style="display:none;max-height:320px;overflow:auto;background:rgba(0,0,0,.25);
+             border:1px solid rgba(148,163,184,.15);border-radius:8px;padding:10px;font-size:12px;line-height:1.5;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Save-as-template modal (standalone row action) -->
+<div class="modal fade fw-modal" id="modalSaveTpl" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-bookmark-plus me-2"></i>{{ _('Save as template') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted" style="font-size:13px;">
+          {{ _('Save') }} <strong id="tpl-source"></strong> {{ _('from') }} <strong>{{ appliance.name }}</strong> {{ _('into the template library. It lands as') }} <strong>{{ _('pending') }}</strong>{{ _('; an admin approves it in') }}
+          <strong>{{ _('Template Library') }}</strong> {{ _('and it then becomes available to deploy across the fleet.') }}
+        </p>
+        <div class="mb-3">
+          <label class="fw-form-label">{{ _('Template name') }} <span class="text-danger">*</span></label>
+          <input type="text" class="form-control fw-form-control" id="tpl-name"
+                 placeholder="{{ _('e.g. WPP-Ecommerce-Strict') }}">
+        </div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-fw-primary btn-sm" id="tpl-save-btn">
+            <i class="bi bi-bookmark-plus me-1"></i>{{ _('Save as template') }}
+          </button>
+        </div>
+        <div id="tpl-status" class="mt-3" style="font-size:13px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+var APPLIANCE_ID = {{ appliance.id }};
+var URL_CLONE_PLAN = "{{ url_for('web_protection.clone_plan', id=appliance.id) }}";
+var URL_CLONE = "{{ url_for('web_protection.clone_apply', id=appliance.id) }}";
+var URL_SAVE_TPL = "{{ url_for('web_protection.save_as_template', id=appliance.id) }}";
+var URL_TEMPLATES = "{{ url_for('templates.index') }}";
+
+function filterTable(tableId, q) {
+  q = (q || '').toLowerCase();
+  document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function (row) {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function applyWppFilters() {
+  var qel = document.getElementById('wpp-search');
+  var q = (qel ? qel.value : '').toLowerCase();
+  var cb = document.getElementById('hide-default-toggle');
+  var hideDefault = cb ? cb.checked : false;
+  document.querySelectorAll('#profiles-table tbody tr').forEach(function (row) {
+    if (!('default' in row.dataset)) return;  // skip the empty-state row
+    var isDefault = row.dataset.default === '1';
+    var matchesText = row.textContent.toLowerCase().includes(q);
+    row.style.display = (matchesText && !(hideDefault && isDefault)) ? '' : 'none';
+  });
+}
+
+function onHideDefaultChange(cb) {
+  applyWppFilters();
+  fetch('{{ url_for("web_protection.set_pref") }}', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: 'hide_default', value: cb.checked })
+  }).catch(function () {});
+}
+
+
+// ── Clone modal ───────────────────────────────────────────────────────────
+var CLONE_SOURCE = '';
+
+function openCloneModal(name) {
+  CLONE_SOURCE = name;
+  document.getElementById('clone-source').textContent = name;
+  document.getElementById('clone-source-view').href =
+    '/objedit/{{ appliance.id }}/edit?collection=' +
+    encodeURIComponent('waf/web-protection-profile.inline-protection') +
+    '&mkey=' + encodeURIComponent(name) + '&title=Web+Protection+Profile';
+  document.getElementById('clone-new-name').value = name + '-copy';
+  document.getElementById('clone-status').innerHTML = '';
+  var pre = document.getElementById('clone-plan');
+  pre.style.display = 'none'; pre.textContent = '';
+  document.getElementById('clone-apply-btn').disabled = true;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modalCloneWpp')).show();
+}
+
+function _esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+function _cloneStatus(html, kind) {
+  var el = document.getElementById('clone-status');
+  var cls = kind === 'error' ? 'fw-alert-danger' : (kind === 'ok' ? 'fw-alert-success' : (kind === 'warn' ? 'fw-alert-warning' : 'fw-alert-info'));
+  el.innerHTML = '<div class="fw-alert ' + cls + ' d-flex align-items-center gap-2 mb-0">' + html + '</div>';
+}
+
+function _newName() { return (document.getElementById('clone-new-name').value || '').trim(); }
+
+function _busy(btnId, on, label) {
+  var b = document.getElementById(btnId);
+  if (!b) return;
+  b.disabled = on;
+  if (on) { b.dataset._html = b.innerHTML; b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>' + (label || 'Working…'); }
+  else if (b.dataset._html) { b.innerHTML = b.dataset._html; }
+}
+
+function cloneWppPreview() {
+  var nn = _newName();
+  if (!nn) { _cloneStatus('Enter a new name first.', 'error'); return; }
+  _busy('clone-preview-btn', true, 'Planning…');
+  fetch(URL_CLONE_PLAN, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: CLONE_SOURCE, new_name: nn })
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    _busy('clone-preview-btn', false);
+    if (!d.ok) { _cloneStatus('Plan failed: ' + (d.error || 'unknown'), 'error'); return; }
+    var s = d.summary || {};
+    var create = s.create || 0, exists = s.exists || 0;
+    _cloneStatus('<i class="bi bi-info-circle"></i><div>Plan: <strong>' + create +
+      '</strong> to create, <strong>' + exists + '</strong> already exist (reused). Review below, then clone.</div>', 'info');
+    var pre = document.getElementById('clone-plan');
+    pre.textContent = d.plan || ''; pre.style.display = 'block';
+    document.getElementById('clone-apply-btn').disabled = (create === 0);
+  }).catch(function (e) { _busy('clone-preview-btn', false); _cloneStatus('Plan error: ' + e, 'error'); });
+}
+
+function cloneWppApply() {
+  var nn = _newName();
+  if (!nn) { _cloneStatus('Enter a new name first.', 'error'); return; }
+  if (!confirm('Deep-clone "' + CLONE_SOURCE + '" as "' + nn + '" on {{ appliance.name }}?\nMissing referenced objects will be created on the device.')) return;
+  _busy('clone-apply-btn', true, 'Cloning…');
+  fetch(URL_CLONE, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: CLONE_SOURCE, new_name: nn })
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    _busy('clone-apply-btn', false);
+    if (!d.ok && d.created === undefined) { _cloneStatus('Clone failed: ' + (d.error || 'unknown'), 'error'); return; }
+    var msg = 'Created <strong>' + (d.created || 0) + '</strong> object(s)' +
+      (d.failed ? ', <strong>' + d.failed + '</strong> failed' : '') + ' for "' + nn + '".';
+    // Per-object failure detail: WHAT failed and WHY.
+    var detail = '';
+    if (d.failures && d.failures.length) {
+      detail = '<ul style="margin:6px 0 0;padding-left:18px;">';
+      d.failures.forEach(function (f) {
+        detail += '<li><strong>' + _esc(f.label || f.urn || '?') +
+          (f.mkey ? ' (' + _esc(f.mkey) + ')' : '') + '</strong>: ' +
+          _esc(f.reason || 'write failed') + '</li>';
+      });
+      detail += '</ul>';
+    }
+    var refreshed = !d.cache_refresh_failed;
+    if (d.failed) {
+      _cloneStatus('<i class="bi bi-exclamation-triangle"></i><div>' + msg + detail + '</div>', 'error');
+    } else if (!refreshed) {
+      // Clone landed on the box but the local cache did not refresh -- tell the user.
+      _cloneStatus('<i class="bi bi-check-circle"></i><div>' + msg +
+        ' <strong>Clone OK</strong>, but the local cache could not refresh automatically &mdash; ' +
+        'click <strong>Refresh</strong> on the page to see it.</div>', 'warn');
+    } else {
+      _cloneStatus('<i class="bi bi-check-circle"></i><div>' + msg + ' Refreshing&hellip;</div>', 'ok');
+    }
+    var pre = document.getElementById('clone-plan'); pre.textContent = d.plan || pre.textContent;
+    // Only auto-reload when the clone fully succeeded AND the cache refreshed
+    // (else the reload would render stale data missing the new profile).
+    if (!d.failed && refreshed) { setTimeout(function () { window.location.reload(); }, 1500); }
+  }).catch(function (e) { _busy('clone-apply-btn', false); _cloneStatus('Clone error: ' + e, 'error'); });
+}
+
+function cloneWppSaveTemplate() {
+  var nn = _newName() || CLONE_SOURCE;
+  _busy('clone-tpl-btn', true, 'Saving…');
+  fetch(URL_SAVE_TPL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: CLONE_SOURCE, name: nn })
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    _busy('clone-tpl-btn', false);
+    if (!d.ok) { _cloneStatus('Save failed: ' + (d.error || 'unknown'), 'error'); return; }
+    _cloneStatus('<i class="bi bi-bookmark-check"></i><div>Saved template <strong>' + d.name +
+      '</strong> (v' + d.version + ') as <strong>' + d.status + '</strong>. An admin can approve it in ' +
+      '<a href="' + URL_TEMPLATES + '" class="alert-link">Template Library</a>.</div>', 'ok');
+  }).catch(function (e) { _busy('clone-tpl-btn', false); _cloneStatus('Save error: ' + e, 'error'); });
+}
+
+// ── Save-as-template (standalone row action) ───────────────────────────────
+var TPL_SOURCE = '';
+
+function openTemplateModal(name) {
+  TPL_SOURCE = name;
+  document.getElementById('tpl-source').textContent = name;
+  document.getElementById('tpl-name').value = name;
+  document.getElementById('tpl-status').innerHTML = '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSaveTpl')).show();
+}
+
+function _tplStatus(html, kind) {
+  var el = document.getElementById('tpl-status');
+  var cls = kind === 'error' ? 'fw-alert-danger' : (kind === 'ok' ? 'fw-alert-success' : 'fw-alert-info');
+  el.innerHTML = '<div class="fw-alert ' + cls + ' d-flex align-items-center gap-2 mb-0">' + html + '</div>';
+}
+
+function saveTplConfirm() {
+  var nn = (document.getElementById('tpl-name').value || '').trim() || TPL_SOURCE;
+  _busy('tpl-save-btn', true, 'Saving…');
+  fetch(URL_SAVE_TPL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: TPL_SOURCE, name: nn })
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    _busy('tpl-save-btn', false);
+    if (!d.ok) { _tplStatus('Save failed: ' + _esc(d.error || 'unknown'), 'error'); return; }
+    _tplStatus('<i class="bi bi-bookmark-check"></i><div>Saved template <strong>' + _esc(d.name) +
+      '</strong> (v' + _esc(d.version) + ') as <strong>' + _esc(d.status) + '</strong>. An admin can approve it in ' +
+      '<a href="' + URL_TEMPLATES + '" class="alert-link">Template Library</a> for fleet deploy.</div>', 'ok');
+  }).catch(function (e) { _busy('tpl-save-btn', false); _tplStatus('Save error: ' + _esc(e), 'error'); });
+}
+
+// ── Event bindings (CSP: no inline handlers) ───────────────────────────────
+(function () {
+  var search = document.getElementById('wpp-search');
+  if (search) search.addEventListener('input', function (event) { applyWppFilters(); });
+
+  var hideDefault = document.getElementById('hide-default-toggle');
+  if (hideDefault) hideDefault.addEventListener('change', function (event) { onHideDefaultChange(this); });
+
+  var clonePreview = document.getElementById('clone-preview-btn');
+  if (clonePreview) clonePreview.addEventListener('click', function (event) { cloneWppPreview(); });
+
+  var cloneApply = document.getElementById('clone-apply-btn');
+  if (cloneApply) cloneApply.addEventListener('click', function (event) { cloneWppApply(); });
+
+  var cloneTpl = document.getElementById('clone-tpl-btn');
+  if (cloneTpl) cloneTpl.addEventListener('click', function (event) { cloneWppSaveTemplate(); });
+
+  var tplSave = document.getElementById('tpl-save-btn');
+  if (tplSave) tplSave.addEventListener('click', function (event) { saveTplConfirm(); });
+
+  document.querySelectorAll('[data-js="open-clone-modal"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openCloneModal(this.dataset.profile); });
+  });
+  document.querySelectorAll('[data-js="open-template-modal"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openTemplateModal(this.dataset.profile); });
+  });
+  applyWppFilters();
+})();
+</script>
+{% endblock %}

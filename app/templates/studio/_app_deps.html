@@ -1,0 +1,127 @@
+{# Plugin Studio > Apps > <app> > Dependencies (services.studio_app_deps, FA-0017).
+   Everything the app needs, grouped and named as Plugin Studio's panes are:
+   Data stores, Connections, API Catalog, Sign-in directories -- plus the
+   scripts it runs, the apps it opens, its automations and who runs it. Each
+   object links to its own page; "draft only" = not what operators run yet. #}
+{% macro where_badge(w) -%}
+  {%- if w == 'draft' %}<span class="fw-badge fw-badge-warning fw-badge-nowrap" title="{{ _('In the draft only: operators do not run it until you publish') }}">{{ _('draft only') }}</span>
+  {%- elif w == 'published' %}<span class="fw-badge fw-badge-secondary fw-badge-nowrap" title="{{ _('Removed from the draft, still in the published version operators run') }}">{{ _('published only') }}</span>
+  {%- elif w == 'script' %}<span class="fw-badge fw-badge-info fw-badge-nowrap" title="{{ _('Called by a script the diagram runs') }}">{{ _('via script') }}</span>
+  {%- endif %}
+{%- endmacro %}
+{% macro section(id, icon, label, n, pane) -%}
+<div class="fw-card mb-3" id="ap-deps-{{ id }}">
+  <div class="fw-card-header d-flex align-items-center gap-2" style="padding:8px 14px;">
+    <span class="fw-card-title" style="font-size:13px;"><i class="bi {{ icon }} me-2 text-accent"></i>{{ label }}</span>
+    <span class="fw-badge fw-badge-secondary">{{ n }}</span>
+    {% if pane %}<a class="ms-auto small text-nowrap" href="{{ url_for('studio.index', pane=pane) }}">{{ _('All in Plugin Studio') }} <i class="bi bi-arrow-right"></i></a>{% endif %}
+  </div>
+  {{ caller() }}
+</div>
+{%- endmacro %}
+
+{% if deps.problems %}
+<div class="fw-alert fw-alert-warning mb-3" id="ap-deps-problems" style="font-size:13px;">
+  <strong>{{ _('Not ready on this server') }}:</strong>
+  <ul class="mb-0 mt-1">{% for p in deps.problems %}<li>{{ p }}</li>{% endfor %}</ul>
+</div>
+{% elif not deps.empty %}
+<div class="fw-alert fw-alert-success mb-3" id="ap-deps-ok" style="font-size:13px;">{{ _('Everything this app needs exists on this server.') }}</div>
+{% endif %}
+<p class="text-muted" style="font-size:12px;">{{ _('Read from the draft and the published version: the diagram, the actions, the form, the view, the scripts it runs and its sign-in. Exporting the app takes these along (secrets never).') }}
+  <a href="{{ url_for('studio.app_export', slug=a.slug) }}"><i class="bi bi-box-arrow-up me-1"></i>{{ _('Export package') }}</a></p>
+
+{# ------------------------------------------------------------ data stores #}
+{% call section('stores', 'bi-table', _('Data stores'), deps.counts.stores, 'stores') %}
+{% if deps.stores %}
+<div class="fw-table-wrapper mb-0" style="border:0;border-radius:0;"><table class="fw-table">
+  <thead><tr><th>{{ _('Store') }}</th><th class="text-end">{{ _('Rows') }}</th><th class="text-end">{{ _('Columns') }}</th><th>{{ _('Also used by') }}</th><th></th></tr></thead>
+  <tbody>{% for s in deps.stores %}<tr data-dep-store="{{ s.slug }}">
+    <td>{% if s.missing %}<code>{{ s.slug }}</code> <span class="fw-badge fw-badge-danger">{{ _('missing') }}</span>{% else %}<a href="{{ url_for('studio.store', slug=s.slug) }}">{{ s.name }}</a> <code class="small">{{ s.slug }}</code>{% endif %}</td>
+    <td class="text-end">{{ s.rows }}</td><td class="text-end">{{ s.columns }}</td>
+    <td>{% for o in s.shared_with %}<a href="{{ url_for('studio.app_edit', slug=o) }}">{{ o }}</a>{{ ', ' if not loop.last }}{% else %}<span class="text-muted">{{ _('only this app') }}</span>{% endfor %}</td>
+    <td class="text-end">{{ where_badge(s.where) }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<div class="fw-card-body text-muted small">{{ _('No data store.') }}</div>{% endif %}
+{% endcall %}
+
+{# ------------------------------------------------------------ connections #}
+{% call section('connections', 'bi-plug', _('Connections'), deps.counts.connections, 'connections') %}
+{% if deps.connections %}
+<div class="fw-table-wrapper mb-0" style="border:0;border-radius:0;"><table class="fw-table">
+  <thead><tr><th>{{ _('Connection') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Target') }}</th><th>{{ _('Secret') }}</th><th>{{ _('API Catalog') }}</th><th></th></tr></thead>
+  <tbody>{% for c in deps.connections %}<tr data-dep-connection="{{ c.slug }}">
+    <td>{% if c.missing %}<code>{{ c.slug }}</code> <span class="fw-badge fw-badge-danger">{{ _('missing') }}</span>{% else %}<a href="{{ url_for('studio.connection', slug=c.slug) }}">{{ c.name }}</a> <code class="small">{{ c.slug }}</code>{% endif %}
+      {% if c.via %}<div class="text-muted small">{{ _('called by script') }} {% for s in c.via %}<code>{{ s }}</code>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}</td>
+    <td>{{ c.kind }}{% if c.auth and c.auth != 'none' %} <span class="text-muted small">({{ c.auth }})</span>{% endif %}</td>
+    <td class="small" style="word-break:break-all;">{{ c.target or '—' }}</td>
+    <td>{% if c.missing %}—{% elif not c.needs_secret %}<span class="text-muted small">{{ _('none needed') }}</span>{% elif c.has_secret %}<span class="fw-badge fw-badge-success">{{ _('set') }}</span>{% else %}<span class="fw-badge fw-badge-danger fw-badge-nowrap">{{ _('not set') }}</span>{% endif %}</td>
+    <td>{% if c.api %}<a href="{{ url_for('studio.api_version', slug=c.api.slug, version=c.api.version) }}">{{ c.api.slug }} {{ c.api.version }}</a>{% else %}<span class="text-muted small">—</span>{% endif %}</td>
+    <td class="text-end">{{ where_badge(c.where) }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<div class="fw-card-body text-muted small">{{ _('No connection.') }}</div>{% endif %}
+{% endcall %}
+
+{# ------------------------------------------------------------ API Catalog #}
+{% call section('apis', 'bi-journal-code', _('API Catalog'), deps.counts.apis, 'apis') %}
+{% if deps.apis %}
+<div class="fw-table-wrapper mb-0" style="border:0;border-radius:0;"><table class="fw-table">
+  <thead><tr><th>{{ _('API') }}</th><th>{{ _('Version') }}</th><th>{{ _('Status') }}</th><th class="text-end">{{ _('Endpoints') }}</th><th>{{ _('Through connection') }}</th></tr></thead>
+  <tbody>{% for v in deps.apis %}<tr data-dep-api="{{ v.slug }}/{{ v.version }}">
+    <td><a href="{{ url_for('studio.api', slug=v.slug) }}">{{ v.name }}</a> <code class="small">{{ v.slug }}</code>{% if v.source == 'library' %} <span class="fw-badge fw-badge-info">{{ _('library') }}</span>{% endif %}</td>
+    <td><a href="{{ url_for('studio.api_version', slug=v.slug, version=v.version) }}">{{ v.version }}</a></td>
+    <td><span class="fw-badge {{ 'fw-badge-success' if v.status == 'published' else ('fw-badge-secondary' if v.status == 'deprecated' else 'fw-badge-warning') }}">{{ v.status }}</span></td>
+    <td class="text-end">{{ v.endpoints }}</td>
+    <td>{% for c in v.connections %}<code>{{ c }}</code>{{ ', ' if not loop.last }}{% endfor %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<div class="fw-card-body text-muted small">{{ _('No API Catalog version: no connection of this app is pinned to one.') }}</div>{% endif %}
+{% endcall %}
+
+{# ---------------------------------------------------- sign-in directories #}
+{% call section('signin', 'bi-diagram-2', _('Sign-in directories'), deps.counts.signin, 'directories' if current_user.can('user_manage') else '') %}
+{% if deps.signin.rules %}
+<div class="fw-card-body pb-0 small">{{ _('The app\'s own sign-in page is') }}
+  {% if deps.signin.enabled %}<span class="fw-badge fw-badge-success">{{ _('on') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('off') }}</span>{% endif %}
+  — <a href="#" data-ap-goto-tab="signin">{{ _('tab Sign-in') }}</a>{% if deps.signin.problem %} <span class="text-danger">{{ deps.signin.problem }}</span>{% endif %}</div>
+<div class="fw-table-wrapper mb-0" style="border:0;border-radius:0;"><table class="fw-table">
+  <thead><tr><th>{{ _('Directory') }}</th><th>{{ _('Kind') }}</th><th>{{ _('State') }}</th><th>{{ _('Two-factor') }}</th></tr></thead>
+  <tbody>{% for r in deps.signin.rules %}<tr data-dep-directory="{{ r.slug if not r.local else 'local' }}">
+    <td>{{ r.name }}{% if not r.local %} <code class="small">{{ r.slug }}</code>{% endif %}{% if r.missing %} <span class="fw-badge fw-badge-danger">{{ _('missing') }}</span>{% endif %}</td>
+    <td>{{ r.kind_label }}</td>
+    <td>{% if r.enabled %}<span class="fw-badge fw-badge-success">{{ _('enabled') }}</span>{% else %}<span class="fw-badge fw-badge-danger">{{ _('switched off') }}</span>{% endif %}</td>
+    <td>{{ _('required') if r.require_2fa else '—' }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<div class="fw-card-body text-muted small">{{ _('No sign-in rule: only SATOM accounts with access use this app.') }} <a href="#" data-ap-goto-tab="signin">{{ _('tab Sign-in') }}</a></div>{% endif %}
+{% endcall %}
+
+{# ------------------------------------------------- scripts, apps, automations #}
+<div class="row g-3">
+  <div class="col-xl-4">
+  {% call section('scripts', 'bi-filetype-py', _('Code it runs'), deps.counts.scripts, 'code') %}
+  <div class="fw-card-body small">{% for s in deps.scripts %}<div class="mb-1" data-dep-script="{{ s.slug }}">
+      {% if s.missing %}<code>{{ s.slug }}</code> <span class="fw-badge fw-badge-danger">{{ _('missing') }}</span>
+      {% else %}<a href="{{ url_for('script_library.edit', slug=s.slug) }}">{{ s.name }}</a> <code>{{ s.slug }}</code>
+        {% if s.published %}<span class="fw-badge fw-badge-success">v{{ s.published }}</span>{% else %}<span class="fw-badge fw-badge-warning">{{ _('not published') }}</span>{% endif %}{% endif %}
+      {{ where_badge(s.where) }}</div>
+    {% else %}<span class="text-muted">{{ _('None.') }}</span>{% endfor %}</div>
+  {% endcall %}
+  </div>
+  <div class="col-xl-4">
+  {% call section('apps', 'bi-app-indicator', _('Apps it opens or runs'), deps.counts.apps, '') %}
+  <div class="fw-card-body small">{% for o in deps.apps %}<div class="mb-1" data-dep-app="{{ o.slug }}">
+      {% if o.missing %}<code>{{ o.slug }}</code> <span class="fw-badge fw-badge-danger">{{ _('missing') }}</span>
+      {% else %}<a href="{{ url_for('studio.app_edit', slug=o.slug) }}">{{ o.name }}</a> <code>{{ o.slug }}</code>{% if not o.published %} <span class="fw-badge fw-badge-warning">{{ _('not published') }}</span>{% endif %}{% endif %}
+      {{ where_badge(o.where) }}</div>
+    {% else %}<span class="text-muted">{{ _('None.') }}</span>{% endfor %}
+    {% if deps.used_by %}<div class="mt-2 text-muted">{{ _('Run or opened by') }}: {% for o in deps.used_by %}<a href="{{ url_for('studio.app_edit', slug=o) }}">{{ o }}</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}</div>
+  {% endcall %}
+  </div>
+  <div class="col-xl-4">
+  {% call section('automations', 'bi-calendar2-check', _('Automations'), deps.counts.automations, '') %}
+  <div class="fw-card-body small">{% for r in deps.automations %}<div class="mb-1" data-dep-automation="{{ r.id }}">
+      <a href="{{ url_for('automations.edit', id=r.id) }}">{{ r.name }}</a> <span class="text-muted">{{ r.when }}</span>
+      {% if r.enabled %}<span class="fw-badge fw-badge-success">{{ _('on') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('off') }}</span>{% endif %}</div>
+    {% else %}<span class="text-muted">{{ _('None.') }}</span> <a href="{{ url_for('automations.new') }}">{{ _('Add one') }}</a>{% endfor %}</div>
+  {% endcall %}
+  </div>
+</div>

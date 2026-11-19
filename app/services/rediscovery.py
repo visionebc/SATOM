@@ -1,0 +1,2133 @@
+"""Rediscovery — re-read **all** config objects of a FortiWeb in one sweep.
+
+The user's "rediscovery" button: a single read-only pass that GETs every
+top-level CMDB endpoint in the registry (seeded from the FortiWeb baseline), captures the
+object lists section by section, and writes a ``_config.json`` snapshot under
+``data/rediscovery/<appliance_id>/`` so the whole box's state is refreshed at
+once.
+
+Web port of the desktop ``services/rediscovery.py``, reimplemented against the
+web's flat endpoint registry + the simple :class:`FortiWebClient`. It runs in a
+background thread and reports progress through a **file** (``progress.json``) —
+the app serves under gunicorn with 4 workers, so an in-memory progress dict
+would be invisible to the worker that handles the poll; a file is worker-proof.
+
+By-parent sub-tables (a child whose parent URN is itself an endpoint, e.g.
+``server-pool/pserver-list``) are skipped — they need an ``mkey`` and their deep
+contents belong to the Policy Inspector; this sweep is the object-list layer.
+"""
+from __future__ import annotations
+
+import contextlib
+import json
+import logging
+import os
+import re
+import socket
+import threading
+import time
+from datetime import datetime
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+from ..clients.base import response_summary
+from ..clients.fortiweb import DeviceAuthError, FortiWebClient, auth_error_message
+from ..registry import loader
+
+
+# The deep-capture pass writes to the DB, so it needs a Flask app context inside
+# the worker thread. ``start()`` captures the live app here; ``_get_flask_app``
+# falls back to ``current_app`` when called from within a request.
+_APP = None
+
+
+def _get_flask_app():
+    """The ACTIVE app context first; ``_APP`` only for the bare worker thread.
+
+    ``_APP`` is a module global that outlives the app it was captured from.
+    Preferring it let a synchronous ``_run`` (a harvest job, a test) write the
+    firmware column, the matrix export and the library evidence into ANOTHER
+    app's database — the 2026-09-15 contamination. Every DB write in this
+    module goes through here, so the rule lives here once.
+    """
+    from flask import current_app, has_app_context
+    if has_app_context():
+        return current_app._get_current_object()
+    if _APP is not None:
+        return _APP
+    return current_app._get_current_object()
+
+
+#: Terminal state for a sweep whose worker process no longer exists. It is
+#: NEITHER ``done`` NOR ``failed`` on purpose: a run killed mid-flight produced
+#: no snapshot and reported no error, so calling it done would claim a result
+#: that was never written and calling it failed would blame the device for a
+#: service restart. Three outcomes, three words — the same rule the CLI capture
+#: and the probe verdicts already follow.
+INTERRUPTED = "interrupted"
+FAILED = "failed"
+#: The operator pressed Stop. Its own word for the same reason as the two
+#: above: nothing failed and nothing was interrupted by accident.
+STOPPED = "stopped"
+#: States in which a worker is (or claims to be) working.
+ACTIVE_STATES = ("running", "deep-running", "cli-running")
+#: The Stop flag. A FILE, not a variable: the Stop request lands on whichever
+#: gunicorn worker the balancer picks, and the sweep thread lives in one of
+#: them. Checked between endpoints, so a stop takes effect once the request in
+#: flight returns (bounded by the client timeout).
+_STOP_FILE = "stop.request"
+
+_HOST = socket.gethostname()
+_log = logging.getLogger(__name__)
+
+
+def _data_dir() -> Path:
+    """Where sweep state lives.
+
+    ``SATOM_REDISCOVERY_DIR`` overrides the in-tree default, and it exists for
+    one measured reason: ``tests/test_rediscovery_*`` drive real sweeps against
+    the TEST database while writing their progress and ``_config.json`` into
+    the PRODUCTION tree. On 2026-09-15 that also wiped
+    ``data/api_matrix/fortiweb.json`` (which is rebuilt from this directory)
+    down to ``swept: 0`` — untracked, so git said nothing, and an empty matrix
+    renders as a page with no differences rather than as an error. Same
+    isolation pattern as ``SATOM_JOBS_DIR`` / ``SATOM_SOT_DIR``.
+    """
+    override = os.environ.get("SATOM_REDISCOVERY_DIR")
+    d = (Path(override) if override
+         else Path(__file__).resolve().parents[2] / "data" / "rediscovery")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _dev_dir(appliance_id: int) -> Path:
+    d = _data_dir() / str(appliance_id)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _write_json(path: Path, obj: Any) -> None:
+    """Atomic write so a poller never reads a half-written file."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(obj, indent=2, default=str), encoding="utf-8")
+    os.replace(tmp, path)
+    if path.name == "progress.json" and isinstance(obj, dict):
+        _mirror_job(obj)
+
+
+def _mirror_job(state: dict) -> None:
+    """Every sweep started from the UI is also a job (``services.jobs``), so it
+    shows in the dock, on the Jobs page and on the appliance's "Jobs on this
+    device" card like every other device action. progress.json stays the
+    sweep's own record; this only copies its progress across. The terminal
+    state is set once, by :func:`_run`, after the deep/CLI passes."""
+    jid = state.get("job_id")
+    if not jid or state.get("state") not in ACTIVE_STATES:
+        return
+    try:
+        from . import jobs
+        total, done = state.get("total") or 0, state.get("done") or 0
+        pct = int(state.get("percent") or 0)
+        if state.get("state") == "running":
+            msg = (f"{done}/{total} endpoints · {state.get('objects') or 0} objects"
+                   + (f" · {state['section']}" if state.get("section") else ""))
+        elif state.get("state") == "deep-running" and state.get("deep_total"):
+            msg, pct = deep_line(state), int(state.get("deep_percent") or 0)
+        else:
+            msg = state.get("section") or state.get("state")
+        jobs.set_progress(jid, pct, msg)
+    except Exception:  # noqa: BLE001 — the mirror must never break the sweep
+        pass
+
+
+def deep_line(state: dict) -> str:
+    """One line for the deep pass: which policy/WPP is being walked, out of how
+    many. Before the lists are read there is nothing to count yet, and the line
+    says so instead of a bare "running" (SI-0004)."""
+    if state.get("deep_kind") == "adc":
+        if not state.get("deep_total"):
+            return "Deep capture: listing child tables…"
+        line = (f"Deep capture {state.get('deep_done', 0)}/{state['deep_total']} "
+                f"child-table reads")
+        if state.get("deep_current"):
+            line += f" · {state['deep_current']}"
+        if state.get("cli_running"):
+            line += " · CLI capture running alongside"
+        return line
+    if not state.get("deep_total"):
+        return "Deep capture: listing server policies and WPPs…"
+    phase = state.get("deep_phase") or ""
+    line = (f"Deep capture {state.get('deep_done', 0)}/{state['deep_total']} · "
+            f"{state.get('deep_policies', 0)} server policies, "
+            f"{state.get('deep_wpps', 0)} WPPs")
+    if phase in ("server policy", "WPP", "offline WPP"):
+        line += (f" · {phase} {state.get('deep_index', 0)}/"
+                 f"{state.get('deep_of', 0)}")
+        if state.get("deep_current"):
+            line += f": {state['deep_current']}"
+    elif phase == "certificates":
+        line += " · certificates and SNI"
+    elif phase == "done":
+        line += " · saving"
+    if state.get("deep_catalog_reused"):
+        line += (f" · {state['deep_catalog_reused']} predefined WPP(s) "
+                 f"from the factory catalog")
+    if state.get("cli_running"):
+        line += " · CLI capture running alongside"
+    return line
+
+
+def catalog_line(cat: dict) -> str:
+    """What the factory catalog did in one deep pass, for the progress page."""
+    if not cat:
+        return ""
+    surface = cat.get("surface") or {}
+    where = surface.get("firmware") or ""
+    if surface.get("build_no"):
+        where += " build %s" % surface["build_no"]
+    if surface.get("api_version"):
+        where += " · API %s" % surface["api_version"]
+    walked = cat.get("walked_count")
+    if walked is None:
+        walked = cat.get("walked") or 0
+        walked = len(walked) if isinstance(walked, list) else walked
+    parts = ["%d predefined WPP(s) from the factory catalog" % (cat.get("reused") or 0),
+             "%d read in full" % walked]
+    if cat.get("new"):
+        parts.append("%d new in the catalog" % cat["new"])
+    if cat.get("ambiguous"):
+        parts.append("%d marked ambiguous" % cat["ambiguous"])
+    if cat.get("skipped_incomplete"):
+        parts.append("%d not stored (a read failed)" % cat["skipped_incomplete"])
+    if cat.get("error"):
+        parts.append("catalog not updated: %s" % cat["error"][:120])
+    return ("Factory catalog (%s): " % where if where else "Factory catalog: ") \
+        + ", ".join(parts)
+
+
+def _finish_job(appliance_id: int, job_id: str | None) -> None:
+    if not job_id:
+        return
+    try:
+        from . import jobs
+        st = status(appliance_id) or {}
+        if st.get("job_id") not in (None, job_id):
+            return
+        state = st.get("state")
+        result = {"objects": st.get("objects"), "errors": len(st.get("errors") or []),
+                  "absent": st.get("absent_count")}
+        if state == "done":
+            jobs.finish_success(job_id, message=st.get("summary") or "Discovery complete",
+                                result=result)
+        elif state == STOPPED:
+            jobs.finish_cancelled(job_id, message=st.get("error") or "Stopped",
+                                  result=result)
+        else:
+            jobs.finish_error(job_id, st.get("error") or f"Discovery ended in state {state!r}")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+#: Sub-directory of a device's sweep dir holding ONE SNAPSHOT PER FIRMWARE
+#: VERSION. ``_config.json`` stays exactly what it was — the latest sweep, read
+#: by ``registry_reconcile`` and by every existing consumer — and this is the
+#: history beside it.
+#:
+#: The defect it closes, measured on this fleet: the sweep wrote one file per
+#: APPLIANCE and overwrote it every run, so the first sweep after a firmware
+#: upgrade DESTROYED the only evidence backing the previous line. Nothing
+#: reported a loss; ``/web/registry/versions`` simply showed the old line with
+#: fewer endpoints, which reads as "that line has less API", not as "we deleted
+#: the proof".
+#:
+#: There is deliberately NO retention cap here. A cap would reintroduce the
+#: exact failure being fixed — silently dropping the evidence for a version
+#: somebody is still running — and the growth is bounded by how often a box is
+#: upgraded, not by traffic.
+VERSION_DIR = "by-version"
+
+
+def _version_of(snapshot: dict) -> str:
+    """The full firmware version a snapshot was measured against, or ``""``.
+
+    Read from the SNAPSHOT, never from the appliance row: the row can have been
+    upgraded since, and attributing old evidence to the new version is the
+    error this whole directory exists to prevent.
+    """
+    from . import firmware_versions
+    return firmware_versions.normalize(snapshot.get("firmware") if isinstance(snapshot, dict) else "")
+
+
+def _version_dir(appliance_id: int) -> Path:
+    d = _dev_dir(appliance_id) / VERSION_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def archive_snapshot(appliance_id: int, snapshot: dict) -> Path | None:
+    """Persist ``snapshot`` under its own firmware version. Returns the path.
+
+    ``None`` when the snapshot records no firmware: a snapshot that cannot say
+    which version it measured must NOT be filed under a guess. It stays
+    reachable as ``_config.json`` and ``api_matrix`` reports it as a witness
+    with no version rather than crediting it to one.
+    """
+    version = _version_of(snapshot)
+    if not version:
+        return None
+    path = _version_dir(appliance_id) / ("%s.json" % version)
+    _write_json(path, snapshot)
+    return path
+
+
+def version_snapshots(appliance_id: int) -> dict:
+    """``{version: Path}`` of every archived sweep for one appliance."""
+    d = _dev_dir(appliance_id) / VERSION_DIR
+    if not d.is_dir():
+        return {}
+    out: dict = {}
+    for p in sorted(d.glob("*.json")):
+        out[p.stem] = p
+    return out
+
+
+def migrate_version_archive() -> list[dict]:
+    """File every existing ``_config.json`` under its own version. Idempotent.
+
+    Runs at boot beside the stale-sweep reconcile. It is a pure BACKFILL: an
+    archive entry that already exists is left alone unless the ``_config.json``
+    beside it is strictly newer for the SAME version, because overwriting a
+    version's evidence with a different version's is the bug, and overwriting
+    it with older evidence of its own version is pointless churn on a tree the
+    standby rsyncs every five minutes.
+    """
+    from . import firmware_versions  # noqa: F401  (import guard: same module)
+
+    moved: list[dict] = []
+    root = _data_dir()
+    if not root.is_dir():
+        return moved
+    for devdir in sorted(root.iterdir()):
+        if not devdir.is_dir() or not devdir.name.isdigit():
+            continue
+        cfg = devdir / "_config.json"
+        if not cfg.exists():
+            continue
+        try:
+            snap = json.loads(cfg.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — an unreadable snapshot is not fatal
+            continue
+        version = _version_of(snap)
+        if not version:
+            continue
+        target = devdir / VERSION_DIR / ("%s.json" % version)
+        if target.exists():
+            try:
+                existing = json.loads(target.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                existing = {}
+            if str(existing.get("generated_at") or "") >= str(snap.get("generated_at") or ""):
+                continue
+        try:
+            archive_snapshot(int(devdir.name), snap)
+        except OSError:
+            continue
+        moved.append({"appliance_id": int(devdir.name),
+                      "device": snap.get("device") or "",
+                      "version": version})
+    return moved
+
+
+def _normalize(urn: str) -> str:
+    """Drop a leading ``/api/v2.X/`` so URNs compare uniformly."""
+    return (urn or "").lstrip("/").split("/", 2)[-1] if "/api/" in (urn or "") else (urn or "").lstrip("/")
+
+
+def sweep_plan() -> list[dict]:
+    """The top-level CMDB GET endpoints to sweep (by-parent children dropped)."""
+    eps = [e for e in loader.get_all_endpoints() if "/cmdb/" in (e.get("urn") or "")]
+    urn_set = {_normalize(e["urn"]) for e in eps}
+    plan: list[dict] = []
+    for e in eps:
+        nu = _normalize(e["urn"])
+        parent = nu.rsplit("/", 1)[0] if "/" in nu else ""
+        if parent and parent in urn_set:
+            continue  # by-parent sub-table — needs an mkey; skip in the list layer
+        plan.append({"name": e["name"], "urn": e["urn"], "section": e.get("section") or "Other"})
+    return plan
+
+
+def sweep_plan_adc() -> list[dict]:
+    """The FortiADC sweep plan — delegated to :mod:`app.services.adc_ops`
+    (the ADC module holds the fortiadc-side imports; import direction is
+    enforced by ``tests/test_product_separation.py``)."""
+    from . import adc_ops
+    return adc_ops.discovery_plan()
+
+
+def plan_for(appliance) -> list[dict]:
+    """The sweep plan matching the appliance's kind."""
+    if getattr(appliance, "kind", "") == "fortiadc":
+        return sweep_plan_adc()
+    return sweep_plan()
+
+
+def status(appliance_id: int) -> dict | None:
+    """Current/last run progress for an appliance (None if never run)."""
+    p = _dev_dir(appliance_id) / "progress.json"
+    if not p.exists():
+        return None
+    try:
+        st = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    if st.get("state") in ACTIVE_STATES and _stop_requested(appliance_id):
+        st["stop_requested"] = True
+    return st
+
+
+def _stop_requested(appliance_id: int) -> bool:
+    if (_dev_dir(appliance_id) / _STOP_FILE).exists():
+        return True
+    # A Stop pressed in the dock or on the Jobs page lands on the job, not on
+    # the flag file; it means the same thing.
+    try:
+        st = json.loads((_dev_dir(appliance_id) / "progress.json").read_text(encoding="utf-8"))
+        jid = st.get("job_id") if st.get("state") in ACTIVE_STATES else None
+        if jid:
+            from . import jobs
+            return jobs.is_cancel_requested(jid)
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
+def _clear_stop(appliance_id: int) -> None:
+    try:
+        (_dev_dir(appliance_id) / _STOP_FILE).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def request_stop(appliance_id: int, by: str = "") -> dict:
+    """Ask the running sweep for ``appliance_id`` to stop.
+
+    * a sweep whose worker is alive gets the flag and stops at the next
+      endpoint boundary; the snapshot of the previous run is left untouched;
+    * a ``running`` file whose worker on THIS host is gone (a restart) is
+      closed as stopped right here, since nothing would ever read the flag;
+    * a run owned by the peer node is refused: its pid means nothing here.
+    """
+    st = status(appliance_id)
+    if not st or st.get("state") not in ACTIVE_STATES:
+        return {"stopped": False, "reason": "no discovery is running"}
+    if (st.get("host") or _HOST) != _HOST:
+        return {"stopped": False,
+                "reason": f"this sweep runs on {st.get('host')}; stop it there"}
+    pid = st.get("pid")
+    if pid and not _pid_alive(pid):
+        st.update(state=STOPPED, stopped_by=by,
+                  finished=datetime.utcnow().isoformat(),
+                  error="Stopped — the worker running this sweep was already "
+                        "gone. No snapshot was written.")
+        st.pop("stop_requested", None)
+        _write_json(_dev_dir(appliance_id) / "progress.json", st)
+        _clear_stop(appliance_id)
+        _finish_job(appliance_id, st.get("job_id"))
+        return {"stopped": True, "pending": False, "progress": st}
+    _write_json(_dev_dir(appliance_id) / _STOP_FILE,
+                {"by": by, "at": datetime.utcnow().isoformat()})
+    if st.get("job_id"):
+        try:
+            from . import jobs
+            jobs.request_cancel(st["job_id"])
+        except Exception:  # noqa: BLE001
+            pass
+    st["stop_requested"] = True
+    return {"stopped": True, "pending": True, "progress": st}
+
+
+def _stop_by(appliance_id: int) -> str:
+    try:
+        return json.loads((_dev_dir(appliance_id) / _STOP_FILE)
+                          .read_text(encoding="utf-8")).get("by", "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _finish_stopped(aid: int, progress_path, state: dict, message: str) -> None:
+    state.update(state=STOPPED, stopped_by=_stop_by(aid), error=message,
+                 finished=datetime.utcnow().isoformat(),
+                 heartbeat=datetime.utcnow().isoformat())
+    state.pop("stop_requested", None)
+    _write_json(progress_path, state)
+    _clear_stop(aid)
+
+
+def _finish_failed(progress_path, state: dict, message: str) -> None:
+    state.update(state=FAILED, error=message,
+                 finished=datetime.utcnow().isoformat(),
+                 heartbeat=datetime.utcnow().isoformat())
+    _write_json(progress_path, state)
+
+
+def _auth_stop_message(auth_error: str, done: int, total: int) -> str:
+    return (f"{auth_error}. Discovery stopped at endpoint {done}/{total} so it "
+            f"does not lock the admin account out with more failed logins. "
+            f"No snapshot was written; the previous one is unchanged.")
+
+
+def latest_snapshot_meta(appliance_id: int) -> dict | None:
+    p = _dev_dir(appliance_id) / "_config.json"
+    if not p.exists():
+        return None
+    try:
+        snap = json.loads(p.read_text(encoding="utf-8"))
+        return {
+            "generated_at": snap.get("generated_at"),
+            "sections": len(snap.get("sections") or {}),
+            "objects": snap.get("total_objects"),
+        }
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def has_snapshot(appliance_id: int) -> bool:
+    """True once a rediscovery sweep has written a snapshot for this appliance.
+
+    Cheap existence check (no JSON parse) — drives the **Discovery** vs
+    **Rediscovery** label: a never-swept appliance shows "Discovery".
+    """
+    return (_dev_dir(appliance_id) / "_config.json").exists()
+
+
+# --- Physical-inventory sync (hybrid: auto-fill, never clobber manual data) ---
+
+def _clean_ip(v) -> str | None:
+    v = (v or "").strip()
+    if not v:
+        return None
+    head = v.split()[0].split("/")[0]
+    if head in ("0.0.0.0", "::"):
+        return None
+    return v
+
+
+def _iface_rows(snapshot: dict) -> list[dict]:
+    """All discovered ``system/interface`` rows out of a snapshot."""
+    rows: list[dict] = []
+    for section in (snapshot.get("sections") or {}).values():
+        if not isinstance(section, dict):
+            continue
+        for name, eprows in section.items():
+            n = str(name)
+            # FortiWeb logical: "interface*"; FortiADC logical: "system_interface"
+            if (n.startswith("interface") or n.endswith("interface")) \
+                    and isinstance(eprows, list):
+                rows.extend(r for r in eprows if isinstance(r, dict))
+    return rows
+
+
+def _model_from_status(appliance) -> tuple[str | None, str | None, str | None]:
+    """Best-effort ``(model, hw_type, firmware)`` from a live status call.
+
+    Returns ``(None, None, None)`` on any failure so a sync never breaks on a
+    probe. FortiADC keys off ``/api/platform/version`` (live-verified 8.0.3);
+    FortiWeb keeps its ``status.systemstatus`` read (firmware not derived
+    there — unchanged behaviour).
+    """
+    if getattr(appliance, "kind", "") == "fortiadc":
+        from . import adc_ops
+        return adc_ops.model_inventory(appliance)
+    try:
+        from ..clients.fortiweb import FortiWebClient
+        raw = FortiWebClient(appliance, timeout=15.0).status_check()
+        d = raw.get("results", raw) if isinstance(raw, dict) else {}
+    except Exception:  # noqa: BLE001
+        return None, None, None
+    fw = str(d.get("firmwareVersion") or "")
+    platform = str(d.get("platformName") or "")
+    serial = str(d.get("serialNumber") or "")
+    model = fw.split(",")[0].strip() if fw else (platform or None)
+    blob = f"{platform} {fw} {serial}".upper()
+    if "VM" in blob or "KVM" in blob:
+        hw = "vm"
+    elif platform or fw:
+        hw = "hardware"
+    else:
+        hw = None
+    return (model or None), hw, None
+
+
+def apply_inventory(appliance) -> dict:
+    """Merge the latest discovery snapshot into the physical-inventory tables.
+
+    Hybrid policy: add new interfaces and refresh auto-derived fields
+    (type, IP) plus model + HW/VM. NEVER deletes interfaces and NEVER overwrites
+    operator-entered fields (``role``, ``segment``, ``connected_to``, ``notes``)
+    or the datasheet.
+
+    ``role`` in particular is not merely "not overwritten" — it is
+    UNDISCOVERABLE. The appliance exposes a port's name, media type and
+    address; it has no field that says what the port is FOR. A newly-discovered
+    port therefore lands as ``unspecified`` and stays there until a human says
+    otherwise. Deriving it (e.g. "the port holding the management IP is the
+    management port") would manufacture a declaration and the clone/migrate
+    gate would then report agreement nobody asserted.
+    Must run inside a Flask app context (uses the DB session).
+    """
+    from ..extensions import db
+    from ..models import ApplianceInterface
+
+    snap_path = _dev_dir(appliance.id) / "_config.json"
+    if not snap_path.exists():
+        return {"applied": False, "reason": "no snapshot"}
+    try:
+        snapshot = json.loads(snap_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {"applied": False, "reason": "unreadable snapshot"}
+
+    existing = {i.name: i for i in appliance.interfaces}
+    next_sort = max([i.sort_order or 0 for i in appliance.interfaces], default=-1) + 1
+    added = updated = 0
+    seen: set[str] = set()
+    for row in _iface_rows(snapshot):
+        nm = (row.get("name") or row.get("intf") or row.get("mkey") or "").strip()
+        if not nm or nm in seen:
+            continue
+        seen.add(nm)
+        if_type = (row.get("type") or "").strip() or None
+        ip = _clean_ip(row.get("ip"))
+        cur = existing.get(nm)
+        if cur is None:
+            db.session.add(ApplianceInterface(
+                appliance_id=appliance.id, name=nm, if_type=if_type,
+                ip_address=ip, sort_order=next_sort))
+            next_sort += 1
+            added += 1
+        else:
+            changed = False
+            if if_type and cur.if_type != if_type:
+                cur.if_type = if_type
+                changed = True
+            if ip and cur.ip_address != ip:
+                cur.ip_address = ip
+                changed = True
+            if changed:
+                updated += 1
+
+    model, hw, fw = _model_from_status(appliance)
+    if model:
+        appliance.model = model
+    if hw:
+        appliance.hw_type = hw
+    if fw:
+        appliance.firmware = fw
+        # Stamped with the moment the sweep OBSERVED the version, never with
+        # "now": the snapshot can be minutes old by the time this merge runs,
+        # and an attestation dated later than its observation is a lie about
+        # freshness. Until 2026-09-15 this branch wrote the version and NO
+        # timestamp at all, so the sweep left behind a firmware no consumer
+        # (CVE correlation, the Upgrade Scout) could date.
+        observed = _parse_iso(snapshot.get("generated_at"))
+        if observed is not None:
+            appliance.firmware_checked_at = observed
+
+    db.session.commit()
+    return {"applied": True, "interfaces_added": added, "interfaces_updated": updated,
+            "model": appliance.model, "hw_type": appliance.hw_type,
+            "generated_at": snapshot.get("generated_at")}
+
+
+def _parse_iso(value) -> datetime | None:
+    """An ISO stamp, or None. None is returned rather than ``utcnow()`` so a
+    snapshot with no readable time leaves the previous attestation alone
+    instead of inventing one."""
+    try:
+        return datetime.fromisoformat(str(value))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def maybe_apply_inventory(appliance) -> dict | None:
+    """Apply the inventory sync once per snapshot (idempotent across status polls).
+
+    Returns the apply result the first time a given snapshot is seen, else None.
+    """
+    snap_path = _dev_dir(appliance.id) / "_config.json"
+    if not snap_path.exists():
+        return None
+    try:
+        gen = json.loads(snap_path.read_text(encoding="utf-8")).get("generated_at")
+    except Exception:  # noqa: BLE001
+        return None
+    marker = _dev_dir(appliance.id) / "_inventory_applied.json"
+    if marker.exists():
+        try:
+            if json.loads(marker.read_text(encoding="utf-8")).get("generated_at") == gen:
+                return None
+        except Exception:  # noqa: BLE001
+            pass
+    res = apply_inventory(appliance)
+    if res.get("applied"):
+        _write_json(marker, {"generated_at": gen, "result": res})
+    return res
+
+
+# --- per-endpoint verdicts -------------------------------------------------
+# The sweep's job is not only to collect rows: it is the only thing in SATOM
+# that asks a live appliance about EVERY endpoint in the catalog. Recording
+# only the rows threw that away. ``_results_list`` folds a device error
+# envelope into ``[]``, so "this collection is empty" and "this firmware has
+# no such endpoint" were the same observation — which is why every snapshot
+# ever written carries ``errors: []``, including one taken from an appliance
+# that was answering ``errcode -20001`` to one of its URNs.
+VERDICT_OK = "ok"
+VERDICT_ABSENT = "absent"
+VERDICT_ERROR = "error"
+
+
+def _resp_message(resp) -> str:
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            return str(body.get("message") or body.get("error") or "")[:120]
+    except Exception:  # noqa: BLE001 — non-JSON body
+        pass
+    return response_summary(resp, 120)
+
+
+def _device_firmware(appliance_snap, is_adc: bool) -> str:
+    """Best-effort running firmware line, read from the device at sweep time.
+
+    NOT ``Appliance.firmware``: that column is filled by other flows and was
+    ``None`` for two of the three live FortiWebs when this was written. A
+    verdict ledger whose firmware is a guess is worse than one that says
+    "unknown", because the reconciler weights absence BY FIRMWARE LINE — the
+    endpoint catalog is a deliberate cross-firmware superset, so "absent" only
+    ever means "absent on the line this appliance runs".
+
+    Reads the same documented field as ``_model_from_status``
+    (``status.systemstatus → firmwareVersion``), which returns firmware as
+    ``None`` for FortiWeb and therefore cannot be reused directly.
+    """
+    import re as _re
+    try:
+        if is_adc:
+            from . import adc_ops
+            raw = adc_ops.model_inventory(appliance_snap)[2] or ""
+        else:
+            body = FortiWebClient(appliance_snap, timeout=10.0).status_check()
+            d = body.get("results", body) if isinstance(body, dict) else {}
+            raw = str(d.get("firmwareVersion") or "")
+        # Normalised to X.Y.Z for BOTH products: the reconciler groups by line,
+        # and "8.0.3 build0093,260401" would be its own line on every rebuild.
+        m = _re.search(r"\d+\.\d+(?:\.\d+)?", raw)
+        return m.group(0) if m else ""
+    except DeviceAuthError:
+        raise  # not a version problem: the sweep must stop, see _sweep
+    except Exception:  # noqa: BLE001 — never let a version read sink a sweep
+        return ""
+
+
+# --------------------------------------------------------------------------- #
+# FortiWeb answers a NESTED path it does not serve with the PARENT's answer.   #
+# --------------------------------------------------------------------------- #
+# Measured on fortiweb17 (7.6.8), 2026-10-07: ``system/interface/nonexistent-xyz``
+# answers 200 with the 3 interface rows of ``system/interface``;
+# ``waf/web-protection-profile.inline-protection/nonexistent-xyz`` answers 200
+# with all 210 web protection profiles; with ``?mkey=`` (or under a singleton)
+# it answers the parent's dict. Only an unknown TOP-LEVEL path gets errcode
+# -20001, and a real empty sub-table answers ``[]``. So "200 without errcode"
+# proves nothing for a nested path: the verdict is read from the SHAPE of the
+# answer — whether it IS the parent's answer, or rows that carry the child as
+# one of their own keys, or rows none of whose keys the object has.
+_FWB_ABSENT_CODES = frozenset({"-20001", "-3"})
+_FWB_NOISE = re.compile(r"^(?:q_|sz_|can_)|_val$")
+
+
+def _fwb_results(payload):
+    if isinstance(payload, dict):
+        return payload.get("results", payload.get("data"))
+    return payload
+
+
+def _fwb_errcode(payload):
+    body = payload if isinstance(payload, dict) else {}
+    res = body.get("results")
+    if isinstance(res, dict) and res.get("errcode") not in (None, 0, "0"):
+        body = res
+    code = body.get("errcode")
+    return None if code in (None, 0, "0") else code
+
+
+def _fwb_nested(urn: str) -> bool:
+    """``module/object/child`` (or deeper): a path that can fall back to its parent."""
+    from .api_library import urn_key
+    return urn_key(urn).count("/") >= 2
+
+
+def _fwb_parent_urn(urn: str) -> str:
+    path, sep, query = str(urn or "").partition("?")
+    parent = path.rstrip("/").rsplit("/", 1)[0]
+    return parent + (sep + query if sep else "")
+
+
+def _fwb_canon(obj) -> str:
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def fortiweb_shape_verdict(urn: str, payload, expected_fields=None, *,
+                           parent_payload=None) -> dict:
+    """Classify one FortiWeb GET answer by its SHAPE, never by HTTP status.
+
+    Returns ``{"verdict": ok|absent|error, "shape", "rows", "detail"}``:
+
+    * errcode -20001 / -3                      -> ``absent`` (shape ``errcode``);
+    * any other errcode                        -> ``error``;
+    * ``[]``                                   -> ``ok`` (a real empty table);
+    * a NESTED path whose answer is the parent's answer (``parent_payload``
+      equal), whose rows carry the child itself as a key (``<child>`` or
+      ``sz_<child>``: those are the parent's rows), or whose row keys share
+      nothing with ``expected_fields`` (the object's fields from ``tree``)
+                                               -> ``absent`` (shape
+      ``parent_fallback``);
+    * anything else                            -> ``ok``.
+    """
+    from .api_library import urn_key
+    code = _fwb_errcode(payload)
+    if code is not None:
+        if str(code) in _FWB_ABSENT_CODES:
+            return {"verdict": VERDICT_ABSENT, "shape": "errcode", "rows": [],
+                    "detail": "errcode %s" % code}
+        return {"verdict": VERDICT_ERROR, "shape": "errcode", "rows": [],
+                "detail": "errcode %s" % code}
+    results = _fwb_results(payload)
+    if isinstance(results, list):
+        rows = results
+    elif isinstance(results, dict):
+        rows = [results]
+    else:
+        return {"verdict": VERDICT_ERROR, "shape": "unreadable", "rows": [],
+                "detail": "the answer carries no results"}
+    if not rows:
+        return {"verdict": VERDICT_OK, "shape": "empty", "rows": [], "detail": ""}
+    if not _fwb_nested(urn):
+        return {"verdict": VERDICT_OK, "shape": "dict" if isinstance(results, dict) else "rows",
+                "rows": rows, "detail": ""}
+    fallback = {"verdict": VERDICT_ABSENT, "shape": "parent_fallback", "rows": []}
+    if parent_payload is not None and _fwb_errcode(parent_payload) is None:
+        pres = _fwb_results(parent_payload)
+        if pres is not None and _fwb_canon(pres) == _fwb_canon(results):
+            return dict(fallback, detail="200 with the parent's answer: the path is not served")
+    leaf = urn_key(urn).rsplit("/", 1)[-1]
+    keys = set()
+    for r in rows:
+        if isinstance(r, dict):
+            keys.update(str(k) for k in r)
+    if leaf in keys or ("sz_" + leaf) in keys:
+        return dict(fallback, detail="200 with rows that hold %r as a field of theirs: "
+                                     "the parent's rows" % leaf)
+    if expected_fields:
+        own = {k for k in keys if not _FWB_NOISE.search(k)}
+        if own and not (own & {str(f) for f in expected_fields}):
+            return dict(fallback, detail="200 with rows none of whose %d keys is a field "
+                                         "of the object" % len(own))
+    return {"verdict": VERDICT_OK, "shape": "dict" if isinstance(results, dict) else "rows",
+            "rows": rows, "detail": ""}
+
+
+def _fwb_parent_payload(client, urn: str):
+    """The parent's answer, for the comparison; None when it cannot be read.
+
+    A 401 here goes through ``status_check`` exactly like the main read: the
+    gated client counts it as a suspect and waits for that re-check."""
+    try:
+        resp = client.get(_fwb_parent_urn(urn))
+        if resp.status_code == 401:
+            client.status_check()       # raises DeviceAuthError -> _sweep stops
+            return None
+        if resp.status_code >= 400:
+            return None
+        return resp.json()
+    except DeviceAuthError:
+        raise
+    except Exception:  # noqa: BLE001 — no comparison, the other rules still apply
+        return None
+
+
+def _probe_fortiweb(client, ep: dict) -> tuple[list, str, str]:
+    """GET one FortiWeb endpoint and classify the answer three ways.
+
+    ``ok``     the device answered — an empty list then means an EMPTY
+               collection, which is a fact about the config, not the catalog.
+    ``absent`` this firmware does not serve the path at all (``errcode -20001``
+               "The REST API has invalid URL", or ``-3``). Evidence about the
+               CATALOG.
+    ``error``  anything else — transport, auth, HTTP >= 400 without an absent
+               code, or a device-wide refusal such as ``-20010`` ("The license
+               of peer VM FortiWeb is not valid", observed live on fortiweb08
+               for every single read). Evidence about the DEVICE.
+
+    Collapsing ``absent`` into ``error`` loses the reconciler its only signal;
+    collapsing ``error`` into ``absent`` lets one sick appliance propose
+    deleting the whole catalog. The codes are the same ones
+    ``FortiWebClient.cmdb_names_checked`` already trusts.
+
+    A 200 is classified by SHAPE (:func:`fortiweb_shape_verdict`): a nested
+    path FortiWeb does not serve answers with its PARENT's rows. For a nested
+    path that returned rows, the parent is read once to compare.
+    ``ep["expected_fields"]`` (the object's fields from ``tree``) sharpens it.
+    """
+    resp = client.get(ep["urn"])
+    if resp.status_code == 401:
+        # Before calling it a per-endpoint refusal, ask once whether the
+        # credentials still work at all. If status answers 401 too, every
+        # remaining endpoint would be one more failed admin login.
+        client.status_check()  # raises DeviceAuthError -> _sweep stops
+    code = client._errcode(resp)
+    if code is not None and str(code) in client._ABSENT_ERRCODES:
+        return [], VERDICT_ABSENT, f"errcode {code}"
+    if code is not None:
+        return [], VERDICT_ERROR, f"errcode {code}: {_resp_message(resp)}"[:200]
+    if resp.status_code >= 400:
+        return [], VERDICT_ERROR, f"HTTP {resp.status_code}: {_resp_message(resp)}"[:200]
+    payload = resp.json()
+    parent = None
+    if _fwb_nested(ep["urn"]) and client._results_list(payload):
+        parent = _fwb_parent_payload(client, ep["urn"])
+    shape = fortiweb_shape_verdict(ep["urn"], payload, ep.get("expected_fields"),
+                                   parent_payload=parent)
+    if shape["verdict"] != VERDICT_OK:
+        return [], shape["verdict"], shape["detail"][:200]
+    return client._results_list(payload), VERDICT_OK, ""
+
+
+def probe_endpoint(appliance, urn: str) -> tuple[list, str, str]:
+    """GET one URN and classify it the way a sweep does — ``(rows, verdict, detail)``.
+
+    The public door onto the two private probes, so a caller outside the sweep
+    (the CLI-coverage section, promoting a finding into the catalog) gets the
+    SAME three verdicts with the same meanings instead of inventing a fourth
+    reading of an HTTP status. ``absent`` in particular is a claim about the
+    catalog and ``error`` is a claim about the device; anything that re-derived
+    that distinction would eventually disagree with the reconciler, which acts
+    on it.
+    """
+    snap = _client_snapshot(appliance)
+    if getattr(snap, "kind", "") == "fortiadc":
+        from . import adc_ops
+        return adc_ops.make_probe(snap)({"urn": urn})
+    return _probe_fortiweb(FortiWebClient(snap, timeout=20.0), {"urn": urn})
+
+
+def sweep_workers() -> int:
+    """How many reads one rediscovery sends to its appliance at once, in the
+    endpoint sweep and in the deep pass alike.
+
+    ``SATOM_REDISCOVERY_WORKERS`` (default 3), never above the per-host cap
+    every client already obeys (``FORTINET_HOST_CONCURRENCY``, default 4) so a
+    sweep cannot take every slot the GUI and the scheduler share. 1 restores
+    the serial sweep."""
+    from ..clients import base
+    try:
+        n = int(os.environ.get("SATOM_REDISCOVERY_WORKERS", "3"))
+    except ValueError:
+        n = 3
+    return max(1, min(n, base._HOST_CONCURRENCY))
+
+
+class _StopSkipped(Exception):
+    """A read a parallel sweep did not send because Stop was pressed first."""
+
+
+class _GatedClient:
+    """The sweep's client as its parallel workers see it.
+
+    Keeps a PARALLEL sweep as close as it can get to the serial sweep's login
+    budget. Serially, a 401 costs at most one more failed login (the status
+    re-check) before the sweep stops. In parallel:
+
+    * the moment any read answers 401, no NEW read is sent until that 401's
+      re-check has answered -- reads already on the wire cannot be recalled,
+      so the worst case is ``workers`` 401s plus one re-check, against 2;
+    * one re-check runs at a time, and once one has failed every later read is
+      refused here, before it reaches the box.
+
+    It also keeps a Stop from sending reads: a read not yet started when Stop
+    was pressed is skipped (reads already on the wire finish; their answers are
+    discarded with the rest of the partial sweep)."""
+
+    def __init__(self, client, stop_requested) -> None:
+        self._client = client
+        self._stop_requested = stop_requested
+        self._recheck = threading.Lock()
+        self._cond = threading.Condition()
+        self._suspect = 0          # 401s whose re-check has not answered yet
+        self.auth_error: DeviceAuthError | None = None
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+    def get(self, path):
+        with self._cond:
+            while self._suspect and self.auth_error is None:
+                self._cond.wait()
+            if self.auth_error is not None:
+                raise self.auth_error
+        if self._stop_requested():
+            raise _StopSkipped(path)
+        resp = self._client.get(path)
+        if getattr(resp, "status_code", None) == 401:
+            with self._cond:
+                self._suspect += 1
+        return resp
+
+    def status_check(self):
+        with self._recheck:
+            try:
+                with self._cond:
+                    if self.auth_error is not None:
+                        raise self.auth_error
+                try:
+                    return self._client.status_check()
+                except DeviceAuthError as exc:
+                    with self._cond:
+                        self.auth_error = exc
+                    raise
+            finally:
+                with self._cond:
+                    self._suspect = max(0, self._suspect - 1)
+                    self._cond.notify_all()
+
+
+def _ordered_results(stack: contextlib.ExitStack, plan: list[dict], probe,
+                     workers: int):
+    """``fetch(i)`` returns ``probe(plan[i])`` -- in plan order, with up to
+    ``workers`` probes in flight ahead of the one being consumed.
+
+    The sweep loop consumes the answers exactly as it did serially, so the
+    ledger, the sections and the progress file come out in the same order and
+    a Stop still lands between two endpoints. The pool is shut down by
+    ``stack`` (in-flight reads finish, queued ones are cancelled)."""
+    if workers <= 1:
+        return lambda i: probe(plan[i])
+    from concurrent.futures import ThreadPoolExecutor
+    pool = ThreadPoolExecutor(max_workers=workers,
+                              thread_name_prefix="rediscovery-sweep")
+    stack.callback(pool.shutdown, wait=True, cancel_futures=True)
+    futures: dict = {}
+
+    def fetch(i: int):
+        for j in range(i, min(i + workers, len(plan))):
+            if j not in futures:
+                futures[j] = pool.submit(probe, plan[j])
+        return futures.pop(i).result()
+    return fetch
+
+
+def _client_snapshot(appliance) -> SimpleNamespace:
+    """A DB-detached copy of just the fields FortiWebClient reads, so the worker
+    thread never touches the SQLAlchemy session."""
+    return SimpleNamespace(
+        id=appliance.id, name=appliance.name, host=appliance.host,
+        port=appliance.port, verify_ssl=appliance.verify_ssl,
+        tls_name=getattr(appliance, "tls_name", None),
+        username=appliance.username, password=appliance.password,
+        vdom=appliance.vdom, kind=getattr(appliance, "kind", "fortiweb"),
+        # the factory catalog files what it reads under the exact build
+        firmware=getattr(appliance, "firmware", "") or "",
+        fw_version=getattr(appliance, "fw_version", "") or "",
+    )
+
+
+def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
+         plan: list[dict] | None = None, cli: bool = False,
+         job_id: str | None = None, factory_full: bool = False) -> None:
+    """Thread entry point: :func:`_sweep` plus the one thing a file-backed
+    status owes its readers — a TERMINAL state when the worker dies.
+
+    Without this, an exception anywhere in the sweep left ``running`` on disk
+    forever, indistinguishable on screen from a sweep still in flight, and the
+    only thing that ever cleared it was a restart (and, until 2026-09-15, not
+    even that: appliance 4 sat at 71 % from 2026-07-03).
+    """
+    try:
+        _sweep(appliance_snap, by, deep, plan, cli, job_id=job_id,
+               factory_full=factory_full)
+        _close_open_run(appliance_snap.id)
+    except BaseException as exc:  # noqa: BLE001 — record, then let it propagate
+        try:
+            p = _dev_dir(appliance_snap.id) / "progress.json"
+            st = status(appliance_snap.id) or {}
+            st.update(state=FAILED,
+                      error="%s: %s" % (type(exc).__name__, exc),
+                      finished=datetime.utcnow().isoformat(),
+                      heartbeat=datetime.utcnow().isoformat())
+            _write_json(p, st)
+        except Exception:  # noqa: BLE001 — never mask the original failure
+            pass
+        raise
+    finally:
+        _finish_job(appliance_snap.id, job_id)
+
+
+def _close_open_run(appliance_id: int) -> None:
+    """A sweep that RETURNED is over, so its state on disk must be terminal.
+
+    The sweep only writes ``done`` from its last phase; a phase that returns
+    without writing one would leave a live state behind, a page polling it
+    forever and ``start()`` refusing every new run for 15 minutes. That is a
+    defect, so it is recorded as one rather than dressed up as ``done``."""
+    st = status(appliance_id) or {}
+    if (st.get("state") not in ACTIVE_STATES or st.get("pid") != os.getpid()
+            or (st.get("host") or _HOST) != _HOST):
+        return
+    now = datetime.utcnow().isoformat()
+    st.pop("stop_requested", None)
+    st.update(state=FAILED, finished=now, heartbeat=now,
+              error="The sweep ended without recording how it ended — a "
+                    "defect, not a device error. Run it again.")
+    _write_json(_dev_dir(appliance_id) / "progress.json", st)
+
+
+def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
+           plan: list[dict] | None = None, cli: bool = False,
+           job_id: str | None = None, factory_full: bool = False) -> None:
+    aid = appliance_snap.id
+    devdir = _dev_dir(aid)
+    progress_path = devdir / "progress.json"
+    is_adc = getattr(appliance_snap, "kind", "") == "fortiadc"
+    if plan is None:
+        plan = sweep_plan_adc() if is_adc else sweep_plan()
+    total = len(plan)
+    started = datetime.utcnow().isoformat()
+    auth_error = ""
+    try:
+        firmware = _device_firmware(appliance_snap, is_adc)
+    except DeviceAuthError as exc:
+        firmware, auth_error = "", str(exc)
+    state = {
+        "state": "running", "appliance_id": aid, "appliance": appliance_snap.name,
+        "firmware": firmware,
+        "total": total, "done": 0, "percent": 0, "objects": 0,
+        "started": started, "by": by, "section": "", "errors": [], "finished": None,
+        # WHO is running this, so a boot-time reconciler can tell a live sweep
+        # from the ghost of one. ``host`` matters as much as ``pid``: the
+        # standby PULLS this whole data/ tree every 5 minutes, so a2 sees a1's
+        # progress files and must never judge a pid that is not its own.
+        "pid": os.getpid(), "host": _HOST, "heartbeat": started,
+        "job_id": job_id,
+        # read every predefined WPP in full instead of replaying the factory
+        # catalog (carried in the state so _run_deep keeps its signature)
+        "factory_full": bool(factory_full),
+    }
+    _write_json(progress_path, state)
+    if auth_error:
+        _finish_failed(progress_path, state, _auth_stop_message(auth_error, 0, total))
+        return
+
+    # One reused connection pool for the whole sweep, and ``sweep_workers()``
+    # reads in flight. ADC stays serial: its probe logs in to a session of its
+    # own. FortiWeb goes parallel only once the status read above answered
+    # (``firmware``): until the credentials are proven, the first 401 has to
+    # be the only one (see DeviceAuthError).
+    workers = 1
+    keep = contextlib.nullcontext()
+    if is_adc:
+        from . import adc_ops
+
+        _probe = adc_ops.make_probe(appliance_snap)
+    else:
+        client = FortiWebClient(appliance_snap, timeout=20.0)
+        keep = client.keep_alive()
+        if firmware:
+            workers = sweep_workers()
+        probe_client = (_GatedClient(client, lambda: _stop_requested(aid))
+                        if workers > 1 else client)
+
+        def _probe(ep: dict):
+            return _probe_fortiweb(probe_client, ep)
+    state["workers"] = workers
+
+    sections: dict[str, dict[str, list]] = {}
+    total_objects = 0
+    errors: list[dict] = []
+    absent: list[dict] = []
+    ledger: dict[str, dict] = {}
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(keep)
+        _result = _ordered_results(stack, plan, _probe, workers)
+        for i, ep in enumerate(plan, 1):
+            if _stop_requested(aid):
+                # No _config.json: a half sweep written as the LATEST snapshot
+                # would replace the last complete one and drive the inventory,
+                # the API matrix and the library from a partial picture.
+                state.update(done=i - 1, objects=total_objects,
+                             errors=errors[-25:], absent_count=len(absent))
+                _finish_stopped(aid, progress_path, state,
+                                f"Stopped at endpoint {i - 1}/{total}. No snapshot "
+                                f"was written; the previous one is unchanged.")
+                return
+            try:
+                rows, verdict, detail = _result(i - 1)
+                rows = [r for r in rows if isinstance(r, dict)]
+            except DeviceAuthError as exc:
+                # The one failure that DOES sink the sweep: see DeviceAuthError.
+                state.update(done=i - 1, objects=total_objects,
+                             errors=errors[-25:], absent_count=len(absent))
+                _finish_failed(progress_path, state,
+                               _auth_stop_message(str(exc), i - 1, total))
+                return
+            except Exception as exc:  # noqa: BLE001 — one endpoint never sinks the sweep
+                rows, verdict = [], VERDICT_ERROR
+                detail = f"{type(exc).__name__}: {exc}"[:160]
+            ledger[ep["name"]] = {"urn": ep["urn"], "section": ep["section"],
+                                  "verdict": verdict, "rows": len(rows),
+                                  "detail": (detail or "")[:200]}
+            if verdict == VERDICT_ERROR:
+                errors.append({"endpoint": ep["name"], "error": detail or "unknown error"})
+            elif verdict == VERDICT_ABSENT:
+                absent.append({"endpoint": ep["name"], "urn": ep["urn"],
+                               "detail": detail or ""})
+            elif rows:
+                sections.setdefault(ep["section"], {})[ep["name"]] = rows
+                total_objects += len(rows)
+            if i % 5 == 0 or i == total:
+                state.update(done=i, percent=int(i * 100 / total) if total else 100,
+                             objects=total_objects, section=ep["section"],
+                             errors=errors[-25:], absent_count=len(absent),
+                             heartbeat=datetime.utcnow().isoformat())
+                _write_json(progress_path, state)
+
+    if errors and not any(v["verdict"] == VERDICT_OK for v in ledger.values()):
+        # Not one endpoint answered. Written as the LATEST snapshot this would
+        # replace the last good one with an empty configuration and feed the
+        # inventory, API matrix and library from it — "I ran discovery and
+        # there is absolutely nothing" (SI-0002) is what that looks like.
+        reasons = sorted({e["error"] for e in errors})
+        state.update(done=total, percent=100, errors=errors[-25:],
+                     absent_count=len(absent))
+        _finish_failed(progress_path, state,
+                       f"None of the {total} endpoint(s) answered "
+                       f"({len(errors)} error(s), e.g. {reasons[0][:160]}). "
+                       f"No snapshot was written; the previous one is unchanged.")
+        return
+
+    generated_at = datetime.utcnow().isoformat()
+    snapshot = {
+        "device": appliance_snap.name, "appliance_id": aid, "generated_at": generated_at,
+        "firmware": firmware,
+        "by": by, "endpoints_swept": total, "total_objects": total_objects,
+        "section_count": len(sections), "sections": sections, "errors": errors,
+        # The ledger is the sweep's OTHER product: one verdict per endpoint,
+        # read back by services.registry_reconcile. ``absent`` is kept out of
+        # ``errors`` on purpose — an endpoint this firmware does not have is not
+        # a failure of the sweep, and folding it in would bury the real errors
+        # under dozens of benign rows on every run.
+        "endpoint_status": ledger,
+        "absent": absent,
+        "verdict_counts": {
+            "ok": sum(1 for v in ledger.values() if v["verdict"] == VERDICT_OK),
+            "absent": len(absent),
+            "error": len(errors),
+        },
+    }
+    _write_json(devdir / "_config.json", snapshot)
+    # ...and beside it, the same snapshot filed under the version it measured.
+    # ``_config.json`` is the LATEST; this is the history, and it is what makes
+    # a firmware upgrade stop destroying the evidence for the previous version.
+    archive_snapshot(aid, snapshot)
+    # ...and into the API library, which is where the evidence is KEPT: the two
+    # files above are rewritten by the next sweep, a library row never is. The
+    # outcome rides in the progress state under its own key so "the library
+    # refused it" never reads as "the sweep failed" (the files are on disk).
+    lib = _ingest_library(appliance_snap, snapshot)
+    if lib.get("error"):
+        state["apilib_error"] = lib["error"]
+    else:
+        state["apilib"] = lib
+    # ...and into the local cache, which is what Device health, the section
+    # pages and the inventory read. Same outcome rule as the library: its own
+    # key, never the sweep's verdict.
+    cache = _feed_cache(appliance_snap, snapshot)
+    if cache.get("error"):
+        state["cache_error"] = cache["error"]
+    # ``done`` is TERMINAL for every reader: both progress pollers stop asking
+    # and the start guard lets a second run in. With a deep or CLI pass still
+    # to come the run is NOT done, so the snapshot's results are written under
+    # a live state and the last phase writes ``done`` itself. Until 2026-10-08
+    # this wrote ``done`` here: the page froze at 100 % while the deep pass
+    # walked 220 WPPs for another 51 s and never showed that it finished.
+    more = deep or cli
+    state.update(state="running" if more else "done",
+                 section=(("snapshot saved — starting the deep capture"
+                           if deep else
+                           "snapshot saved — starting the CLI capture")
+                          if more else state.get("section", "")),
+                 done=total, percent=100, objects=total_objects,
+                 section_count=len(sections), errors=errors,
+                 finished=None if more else generated_at,
+                 absent_count=len(absent),
+                 summary=f"{total_objects} object(s) across {len(sections)} section(s) "
+                         f"from {total} endpoint(s)"
+                         + (f", {len(absent)} absent" if absent else "")
+                         + (f", {len(errors)} error(s)" if errors else ""))
+    _write_json(progress_path, state)
+
+    _persist_firmware(aid, firmware)
+    _refresh_api_matrix(appliance_snap)
+
+    # The snapshot is on disk from here on, so a stop only skips what is left.
+    # The deep pass stops between objects (``_run_deep``); a CLI pass already
+    # started runs to its end (capped at 300 s): one SSH dump has no boundary.
+    def _stop_before(phase: str) -> bool:
+        if not _stop_requested(aid):
+            return False
+        _finish_stopped(aid, progress_path, state,
+                        f"Stopped before the {phase}. The sweep snapshot was "
+                        f"saved; the {phase} was skipped.")
+        return True
+
+    if deep:  # FortiWeb: WPP/policy graph; FortiADC: every child table
+        if _stop_before("deep capture"):
+            return
+        # The CLI dump is one SSH session and the deep pass is REST: they share
+        # nothing on the box, so with both asked for they run side by side and
+        # the sweep takes the longer of the two instead of their sum.
+        cli_run = _start_cli_alongside(appliance_snap, state) if cli else None
+        if is_adc:
+            stopped = _run_deep_adc(appliance_snap, progress_path, state,
+                                    snapshot, finish=cli_run is None)
+        else:
+            stopped = _run_deep(appliance_snap, progress_path, state,
+                                finish=cli_run is None)
+        if cli_run is not None:
+            _join_cli_alongside(cli_run, progress_path, state, stopped)
+            cli = False   # captured already, alongside the deep pass
+        if stopped:
+            return   # stopped mid-walk: nothing else is started
+
+    # LAST, and only when asked. ``cli`` defaults to False so the post-
+    # registration sweep (views.appliances) and every other internal caller
+    # keep their current cost and their current side effects.
+    if cli:
+        if _stop_before("CLI capture"):
+            return
+        _run_cli(appliance_snap, progress_path, state)
+
+    # Pressed after the last phase began: nothing was left to stop. Drop the
+    # flag so it cannot stop the NEXT run before its first endpoint.
+    _clear_stop(aid)
+
+
+def _persist_firmware(appliance_id: int, firmware: str) -> None:
+    """Write the firmware the sweep just measured onto the appliance row.
+
+    The sweep has always read the running firmware (``_device_firmware``) and
+    always thrown it away: ``appliances.firmware`` is filled only by
+    ``_apply_inventory``, out of ``_model_from_status``, which returns ``None``
+    for FortiWeb. That is why 8 of 10 appliances had an empty firmware column
+    while their own snapshots said 7.6.8 / 8.0.3 — and why anything keyed by
+    firmware line (capacity limits, the API matrix, the field catalog) had to
+    treat most of the fleet as "unknown line".
+
+    Best-effort by construction: a sweep that produced a good snapshot must not
+    be reported as failed because a column write did not land.
+    """
+    if not firmware:
+        return
+    try:
+        from ..extensions import db
+        from ..models import Appliance
+        app = _get_flask_app()
+        with app.app_context():
+            row = db.session.get(Appliance, appliance_id)
+            # Compared NORMALIZED: the sweep only knows X.Y.Z, so a row the
+            # firmware probe filled with the full string of the SAME version
+            # ("FortiWeb-KVM 7.6.8,build1128...") is already right and richer.
+            # Overwriting it dropped the build token, and made every sweep
+            # after a probe file its evidence under a different device
+            # identity — a new library row instead of a confirmation.
+            from . import firmware_versions
+            if row is None or firmware_versions.normalize(row.firmware) == firmware:
+                return
+            row.firmware = firmware
+            db.session.commit()
+    except Exception:  # noqa: BLE001 — never let bookkeeping sink a good sweep
+        pass
+
+
+def _refresh_api_matrix(appliance_snap) -> None:
+    """Fold this sweep's verdicts and field keys into the API matrix.
+
+    The matrix is derived, so this is a convenience, not a source of truth: it
+    only spares the operator a manual rebuild after every sweep. A failure here
+    leaves a stale-but-valid matrix and is silent for the same reason as above.
+    """
+    try:
+        from . import api_matrix
+        kind = getattr(appliance_snap, "kind", "") or "fortiweb"
+        app = _get_flask_app()
+        with app.app_context():
+            api_matrix.rebuild(kind)
+            # Re-judge the disappearances the fresh matrix implies, and record
+            # them. Here rather than only on the alert timer because THIS is
+            # the moment the evidence changed: an operator who runs a sweep to
+            # answer a question should not have to wait for a timer to see the
+            # answer recorded, and a ledger written only by a timer cannot say
+            # which sweep proved what.
+            from . import absence_record
+            absence_record.record(kind)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _library_app():
+    """The app whose database the library write goes to.
+
+    The ACTIVE app context first, ``_APP`` only as the fallback for the bare
+    worker thread ``start()`` spawns. The order is the point: ``_APP`` is a
+    module global that outlives the app it was captured from, so a synchronous
+    ``_run`` inside a harvest job (or a test) that preferred it could write
+    evidence into ANOTHER app's database — the 2026-09-15 contamination, moved
+    from files into rows. There is deliberately no third fallback: with no app
+    to ask, the write fails and says so instead of guessing a database.
+    """
+    return _get_flask_app()
+
+
+def _library_device(appliance_id: int, appliance_snap) -> dict:
+    """Device identity copied INTO the evidence, so it outlives the row.
+
+    Read from the row at sweep time (serial/model/hw_type are not part of the
+    client snapshot), falling back to the snapshot when the row is gone —
+    a sweep of a device deleted mid-run is still evidence about its build.
+    ``firmware_raw`` is the row's full string because the sweep itself keeps
+    only X.Y.Z; ``evidence_from_sweep`` takes the build token from it only
+    when it names the SAME version the sweep measured.
+    """
+    from ..extensions import db
+    from ..models import Appliance
+    row = db.session.get(Appliance, appliance_id)
+    src = row if row is not None else appliance_snap
+    return {"appliance_id": appliance_id,
+            "name": str(getattr(src, "name", "") or ""),
+            "serial": str(getattr(src, "serial", "") or ""),
+            "model": str(getattr(src, "model", "") or ""),
+            "hw_type": str(getattr(src, "hw_type", "") or ""),
+            "firmware_raw": str(getattr(src, "firmware", "") or "")}
+
+
+#: The keys a harvest snapshot carries (``device_sync.snapshot_from_device``).
+#: The sweep adds its ledger on top; those extras stay out of the cache copy so
+#: the SoT store hashes a rediscovery and an hourly harvest of the same
+#: configuration to the SAME version instead of alternating between two.
+_HARVEST_KEYS = ("device", "appliance_id", "generated_at", "total_objects",
+                 "section_count", "sections", "errors")
+
+
+def _feed_cache(appliance_snap, snapshot: dict) -> dict:
+    """Ingest this sweep into the local cache as a harvest. NEVER raises.
+
+    The sweep reads the same plan the hourly harvest reads and produced the
+    same snapshot shape, and until 2026-10-03 it threw that away: a node whose
+    operator had just run a rediscovery still said "no cached configuration on
+    this node" and "never harvested" on Device health (SI-0006), because only
+    ``device_sync`` filled the cache and a fresh install seeds no schedule for
+    it. Recorded as a ``SyncRun`` with trigger ``rediscovery`` so the harvest
+    history says where the data came from.
+    """
+    try:
+        from . import device_sync
+        harvest = {k: snapshot[k] for k in _HARVEST_KEYS if k in snapshot}
+        with _get_flask_app().app_context():
+            run = device_sync.persist_snapshot(appliance_snap, harvest,
+                                               source="live",
+                                               trigger="rediscovery")
+            # Read inside the context: the row is detached once it closes.
+            status, detail = run.status, run.detail
+        if status != "ok":
+            return {"error": (detail or "cache ingest failed")[:200]}
+        return {"ok": True}
+    except Exception as exc:  # noqa: BLE001 — never let the cache sink a sweep
+        _log.warning("rediscovery: cache ingest failed for appliance %s: %s",
+                     appliance_snap.id, exc, exc_info=True)
+        return {"error": ("%s: %s" % (type(exc).__name__, exc))[:200]}
+
+
+def _ingest_library(appliance_snap, snapshot: dict, *,
+                    origin: str = "rediscovery:") -> dict:
+    """File this sweep's snapshot as API-library evidence. NEVER raises.
+
+    Returns ``{evidence_id, created, healthy, skip_reason}`` or ``{error}``.
+    A library failure is logged and reported, but it cannot fail the sweep:
+    ``_config.json`` and the by-version archive are already on disk and stay
+    the export every existing consumer reads. ``origin`` prefixes the
+    ``origin_ref``: the ADC depth pass files its child tables under
+    ``api_library.DEPTH_ORIGIN_PREFIX`` (partial evidence of the build).
+    """
+    aid = appliance_snap.id
+    try:
+        from ..extensions import db
+        from . import api_library
+        product = getattr(appliance_snap, "kind", "") or "fortiweb"
+        version = _version_of(snapshot)
+        # Same origin_ref shape as api_library.backfill, so the provenance of
+        # a live ingest and of a later backfill of the same file reads alike.
+        ref = "%s%d@%s" % (origin, aid, version or "unversioned")
+        with _library_app().app_context():
+            try:
+                doc = api_library.evidence_from_sweep(
+                    product, snapshot, _library_device(aid, appliance_snap), ref)
+                res = api_library.ingest(doc, raw=snapshot)
+            except Exception:
+                db.session.rollback()
+                raise
+        return {"evidence_id": res.get("evidence_id"),
+                "created": bool(res.get("created")),
+                "healthy": bool(doc.get("healthy")),
+                "skip_reason": doc.get("skip_reason") or ""}
+    except Exception as exc:  # noqa: BLE001 — never let the library sink a sweep
+        _log.warning("rediscovery: API library ingest failed for appliance %s: %s",
+                     aid, exc, exc_info=True)
+        return {"error": ("%s: %s" % (type(exc).__name__, exc))[:200]}
+
+
+def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict,
+              finish: bool = True) -> bool:
+    """Opt-in deep-capture pass appended after the shallow sweep: walk every
+    server policy + WPP (sub-tables + named-rule objects nested) and ingest under
+    layer='deep'. Best-effort — a failure is recorded but never breaks the
+    shallow rediscovery that already completed.
+
+    Returns True when a Stop ended it. The stop is honoured between objects;
+    what was walked so far is DISCARDED, not persisted: a deep layer missing the
+    objects never reached would read as those objects having been deleted.
+
+    ``finish=False`` leaves the sweep's state open (no ``done``): the CLI
+    capture is still running alongside and the sweep ends when it does.
+
+    The walk uses ``sweep_workers()`` readers on one reused connection pool,
+    and reports how many device reads it made and how many the per-sweep memo
+    answered instead (``deep_reads`` / ``deep_reused``)."""
+    from .deep_capture import DeepCaptureStopped
+    aid = appliance_snap.id
+    state.update(state="deep-running", section="deep capture (WPP + policy graph)",
+                 finished=None, deep_total=0, deep_done=0, deep_percent=0)
+    _write_json(progress_path, state)
+
+    def _progress(p: dict) -> None:
+        # Every policy/WPP walk is several reads, so one write per object is
+        # cheap -- and it is also the heartbeat: a long deep pass that never
+        # touched the file looked exactly like a dead one.
+        total = p.get("total") or 0
+        state.update(deep_total=total, deep_done=p.get("done", 0),
+                     deep_percent=(int(p.get("done", 0) * 100 / total)
+                                   if total else 0),
+                     deep_phase=p.get("phase", ""), deep_index=p.get("index", 0),
+                     deep_of=p.get("of", 0),
+                     deep_current=str(p.get("current") or "")[:120],
+                     deep_policies=p.get("policies", 0),
+                     deep_wpps=p.get("wpps", 0),
+                     deep_reads=p.get("reads", 0),
+                     deep_reused=p.get("reused", 0),
+                     deep_catalog_reused=p.get("catalog_reused", 0),
+                     heartbeat=datetime.utcnow().isoformat())
+        _write_json(progress_path, state)
+
+    stats: dict = {}
+
+    def _record_stats() -> None:
+        if stats:
+            state.update(deep_reads=stats.get("reads", 0),
+                         deep_reused=stats.get("reused", 0),
+                         deep_workers=stats.get("workers", 1))
+            cat = stats.get("catalog")
+            if cat:
+                state["deep_catalog"] = catalog_line(cat)
+
+    try:
+        from . import device_sync
+        app = _get_flask_app()
+        with app.app_context():
+            snap = device_sync.deep_snapshot_from_device(
+                appliance_snap, progress=_progress,
+                should_stop=lambda: _stop_requested(aid),
+                workers=sweep_workers(), keep_alive=True, stats=stats,
+                force_factory_walk=bool(state.get("factory_full")))
+            device_sync.persist_deep_snapshot(appliance_snap, snap)
+        _record_stats()
+        state.update(section="deep capture complete",
+                     deep_objects=snap.get("total_objects"))
+        if finish:
+            state.update(state="done", finished=datetime.utcnow().isoformat())
+    except DeepCaptureStopped as stop:
+        _record_stats()
+        where = f"{stop.phase} {stop.current}".strip()
+        _finish_stopped(aid, progress_path, state,
+                        f"Stopped during the deep capture, at object "
+                        f"{stop.done}/{stop.total}"
+                        + (f" ({where})" if where else "")
+                        + ". The sweep snapshot was saved; the partial deep "
+                          "capture was discarded and the previous one kept.")
+        return True
+    except Exception as exc:  # noqa: BLE001
+        _record_stats()
+        state.update(deep_error=f"{type(exc).__name__}: {exc}"[:200])
+        if finish:
+            state.update(state="done", finished=datetime.utcnow().isoformat())
+    _write_json(progress_path, state)
+    return False
+
+
+# --------------------------------------------------------------------------- #
+# FortiADC depth — every child table, once per parent row                      #
+# --------------------------------------------------------------------------- #
+#: Beside ``_config.json``: the child rows of the sweep that wrote it. Kept in
+#: its own file for the same reason the FortiWeb depth is its own layer — a
+#: stopped or failed depth pass must never touch the sweep snapshot.
+ADC_DEEP_FILE = "_deep.json"
+
+
+def adc_deep(appliance_id: int) -> dict | None:
+    """The last FortiADC depth capture, or ``None``."""
+    path = _dev_dir(appliance_id) / ADC_DEEP_FILE
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def adc_deep_meta(appliance_id: int) -> dict | None:
+    """``{captured_at, rows, reads, errors}`` of the last ADC depth capture —
+    the shape the Rediscover page's depth badge reads."""
+    d = adc_deep(appliance_id)
+    if not d:
+        return None
+    return {"captured_at": d.get("generated_at"), "rows": d.get("rows", 0),
+            "reads": d.get("reads", 0), "errors": len(d.get("errors") or [])}
+
+
+def latest_snapshot(appliance_id: int) -> dict | None:
+    """The full last sweep snapshot (``_config.json``), or ``None``."""
+    try:
+        return json.loads((_dev_dir(appliance_id) / "_config.json").read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def _feed_deep_cache_adc(appliance_snap, snapshot: dict, deep_doc: dict) -> dict:
+    """The ADC depth capture into the cache's ``deep`` layer. NEVER raises.
+
+    Replaces the device's deep layer like the FortiWeb depth does
+    (``device_sync.persist_deep_snapshot``): the sweep's rows of every parent
+    table whose child table this build serves, each with the child rows read
+    for it (``adc_vstree.deep_sections``). Returns ``{objects, sections}``
+    or ``{error}``."""
+    try:
+        from . import adc_vstree, device_sync
+        sections = adc_vstree.deep_sections(snapshot.get("sections"), deep_doc)
+        snap = {"device": appliance_snap.name, "appliance_id": appliance_snap.id,
+                "generated_at": deep_doc.get("generated_at"),
+                "total_objects": sum(len(rows) for eps in sections.values()
+                                     for rows in eps.values()),
+                "section_count": len(sections), "sections": sections, "errors": []}
+        with _get_flask_app().app_context():
+            res = device_sync.persist_deep_snapshot(appliance_snap, snap,
+                                                    trigger="rediscovery")
+        if sections and not res:
+            # persist_deep_snapshot records its own failure on the SyncRun
+            return {"error": "deep cache ingest failed (see the harvest history)"}
+        return {"objects": sum(v.get("objects", 0) for v in res.values()),
+                "sections": len(res)}
+    except Exception as exc:  # noqa: BLE001 — never let the cache sink a sweep
+        _log.warning("rediscovery: ADC deep cache ingest failed for appliance %s: %s",
+                     appliance_snap.id, exc, exc_info=True)
+        return {"error": ("%s: %s" % (type(exc).__name__, exc))[:200]}
+
+
+def depth_evidence(snapshot: dict, deep_doc: dict) -> dict:
+    """The ADC depth capture as a sweep-shaped snapshot of the CHILD tables
+    alone, for ``api_library.evidence_from_sweep``: one ledger entry per
+    child table read, its rows across every parent, the sweep's firmware.
+
+    A table that answered for at least one parent is ``ok`` (the library's
+    own merge rule: an answer anywhere proves the build serves it); the
+    section is its parent's. ``{}`` when no child table was read."""
+    ledger = (deep_doc or {}).get("endpoint_status") or {}
+    if not ledger:
+        return {}
+    sweep_led = (snapshot or {}).get("endpoint_status") or {}
+    status, rows = {}, {}
+    for name, led in sorted(ledger.items()):
+        led = led or {}
+        status[name] = {
+            "urn": led.get("urn") or "",
+            "section": (sweep_led.get(led.get("parent")) or {}).get("section") or "",
+            "verdict": "ok" if led.get("parents") else (led.get("verdict") or "error"),
+            "rows": led.get("rows", 0)}
+    for name, per in ((deep_doc or {}).get("children") or {}).items():
+        rows[name] = [r for parent_rows in (per or {}).values()
+                      for r in parent_rows or [] if isinstance(r, dict)]
+    return {"device": deep_doc.get("device"), "appliance_id": deep_doc.get("appliance_id"),
+            "generated_at": deep_doc.get("generated_at"),
+            "firmware": (snapshot or {}).get("firmware", ""),
+            "endpoint_status": status, "sections": {"Child tables": rows}}
+
+
+def _ingest_library_depth(appliance_snap, snapshot: dict, deep_doc: dict) -> dict:
+    """The child tables the depth pass read, filed in the API library as
+    measured for this build. ``{}`` when nothing was read; never raises."""
+    from . import api_library
+    measured = depth_evidence(snapshot, deep_doc)
+    if not measured:
+        return {}
+    return _ingest_library(appliance_snap, measured,
+                           origin=api_library.DEPTH_ORIGIN_PREFIX)
+
+
+def _run_deep_adc(appliance_snap: SimpleNamespace, progress_path, state: dict,
+                  snapshot: dict, finish: bool = True) -> bool:
+    """Read every registered ``<parent>_child_<x>`` table once per parent row
+    of THIS sweep (``?pkey=<mkey>``) and write :data:`ADC_DEEP_FILE`.
+
+    Returns True when a Stop ended it; what was read so far is DISCARDED and
+    the previous depth file kept, as on FortiWeb: a depth file missing the
+    groups never reached would draw them as empty."""
+    from . import adc_ops, adc_vstree
+    aid = appliance_snap.id
+    state.update(state="deep-running", deep_kind="adc",
+                 section="deep capture (child tables)", finished=None,
+                 deep_total=0, deep_done=0, deep_percent=0)
+    _write_json(progress_path, state)
+
+    def _progress(p: dict) -> None:
+        total = p.get("total") or 0
+        state.update(deep_total=total, deep_done=p.get("done", 0),
+                     deep_percent=(int(p.get("done", 0) * 100 / total)
+                                   if total else 0),
+                     deep_phase="child table",
+                     deep_current=str(p.get("current") or "")[:120],
+                     heartbeat=datetime.utcnow().isoformat())
+        _write_json(progress_path, state)
+
+    try:
+        with _get_flask_app().app_context():
+            plan = adc_vstree.child_plan()
+        res = adc_vstree.capture_children(
+            adc_ops.make_probe(appliance_snap), plan,
+            adc_vstree.parent_rows(snapshot.get("sections")),
+            should_stop=lambda: _stop_requested(aid), progress=_progress)
+    except adc_vstree.ChildCaptureStopped as stop:
+        _finish_stopped(aid, progress_path, state,
+                        f"Stopped during the deep capture, at child-table read "
+                        f"{stop.done}/{stop.total}"
+                        + (f" ({stop.current})" if stop.current else "")
+                        + ". The sweep snapshot was saved; the partial deep "
+                          "capture was discarded and the previous one kept.")
+        return True
+    except DeviceAuthError as exc:
+        state.update(deep_error=str(exc)[:200])
+        res = None
+    except Exception as exc:  # noqa: BLE001 — the sweep already succeeded
+        state.update(deep_error=f"{type(exc).__name__}: {exc}"[:200])
+        res = None
+    if res is not None:
+        deep_doc = {
+            "device": appliance_snap.name, "appliance_id": aid,
+            "generated_at": datetime.utcnow().isoformat(),
+            "firmware": snapshot.get("firmware", ""),
+            # Which sweep the parents came from: a tree drawn from this file
+            # and an OLDER _config.json would pair rows of two moments.
+            "sweep_generated_at": snapshot.get("generated_at"),
+            **res,
+        }
+        _write_json(_dev_dir(aid) / ADC_DEEP_FILE, deep_doc)
+        state.update(section="deep capture complete", deep_objects=res["rows"],
+                     deep_reads=res["reads"], deep_errors=len(res["errors"]),
+                     deep_total=res["pairs"], deep_done=res["pairs"],
+                     deep_percent=100)
+        # The file feeds the VS tree; the cache's ``deep`` layer and the API
+        # library are what everything else reads (Analysis, the library's
+        # per-build answer) — same two homes as the FortiWeb depth and the
+        # sweep. Each outcome under its own key: neither can fail
+        # a capture that is already on disk.
+        cache = _feed_deep_cache_adc(appliance_snap, snapshot, deep_doc)
+        state["deep_cache" if "error" not in cache else "deep_cache_error"] = \
+            cache.get("error") or cache
+        lib = _ingest_library_depth(appliance_snap, snapshot, deep_doc)
+        if lib:
+            state["deep_apilib" if "error" not in lib else "deep_apilib_error"] = \
+                lib.get("error") or lib
+    if finish:
+        state.update(state="done", finished=datetime.utcnow().isoformat())
+    _write_json(progress_path, state)
+    return False
+
+
+# --------------------------------------------------------------------------- #
+# Third pass — capture what the CLI serves                                     #
+# --------------------------------------------------------------------------- #
+# The sweep reads what REST serves. ``show full-configuration`` reads what the
+# CLI serves, and the gap between the two IS the CLI-coverage report
+# (:mod:`app.services.cli_coverage`). Capturing it HERE is what makes that
+# report describe the box *as swept* — same box, same firmware, same minute —
+# instead of whatever dump happened to already be sitting in the vault.
+#
+# It is a SEPARATE, OPT-IN pass appended after ``_config.json`` is already on
+# disk, for three measured reasons:
+#   * an SSH dump is a single session bounded at 300 s against a REST sweep
+#     that finishes in seconds, so folding it inline would make EVERY sweep
+#     minutes long — including the silent one behind device registration;
+#   * SSH can fail on a box whose REST just answered perfectly, and a sweep
+#     that SUCCEEDED must not be reported as failed because a second transport
+#     could not connect;
+#   * it writes ~700 KB of device configuration into the vault. That is a state
+#     change, and a state change nobody asked for is not a default.
+CLI_CAPTURE_MAX_AGE_H = 24
+
+#: Every skip carries its OWN reason. A single generic "no" would be
+#: indistinguishable from a capture that ran and found nothing — precisely the
+#: confusion the coverage report exists to remove.
+CLI_SKIP_NOT_REQUESTED = "not requested for this sweep"
+CLI_SKIP_NO_PERMISSION = ("the CLI dump is written to the configuration vault, "
+                          "which this user may not write")
+CLI_SKIP_MAINTENANCE = ("the appliance is in maintenance mode, where scheduled "
+                        "collection is suppressed")
+
+
+def _latest_usable_dump(appliance_id: int, evidence: list | None = None) -> dict | None:
+    """Newest vault dump for THIS appliance that the coverage report would accept.
+
+    ``usable`` is not decoration. An encrypted dump (the box has a backup
+    password set) can never be parsed, so counting it as freshness would
+    suppress every future capture and leave the coverage section permanently
+    empty on exactly the appliances that need it most.
+    """
+    from . import cli_coverage
+
+    rows = cli_coverage.evidence_index() if evidence is None else evidence
+    for rec in rows:                     # evidence_index is newest-first
+        if rec.get("appliance_id") == appliance_id and rec.get("usable"):
+            return rec
+    return None
+
+
+def _dump_age_hours(rec: dict | None, now: datetime) -> float | None:
+    """Age of an evidence row in hours, or ``None`` when it cannot be established.
+
+    Reads ``created_iso``, never the ``created_at`` display string.
+    """
+    stamp = (rec or {}).get("created_iso") or ""
+    if not stamp:
+        return None
+    try:
+        when = datetime.fromisoformat(stamp)
+    except ValueError:
+        return None
+    return max(0.0, (now - when).total_seconds() / 3600.0)
+
+
+def cli_capture_decision(*, requested: bool, kind: str, appliance_id: int,
+                         evidence: list | None = None, maintenance: bool = False,
+                         may_write_vault: bool = True,
+                         max_age_h: float = CLI_CAPTURE_MAX_AGE_H,
+                         now: datetime | None = None) -> dict:
+    """Decide — BEFORE any session is opened — whether this sweep captures a dump.
+
+    ONE authority for the question, because it has two callers that must never
+    disagree: the worker (which acts on it) and the rediscovery page (which
+    tells the operator in advance what the checkbox will do). Two answers to
+    "will this capture?" is how a UI ends up promising a dump that the worker
+    then silently declines to take.
+
+    Returns ``{"capture", "reason", "existing", "age_h"}``. ``reason`` is empty
+    only when ``capture`` is True.
+    """
+    from . import cli_coverage
+
+    now = now or datetime.utcnow()
+    if not requested:
+        return {"capture": False, "reason": CLI_SKIP_NOT_REQUESTED,
+                "existing": None, "age_h": None}
+    kind = (kind or "fortiweb").lower()
+    if kind not in cli_coverage.SUPPORTED_PRODUCTS:
+        # FortiAnalyzer and FortiAuthenticator do not answer this question with
+        # a configuration dump; say which one and why, never a bare False.
+        return {"capture": False,
+                "reason": cli_coverage.UNSUPPORTED_REASON.get(
+                    kind, "this product has no CLI configuration dump to capture"),
+                "existing": None, "age_h": None}
+    if not may_write_vault:
+        return {"capture": False, "reason": CLI_SKIP_NO_PERMISSION,
+                "existing": None, "age_h": None}
+    if maintenance:
+        return {"capture": False, "reason": CLI_SKIP_MAINTENANCE,
+                "existing": None, "age_h": None}
+
+    fresh = _latest_usable_dump(appliance_id, evidence)
+    age_h = _dump_age_hours(fresh, now)
+    if fresh is not None and age_h is not None and age_h < max_age_h:
+        return {"capture": False, "existing": fresh, "age_h": round(age_h, 1),
+                "reason": (f"a usable dump captured {age_h:.1f} h ago is inside "
+                           f"the {max_age_h:g} h budget - re-reading the same "
+                           f"configuration would only cost the box another "
+                           f"300 s session")}
+    return {"capture": True, "reason": "", "existing": fresh, "age_h": age_h}
+
+
+def _run_cli(appliance_snap: SimpleNamespace, progress_path, state: dict) -> None:
+    """Opt-in CLI-dump pass, appended after the sweep snapshot is already on disk.
+
+    Best-effort BY CONSTRUCTION: ``_config.json`` is written before this runs,
+    so nothing here — including hanging on a dead SSH port until the 300 s
+    ceiling — can cost the operator the sweep that already succeeded. The
+    outcome lands in ``progress.json`` beside the sweep's own, under separate
+    keys, because a capture that was SKIPPED and a capture that FAILED must
+    never look alike.
+    """
+    state.update(state="cli-running",
+                 section="CLI capture (show full-configuration)", finished=None)
+    _write_json(progress_path, state)
+    outcome = _cli_outcome(appliance_snap, state.get("by") or "")
+    state.update(state="done", finished=datetime.utcnow().isoformat(), **outcome)
+    _write_json(progress_path, state)
+
+
+def _cli_outcome(appliance_snap: SimpleNamespace, by: str) -> dict:
+    """The CLI capture itself: decide, capture, audit. Returns the outcome keys
+    (``cli_backup_id``/``cli_kb``/``cli_firmware``, ``cli_skipped`` or
+    ``cli_error``) and never raises -- a sweep that succeeded is never sunk by
+    its second transport. Touches no progress state, so it can run alongside
+    the deep pass."""
+    aid = appliance_snap.id
+    outcome: dict = {}
+    try:
+        from ..extensions import db
+        from ..models import Appliance
+        from . import backup as backup_svc
+        from .audit import log_action
+
+        app = _get_flask_app()
+        with app.app_context():
+            # Re-read the row inside THIS thread's context, by id. Carrying a
+            # request's ORM instance into a worker thread is what made every
+            # status badge read "offline" on 2026-09-14 — and the credential
+            # this capture needs may live in the vault, which reads the DB.
+            row = db.session.get(Appliance, aid)
+            if row is None:
+                raise RuntimeError("the appliance row disappeared mid-sweep")
+            decision = cli_capture_decision(
+                requested=True, kind=getattr(row, "kind", "") or "fortiweb",
+                appliance_id=aid,
+                maintenance=bool(getattr(row, "maintenance", False)))
+            if not decision["capture"]:
+                outcome = {"cli_skipped": decision["reason"]}
+                if decision.get("existing"):
+                    outcome["cli_backup_id"] = decision["existing"].get("backup_id")
+            else:
+                rec = backup_svc.fetch_device_backup_auto(
+                    row, created_by=(by or "rediscovery")[:64],
+                    method="ssh")
+                outcome = {"cli_backup_id": rec.id,
+                           "cli_kb": (rec.size_bytes or 0) // 1024,
+                           "cli_firmware": rec.firmware or ""}
+                log_action("appliance.cli_capture", target=row.name or "",
+                           extra={"backup_id": rec.id, "by": "rediscovery sweep",
+                                  "kb": (rec.size_bytes or 0) // 1024,
+                                  "firmware": rec.firmware or ""})
+    except Exception as exc:  # noqa: BLE001 — never sink a sweep that succeeded
+        outcome = {"cli_error": f"{type(exc).__name__}: {exc}"[:200]}
+    return outcome
+
+
+def _start_cli_alongside(appliance_snap: SimpleNamespace, state: dict):
+    """Start the CLI capture in its own thread, next to the deep pass."""
+    box: dict = {}
+
+    def _go() -> None:
+        box.update(_cli_outcome(appliance_snap, state.get("by") or ""))
+
+    thread = threading.Thread(target=_go, daemon=True,
+                              name=f"rediscovery-cli-{appliance_snap.id}")
+    state["cli_running"] = True
+    thread.start()
+    return thread, box
+
+
+def _join_cli_alongside(run, progress_path, state: dict, stopped: bool) -> None:
+    """Wait for the CLI capture started by :func:`_start_cli_alongside` and
+    record its outcome. A session already open cannot be cut, so a Stop during
+    the deep pass waits for it too; the state then stays ``stopped``."""
+    thread, box = run
+    if thread.is_alive() and not stopped:
+        state.update(state="cli-running",
+                     section="CLI capture (show full-configuration)",
+                     finished=None)
+        _write_json(progress_path, state)
+    thread.join()
+    state.pop("cli_running", None)
+    state.update(**box)
+    if not stopped:
+        state.update(state="done", finished=datetime.utcnow().isoformat())
+    _write_json(progress_path, state)
+
+
+def start(appliance, by: str = "", deep: bool = False,
+          cli: bool = False, factory_full: bool = False) -> dict:
+    """Kick off a rediscovery sweep in a background thread.
+
+    Refuses to start a second concurrent run for the same appliance. Returns the
+    initial progress dict.
+    """
+    cur = status(appliance.id)
+    # Every live phase counts: a sweep in its deep or CLI phase is still the
+    # run that owns the snapshot and the stop flag cleared below.
+    if cur and cur.get("state") in ACTIVE_STATES:
+        # guard against a stuck 'running' flag: only block if it looks live (<15 min)
+        try:
+            # ``started`` is naive UTC: compare it with UTC, never with the
+            # host's local clock (that skewed the age by the zone offset).
+            age = (datetime.utcnow() - datetime.fromisoformat(cur["started"])).total_seconds()
+        except Exception:  # noqa: BLE001
+            age = 0
+        if age < 900:
+            return {"started": False, "reason": "a rediscovery is already running", "progress": cur}
+
+    global _APP
+    try:
+        from flask import current_app
+        _APP = current_app._get_current_object()
+    except Exception:  # noqa: BLE001 — outside a request (tests set _APP directly)
+        pass
+
+    snap = _client_snapshot(appliance)
+    if snap.kind == "fortiadc":
+        # The ADC depth is its child tables (services.adc_vstree); there is
+        # no factory WPP catalog to re-read.
+        factory_full = False
+    # Resolve the plan HERE (request context): the registry is DB-first and the
+    # worker thread has no app context to fall back through.
+    plan = plan_for(appliance)
+    _clear_stop(appliance.id)   # a flag left by an earlier run must not stop this one
+    from . import jobs
+    job = jobs.create_job(
+        "rediscovery", f"Discovery · {appliance.name}", by=by,
+        meta={"appliance_id": appliance.id, "appliance": appliance.name,
+              "deep": bool(deep), "cli": bool(cli),
+              "factory_full": bool(deep and factory_full)},
+        cancelable=True)
+    jobs.update_job(job["id"], status=jobs.RUNNING, pid=os.getpid())
+    _now = datetime.utcnow().isoformat()
+    init = {"state": "running", "appliance_id": appliance.id, "appliance": appliance.name,
+            "total": 0, "done": 0, "percent": 0, "objects": 0, "deep": bool(deep),
+            "cli": bool(cli),
+            "started": _now, "by": by, "errors": [], "finished": None,
+            "pid": os.getpid(), "host": _HOST, "heartbeat": _now,
+            "job_id": job["id"]}
+    _write_json(_dev_dir(appliance.id) / "progress.json", init)
+    kwargs = {"job_id": job["id"]}
+    if deep and factory_full:
+        kwargs["factory_full"] = True
+    threading.Thread(target=_run, args=(snap, by, deep, plan, cli),
+                     kwargs=kwargs, daemon=True).start()
+    return {"started": True, "progress": init}
+
+
+def _pid_alive(pid) -> bool:
+    """True when ``pid`` exists AND still looks like one of our processes.
+
+    Deliberately identical to ``jobs._pid_alive``: "the worker is gone" must
+    have ONE definition in this product, not two that drift apart. The cmdline
+    check guards against PID reuse after a reboot.
+    """
+    try:
+        os.kill(int(pid), 0)
+    except (OSError, TypeError, ValueError):
+        return False
+    try:
+        cmd = Path("/proc/%s/cmdline" % int(pid)).read_bytes().decode(errors="replace")
+        return ("python" in cmd) or ("gunicorn" in cmd)
+    except Exception:  # noqa: BLE001 — no /proc: liveness alone decides
+        return True
+
+
+def reconcile_stale_runs(*, no_pid_stale_after_s: int = 900) -> list[dict]:
+    """Retire ``running`` sweeps whose worker process no longer exists.
+
+    The sweep runs in a daemon thread and its state lives in a file, so a
+    ``systemctl restart satom`` kills the thread without touching the file and
+    every live run becomes a permanent ``running``. Nothing corrected that: the
+    guard in :func:`start` only stops BLOCKING a new run after 15 minutes,
+    which unblocks the operator and leaves the page reading 71 % forever.
+
+    Rules, mirroring ``jobs.sweep_orphans``:
+
+    * a file from ANOTHER host is never touched — ``satom-ha-datasync`` pulls
+      this whole tree onto the standby every 5 minutes, so the peer's progress
+      files are visible here and its pids mean nothing on this machine;
+    * a recorded pid that is alive → left alone (another gunicorn worker may be
+      running the sweep right now, and booting workers run this too);
+    * no pid recorded (a file written before this field existed) → judged by
+      age, because such a file can only predate the current process.
+
+    Never raises: housekeeping must not be able to block boot.
+    """
+    out: list[dict] = []
+    base = _data_dir()
+    try:
+        entries = sorted(os.listdir(base))
+    except OSError:
+        return out
+    for entry in entries:
+        p = base / entry / "progress.json"
+        if not p.exists():
+            continue
+        try:
+            st = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        if st.get("state") != "running":
+            continue
+        if (st.get("host") or _HOST) != _HOST:
+            continue
+        pid = st.get("pid")
+        if pid:
+            if _pid_alive(pid):
+                continue
+        else:
+            stamp = st.get("heartbeat") or st.get("started")
+            try:
+                # Stamps are naive UTC (utcnow); .timestamp() would read them
+                # as LOCAL time and skew the age by the node's UTC offset.
+                age = (datetime.utcnow() - datetime.fromisoformat(stamp)).total_seconds()
+            except Exception:  # noqa: BLE001 — unreadable stamp is not evidence of life
+                age = no_pid_stale_after_s + 1
+            if age <= no_pid_stale_after_s:
+                continue
+        st.update(state=INTERRUPTED,
+                  finished=datetime.utcnow().isoformat(),
+                  error="Interrupted — the service restarted while this sweep "
+                        "was running. It wrote no snapshot; run it again.")
+        try:
+            _write_json(p, st)
+        except Exception:  # noqa: BLE001
+            continue
+        out.append(st)
+    return out
+
+
+__all__ = ["sweep_plan", "sweep_plan_adc", "plan_for", "status",
+           "reconcile_stale_runs", "INTERRUPTED", "FAILED", "STOPPED",
+           "ACTIVE_STATES", "request_stop",
+           "VERSION_DIR", "archive_snapshot", "version_snapshots",
+           "migrate_version_archive",
+           "latest_snapshot_meta", "start", "apply_inventory",
+           "maybe_apply_inventory", "_run_deep", "_run_cli", "_probe_fortiweb",
+           "fortiweb_shape_verdict",
+           "cli_capture_decision", "CLI_CAPTURE_MAX_AGE_H",
+           "CLI_SKIP_NOT_REQUESTED", "CLI_SKIP_NO_PERMISSION",
+           "CLI_SKIP_MAINTENANCE",
+           "VERDICT_OK", "VERDICT_ABSENT", "VERDICT_ERROR"]

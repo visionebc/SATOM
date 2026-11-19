@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% set cfg = ds_config or {} %}
+{% set dg = cfg.get('diagram') or {} %}
+{% block title %}{{ dg.get('name') or _('Diagram') }} — {{ _('Diagram Studio') }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/diagram_studio.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('diagram_studio.index') }}">{{ _('Diagram Studio') }}</a>
+  <span class="separator">/</span>
+  <span>{{ dg.get('name') or _('Diagram') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="ds-editor{% if not cfg.get('mayEdit') %} ds-readonly{% endif %}" id="dsEditor">
+  <div class="ds-topbar fw-card">
+    <div class="ds-title">
+      <a href="{{ url_for('diagram_studio.index') }}" class="btn btn-sm ds-tb" title="{{ _('Back to the library') }}" aria-label="{{ _('Back to the library') }}"><i class="bi bi-arrow-left" aria-hidden="true"></i></a>
+      <h1 id="dsDiagramName">{{ dg.get('name') or _('Untitled diagram') }}</h1>
+      {% if cfg.get('mayEdit') %}<button type="button" id="dsRename" class="btn btn-link btn-sm" title="{{ _('Rename diagram') }}" aria-label="{{ _('Rename diagram') }}"><i class="bi bi-pencil" aria-hidden="true"></i></button>{% endif %}
+      <span id="dsSaveStatus" class="fw-badge fw-badge-secondary ds-save-status" role="status" aria-live="polite">{{ _('Loading…') }}</span>
+      {% if dg.get('published') %}{% if cfg.get('viewUrl') %}<a href="{{ cfg.get('viewUrl') }}" class="fw-badge fw-badge-info ds-badge text-decoration-none" title="{{ _('Open the published version') }}"><i class="bi bi-broadcast" aria-hidden="true"></i> {{ _('Published') }}</a>{% else %}<span class="fw-badge fw-badge-info ds-badge"><i class="bi bi-broadcast" aria-hidden="true"></i> {{ _('Published') }}</span>{% endif %}{% endif %}
+    </div>
+
+    <div class="ds-toolbar" role="toolbar" aria-label="{{ _('Editor tools') }}">
+      {% if cfg.get('mayEdit') %}
+      <div class="btn-group" role="group" aria-label="{{ _('History') }}">
+        <button type="button" id="dsUndo" class="btn btn-sm ds-tb" title="{{ _('Undo (Ctrl+Z)') }}" aria-label="{{ _('Undo') }}" disabled><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
+        <button type="button" id="dsRedo" class="btn btn-sm ds-tb" title="{{ _('Redo (Ctrl+Y)') }}" aria-label="{{ _('Redo') }}" disabled><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button>
+      </div>
+      <div class="btn-group" role="group" aria-label="{{ _('Arrange') }}">
+        <button type="button" id="dsDuplicate" class="btn btn-sm ds-tb" title="{{ _('Duplicate (Ctrl+D)') }}" aria-label="{{ _('Duplicate') }}"><i class="bi bi-copy" aria-hidden="true"></i></button>
+        <button type="button" id="dsDelete" class="btn btn-sm ds-tb" title="{{ _('Delete (Del)') }}" aria-label="{{ _('Delete') }}"><i class="bi bi-trash" aria-hidden="true"></i></button>
+        <button type="button" id="dsGroup" class="btn btn-sm ds-tb" title="{{ _('Group (Ctrl+G)') }}" aria-label="{{ _('Group') }}"><i class="bi bi-collection" aria-hidden="true"></i></button>
+        <button type="button" id="dsUngroup" class="btn btn-sm ds-tb" title="{{ _('Ungroup (Ctrl+Shift+G)') }}" aria-label="{{ _('Ungroup') }}"><i class="bi bi-grid-3x3" aria-hidden="true"></i></button>
+        <button type="button" id="dsFront" class="btn btn-sm ds-tb" title="{{ _('Bring to front') }}" aria-label="{{ _('Bring to front') }}"><i class="bi bi-front" aria-hidden="true"></i></button>
+        <button type="button" id="dsBack" class="btn btn-sm ds-tb" title="{{ _('Send to back') }}" aria-label="{{ _('Send to back') }}"><i class="bi bi-back" aria-hidden="true"></i></button>
+      </div>
+      <div class="btn-group" role="group">
+        <button type="button" class="btn btn-sm ds-tb dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Align and distribute the selection') }}" aria-label="{{ _('Align') }}"><i class="bi bi-align-start me-1" aria-hidden="true"></i>{{ _('Align') }}</button>
+        <ul class="dropdown-menu">
+          <li><button type="button" class="dropdown-item" data-ds-align="left"><i class="bi bi-align-start me-2" aria-hidden="true"></i>{{ _('Align left') }}</button></li>
+          <li><button type="button" class="dropdown-item" data-ds-align="center"><i class="bi bi-align-center me-2" aria-hidden="true"></i>{{ _('Align centre') }}</button></li>
+          <li><button type="button" class="dropdown-item" data-ds-align="right"><i class="bi bi-align-end me-2" aria-hidden="true"></i>{{ _('Align right') }}</button></li>
+          <li><button type="button" class="dropdown-item" data-ds-align="top"><i class="bi bi-align-top me-2" aria-hidden="true"></i>{{ _('Align top') }}</button></li>
+          <li><button type="button" class="dropdown-item" data-ds-align="middle"><i class="bi bi-align-middle me-2" aria-hidden="true"></i>{{ _('Align middle') }}</button></li>
+          <li><button type="button" class="dropdown-item" data-ds-align="bottom"><i class="bi bi-align-bottom me-2" aria-hidden="true"></i>{{ _('Align bottom') }}</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><button type="button" class="dropdown-item" data-ds-distribute="h"><i class="bi bi-distribute-horizontal me-2" aria-hidden="true"></i>{{ _('Distribute horizontally') }}</button></li>
+          <li><button type="button" class="dropdown-item" data-ds-distribute="v"><i class="bi bi-distribute-vertical me-2" aria-hidden="true"></i>{{ _('Distribute vertically') }}</button></li>
+          <li><button type="button" class="dropdown-item" id="dsSameSize"><i class="bi bi-bounding-box me-2" aria-hidden="true"></i>{{ _('Same size') }}</button></li>
+        </ul>
+      </div>
+      <div class="btn-group" role="group">
+        <button type="button" class="btn btn-sm ds-tb dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Lay out the selection, or the whole page') }}" aria-label="{{ _('Layout') }}"><i class="bi bi-diagram-2 me-1" aria-hidden="true"></i>{{ _('Layout') }}</button>
+        <ul class="dropdown-menu">
+          <li><button type="button" class="dropdown-item" data-ds-layout="TB"><i class="bi bi-arrow-down me-2" aria-hidden="true"></i>{{ _('Layered, top-down') }}</button></li>
+          <li><button type="button" class="dropdown-item" data-ds-layout="LR"><i class="bi bi-arrow-right me-2" aria-hidden="true"></i>{{ _('Layered, left-right') }}</button></li>
+          <li><button type="button" class="dropdown-item" data-ds-layout="tidy"><i class="bi bi-grid me-2" aria-hidden="true"></i>{{ _('Tidy grid') }}</button></li>
+        </ul>
+      </div>
+      <div class="btn-group" role="group" aria-label="{{ _('Colours') }}">
+        <button type="button" id="dsThemeBtn" class="btn btn-sm ds-tb" title="{{ _('Colour themes: colour the selection, the page or the diagram by meaning') }}" aria-label="{{ _('Colour themes') }}"><i class="bi bi-palette me-1" aria-hidden="true"></i>{{ _('Theme') }}</button>
+      </div>
+      <div class="btn-group" role="group">
+        <button type="button" class="btn btn-sm ds-tb dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Routing of new and selected connectors') }}" aria-label="{{ _('Connector routing') }}"><i class="bi bi-bezier2 me-1" aria-hidden="true"></i><span id="dsRoutingLabel">{{ _('Orthogonal') }}</span></button>
+        <ul class="dropdown-menu" role="menu">
+          <li><button type="button" class="dropdown-item" role="menuitemradio" data-ds-routing="straight"><i class="bi bi-check2 ds-check me-2" aria-hidden="true"></i>{{ _('Straight') }}</button></li>
+          <li><button type="button" class="dropdown-item" role="menuitemradio" data-ds-routing="orthogonal"><i class="bi bi-check2 ds-check me-2" aria-hidden="true"></i>{{ _('Orthogonal (around shapes)') }}</button></li>
+          <li><button type="button" class="dropdown-item" role="menuitemradio" data-ds-routing="curved"><i class="bi bi-check2 ds-check me-2" aria-hidden="true"></i>{{ _('Curved') }}</button></li>
+        </ul>
+      </div>
+      <div class="btn-group" role="group" aria-label="{{ _('Grid') }}">
+        <button type="button" id="dsSnap" class="btn btn-sm ds-tb" aria-pressed="true" title="{{ _('Snap to grid') }}" aria-label="{{ _('Snap to grid') }}"><i class="bi bi-magnet" aria-hidden="true"></i></button>
+        <button type="button" id="dsGuides" class="btn btn-sm ds-tb" aria-pressed="true" title="{{ _('Smart guides') }}" aria-label="{{ _('Smart guides') }}"><i class="bi bi-rulers" aria-hidden="true"></i></button>
+        <button type="button" id="dsGridShow" class="btn btn-sm ds-tb" aria-pressed="true" title="{{ _('Show grid') }}" aria-label="{{ _('Show grid') }}"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i></button>
+      </div>
+      <select id="dsGridSize" class="form-select form-select-sm ds-grid-select" title="{{ _('Grid size') }}" aria-label="{{ _('Grid size') }}">
+        <option value="5">5 px</option><option value="10">10 px</option><option value="20">20 px</option><option value="40">40 px</option>
+      </select>
+      <select id="dsGridKind" class="form-select form-select-sm ds-grid-select" title="{{ _('Grid: square or isometric (snapping follows it)') }}" aria-label="{{ _('Grid kind') }}">
+        <option value="square">{{ _('Square grid') }}</option><option value="iso">{{ _('Isometric grid') }}</option>
+      </select>
+      <span class="ds-sep" aria-hidden="true"></span>
+      {% endif %}
+      <div class="btn-group" role="group" aria-label="{{ _('Zoom') }}">
+        <button type="button" id="dsZoomOut" class="btn btn-sm ds-tb" title="{{ _('Zoom out (-)') }}" aria-label="{{ _('Zoom out') }}"><i class="bi bi-zoom-out" aria-hidden="true"></i></button>
+        <button type="button" id="dsZoom100" class="btn btn-sm ds-tb ds-zoom-label" title="{{ _('Zoom to 100%% (1)') }}" aria-label="{{ _('Zoom to 100%%') }}"><span id="dsZoomLabel">100 %</span></button>
+        <button type="button" id="dsZoomIn" class="btn btn-sm ds-tb" title="{{ _('Zoom in (+)') }}" aria-label="{{ _('Zoom in') }}"><i class="bi bi-zoom-in" aria-hidden="true"></i></button>
+        <button type="button" id="dsFit" class="btn btn-sm ds-tb" title="{{ _('Fit the drawing (0)') }}" aria-label="{{ _('Fit the drawing') }}"><i class="bi bi-aspect-ratio" aria-hidden="true"></i></button>
+      </div>
+      <div class="btn-group" role="group" aria-label="{{ _('View') }}">
+        <button type="button" id="dsSearchBtn" class="btn btn-sm ds-tb" title="{{ _('Search elements (Ctrl+F)') }}" aria-label="{{ _('Search elements') }}"><i class="bi bi-search" aria-hidden="true"></i></button>
+        <button type="button" id="dsListBtn" class="btn btn-sm ds-tb" aria-pressed="false" title="{{ _('List view: the elements and connectors as tables') }}" aria-label="{{ _('List view') }}"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" id="dsHistoryBtn" class="btn btn-sm ds-tb" aria-expanded="false" aria-controls="dsHistory" title="{{ _('Version history') }}" aria-label="{{ _('Version history') }}"><i class="bi bi-clock-history" aria-hidden="true"></i></button>
+        <button type="button" id="dsHelpBtn" class="btn btn-sm ds-tb" title="{{ _('Keyboard shortcuts (?)') }}" aria-label="{{ _('Keyboard shortcuts') }}"><i class="bi bi-question-circle" aria-hidden="true"></i></button>
+      </div>
+      <div class="btn-group" role="group">
+        <button type="button" class="btn btn-sm ds-tb dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Download this diagram') }}"><i class="bi bi-download me-1" aria-hidden="true"></i>{{ _('Export to') }}</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><button type="button" class="dropdown-item" data-ds-export="drawio" title="{{ _('Editable in draw.io / diagrams.net, every page') }}"><i class="bi bi-diagram-3 me-2" aria-hidden="true"></i>{{ _('draw.io (.drawio)') }}</button></li>
+          <li><button type="button" class="dropdown-item" data-ds-export="svg" title="{{ _('Structured, editable SVG of one page') }}"><i class="bi bi-filetype-svg me-2" aria-hidden="true"></i>{{ _('SVG (.svg)') }}</button></li>
+          <li><button type="button" class="dropdown-item" data-ds-export="pdf" title="{{ _('Vector PDF') }}"><i class="bi bi-filetype-pdf me-2" aria-hidden="true"></i>{{ _('PDF (.pdf)') }}</button></li>
+          <li><button type="button" class="dropdown-item" data-ds-export="png" title="{{ _('Picture of one page at 1×, 2× or 4×') }}"><i class="bi bi-filetype-png me-2" aria-hidden="true"></i>{{ _('PNG (.png)') }}</button></li>
+        </ul>
+      </div>
+      {% if cfg.get('mayEdit') %}
+      <button type="button" id="dsSave" class="btn btn-sm btn-fw-primary" title="{{ _('Save (Ctrl+S)') }}"><i class="bi bi-floppy me-1" aria-hidden="true"></i>{{ _('Save') }}</button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% set _copy = cfg.get('copyOf') %}
+  {% if _copy %}
+  {# A copy of a live page (views/diagram_studio.api_from_satom): say so, and
+     link back to the page that stays live. The link is built by the view. #}
+  <p class="ds-copy-note small text-muted mb-0 px-1" role="note" data-copy-of="{{ _copy.source }}"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>{{ _('Copy of %(source)s taken %(when)s', source=_copy.label, when=_copy.taken or _('earlier')) }}{% if _copy.url %} — <a href="{{ _copy.url }}">{{ _('open the live diagram') }}</a>{% endif %}</p>
+  {% endif %}
+
+  <div class="ds-workspace">
+    <aside class="ds-left" aria-label="{{ _('Symbol library') }}">
+      <section class="fw-card ds-panel">
+        <div class="ds-panel-head"><i class="bi bi-boxes" aria-hidden="true"></i><h2>{{ _('Symbols') }}</h2></div>
+        <div class="ds-panel-body">
+          <input type="search" id="dsLibSearch" class="form-control form-control-sm mb-2" placeholder="{{ _('Search symbols') }}" aria-label="{{ _('Search symbols') }}">
+          <div id="dsLibrary"></div>
+        </div>
+      </section>
+    </aside>
+
+    <main class="ds-center">
+      <div class="ds-pages" id="dsPageTabs" role="tablist" aria-label="{{ _('Pages') }}"></div>
+      <div class="ds-canvas-wrap" id="dsCanvasWrap">
+        <svg id="dsCanvas" tabindex="0" role="application" aria-roledescription="{{ _('diagram editor') }}" aria-label="{{ _('Diagram canvas. Use the List view for a table of every element.') }}"></svg>
+        <textarea id="dsTextEdit" class="ds-textedit" hidden spellcheck="true"></textarea>
+        <canvas id="dsMinimap" class="ds-minimap" role="img" aria-label="{{ _('Minimap: click to move the view') }}"></canvas>
+        {% if not cfg.get('mayEdit') %}<span class="ds-ro-banner fw-badge fw-badge-secondary ds-badge"><i class="bi bi-eye" aria-hidden="true"></i> {{ _('Read-only') }}</span>{% endif %}
+        <div id="dsSearch" class="ds-search fw-card" hidden role="search">
+          <div class="d-flex gap-1">
+            <input type="search" id="dsSearchInput" class="form-control form-control-sm" placeholder="{{ _('Text, name, category, property…') }}" aria-label="{{ _('Search elements') }}" aria-controls="dsSearchResults">
+            <button type="button" id="dsSearchClose" class="btn btn-sm ds-tb" aria-label="{{ _('Close search') }}" title="{{ _('Close (Esc)') }}"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+          </div>
+          <ul id="dsSearchResults" aria-label="{{ _('Search results') }}"></ul>
+        </div>
+      </div>
+      <div id="dsList" class="ds-list" hidden aria-label="{{ _('List view') }}"></div>
+    </main>
+
+    <aside class="ds-right">
+      <section class="fw-card ds-panel" id="dsInspector" aria-labelledby="dsInspectorTitle">
+        <div class="ds-panel-head"><i class="bi bi-sliders" aria-hidden="true"></i><h2 id="dsInspectorTitle">{{ _('Page') }}</h2></div>
+        <div class="ds-panel-body" id="dsInspectorBody"></div>
+      </section>
+      <section class="fw-card ds-panel" id="dsLayers" aria-labelledby="dsLayersTitle">
+        <div class="ds-panel-head"><i class="bi bi-layers" aria-hidden="true"></i><h2 id="dsLayersTitle">{{ _('Layers') }}</h2></div>
+        <div class="ds-panel-body" id="dsLayersBody"></div>
+      </section>
+    </aside>
+  </div>
+
+  <aside id="dsHistory" class="ds-drawer fw-card" hidden aria-labelledby="dsHistoryTitle">
+    <div class="ds-panel-head">
+      <i class="bi bi-clock-history" aria-hidden="true"></i><h2 id="dsHistoryTitle" class="me-auto">{{ _('Version history') }}</h2>
+      <button type="button" id="dsHistoryClose" class="btn-close" aria-label="{{ _('Close') }}"></button>
+    </div>
+    <div class="ds-panel-body" id="dsHistoryBody"></div>
+  </aside>
+</div>
+
+<script type="application/json" id="dsUrls">{{ {'base': url_for('diagram_studio.index')}|tojson }}</script>
+<script type="application/json" id="dsConfig">{{ cfg|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/diagram_studio_core.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_routing.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_render.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_layout.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_export.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_editor.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_themes.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_style.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_panels.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

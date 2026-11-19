@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+
+{% block title %}Firmware{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('firmware.index') }}">{{ _('Firmware') }}</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-hdd-stack me-2 text-accent"></i>{{ _('Firmware') }}
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Upload and keep {{ fw_products | map(attribute='name') | join(' / ') }} firmware images (<span class="mono">{{ _('.out') }}</span>{{ _(') for use in appliance upgrades.') }}
+    </p>
+  </div>
+</div>
+
+<!-- Upload form -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title">{{ _('Add a firmware image') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <form method="POST" action="{{ url_for('firmware.upload') }}" id="fw-upload-form"
+          enctype="multipart/form-data" class="row g-3 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-5">
+        <label class="fw-form-label" style="font-size:12px;">
+          {{ _('Firmware file') }} <span class="text-muted">(.out, up to 600&nbsp;MB)</span>
+        </label>
+        <input type="file" name="image" id="fwFile" class="form-control" accept=".out" required>
+      </div>
+      <div class="col-md-3">
+        <label class="fw-form-label" style="font-size:12px;">{{ _('Image type') }}</label>
+        {# Fortinet ships a separate artefact for a fresh install and for an
+           upgrade; they are not interchangeable. Picking here also decides
+           which file extensions the server will accept. #}
+        <select name="image_kind" id="fwKind" class="form-select">
+          {% for k in image_kinds %}
+          <option value="{{ k }}"{{ ' selected' if loop.first else '' }}>{{ {'upgrade':'Upgrade (.out)','install':'Install / new machine'}[k] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3 d-none" id="fwHypWrap">
+        <label class="fw-form-label" style="font-size:12px;">{{ _('Hypervisor') }}</label>
+        <select name="hypervisor" id="fwHyp" class="form-select">
+          <option value="">{{ _('Any / hardware') }}</option>
+          <option value="kvm">{{ _('KVM / Proxmox (.qcow2)') }}</option>
+          <option value="vmware">{{ _('VMware ESXi (.ovf / .ova)') }}</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" style="font-size:12px;">{{ _('Product') }}</label>
+        {% if adom_scope and adom_scope != 'global' %}
+        {# In a concrete ADOM the product is fixed. The POST handler overrules
+           the field anyway; showing a dropdown here would only invite an
+           upload that silently lands somewhere else. #}
+        <input type="hidden" name="product" value="{{ adom_scope }}">
+        <input type="text" class="form-control" value="{{ fw_products[0].name if fw_products else adom_scope }}" disabled>
+        {% else %}
+        <select name="product" class="form-select">
+          {% for p in fw_products %}<option value="{{ p.key }}"{{ ' selected' if loop.first else '' }}>{{ p.name }}</option>{% endfor %}
+        </select>
+        {% endif %}
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" style="font-size:12px;">{{ _('Version') }}</label>
+        <input type="text" name="version" id="fwVersion" class="form-control" placeholder="7.6.4" required>
+      </div>
+      <div class="col-md-3">
+        <label class="fw-form-label" style="font-size:12px;">
+          {{ _('Platform') }} <span class="text-muted d-none" id="fwPlatformAuto">{{ _('(detected from the file name)') }}</span>
+        </label>
+        <select name="platform" id="fwPlatform" class="form-select">
+          <option value="" selected>{{ _('Any (universal)') }}</option>
+          <option value="hw">{{ _('Hardware appliance') }}</option>
+          <option value="vm">{{ _('Virtual Machine (KVM/VMware/cloud)') }}</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" style="font-size:12px;">
+          {{ _('Build') }} <span class="text-muted">{{ _('(optional)') }}</span>
+        </label>
+        <input type="text" name="build" id="fwBuild" class="form-control" placeholder="1234">
+      </div>
+      <div class="col-md-8">
+        <label class="fw-form-label" style="font-size:12px;">
+          {{ _('Notes') }} <span class="text-muted">{{ _('(optional)') }}</span>
+        </label>
+        <input type="text" name="notes" class="form-control" placeholder="{{ _('Release notes / source / GA build') }}">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-fw-primary w-100">
+          <i class="bi bi-upload me-1"></i>{{ _('Upload') }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Stored images -->
+<div class="fw-card">
+  <div class="fw-card-header">
+    <span class="fw-card-title">{{ _('Stored firmware') }}</span>
+    <span class="fw-badge fw-badge-secondary">{{ images|length }}</span>
+  </div>
+  <div class="fw-card-body p-0">
+    <table class="fw-table mb-0">
+      <thead>
+        <tr>
+          <th>{{ _('Product') }}</th>
+          <th style="width:130px;">{{ _('Type') }}</th>
+          <th>{{ _('Version') }}</th>
+          <th>{{ _('Platform') }}</th>
+          <th>{{ _('Build') }}</th>
+          <th>{{ _('File') }}</th>
+          <th style="width:80px;">{{ _('Size') }}</th>
+          <th data-priority="5">{{ _('SHA-256') }}</th>
+          <th>{{ _('Uploaded by') }}</th>
+          <th style="width:160px;">{{ _('Uploaded (UTC)') }}</th>
+          <th style="width:160px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for img in images %}
+        <tr>
+          <td><span class="fw-badge fw-badge-secondary">{{ img.product }}</span></td>
+          <td>
+            {% if img.image_kind == 'install' %}
+              <span class="fw-badge fw-badge-primary">{{ _('Install') }}</span>
+              {% if img.hypervisor %}<span class="text-muted" style="font-size:11px;">{{ img.hypervisor }}</span>{% endif %}
+            {% else %}
+              <span class="fw-badge fw-badge-info">{{ _('Upgrade') }}</span>
+            {% endif %}
+          </td>
+          <td><strong>{{ img.version }}</strong></td>
+          <td class="text-muted">{{ {'hw':'Hardware','vm':'Virtual Machine'}.get(img.platform, 'Any') }}</td>
+          <td class="text-muted">{{ img.build or '—' }}</td>
+          <td class="mono" style="font-size:11.5px;">{{ img.filename }}</td>
+          <td>{{ img.size_mb() }} MB</td>
+          <td class="mono text-muted" style="font-size:11px;" title="{{ img.sha256 }}">
+            {{ img.sha256[:12] }}{% if img.sha256 %}…{% endif %}
+          </td>
+          <td class="text-muted">{{ img.uploaded_by or '—' }}</td>
+          <td class="text-muted mono" style="font-size:11.5px;">
+            {{ img.created_at.strftime('%Y-%m-%d %H:%M') if img.created_at else '—' }}
+          </td>
+          <td>
+            <div class="d-flex gap-2">
+              <a href="{{ url_for('firmware.download', image_id=img.id) }}"
+                 class="btn btn-fw-outline btn-sm">
+                <i class="bi bi-download me-1"></i>{{ _('Download') }}
+              </a>
+              <form method="POST" action="{{ url_for('firmware.delete', image_id=img.id) }}"
+                    data-js="fw-delete-form" data-version="{{ img.version }}" data-filename="{{ img.filename }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-fw-danger btn-sm">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="10">
+            <div class="fw-empty-state py-5">
+              <div class="fw-empty-state-icon"><i class="bi bi-hdd-stack"></i></div>
+              <div class="fw-empty-state-title">{{ _('No firmware uploaded yet') }}</div>
+              <div class="fw-empty-state-text">
+                Add a {{ fw_products | map(attribute='name') | join('/') }} <span class="mono">{{ _('.out') }}</span> {{ _('image above.') }}
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+/* Progressive enhancement: intercept the upload so it runs in the background
+   with a live transfer bar + a "Verifying…" job toast (bottom-right). If JS is
+   off or jobs.js failed to load, the form submits natively (synchronous path). */
+(function () {
+  var form = document.getElementById('fw-upload-form');
+  if (!form || !window.JobsUI) return;
+  form.addEventListener('submit', function (e) {
+    var fileInput = form.querySelector('input[type=file][name=image]');
+    if (!fileInput || !fileInput.files.length) return;   // let native "required" fire
+    e.preventDefault();
+    var name = fileInput.files[0].name;
+    var fd = new FormData(form);
+    fd.append('ajax', '1');
+    // Both upload paths must carry the artefact family, or a resumable
+    // upload of an install image would be recorded as an upgrade.
+    var _k = document.getElementById('fwKind');
+    var _h = document.getElementById('fwHyp');
+    if (_k) fd.append('image_kind', _k.value);
+    if (_h) fd.append('hypervisor', _h.value);
+    JobsUI.uploadWithProgress(form.action, fd, {
+      title: 'Uploading ' + name,
+      serverTitle: 'Verifying ' + name
+    });
+    fileInput.value = '';   // clear so another image can be queued
+    var btn = form.querySelector('button[type=submit]');
+    if (btn) { btn.disabled = true; setTimeout(function () { btn.disabled = false; }, 1500); }
+  });
+})();
+(function () {
+  document.querySelectorAll('[data-js="fw-delete-form"]').forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+      if (!confirm('Delete firmware ' + this.dataset.version + ' (' + this.dataset.filename + ')? This removes the file from disk.')) event.preventDefault();
+    });
+  });
+})();
+</script>
+<script nonce="{{ csp_nonce }}">
+// Install media are not .out files (a FortiWeb VM ships as a zip of an OVF
+// plus VMDKs, or as a qcow2), so the accept filter and the hypervisor picker
+// follow the image type. The server re-validates; this only stops the
+// operator from choosing a file that is going to be rejected.
+(function () {
+  var kind = document.getElementById('fwKind');
+  var wrap = document.getElementById('fwHypWrap');
+  var file = document.getElementById('fwFile');
+  if (!kind) { return; }
+  function sync() {
+    var install = kind.value === 'install';
+    if (wrap) { wrap.classList.toggle('d-none', !install); }
+    if (file) {
+      file.setAttribute('accept', install
+        ? '.out,.zip,.qcow2,.ova,.ovf,.vmdk,.img,.gz,.tgz'
+        : '.out');
+    }
+  }
+  kind.addEventListener('change', sync);
+  sync();
+})();
+</script>
+
+<script nonce="{{ csp_nonce }}">
+// Autofill Version/Build from the chosen filename. The parsing lives on the
+// server (firmware.parse_name -> the same helper both POST handlers use), so
+// what shows up here is a preview of what would be stored, not a second guess.
+(function () {
+  var file = document.getElementById('fwFile');
+  var ver = document.getElementById('fwVersion');
+  var bld = document.getElementById('fwBuild');
+  var plat = document.getElementById('fwPlatform');
+  var hyp = document.getElementById('fwHyp');
+  var platNote = document.getElementById('fwPlatformAuto');
+  if (!file || (!ver && !bld)) { return; }
+  // Only ever overwrite a value THIS code wrote: a version the operator typed
+  // survives, and picking a second file replaces the first guess instead of
+  // leaving a stale one from the previous name.
+  function put(el, val) {
+    if (!el) { return; }
+    if (el.value && el.dataset.fwAuto !== '1') { return; }
+    el.value = val || '';
+    if (val) { el.dataset.fwAuto = '1'; } else { delete el.dataset.fwAuto; }
+  }
+  [ver, bld].forEach(function (el) {
+    if (el) { el.addEventListener('input', function () { delete el.dataset.fwAuto; }); }
+  });
+  [plat, hyp].forEach(function (el) {
+    if (el) { el.addEventListener('change', function () {
+      delete el.dataset.fwAuto;
+      if (el === plat && platNote) { platNote.classList.add('d-none'); }
+    }); }
+  });
+  file.addEventListener('change', function () {
+    if (!file.files || !file.files.length) { return; }
+    var name = file.files[0].name || '';
+    fetch('{{ url_for("firmware.parse_name") }}?filename=' + encodeURIComponent(name),
+          { credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) { return; }
+        put(ver, d.version); put(bld, d.build);
+        // Hardware vs VM: Fortinet's file name says it (FWB_KVM-… / FWB_1000E-…).
+        put(plat, d.platform); put(hyp, d.hypervisor);
+        if (platNote) { platNote.classList.toggle('d-none', !(d.platform && plat && plat.dataset.fwAuto === '1')); }
+      })
+      .catch(function () { /* autofill is a convenience - never block an upload */ });
+  });
+})();
+</script>
+
+{% endblock %}

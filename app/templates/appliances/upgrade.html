@@ -1,0 +1,214 @@
+{% extends 'base.html' %}
+{% block title %}Upgrade - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-cloud-arrow-up me-2"></i>Firmware Upgrade — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
+</div>
+
+<div class="fw-alert fw-alert-danger d-flex align-items-center gap-2">
+  <i class="bi bi-exclamation-octagon-fill"></i>
+  {{ _('A live upgrade') }} <b>{{ _('reboots the appliance') }}</b> {{ _('and interrupts every service it fronts. Always run') }}
+  <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="alert-link">{{ _('Upgrade Preparation') }}</a>
+  {{ _('first. Leave') }} <b>{{ _('Dry run') }}</b> {{ _('checked to validate without sending anything.') }}
+</div>
+
+{# --- CHANGE CONTROL: a live flash needs an approved, open window --- #}
+<div class="fw-alert fw-alert-{{ 'success' if cr_ok else 'warning' }} mt-2">
+  <i class="bi bi-{{ 'shield-check' if cr_ok else 'shield-exclamation' }} me-1"></i>
+  {% if cr_ok %}
+    <b>Authorised by {{ cr.ref or ('CR #' ~ cr.id) }}</b> &mdash; &ldquo;{{ cr.title }}&rdquo;,
+    window {{ cr.window_start|localtime('%Y-%m-%d %H:%M %Z') }}{% if cr.window_end %} &rarr; {{ cr.window_end|localtime('%Y-%m-%d %H:%M %Z') }}{% endif %}.
+    A live push will move that change to <i>in&nbsp;progress</i> and close it with the real outcome.
+  {% else %}
+    <b>{{ _('Live upgrade is blocked.') }}</b> {{ cr_reason }}.
+    Dry runs still work &mdash; they send nothing to the appliance.
+    {% if cr %}
+      <a class="alert-link" href="{{ url_for('change_requests.detail', id=cr.id) }}">Open {{ cr.ref or ('CR #' ~ cr.id) }}</a>.
+    {% else %}
+      Run <a class="alert-link" href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}">{{ _('Upgrade Preparation') }}</a>,
+      raise a change request from that run, and get it approved.
+    {% endif %}
+  {% endif %}
+  {% if prep %}
+  <div class="small mt-1">
+    Latest pre-flight: #{{ prep.id }} on {{ prep.created_at|localtime }} &mdash;
+    {{ 'passed' if prep.ok else 'NOT clean' }} ({{ prep.summary }}).
+  </div>
+  {% else %}
+  <div class="small mt-1 text-muted">{{ _('No pre-flight has ever been recorded for this appliance.') }}</div>
+  {% endif %}
+</div>
+
+{% if result %}
+<div class="card shadow-sm mb-3">
+  <div class="card-header fw-card-header">Result — {{ 'DRY RUN' if result.dry_run else 'LIVE PUSH' }}</div>
+  <div class="card-body">
+    <div class="fw-alert fw-alert-{{ 'success' if result.ok else 'warning' }} mb-2">{{ result.message }}</div>
+    <dl class="row mb-0 small">
+      <dt class="col-sm-3">{{ _('Image') }}</dt><dd class="col-sm-9">{{ result.image }} ({{ '{:,}'.format(result.size) }} bytes)</dd>
+      <dt class="col-sm-3">{{ _('Firmware before') }}</dt><dd class="col-sm-9">{{ result.firmware_before or '?' }}</dd>
+      <dt class="col-sm-3">{{ _('Maintenance permission') }}</dt><dd class="col-sm-9">{{ result.permitted if result.permitted is not none else 'unknown' }}</dd>
+      {% if result.maturity %}<dt class="col-sm-3 text-warning">{{ _('Maturity prompt') }}</dt><dd class="col-sm-9 text-warning">{{ result.maturity }} — re-submit with "Confirm maturity change" checked to install.</dd>{% endif %}
+      {% if result.warning %}<dt class="col-sm-3 text-warning">{{ _('Warning') }}</dt><dd class="col-sm-9 text-warning">{{ result.warning }}</dd>{% endif %}
+    </dl>
+  </div>
+</div>
+{% endif %}
+
+{% if not images %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <p class="small text-muted mb-2">{{ _('Current firmware:') }} <b>{{ firmware or 'unknown' }}</b></p>
+    <div class="fw-alert fw-alert-warning mb-0">
+      <i class="bi bi-info-circle me-1"></i>
+      {{ _('No firmware image in the repository matches this appliance (') }}<b>{{ appliance.kind }}</b>{% if appliance.model %} / {{ appliance.model }}{% endif %}).
+      Add one in the <a class="alert-link" href="{{ url_for('firmware.index') }}">{{ _('Firmware repository') }}</a> {{ _('first — images are no longer uploaded from this page.') }}
+    </div>
+  </div>
+</div>
+{% else %}
+
+{# --- Shared image picker is rendered inside each form so the value posts. --- #}
+{% macro image_select(name) %}
+<label class="form-label">{{ _('Firmware image (auto-detected from repository)') }}</label>
+<select class="form-select" name="image_id" required>
+  {% for img in images %}
+  <option value="{{ img.id }}" {{ 'selected' if selected_id and selected_id == img.id else '' }}>
+    {{ img.version }}{% if img.build %} (build {{ img.build }}){% endif %}
+    — {{ {'hw':'Hardware','vm':'Virtual Machine'}.get(img.platform, 'Universal') }} · {{ img.size_mb() }} MB · sha256 {{ img.sha256[:12] }}…
+  </option>
+  {% endfor %}
+</select>
+{% endmacro %}
+
+{% if scout is defined %}{% include 'appliances/_scout_advisory.html' %}{% endif %}
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header fw-card-header"><i class="bi bi-check2-circle me-1"></i>{{ _('Apply now') }}</div>
+  <div class="card-body">
+    <p class="small text-muted mb-3">{{ _('Current firmware:') }} <b>{{ firmware or 'unknown' }}</b> {{ _('— the matching image is selected automatically below; just validate and accept.') }}</p>
+    <form method="POST" action="{{ url_for('appliances.upgrade_push', id=appliance.id) }}" id="flash-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-3">{{ image_select('image_id') }}</div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked>
+        <label class="form-check-label" for="dry_run">{{ _('Dry run (validate the image only — nothing is sent)') }}</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="scout_check" id="scout_check"
+               {{ 'checked' if scout_on else '' }}{{ ' disabled' if not scout_on else '' }}>
+        <label class="form-check-label" for="scout_check">
+          {{ _('Ask the Upgrade Advisory to review the release notes for this version') }}
+          {% if not scout_on %}<span class="text-muted">&mdash; {{ _('Turn on Path Diagnostics in Settings → Path Diagnostics to see the Upgrade Advisory.') }}</span>{% endif %}
+        </label>
+      </div>
+      <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
+        {% if appliance.kind == 'fortiadc' %}
+        <p class="small mb-2">{{ _('FortiADC installs the image into its inactive partition and reboots into it; the running build stays on the other partition as the rollback.') }}</p>
+        {% else %}
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="confirm_maturity" id="confirm_maturity">
+          <label class="form-check-label" for="confirm_maturity">Confirm maturity change (Mature&harr;Feature, e.g. 7.6&rarr;8.0)</label>
+        </div>
+        {% endif %}
+        <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise the live reboot:</label>
+        <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
+      </div>
+      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>{{ _('Validate / Accept') }}</button>
+    </form>
+  </div>
+</div>
+
+<div class="fw-alert fw-alert-info small d-flex align-items-start gap-2">
+  <i class="bi bi-calendar-event mt-1"></i>
+  <div>
+    {{ _('To flash in a maintenance window, use') }}
+    <a class="alert-link" href="{{ url_for('upgrade_flow.index') }}">{{ _('Upgrade Flow') }}</a>{{ _(': pre-upgrade, a change request with its window, approval and scheduled execution. This page flashes now, inside an approved change request.') }}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+/* Firmware flash submit handler. Lives in the scripts block (AFTER jobs.js) so
+   window.JobsUI is always defined here. The listener ALWAYS attaches: a live
+   flash must never fall through to a synchronous submit (that hung the worker). */
+(function () {
+  var form = document.getElementById('flash-form');
+  if (!form) return;                     // no matching image -> no form on the page
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = form.querySelector('button[type="submit"]');
+    var dry = form.querySelector('#dry_run');
+    var isDry = dry ? dry.checked : true;
+    if (btn) { btn.disabled = true; btn.classList.add('disabled'); }
+    var fd = new FormData(form);
+    fd.append('ajax', '1');
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    fetch(form.action, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest',
+                 'X-CSRFToken': (meta && meta.content) || '' },
+      body: fd
+    }).then(function (r) {
+        return r.text().then(function (t) {
+          var d = {}; try { d = JSON.parse(t); } catch (e) { /* HTML error page */ }
+          return { ok: r.ok, status: r.status, d: d };
+        });
+      })
+      .then(function (o) {
+        if (btn) { btn.disabled = false; btn.classList.remove('disabled'); }
+        if (o.ok && o.d.job_id && window.JobsUI && window.JobsUI.trackJob) {
+          JobsUI.trackJob(o.d.job_id,
+            isDry ? 'Validating firmware…' : 'Firmware flash…');
+        } else if (o.ok && o.d.job_id) {
+          window.location.reload();       // JobsUI absent (shouldn't happen) — still proceed
+        } else {
+          alert((o.d && o.d.error) || ('Could not start the task (HTTP ' + o.status + ').'));
+        }
+      }).catch(function () {
+        if (btn) { btn.disabled = false; btn.classList.remove('disabled'); }
+        alert('Network error starting the task.');
+      });
+  });
+})();
+/* Keep the panel describing the move that is actually selected. Swapping the
+   SERVER's fragment (rather than building rows from JSON) is what keeps vendor
+   prose inside Jinja's autoescape — there is one renderer for these findings. */
+(function () {
+  var form = document.getElementById('flash-form');
+  if (!form) return;
+  var sel = form.querySelector('select[name="image_id"]');
+  var box = document.getElementById('scout_check');
+  var url = {{ url_for('appliances.upgrade_advisory', id=appliance.id)|tojson }};
+  function refresh() {
+    var panel = document.getElementById('scout-panel');
+    if (!panel || !sel) return;
+    fetch(url + '?image_id=' + encodeURIComponent(sel.value) +
+          '&scout_check=' + ((box && box.checked) ? 'on' : 'off'),
+          { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (html) {
+        if (html === null) return;
+        var d = document.createElement('div');
+        d.innerHTML = html;
+        var fresh = d.querySelector('#scout-panel');
+        if (fresh && panel.parentNode) panel.parentNode.replaceChild(fresh, panel);
+      })
+      .catch(function () { /* the panel keeps its last honest answer */ });
+  }
+  if (sel) sel.addEventListener('change', refresh);
+  if (box) box.addEventListener('change', refresh);
+})();
+// CSP: former inline onchange on #dry_run, re-bound here (Turbo-safe immediate IIFE)
+(function () {
+  var dry = document.getElementById('dry_run');
+  if (dry) dry.addEventListener('change', function () {
+    document.getElementById('live-fields').classList.toggle('d-none', this.checked);
+  });
+})();
+</script>
+{% endblock %}

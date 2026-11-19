@@ -1,0 +1,9 @@
+{# The ONE way every surface says where a GUI layout comes from (page banner,
+   dialogs, "Not in GUI, but in CLI", the exception form): the sentence
+   ``Layout measured on <product> <ver> build<nnnn> · this device runs <ver>
+   build<nnnn> · <how close>`` and a badge from the .fw-badge-* set. ``o`` is
+   ``services.gui_pages.layout_origin`` / ``origin_of`` (builds zero padded,
+   both builds always named). #}
+{% macro layout_origin(o) -%}
+<span class="fwg-origin" data-gui-origin-line data-closeness="{{ o.closeness }}">{{ o.head }} · <span class="fw-badge fw-badge-{{ o.badge }}" data-gui-origin-badge>{{ o.phrase }}</span></span>
+{%- endmacro %}

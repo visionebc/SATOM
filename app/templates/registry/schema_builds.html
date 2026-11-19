@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Schema builds') }}{% endblock %}
+
+{% macro cap(on, label) -%}
+  <span class="fw-badge {{ 'fw-badge-info' if on else 'fw-badge-secondary' }} me-1" style="{{ '' if on else 'opacity:.55;' }}">{{ label }}</span>
+{%- endmacro %}
+
+{% block content %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-diagram-3 me-2"></i>{{ _('Schema builds') }}</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    {{ _('Every product describes its configuration schema its own way; each adapter below turns it into the same per-build, per-channel model of the API library. A build an appliance runs with no harvested schema is listed here (and announced once in the bell) until it is harvested; the harvest is then compared with the closest harvested build, item by item.') }}
+    <a href="{{ url_for('registry.api_versions') }}">{{ _('API versions') }}</a>
+  </p>
+</div>
+
+<div class="fw-card mb-3" style="padding:12px 14px;">
+  <h6 class="mb-2">{{ _('Adapters') }}</h6>
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0" id="sbAdapters">
+    <thead><tr><th>{{ _('Product') }}</th><th>{{ _('Capabilities') }}</th><th>{{ _('Verification') }}</th><th>{{ _('Live') }}</th><th>{{ _('Notes') }}</th></tr></thead>
+    <tbody>
+    {% for a in adapters %}
+      <tr data-product="{{ a.product }}">
+        <td><strong>{{ a.label }}</strong></td>
+        <td>{{ cap(a.capabilities.tree, 'tree') }}{{ cap(a.capabilities.show_full, 'show full') }}{{ cap(a.capabilities.rest_schema, 'REST schema') }}{{ cap(a.capabilities.rest_probe, 'REST probe') }}</td>
+        <td>
+          {% if a.verified %}
+            <span class="fw-badge fw-badge-success">{{ _('verified') }}</span>
+          {% else %}
+            <span class="fw-badge fw-badge-warning sb-unverified">{{ _('unverified') }}</span>
+          {% endif %}
+          {% for v in a.verified_on %}
+            <div class="text-muted" style="font-size:11.5px;">{{ v.date }} &middot; {{ v.device }} &middot; {{ v.build }}{% if v.note %} &middot; {{ v.note }}{% endif %}</div>
+          {% endfor %}
+          {% for k, why in a.unverified.items() %}
+            <div style="font-size:11.5px; color:#856404;"><strong>{{ k }}</strong>: {{ why }}</div>
+          {% endfor %}
+        </td>
+        <td>{% if a.live %}<span class="fw-badge fw-badge-info">{{ _('live') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('pack / import') }}</span>{% endif %}</td>
+        <td class="text-muted" style="font-size:12px;">{{ a.notes }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="fw-card mb-3" style="padding:12px 14px;">
+  <h6 class="mb-2">{{ _('Builds without a harvested schema') }}</h6>
+  {% if not pending %}
+    <p class="text-muted mb-0" style="font-size:13px;" id="sbNoPending">{{ _('Every appliance runs a build whose schema is harvested.') }}</p>
+  {% else %}
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0" id="sbPending">
+    <thead><tr><th>{{ _('Appliance') }}</th><th>{{ _('Product') }}</th><th>{{ _('Build') }}</th><th>{{ _('Compare with') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for p in pending %}
+      <tr {% if focus == p.appliance_id %}style="background:var(--fw-accent-light);"{% endif %}>
+        <td>{{ p.appliance }}</td>
+        <td>{{ p.product }}{% if not p.verified %} <span class="fw-badge fw-badge-warning">{{ _('unverified adapter') }}</span>{% endif %}</td>
+        <td><code>{{ p.version }}</code> <span class="text-muted" style="font-size:11.5px;">{{ _('no %(s)s evidence', s=p.source) }}</span></td>
+        <td>{{ p.closest or _('(no other harvested build)') }}</td>
+        <td class="text-end">
+          {% if p.live and may_open('schema_builds.harvest') %}
+          <form method="post" action="{{ url_for('schema_builds.harvest', appliance_id=p.appliance_id) }}" class="d-inline-flex gap-1 align-items-center">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if p.product == 'fortiauthenticator' %}
+              <input type="password" name="ssh_secret" class="form-control form-control-sm" style="width:170px;" autocomplete="off"
+                     placeholder="{{ _('CLI password (optional)') }}"
+                     title="{{ _('SATOM stores the REST API key for FortiAuthenticator, not a CLI login. Give the CLI password to read the CLI schema too; it is used for this harvest only and never stored.') }}">
+            {% endif %}
+            <button type="submit" class="btn btn-sm btn-fw-outline"><i class="bi bi-cloud-download me-1"></i>{{ _('Harvest') }}</button>
+          </form>
+          {% elif not p.live %}
+            <span class="text-muted" style="font-size:12px;">{{ _('import a harvester pack') }}</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
+
+<div class="fw-card mb-3" style="padding:12px 14px;">
+  <h6 class="mb-2">{{ _('Harvested builds') }}</h6>
+  {% for product, versions in harvested.items() %}
+    <div class="mb-1" style="font-size:13px;"><strong>{{ product }}</strong>:
+      {% for v in versions %}
+        <a class="fw-badge fw-badge-primary text-decoration-none" href="{{ url_for('schema_builds.index', product=product, version=v) }}">{{ v }}</a>
+      {% else %}<span class="text-muted">{{ _('none') }}</span>{% endfor %}
+    </div>
+  {% endfor %}
+</div>
+
+{% if diff %}
+<div class="fw-card mb-3" style="padding:12px 14px;" id="sbDiff">
+  <h6 class="mb-2">{{ diff.product }} {{ diff.version }} {{ _('compared with') }} {{ diff.base or '—' }}</h6>
+  {% if diff.reason %}
+    <p class="text-muted mb-0" style="font-size:13px;">{{ diff.reason }}</p>
+  {% else %}
+    <p style="font-size:13px;" class="mb-2">
+      {{ _('%(n)s new or changed item(s); %(v)s to verify (their REST side was not measured on %(ver)s, so the library reads them unknown).', n=diff.count, v=diff.to_verify, ver=diff.version) }}
+      {% for k, n in diff.totals.items() %}<span class="fw-badge fw-badge-secondary ms-1">{{ k }} {{ n }}</span>{% endfor %}
+    </p>
+    {% if diff['items'] %}
+    <div class="table-responsive" style="max-height:480px; overflow:auto;">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>{{ _('Object') }}</th><th>{{ _('Field') }}</th><th>{{ _('Change') }}</th><th>{{ _('Channel on the new build') }}</th></tr></thead>
+      <tbody>
+      {% for it in diff['items'] %}
+        <tr>
+          <td><code>{{ it.endpoint }}</code></td>
+          <td>{{ it.field or '' }}</td>
+          <td>{{ it.change }}{% if it.detail %} <span class="text-muted" style="font-size:11.5px;">{{ it.detail }}</span>{% endif %}</td>
+          <td>{% if it.to_verify %}<span class="fw-badge fw-badge-warning">{{ _('unknown — to verify') }}</span>{% else %}<span class="fw-badge fw-badge-info">{{ it.channel }}</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if diff.truncated %}<p class="text-muted mt-1 mb-0" style="font-size:12px;">{{ _('Only the first %(n)s items are listed; the totals are complete.', n=diff['items']|length) }}</p>{% endif %}
+    {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

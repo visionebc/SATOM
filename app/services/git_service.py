@@ -1,0 +1,401 @@
+"""Git service — read repo state, pull, publish reports, run manual commands.
+
+Ported from the desktop app's ``services/inspector.py`` git helpers.
+Scoped to the web-app root (the directory containing ``wsgi.py``).
+"""
+from __future__ import annotations
+
+import os
+import re
+import shlex
+import subprocess
+from pathlib import Path
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+
+def _git_env() -> dict | None:
+    """The environment for git: ``GIT_SSL_CAINFO`` = the trust store bundle,
+    so an https remote behind the company CA verifies (SA-0003). Only inside
+    an application context -- outside one (the reconciler, a script) git keeps
+    its own roots and no database is touched."""
+    from flask import has_app_context
+    if not has_app_context():
+        return None
+    from . import trust_store
+    ca = trust_store.ca_file()
+    if not ca:
+        return None
+    env = dict(os.environ)
+    env["GIT_SSL_CAINFO"] = ca
+    return env
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent.parent  # app/services → app → root
+
+
+def _git_try(root: Path, *args: str):
+    """(ok, output). ``ok`` is False when git could not answer at all.
+
+    The distinction this restores: ``_git_out`` collapses "git failed" and
+    "git said nothing" into the same empty string, and every caller below
+    reads that as a *fact about the repository*. A repo git cannot read
+    therefore reported 0 commits ahead, 0 behind and a CLEAN working tree —
+    the exact three answers that mean "nothing to worry about".
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True, text=True, timeout=20, env=_git_env(),
+        )
+    except Exception:  # noqa: BLE001
+        return False, ""
+    if r.returncode != 0:
+        return False, (r.stderr or "").strip()
+    return True, (r.stdout or "").strip()
+
+
+def _git_out(root: Path, *args: str, default: str = "") -> str:
+    """Display-only convenience. Callers that make a SAFETY decision must use
+    :func:`_git_try` — a default here is indistinguishable from an answer."""
+    ok, out = _git_try(root, *args)
+    return out if ok else default
+
+
+def _run_git(root: Path, args: tuple, lines: list, redact: tuple = ()) -> int:
+    def scrub(t: str) -> str:
+        for s in redact:
+            if s:
+                t = t.replace(s, "***")
+        return t
+
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True, text=True, timeout=120, env=_git_env(),
+        )
+    except Exception as e:
+        lines.append(scrub(f"$ git {' '.join(str(a) for a in args)}\n[error: {e}]"))
+        return 1
+    body = "\n".join(p for p in ((r.stdout or "").strip(), (r.stderr or "").strip()) if p)
+    lines.append(scrub(f"$ git {' '.join(str(a) for a in args)}\n{body}").rstrip())
+    return r.returncode
+
+
+def _redact_remote(url: str) -> str:
+    """Remove credentials embedded in an HTTP remote URL."""
+    return re.sub(r'(https?://)([^@]+@)', r'\1', url)
+
+
+def _authed_remote(clean: str, token: str) -> str | None:
+    m = re.match(r'(https?://)(.*)', clean)
+    if not m:
+        return None
+    return f"{m.group(1)}{token}@{m.group(2)}"
+
+
+def _harden_git_config(root: Path) -> None:
+    """Make ``.git/config`` owner-only when it can hold a token.
+
+    The remote URL is where this repo keeps its push credential, and git
+    writes that file with the default 644 — so the token that authenticates
+    every push is readable by every account on the box. git has no setting
+    for this, so the mode has to be re-asserted by whoever writes it.
+
+    Called from the writer AND from ``git_info`` because a repository cloned
+    by the installer (``git clone $GIT_URL``) never passes through the writer:
+    the very first .git/config the product ever creates is the exposed one.
+
+    Never raises. A repo owned by another account is a fact to leave alone,
+    not a reason to fail the page that happened to notice it.
+    """
+    path = root / ".git" / "config"
+    try:
+        if not path.is_file():
+            return
+        mode = path.stat().st_mode & 0o777
+        if mode & 0o077:
+            path.chmod(0o600)
+    except OSError:
+        pass
+
+
+def _git_token() -> str:
+    """Extract the token from the current origin remote URL (if embedded)."""
+    root = _repo_root()
+    raw = _git_out(root, "remote", "get-url", "origin")
+    m = re.match(r'https?://([^@/]+)@', raw)
+    return m.group(1) if m else ""
+
+
+# ── public API ────────────────────────────────────────────────────────────────
+
+def _local(iso: str) -> str:
+    """Localize a git ISO-8601 committer timestamp (``%cI``) to the admin
+    console timezone via the shared settings_store converter. Empty string when
+    there is nothing to show, so callers can hide the row."""
+    if not iso or iso == "—":
+        return ""
+    from . import settings_store as _stz
+    return _stz.to_local(iso)
+
+
+def remote_configured() -> bool:
+    """Does this node have an update repository AT ALL?
+
+    Kept apart from :func:`git_info`, which describes a repository; this
+    answers whether there is one to describe. The settings page needs the
+    answer on its FIRST render, before any fetch, because it decides whether
+    the configuration form is the thing the operator needs to see. It is one
+    probe, and a git that cannot answer counts as "not configured" — the state
+    in which showing the form is harmless.
+    """
+    ok, out = _git_try(_repo_root(), "remote", "get-url", "origin")
+    return bool(ok and out.strip())
+
+
+def git_info() -> dict:
+    """Snapshot of the repo for the Settings → Git tab."""
+    root = _repo_root()
+    _harden_git_config(root)
+
+    def out(*args, default="—") -> str:
+        return _git_out(root, *args, default=default)
+
+    raw_remote = out("remote", "get-url", "origin", default="")
+    remote = _redact_remote(raw_remote)
+    branch = out("rev-parse", "--abbrev-ref", "HEAD")
+    commit = out("log", "-1", "--format=%h %cs %s")
+    commit_iso = out("log", "-1", "--format=%cI", default="")
+    # A repository probe that FAILED must not be reported as a repository that
+    # is clean and in sync. `unknown` is the third state those callers lacked.
+    unknown = False
+    errors = []
+    repo_ok, repo_err = _git_try(root, "rev-parse", "--git-dir")
+    if not repo_ok:
+        unknown = True
+        errors.append("rev-parse --git-dir: %s" % (repo_err or "failed"))
+
+    dirty_ok, dirty_raw = _git_try(root, "status", "--porcelain")
+    if not dirty_ok:
+        unknown = True
+        errors.append("status: %s" % (dirty_raw or "failed"))
+    dirty = bool(dirty_raw.strip()) if dirty_ok else False
+
+    ab_ok, ahead_behind = _git_try(
+        root, "rev-list", "--left-right", "--count", "@{upstream}...HEAD")
+    ahead = behind = 0
+    if ab_ok and "\t" in ahead_behind:
+        b, a = ahead_behind.split("\t", 1)
+        try:
+            behind, ahead = int(b), int(a)
+        except ValueError:
+            unknown = True
+            errors.append("rev-list gave an uncountable answer")
+    elif not ab_ok and repo_ok:
+        # No upstream configured is normal on a fresh clone and is NOT
+        # unknown; an unreadable repo already set the flag above.
+        pass
+    ahead_behind = ahead_behind if ab_ok else ""
+    recent = []
+    log_raw = out("log", "-8", "--format=%h|%cs|%s", default="")
+    for line in log_raw.splitlines():
+        parts = line.split("|", 2)
+        if len(parts) == 3:
+            recent.append({"hash": parts[0], "date": parts[1], "subject": parts[2]})
+
+    return {
+        "unknown": unknown,
+        "error": "; ".join(errors),
+        "remote": remote or "—",
+        "branch": branch,
+        "commit": commit,
+        "commit_local": _local(commit_iso),
+        "dirty": dirty,
+        "ahead": ahead,
+        "behind": behind,
+        "recent": recent,
+        "root": str(root),
+    }
+
+
+def git_pull() -> str:
+    """Pull latest from origin (ff-only)."""
+    root = _repo_root()
+    token = _git_token()
+    clean = _redact_remote(_git_out(root, "remote", "get-url", "origin"))
+    lines: list[str] = []
+
+    if token and clean:
+        authed = _authed_remote(clean, token)
+        if authed:
+            branch = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD") or "HEAD"
+            _run_git(root, ("pull", "--ff-only", authed, branch), lines, (token,))
+        else:
+            _run_git(root, ("pull", "--ff-only"), lines)
+    else:
+        _run_git(root, ("pull", "--ff-only"), lines)
+    return "\n\n".join(lines)
+
+
+def run_git_script(script: str) -> str:
+    """Run an operator-typed block of git commands (git-only escape hatch)."""
+    root = _repo_root()
+    token = _git_token()
+    redact = (token,) if token else ()
+    lines: list[str] = []
+    for raw in script.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            args = shlex.split(line)
+        except ValueError as e:
+            lines.append(f"$ {line}\n[parse error: {e}]")
+            continue
+        if args and args[0] == "git":
+            args = args[1:]
+        if not args:
+            continue
+        _run_git(root, tuple(args), lines, redact)
+    return "\n\n".join(lines)
+
+
+def git_configure(remote_url: str, token: str, branch: str) -> str:
+    """Update remote URL (with optional embedded token) and/or switch branch."""
+    root = _repo_root()
+    lines: list[str] = []
+
+    # Build final remote URL
+    if token and remote_url:
+        m = re.match(r"(https?://)(.*)", remote_url)
+        if m:
+            final_url = f"{m.group(1)}{token}@{m.group(2)}"
+        else:
+            final_url = remote_url
+    else:
+        final_url = remote_url
+
+    if final_url:
+        _run_git(root, ("remote", "set-url", "origin", final_url), lines, (token,) if token else ())
+        # set-url rewrote .git/config, and the URL it just wrote holds the token.
+        _harden_git_config(root)
+    if branch:
+        current = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD")
+        if current != branch:
+            _run_git(root, ("checkout", "-B", branch, f"origin/{branch}"), lines)
+        else:
+            lines.append(f"# branch is already {branch!r}")
+    return "\n\n".join(lines)
+
+
+def git_publish(message: str, paths: list[str]) -> str:
+    """Stage *paths*, commit with *message*, and push to origin (authed remote,
+    same token handling as :func:`git_pull`). Best-effort: a no-op commit (nothing
+    changed) or an unreachable remote is reported in the returned log, never raised.
+    Used by the Release-Notes scan to share the harvested corpus with the team."""
+    root = _repo_root()
+    token = _git_token()
+    clean = _redact_remote(_git_out(root, "remote", "get-url", "origin"))
+    redact = (token,) if token else ()
+    lines: list[str] = []
+
+    _run_git(root, ("add", *paths), lines, redact)
+    _run_git(root, ("commit", "-m", message), lines, redact)  # rc!=0 if nothing to commit
+    branch = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD") or "HEAD"
+    if token and clean:
+        authed = _authed_remote(clean, token)
+        if authed:
+            _run_git(root, ("push", authed, branch), lines, redact)
+        else:
+            _run_git(root, ("push",), lines, redact)
+    else:
+        _run_git(root, ("push",), lines, redact)
+    return "\n\n".join(lines)
+
+
+# ── reports/ source-of-truth helpers (System Backup & Restore page) ──────────
+
+def reports_history(limit: int = 12) -> list[dict]:
+    """Commits that touched ``reports/`` (the per-device JSON source of truth),
+    newest first, with a per-commit change summary — the page's "what is in
+    git" view."""
+    root = _repo_root()
+    raw = _git_out(root, "log", f"-{int(limit)}",
+                   "--format=%h|%cs|%cI|%s", "--", "reports/", default="")
+    out: list[dict] = []
+    for line in raw.splitlines():
+        parts = line.split("|", 3)
+        if len(parts) != 4:
+            continue
+        sha, date, iso, subject = parts
+        stat = _git_out(root, "show", "--stat", "--format=", sha, "--",
+                        "reports/", default="")
+        files = [ln.split("|")[0].strip() for ln in stat.splitlines()
+                 if "|" in ln]
+        summary = stat.splitlines()[-1].strip() if stat.strip() else ""
+        out.append({"hash": sha, "date": date, "datetime": _local(iso),
+                    "subject": subject,
+                    "files": files[:12], "n_files": len(files),
+                    "summary": summary})
+    return out
+
+
+def reports_dirty() -> list[dict]:
+    """Un-published (uncommitted) changes under ``reports/`` — drift between
+    the running instance and the git source of truth."""
+    root = _repo_root()
+    raw = _git_out(root, "status", "--porcelain", "--", "reports/", default="")
+    out: list[dict] = []
+    for line in raw.splitlines():
+        if len(line) < 4:
+            continue
+        out.append({"state": line[:2].strip() or "??", "path": line[3:].strip()})
+    return out
+
+
+def reports_diff(ref_a: str, ref_b: str, device: str = "") -> dict:
+    """Compare two versions of the ``reports/`` tree (rollback / version
+    comparison). Returns the ``--stat`` summary and a size-capped unified diff.
+    Refs are validated (rev-parse) before use — no arbitrary git args."""
+    root = _repo_root()
+    safe = re.compile(r"^[0-9A-Za-z_./~^-]{1,64}$")
+    if not (safe.match(ref_a or "") and safe.match(ref_b or "")):
+        return {"ok": False, "error": "invalid ref"}
+    for ref in (ref_a, ref_b):
+        if not _git_out(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"):
+            return {"ok": False, "error": f"unknown ref: {ref}"}
+    scope = "reports/"
+    if device:
+        if not re.match(r"^[0-9A-Za-z_.-]{1,64}$", device):
+            return {"ok": False, "error": "invalid device"}
+        scope = f"reports/{device}/"
+    stat = _git_out(root, "diff", "--stat", ref_a, ref_b, "--", scope, default="")
+    diff = _git_out(root, "diff", ref_a, ref_b, "--", scope, default="")
+    truncated = False
+    if len(diff) > 60_000:
+        diff, truncated = diff[:60_000], True
+    return {"ok": True, "ref_a": ref_a, "ref_b": ref_b, "scope": scope,
+            "stat": stat, "diff": diff, "truncated": truncated,
+            "identical": not stat.strip()}
+
+
+def code_history(limit: int = 15) -> list[dict]:
+    """Application-code commits (whole repo, newest first) for the System
+    Backup page's code-rollback section. Marks the running revision so the UI
+    can show "you are here". Rollback itself goes through the self_update
+    queue (privileged runner) — this is only the read side."""
+    root = _repo_root()
+    head = _git_out(root, "rev-parse", "--short", "HEAD", default="")
+    raw = _git_out(root, "log", f"-{int(limit)}", "--format=%h|%cs|%an|%s",
+                   default="")
+    out: list[dict] = []
+    for line in raw.splitlines():
+        parts = line.split("|", 3)
+        if len(parts) != 4:
+            continue
+        sha, date, author, subject = parts
+        out.append({"hash": sha, "date": date, "author": author,
+                    "subject": subject, "current": sha == head})
+    return out

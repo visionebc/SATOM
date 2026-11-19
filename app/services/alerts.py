@@ -1,0 +1,1692 @@
+"""Proactive alert engine — the *push* side of observability.
+
+Everything else in SATOM is *pull*: you open the Monitoring / System Backup /
+Node TLS page and read a live badge. This engine flips that around — it evaluates
+a handful of cheap health checks on a timer and, when one crosses a threshold,
+*pushes* a notice out through email (``email_service``) and the in-app bell
+(``notifications``) so nobody has to be looking at the page.
+
+Design notes
+------------
+* **Config lives in ``app_settings``** (one source of truth across gunicorn
+  workers), same pattern as ``email_service``/``settings_store``.
+* **Cooldown**: a fired alert is suppressed for ``alerts.cooldown_hours`` (default
+  6h) so a persistent condition (cert 13 days out) does not email every run. The
+  last-fired timestamp per alert key lives in the ``alerts.state`` JSON blob.
+* **Per-node**: cert / device-reachability / git-lag are node-local truths, so the
+  timer runs on BOTH nodes and each reports about itself. The node hostname is in
+  every message so a two-node fleet is legible.
+* **Never raises**: a broken individual check degrades to a logged skip; the run
+  keeps going. Email delivery is best-effort (``send_email`` never raises).
+* **Two dispatch paths, not one list of destinations.** Email and the in-app
+  bell *notify a person*: they carry the cooldown, they run on the primary only,
+  and they answer to the per-sink filter in :mod:`app.services.alert_routing`.
+  The syslog/CEF feed is a *record*: no cooldown, every evaluation, and it runs
+  on the standby too. Folding the two into one loop over three sinks would give
+  the feed cooldown holes that read as "nothing was wrong" — see
+  :mod:`app.services.alert_syslog`.
+"""
+from __future__ import annotations
+
+import json
+import re
+import socket
+from datetime import datetime, timezone
+from html import escape as _esc
+
+from ..models import AppSetting
+from . import alert_routing as routing
+from . import alert_syslog
+from . import alert_webhook
+from . import drift_attribution
+from . import email_service
+from . import notifications as notify
+from .product_scope import concrete_products
+
+# ---- config keys ----------------------------------------------------------
+K_ENABLED = "alerts.enabled"              # "1" / "0"
+K_EMAIL_TO = "alerts.email_to"            # falls back to email.default_to
+K_COOLDOWN_H = "alerts.cooldown_hours"    # per-alert suppression window
+K_CERT_DAYS = "alerts.cert_days"          # warn when cert has <= N days left
+K_GIT_BEHIND_MAX = "alerts.git_behind_max"  # warn when standby lags > N commits
+K_GIT_AHEAD_MAX_H = "alerts.git_ahead_max_hours"  # warn when a commit stays unpushed
+K_BACKUP_MAX_H = "alerts.backup_max_hours"  # warn when newest bundle older than N h
+K_STATE = "alerts.state"                  # JSON {alert_key: last_fired_iso}
+K_LAST_EMAIL = "alerts.last_email"        # JSON {at, ok, detail} of the last send attempt
+# per-check enable toggles (default on)
+K_CHK_CERT = "alerts.check.cert"
+K_CHK_GIT = "alerts.check.git"
+K_CHK_DEVICE = "alerts.check.device"
+K_CHK_BACKUP = "alerts.check.backup"
+K_CHK_DRIFT = "alerts.check.drift"
+K_CHK_INTENT = "alerts.check.intent"    # bound device ≠ its template (intent deviation)
+K_CHK_ACTIONS = "alerts.check.actions"
+K_CHK_HOST = "alerts.check.host"
+K_CHK_CATALOG = "alerts.check.catalog"
+K_ACT_STREAK_CRIT = "alerts.action_fail_streak_crit"  # crit at N straight failures
+K_ACT_OVERDUE_H = "alerts.action_overdue_hours"       # enabled action this late to fire
+K_DRIFT_WINDOW_MIN = "alerts.drift_window_min"  # only alert on drift newer than this
+# What to do with a drift SATOM can prove it caused itself: "info"
+# (default -- still reported, downgraded and credited), "warn" (treat it
+# like unexplained drift) or "off" (silent).
+K_DRIFT_ATTRIBUTED = "alerts.drift_attributed"
+K_DEV_MIN = "alerts.device_min_status"    # "warn" (default) or "crit"
+
+DEFAULTS = {
+    K_ENABLED: "0",
+    K_COOLDOWN_H: "6",
+    K_CERT_DAYS: "14",
+    K_GIT_BEHIND_MAX: "25",
+    K_GIT_AHEAD_MAX_H: "6",
+    K_BACKUP_MAX_H: "48",
+    K_CHK_CERT: "1",
+    K_CHK_GIT: "1",
+    K_CHK_DEVICE: "1",
+    K_CHK_BACKUP: "1",
+    K_CHK_DRIFT: "1",
+    K_CHK_INTENT: "1",
+    K_CHK_ACTIONS: "1",
+    K_CHK_HOST: "1",
+    K_CHK_CATALOG: "1",
+    K_ACT_STREAK_CRIT: "3",
+    K_ACT_OVERDUE_H: "3",
+    K_DRIFT_WINDOW_MIN: "90",
+    K_DRIFT_ATTRIBUTED: "info",
+    K_DEV_MIN: "warn",
+}
+
+_REPO_ROOT = "/opt/satom"
+
+# How far back _check_actions reads a scheduled action history. A streak that
+# hits this cap is reported as "N+": a floor, not a count.
+_RUN_WINDOW = 50
+
+SEV_CRITICAL = "critical"
+SEV_WARNING = "warning"
+SEV_INFO = "info"
+_SEV_RANK = {SEV_INFO: 0, SEV_WARNING: 1, SEV_CRITICAL: 2}
+
+
+# ---- small helpers --------------------------------------------------------
+def _get(key: str) -> str:
+    v = AppSetting.get(key)
+    return DEFAULTS.get(key, "") if v is None else v
+
+
+def _flag(key: str) -> bool:
+    return _get(key) in ("1", "on", "true", "True")
+
+
+def _int(key: str, fallback: int) -> int:
+    # Through float: the Thresholds page stores "hours" fields as "12.0", and a
+    # plain int("12.0") raised, silently replacing the configured value with
+    # the fallback.
+    try:
+        return int(float(str(_get(key)).strip()))
+    except (TypeError, ValueError, OverflowError):
+        return fallback
+
+
+def _span(att: dict) -> str:
+    """The attribution window as one human phrase.
+
+    Printed in BOTH the attributed and the unattributed message: the
+    operator cannot judge "SATOM recorded no write" without being told
+    what stretch of time was searched.
+    """
+    s, e = att.get("start"), att.get("end")
+    if not s or not e:
+        return "the interval since the previous snapshot"
+    tail = f"{e:%H:%M}" if s.date() == e.date() else f"{e:%Y-%m-%d %H:%M}"
+    return f"{s:%Y-%m-%d %H:%M} to {tail} UTC"
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _node() -> str:
+    try:
+        return socket.gethostname()
+    except Exception:  # noqa: BLE001
+        return "node"
+
+
+def _is_read_only_replica() -> bool:
+    """True when this node's Postgres is a streaming replica (standby), where any
+    write (notifications, cooldown state) would fail. Self-detecting via
+    ``pg_is_in_recovery()`` so no role config is needed and a promoted standby
+    starts dispatching automatically. SQLite / unknown → treated as writable."""
+    from ..extensions import db
+    try:
+        from sqlalchemy import text
+        return bool(db.session.execute(text("SELECT pg_is_in_recovery()")).scalar())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def is_enabled() -> bool:
+    return _flag(K_ENABLED)
+
+
+# ---- admin-console config (read + save) -----------------------------------
+def config() -> dict:
+    """Current alert-engine settings for the admin console. Never raises."""
+    return {
+        "enabled": _flag(K_ENABLED),
+        "email_to": _get(K_EMAIL_TO),
+        "email_fallback": email_service.config().get("default_to") or "",
+        "cooldown_hours": _int(K_COOLDOWN_H, 6),
+        "cert_days": _int(K_CERT_DAYS, 14),
+        "git_behind_max": _int(K_GIT_BEHIND_MAX, 25),
+        "git_ahead_max_hours": _int(K_GIT_AHEAD_MAX_H, 6),
+        "backup_max_hours": _int(K_BACKUP_MAX_H, 48),
+        "drift_window_min": _int(K_DRIFT_WINDOW_MIN, 90),
+        "drift_attributed": _get(K_DRIFT_ATTRIBUTED) or "info",
+        "action_fail_streak_crit": _int(K_ACT_STREAK_CRIT, 3),
+        "action_overdue_hours": _int(K_ACT_OVERDUE_H, 3),
+        "device_min_status": _get(K_DEV_MIN) or "warn",
+        "checks": {
+            "cert": _flag(K_CHK_CERT),
+            "git": _flag(K_CHK_GIT),
+            "device": _flag(K_CHK_DEVICE),
+            "backup": _flag(K_CHK_BACKUP),
+            "drift": _flag(K_CHK_DRIFT),
+            "intent": _flag(K_CHK_INTENT),
+            "actions": _flag(K_CHK_ACTIONS),
+            "host": _flag(K_CHK_HOST),
+            "catalog": _flag(K_CHK_CATALOG),
+        },
+        # Per-sink routing (severity floor + family mask) and the syslog
+        # collector. Kept in their own modules so the filter can be tested as
+        # a pure function and the wire framing as a pure string.
+        "sinks": routing.config(),
+        "sink_families": [(f, routing.FAMILY_LABELS[f]) for f in routing.FAMILIES],
+        "severities": list(routing.SEVERITIES),
+        "webhook": alert_webhook.config(),
+        "webhook_formats": [(f, alert_webhook.FORMAT_LABELS[f])
+                            for f in alert_webhook.FORMATS],
+        "webhook_sample": alert_webhook.sample_payload(),
+        "syslog": alert_syslog.config(),
+        "syslog_formats": list(alert_syslog.FORMATS),
+        "syslog_protocols": list(alert_syslog.PROTOCOLS),
+        "syslog_facilities": sorted(alert_syslog.FACILITIES),
+    }
+
+
+def save_config(form) -> None:
+    """Persist alert-engine settings from the admin-console form. Checkbox
+    fields are 'on'/absent; numeric fields are clamped to sane ranges."""
+    def g(key, default=""):
+        try:
+            return (form.get(key, default) or "").strip()
+        except AttributeError:
+            return str(form.get(key, default) or "").strip()
+
+    def cb(key):  # checkbox → "1"/"0"
+        return "1" if form.get(key) in ("on", "1", "true", "True", True) else "0"
+
+    def clamp(key, lo, hi, default):
+        try:
+            n = int(g(key) or default)
+        except ValueError:
+            n = default
+        return str(max(lo, min(hi, n)))
+
+    AppSetting.set(K_ENABLED, cb("enabled"))
+    AppSetting.set(K_EMAIL_TO, g("email_to"))
+    AppSetting.set(K_COOLDOWN_H, clamp("cooldown_hours", 0, 168, 6))
+    AppSetting.set(K_CERT_DAYS, clamp("cert_days", 1, 365, 14))
+    AppSetting.set(K_GIT_BEHIND_MAX, clamp("git_behind_max", 1, 10000, 25))
+    AppSetting.set(K_GIT_AHEAD_MAX_H, clamp("git_ahead_max_hours", 1, 8760, 6))
+    AppSetting.set(K_BACKUP_MAX_H, clamp("backup_max_hours", 1, 8760, 48))
+    AppSetting.set(K_DRIFT_WINDOW_MIN, clamp("drift_window_min", 1, 43200, 90))
+    # A drift SATOM can prove it caused itself. Unknown values fall back to
+    # "info" (reported, downgraded, credited) and NEVER to "off": a typo in
+    # a settings field must not be able to silence an alert.
+    _att = g("drift_attributed")
+    AppSetting.set(K_DRIFT_ATTRIBUTED,
+                   _att if _att in ("info", "warn", "off") else "info")
+    AppSetting.set(K_ACT_STREAK_CRIT, clamp("action_fail_streak_crit", 2, 100, 3))
+    AppSetting.set(K_ACT_OVERDUE_H, clamp("action_overdue_hours", 1, 8760, 3))
+    # Only "warn" and "crit" are dispatchable floors: "ok"/"unknown" would mail
+    # about every device on every run.
+    _dev_min = g("device_min_status")
+    AppSetting.set(K_DEV_MIN, _dev_min if _dev_min in ("warn", "crit") else "warn")
+    # per-check toggles (absent checkbox = off)
+    AppSetting.set(K_CHK_CERT, cb("check_cert"))
+    AppSetting.set(K_CHK_GIT, cb("check_git"))
+    AppSetting.set(K_CHK_DEVICE, cb("check_device"))
+    AppSetting.set(K_CHK_BACKUP, cb("check_backup"))
+    AppSetting.set(K_CHK_DRIFT, cb("check_drift"))
+    AppSetting.set(K_CHK_INTENT, cb("check_intent"))
+    AppSetting.set(K_CHK_ACTIONS, cb("check_actions"))
+    AppSetting.set(K_CHK_HOST, cb("check_host"))
+    AppSetting.set(K_CHK_CATALOG, cb("check_catalog"))
+    # Per-sink routing and the syslog collector ride the same form and the
+    # same POST: a severity floor saved in a different round-trip from the
+    # engine toggle is a window in which the two disagree.
+    routing.save_all(form)
+    alert_syslog.save(form)
+    alert_webhook.save(form)
+    # AppSetting.set commits per call — no trailing commit needed.
+
+
+def recipients() -> list[str]:
+    to = email_service.parse_recipients(_get(K_EMAIL_TO))
+    if not to:
+        cfg = email_service.config()
+        to = email_service.parse_recipients(cfg.get("default_to"))
+    return to
+
+
+# ---- cooldown state -------------------------------------------------------
+def _load_state() -> dict:
+    raw = AppSetting.get(K_STATE)
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw) or {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def _save_state(state: dict) -> None:
+    AppSetting.set(K_STATE, json.dumps(state))
+
+
+def _record_email_outcome(res) -> None:
+    res = res or {}
+    # A delivered message can still be one nobody reads: an unsigned direct
+    # hand-off lands in spam. Kept with the outcome so the status page marks
+    # it as an error instead of reporting "delivered" and moving on.
+    deliv = res.get("deliverability") or {}
+    spam_risk = (str(deliv.get("detail") or "")[:400]
+                 if res.get("ok") and deliv.get("ok") is False else "")
+    try:
+        AppSetting.set(K_LAST_EMAIL, json.dumps({
+            "at": _now().isoformat(timespec="seconds"),
+            "ok": bool(res.get("ok")),
+            "detail": str(res.get("detail") or "")[:300],
+            "spam_risk": spam_risk}))
+    except Exception:  # noqa: BLE001 -- bookkeeping must never sink a run
+        pass
+
+
+def _in_cooldown(state: dict, key: str, cooldown_h: int) -> bool:
+    last = state.get(key)
+    if not last:
+        return False
+    try:
+        prev = datetime.fromisoformat(last)
+    except ValueError:
+        return False
+    if prev.tzinfo is None:
+        prev = prev.replace(tzinfo=timezone.utc)
+    return (_now() - prev).total_seconds() < cooldown_h * 3600
+
+
+# ---- individual checks ----------------------------------------------------
+# Each returns a list of findings: {key, severity, title, detail}.
+def _renewal_failures() -> list[dict]:
+    """A renewal that FAILED is its own alert — until now the only e-mail was the
+    T-N days expiry warning, which means a broken pipeline stayed silent for weeks
+    and then surfaced as an emergency. The failure detail (and the page that shows
+    the full error) goes in the mail body."""
+    try:
+        from . import cert_renew_log as jrn
+        summ = jrn.summary()
+    except Exception:  # noqa: BLE001
+        return []
+    streak = summ.get("fail_streak") or 0
+    if streak <= 0:
+        return []
+    last = summ.get("last_error") or {}
+    sev = SEV_CRITICAL if streak >= 3 else SEV_WARNING
+    return [{"key": "cert.renew_failed", "severity": sev,
+             "title": f"Certificate renewal failing on {_node()} ({streak} consecutive)",
+             "detail": (f"Channel {last.get('channel')}: {last.get('summary')}\n"
+                        f"Error: {last.get('error') or 'n/a'}\n"
+                        f"Last attempt: {last.get('at')}\n"
+                        f"Full history: /cert-manager/renewals")}]
+
+
+def _check_cert() -> list[dict]:
+    from . import cert_service
+    out = _renewal_failures()
+    try:
+        cur = cert_service.current()
+    except Exception as exc:  # noqa: BLE001
+        return out + [{"key": "cert.error", "severity": SEV_WARNING,
+                       "title": "Certificate status unreadable",
+                       "detail": f"cert_service.current() failed: {exc}"}]
+    days = cur.get("days_left")
+    if days is None:
+        return out
+    thresh = _int(K_CERT_DAYS, 14)
+    if days > thresh:
+        return out
+    sev = SEV_CRITICAL if days <= 3 else SEV_WARNING
+    src = cur.get("source") or "?"
+    return out + [{"key": "cert.expiry", "severity": sev,
+             "title": f"TLS certificate expires in {days} day(s)",
+             "detail": (f"The service certificate on {_node()} expires in {days} "
+                        f"day(s) (source={src}, not_after={cur.get('not_after')}). "
+                        f"Renew or re-copy the wildcard before it lapses. "
+                        f"Renewal history + errors: /cert-manager/renewals")}]
+
+
+def _check_git() -> list[dict]:
+    from . import git_service
+    try:
+        info = git_service.git_info()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "git.error", "severity": SEV_WARNING,
+                 "title": "Git status unreadable",
+                 "detail": f"git_info() failed: {exc}"}]
+    if info.get("unknown"):
+        # Reached before ahead/behind are read, because on this path they are
+        # both 0 — and 0/0 is the answer that means "healthy". Every finding
+        # below was structurally unreachable on a repo git could not read.
+        return [{"key": "git.unreadable", "severity": SEV_WARNING,
+                 "title": f"Git status unreadable on {_node()}",
+                 "detail": ("The repository could not be probed, so 'ahead', "
+                            "'behind' and 'clean' below are not measurements — "
+                            "they are defaults. " + (info.get("error") or ""))}]
+    ahead, behind = int(info.get("ahead") or 0), int(info.get("behind") or 0)
+    # True divergence: local has commits the upstream doesn't AND is behind it →
+    # the branches forked and a fast-forward is impossible. This is the dangerous
+    # one (the HA pair can silently disagree).
+    if ahead > 0 and behind > 0:
+        return [{"key": "git.diverged", "severity": SEV_CRITICAL,
+                 "title": f"Git history diverged on {_node()}",
+                 "detail": (f"Local branch is {ahead} ahead AND {behind} behind "
+                            f"origin — the histories have forked and cannot "
+                            f"fast-forward. Reconcile before the nodes disagree.")}]
+    # ahead>0 with behind==0 is the signature of an unreachable remote (Gitea
+    # down, token expired, DNS): the hourly reports/ publisher keeps committing
+    # locally and the push silently fails, and nothing else notices. (The hourly
+    # publisher named here was retired 2026-08-05 with the git SoT; the
+    # exposure is the same for any local-only commit.) Those local-only commits are the off-box
+    # copy of the device source of truth, and the update runner's reset would
+    # discard them (it parks them under refs/backup/ now, but recovering a ref
+    # is not the same as having published). Age, not count, is the signal: one
+    # unpushed commit for three days is worse than twenty in the last hour.
+    if ahead > 0:
+        from . import git_backup
+        state = git_backup.unpushed_state()
+        if state.get("unknown"):
+            return [{"key": "git.unreadable", "severity": SEV_WARNING,
+                     "title": f"Git push state unreadable on {_node()}",
+                     "detail": ("There are unpushed commits but their age "
+                                "could not be measured, so the threshold below "
+                                "cannot be applied. "
+                                + (state.get("error") or ""))}]
+        age = float(state.get("oldest_age_h") or 0.0)
+        max_h = _int(K_GIT_AHEAD_MAX_H, 6)
+        if age >= max_h:
+            crit = age >= max_h * 8
+            return [{"key": "git.ahead_unpushed",
+                     "severity": SEV_CRITICAL if crit else SEV_WARNING,
+                     "title": (f"{_node()} has {ahead} commit(s) unpushed for "
+                               f"{age:.0f}h"),
+                     "detail": (f"The oldest local commit has been waiting "
+                                f"{age:.0f}h to reach {state.get('upstream') or 'origin'} "
+                                f"(threshold {max_h}h). The push is failing "
+                                f"silently — check the git remote / Gitea. Until "
+                                f"it succeeds these commits exist on this node "
+                                f"only: take a git bundle from System Backup & "
+                                f"Restore to get them off-box.")}]
+    # Benign lag is expected between syncs; only shout when it is stuck far behind.
+    behind_max = _int(K_GIT_BEHIND_MAX, 25)
+    if behind > behind_max:
+        return [{"key": "git.behind", "severity": SEV_WARNING,
+                 "title": f"{_node()} is {behind} commits behind origin",
+                 "detail": (f"This node is {behind} commits behind origin (> "
+                            f"{behind_max}). If it is the standby, the git sync "
+                            f"may be stuck — check the reconciler / datasync.")}]
+    return []
+
+
+def _reachable(host: str, port: int) -> bool:
+    """TCP liveness. The ONLY signal in this module that touches the network —
+    the Monitoring page is DB-first by contract and deliberately cannot probe."""
+    try:
+        with socket.create_connection((host, int(port or 443)), timeout=4):
+            return True
+    except Exception:  # noqa: BLE001 — unreachable is the finding, not an error
+        return False
+
+
+def _product_of(appliance) -> str:
+    """ADOM a device-scoped finding belongs to, '' when the kind is unknown.
+
+    The alert engine runs in a background thread with NO request context, so
+    ``product_scope.stamp()`` returns '' for everything it raises — and an
+    unscoped notification is visible in the FortiWeb ADOM by construction. That
+    made the FortiWeb bell the catch-all for fadc and faz01 too. A device
+    finding's ADOM is not the session's, it is the DEVICE's kind.
+
+    The accepted kinds are DERIVED from the ADOM registry, not listed here: a
+    hardcoded tuple silently sends the new product's alerts to the FortiWeb
+    catch-all, which is exactly what it did to fadc and faz01 before 2026-07-28
+    and would have done to fortiauthenticator after 2026-08-05."""
+    kind = (getattr(appliance, "kind", "") or "").strip().lower()
+    return kind if kind in concrete_products() else ""
+
+
+#: Characters of a finding's detail stored in the in-app notification.
+BELL_BODY_MAX = 1500
+
+
+def bell_kind(severity: str) -> str:
+    """The notification kind a finding of ``severity`` is stored with.
+
+    Until 2026-11-02 warning and critical were both stored as ``error``, so a
+    memory reading at its warning line drew the same red cross as a device
+    that was down, and the Notifications page could not tell them apart."""
+    from ..models_notifications import Notification as N
+    return {SEV_CRITICAL: N.KIND_ERROR,
+            SEV_WARNING: N.KIND_WARNING}.get(severity, N.KIND_INFO)
+
+#: Alerting probes spelled out per device finding; the rest are counted.
+PROBE_LINES_MAX = 6
+
+
+def _probe_lines(items: list[dict], cap: int = PROBE_LINES_MAX) -> list[str]:
+    """One indented block per alerting deep monitor: what it measures, the
+    reading, every limit it is graded against with WHERE that limit is set,
+    and when it was read.
+
+    Before 2026-10-16 the mail said "1/6 probes alerting: fortiweb17 · CPU" and
+    stopped -- the operator had to open the page to learn the CPU was at 97 %
+    against a 95 % line inherited from the product scope."""
+    out: list[str] = []
+    for it in items[:cap]:
+        word = ("COULD NOT RUN" if it.get("raw_status") == "error"
+                else {"crit": "CRITICAL", "warn": "WARNING"}.get(
+                    it["status"], str(it["status"]).upper()))
+        out.append(f"    · {it['name']} [{word}] — {it['what']}: "
+                   f"{it.get('detail') or 'no detail recorded'}")
+        bits = [f"{lim['label']} {lim['text']} ({lim['origin']})"
+                for lim in it.get("limits") or []]
+        at = it.get("at")
+        if isinstance(at, datetime):
+            bits.append(f"read {at:%Y-%m-%d %H:%M} UTC")
+        if bits:
+            out.append("      " + "; ".join(bits))
+    if len(items) > cap:
+        out.append(f"    · +{len(items) - cap} more alerting probe(s) — "
+                   "see /monitoring/")
+    return out
+
+
+def _check_devices() -> list[dict]:
+    """One finding per unhealthy appliance, graded on the SAME ladder the
+    Monitoring page prints.
+
+    Until 2026-07-28 this check opened a TCP socket and nothing else, so it was
+    blind to every failure where the box answers the port but stops being
+    useful: fw6 and fw7 accepted :443 for a week while their harvest died on an
+    invalid licence — the page went red and no mail was ever sent. The socket
+    probe stays (it is the only network-touching signal here) but it is now one
+    input among the four DB-first signals from :mod:`device_health`, merged into
+    a single per-device message: one device, one alert, every failing signal
+    listed. Sharing ``device_health`` is the point — two ladders would let the
+    page and the mailbox disagree about the same box."""
+    from ..models import Appliance
+    from . import device_health as devhealth
+
+    try:
+        appliances = Appliance.query.all()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "device.error", "severity": SEV_WARNING,
+                 "title": "Appliance list unreadable",
+                 "detail": f"Appliance.query failed: {exc}"}]
+
+    floor = devhealth.RANK.get(_get(K_DEV_MIN), 0) or devhealth.RANK["warn"]
+    # Capacity thresholds are resolved PER DEVICE inside ``collect_for`` from
+    # that device's own product. Resolving one pair here and passing it to every
+    # appliance is what previously defeated per-product thresholds for the one
+    # caller that actually sends the mail.
+
+    findings: list[dict] = []
+    for a in appliances:
+        if getattr(a, "maintenance", False):
+            continue
+        host, port = a.host, int(a.port or 443)
+        reachable = _reachable(host, port)
+        try:
+            health = devhealth.collect_for(a)
+        except Exception as exc:  # noqa: BLE001 — one bad device never sinks the run
+            findings.append({"key": f"device.error.{a.name}", "severity": SEV_WARNING,
+                             "title": f"Health roll-up failed for {a.name}",
+                             "product": _product_of(a), "appliance_id": a.id,
+                             "detail": f"device_health.collect_for() raised: {exc}"})
+            continue
+
+        lines = [] if reachable else [
+            f"- Reachability: no TCP connection to {host}:{port} within 4s "
+            f"(probed from {_node()}) — down or network-partitioned"]
+        for r in health["reasons"]:
+            if r["status"] in ("warn", "crit"):
+                lines.append(f"- {r['label']}: {r['text']}")
+                lines += _probe_lines(r.get("alerting") or [])
+
+        status = devhealth.worst_of([health["status"]] +
+                                    ([] if reachable else ["warn"]))
+        if not lines or devhealth.RANK.get(status, 0) < floor:
+            continue
+
+        crit = status == "crit"
+        title = f"Device {a.name} is {'critical' if crit else 'degraded'}"
+        # The title is all the bell and the push show, and the mail subject
+        # repeats it: when a deep monitor is the worst reason, it carries the
+        # reading ("CPU 97% (critical 95%)"), not just the word "critical".
+        top = next((r for r in health["reasons"]
+                    if r["status"] in ("warn", "crit")), None)
+        if top and top.get("alerting"):
+            title += f" — {devhealth.probe_headline(top['alerting'][0])}"
+        findings.append({
+            # The status is part of the key ON PURPOSE: an escalation from warn
+            # to crit inside the cooldown window must still reach the operator.
+            # The key never carries the reading: a CPU wobbling 96 -> 97 % must
+            # not re-arm the cooldown.
+            "key": f"device.health.{a.name}.{status}",
+            "severity": SEV_CRITICAL if crit else SEV_WARNING,
+            "title": title,
+            "product": _product_of(a),
+            # The id, not only the name in the key: a process trigger resolves
+            # the appliance from it, and a name is not an identity (two ADOMs).
+            "appliance_id": a.id,
+            "detail": ("\n".join(lines) +
+                       f"\n\n{a.kind} appliance at {host}:{port}, probed from "
+                       f"{_node()}. Full picture: /monitoring/ — thresholds: "
+                       f"Settings -> Thresholds -> {a.kind or 'this product'}.")})
+    return findings
+
+
+
+def _check_actions() -> list[dict]:
+    """One finding per broken scheduled automation — silent unless it breaks.
+
+    This is the push half of the housekeeping contract. Background sweeps were
+    made silent on 2026-07-28 (a run that worked is not news), which is only
+    safe if the FAILING run is loud somewhere. It was not: ``scheduled_actions``
+    contains no ``notify`` call and this engine had no check for it, so on the
+    day this was written action 5 (device_sync) had failed **24 consecutive
+    scheduled runs** and nobody was told. The day before, ``scheduler_guard.sh``
+    broke on ``runuser`` and the sidecar fired *nothing at all* for hours while
+    systemd still showed the unit ``active`` — also silent.
+
+    Two failure modes, therefore, not one:
+
+    * **failing** — the action fires and errors. Graded on the consecutive
+      scheduled-failure streak.
+    * **overdue** — the action is enabled and its ``next_run`` is long past. A
+      scheduler that stops firing produces *no* failed runs at all, so a
+      streak-only check would call a dead scheduler healthy.
+
+    Only ``trigger='schedule'`` runs count. A manual run is user-initiated and
+    its result is already on the operator's screen; worse, mixing the two hides
+    exactly the case seen on 2026-07-28 where the scheduled path failed
+    (``Unknown action``: the sidecar held stale code) while the manual path
+    succeeded in the freshly restarted web worker.
+    """
+    from ..models import ScheduledAction, ScheduledActionRun
+
+    try:
+        actions = ScheduledAction.query.filter_by(enabled=True).all()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "action.error", "severity": SEV_WARNING,
+                 "title": "Scheduled action list unreadable",
+                 "detail": f"ScheduledAction.query failed: {exc}"}]
+
+    streak_crit = max(2, _int(K_ACT_STREAK_CRIT, 3))
+    overdue_h = max(1, _int(K_ACT_OVERDUE_H, 3))
+    now = datetime.utcnow()
+    findings: list[dict] = []
+
+    for a in actions:
+        product = (a.product or "").strip().lower()
+        product = product if product in concrete_products() else ""
+        label = f"{a.name or a.action} (#{a.id})"
+        lines: list[str] = []
+        crit = False
+
+        try:
+            runs = (ScheduledActionRun.query
+                    .filter_by(action_id=a.id, trigger="schedule")
+                    .order_by(ScheduledActionRun.id.desc()).limit(_RUN_WINDOW).all())
+        except Exception as exc:  # noqa: BLE001 — one bad action never sinks the run
+            findings.append({"key": f"action.error.{a.id}", "severity": SEV_WARNING,
+                             "title": f"Run history unreadable for {label}",
+                             "product": product,
+                             "detail": f"ScheduledActionRun.query raised: {exc}"})
+            continue
+
+        # -- failing --------------------------------------------------------
+        streak, last_fail = 0, None
+        for r in runs:
+            if r.status == "failed":
+                streak += 1
+                last_fail = last_fail or r
+            elif r.status in ("ok", "skipped"):
+                # A skip terminates the streak as surely as a success does.
+                # Stepping over it looks safer and is not: an action whose whole
+                # target set is parked reports 'skipped' forever, so old
+                # failures would never clear and the alert would stay critical
+                # permanently — the always-red state this check exists to
+                # prevent. A skip is a legitimate outcome, not a fault; if the
+                # action really is broken its next real run restarts the streak.
+                break
+            # 'running' is the row this very sweep opened — neither outcome yet.
+        if streak:
+            crit = crit or streak >= streak_crit
+            when = last_fail.started_at.strftime("%Y-%m-%d %H:%M") if last_fail else "?"
+            why = ((last_fail.summary or "").strip() if last_fail else "") or "no summary recorded"
+            # The history window is bounded; at the cap the streak is a floor,
+            # not a count. Saying "50" when it may be 500 is a lie the operator
+            # would use to judge how long this has been broken.
+            shown = f"{streak}+" if streak >= _RUN_WINDOW else str(streak)
+            lines.append(f"- Failing: {shown} consecutive scheduled run(s) failed, "
+                         f"latest {when} UTC — {why[:400]}")
+            if _runs_on_server(a.action):
+                # SA-0020: the reader looked for the appliance that failed.
+                lines.append("- Target: no appliance — this action runs on the "
+                             "SATOM server itself.")
+
+        # -- overdue --------------------------------------------------------
+        if a.next_run:
+            late_h = (now - a.next_run).total_seconds() / 3600.0
+            if late_h >= overdue_h:
+                crit = crit or late_h >= overdue_h * 4
+                last = a.last_run.strftime("%Y-%m-%d %H:%M") if a.last_run else "never"
+                lines.append(f"- Overdue: due {a.next_run.strftime('%Y-%m-%d %H:%M')} UTC, "
+                             f"{late_h:.1f}h ago and still not fired (last run: {last}). "
+                             f"The scheduler sidecar may not be running on the primary.")
+
+        if not lines:
+            continue
+
+        findings.append({
+            # Severity is in the key ON PURPOSE (same reason as device health):
+            # an escalation from warn to crit inside the cooldown must get out.
+            "key": f"action.broken.{a.id}.{'crit' if crit else 'warn'}",
+            "severity": SEV_CRITICAL if crit else SEV_WARNING,
+            "title": f"Scheduled automation {'failing' if streak else 'not firing'}: {label}",
+            "product": product,
+            "detail": ("\n".join(lines) +
+                       f"\n\nAction '{a.action}', schedule {a.schedule_kind}, "
+                       f"evaluated on {_node()}. Details: {_action_page(a)}")})
+    return findings
+
+def _runs_on_server(key: str) -> bool:
+    """True for an action with no device target (``needs_targets`` False)."""
+    try:
+        from .scheduled_actions import get_spec
+        spec = get_spec(key)
+    except Exception:  # noqa: BLE001
+        return False
+    return spec is not None and not spec.needs_targets
+
+
+def _action_page(action) -> str:
+    """The list that owns ``action``: /automations/ for operator work,
+    /scheduled-actions/ (System Automations) for SATOM's own. Since the
+    2026-10-14 regroup an upgrade or reboot row lives on the first; pointing
+    every alert at the second sent the operator to a page that cannot open it.
+
+    Both lists live under ``/web/``. ``/scheduled-actions/`` happens to
+    redirect there; ``/automations/`` does not and answered 404 until
+    2026-11-02, so the operator-work alerts linked to nothing."""
+    try:
+        from ..views.scheduled_actions import endpoint_for
+        return ("/web/automations/" if endpoint_for(action) == "automations"
+                else "/web/scheduled-actions/")
+    except Exception:  # noqa: BLE001 - a link must never cost the alert
+        return "/web/scheduled-actions/"
+
+
+def _bundle_stamp(entry: dict):
+    """When a bundle was taken, as an aware UTC datetime, or None.
+
+    The name is a real fallback, not a nicety: an off-box-only row carries no
+    local mtime (there is no local file), and ``fmw-backup-YYYYmmdd-HHMMSS`` is
+    written from the same clock as the mtime this used to be the only source
+    for.
+    """
+    ts = entry.get("created") or entry.get("modified") or entry.get("mtime") or entry.get("date")
+    dt = None
+    if isinstance(ts, (int, float)):
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    elif isinstance(ts, str) and ts:
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except ValueError:
+            dt = None
+    if dt is None:
+        m = re.search(r"(\d{8})-(\d{6})", str(entry.get("name") or ""))
+        if m:
+            try:
+                dt = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
+            except ValueError:
+                dt = None
+    if dt is not None and dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _check_backup() -> list[dict]:
+    """Is there a recent database bundle ANYWHERE we can see?
+
+    Reads the local+off-box union, not this node's disk. Keeping a bundle
+    beside the database it backs up is where it is worth least, so the default
+    retention is ``keep=0``: once an upload to the backup server is verified
+    byte for byte the local copy is deleted. A check that only listed local
+    files therefore raised "No database backup bundles present" every day in
+    the window between the eviction and the next nightly dump - it fired on the
+    backup policy WORKING. ``all_bundles`` is the same union the System Backup
+    page renders, whose own docstring already names this failure.
+    """
+    from . import system_backup
+    try:
+        bundles = system_backup.all_bundles()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "backup.error", "severity": SEV_INFO,
+                 "title": "Backup inventory unreadable",
+                 "detail": f"all_bundles() failed: {exc}"}]
+    if not bundles:
+        return [{"key": "backup.none", "severity": SEV_WARNING,
+                 "title": "No database backup bundles present",
+                 "detail": (f"No pg_dump bundle found on {_node()} nor on the "
+                            f"backup server.")}]
+    newest = None
+    for b in bundles:
+        dt = _bundle_stamp(b)
+        if dt is not None and (newest is None or dt > newest):
+            newest = dt
+    if newest is None:
+        return []
+    if newest.tzinfo is None:
+        newest = newest.replace(tzinfo=timezone.utc)
+    age_h = (_now() - newest).total_seconds() / 3600
+    max_h = _int(K_BACKUP_MAX_H, 48)
+    if age_h > max_h:
+        return [{"key": "backup.stale", "severity": SEV_WARNING,
+                 "title": f"Newest DB backup is {int(age_h)}h old",
+                 "detail": (f"The most recent database bundle on {_node()} is "
+                            f"{int(age_h)}h old (> {max_h}h). Backups may have "
+                            f"stopped running.")}]
+    return []
+
+
+def _drift_exclude_slugs() -> set[str]:
+    """Device names the operator listed in ``alerts.drift_exclude``.
+
+    Empty by default. It used to default to ``faz01``: that box's "rotating
+    crypto tokens" were FortiAnalyzer's per-read salted ``["ENC", ...]``
+    secrets, now dropped by the FortiAnalyzer sweep and by the SoT identity
+    (``sot_store.RPC_SECRET_TAG``). A lab hostname baked into the shipped
+    default also silenced drift on ANY customer device that happened to be
+    called faz01. Volatile fields belong in ``sot_store.normalise``, which
+    keeps the version history clean too, not in a per-device mute."""
+    raw = AppSetting.get("alerts.drift_exclude") or ""
+    return {s.strip() for s in raw.replace(";", ",").split(",") if s.strip()}
+
+
+def _check_drift() -> list[dict]:
+    """Config-drift: a device whose harvested configuration CHANGED recently.
+
+    The signal is a new row in the local source-of-truth store. That store is
+    content-addressed and volatile fields are excluded from the hash
+    (``sot_store.canonical_bytes``), so an unchanged device mints no row at
+    all -- a new row therefore IS a real config change, with no second
+    normalisation pass to keep in sync. Only changes newer than
+    ``alerts.drift_window_min`` alert, keyed by content hash so each distinct
+    drift fires once. Near-zero cost: one indexed query per device, never
+    touches the appliance.
+
+    It read git history until 2026-08-05. The source of truth left git that
+    morning, so git saw the migration as a DELETION of every
+    ``reports/<slug>/_config.json`` and the check reported one refactor commit
+    as fifteen device-side edits. A drift check must read the store that
+    actually holds the baseline.
+
+    Devices in ``maintenance`` are skipped -- that is the documented lever for
+    parking a broken box, and it already suppresses scheduled runs and device
+    health. Noisy devices can still be listed in ``alerts.drift_exclude``.
+    """
+    from datetime import timedelta
+
+    from ..models import Appliance
+    from ..models_sot import SotVersion
+    findings: list[dict] = []
+    try:
+        appliances = Appliance.query.all()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "drift.error", "severity": SEV_INFO,
+                 "title": "Drift scan: appliance list unreadable", "detail": str(exc)}]
+    window_min = _int(K_DRIFT_WINDOW_MIN, 90)
+    excluded = _drift_exclude_slugs()
+    now = _now().replace(tzinfo=None)          # sot_version.taken_at is naive UTC
+    cutoff = now - timedelta(minutes=window_min)
+    for a in appliances:
+        slug = a.name
+        if slug in excluded or getattr(a, "maintenance", False):
+            continue
+        try:
+            rows = (SotVersion.query.filter_by(device=slug)
+                    .order_by(SotVersion.taken_at.desc(), SotVersion.id.desc())
+                    .limit(2).all())
+        except Exception:  # noqa: BLE001 -- one unreadable device never sinks the scan
+            continue
+        if len(rows) < 2:
+            continue        # first-ever version is onboarding, not drift
+        new = rows[0]
+        if not new.taken_at or new.taken_at < cutoff:
+            continue        # old change -- already seen / not this run's concern
+        age_min = int((now - new.taken_at).total_seconds() / 60)
+        # Who changed it. SATOM records its own writes in ``audit_logs``; the
+        # message used to hand that correlation back to the reader ("If nobody
+        # edited it via SATOM...") while holding the rows that answer it.
+        att = drift_attribution.attribute(a, rows[1], new)
+        span = _span(att)
+        head = (f"{a.kind} '{slug}' changed in the source-of-truth "
+                f"({age_min}m ago, content {new.sha256[:8]}, "
+                f"previous {rows[1].sha256[:8]}).")
+        if att["receipts"]:
+            mode = _get(K_DRIFT_ATTRIBUTED).strip().lower()
+            if mode == "off":
+                continue
+            lines = "\n".join("- " + drift_attribution.describe(r)
+                               for r in att["receipts"])
+            findings.append({
+                "key": f"drift.{slug}.{new.sha256[:12]}",
+                "severity": SEV_WARNING if mode == "warn" else SEV_INFO,
+                "title": f"Config change on {slug} — made through SATOM",
+                "product": _product_of(a), "appliance_id": a.id,
+                "detail": (f"{head} SATOM recorded {len(att['receipts'])} "
+                           f"write(s) to this device in {span}, the interval "
+                           f"the change has to fall in, so this is an expected "
+                           f"change and not device-side drift:\n{lines}\n"
+                           f"If none of those is the change you are looking at, "
+                           f"review the A/B diff on the System Backup page.")})
+            continue
+        findings.append({
+            "key": f"drift.{slug}.{new.sha256[:12]}", "severity": SEV_WARNING,
+            "title": f"Config drift on {slug}",
+            "product": _product_of(a), "appliance_id": a.id,
+            "detail": (f"{head} SATOM recorded no write of its own to this "
+                       f"device in {span}, the interval the change has to fall "
+                       f"in, so it came from the device side (CLI/GUI) or from "
+                       f"a tool other than SATOM -- review the A/B diff on the "
+                       f"System Backup page.")})
+    return findings
+
+
+def _check_intent() -> list[dict]:
+    """One finding per binding whose device no longer matches its template.
+
+    Drift (above) says a device CHANGED; this says a device does not match
+    what the operator MEANT it to run, whether it changed yesterday or never
+    received the template at all. The comparison is local -- the rendered
+    template against the cached device objects (``services.intent_compliance``)
+    -- so it never touches the appliance, and it names the fields that differ,
+    never their values.
+
+    One finding per binding, keyed by device, binding and a hash of the
+    deviation: the same deviation fires once per cooldown window, a corrected
+    device goes quiet on its own, and a device that deviates DIFFERENTLY
+    tomorrow mints a new key. Devices in ``maintenance`` are skipped, and so are
+    the names in ``alerts.drift_exclude`` -- a box whose changes are muted is a
+    box whose compliance is not wanted either. ``unmeasured`` bindings (no
+    approved version, a variable unset, nothing cached) raise nothing: the
+    bindings table says why, and an alert that cannot tell "does not match"
+    from "could not look" would be the permanent complaint this engine has
+    already had to delete three times.
+    """
+    from ..models import Appliance
+    from . import intent_compliance as ic
+    findings: list[dict] = []
+    try:
+        results = ic.all_bindings()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "intent.error", "severity": SEV_INFO,
+                 "title": "Intent scan: bindings unreadable", "detail": str(exc)}]
+    excluded = _drift_exclude_slugs()
+    for r in results:
+        if r.get("status") != ic.STATUS_DEVIATES:
+            continue
+        a = db_get(Appliance, r.get("appliance_id"))
+        if a is None:
+            continue
+        slug = a.name
+        if slug in excluded or getattr(a, "maintenance", False):
+            continue
+        lines = "\n".join(ic.describe(r))
+        findings.append({
+            "key": f"intent.{slug}:{r['binding_id']}:{r['hash']}",
+            "severity": SEV_WARNING,
+            "title": f"Intent deviation on {slug}: {r['name']}",
+            "product": _product_of(a),
+            "detail": (f"{a.kind} '{slug}' no longer matches template "
+                       f"{r['kind']}/{r['name']} v{r['version']} it is bound to: "
+                       f"{r['deviations']} of {r['compared'] + r['unmeasured']} "
+                       f"object(s) deviate ({r['compared']} compared"
+                       + (f", {r['unmeasured']} not compared" if r["unmeasured"] else "")
+                       + f").\n{lines}\nRe-apply the template from the Template "
+                       f"Library, or re-bind the device to the version it runs."),
+            "intent": {
+                "appliance_id": r["appliance_id"], "appliance": slug,
+                "binding_id": r["binding_id"], "template_id": r["template_id"],
+                "kind": r["kind"], "name": r["name"], "version": r["version"],
+                "deviations": [{"endpoint": d["endpoint"], "mkey": d["mkey"],
+                                "reason": d["reason"], "keys": list(d["keys"])}
+                               for d in r["deviating"]],
+                "deviation_count": r["deviations"], "compared": r["compared"],
+            },
+        })
+    return findings
+
+
+def db_get(model, ident):
+    """``db.session.get`` that treats a missing or invalid id as None."""
+    from ..extensions import db
+    if ident in (None, ""):
+        return None
+    try:
+        return db.session.get(model, int(ident))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _check_host() -> list[dict]:
+    """One finding per node whose MACHINE is degraded — disk, memory, load.
+
+    This check exists because nothing in the product measured the box it runs
+    on. On 2026-07-28 the primary reached 95 % disk in six minutes; every unit
+    stayed active, ``/healthz`` stayed 200, the badge stayed green and no mail
+    was sent. It was found by a human running ``df``.
+
+    Two boundaries, both deliberate:
+
+    * **An unreachable node is not alerted here.** It grades ``unknown`` (we
+      learned nothing about its disk) and the redundancy check already owns
+      "the peer is gone". Alerting both would send two mails for one dead
+      standby.
+    * **One finding per node, every failing signal listed** — the same contract
+      as :func:`_check_devices`. Three mails about one full disk is how an
+      operator learns to filter the sender.
+    """
+    from . import host_health as hh
+    try:
+        fleet = hh.fleet()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "host.error", "severity": SEV_WARNING,
+                 "title": "Host health unreadable",
+                 "detail": f"host_health.fleet() raised: {exc}"}]
+
+    findings: list[dict] = []
+    for n in fleet.get("nodes") or []:
+        bad = [r for r in (n.get("reasons") or [])
+               if r.get("status") in ("warn", "crit")]
+        if not bad:
+            continue
+        crit = any(r["status"] == "crit" for r in bad)
+        name = n.get("name") or "this node"
+        findings.append({
+            # The status is part of the key so an escalation from warn to crit
+            # inside the cooldown window still reaches the operator.
+            "key": f"host.{name}.{'crit' if crit else 'warn'}",
+            "severity": SEV_CRITICAL if crit else SEV_WARNING,
+            "title": f"Host {name} is {'critical' if crit else 'degraded'}",
+            "detail": ("\n".join(f"- {r['label']}: {r['text']}" for r in bad)
+                       + "\n\nThresholds: Settings -> Thresholds -> "
+                         "SATOM host (the machine).")})
+    return findings
+
+
+
+def _check_catalog() -> list[dict]:
+    """Corroborated object disappearances — and the ones that accuse US.
+
+    Every other check in this engine reports on a device or on this host. This
+    one reports on SATOM's own endpoint catalog, and that is the point: when a
+    firmware line rejects a path we hold, exactly one of two things is true and
+    they need opposite work. ``absence_corroboration`` decides which by asking
+    the appliance's own configuration dump, a source that is addressed in CLI
+    syntax and therefore cannot inherit our path's mistake.
+
+    Severity follows that split and not the drama of the words:
+
+    * a **contradiction** (the dump holds a block the REST path is rejecting)
+      is a WARNING, because the catalog every service resolves names through
+      is wrong for that line and nobody would find out from a green page;
+    * a newly proved **disappearance** is INFO, because it is a correct
+      measurement of the firmware and alerting on it at warning level would
+      train the operator to mute the family before the contradiction arrives.
+
+    Evaluating writes the ledger (``absence_record.record``). That is
+    deliberate — the timer is the thing that re-proves a finding, and
+    ``last_seen_at`` is what lets a finding that stopped being true stop firing
+    without anybody clearing it. On a read-only standby the write is rolled
+    back and the findings are still reported.
+    """
+    from . import absence_corroboration as _corr
+    from . import absence_record
+    from . import api_matrix as _am
+
+    findings: list[dict] = []
+    for product in concrete_products():
+        if product not in _am.SWEPT_PRODUCTS:
+            continue
+        try:
+            summary = absence_record.record(product)
+        except Exception as exc:  # noqa: BLE001 — one product never sinks the check
+            findings.append({"key": "catalog.error", "severity": SEV_INFO,
+                             "product": product,
+                             "title": f"Catalog absence scan failed ({product})",
+                             "detail": str(exc)})
+            continue
+
+        rows = [f for f in summary.get("findings") or []
+                if _corr.is_actionable(f.get("state"))]
+        if rows:
+            lines = [
+                f"- {f['name']} ({f['base_scope']} -> {f['target_scope']}): "
+                f"{f['target_scope']} rejects {f['urn'] or 'the catalog URN'} "
+                f"but its CLI dump"
+                + (f" spells it {f['proposed_path']}" if f.get("proposed_path")
+                   else " holds a block for it")
+                + (f" [{f['cli_device']}]" if f.get("cli_device") else "")
+                for f in rows]
+            findings.append({
+                "key": "catalog.registry_suspect", "severity": SEV_WARNING,
+                "product": product,
+                "title": (f"{len(rows)} {product} catalog path(s) look wrong "
+                          f"for a firmware line"),
+                "detail": ("\n".join(lines) + "\n\n"
+                           + absence_record.BLOCKED_REASON
+                           + "\nReview: Registry -> firmware comparison.")})
+
+        fresh = [f for f in summary.get("findings") or []
+                 if f.get("state") == _corr.STATE_CONFIRMED]
+        if fresh and summary.get("created"):
+            findings.append({
+                "key": "catalog.object_gone", "severity": SEV_INFO,
+                "product": product,
+                "title": (f"{summary['created']} newly recorded {product} "
+                          f"object disappearance(s)"),
+                "detail": ("\n".join(
+                    f"- {f['name']}: gone on {f['target_scope']} "
+                    f"(corroborated by the CLI dump)"
+                    for f in fresh[:20])
+                    + ("\n..." if len(fresh) > 20 else ""))})
+        if not summary.get("persisted") and summary.get("error"):
+            findings.append({
+                "key": "catalog.error", "severity": SEV_INFO,
+                "product": product,
+                "title": f"Catalog absence ledger not written ({product})",
+                "detail": str(summary.get("error"))})
+
+        # A pair the ledger stopped tracking. WARNING, and the level is the
+        # argument: the two findings above are about a firmware, and this one
+        # is about the ledger having quietly stopped maintaining records a
+        # person already decided. Nothing else in the product can notice it --
+        # the rows are still in the table, the page is still green, and
+        # ``evaluate`` simply never visits them again. Silence is exactly the
+        # failure mode, so it is the one thing here that leaves the building on
+        # its own.
+        try:
+            stale = absence_record.orphans(product)
+        except Exception:  # noqa: BLE001 -- never sink the check over a read
+            stale = []
+        if stale:
+            findings.append({
+                "key": "catalog.ledger_orphaned", "severity": SEV_WARNING,
+                "product": product,
+                "title": (f"{len(stale)} {product} lifecycle ledger pair(s) are "
+                          f"no longer tracked"),
+                "detail": ("\n".join(
+                    f"- {g['base']} -> {g['target']}: {g['rows']} recorded "
+                    f"({g['decided']} already decided, {g['open']} open) — "
+                    f"a firmware line now sits between these two, so nothing "
+                    f"re-proves them: {', '.join(g['names'][:10])}"
+                    + ("…" if len(g['names']) > 10 else "")
+                    for g in stale)
+                    + "\n\nThe rows are intact and still readable on the "
+                      "comparison that recorded them. Decide whether the "
+                      "records still stand for the new pairing; they are not "
+                      "re-filed automatically, because that would attribute a "
+                      "decision to a pair nobody reviewed.")})
+    return findings
+
+
+def _check_signatures() -> list[dict]:
+    """Signature databases that stopped updating (contract C8).
+
+    Reads what the ``signature_check`` scheduled action stored — this engine
+    never contacts a device for it. A FortiWeb whose signature DB is older than
+    ``alerts.signature_max_days`` (default 7), that reports it never updated,
+    or whose version could not be read, is a WARNING in the ``device`` family:
+    a WAF on stale signatures is a box protecting against last month.
+
+    The key carries the appliance id, like ``device.health.<name>``: with one
+    key for every FortiWeb, one device's cooldown silenced another's alert."""
+    from . import signature_freshness as sf
+    from . import signature_index as sidx
+    findings: list[dict] = []
+    findings.extend(_check_signature_source(sidx))
+    for row in sf.rows(now=_now()):
+        if row["status"] == "ok":
+            continue
+        name = row.get("name") or ("appliance %s" % row.get("appliance_id"))
+        if row["status"] == "unreadable":
+            findings.append({
+                "key": f"device.signature_unreadable.{row.get('appliance_id')}",
+                "severity": SEV_WARNING,
+                "product": row.get("product") or "fortiweb",
+                "title": f"Signature DB version unreadable on {name}",
+                "detail": (f"{name}: {row.get('reason')}. The last known version "
+                           f"is {row.get('version') or 'none'}. Check REST access "
+                           f"(the read is GET {sf.REST_PATH}; `{sf.VERSION_CMD}` "
+                           f"over SSH is the fallback).")})
+        else:
+            findings.append({
+                "key": f"device.signature_stale.{row.get('appliance_id')}",
+                "severity": SEV_WARNING,
+                "product": row.get("product") or "fortiweb",
+                "title": f"Signature DB on {name} is stale",
+                "detail": (f"{name}: {row.get('reason')}. Check the device's "
+                           f"FortiGuard connectivity and licence (System → "
+                           f"FortiGuard).")})
+    return findings
+
+
+def _check_signature_source(sidx) -> list[dict]:
+    """FortiWebs registered but no usable signature source: nothing feeds the
+    local signature index, and the Signatures page would show a frozen catalog
+    as if it were current."""
+    from ..models import Appliance
+    out: list[dict] = []
+    for product in sidx.PRODUCTS:
+        live = (Appliance.query.filter(Appliance.kind == product)
+                .filter(Appliance.maintenance.is_(False)).count())
+        if not live or sidx.source_appliance(product) is not None:
+            continue
+        stale_id = sidx.source_id(product)
+        out.append({
+            "key": "device.signature_source_missing", "severity": SEV_WARNING,
+            "product": product,
+            "title": "No signature source configured",
+            "detail": ("%d %s device(s) registered but %s, so SATOM is not "
+                       "collecting their signature database. Choose a source on "
+                       "the Signatures page." % (
+                           live, product,
+                           ("the configured source (appliance %s) no longer exists"
+                            % stale_id) if stale_id else "no signature source is set"))})
+    return out
+
+
+#: Keys whose check reported them AFFIRMATIVELY cleared during the last
+#: evaluate(). run() lifts their cooldown, so an alert of this kind notifies on
+#: every ok -> broken transition: without it, a second outage inside the
+#: cooldown window of the first would be suppressed as if it were the same one.
+#: Only checks that can tell "healthy" from "could not tell" may add to it.
+_CLEARED: set = set()
+
+
+def _check_code() -> list[dict]:
+    """One finding per SATOM process running code older than the disk.
+
+    On 2026-10-13 satom-scheduler had run two-day-old code for 45 hours
+    because deploys restarted only the web service; its ``device_sync`` said
+    "6/6 ok" and silently skipped the FortiGate the new code had added. A stale
+    scheduler fails only on the scheduled path, so a manual test passes — which
+    is why this lives with the scheduled-automation checks (same toggle; a new
+    toggle would default to OFF on every saved settings form).
+
+    Only on a node with systemd units (``runtime.capability``); a delegated
+    container runtime restarts its processes with the image.
+    """
+    from .. import runtime
+    from . import code_freshness as cf
+    if not runtime.capability("unit_health") or runtime.delegated("unit_health"):
+        return []
+    rows = cf.stale()
+    if not rows:
+        return []
+    node = _node()
+    return [{
+        "key": "action.code_stale.%s" % r["alias"],
+        "severity": SEV_WARNING,
+        "title": "%s on %s is running code older than the disk" % (r["unit"], node),
+        "detail": ("%s started %.1f h before the newest source file (%s) was "
+                   "written. Until it restarts it runs the previous release: "
+                   "scheduled actions can fail or skip work while manual runs "
+                   "of the same thing pass.\n\nFix: satom execute restart-all"
+                   % (r["unit"], r["behind_h"], r["newest"]))}
+        for r in rows]
+
+
+def _check_ha_link() -> list[dict]:
+    """The standby cannot fetch code from this primary (app/services/ha_link).
+
+    Same toggle as the git checks: it is the git-sync path between the nodes,
+    and a new toggle would default to OFF on every saved settings form.
+    """
+    from . import ha_link
+    findings, cleared = ha_link.alert_findings()
+    if cleared:
+        _CLEARED.add(ha_link.ALERT_KEY)
+    return findings
+
+
+def _check_service_checks() -> list[dict]:
+    from . import service_checks
+    return service_checks.alert_findings()
+
+
+_CHECKS = [
+    (K_CHK_CERT, _check_cert),
+    (K_CHK_GIT, _check_git),
+    (K_CHK_GIT, _check_ha_link),
+    (K_CHK_DEVICE, _check_devices),
+    # Same toggle and family as device health: a stale signature DB is the
+    # device's health, and a new toggle would default to OFF on every saved
+    # settings form that predates it.
+    (K_CHK_DEVICE, _check_signatures),
+    (K_CHK_BACKUP, _check_backup),
+    (K_CHK_DRIFT, _check_drift),
+    (K_CHK_INTENT, _check_intent),
+    (K_CHK_ACTIONS, _check_actions),
+    (K_CHK_ACTIONS, _check_code),
+    (K_CHK_HOST, _check_host),
+    (K_CHK_CATALOG, _check_catalog),
+    # Monitoring › Service checks (2026-11-17): a service a check watches is
+    # down or degraded. Device toggle, like the signatures: a new toggle would
+    # default to OFF on every saved settings form that predates it.
+    (K_CHK_DEVICE, _check_service_checks),
+]
+
+
+def evaluate() -> list[dict]:
+    """Run every enabled check and return the merged findings list (no dispatch,
+    no cooldown) — used by the run loop AND by the Settings 'Preview' button."""
+    _CLEARED.clear()
+    findings: list[dict] = []
+    for toggle_key, fn in _CHECKS:
+        if not _flag(toggle_key):
+            continue
+        try:
+            findings.extend(fn() or [])
+        except Exception as exc:  # noqa: BLE001 — one bad check never sinks the run
+            findings.append({"key": "engine.error", "severity": SEV_INFO,
+                             "title": f"Alert check {fn.__name__} errored",
+                             "detail": str(exc)})
+    findings.sort(key=lambda f: _SEV_RANK.get(f.get("severity"), 0), reverse=True)
+    return findings
+
+
+# ---- dispatch -------------------------------------------------------------
+def _muted_by_all(user_ids, title: str) -> bool:
+    """Did every one of ``user_ids`` switch off the bell category of ``title``
+    (profile › Notifications)? False on any doubt: an unreadable preference is
+    reported as a delivery failure, never as a choice."""
+    try:
+        from . import notification_guide as guide
+        from .user_settings_store import muted_categories
+        cat = guide.category_of(title)
+        ids = list(user_ids or [])
+        return bool(ids) and all(cat in muted_categories(uid) for uid in ids)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _admin_ids() -> list[int]:
+    from ..models import User
+    ids = []
+    for u in User.query.all():
+        try:
+            # is_admin_capable is a @property (bool), not a method — no parens.
+            if u.is_admin_capable:
+                ids.append(u.id)
+        except Exception:  # noqa: BLE001
+            pass
+    return ids
+
+
+def _email_body(new_findings: list[dict]) -> tuple[str, str]:
+    node = _node()
+    lines = [f"SATOM alerts from {node} — {len(new_findings)} new:", ""]
+    for f in new_findings:
+        lines.append(f"[{f['severity'].upper()}] {f['title']}")
+        lines.append(f"    {f['detail']}")
+        lines.append("")
+    text = "\n".join(lines)
+    # Escaped, and pre-wrap so the per-probe sub-lines keep their breaks and
+    # indentation: the detail carries device-reported text (probe details,
+    # sync errors), and without pre-wrap a multi-line detail collapsed into one
+    # run-on paragraph in every HTML mail client.
+    rows = "".join(
+        f"<tr><td style='padding:4px 8px;font-weight:600'>{f['severity'].upper()}</td>"
+        f"<td style='padding:4px 8px'><b>{_esc(f['title'])}</b><br>"
+        f"<span style='color:#555;white-space:pre-wrap'>{_esc(f['detail'])}</span>"
+        f"</td></tr>"
+        for f in new_findings)
+    html = (f"<h3>SATOM alerts — {node}</h3>"
+            f"<table style='border-collapse:collapse'>{rows}</table>")
+    return text, html
+
+
+def alert_event_payload(finding: dict, node: str) -> dict:
+    """The ``alert.fired`` payload for one finding.
+
+    ``family`` is resolved here rather than left to the hook author: the
+    key prefix and the family name genuinely differ (``action.*`` ->
+    ``actions``), and every hook re-deriving that mapping is four copies
+    of one rule that will drift."""
+    return {
+        "key": finding.get("key", ""),
+        "family": routing.family_of(finding.get("key", "")),
+        "severity": finding.get("severity", SEV_INFO),
+        "title": finding.get("title", ""),
+        "detail": finding.get("detail", ""),
+        "product": finding.get("product") or "",
+        # The appliance a device finding is about, when the check recorded
+        # one; None for fleet-wide findings. Triggers resolve the device from
+        # it (services.trigger_engine).
+        "appliance_id": finding.get("appliance_id"),
+        "node": node or "",
+        "fired_at": _now().isoformat(),
+    }
+
+
+def intent_event_payload(finding: dict, node: str) -> dict | None:
+    """The ``intent.deviation`` payload for one intent finding, None for any
+    other finding. The typed event carries what the generic ``alert.fired``
+    folds into prose: which binding, which objects, which keys -- and never a
+    value, because the finding itself never held one."""
+    info = finding.get("intent")
+    if not isinstance(info, dict):
+        return None
+    return {
+        "key": finding.get("key", ""),
+        "severity": finding.get("severity", SEV_WARNING),
+        "appliance_id": info.get("appliance_id"),
+        "appliance": info.get("appliance", ""),
+        "product": finding.get("product") or "",
+        "binding_id": info.get("binding_id"),
+        "template_id": info.get("template_id"),
+        "kind": info.get("kind", ""),
+        "name": info.get("name", ""),
+        "version": info.get("version"),
+        "deviations": [{"endpoint": d.get("endpoint", ""), "mkey": d.get("mkey", ""),
+                        "reason": d.get("reason", ""), "keys": list(d.get("keys") or [])}
+                       for d in (info.get("deviations") or [])],
+        "deviation_count": int(info.get("deviation_count") or 0),
+        "compared": int(info.get("compared") or 0),
+        "node": node or "",
+        "fired_at": _now().isoformat(),
+    }
+
+
+def run(*, force: bool = False, dry_run: bool = False) -> dict:
+    """Evaluate, feed the record, then notify the humans who asked to hear it.
+
+    ``force`` ignores the cooldown; ``dry_run`` evaluates and reports what WOULD
+    fire without sending anything or touching state. Returns a summary dict."""
+    findings = evaluate()
+    node = _node()
+    if dry_run:
+        return {"node": node, "evaluated": len(findings),
+                "findings": findings, "dispatched": 0, "dry_run": True,
+                "syslog": alert_syslog.emit(findings, node, dry_run=True),
+                "webhook": alert_webhook.emit(findings, node,
+                                              dry_run=True)}
+
+    # ---- feed path --------------------------------------------------------
+    # Deliberately BEFORE the replica guard and BEFORE the cooldown. The syslog
+    # sink writes no state, so a read-only standby can still put its own cert /
+    # host / reachability findings on the wire — today they never leave the
+    # node. And a record with cooldown holes reads as "nothing was wrong".
+    syslog_res = alert_syslog.emit(findings, node)
+
+    # On a read-only standby, notification (in-app + cooldown state) can't be
+    # written and email would spam without persistable cooldown. Evaluate + log
+    # only; the writable primary owns it. A promoted standby flips and starts.
+    if _is_read_only_replica():
+        return {"node": node, "evaluated": len(findings), "fresh": 0,
+                "dispatched": 0, "email": None, "enabled": is_enabled(),
+                "syslog": syslog_res,
+                "skipped": "read-only replica — notification is primary-only"}
+
+    state = _load_state()
+    # Re-arm transition alerts whose condition is now affirmatively gone. Done
+    # here and not in evaluate(): the Preview button evaluates too, and a
+    # preview must never change what the next real run sends.
+    rearm = [k for k in _CLEARED if k in state]
+    if rearm:
+        for k in rearm:
+            state.pop(k, None)
+        _save_state(state)
+    cooldown_h = _int(K_COOLDOWN_H, 6)
+    fresh = [f for f in findings
+             if force or not _in_cooldown(state, f["key"], cooldown_h)]
+
+    result = {"node": node, "evaluated": len(findings),
+              "fresh": len(fresh), "dispatched": 0, "email": None,
+              "in_app": 0, "in_app_muted": [], "channels": [], "delivery_failed": [],
+              "syslog": syslog_res, "webhook": None,
+              "hooks": None, "queued": 0, "routed": {},
+              "enabled": is_enabled()}
+
+    # ---- notification path ------------------------------------------------
+    # Each sink gets only what its own severity floor and family mask accept.
+    # The engine master switch still gates email; the bell has always fired
+    # regardless (cheap, local) and keeps doing so, now under its own filter.
+    bell = routing.route(fresh, routing.SINK_IN_APP)
+    mail = routing.route(fresh, routing.SINK_EMAIL) if is_enabled() else []
+    # The webhook is an OUTBOUND call to somebody else's system, so it
+    # answers to the engine master switch exactly like email. The bell is
+    # local and free and has always ignored it; the syslog feed ignores it
+    # too, on purpose, because a record with holes reads as "all was well".
+    hooked = routing.route(fresh, routing.SINK_WEBHOOK) if is_enabled() else []
+    hookable = routing.route(fresh, routing.SINK_HOOKS) if is_enabled() else []
+    result["routed"] = {
+        routing.SINK_IN_APP: len(bell),
+        routing.SINK_EMAIL: len(mail),
+        routing.SINK_WEBHOOK: len(hooked),
+        routing.SINK_HOOKS: len(hookable),
+        routing.SINK_SYSLOG: (syslog_res or {}).get("matched", 0),
+    }
+    if not fresh:
+        return result
+
+    # ---- orchestration path ------------------------------------------------
+    # Every FRESH finding reaches the triggers below, independently of the
+    # notification sinks: a trigger is a plan the operator drew, not a
+    # channel. A finding that started an automation owes a cooldown exactly
+    # like one the hook subsystem accepted (``queued_keys`` below).
+    triggered_keys: set = set()
+    # Triggers (Administrator > Triggers) and the event automations bound to
+    # them (Automation > Automations > On a trigger): the same rule as
+    # above -- every fresh finding, whatever the sinks say,
+    # queued as jobs, and a finding that started an automation owes a cooldown.
+    try:
+        from . import trigger_engine
+        trig_rows = trigger_engine.on_findings(fresh, node)
+    except Exception as exc:  # noqa: BLE001 — report, do not sink the run
+        trig_rows = []
+        result["delivery_failed"].append("triggers: %s" % exc)
+    result["triggers"] = {
+        "queued": sum(1 for r in trig_rows if r["status"] == "queued"),
+        "suppressed": sum(1 for r in trig_rows if r["status"] == "suppressed"),
+        "rows": trig_rows}
+    triggered_keys.update(r["key"] for r in trig_rows if r["status"] == "queued")
+
+    # A finding no notification sink accepted reached nobody. It is not
+    # ``dispatched`` and — see the cooldown note below — it is not stamped
+    # either, so widening a filter tomorrow does not have to wait out a
+    # suppression window for an alert that was never delivered.
+    delivered: set = set()
+    # Findings handed to the hook subsystem. Kept SEPARATE from
+    # ``delivered`` because the two answer different questions: an enqueue
+    # is enough to owe a cooldown (or a Telegram starter re-fires forever)
+    # and is NOT enough to claim delivery -- the runner is a different
+    # systemd unit, and it has been found disabled on a live node before.
+    queued_keys: set = set()
+
+    admin_ids = _admin_ids()
+    for f in bell:
+        kind = bell_kind(f["severity"])
+        if admin_ids:
+            # product=None means "stamp from the session", which is '' in this
+            # worker thread. Device findings carry the device's ADOM instead.
+            try:
+                # 1500, not 400: at 400 the per-probe evidence (reading,
+                # limits, where they are set) was cut before it began.
+                written = notify.push_many(admin_ids, f["title"], kind=kind,
+                                           body=f["detail"][:BELL_BODY_MAX],
+                                           product=f.get("product") or None)
+            except Exception as exc:  # noqa: BLE001 — count it, don't sink the run
+                result["delivery_failed"].append("in-app: %s" % exc)
+                continue
+            # Credited only when a row was WRITTEN. ``push`` never raises, so
+            # a failed write used to count as delivered; and a category every
+            # admin switched off in their profile reaches nobody either. The
+            # second case is a choice, not a failure: reported apart, and not
+            # stamped, so the first admin who switches it back on gets it.
+            if written:
+                result["in_app"] += 1
+                delivered.add(f["key"])
+            elif _muted_by_all(admin_ids, f["title"]):
+                result["in_app_muted"].append(f["title"])
+            else:
+                result["delivery_failed"].append(
+                    "in-app: no notification written for %r" % f["title"])
+    if bell and not admin_ids:
+        result["delivery_failed"].append(
+            "in-app: no admin recipients — nobody holds the bell")
+
+    if mail:
+        to = recipients()
+        if to:
+            subject = (f"[SATOM/{node}] {len(mail)} alert(s) — "
+                       f"{mail[0]['title']}")
+            text, html = _email_body(mail)
+            result["email"] = email_service.send_email(to, subject, text,
+                                                       html=html)
+            if (result["email"] or {}).get("ok"):
+                delivered.update(f["key"] for f in mail)
+        else:
+            result["email"] = {"ok": False, "detail": "no recipients configured"}
+        # The outcome of the last attempt, kept where `satom get alerts status`
+        # reads it. Without it the status page judged the CONFIGURATION and
+        # said "ok" while the relay refused every message for three weeks
+        # (a1, 2026-09-23 -> 2026-10-13: 186 refusals, 0 delivered).
+        _record_email_outcome(result["email"])
+
+    # ONE POST carrying every matching finding, not one per finding: the
+    # router exists so a channel stops being a hose, and twelve POSTs per
+    # evaluation is the hose with extra steps. All-or-nothing, like email.
+    if hooked:
+        webhook_res = alert_webhook.emit(fresh, node)
+        result["webhook"] = webhook_res
+        if (webhook_res or {}).get("ok") and (webhook_res or {}).get("sent"):
+            delivered.update(f["key"] for f in hooked)
+
+    if hookable:
+        # Lazy import: integration_hooks touches the filesystem at call
+        # time and nothing else in this module needs it.
+        from . import integration_hooks
+        rows = []
+        for f in hookable:
+            try:
+                r = integration_hooks.dispatch(
+                    "alert.fired", alert_event_payload(f, node),
+                    by="alerts")
+            except Exception as exc:  # noqa: BLE001 — report, do not sink the run
+                result["delivery_failed"].append("hooks: %s" % exc)
+                break
+            # An empty list means the sink is ON and NO hook is bound to
+            # the event. Nothing was enqueued, so nothing may be stamped:
+            # crediting it would silence the finding for the whole window
+            # on behalf of a subscriber that does not exist.
+            if r:
+                rows.extend(r)
+                queued_keys.add(f["key"])
+            # The typed twin of an intent finding. Same sink filter, same
+            # cooldown stamp (the key is the finding's), same once-per-finding
+            # cadence; a hook binds to alert.fired OR intent.deviation.
+            typed = intent_event_payload(f, node)
+            if typed is None:
+                continue
+            try:
+                r2 = integration_hooks.dispatch("intent.deviation", typed,
+                                                by="alerts")
+            except Exception as exc:  # noqa: BLE001
+                result["delivery_failed"].append("hooks: %s" % exc)
+                break
+            if r2:
+                rows.extend(r2)
+                queued_keys.add(f["key"])
+        result["hooks"] = {"requests": len(rows),
+                           "findings": len(queued_keys)}
+        result["queued"] = len(queued_keys)
+        if not rows:
+            result["delivery_failed"].append(
+                "hooks: sink enabled but no hook is bound to alert.fired")
+
+    # ``dispatched`` means DELIVERED, on at least one notification channel. It
+    # used to be set to len(fresh) unconditionally, so a run whose every message
+    # the relay refused ("454 4.7.1 Relay access denied", every run for weeks)
+    # still reported ``dispatched: 2``. A counter that says "sent" when nothing
+    # was sent is worse than no counter: it is the number an operator checks to
+    # decide the channel is healthy. The syslog feed is NOT counted here — a
+    # healthy record must not be able to make a dead mailbox look alive.
+    if result["email"] is not None and not (result["email"] or {}).get("ok"):
+        result["delivery_failed"].append(
+            "email: %s" % ((result["email"] or {}).get("detail") or "send failed"))
+    if syslog_res is not None and not syslog_res.get("ok"):
+        result["delivery_failed"].append(
+            "syslog: %s" % (syslog_res.get("detail") or "send failed"))
+    _wh = result["webhook"]
+    if _wh is not None and not _wh.get("ok"):
+        result["delivery_failed"].append(
+            "webhook: %s" % (_wh.get("detail") or "send failed"))
+    channels = []
+    if result["in_app"]:
+        channels.append("in-app")
+    if (result["email"] or {}).get("ok"):
+        channels.append("email")
+    if (result["webhook"] or {}).get("sent"):
+        channels.append("webhook")
+    # "hooks" is listed as a channel because something left this process,
+    # but it is deliberately absent from ``dispatched`` above.
+    if queued_keys:
+        channels.append("hooks")
+    if (syslog_res or {}).get("sent"):
+        channels.append("syslog")
+    result["channels"] = channels
+    result["dispatched"] = len(delivered)
+
+    # Cooldown records what LEFT THIS PROCESS — delivered to a person, or
+    # accepted by the hook subsystem. Stamping a finding that reached nothing
+    # at all would swallow it for the whole window: the alert would exist, be
+    # counted, and never arrive. The invariant lives in the loop below, which
+    # iterates ``delivered | queued_keys`` and NEVER ``fresh``; this early
+    # return only skips a pointless write, and a mutation of it is equivalent.
+    stamp = delivered | queued_keys | triggered_keys
+    if not stamp:
+        return result
+    now_iso = _now().isoformat()
+    for key in stamp:
+        state[key] = now_iso
+    _save_state(state)
+    return result
+
+
+
+__all__ = ["evaluate", "run", "is_enabled", "recipients", "DEFAULTS"]

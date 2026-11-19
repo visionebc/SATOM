@@ -1,0 +1,1018 @@
+{% extends "base.html" %}
+{% from "partials/_cli_provenance.html" import prov_badge, prov_legend with context %}
+
+{% block title %}API-Registry Explorer{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('API-Registry Explorer') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{% set api_tab = 'explorer' %}
+{% include 'partials/api_nav_tabs.html' %}
+
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-code-square me-2 text-accent"></i>{{ _('API-Registry Explorer') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('The endpoint') }} <strong>{{ _('catalog') }}</strong> (stored in the database, seeded from the FortiWeb endpoint baseline)
+      and the live <strong>{{ _('query console') }}</strong> in one place — browse &amp; edit paths on the API&nbsp;Menu tree,
+      execute them against a real appliance on the right.
+      {% if can_edit %}Catalog changes are audited and survive deploys.{% endif %}
+    </p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    {% if can_edit %}
+    {# The sweep's verdicts, read back against this catalog. Lives next to the
+       New/Edit affordances because it drives the same write (registry.toggle). #}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('registry.api_versions') }}">
+      <i class="bi bi-diagram-2 me-1"></i>Versions</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('registry.reconcile') }}">
+      <i class="bi bi-clipboard2-check me-1"></i>{{ _('Reconcile') }}
+    </a>
+    <button class="btn btn-fw-primary btn-sm" data-js="new-endpoint">
+      <i class="bi bi-plus-lg me-1"></i>{{ _('New Endpoint') }}
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{# Discovery run — FIRST card on purpose. The catalog only ever shrank by
+   itself; this is its growth path, and it was unfindable at the foot of the
+   page. ONE author for the markup (partials/_discovery_run.html). #}
+{# The Discovery run MOVED to the API-versions page (2026-09-16). Here it had
+   no firmware to be about: the candidates came from whichever CLI dump sorted
+   first, the appliance came from a second picker, and nothing tied either to a
+   build — so every `absent` it reported was true of that pairing and useless
+   as a statement about a firmware. On the versions page the row IS the build.
+   ONE author for the markup (partials/_discovery_run.html), now included
+   there. #}
+<div class="fw-card mt-3">
+  <div class="fw-card-body d-flex flex-wrap align-items-center gap-2"
+       style="font-size:13px;">
+    <i class="bi bi-binoculars text-accent"></i>
+    <strong>{{ _('Discovery run') }}</strong>
+    <span class="text-muted">
+      {{ _('moved to the API-versions page, where each row is a firmware build. A run derives its candidates from a CLI dump captured on ONE build and probes a box running THAT build — neither of which this page can name.') }}
+    </span>
+    <a class="btn btn-sm btn-fw-outline ms-auto" href="{{ url_for('registry.api_versions') }}">
+      <i class="bi bi-diagram-2 me-1"></i>{{ _('API versions') }}</a>
+  </div>
+</div>
+
+
+<style nonce="{{ csp_nonce }}">
+  /* API Menu tree (left sidebar) — caret rotates with Bootstrap collapse state */
+  #apiTree .api-tree-section-header .api-tree-caret { transition: transform .15s ease; }
+  #apiTree .api-tree-section-header:not(.collapsed) .api-tree-caret { transform: rotate(90deg); }
+  #apiTree .api-tree-leaf { border-bottom: 1px solid #F4F5F7; }
+  #apiTree .api-tree-leaf:hover { background: #FAFBFC; }
+  #apiTree .api-tree-leaf-btn { color: inherit; }
+  #apiTree .api-tree-leaf-btn:focus { box-shadow: none; }
+  /* ONE LINE PER ENDPOINT (2026-10-24). The clickable row is method + name
+     + build mark, never wrapping: the method badge has a fixed width, the
+     name truncates with an ellipsis (full name and URN in the title). The
+     URN and the transport badge sit below as plain text lines, and the row
+     actions float over the right edge on hover instead of taking width the
+     narrow menu column does not have at 1280 px. */
+  #apiTree .api-leaf-row { position: relative; display: flex; align-items: center; min-width: 0; }
+  #apiTree .api-tree-leaf-btn { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0;
+    padding: 5px 8px 2px 16px; white-space: nowrap; overflow: hidden; border: 0; }
+  #apiTree .api-tree-leaf-btn .fw-api-method { flex: 0 0 44px; text-align: center; font-size: 9px; padding: 2px 0; }
+  #apiTree .api-leaf-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+  #apiTree .api-tree-leaf-btn .fw-badge { flex: 0 0 auto; }
+  #apiTree .api-tree-leaf-btn .api-build-mark { margin-left: auto; }
+  #apiTree .api-leaf-meta { padding: 0 8px 4px 16px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; font-size: 10.5px; line-height: 1.4; cursor: pointer; }
+  #apiTree .api-leaf-meta code { font-size: 10.5px; }
+  #apiTree .api-leaf-actions { position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    padding-left: 14px; background: linear-gradient(to right, rgba(250,251,252,0), #FAFBFC 12px);
+    opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+  #apiTree .api-tree-leaf:hover .api-leaf-actions,
+  #apiTree .api-leaf-actions:focus-within { opacity: 1; pointer-events: auto; }
+  /* Build awareness — light chrome only: --fw-* tokens and .fw-badge-*. */
+  #build-banner .build-prov { font-size: 11.5px; color: var(--fw-text-secondary); }
+  #build-banner .build-prov li { margin-bottom: 2px; }
+  #apiTree .api-build-mark { font-size: 9.5px; padding: 1px 6px; margin-left: 4px; }
+  #apiTree .api-tree-leaf[data-mark="absent"] .api-tree-leaf-btn > span:nth-child(2) { text-decoration: line-through; color: var(--fw-text-secondary); }
+  #fields-table td, #fields-table th { font-size: 11.5px; padding: 4px 6px; vertical-align: top; }
+  #fields-table code { font-size: 11px; }
+  #resp-warning { font-size: 12px; border-bottom: 1px solid var(--fw-border-light); background: var(--fw-surface-alt); }
+</style>
+
+{# The selected appliance's BUILD, as the API library knows it. Filled by
+   /api-explorer/build whenever the appliance picker changes — rendered empty
+   rather than guessed, because a banner that names the wrong build is worse
+   than none. #}
+<div class="fw-card mb-3" id="build-banner"
+     data-build-url="{{ url_for('api_explorer.build_info') }}"
+     data-fields-url="{{ url_for('api_explorer.endpoint_fields') }}"
+     data-execute-url="{{ url_for('api_explorer.execute') }}"
+     data-harvest-url="{{ url_for('api_explorer.harvest', appliance_id=0) }}"
+     data-schema-harvest-url="{{ url_for('api_explorer.schema_harvest', appliance_id=0) }}">
+  <div class="fw-card-body d-flex flex-wrap align-items-start gap-3" style="font-size:13px;">
+    <div>
+      <i class="bi bi-cpu text-accent me-1"></i><strong>{{ _('Build') }}</strong>
+      <span id="build-product" class="ms-1"></span>
+      <code id="build-version" class="ms-1"></code>
+      <span id="build-status" class="fw-badge fw-badge-secondary ms-1">{{ _('select an appliance') }}</span>
+      <div class="text-muted mt-1" style="font-size:12px;" id="build-counts"></div>
+    </div>
+    <div class="flex-grow-1">
+      <ul class="build-prov list-unstyled mb-0" id="build-prov"></ul>
+    </div>
+    <div id="build-harvest-wrap" class="d-none">
+      <button type="button" class="btn btn-sm btn-fw-primary" id="btn-harvest">
+        <i class="bi bi-cloud-download me-1"></i>{{ _('Harvest this appliance now') }}
+      </button>
+      <div class="text-muted mt-1" style="font-size:11px; max-width:260px;">
+        {{ _('No real box has been measured on this build. A harvest records what it serves.') }}
+      </div>
+    </div>
+    <div id="build-schema-wrap" class="d-none">
+      <button type="button" class="btn btn-sm btn-fw-outline" id="btn-schema-harvest">
+        <i class="bi bi-diagram-3 me-1"></i>{{ _('Harvest CLI schema') }}
+      </button>
+      <div class="text-muted mt-1" style="font-size:11px; max-width:260px;">
+        {{ _('Reads tree and show full-configuration over SSH and probes the REST paths the library lacks. Read-only on the box.') }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- API Menu: registry-backed section > endpoint tree; editable in place when can_edit -->
+{# Which BUILD the transport badges below were measured on. They are derived
+   from one CLI dump, and until 2026-09-16 the page never said which — so a
+   `cli` badge was a build-specific claim made out of anonymous evidence.
+   Narrow it with ?version=<build> (or ?line=<line>); the choice is a FILTER,
+   so a build with no dump reports no evidence rather than borrowing another
+   build's. #}
+{% if cc_prov is defined %}
+<p class="text-muted mb-2" style="font-size:12px;">
+  {% if cc_prov and cc_prov.measured %}
+    {{ _('CLI evidence:') }} <code>{{ cc_prov.device }}</code>
+    · <code>{{ cc_report.chosen.version or cc_report.chosen.line or _('version not recorded') }}</code>
+    · {{ cc_prov.captured_at }}
+    {% if cc_scope %}<span class="fw-badge fw-badge-info ms-1">{{ _('scoped to') }} {{ cc_scope }}</span>{% endif %}
+  {% elif cc_report and cc_report.pack %}
+    {{ _('CLI evidence:') }} <code>{{ _('knowledge pack digest') }}</code>
+    · <code>{{ cc_report.pack.version }}</code>{% if cc_report.pack.captured_at %} · {{ cc_report.pack.captured_at }}{% endif %}
+    {% if cc_scope %}<span class="fw-badge fw-badge-info ms-1">{{ _('scoped to') }} {{ cc_scope }}</span>{% endif %}
+  {% elif cc_scope %}
+    <span class="fw-badge fw-badge-warning">{{ _('no CLI dump captured on build') }} {{ cc_scope }}</span>
+    {{ _('Transport badges fall back to what the URN alone can prove; nothing here is inferred from another build.') }}
+  {% else %}
+    <span class="fw-badge fw-badge-warning">{{ _('no CLI evidence') }}</span>
+  {% endif %}
+</p>
+{% endif %}
+
+  <div class="col-lg-3">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('API Menu') }}</span>
+        <div class="d-flex align-items-center gap-2">
+          {% if can_edit %}
+          <button class="btn btn-sm btn-fw-primary" data-js="new-endpoint" title="{{ _('Add a catalog endpoint') }}" style="padding:2px 8px;">
+            <i class="bi bi-plus-lg"></i>
+          </button>
+          {% endif %}
+          <span class="fw-badge fw-badge-secondary">{{ api_tree.descendant_count() if api_tree else 0 }}</span>
+        </div>
+      </div>
+      <div class="fw-card-body p-0">
+        <div class="fw-search-box" style="padding:10px 12px; border-bottom:1px solid #F0F2F5;">
+          <i class="bi bi-search search-icon" style="left:22px;"></i>
+          <input type="text" id="apiTreeSearch" placeholder="{{ _('Filter endpoints…') }}"
+                 style="padding-left:34px; font-size:13px;">
+        </div>
+        <div class="px-2 pt-2">{{ prov_legend(cc_prov) }}</div>
+        {# Build marks: served / absent / unknown on the SELECTED appliance's
+           build. "Unknown" is its own state — the library never had evidence,
+           which is not the same as "served". #}
+        <div class="px-3 pt-2 d-flex flex-wrap align-items-center gap-2" style="font-size:11.5px;">
+          <label class="d-flex align-items-center gap-1 mb-0">
+            <input type="checkbox" id="apiTreeServedOnly" disabled>
+            {{ _('Only what this build serves') }}
+          </label>
+          <span class="fw-badge fw-badge-success api-legend">{{ _('served') }}</span>
+          <span class="fw-badge fw-badge-danger api-legend">{{ _('absent') }}</span>
+          <span class="fw-badge fw-badge-secondary api-legend">{{ _('unknown') }}</span>
+        </div>
+        <div id="apiTree" style="max-height:640px; overflow-y:auto;">
+          {% if api_tree and api_tree.child_nodes() %}
+            {% for section in api_tree.child_nodes() %}
+              {% set sid = 'apisec-' ~ loop.index %}
+              <div class="api-tree-section">
+                <button class="api-tree-section-header list-group-item list-group-item-action d-flex align-items-center justify-content-between {{ '' if loop.first else 'collapsed' }}"
+                        type="button" data-bs-toggle="collapse" data-bs-target="#{{ sid }}"
+                        aria-expanded="{{ 'true' if loop.first else 'false' }}" aria-controls="{{ sid }}"
+                        style="font-size:13px; font-weight:600; padding:8px 12px; border:none; background:#FAFBFC;">
+                  <span class="text-truncate">
+                    <i class="bi bi-caret-right-fill me-1 api-tree-caret" style="font-size:10px;"></i>{{ section.label }}
+                  </span>
+                  <span class="fw-badge fw-badge-secondary">{{ section.descendant_count() }}</span>
+                </button>
+                <div class="collapse {{ 'show' if loop.first else '' }}" id="{{ sid }}">
+                  {% for ep in section.endpoints %}
+                    {% set method = ep.method or 'GET' %}
+                    {% set row = db_rows.get(ep.name) if can_edit else none %}
+                    <div class="api-tree-leaf" data-name="{{ ep.name }}"
+                         data-search="{{ (ep.name ~ ' ' ~ (ep.urn or ep.path or ''))|lower }}">
+                      <div class="api-leaf-row">
+                        <button type="button" class="btn btn-link text-start text-decoration-none api-tree-leaf-btn"
+                              data-method="{{ method }}" data-path="{{ ep.urn or ep.path or '' }}"
+                              data-name="{{ ep.name }}"
+                                title="{{ ep.name }} &middot; {{ ep.urn or ep.path }}">
+                        <span class="fw-api-method fw-api-method-{{ method|lower }}">{{ method }}</span>
+                        <span class="api-leaf-name">{{ ep.name }}</span>
+                        <span class="fw-badge api-build-mark d-none"></span>
+                        {% set pv = cc_prov.by_name.get(ep.name) if cc_prov else none %}
+                        </button>
+                        <div class="fw-row-actions api-leaf-actions">
+                        {% if row %}
+                        <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy"
+                                title="{{ _('Edit catalog endpoint') }}" data-js="edit-endpoint"
+                                data-id="{{ row.id }}" data-name="{{ row.name }}"
+                                data-urn="{{ row.urn }}" data-apiver="{{ row.api_version }}"
+                                style="padding:2px 7px;">
+                          <i class="bi bi-pencil" style="font-size:11px;"></i>
+                        </button>
+                        <form method="post" action="{{ url_for('registry.toggle', rid=row.id) }}"
+                              data-js="disable-endpoint" data-name="{{ row.name }}" class="d-inline">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <input type="hidden" name="next" value="{{ request.full_path }}">
+                          <button type="submit" class="btn btn-sm btn-fw-outline border-0 api-tree-copy"
+                                  title="{{ _('Disable catalog endpoint (soft delete)') }}" style="padding:2px 7px;">
+                            <i class="bi bi-eye-slash" style="font-size:11px;"></i>
+                          </button>
+                        </form>
+                        {% endif %}
+                        <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy"
+                                title="{{ _('Copy URN') }}" data-urn="{{ ep.urn or ep.path or '' }}"
+                                style="padding:2px 7px;">
+                          <i class="bi bi-clipboard" style="font-size:11px;"></i>
+                        </button>
+                        </div>
+                      </div>
+                      <div class="api-leaf-meta"><code class="text-muted">{{ ep.urn or ep.path }}</code></div>
+                      {% if cc_prov %}<div class="api-leaf-meta">{{ prov_badge(pv or cc_prov.for_name(ep.name), show_path=True) }}</div>{% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="p-3 text-muted text-center" style="font-size:13px;">{{ _('No endpoints loaded') }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if can_edit and disabled_rows %}
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-eye-slash me-2"></i>{{ _('Disabled') }}</span>
+        <span class="fw-badge fw-badge-secondary">{{ disabled_rows|length }}</span>
+      </div>
+      <div class="fw-card-body p-0">
+        <div style="max-height:260px; overflow-y:auto;">
+          {% for r in disabled_rows %}
+          <div class="d-flex align-items-center justify-content-between" style="padding:6px 12px; border-bottom:1px solid #F4F5F7;">
+            <div style="min-width:0;">
+              <div style="font-size:12px; font-weight:500;" class="text-truncate">{{ r.name }}</div>
+              <code class="text-muted d-block text-truncate" style="font-size:10px;">{{ r.urn }}</code>
+            </div>
+            <form method="post" action="{{ url_for('registry.toggle', rid=r.id) }}" class="ms-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ request.full_path }}">
+              <button class="btn btn-sm btn-outline-success btn-sm-icon" title="{{ _('Restore endpoint') }}">
+                <i class="bi bi-arrow-counterclockwise"></i>
+              </button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Request Panel -->
+  <div class="col-lg-4">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-send me-2 text-accent"></i>{{ _('Request') }}</span>
+      </div>
+      <div class="fw-card-body">
+        <!-- Appliance selector -->
+        <div class="mb-3">
+          <label class="fw-form-label">{{ _('Appliance') }} <span class="text-danger">*</span></label>
+          <select id="sel-appliance" class="form-select fw-form-control">
+            {% if appliances %}
+              {% for a in appliances %}
+                <option value="{{ a.id }}" data-kind="{{ a.kind }}"
+                        {{ 'selected' if a.id == selected_appliance_id else '' }}>
+                  {{ a.name }} — {{ a.host }}
+                </option>
+              {% endfor %}
+            {% else %}
+              <option value="">{{ _('No appliances configured') }}</option>
+            {% endif %}
+          </select>
+        </div>
+
+        <!-- Method + Path -->
+        <div class="mb-3">
+          <label class="fw-form-label">Method &amp; Path <span class="text-danger">*</span></label>
+          <div class="d-flex gap-2">
+            <select id="sel-method" class="form-select fw-form-control" style="width:100px; flex-shrink:0;">
+              <option>GET</option>
+              <option{% if not can_write %} disabled{% endif %}>POST</option>
+              <option{% if not can_write %} disabled{% endif %}>PUT</option>
+              <option{% if not can_write %} disabled{% endif %}>{{ _('DELETE') }}</option>
+              <option{% if not can_write %} disabled{% endif %}>{{ _('PATCH') }}</option>
+            </select>
+            <input type="text" id="inp-path" class="form-control fw-form-control"
+                   placeholder="{{ _('api/v2.0/system/status.systemstatus') }}"
+                   value="{{ request.args.get('path','') if request else '' }}">
+          </div>
+          {% if not can_write %}
+          <div class="text-muted mt-1" style="font-size:11px;">
+            <i class="bi bi-info-circle me-1"></i>{{ _('Write methods need the "Execute write API calls" permission.') }}
+          </div>
+          {% endif %}
+          <div id="selected-urn" class="text-muted mt-1" style="font-size:11px;"></div>
+          {# Common paths: one dropdown, not a chip row that wraps to two lines
+             in the narrow console column (2026-10-24). #}
+          <div class="dropdown mt-1">
+            <button type="button" class="btn btn-sm btn-fw-outline dropdown-toggle" data-bs-toggle="dropdown"
+                    aria-expanded="false" data-bs-popper-config='{"strategy":"fixed"}'>
+              <i class="bi bi-signpost-2 me-1"></i>{{ _('Common paths') }}</button>
+            <ul class="dropdown-menu" style="font-size:12.5px;">
+              {% for path in [
+                'api/v2.0/system/status.systemstatus',
+                'api/v2.0/cmdb/server-policy.policy',
+                'api/v2.0/cmdb/server-policy.vserver',
+                'api/v2.0/cmdb/server-policy.server-pool',
+                'api/v2.0/cmdb/waf/web-protection-profile.inline-protection',
+              ] %}
+                <li><button type="button" class="dropdown-item" data-js="common-path" data-path="{{ path }}"
+                            title="{{ path }}">
+                  <strong>{{ path.split('.')[-1] }}</strong>
+                  <code class="text-muted ms-2" style="font-size:10.5px;">{{ path.rsplit('.', 1)[0] }}</code>
+                </button></li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+
+        <!-- Query params -->
+        <div class="mb-3">
+          <label class="fw-form-label">{{ _('Key Filter (mkey)') }}</label>
+          <input type="text" id="inp-mkey" class="form-control fw-form-control"
+                 placeholder="{{ _('Object name / mkey (optional)') }}"
+                 value="{{ request.args.get('mkey','') if request else '' }}">
+        </div>
+
+        <!-- Request body -->
+        <div class="mb-3">
+          <label class="fw-form-label">{{ _('Request Body (JSON)') }}</label>
+          <textarea id="inp-body" class="form-control fw-form-control font-monospace"
+                    rows="6" placeholder='{"data": {}}'
+                    style="font-family:Consolas,Monaco,monospace; font-size:12.5px;"></textarea>
+        </div>
+
+        <button class="btn btn-fw-primary w-100" id="btn-execute">
+          <i class="bi bi-play-circle me-1"></i>{{ _('Execute Request') }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Fields the selected endpoint serves on the selected build -->
+    <div class="fw-card mb-3" id="fields-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-list-columns me-2 text-accent"></i>{{ _('Fields on this build') }}</span>
+        <span id="fields-status" class="fw-badge fw-badge-secondary">—</span>
+      </div>
+      <div class="fw-card-body p-0">
+        <div id="fields-note" class="text-muted px-3 py-2" style="font-size:12px;">
+          {{ _('Pick an endpoint in the API Menu to see its fields on the selected build.') }}
+        </div>
+        <div style="max-height:260px; overflow-y:auto;">
+          <table class="table table-sm mb-0 d-none" id="fields-table">
+            <thead><tr>
+              <th>{{ _('Field') }}</th><th>{{ _('Type') }}</th>
+              <th>{{ _('Options / default') }}</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Request History -->
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-clock-history me-2"></i>{{ _('History') }}</span>
+        <button class="btn btn-sm btn-secondary" data-js="clear-history">{{ _('Clear') }}</button>
+      </div>
+      <div id="history-list" class="fw-card-body p-0" style="max-height:200px;overflow-y:auto;">
+        <div class="text-muted text-center py-3" style="font-size:13px;" id="history-empty">
+          {{ _('No requests yet') }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Response Panel -->
+  <div class="col-lg-5">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-arrow-down-circle me-2 text-accent"></i>{{ _('Response') }}</span>
+        <div class="d-flex align-items-center gap-3">
+          <span id="resp-time" class="text-muted" style="font-size:12px;"></span>
+          <span id="resp-status" class="fw-badge fw-badge-secondary">—</span>
+          <button class="btn btn-sm btn-fw-outline" data-js="copy-response">
+            <i class="bi bi-clipboard me-1"></i>{{ _('Copy') }}
+          </button>
+        </div>
+      </div>
+      <div class="fw-card-body p-0" style="height: calc(100% - 52px);">
+        <div id="resp-warning" class="px-3 py-2 d-none"></div>
+        <div data-verdict-wrap class="d-none px-3 pt-2" style="font-size:12px;">
+          <span id="resp-verify" data-verdict-badge class="fw-badge d-none"
+                style="white-space:normal;text-align:left;"></span>
+        </div>
+        <pre id="resp-body"
+             class="fw-code-block m-0"
+             style="min-height:500px; border-radius:0 0 8px 8px;">Execute a request to see the response here.</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if can_edit %}
+<!-- Catalog endpoint editor modal (writes through registry.save) -->
+<div class="modal fade" id="endpointModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('registry.save') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ request.full_path }}">
+        <input type="hidden" name="id" id="epId" value="">
+        <div class="modal-header">
+          <h5 class="modal-title" id="epModalTitle">{{ _('Edit Endpoint') }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label" for="epName">{{ _('Logical name') }}</label>
+            <input type="text" class="form-control" name="name" id="epName" required
+                   pattern="[A-Za-z0-9_.\-]+" placeholder="{{ _('server_policy') }}">
+            <div class="form-text">{{ _('The stable key services resolve by — letters, digits, "_", "-", ".".') }}</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="epUrn">{{ _('URN / API path') }}</label>
+            <input type="text" class="form-control" name="urn" id="epUrn" required
+                   placeholder="{{ _('/api/v2.0/cmdb/server-policy/policy') }}">
+            <div class="form-text">{{ _('Absolute path as served by the appliance.') }}</div>
+          </div>
+          <div class="mb-1">
+            <label class="form-label" for="epApiVer">{{ _('API version') }}</label>
+            <input type="text" class="form-control" name="api_version" id="epApiVer" value="v2.0">
+            <div class="form-text">{{ _('FortiWeb serves v2.0 on every current firmware — change only for a future API generation.') }}</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-fw-outline btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-check-lg me-1"></i>{{ _('Save') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# CLI ↔ API coverage — ONE author for this section (partials/_cli_coverage.html) #}
+{% include 'partials/_cli_coverage.html' %}
+{% endblock %}
+
+{% block scripts %}
+{% include 'partials/_write_verdict.html' %}
+<script nonce="{{ csp_nonce }}">
+var requestHistory = [];
+
+// Every fetch in this app carries the CSRF token, and every JSON error comes
+// back in `msg`.
+function csrfToken() {
+  return (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+}
+function explorerUrl(key) { return document.getElementById('build-banner').dataset[key]; }
+
+function showWarning(text) {
+  const el = document.getElementById('resp-warning');
+  if (!el) return;
+  el.textContent = text || '';
+  el.classList.toggle('d-none', !text);
+}
+
+// POSTs to /api-explorer/execute — the route that holds the firmware guard.
+// (Until 2026-09-26 this page went through the generic /api/<fw|adc>/proxy,
+// where no guard can live without guarding every other caller too.)
+async function postExecute(fields) {
+  const fd = new FormData();
+  Object.keys(fields).forEach(function (k) { fd.append(k, fields[k]); });
+  const r = await fetch(explorerUrl('executeUrl'), {
+    method: 'POST', body: fd, headers: { 'X-CSRF-Token': csrfToken() }
+  });
+  const data = await r.json().catch(function () { return { ok: false, msg: 'HTTP ' + r.status }; });
+  return { http: r.status, data: data };
+}
+
+async function runRequest() {
+  const btn      = document.getElementById('btn-execute');
+  const appId    = document.getElementById('sel-appliance').value;
+  const method   = document.getElementById('sel-method').value;
+  let   path     = document.getElementById('inp-path').value.trim().replace(/^\//, '');
+  const mkey     = document.getElementById('inp-mkey').value.trim();
+  const bodyTxt  = document.getElementById('inp-body').value.trim();
+  const respEl   = document.getElementById('resp-body');
+  const statusEl = document.getElementById('resp-status');
+  const timeEl   = document.getElementById('resp-time');
+
+  if (!appId) { window.FW.toast('Select an appliance first', 'warning'); return; }
+  if (!path)  { window.FW.toast('Enter an API path', 'warning'); return; }
+
+  if (mkey) path += '?mkey=' + encodeURIComponent(mkey);
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="fw-loading-spinner"></span> Executing…';
+  respEl.textContent = 'Loading…';
+  statusEl.textContent = '…';
+  statusEl.className = 'fw-badge fw-badge-secondary';
+  timeEl.textContent = '';
+  showWarning('');
+  window.satomVerdictBadge(document.getElementById('resp-verify'), null);
+
+  const t0 = Date.now();
+
+  try {
+    const fields = { appliance_id: appId, endpoint: '/' + path, method: method,
+                     body: (method !== 'GET' && method !== 'DELETE') ? bodyTxt : '' };
+    let res = await postExecute(fields);
+    // Known NOT served on this build: the server refused. Only an explicit
+    // yes from the operator sends it again, and the audit log records that.
+    if (res.data && res.data.needs_confirm) {
+      if (!window.confirm((res.data.msg || 'This build does not serve this endpoint.') +
+                          '\n\nSend it anyway?')) {
+        statusEl.textContent = 'Refused';
+        statusEl.className = 'fw-badge fw-badge-danger';
+        respEl.textContent = res.data.msg || 'Refused by the firmware guard.';
+        return;
+      }
+      fields.confirm_unserved = '1';
+      res = await postExecute(fields);
+    }
+    const ms   = Date.now() - t0;
+    const data = res.data || {};
+    timeEl.textContent = ms + 'ms';
+    showWarning(data.warning || (data.library && data.library.warning) || '');
+
+    if (!data.ok) {
+      statusEl.textContent = 'Error';
+      statusEl.className   = 'fw-badge fw-badge-danger';
+      respEl.textContent   = data.msg || data.error || 'Request failed.';
+      return;
+    }
+    const code = data.status;
+    statusEl.textContent = String(code);
+    statusEl.className   = 'fw-badge ' + (code >= 200 && code < 300 ? 'fw-badge-success' : 'fw-badge-danger');
+
+    const out = data.result;
+    const formatted = typeof out === 'object' ? JSON.stringify(out, null, 2) : String(out);
+    respEl.innerHTML = syntaxHighlight(escapeHtml(formatted));
+    // The device re-read of an applied write, beside the raw reply.
+    window.satomVerdictBadge(document.getElementById('resp-verify'), data.verify);
+
+    // Add to history
+    addHistory(method, path.split('?')[0], code);
+
+  } catch (err) {
+    statusEl.textContent = 'Error';
+    statusEl.className   = 'fw-badge fw-badge-danger';
+    respEl.textContent   = 'Request failed: ' + err.message;
+    timeEl.textContent   = '';
+    window.FW.toast('Request failed: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Execute Request';
+  }
+}
+
+// Device output is untrusted: neutralise markup before highlighting. Quotes
+// stay as they are so syntaxHighlight can still find the JSON strings.
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function syntaxHighlight(json) {
+  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+    let cls = 'json-number';
+    if (/^"/.test(match)) { cls = /:$/.test(match) ? 'json-key' : 'json-string'; }
+    else if (/true|false/.test(match)) { cls = 'json-bool'; }
+    else if (/null/.test(match)) { cls = 'json-null'; }
+    return '<span class="' + cls + '">' + match + '</span>';
+  });
+}
+
+function addHistory(method, path, status) {
+  requestHistory.unshift({ method, path, status, ts: new Date().toLocaleTimeString() });
+  if (requestHistory.length > 20) requestHistory.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!requestHistory.length) {
+    const empty = document.createElement('div');
+    empty.id = 'history-empty';
+    empty.className = 'text-muted text-center py-3';
+    empty.style.fontSize = '13px';
+    empty.textContent = 'No requests yet';
+    list.appendChild(empty);
+    return;
+  }
+  requestHistory.forEach(function (h) {
+    const btn = document.createElement('button');
+    btn.className = 'list-group-item list-group-item-action text-start';
+    btn.style.cssText = 'font-size:12px;padding:8px 14px;border:none;';
+
+    const methodEl = document.createElement('span');
+    methodEl.className = 'fw-api-method fw-api-method-' + h.method.toLowerCase() + ' me-2';
+    methodEl.textContent = h.method;
+
+    const pathEl = document.createElement('span');
+    pathEl.className = 'text-truncate';
+    pathEl.style.cssText = 'max-width:260px;display:inline-block;vertical-align:middle;';
+    pathEl.textContent = h.path;
+
+    const tsEl = document.createElement('span');
+    tsEl.className = 'float-end text-muted';
+    tsEl.style.cssText = 'font-size:11px;';
+    tsEl.textContent = h.ts;
+
+    btn.appendChild(methodEl);
+    btn.appendChild(pathEl);
+    btn.appendChild(tsEl);
+    btn.addEventListener('click', function () { loadHistory(h.method, h.path); });
+    list.appendChild(btn);
+  });
+}
+
+function loadHistory(method, path) {
+  document.getElementById('sel-method').value = method;
+  document.getElementById('inp-path').value   = path;
+}
+
+function clearHistory() {
+  requestHistory.length = 0;
+  renderHistory();
+}
+
+function copyResponse() {
+  const text = document.getElementById('resp-body').textContent;
+  navigator.clipboard.writeText(text)
+    .then(() => window.FW.toast('Response copied', 'success'))
+    .catch(() => window.FW.toast('Copy failed', 'danger'));
+}
+
+// --- API Menu tree (left sidebar) ----------------------------------------
+
+// Fill the executor's method + path inputs from a tree leaf and surface the URN.
+function loadEndpoint(method, path, name) {
+  const methodEl = document.getElementById('sel-method');
+  const pathEl   = document.getElementById('inp-path');
+  const urnEl    = document.getElementById('selected-urn');
+  if (methodEl) methodEl.value = method;
+  if (pathEl)   pathEl.value   = path;
+  if (urnEl)    urnEl.textContent = 'URN: ' + path;
+  if (pathEl)   pathEl.focus();
+  loadFields(name || '', path || '');
+}
+
+// --- Build awareness ------------------------------------------------------
+
+var BUILD = null;          // last /build answer for the selected appliance
+var LAST_ENDPOINT = null;  // {name, path} of the leaf whose fields are shown
+
+var MARK_BADGE = { served: 'fw-badge-success', absent: 'fw-badge-danger', unknown: 'fw-badge-secondary' };
+var STATUS_BADGE = { measured: 'fw-badge-success', vendor_only: 'fw-badge-info',
+                     unmeasured: 'fw-badge-warning', unknown_firmware: 'fw-badge-warning' };
+
+function paintMarks(marks, why, texts) {
+  document.querySelectorAll('#apiTree .api-tree-leaf').forEach(function (leaf) {
+    const badge = leaf.querySelector('.api-build-mark');
+    const state = marks ? (marks[leaf.dataset.name] || 'unknown') : '';
+    if (state) leaf.dataset.mark = state; else delete leaf.dataset.mark;
+    if (!badge) return;
+    badge.className = 'fw-badge api-build-mark' + (state ? ' ' + MARK_BADGE[state] : ' d-none');
+    badge.textContent = state;
+    const code = why ? why[leaf.dataset.name] : '';
+    if (code && texts && texts[code]) badge.title = texts[code]; else badge.removeAttribute('title');
+  });
+  const only = document.getElementById('apiTreeServedOnly');
+  if (only) { only.disabled = !marks; if (!marks) only.checked = false; }
+  filterApiTree(document.getElementById('apiTreeSearch').value);
+}
+
+function unknownBreakdown(d) {
+  const by = (d && d.unknown_by) || {}, parts = [];
+  const sub = (by.sub_table || 0) + (by.sub_table_cli || 0);
+  if (sub) parts.push(sub + ' by-parent sub-tables not swept');
+  if (by.not_object) parts.push(by.not_object + ' monitor/log endpoints');
+  if (by.not_probed) parts.push(by.not_probed + ' without evidence');
+  return parts.length ? ' (' + parts.join(', ') + ')' : '';
+}
+
+function paintBanner(d) {
+  const b = (d && d.build) || {};
+  document.getElementById('build-product').textContent = b.product || '';
+  document.getElementById('build-version').textContent = b.version || b.firmware_raw || '';
+  const st = document.getElementById('build-status');
+  st.className = 'fw-badge ms-1 ' + (STATUS_BADGE[b.status] || 'fw-badge-secondary');
+  st.textContent = d ? (b.status_label || b.status || '') : 'select an appliance';
+  const c = (d && d.counts) || null;
+  document.getElementById('build-counts').textContent = c
+    ? ('API Menu on this build: ' + c.served + ' served · ' + c.absent + ' absent · ' +
+       c.unknown + ' unknown' + unknownBreakdown(d))
+    : '';
+  const ul = document.getElementById('build-prov');
+  ul.innerHTML = '';
+  ((d && d.provenance) || []).forEach(function (p) {
+    const li = document.createElement('li');
+    li.textContent = p.source + ' · ' + p.scope + (p.device ? ' · ' + p.device : '') +
+                     (p.captured_at ? ' · ' + p.captured_at : '') +
+                     (p.origin_ref && !p.device ? ' · ' + p.origin_ref : '') +
+                     (p.healthy ? '' : ' · unhealthy (kept, not counted)');
+    ul.appendChild(li);
+  });
+  if (d && !(d.provenance || []).length) {
+    const li = document.createElement('li');
+    li.textContent = 'No evidence in the library for this build.';
+    ul.appendChild(li);
+  }
+  document.getElementById('build-harvest-wrap').classList.toggle('d-none', !(d && d.harvestable));
+  const product = d && d.build ? d.build.product : '';
+  document.getElementById('build-schema-wrap').classList.toggle(
+    'd-none', !(d && d.build && d.build.version && (product === 'fortiweb' || product === 'fortiadc')));
+}
+
+async function loadBuild() {
+  const appId = document.getElementById('sel-appliance').value;
+  BUILD = null;
+  paintBanner(null);
+  paintMarks(null);
+  if (!appId) return;
+  try {
+    const r = await fetch(explorerUrl('buildUrl') + '?appliance_id=' + encodeURIComponent(appId),
+                          { headers: { 'X-CSRF-Token': csrfToken() } });
+    const d = await r.json();
+    if (!d.ok) { window.FW.toast(d.msg || 'Could not resolve the build', 'warning'); return; }
+    // The picker may have moved on while this was in flight.
+    if (document.getElementById('sel-appliance').value !== appId) return;
+    BUILD = d;
+    paintBanner(d);
+    paintMarks(d.marks, d.why, d.why_text);
+    if (LAST_ENDPOINT) loadFields(LAST_ENDPOINT.name, LAST_ENDPOINT.path);
+  } catch (err) {
+    window.FW.toast('Could not resolve the build: ' + err.message, 'danger');
+  }
+}
+
+function fmtVal(v) {
+  if (v === null || v === undefined || v === '') return '';
+  return typeof v === 'object' ? JSON.stringify(v) : String(v);
+}
+
+function paintFields(d) {
+  const st = document.getElementById('fields-status');
+  const note = document.getElementById('fields-note');
+  const table = document.getElementById('fields-table');
+  const tbody = table.querySelector('tbody');
+  tbody.innerHTML = '';
+  let fields = d.fields || {};
+  let label = d.status;
+  let text = '';
+  if (d.status === 'measured') {
+    text = d.endpoint + ' on ' + d.version + ': ' + Object.keys(fields).length + ' fields (' +
+           (d.provenance || []).filter(function (p) { return p.used; })
+              .map(function (p) { return p.source; }).join(' + ') + ').';
+  } else if (d.line_fallback) {
+    fields = d.line_fallback.fields || {};
+    label = d.status + ' · line ' + d.line_fallback.line;
+    text = 'Not measured on ' + d.version + ' (' + d.status + '). Showing the schema harvested ' +
+           'for line ' + d.line_fallback.line + ' — a line-level claim, not this build.';
+  } else {
+    text = {
+      blind: 'The endpoint answered on this build but no row revealed its fields.',
+      absent: 'This build does not serve this endpoint.',
+      unmeasured: 'Nobody measured this endpoint on this build.'
+    }[d.status] || '';
+  }
+  st.className = 'fw-badge ' + ({ measured: 'fw-badge-success', absent: 'fw-badge-danger',
+                                  blind: 'fw-badge-warning' }[d.status] || 'fw-badge-secondary');
+  st.textContent = label;
+  note.textContent = text;
+  const names = Object.keys(fields);
+  table.classList.toggle('d-none', !names.length);
+  names.forEach(function (n) {
+    const f = fields[n] || {};
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td');
+    const code = document.createElement('code');
+    code.textContent = n;
+    td1.appendChild(code);
+    if (f.required) { const r = document.createElement('span'); r.className = 'text-danger ms-1'; r.textContent = '*'; td1.appendChild(r); }
+    if (f.since) {
+      const s = document.createElement('span');
+      s.className = 'fw-badge fw-badge-info ms-1';
+      s.textContent = 'since ' + f.since;
+      s.title = 'First seen on build ' + f.since + ' (' + (f.since_source || '') +
+                '); an older build measured this endpoint without it.';
+      td1.appendChild(s);
+    }
+    const td2 = document.createElement('td');
+    td2.textContent = f.type || '';
+    const td3 = document.createElement('td');
+    const opts = Array.isArray(f.options) ? f.options.join(' | ') : fmtVal(f.options);
+    td3.textContent = [opts, f.default !== null && f.default !== undefined && f.default !== ''
+                       ? 'default: ' + fmtVal(f.default) : ''].filter(Boolean).join(' · ');
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+    tbody.appendChild(tr);
+  });
+}
+
+async function loadFields(name, path) {
+  LAST_ENDPOINT = { name: name, path: path };
+  const appId = document.getElementById('sel-appliance').value;
+  if (!appId || !(name || path)) return;
+  const qs = '?appliance_id=' + encodeURIComponent(appId) + '&endpoint=' + encodeURIComponent(name) +
+             '&path=' + encodeURIComponent(path);
+  try {
+    const r = await fetch(explorerUrl('fieldsUrl') + qs, { headers: { 'X-CSRF-Token': csrfToken() } });
+    const d = await r.json();
+    if (!d.ok) { window.FW.toast(d.msg || 'Could not load fields', 'warning'); return; }
+    paintFields(d);
+  } catch (err) {
+    window.FW.toast('Could not load fields: ' + err.message, 'danger');
+  }
+}
+
+async function harvestNow() {
+  const appId = document.getElementById('sel-appliance').value;
+  if (!appId) return;
+  const btn = document.getElementById('btn-harvest');
+  btn.disabled = true;
+  try {
+    const url = explorerUrl('harvestUrl').replace(/\/0$/, '/' + encodeURIComponent(appId));
+    const r = await fetch(url, { method: 'POST', headers: { 'X-CSRF-Token': csrfToken() } });
+    const d = await r.json().catch(function () { return { ok: false, msg: 'HTTP ' + r.status }; });
+    window.FW.toast(d.msg || (d.ok ? 'Harvest queued' : 'Harvest failed'), d.ok ? 'success' : 'danger');
+  } catch (err) {
+    window.FW.toast('Harvest failed: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function schemaHarvestNow() {
+  const appId = document.getElementById('sel-appliance').value;
+  if (!appId) return;
+  const btn = document.getElementById('btn-schema-harvest');
+  btn.disabled = true;
+  try {
+    const url = explorerUrl('schemaHarvestUrl').replace(/\/0$/, '/' + encodeURIComponent(appId));
+    const r = await fetch(url, { method: 'POST', headers: { 'X-CSRF-Token': csrfToken() } });
+    const d = await r.json().catch(function () { return { ok: false, msg: 'HTTP ' + r.status }; });
+    window.FW.toast(d.msg || (d.ok ? 'Schema harvested' : 'Schema harvest failed'), d.ok ? 'success' : 'danger');
+    if (d.ok) loadBuild();
+  } catch (err) {
+    window.FW.toast('Schema harvest failed: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Copy a leaf's URN to the clipboard ("Copy URN" affordance).
+function copyUrn(urn) {
+  navigator.clipboard.writeText(urn)
+    .then(() => window.FW.toast('URN copied', 'success'))
+    .catch(() => window.FW.toast('Copy failed', 'danger'));
+}
+
+// Live-filter the tree by endpoint name / URN; hide empty sections and
+// auto-expand the ones that still have matches while a query is active.
+function filterApiTree(q) {
+  q = (q || '').toLowerCase().trim();
+  const onlyEl = document.getElementById('apiTreeServedOnly');
+  const servedOnly = !!(onlyEl && onlyEl.checked && !onlyEl.disabled);
+  document.querySelectorAll('#apiTree .api-tree-section').forEach(function (sec) {
+    let any = false;
+    sec.querySelectorAll('.api-tree-leaf').forEach(function (leaf) {
+      const hit = (!q || (leaf.dataset.search || '').includes(q)) &&
+                  (!servedOnly || leaf.dataset.mark === 'served');
+      leaf.style.display = hit ? '' : 'none';
+      if (hit) any = true;
+    });
+    sec.style.display = any ? '' : 'none';
+    const body = sec.querySelector('.collapse');
+    if (body && (q || servedOnly)) body.classList.toggle('show', any);
+  });
+}
+
+// Ctrl+Enter to submit
+document.addEventListener('keydown', function (e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    runRequest();
+  }
+});
+
+// Event bindings (moved from inline on* attributes for CSP script-src-attr 'none').
+(function () {
+  document.getElementById('apiTreeSearch').addEventListener('input', function (event) { filterApiTree(this.value); });
+  document.getElementById('btn-execute').addEventListener('click', function (event) { runRequest(); });
+  document.querySelector('[data-js="clear-history"]').addEventListener('click', function (event) { clearHistory(); });
+  document.querySelector('[data-js="copy-response"]').addEventListener('click', function (event) { copyResponse(); });
+
+  // Tree leaf: load into the executor. Delegated so edit/disable/copy buttons
+  // nested in the same leaf don't hijack the click, and only the leaf button fires.
+  document.querySelectorAll('#apiTree .api-tree-leaf-btn').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { loadEndpoint(this.dataset.method, this.dataset.path, this.dataset.name); });
+  });
+  document.getElementById('apiTreeServedOnly').addEventListener('change', function () {
+    filterApiTree(document.getElementById('apiTreeSearch').value);
+  });
+  document.getElementById('sel-appliance').addEventListener('change', loadBuild);
+  document.getElementById('btn-harvest').addEventListener('click', harvestNow);
+  document.getElementById('btn-schema-harvest').addEventListener('click', schemaHarvestNow);
+  loadBuild();
+  // The URN / transport lines under a leaf load it too (they sit outside the button).
+  document.querySelectorAll('#apiTree .api-leaf-meta').forEach(function (m) {
+    m.addEventListener('click', function () {
+      var b = m.parentElement.querySelector('.api-tree-leaf-btn'); if (b) b.click();
+    });
+  });
+  document.querySelectorAll('#apiTree .api-tree-copy[data-urn]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { copyUrn(this.dataset.urn); });
+  });
+  document.querySelectorAll('[data-js="common-path"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { document.getElementById('inp-path').value = this.dataset.path; });
+  });
+})();
+
+// --- Catalog editor (only rendered for registry_edit users) --------------
+(function () {
+  var modalEl = document.getElementById('endpointModal');
+  if (!modalEl) return;
+
+  function openModal(title, data) {
+    document.getElementById('epModalTitle').textContent = title;
+    document.getElementById('epId').value = data.id || '';
+    document.getElementById('epName').value = data.name || '';
+    document.getElementById('epUrn').value = data.urn || '';
+    document.getElementById('epApiVer').value = data.apiver || 'v2.0';
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+
+  document.querySelectorAll('[data-js="new-endpoint"]').forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal('New Endpoint', {}); });
+  });
+
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-js="edit-endpoint"]');
+    if (!btn) return;
+    openModal('Edit Endpoint', {
+      id: btn.dataset.id, name: btn.dataset.name,
+      urn: btn.dataset.urn, apiver: btn.dataset.apiver
+    });
+  });
+
+  document.addEventListener('submit', function (ev) {
+    var form = ev.target.closest('[data-js="disable-endpoint"]');
+    if (!form) return;
+    if (!window.confirm('Disable endpoint "' + form.dataset.name + '"?\n\nServices resolving this name will fail loudly until it is restored. The row is kept (soft delete) and can be restored from the "Disabled" panel.')) {
+      ev.preventDefault();
+    }
+  });
+})();
+</script>
+{% endblock %}

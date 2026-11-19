@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% set cfg = ds_config or {} %}
+{% set dg = cfg.get('diagram') or {} %}
+{% block title %}{{ dg.get('name') or _('Diagram') }} — {{ _('Diagrams') }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/diagram_studio.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Diagrams') }}</span>
+  <span class="separator">/</span>
+  <span>{{ dg.get('name') or _('Diagram') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header mb-2">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent" aria-hidden="true"></i>{{ dg.get('name') or _('Diagram') }}</h1>
+    {% if dg.get('description') %}<p class="text-muted mb-0 small">{{ dg.get('description') }}</p>{% endif %}
+  </div>
+  <div class="ds-toolbar" role="toolbar" aria-label="{{ _('Viewer tools') }}">
+    <div class="btn-group" role="group" aria-label="{{ _('Zoom') }}">
+      <button type="button" id="dvZoomOut" class="btn btn-sm ds-tb" title="{{ _('Zoom out') }}" aria-label="{{ _('Zoom out') }}"><i class="bi bi-zoom-out" aria-hidden="true"></i></button>
+      <button type="button" id="dvFit" class="btn btn-sm ds-tb" title="{{ _('Fit the drawing') }}" aria-label="{{ _('Fit the drawing') }}"><i class="bi bi-aspect-ratio" aria-hidden="true"></i></button>
+      <button type="button" id="dvZoomIn" class="btn btn-sm ds-tb" title="{{ _('Zoom in') }}" aria-label="{{ _('Zoom in') }}"><i class="bi bi-zoom-in" aria-hidden="true"></i></button>
+    </div>
+    <button type="button" id="dvListBtn" class="btn btn-sm ds-tb" aria-pressed="false" title="{{ _('List view: the elements and connectors as tables') }}" aria-label="{{ _('List view') }}"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+    <div class="btn-group" role="group">
+      <button type="button" class="btn btn-sm ds-tb dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Download this diagram') }}"><i class="bi bi-download me-1" aria-hidden="true"></i>{{ _('Export to') }}</button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><button type="button" class="dropdown-item" data-ds-export="drawio" title="{{ _('Editable in draw.io / diagrams.net, every page') }}"><i class="bi bi-diagram-3 me-2" aria-hidden="true"></i>{{ _('draw.io (.drawio)') }}</button></li>
+        <li><button type="button" class="dropdown-item" data-ds-export="svg" title="{{ _('Structured, editable SVG of one page') }}"><i class="bi bi-filetype-svg me-2" aria-hidden="true"></i>{{ _('SVG (.svg)') }}</button></li>
+        <li><button type="button" class="dropdown-item" data-ds-export="pdf" title="{{ _('Vector PDF') }}"><i class="bi bi-filetype-pdf me-2" aria-hidden="true"></i>{{ _('PDF (.pdf)') }}</button></li>
+        <li><button type="button" class="dropdown-item" data-ds-export="png" title="{{ _('Picture of one page at 1×, 2× or 4×') }}"><i class="bi bi-filetype-png me-2" aria-hidden="true"></i>{{ _('PNG (.png)') }}</button></li>
+      </ul>
+    </div>
+    {% if cfg.get('editUrl') %}<a href="{{ cfg.get('editUrl') }}" class="btn btn-sm btn-fw-primary"><i class="bi bi-pencil-square me-1" aria-hidden="true"></i>{{ _('Open in Diagram Studio') }}</a>{% endif %}
+  </div>
+</div>
+
+{% set _copy = cfg.get('copyOf') %}
+{% if _copy %}
+{# A copy of a live page (views/diagram_studio.api_from_satom): say so, and
+   link back to the page that stays live. The link is built by the view. #}
+<p class="ds-copy-note small text-muted mb-2" role="note" data-copy-of="{{ _copy.source }}"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>{{ _('Copy of %(source)s taken %(when)s', source=_copy.label, when=_copy.taken or _('earlier')) }}{% if _copy.url %} — <a href="{{ _copy.url }}">{{ _('open the live diagram') }}</a>{% endif %}</p>
+{% endif %}
+
+<div class="ds-viewer" id="dsViewer">
+  <div class="ds-viewer-main">
+    <div class="ds-pages" id="dvTabs" role="tablist" aria-label="{{ _('Pages') }}"></div>
+    <div class="ds-canvas-wrap" id="dvWrap">
+      <svg id="dvCanvas" tabindex="0" role="img" aria-label="{{ _('Diagram. Use the List view for a table of every element.') }}"></svg>
+      <canvas id="dvMinimap" class="ds-minimap" role="img" aria-label="{{ _('Minimap: click to move the view') }}"></canvas>
+    </div>
+    <div id="dvList" class="ds-list" hidden aria-label="{{ _('List view') }}"></div>
+  </div>
+  <aside class="ds-right">
+    <section class="fw-card ds-panel" aria-labelledby="dvSearchTitle">
+      <div class="ds-panel-head"><i class="bi bi-search" aria-hidden="true"></i><h2 id="dvSearchTitle">{{ _('Search') }}</h2></div>
+      <div class="ds-panel-body">
+        <input type="search" id="dvSearch" class="form-control form-control-sm" placeholder="{{ _('Text, name, category, property…') }}" aria-label="{{ _('Search elements') }}" aria-controls="dvResults">
+        <ul id="dvResults" class="list-unstyled mt-2 mb-0 ds-search-results"></ul>
+      </div>
+    </section>
+    <section class="fw-card ds-panel" aria-labelledby="dvInspTitle">
+      <div class="ds-panel-head"><i class="bi bi-info-circle" aria-hidden="true"></i><h2 id="dvInspTitle">{{ _('Details') }}</h2></div>
+      <div class="ds-panel-body" id="dvInspector"><p class="small ds-muted mb-0">{{ _('Click an element or a connector to see its details.') }}</p></div>
+    </section>
+    <section class="fw-card ds-panel" aria-labelledby="dvLayersTitle">
+      <div class="ds-panel-head"><i class="bi bi-layers" aria-hidden="true"></i><h2 id="dvLayersTitle">{{ _('Layers') }}</h2></div>
+      <div class="ds-panel-body" id="dvLayers"></div>
+    </section>
+  </aside>
+</div>
+
+<script type="application/json" id="dsUrls">{{ {'base': url_for('diagram_studio.index'), 'exportUrl': request.script_root ~ '/diagrams/' ~ (dg.get('id') or 0) ~ '/export/'}|tojson }}</script>
+<script type="application/json" id="dsConfig">{{ cfg|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/diagram_studio_core.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_routing.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_render.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_export.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_viewer.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

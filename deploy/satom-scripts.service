@@ -1,0 +1,74 @@
+# Script Library runner. Triggered by satom-scripts.path when
+# data/scripts/queue/ becomes non-empty.
+#
+# Same shape as satom-integrations.service with one more inversion: NO
+# EnvironmentFile. This process never needs the database or FERNET_KEY -- it
+# reads frozen script trees and writes status files -- so it is not given
+# them. Each script runs inside the bubblewrap jail of app/services/sandbox.py
+# on top of this containment.
+[Unit]
+Description=SATOM Script Library runner (unprivileged, oneshot, no database)
+After=network.target
+
+# One start per queued request: systemd's default start limit (5 in 10 s)
+# stopped this unit -- and with it the .path watcher, for good, until
+# someone ran reset-failed -- after six quick runs (measured on a1). The
+# runner itself bounds its work (MAX_DRAIN per start, and it moves anything
+# it cannot process out of the queue, so DirectoryNotEmpty cannot spin).
+StartLimitIntervalSec=0
+[Service]
+Type=oneshot
+User=satom
+Group=satom
+WorkingDirectory=/opt/satom
+Environment=FM_APP_DIR=/opt/satom
+ExecStart=/opt/satom/venv/bin/python -m app.services.script_runner
+# MAX_PARALLEL runs at a time, each at most 900 s, MAX_DRAIN per invocation;
+# what is left re-fires through the .path unit.
+TimeoutStartSec=4500
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# ONE writable root for queue/claimed/status (the claim is a rename between
+# them; two bind-mounts would make it EXDEV). The script sources are
+# read-only to this unit: a run cannot rewrite the library it runs from.
+ReadWritePaths=-/opt/satom/data/scripts
+ReadOnlyPaths=-/opt/satom/data/scripts/library
+InaccessiblePaths=-/opt/satom/.env -/opt/satom/pki -/opt/satom/.ssh
+# NO ProtectKernelTunables= and NO ProtectProc= here (2026-11-13, FA-0016):
+# both put read-only mounts over parts of /proc, and on a SLES 15 VM bwrap then
+# could not mount the jail's own /proc ("Can't mount proc on /newroot/proc:
+# Operation not permitted"): the kernel only allows a new proc mount where an
+# uncovered one is visible. An LXC with nesting hides that (/dev/.lxc/proc).
+# The jail's private pid namespace and /proc are what keep operator code away
+# from other processes (tests/test_integration_hooks.py); /proc/sys is not
+# writable by the satom uid anyway.
+
+# Resource caps (2026-10-20). Operator code runs in this unit's cgroup, and
+# the LXC it shares with Postgres and gunicorn has a few GB of RAM: without a
+# cap, one script that allocates, forks or writes in a loop takes the node
+# down (measured: no MemoryMax, TasksMax 106611, /tmp on the root disk).
+# RLIMIT_NPROC cannot do this job -- it counts every process of the satom uid
+# on the node. The jail's work directory and its /tmp live in this unit's
+# /tmp, a tmpfs whose pages are charged to MemoryMax: no run can fill the
+# disk. MemoryMax alone, no MemoryHigh: a throttle below the cap kept a
+# runaway run alive and stalled until its timeout (measured on a1); at the cap
+# the kernel ends it at once and the run record says why. A site that needs
+# more raises these in a drop-in.
+MemoryMax=1G
+TasksMax=256
+# The kernel ends the process that hit MemoryMax -- the script, whose jail
+# runs at oom_score_adj 1000 -- and the runner carries on and records it.
+# The default (stop) stopped the whole unit, runner and every other run with
+# it, and left the run marked "running" (measured on a1).
+OOMPolicy=continue
+CPUQuota=200%
+CPUWeight=20
+IOWeight=20
+TemporaryFileSystem=/tmp:size=512M,mode=1777

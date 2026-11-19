@@ -1,0 +1,690 @@
+# Offline update packages
+
+Update a node that has no route to the git remote: download a signed package,
+upload it through the web console, apply it. No internet, no repository, no
+package mirror.
+
+This is not the offline **install** bundle. That one carries OS packages and
+stands a node up from nothing; this carries only what an update needs — the
+application code and the pinned Python wheels a node on a supported starting
+version can be missing — so it is a fraction of the size.
+
+---
+
+## 1. The short version
+
+```
+# build (any machine with a checkout; holds no secret)
+bash installers/build-update-package.sh
+  -> dist/satom-update-<version>.tar.gz
+
+# sign (the machine where the private key lives — never a managed node)
+python3 deploy/sign_update_package.py sign dist/satom-update-<version>.tar.gz \
+        --key release.key
+
+# apply (on the node)
+#   web : Settings -> Software Update -> Offline update package
+#   cli : satom execute update package satom-update-<version>.tar.gz --yes
+```
+
+An **unsigned package is refused by every node**, so shipping one is a mistake
+that fails closed rather than one that ships.
+
+**You normally do not build one.** From 2.5.0 every release publishes its
+package — `satom-update-<version>.tar.gz`, its `.sha256`, and the public key it
+is signed with (`satom-release-2026.pub`) — as assets of the GitHub release and
+in the download catalog. A node installed before 2.5.0 must trust that key once
+before it accepts the package: see §4.1.
+
+**A node that reaches GitHub does not need the download either** (2.7.0 on):
+`sudo satom execute update fetch --yes`, or *Software Update → Check for a
+newer package online → Download & stage*. See §1.1.
+
+**Smaller packages.** A release whose previous release can apply them also
+publishes **delta packages**, `satom-update-<version>-from-<old>.tar.gz`: only
+the files that changed since `<old>`, a few MB instead of the full package, for
+a node on exactly `<old>`. Measured on 4.11.2 → 4.11.3: the full package is
+38.7 MB, the delta 2.1 MB. See §3.1.
+
+### 1.1 The system-upgrade feed (`satom-system-upgrades/`)
+
+Every release writes `satom-system-upgrades/latest.json` in the public
+repository: the newest package's version, its release-asset URL, its size and
+its sha256 (plus one `satom-update-<version>.json` per release and a README
+table of all of them). The packages stay **release assets**; the folder holds
+only the index, because a 64 MB blob per release in git would grow every clone
+for ever, and GitHub refuses files over 100 MB.
+
+| Where | What it does |
+|---|---|
+| `sudo satom execute update fetch` | Reads the feed and shows what it would download (dry run). |
+| `… fetch --yes` | Downloads, checks the sha256 against the feed, then applies through `update package` (signature checked here and again by the runner). |
+| `… fetch --download-only` | Downloads and stages it for the console; nothing is applied. |
+| Software Update → *Check for a newer package online* | Same check; *Download & stage* runs the download as a job and opens the preflight. Applying is still the **Apply** button. |
+| `… fetch --full`, *Full package instead* | The full package even when the feed offers a delta for this node (§3.1). |
+
+- **Deltas in the feed.** A release that has delta packages lists them under
+  `deltas` (one entry per older release: `from`, name, URL, size, sha256). A
+  node on exactly that `from` version is offered the delta; every other node
+  the full package. A node whose preflight refuses the delta (its tree
+  differs) takes the full package with `--full` or *Full package instead*.
+
+- The feed is an **address book, not a trust decision**. A download that does
+  not match the feed's size and sha256 is deleted before it gets a real name;
+  one that matches is still refused unless a trusted key signed it.
+- HTTPS only, redirects included. **Settings → General → Update sources**
+  points the console at another `latest.json` (an internal pipeline or
+  mirror), public or with a user and token. The token goes only to that host
+  and never follows a redirect. `SATOM_UPGRADE_FEED=<https-url>` in the node's
+  environment changes the default. The CLI does not read the console setting:
+  `satom execute update fetch --feed <https-url> [--user <name>]`, with the
+  token in `$SATOM_FEED_TOKEN`.
+- **A link that never changes.** Every release also carries the feed as the
+  asset `satom-update-latest.json`:
+  `https://github.com/visionebc/SATOM/releases/latest/download/satom-update-latest.json`
+  always names the newest package.
+- **Through a mirror of GitHub.** A node that reaches GitHub only through a
+  proxy repository of `https://github.com/` (a Nexus or Artifactory *raw*
+  proxy) uses the same path under the mirror:
+  `https://<mirror>/visionebc/SATOM/releases/latest/download/satom-update-latest.json`.
+  When the feed was read from a URL on another host whose path holds
+  `/visionebc/SATOM/releases/`, the package, the signing key, the API pack and
+  the knowledge feed are fetched through that same mirror (the feed names them
+  on github.com, which such a node cannot reach), and the configured user and
+  token reach them because they are on the feed's host. **Test** and
+  `update fetch` name the mirror. A mirror caches: give the proxy a short
+  metadata/content max age, or `latest` keeps naming the previous release. A
+  Docker registry proxy (of `ghcr.io`, for example) cannot serve these files.
+- **Nothing polls.** The feed is read when an operator asks; an on-premise
+  security product does not phone home on a timer.
+- As root, the CLI loads the downloader only from the root-owned runner
+  library (`/usr/local/lib/satom-runner/upgrade_feed.py`, installed by
+  `install-runner.sh`), never from the application tree.
+- Written by the release pipeline after the package is built and verified
+  (`deploy/gen_upgrade_feed.py`), so it is committed after the tag: the
+  package contains the tree, and the tree cannot contain the package's hash.
+
+---
+
+## 2. Why it is signed, and what that buys
+
+Uploading code that a root process installs is, by construction, remote code
+execution as root — unless something proves the code came from someone the node
+already trusts. That proof is an Ed25519 signature checked against a **trust
+store the web worker cannot write**.
+
+Three properties hold the design together. Breaking any one of them makes the
+other two decorative.
+
+### The private key never touches a managed node
+
+The build host holds no secret; signing is a separate step that runs wherever
+the key is. The key is an encrypted PKCS#8 PEM, protected by a passphrase.
+
+Signing is not part of the build on purpose: a build host is disposable, and a
+disposable machine must not be able to mint packages.
+
+Vision EBC ships two public keys in `deploy/update-keys/`, and the installer
+trusts both:
+
+| Key | Fingerprint | Who signs with it |
+|---|---|---|
+| `satom-release-2026.pub` | `SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA` | the release pipeline, for every published package from 2.5.0 on |
+| `visionebc-release.pub` | `SHA256:d3co+lEJupVmbaov0mGPonUfdNHM1/FW5q4sHcDI4Fo` | a key held offline, for packages signed by hand |
+
+The pipeline's key lives on the release host — the machine that already builds
+and publishes the offline bundles and the container image — never on a SATOM
+node and never on the host that builds the package. Packages are built on one
+machine and signed on another. The trade is stated plainly: whoever controls
+the release host can sign a package every node trusts. That is the same trust
+an operator already places in the bundles that host publishes. If it is ever
+lost, `trust remove-key` revokes it on each node (§4).
+
+### The public key is public, and that is not a weakness
+
+A public key can only **verify**. Nobody can sign with it. That is why it ships
+in the repository and gets installed on every node — exactly like an SSH
+`authorized_keys` entry, which is world-readable and still lets nobody in.
+
+### The trust store is root-owned and outside the application tree
+
+`/etc/satom/update-keys/` is `root:root`, and so is every parent of it. The
+application tree is owned by the service account, so a trust store inside it
+would be a trust store the web worker could add its own key to — and a key it
+chose is a package it can mint. `trust_store_problem()` walks the whole parent
+chain and the runner treats any finding as fatal.
+
+A node with an **empty** trust store accepts nothing. That is a safe default,
+not a working one: install the release key before you need it.
+
+---
+
+## 3. What is in a package
+
+```
+satom-update-<version>/
+    manifest.json      the signed document
+    manifest.sig       base64 Ed25519 signature over manifest.json's BYTES
+    app.tar.gz         the application tree at that revision
+    wheels/*.whl       the pinned dependencies a node may be missing
+```
+
+The signature covers the manifest's **exact bytes** — no canonicalisation, so
+there is no re-serialisation ambiguity to exploit — and the manifest carries a
+sha256 for every other file. Signing one small document therefore covers the
+whole package, and any edit to the manifest invalidates the signature even if
+the JSON stays semantically identical.
+
+The manifest deliberately carries **no hostname, path or operator identity**.
+Packages are published; a published artifact must not describe the estate that
+built it.
+
+`python_tags` says which interpreters the wheels fit. It is `["*"]` when every
+wheel is pure Python and `["cpXY"]` when any of them is compiled. Getting this
+wrong is the RHEL-9 trap — system Python 3.9 against cp311 wheels — where the
+apply would otherwise die deep inside pip on a node with no network to fall
+back on.
+
+`wheelset` lists every wheel the release was resolved with, shipped or not.
+From 3.3.4 a package ships only the wheels that not every earlier package
+with a `wheelset` already had, and `min_from_version` rises to the oldest of
+those releases (3.3.3, the first one that recorded it). A node below that is
+refused at **Upgrade path** with nothing changed. Coming from 3.3.2 or older
+you apply `satom-update-3.3.3.tar.gz` first — it carries every wheel — and
+then the newer package.
+
+### 3.1 Smaller packages: format /2 and delta packages
+
+A package used to carry the whole application tree (`app.tar.gz`, about 28 MB)
+even when a release changed two files. Format `satom.update-package/2` adds two
+shapes; the outer file is still a gzip tarball named `satom-update-*.tar.gz`.
+
+| Shape | Payload | Applies to | Size (4.11.3) |
+|---|---|---|---|
+| full /1 | `app.tar.gz` | any node at or above `min_from_version` | 38.7 MB |
+| full /2 | `app.tar.xz` + per-file tree map | any node at or above `min_from_version`, **if that node's runner speaks /2** | about 27 MB |
+| delta /2 | `app-delta.tar.xz`: only changed files | a node on exactly `from_version` | 2.1 MB |
+
+- **The signed tree.** A /2 manifest lists every file of the target tree with
+  its sha256, mode and size (`app_tree`). The runner builds the complete tree
+  as a plain tarball in its root-only staging directory and checks every file
+  against that list **before** the database backup and before anything is
+  replaced; from there the apply is the same as for a full package (dropped
+  files are removed, the tree is committed).
+- **A delta only builds on the tree it was made from.** Every file the delta
+  does not carry is read from the node's own tree and must hash to the signed
+  value. One file edited by hand, or missing, and the package is refused with
+  *this node's application tree is not the one <version> shipped … Apply the
+  full package satom-update-<version>.tar.gz instead*. Nothing has changed at
+  that point. The preflight (web and `satom execute update package` without
+  `--yes`) runs the same check read-only, so the refusal appears before
+  **Apply**. Root reads the tree without following any link: a link where a
+  file should be counts as a difference.
+- **The API library pack travels as a recipe.** Between two releases 978 of
+  its 980 files are identical; only its manifest and signature change. The
+  delta carries those two members and the sha256 of every other one, and the
+  runner rebuilds the pack from the copy the node already holds. The rebuilt
+  file's own bytes are not pinned (gzip output differs between zlib builds);
+  its integrity is that of every member, and the pack checks its own lane
+  signature when it is imported.
+- **Wheels.** A delta ships only the wheels the from-release's venv lacks (its
+  recorded `wheelset`).
+- **Which nodes can take /2.** A node applies a package with the runner it
+  already has. A runner that predates /2 refuses a /2 package at the signature
+  step (*unsupported package schema*), with nothing changed. So the release
+  pipeline publishes a delta only from releases whose runner speaks /2, and
+  keeps the full package at /1 until the oldest release it accepts speaks /2
+  too. **The first release that carries this runner therefore ships no delta;
+  the one after it does.**
+- **Python without lzma.** A /2 payload is xz-compressed. A node whose Python
+  was built without the `lzma` module is told so at preflight and takes a /1
+  package.
+
+One exception: the **4.0.0** package needs **3.4.7 or newer** (it was built
+against only the packages still on the build host). 4.0.1 and later accept
+3.3.3 or newer again, so a node on 3.3.3–3.4.6 skips 4.0.0.
+
+**On a node on 3.3.2 or older, install the 3.3.3 package's runner first.**
+Those nodes run an update runner that stages the package in a directory only
+root can read and then points `pip` — running as the service account — at the
+wheels inside it; pip ignores the unreadable directory and the apply fails at
+`pip install` with `No matching distribution found`, then rolls back cleanly.
+The runner that reads the wheels from a readable place is in 3.3.3, inside the
+very package the old runner cannot apply, and pip runs before the runner is
+replaced, so the package cannot heal the node by itself. Measured on a 2.11.0
+node on 2026-10-21: the first apply rolled back to the previous commit with
+the data intact; the apply after the step below upgraded to 3.3.3. The step,
+as root on the node, after the console's preflight has verified the package's
+signature (upload it under Software Update and read the preflight — Apply is
+what fails, not the verification):
+
+```bash
+mkdir -m 700 /root/satom-3.3.3-unpacked
+tar xzf satom-update-3.3.3.tar.gz -C /root/satom-3.3.3-unpacked --strip-components=1
+tar xzf /root/satom-3.3.3-unpacked/app.tar.gz -C /root/satom-3.3.3-unpacked deploy/
+SATOM_DEPLOY_SRC=/root/satom-3.3.3-unpacked/deploy \
+    bash /root/satom-3.3.3-unpacked/deploy/install-runner.sh
+# then apply satom-update-3.3.3.tar.gz from the Software Update page as usual
+rm -rf /root/satom-3.3.3-unpacked
+```
+
+`install-runner.sh` installs the root-owned runner copy and converges the
+node's units and roles; it does not touch the application tree or the
+database. A node on 3.3.3 or newer never needs this step.
+
+---
+
+## 4. Managing the trust store
+
+```
+satom show trust                                  # what this node accepts
+satom execute trust add-key release.pub           # install a key (root)
+satom execute trust remove-key <name|fp> --yes    # stop accepting one (root)
+satom diagnose updates                            # is the whole path sound?
+```
+
+Compare the fingerprint against the one published with the release **before**
+trusting it. Installing a key is the moment the trust decision is made; every
+check afterwards only enforces it.
+
+Operators and forks can add their own keys and sign their own packages. Nothing
+in the product contains a secret, so nothing about this depends on the vendor.
+
+**One key, one use (3.0).** This trust store verifies **update packages only**
+(and the legacy 2.x API packs). The 3.0 API and knowledge packs are verified
+with the keys of their own lane — shipped in `deploy/pack-keys/<lane>/`, plus
+any you add under `/etc/satom/pack-keys/<lane>/` with
+`satom execute trust add-key --purpose api_pack|knowledge <file.pub>`. The update
+verifier never reads a pack key, so a pack key can never sign an update, and
+`add-key` refuses a key already trusted for another purpose.
+`satom show trust` lists all three purposes. Details:
+[api-library.md §12.3](api-library.md), [Upgrading to 3.0](upgrading-to-3.0.md).
+
+### 4.1 Upgrading a node installed before 2.5.0
+
+Packages published from 2.5.0 on are signed with `satom-release-2026.pub`. An
+installer before 2.5.0 did not ship that key, so an older node refuses the
+package (*"signed by a key this node does not trust"*) until it is installed
+**once** — after which every later package applies with no further step:
+
+```
+# 1. take satom-release-2026.pub from the release (or extract it from the
+#    package: satom-update-<v>/app.tar.gz -> deploy/update-keys/)
+# 2. compare the fingerprint with the one published in the release notes:
+#      SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA
+sudo /usr/local/sbin/satom execute trust add-key ./satom-release-2026.pub
+sudo /usr/local/sbin/satom show trust     # lists it next to visionebc-release
+```
+
+Use the **full path** on nodes older than 2.7.0: sudo's `secure_path` on
+openSUSE and RHEL omits `/usr/local/sbin`, so `sudo satom` answers *command
+not found* there. From 2.7.0 `install-cli.sh` links `/usr/bin/satom` and the
+short form works everywhere.
+
+Do it on **every** node of a pair: each trust store is local and does not
+replicate.
+
+**A node installed from an offline bundle before 2.5.0 needs one more step,
+once.** Its `/opt/satom` is not a git checkout: the bundle extracted
+`app.tar.gz`, and the runner those versions ship refuses every package at
+*"count local commits — not a git repository"* (it rolls back cleanly, nothing
+changes). From 2.5.0 the installer records the tree in git and the runner
+adopts a tree that is not one, but the hop **into** 2.5.0 runs on the old
+runner. Record the installed tree as a baseline first:
+
+```
+G="sudo runuser -u satom -- env HOME=/opt/satom git -C /opt/satom"
+sudo test -d /opt/satom/.git || {
+  $G init -q
+  $G add -A
+  $G -c user.name=SATOM -c user.email=satom@localhost \
+     commit -qm "baseline: SATOM as installed (offline)"
+}
+$G status --short | wc -l      # 0
+```
+
+`runuser` rather than `sudo -u satom`: many managed sudoers let an operator
+run commands as **root only**, and `sudo -u satom` is then refused
+(*"is not allowed to execute … as satom"*, reported from a customer node).
+`HOME` is explicit because sudo leaves `HOME=/root`, which the service account
+cannot read. `/opt/satom` is `satom:satom 750`, so do not `cd` into it as your
+own user.
+
+The shipped `.gitignore` keeps every node-local path out (`data/`, `venv/`,
+`.env`, `pki/`, the state directories). On a fresh 2.4.1 offline install the
+commit holds exactly the 1,439 files of the release archive. Then apply the
+2.5.0 package as usual. This path was run end to end on openSUSE Leap 15.6
+with no network: 2.4.1 → 2.5.0, migrations to head, `/healthz` 200.
+
+### Rotating a key
+
+1. Generate the new pair where the new key will live.
+2. Publish the new `.pub` and install it alongside the old one.
+3. Sign the next release with the new key.
+4. Once every node has the new key, `remove-key` the old one.
+
+Both keys are trusted during the overlap, which is what makes the rotation
+non-disruptive. Removing the old key first would strand every node that had not
+yet installed the new one.
+
+---
+
+## 5. Preflight
+
+The console verifies the package and reports what applying it would do, before
+anything is applied. An update that cannot work should fail on a page that
+explains why, not halfway through a privileged apply.
+
+| Check | Blocks | What it catches |
+|---|---|---|
+| Trust store | yes | no keys, or a store that is not root-owned |
+| Archive | yes | traversal, symlinks, device nodes |
+| Signature & integrity | yes | unsigned, wrong key, altered payload, extra files |
+| Version | no | downgrade, or reinstall of the same version |
+| Upgrade path | yes | package needs a newer starting point |
+| Python | yes | venv interpreter does not match the wheels |
+| Dependencies | yes | a pinned change with no wheel in the package |
+| Disk space | yes | not enough room for package, extraction and backup |
+| This node | no | staging on a standby, which the data sync deletes |
+
+Every one of these is **advisory**. The privileged runner re-verifies the
+signature, the hashes and the version rules itself, as root, against a store
+the worker cannot write. If the two disagree, the runner wins — the worker runs
+in the process an attacker would already have if they had anything at all.
+
+The server also re-runs preflight when Apply is pressed. The page an operator
+looked at could be minutes old, and "the button was enabled" is not a safety
+property.
+
+---
+
+## 6. Applying
+
+The web worker only stages the file and writes a request. The privileged runner
+(`satom-updater.service`) does everything else, in this order:
+
+1. **Hardened?** — refuse if the runner's own code is writable by the service
+   account
+2. **Signature** — against the trust store
+3. **Every hash** — against the signed manifest
+4. **Version rules** — downgrade allowed only when the request says so
+5. **Database backup** — refuse to replace code if it cannot be taken
+6. **Dependency freeze** — so a rollback can restore the venv
+7. **Park local commits** — anything not on the remote goes to `refs/backup/`
+8. **Install the tree**, hand ownership back to the service account
+9. **`pip install --no-index`** — strictly from the package's own wheels
+10. **Migrations** (fatal on failure, §6.1), units, the operator CLI and the
+    runner itself
+11. **Restart**, then prove it works: HTTP 200 on `/healthz`
+12. **Commit** the deployed revision
+
+The order is not cosmetic. A writable runner makes the signature meaningless; an
+unverified manifest makes the hashes meaningless; unchecked version rules let a
+valid-but-wrong package through. Each stage only means something once the
+previous one passed.
+
+**On failure, anything at all**: the tree is reset to the pre-update commit,
+files the package added are removed, the venv is restored from the freeze, the
+services restart, and health is re-checked. The status log records every step.
+
+**How long a restart may take.** When it is stopped, the scheduler first
+finishes the scheduled actions it is running, so a firmware upgrade or a device
+write is never cut off halfway. Its stop therefore lasts as long as that run of
+actions. The runner waits for every restart as long as systemd itself may take
+(the unit's `TimeoutStopSec` plus `TimeoutStartSec`, plus 30 s; 210 s for the
+scheduler with systemd's defaults). If a restart still runs over, the step names
+the service and the reason, and the update rolls back.
+
+### 6.2 Updating a node on 4.11.0 or older (scheduler restart timed out)
+
+Up to 4.11.0 the runner gave the scheduler 60 s to restart. With devices that
+answer slowly, the update failed with `Command '['systemctl', 'restart',
+'satom-scheduler.service']' timed out after 60 seconds` and rolled back
+(SA-0013). The update is applied by the runner **already installed**, so
+installing the fixed version does not help on that run. On such a node:
+
+```
+satom execute stop scheduler     # as root; lets the running actions finish (systemd allows 90 s)
+satom execute update package satom-update-<version>.tar.gz --yes   # or Apply on the Software Update page
+```
+
+The update starts the scheduler again (on a stopped unit `restart` is just a
+start). Nothing scheduled fires while it is stopped, so apply right after
+stopping it.
+
+**Packages newer than 4.11.1 do this themselves (SA-0014).** Every runner,
+old or new, runs `deploy/install-runner.sh` from the package being applied,
+before it restarts anything. When the update runner is the caller, that script
+asks systemd to stop the scheduler without waiting (`deploy/quiesce-scheduler.sh
+begin`), so it winds down while the update goes on, and at its end waits for it
+to be down (`wait`, bounded by what is left of the 180 s an old runner gives the
+script). The runner's restart is then just a start. The step log shows it as
+`quiesce: scheduler inactive after Ns` in the "refresh update runner" step; a
+`WARN quiesce:` line means the scheduler was still stopping and the restart
+waited for it. Only the 4.11.1 package itself still needs the manual stop
+above on a node on 4.11.0 or older.
+
+### 6.3 The migration waits for its table locks (SA-0019)
+
+The runner applies the migrations (`flask db upgrade`) **before** it restarts
+anything, so the previous release's web and scheduler are still running. A
+scheduled action keeps its database transaction open while it waits for
+devices, and holds a read lock on every table it read. A migration that
+changes such a table (`ALTER TABLE`) needs it to itself.
+
+Up to 4.11.2 the migration waited in one go, up to 120 s, and then failed
+with `LockNotAvailable ... canceling statement due to lock timeout` and the
+update rolled back. From the release after 4.11.2 (`app/migration_lock.py`)
+each attempt waits at most 5 s, so web requests queued behind it are held for
+no longer than that. A failed attempt rolls back (DDL is transactional in
+PostgreSQL), and the next one runs after 2, 4, 8, then every 15 s, for up to
+420 s. The step log shows each wait as `schema migration attempt N: a table it
+changes is in use (pid …, idle in transaction, transaction open Ns)`. This code
+ships with the release being applied, so it works under any installed runner.
+
+If no attempt succeeds, the database is unchanged and **no restore is
+needed**. Stop the scheduler, then apply again (the update starts it again):
+
+```
+satom execute stop scheduler     # as root
+satom execute update package satom-update-<version>.tar.gz --yes
+```
+
+`SATOM_MIGRATION_LOCK_TIMEOUT` (default `5s`) and
+`SATOM_MIGRATION_LOCK_DEADLINE_S` (default `420`; keep it under the 600 s the
+runner gives the step) change the two limits.
+
+### 6.1 Database changes
+
+A schema change reaches a node by two routes, and both run on every update:
+
+- **At boot**, the application creates any missing table (`create_all`) and adds
+  any missing column (`_ensure_columns`, `_ensure_widths`). These only ever
+  **add**.
+- **Alembic** (`flask db upgrade`, step 10) runs the versioned migrations in
+  `migrations/versions/`. This is the only route for a change that transforms
+  data: a rename, a backfill, a dropped column, a `NOT NULL` with a default.
+
+Until 2.5.0 the second route never worked on an installed node. The installer
+built the schema with `create-db` and recorded no Alembic revision, so the
+first update started from the first migration, died on a table that already
+existed, logged the error as *best-effort* and finished green with nothing
+migrated. Three changes close it:
+
+1. **Every migration is idempotent.** `app/migration_guard.py` wraps
+   `create_table`, `add_column`, `create_index` and `create_foreign_key` so they
+   skip what already exists. On a node whose schema `create_all` built, the
+   whole chain runs as no-ops and ends **stamped at head**. A node installed
+   before 2.5.0 is repaired this way by its first 2.5.0 update, with no manual
+   step.
+2. **The installer stamps.** Right after `create-db` it runs
+   `flask db stamp head`. The schema it just built is head by construction.
+3. **A failed migration fails the update.** The runner aborts and rolls back
+   the code and the Python dependencies. It **cannot roll back the database**:
+   if a migration got part of the way, restore the bundle the *database backup*
+   step took (`satom get backup list`, then
+   `satom execute restore db <bundle> --yes`) before retrying. The message on
+   the status page says so.
+
+The standby never migrates; its schema arrives by replication. The Docker web
+container migrates the primary before it starts gunicorn and refuses to serve
+if the migration fails (`deploy/docker/entrypoint.sh`, `migrate_primary`).
+
+*One hop is still special.* A node on 2.4.x applies the 2.5.0 package with the
+runner it already has, in which the migration step is best-effort. The hop
+works anyway, because the 2.5.0 migrations are idempotent: `upgrade` succeeds
+and stamps. The fatal behaviour starts with the next update, after step 10 has
+installed the new runner.
+
+`tests/test_migrations_idempotent.py` runs `create-db` and then `db upgrade`
+for real against a fresh database, so a new migration that is not idempotent
+fails there rather than on a customer's node.
+
+### Rollback removes only what the package added
+
+Not a blanket `git clean`. The untracked-file list is captured before the tree
+is replaced and only the difference is deleted — destroying an operator's
+unrelated work in order to undo ours is not a rollback.
+
+### Why the apply commits
+
+Without a commit the tree stays permanently dirty, `satom diagnose git` reports
+drift for ever, and a reconciler in AUTO mode would reset the package away on
+its next pass. The commit is made as the service account, never as root:
+root-owned objects in `.git` break the git publish path.
+
+---
+
+## 7. Downgrades
+
+Allowed, and they need saying out loud: **a downgrade does not reverse database
+migrations.** A schema created by the newer version stays in place. The older
+code may not know about it.
+
+- The web console requires an explicit confirmation checkbox.
+- The CLI requires `--allow-downgrade`.
+- Either way a database backup is taken first, and that backup is the way back.
+
+The honest limitation: signing prevents a *forged* package, not an operator
+choosing to install a genuine older release with known bugs. That is a
+downgrade attack in the classic sense and it is accepted deliberately, in
+exchange for being able to get out of a bad release on an offline node. The
+mitigations are the audit log, the explicit confirmation, and the backup.
+
+---
+
+## 8. HA
+
+The apply is **node-local**: each node has its own venv, so each node applies
+its own copy. Stage the upload on the **primary** — `data/` replicates to the
+standby with `rsync --delete`, so a file uploaded on the standby is removed on
+the next sync.
+
+Apply to the **primary first**, then the standby. The primary is the only node
+that can apply a schema migration (the standby's database is a read-only
+replica and receives the new schema from it); a standby updated first would
+run code that expects columns its database does not have yet.
+
+---
+
+## 9. The runner privilege boundary
+
+`satom-updater.service` runs as **root**, and the unit it ships with points at
+`/opt/satom/deploy/self_update_runner.py` — inside the tree the service account
+owns. Root executing code the unprivileged worker can rewrite is a complete
+escalation, and it would make signature checking pointless: a verifier the
+attacker can edit verifies nothing.
+
+`deploy/install-runner.sh` fixes this the same way the operator CLI is fixed:
+
+- the runner **and its verifier** are copied to `/usr/local/lib/satom-runner`,
+  `root:root`
+- a **system** interpreter runs them, never the venv (which lives in the tree,
+  and which may be the very thing being repaired)
+- the unit is redirected with a **drop-in**, not an edit — the update runner
+  re-copies `deploy/<unit>` on every update, so an edited unit silently reverts
+- the verifier must pass a sign/verify self-test before it is installed
+
+It runs from four places so the copy cannot drift: the installer, the
+de-privilege migration, every code update, and `satom execute reinstall runner`.
+
+`package_change()` refuses outright when the runner is not hardened. The git
+update path is unaffected — it is gated by the remote, not by local trust.
+
+Verify with:
+
+```
+satom diagnose updates
+```
+
+---
+
+## 10. Building and signing
+
+### Build
+
+```
+bash installers/build-update-package.sh
+```
+
+Uses `git archive HEAD`, never the working tree: the package must contain the
+committed revision, not whatever happens to be lying around on the build host.
+Set `MIN_FROM_VERSION` to raise the minimum version a node may apply it from.
+
+The release pipeline instead passes `APP_TARBALL=<payload>` and `COMMIT=<sha>`:
+the package then carries the same redacted payload as the offline bundles and
+the container image, byte for byte, and verification refuses it otherwise.
+
+`PACKAGE_FORMAT=2` builds the full package in format /2 (§3.1).
+`DELTAS=<json>` also builds one delta per entry, `[{"version", "commit",
+"app_tarball", "wheelset"}]`, where `app_tarball` is the payload that older
+release **published** (the bytes its nodes hold, not a fresh `git archive`).
+Before a delta is packed, the builder applies it to a copy of that tree and
+compares the result with the signed tree; a delta that does not reproduce it
+stops the build. Each delta is signed like the full package.
+
+Wheels are resolved for the nodes, not for the build host: CPython 3.11 on
+`manylinux_2_28` or older (`WHEEL_PYTHON_VERSION`, `WHEEL_PLATFORMS`). All three
+supported families run 3.11, and RHEL 9's glibc (2.34) is the oldest of them. A
+wheel resolved for a newer build host could need a glibc RHEL 9 does not have.
+
+### Create a signing key (once)
+
+```
+python3 deploy/sign_update_package.py genkey \
+        --out release --comment "<who this key belongs to>"
+```
+
+Writes `release.key` (encrypted, **back this up offline**) and `release.pub`
+(publish it). The fingerprint is printed; publish that too, so anyone
+installing the key can compare it.
+
+### Sign
+
+```
+python3 deploy/sign_update_package.py sign <package> --key release.key
+python3 deploy/sign_update_package.py verify <package> --pub release.pub
+```
+
+Unattended signing (the release pipeline) reads the passphrase with
+`--passphrase-file <path>`, never `--passphrase`: an argument is readable by
+every user on the host through the process table.
+
+The signer needs only Python and `cryptography`. The **verifier** needs neither
+— it is pure standard library, because it has to run on a node whose venv is
+broken.
+
+---
+
+## 11. Known limits
+
+- **Not a rescue path for a node that will not boot.** It needs systemd, the
+  runner and a working Postgres connection.
+- **The package cannot change OS packages.** Same scope as every other update
+  path here: application code and Python dependencies only.
+- **A downgrade does not reverse migrations** (section 7).
+- **A delta needs the exact tree of its from-release.** A node patched by hand
+  takes the full package (§3.1).
+- **`git archive` cannot carry untracked files.** Anything not committed is not
+  in the package — which is the intent, but it means a node repaired this way
+  matches the commit, not somebody's working tree.

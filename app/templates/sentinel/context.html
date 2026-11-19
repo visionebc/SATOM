@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Sentinel context — trust, windows, topology{% endblock %}
+
+{#
+   The operator's levers over false positives, on their own URL.
+
+   The document itself lives in sentinel/_context_section.html and is
+   rendered by the Admin Console pane from that same file.  This page is
+   the wrapper and nothing else -- the split the architecture document and
+   the incidents console already use.
+#}
+{% block content %}
+{% include "sentinel/_context_section.html" %}
+{% endblock %}

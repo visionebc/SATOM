@@ -1,0 +1,71 @@
+{
+  "_about": "Every third-party browser asset SATOM serves. Nothing the console loads in a browser comes from another origin: an offline install on an isolated management network must render exactly like an online one. Adding or upgrading an asset: docs/engineering.md section 9.1. Enforced by tests/test_offline_assets.py.",
+  "assets": [
+    {
+      "name": "Bootstrap",
+      "version": "5.3.3",
+      "license": "MIT",
+      "homepage": "https://getbootstrap.com/",
+      "source": "https://registry.npmjs.org/bootstrap/-/bootstrap-5.3.3.tgz",
+      "origin": "package/dist/css/bootstrap.min.css and package/dist/js/bootstrap.bundle.min.js, byte-identical",
+      "files": {
+        "bootstrap/bootstrap.min.css": "3c8f27e6009ccfd710a905e6dcf12d0ee3c6f2ac7da05b0572d3e0d12e736fc8",
+        "bootstrap/bootstrap.bundle.min.js": "0833b2e9c3a26c258476c46266e6877fc75218625162e0460be9a3a098a61c6c"
+      }
+    },
+    {
+      "name": "Bootstrap Icons",
+      "version": "1.11.3",
+      "license": "MIT",
+      "homepage": "https://icons.getbootstrap.com/",
+      "source": "https://registry.npmjs.org/bootstrap-icons/-/bootstrap-icons-1.11.3.tgz",
+      "origin": "package/font/bootstrap-icons.min.css, package/font/fonts/*, package/LICENSE, byte-identical; the stylesheet's relative fonts/ URLs resolve unchanged",
+      "files": {
+        "bootstrap-icons/bootstrap-icons.min.css": "f643d6fe7e679f9de3e16311600c5ef5cd6b098f7a3a8828fcc29255d2b33e62",
+        "bootstrap-icons/fonts/bootstrap-icons.woff2": "476adf42b40325098fcfa8b36ab3e769186bb4f6ce6a249753e2e1a9c22bf99e",
+        "bootstrap-icons/fonts/bootstrap-icons.woff": "bb1de989b83970f6f4e54de1cd974c5cba55b73582da5e1b225a6d0edf029483",
+        "bootstrap-icons/LICENSE": "0fb3e11bd57e896c5a512afd64864d28a37de45d19835016c87ca1ad19ead969"
+      }
+    },
+    {
+      "name": "Inter",
+      "version": "4.1",
+      "license": "OFL-1.1 (SIL Open Font License 1.1, no Reserved Font Name)",
+      "homepage": "https://rsms.me/inter/",
+      "source": "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
+      "origin": "web/InterVariable.woff2, web/InterVariable-Italic.woff2 and LICENSE.txt of the release zip (sha256 9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e), byte-identical. The release publishes no digest, so both fonts were cross-checked byte-identical to package/variable/ of https://registry.npmjs.org/inter-ui/-/inter-ui-4.1.1.tgz, whose integrity sha512-451h0J29HyOmA+JXgSi/6M12tL7ZCZ8arYKZUXiOXTJpJbAKqJvFh3k5SiV3x7tKe0C0KyrKUUiQIvvZ2PQDcA== matches npm. Declared as font-family 'Inter' by css/fortiweb.css.",
+      "files": {
+        "inter/InterVariable.woff2": "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3",
+        "inter/InterVariable-Italic.woff2": "e564f652916db6c139570fefb9524a77c4d48f30c92928de9db19b6b5c7a262a",
+        "inter/LICENSE.txt": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a"
+      }
+    },
+    {
+      "name": "Chart.js",
+      "version": "4.4.4",
+      "license": "MIT",
+      "homepage": "https://www.chartjs.org/",
+      "source": "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js",
+      "origin": "byte-identical to the source URL (the npm package ships only the unminified chart.umd.js)",
+      "files": {
+        "chart/chart.umd.min.js": "b38076762f7363bc9e912b68b8e034826798db5df26bb61f000ec2e7a3137bc7"
+      }
+    },
+    {
+      "name": "Toast UI Editor",
+      "version": "3.2.2",
+      "license": "MIT (bundles ProseMirror, MIT, and DOMPurify 2.3.3, Apache-2.0 / MPL-2.0)",
+      "homepage": "https://ui.toast.com/tui-editor",
+      "source": "https://uicdn.toast.com/editor/3.2.2/toastui-editor-all.min.js",
+      "origin": "toastui-editor-all.min.js byte-identical to the vendor's own CDN build at the source URL (the npm package ships no self-contained bundle: its UMD needs ProseMirror as separate globals). toastui-editor.css and i18n/*.js are package/dist/ files of https://registry.npmjs.org/@toast-ui/editor/-/editor-3.2.2.tgz, byte-identical; tarball integrity sha512-ASX7LFjN2ZYQJrwmkUajPs7DRr9FsM1+RQ82CfTO0Y5ZXorBk1VZS4C2Dpxinx9kl55V4F8/A2h2QF4QMDtRbA== matches npm. Used by the Wiki editor only.",
+      "files": {
+        "toastui-editor/toastui-editor-all.min.js": "f50e1b7c0fc4e5d9a1ccd0d8be78cb3a950ccb3bf676fbf1627810c76aeaedd8",
+        "toastui-editor/toastui-editor.css": "c0ceb967b8c97038dccaa2a35c2222ec35b53a0022febbb6a22715c23ead9211",
+        "toastui-editor/i18n/es-es.js": "54ef17c00e4ccc35febdff49c925315bc33264a081978b6647581832eae4384b",
+        "toastui-editor/i18n/de-de.js": "a904840fa6f6e0983570e0aa258f7b0bddcc83133969a3e69df526c7cb905a8e",
+        "toastui-editor/i18n/fr-fr.js": "699995a799ac06ed7d66d7578da68cb60f4fc47370abeb938193f51770478b53",
+        "toastui-editor/i18n/it-it.js": "4f21f9adf12174d50fbafa89ccf2d1208ee2c7d69f43b55f77ea6b87ed8deb84"
+      }
+    }
+  ]
+}

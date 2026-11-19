@@ -1,0 +1,13 @@
+{# Verdict badge. Light chrome only: .fw-badge-* is calibrated against white. #}
+{% macro verdict_badge(verdict) -%}
+{% set cls = {'ready': 'fw-badge-success', 'ready_with_warnings': 'fw-badge-warning',
+              'blocked': 'fw-badge-danger', 'cannot_assess': 'fw-badge-secondary'} %}
+{% set label = {'ready': _('ready'), 'ready_with_warnings': _('ready with warnings'),
+                'blocked': _('blocked'), 'cannot_assess': _('cannot assess')} %}
+<span class="fw-badge {{ cls.get(verdict, 'fw-badge-secondary') }}" data-migration-verdict="{{ verdict }}">{{ label.get(verdict, verdict) }}</span>
+{%- endmacro %}
+{% macro severity_badge(sev) -%}
+{% set cls = {'block': 'fw-badge-danger', 'translate': 'fw-badge-info',
+              'warn': 'fw-badge-warning', 'info': 'fw-badge-secondary'} %}
+<span class="fw-badge {{ cls.get(sev, 'fw-badge-secondary') }}">{{ sev }}</span>
+{%- endmacro %}

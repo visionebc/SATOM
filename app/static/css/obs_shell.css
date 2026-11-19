@@ -1,0 +1,135 @@
+/* Observability shell for SATOM pages (2026-11-17).
+ *
+ * SATOM's Monitoring views live under /observability/monitoring/ and are drawn
+ * with the Observability app's own theme.css + observability.css (base.html,
+ * obs_shell). Those two files already re-point the --fw-* tokens SATOM's pages
+ * use, because the app's pages were built from SATOM's components. This file
+ * is only the BRIDGE for what they leave out:
+ *
+ *  1. layout: SATOM's .fw-body/.fw-main sit inside the app's fixed top bar and
+ *     sidebar (sizes and collapse come from theme.css);
+ *  2. the --fw-* tokens theme.css does not re-point (hover, status);
+ *  3. the few light colours fortiweb.css, analytics.css and the Monitoring
+ *     templates hard-code, which would otherwise be white islands on navy.
+ *
+ * Every selector is under html.obs-shell: nothing here reaches a SATOM page
+ * outside the area. Every colour is an --obs-* token.
+ */
+
+/* 1 ── layout ─────────────────────────────────────────────────────────── */
+html.obs-shell body { display: block; }
+html.obs-shell .fw-body { display: block; padding-top: 0; }
+html.obs-shell .fw-main.obs-main {
+  margin-left: var(--obs-sb-w); margin-right: 0;
+  padding: calc(var(--obs-topbar-h) + 18px) 24px 32px;
+  transition: margin-left .2s var(--obs-ease);
+}
+html.obs-shell.obs-sb-collapsed .fw-main.obs-main { margin-left: var(--obs-sb-w-collapsed); }
+@media (max-width: 991px) {
+  html.obs-shell .fw-main.obs-main,
+  html.obs-shell.obs-sb-collapsed .fw-main.obs-main { margin-left: 0; padding-left: 14px; padding-right: 14px; }
+}
+/* SATOM's own chrome has no place in the area. */
+html.obs-shell #fw-bookmarks, html.obs-shell #fw-footer, html.obs-shell .fw-footer { display: none !important; }
+html.obs-shell body:has(#fw-bookmarks):not(.bm-open) .fw-main,
+html.obs-shell body.bm-open .fw-main { margin-right: 0; }
+html.obs-shell .obs-search-off { visibility: hidden; }
+html.obs-shell .obs-adom-btn { gap: 6px; padding: 0 10px; }
+
+/* 2 ── tokens theme.css leaves alone ─────────────────────────────────── */
+html.obs-shell {
+  --fw-accent-hover: var(--obs-focus);
+  --fw-success: var(--obs-ok);
+  --fw-danger: var(--obs-err);
+  --fw-warning: var(--obs-stale);
+  --fw-info: var(--obs-cyan);
+  --fw-sidebar-bg: var(--obs-sidebar);
+  --fw-topbar-bg: var(--obs-sidebar);
+  --fw-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --bs-heading-color: var(--obs-text);
+}
+html.obs-shell body { font-size: .875rem; color: var(--obs-text); background: var(--obs-bg); }
+html.obs-shell a:hover { color: var(--bs-link-hover-color); }
+
+/* 3 ── hard-coded light surfaces ─────────────────────────────────────── */
+html.obs-shell .fw-card,
+html.obs-shell .card,
+html.obs-shell .modal-content,
+html.obs-shell .dropdown-menu,
+html.obs-shell .list-group-item,
+html.obs-shell .accordion-item,
+html.obs-shell .accordion-button,
+html.obs-shell .popover,
+html.obs-shell .offcanvas { background-color: var(--obs-surface); color: var(--obs-text); border-color: var(--obs-border); }
+html.obs-shell .card-header, html.obs-shell .card-footer,
+html.obs-shell .modal-header, html.obs-shell .modal-footer { background-color: var(--obs-surface-2); border-color: var(--obs-border-light); }
+html.obs-shell .bg-white, html.obs-shell .bg-light, html.obs-shell .bg-body,
+html.obs-shell .bg-body-tertiary, html.obs-shell .bg-body-secondary { background-color: var(--obs-surface-2) !important; color: var(--obs-text); }
+html.obs-shell .text-dark, html.obs-shell .text-body, html.obs-shell .text-black { color: var(--obs-text) !important; }
+html.obs-shell .text-muted, html.obs-shell .text-secondary { color: var(--obs-text-2) !important; }
+html.obs-shell .border, html.obs-shell .border-top, html.obs-shell .border-bottom,
+html.obs-shell .border-start, html.obs-shell .border-end { border-color: var(--obs-border) !important; }
+html.obs-shell .table { color: var(--obs-text); }
+html.obs-shell .table > thead > tr > th, html.obs-shell .fw-table th,
+html.obs-shell .table-light, html.obs-shell .table-light > * > * {
+  background-color: var(--obs-surface-2) !important; color: var(--obs-text-2); border-color: var(--obs-border-light);
+}
+html.obs-shell .form-control, html.obs-shell .form-select,
+html.obs-shell .input-group-text {
+  background-color: var(--obs-surface-2); color: var(--obs-text); border-color: var(--obs-border);
+}
+html.obs-shell .form-control::placeholder { color: var(--obs-text-3); }
+html.obs-shell .form-control:focus, html.obs-shell .form-select:focus {
+  background-color: var(--obs-surface-3); color: var(--obs-text); border-color: var(--obs-accent);
+  box-shadow: 0 0 0 .2rem var(--obs-accent-soft);
+}
+html.obs-shell .btn-light, html.obs-shell .btn-outline-secondary, html.obs-shell .btn-outline-dark {
+  --bs-btn-color: var(--obs-text-2); --bs-btn-bg: transparent; --bs-btn-border-color: var(--obs-border);
+  --bs-btn-hover-color: var(--obs-text); --bs-btn-hover-bg: var(--obs-surface-3); --bs-btn-hover-border-color: var(--obs-border);
+  --bs-btn-active-bg: var(--obs-surface-3); --bs-btn-active-color: var(--obs-text);
+}
+html.obs-shell .nav-tabs { border-color: var(--obs-border-light); }
+html.obs-shell .nav-tabs .nav-link { color: var(--obs-text-2); }
+html.obs-shell .nav-tabs .nav-link.active {
+  color: var(--obs-text); background-color: var(--obs-surface); border-color: var(--obs-border) var(--obs-border) var(--obs-surface);
+}
+html.obs-shell .alert-light, html.obs-shell .alert-secondary { background: var(--obs-surface-2); color: var(--obs-text); border-color: var(--obs-border); }
+html.obs-shell code { color: var(--obs-gold); }
+html.obs-shell pre { color: var(--obs-text); background: var(--obs-surface-2); }
+html.obs-shell hr { border-color: var(--obs-border); opacity: 1; }
+html.obs-shell .fw-page-title { color: var(--obs-text); }
+/* Inline style="background:#fff…" in older Monitoring markup. */
+html.obs-shell [style*="background:#fff"], html.obs-shell [style*="background: #fff"],
+html.obs-shell [style*="background:#FFF"], html.obs-shell [style*="background: #FFF"],
+html.obs-shell [style*="background:white"], html.obs-shell [style*="background: white"],
+html.obs-shell [style*="background-color:#fff"], html.obs-shell [style*="background-color: #fff"],
+html.obs-shell [style*="background:#f8"], html.obs-shell [style*="background: #f8"],
+html.obs-shell [style*="background:#f3"], html.obs-shell [style*="background: #f3"],
+html.obs-shell [style*="background:#f5"], html.obs-shell [style*="background: #f5"] {
+  background: var(--obs-surface-2) !important; color: var(--obs-text);
+}
+html.obs-shell [style*="color:#0C1B33"], html.obs-shell [style*="color: #0C1B33"],
+html.obs-shell [style*="color:#333"], html.obs-shell [style*="color: #333"],
+html.obs-shell [style*="color:#000"], html.obs-shell [style*="color: #000"] { color: var(--obs-text) !important; }
+
+/* SATOM's status badge set (.fw-badge-*, fortiweb.css) is tuned for white:
+   dark text on a pale tint. On navy it takes the app's status pairs. */
+html.obs-shell .fw-badge-success   { background: var(--obs-ok-bg);    color: var(--obs-ok); }
+html.obs-shell .fw-badge-danger    { background: var(--obs-err-bg);   color: var(--obs-err); }
+html.obs-shell .fw-badge-warning   { background: var(--obs-stale-bg); color: var(--obs-stale); }
+html.obs-shell .fw-badge-info      { background: rgba(34, 211, 238, .14); color: var(--obs-cyan); }
+html.obs-shell .fw-badge-primary   { background: var(--obs-accent-soft); color: var(--obs-accent-strong); }
+html.obs-shell .fw-badge-secondary { background: var(--obs-none-bg);  color: var(--obs-none); }
+html.obs-shell .badge.text-bg-light, html.obs-shell .badge.bg-light { background: var(--obs-surface-3) !important; color: var(--obs-text) !important; }
+html.obs-shell .fw-alert-warning { background: var(--obs-stale-bg); color: var(--obs-stale); }
+html.obs-shell .fw-alert-danger  { background: var(--obs-err-bg);   color: var(--obs-err);   }
+html.obs-shell .fw-alert-success { background: var(--obs-ok-bg);    color: var(--obs-ok);    }
+html.obs-shell .fw-alert-info    { background: var(--obs-accent-soft); color: var(--obs-accent-strong); }
+html.obs-shell .fw-card-header { background: var(--obs-surface-2); border-bottom-color: var(--obs-border-light); color: var(--obs-text); }
+html.obs-shell .text-danger { color: var(--obs-err) !important; }
+html.obs-shell .text-success { color: var(--obs-ok) !important; }
+html.obs-shell .text-warning { color: var(--obs-stale) !important; }
+html.obs-shell .text-primary, html.obs-shell .text-accent { color: var(--obs-accent-strong) !important; }
+html.obs-shell .fw-table tbody tr > td { background: transparent; color: var(--obs-text); border-color: var(--obs-border-light); }
+html.obs-shell .fw-table tbody tr:nth-child(even) > td { background: rgba(255, 255, 255, .015); }
+html.obs-shell .fw-table tbody tr:hover > td { background: rgba(59, 130, 246, .06); }

@@ -1,0 +1,395 @@
+{% extends 'base.html' %}
+{% from 'partials/_maintenance_toggle.html' import maintenance_toggle with context %}
+{% block title %}{{ appliance.name }} - SATOM{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-server me-2"></i>{{ appliance.name }}</h4>
+  <div class="d-flex gap-2">
+    {{ maintenance_toggle(appliance, 'detail', 'labeled') }}
+    {% if current_user.can('config_write') %}
+    <a href="{{ url_for('appliances.edit', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">{{ _('Edit') }}</a>
+    <a href="{{ url_for('provisioning.device_baseline', appliance_id=appliance.id) }}" class="btn fw-btn-secondary btn-sm" title="{{ _('Every template of every combo this device is classified into — dry-run first') }}"><i class="bi bi-layers me-1"></i>{{ _('Apply full baseline…') }}</a>
+    {% endif %}
+    <div class="input-group input-group-sm w-auto">
+      <select class="form-select form-select-sm" id="test-method" aria-label="{{ _('Test method') }}" title="{{ _('How to test, from this SATOM server') }}">
+        <option value="api">{{ _('API (HTTPS)') }}</option>
+        <option value="tcp">{{ _('TCP port (telnet)') }}</option>
+        <option value="ping">{{ _('Ping') }}</option>
+        <option value="traceroute">{{ _('Traceroute') }}</option>
+      </select>
+      <button class="btn fw-btn-primary btn-sm" data-js="test-conn">{{ _('Test Connection') }}</button>
+    </div>
+  </div>
+</div>
+{% if appliance.maintenance %}
+<div style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.35);border-radius:12px;padding:12px 16px;margin-bottom:16px;color:#fbbf24;display:flex;align-items:center;gap:10px;">
+  <i class="bi bi-tools" style="font-size:18px;"></i>
+  <div><strong>{{ _('Maintenance mode') }}</strong> &mdash; hidden from operators and read-only users. Only administrators with the &ldquo;View maintenance devices&rdquo; permission can see and use this device.</div>
+</div>
+{% endif %}
+<div class="row g-3 mb-4">
+  <div class="col-md-6"><div class="card shadow-sm">
+    <div class="card-header fw-card-header">{{ _('Details') }}</div>
+    <div class="card-body"><dl class="row mb-0">
+      <dt class="col-sm-4">{{ _('Kind') }}</dt><dd class="col-sm-8"><span class="badge bg-primary">{{ appliance.kind }}</span></dd>
+      <dt class="col-sm-4">{{ _('Host') }}</dt><dd class="col-sm-8">{{ appliance.host }}:{{ appliance.port }}
+        {# Same function as the bookmarks rail. A second expression here is how
+           two pages start disagreeing about where a device lives. #}
+        {% if device_url %}
+          <a href="{{ device_url }}" target="_blank" rel="noopener noreferrer"
+             class="ms-1 text-decoration-none"
+             title="{{ _('Open the device itself') }} &mdash; {{ device_url }}"
+             ><i class="bi bi-box-arrow-up-right"></i></a>
+        {% elif device_note %}
+          <span class="text-muted ms-1" title="{{ device_note }}"
+            ><i class="bi bi-box-arrow-up-right" style="opacity:.35"></i></span>
+        {% endif %}</dd>
+      <dt class="col-sm-4">{{ _('Username') }}</dt><dd class="col-sm-8">{{ appliance.username }}</dd>
+      <dt class="col-sm-4">{{ _('SSL Verify') }}</dt><dd class="col-sm-8">{{ 'Yes' if appliance.verify_ssl else 'No' }}{% if appliance.verify_ssl_inherited %} <span class="text-muted small">({{ _('set on cluster %(name)s', name=appliance.parent.name) }})</span>{% elif appliance.is_cluster and appliance.members %} <span class="text-muted small">({{ _('applies to every member') }})</span>{% endif %}</dd>
+      {% if appliance.tls_name %}<dt class="col-sm-4">{{ _('TLS certificate name') }}</dt><dd class="col-sm-8"><code>{{ appliance.tls_name }}</code>{% if appliance.verify_ssl_inherited %} <span class="text-muted small">({{ _('set on cluster %(name)s', name=appliance.parent.name) }})</span>{% endif %}</dd>{% endif %}
+      <dt class="col-sm-4">{{ _('Firmware') }}</dt><dd class="col-sm-8">{{ appliance.firmware or '—' }}</dd>
+      {% if appliance.vdom %}<dt class="col-sm-4">{{ _('ADOM (vdom)') }}</dt><dd class="col-sm-8">{{ appliance.vdom }}</dd>{% endif %}
+      {% if appliance.department %}<dt class="col-sm-4">{{ _('Dept') }}</dt><dd class="col-sm-8">{{ appliance.department }}</dd>{% endif %}
+      {% if appliance.zone %}<dt class="col-sm-4">{{ _('Zone') }}</dt><dd class="col-sm-8">{{ appliance.zone }}</dd>{% endif %}
+    </dl></div>
+  </div></div>
+  <div class="col-md-6"><div class="card shadow-sm">
+    <div class="card-header fw-card-header">{{ _('Quick Actions') }}</div>
+    <div class="card-body d-grid gap-2">
+      {# the row that owns the chassis verbs; None when nothing is linkable #}
+      {% set bk_owner = appliance if owns_device_scope(appliance) else device_scope_owner(appliance) %}
+      {% if appliance.kind == 'fortiadc' %}
+      <a href="{{ url_for('adc.use_device', id=appliance.id) }}" class="btn fw-btn-primary">{{ _('Browse Virtual Servers') }}</a>
+      {% if bk_owner and current_user.can('backups.view') %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
+      <a href="{{ url_for('adc_api.index') }}" class="btn fw-btn-secondary">{{ _('API Console') }}</a>
+      {% else %}
+      <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}" class="btn fw-btn-primary">{{ _('Browse Server Policies') }}</a>
+      {# FortiAuthenticator: no backup transport, and its ADOM gate does not admit the Backups pages #}
+      {% if bk_owner and appliance.kind != 'fortiauthenticator' and current_user.can('backups.view') %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
+      <a href="{{ url_for('analysis.dashboard', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('Analysis / FortiView') }}</a>
+      {% endif %}
+    </div>
+  </div></div>
+</div>
+
+<div class="card shadow-sm mb-4" id="dev-jobs" data-appliance="{{ appliance.id }}">
+  <div class="card-header fw-card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-list-task me-2"></i>{{ _('Jobs on this device') }}</span>
+    <a class="small" href="{{ url_for('jobs.manager') }}">{{ _('All jobs') }} &rarr;</a>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0 align-middle dj-table">
+      <tbody id="dev-jobs-body"><tr><td class="text-muted small px-3 py-2">{{ _('Every action on this device runs as a job; the running and most recent ones appear here.') }}</td></tr></tbody>
+    </table>
+  </div>
+</div>
+<style nonce="{{ csp_nonce }}">
+.dj-table td { font-size:13px; }
+.dj-msg { font-size:12px; color:#3D4550; max-width:520px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dj-track { height:6px; background:#E6E8EC; border-radius:4px; overflow:hidden; width:120px; }
+.dj-bar { height:100%; background:var(--fw-accent); }
+.dj-bar.ok { background:#15692A; } .dj-bar.err { background:#8B1C2A; } .dj-bar.stop { background:#7A5700; }
+</style>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var root = document.getElementById('dev-jobs'); if (!root) return;
+  var aid = root.getAttribute('data-appliance'), body = document.getElementById('dev-jobs-body');
+  var BADGE = { running: 'fw-badge-info', pending: 'fw-badge-secondary', cancelling: 'fw-badge-warning',
+                success: 'fw-badge-success', error: 'fw-badge-danger', cancelled: 'fw-badge-warning',
+                paused: 'fw-badge-warning', pausing: 'fw-badge-warning' };
+  var ACTIVE = ['pending', 'running', 'cancelling', 'pausing', 'paused'];
+  var timer = null, gone = false, empty = body.innerHTML;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function when(iso) { try { return new Date(iso + (/Z$|[+-]\d\d:\d\d$/.test(iso) ? '' : 'Z')).toLocaleString(); } catch (e) { return iso || ''; } }
+  function row(j) {
+    var st = j.status || 'pending', m = j.meta || {};
+    var label = (m.queued && st === 'running') ? 'queued' : st;
+    var cls = st === 'success' ? ' ok' : st === 'error' ? ' err' : st === 'cancelled' ? ' stop' : '';
+    var pct = st === 'success' ? 100 : (j.percent || 0);
+    var link = (ACTIVE.indexOf(st) >= 0 && m.device_job) ? '/jobs/' + encodeURIComponent(j.id) + '/wait'
+             : '/jobs/manager?focus=' + encodeURIComponent(j.id);
+    return '<tr><td class="ps-3"><span class="fw-badge ' + (BADGE[st] || 'fw-badge-secondary') + '">' + esc(label) + '</span></td>' +
+      '<td><a href="' + link + '">' + esc(j.title || j.type) + '</a><div class="dj-msg" title="' + esc(j.message) + '">' + esc(j.message) + '</div></td>' +
+      '<td><div class="dj-track"><div class="dj-bar' + cls + '" style="width:' + pct + '%"></div></div></td>' +
+      '<td class="small text-muted">' + esc(j.by || '') + '</td>' +
+      '<td class="small text-muted pe-3">' + esc(when(j.created)) + '</td></tr>';
+  }
+  function poll() {
+    if (gone) return;
+    fetch('/jobs/all?appliance=' + encodeURIComponent(aid) + '&limit=8', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (gone) return;
+        var list = (d && d.jobs) || [];
+        body.innerHTML = list.length ? list.map(row).join('') : empty;
+        var busy = list.some(function (j) { return ACTIVE.indexOf(j.status) >= 0; });
+        timer = setTimeout(poll, busy ? 2000 : 15000);
+      })
+      .catch(function () { if (!gone) timer = setTimeout(poll, 15000); });
+  }
+  function now() { if (timer) clearTimeout(timer); poll(); }
+  document.addEventListener('satom:job', now);
+  document.addEventListener('turbo:before-render', function h() {
+    gone = true; if (timer) clearTimeout(timer);
+    document.removeEventListener('satom:job', now);
+    document.removeEventListener('turbo:before-render', h);
+  });
+  poll();
+})();
+</script>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-card-header"><i class="bi bi-hdd-network me-2"></i>{{ _('Physical / Interfaces') }}</div>
+  <div class="card-body">
+    <dl class="row mb-3">
+      <dt class="col-sm-2">{{ _('Type') }}</dt>
+      <dd class="col-sm-4">
+        {% if appliance.hw_type == 'hardware' %}<span class="badge bg-info">{{ _('Hardware') }}</span>
+        {% elif appliance.hw_type == 'vm' %}<span class="badge bg-secondary">{{ _('Virtual Machine') }}</span>
+        {% else %}<span class="badge bg-dark">{{ _('Unknown') }}</span>{% endif %}
+      </dd>
+      <dt class="col-sm-2">{{ _('Model') }}</dt><dd class="col-sm-4">{{ appliance.model or '—' }}</dd>
+      <dt class="col-sm-2">{{ _('Datasheet') }}</dt>
+      <dd class="col-sm-10">
+        {% if appliance.datasheet_filename %}
+          <a href="{{ url_for('appliances.datasheet', id=appliance.id) }}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>{{ appliance.datasheet_filename }}</a>
+        {% else %}<span class="text-muted">{{ _('none') }}</span>{% endif %}
+      </dd>
+      <dt class="col-sm-2">{{ _('Not in GUI') }}</dt>
+      <dd class="col-sm-10"><a href="{{ url_for('appliances.not_in_gui', id=appliance.id) }}" data-nig-link><i class="bi bi-terminal me-1"></i>{{ _('Not in GUI, but in CLI') }}</a>
+        <span class="text-muted small">{{ _('— every field this build has outside the Fortinet GUI') }}</span></dd>
+    </dl>
+    {% if appliance.interfaces %}
+    <div class="table-responsive">
+      <table class="table table-sm fw-table mb-0">
+        <thead><tr><th>{{ _('Interface') }}</th><th>{{ _('Type') }}</th><th>{{ _('Connected to') }}</th><th>IP</th><th>{{ _('Notes') }}</th></tr></thead>
+        <tbody>
+        {% for i in appliance.interfaces %}
+          <tr>
+            <td><strong>{{ i.name }}</strong></td>
+            <td>{{ i.if_type or '' }}</td>
+            <td>{{ i.connected_to or '' }}</td>
+            <td>{% if i.ip_address %}<code>{{ i.ip_address }}</code>{% endif %}</td>
+            <td class="text-muted">{{ i.notes or '' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">{% if current_user.can('config_write') %}{{ _('No interfaces documented. Use') }} <a href="{{ url_for('appliances.edit', id=appliance.id) }}">{{ _('Edit') }}</a> {{ _('to add them.') }}{% else %}{{ _('No interfaces documented.') }}{% endif %}</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if appliance.kind in ('fortiweb', 'fortiadc') %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-card-header"><i class="bi bi-tools me-2"></i>{{ _('Appliance Actions') }}</div>
+  <div class="card-body">
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{{ url_for('appliances.inspector', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-diagram-2 me-1"></i>{{ 'VS Inspector' if appliance.kind == 'fortiadc' else 'Policy Inspector' }}</a>
+      <a href="{{ url_for('appliances.rediscover', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">{% if has_snapshot(appliance.id) %}<i class="bi bi-arrow-repeat me-1"></i>Rediscovery{% else %}<i class="bi bi-binoculars me-1"></i>Discovery{% endif %}</a>
+      {# Everything below acts on the BOX, not on one ADOM: one flash
+         partition, one boot image, one backup that contains every ADOM. The
+         same answer gates the routes (auth.decorators.require_device_scope) —
+         hiding a button that the URL still honours is decoration. #}
+      {% if owns_device_scope(appliance) %}
+      {% if current_user.can('appliances.apply') %}
+      <a href="{{ url_for('appliances.console', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-terminal me-1"></i>{{ _('Console') }}</a>
+      {% endif %}
+      {% if appliance.is_cluster_member and current_user.can('appliances.apply') %}
+      <a href="{{ url_for('appliances.failover', id=appliance.id) }}" class="btn btn-fw-secondary btn-sm text-danger" title="{{ _('This node belongs to an HA cluster: hand its primary role over, or give it back') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('HA Failover') }}</a>
+      {% endif %}
+      {# Firmware lifecycle shares one menu so the action row stays one line
+         at 1280 px (layout sweep 2026-10-24); the write verbs come last. #}
+      <div class="dropdown">
+        <button type="button" class="btn fw-btn-secondary btn-sm dropdown-toggle text-nowrap" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-cpu me-1"></i>{{ _('Firmware') }}</button>
+        <ul class="dropdown-menu">
+          {% if current_user.can('appliances.apply') %}
+          <li><a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="dropdown-item"><i class="bi bi-clipboard-check me-2"></i>{{ _('Upgrade Prep') }}</a></li>
+          {% endif %}
+          {% if appliance.kind in ('fortiweb', 'fortiadc', 'fortigate') and may_open('migration_report.report') %}
+          <li><a href="{{ url_for('migration_report.report', id=appliance.id) }}" class="dropdown-item" title="{{ _('Check this appliance\'s configuration against a target firmware build') }}"><i class="bi bi-signpost-split me-2"></i>{{ _('Migration Report') }}</a></li>
+          {% endif %}
+          <li><a href="{{ url_for('appliances.flash_reports', appliance_id=appliance.id) }}" class="dropdown-item" title="Before/after firmware upgrade & boot-partition reports for this appliance"><i class="bi bi-clipboard-data me-2"></i>{{ _('Firmware Reports') }}</a></li>
+          {% if current_user.can('appliances.apply') %}
+          <li><hr class="dropdown-divider"></li>
+          <li><a href="{{ url_for('appliances.upgrade', id=appliance.id) }}" class="dropdown-item text-warning"><i class="bi bi-cloud-arrow-up me-2"></i>{{ _('Upgrade') }}</a></li>
+          <li><a href="{{ url_for('appliances.downgrade', id=appliance.id) }}" class="dropdown-item text-warning" title="{{ _('Boot this appliance from its alternate firmware partition (rollback / downgrade — real in-app push + reboot)') }}"><i class="bi bi-hdd-stack me-2"></i>{{ _('Boot Partition') }}</a></li>
+          {% endif %}
+        </ul>
+      </div>
+      {% if current_user.can('user_manage') and current_user.can('backups.restore') %}
+      <a href="{{ url_for('appliances.restore', id=appliance.id) }}" class="btn btn-fw-secondary btn-sm text-danger" title="{{ _('Manage this appliance\'s configuration-backup vault and restore a saved config (admin only)') }}"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore') }}</a>
+      {% if appliance.kind == 'fortiweb' %}
+      <a href="{{ url_for('appliances.migrate', id=appliance.id) }}" class="btn btn-fw-secondary btn-sm text-danger" title="{{ _('Copy another FortiWeb\'s configuration into this one: all of it, some ADOMs or some tables, keeping this box\'s identity (admin only)') }}"><i class="bi bi-box-arrow-in-down-right me-1"></i>{{ _('Migrate into') }}</a>
+      {% endif %}
+      {% endif %}
+      {% endif %}
+    </div>
+    {% if not owns_device_scope(appliance) %}
+    {% set _owner = device_scope_owner(appliance) %}
+    <div class="form-text mt-2">
+      <i class="bi bi-hdd-network me-1"></i>{{ _('Console, firmware and the backup vault act on the whole appliance, not on ADOM') }}
+      <b>{{ appliance.vdom or 'this one' }}</b>.
+      {% if _owner %}{{ _('They live on') }} <a href="{{ url_for('appliances.detail', id=_owner.id) }}">{{ _owner.name }}</a>{% if _owner.vdom %} <span class="fw-tag">{{ _owner.vdom }}</span>{% endif %}.
+      {% else %}{{ _('The row that carries them is not visible to you.') }}{% endif %}
+      {{ _('Classification, policies and this row\'s credential stay per-ADOM.') }}
+    </div>
+    {% endif %}
+    {% if appliance.kind == 'fortiadc' %}
+    <div class="form-text mt-2"><b>{{ _('Restore') }}</b> {{ _('manages the config-backup vault (pull over SSH, upload, download); applying a config back to the box is done from the FortiADC GUI/CLI.') }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% if appliance.is_cluster %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-card-header"><i class="bi bi-diagram-3 me-2"></i>{{ _('HA Cluster — members') }}
+    <span class="badge bg-secondary ms-2">{{ appliance.ha_mode or 'per_node' }}</span>
+    {% if appliance.ha_mode == 'vip' %}<span class="text-muted ms-2 small">VIP {{ appliance.ha_vip or appliance.host }}</span>{% endif %}
+  </div>
+  <div class="card-body">
+    {% if current_user.can('appliances.apply') and owns_device_scope(appliance) %}
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <a href="{{ url_for('appliances.failover', id=appliance.id) }}" class="btn btn-fw-secondary btn-sm text-danger"
+         title="{{ _('Hand the primary role to the peer, or give it back — readiness check, live run inside an approved change window, or plan it') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('HA Failover') }}</a>
+    </div>
+    {% endif %}
+    {% set members = appliance.cluster_members() %}
+    {% if members %}
+    <div class="row g-3 mb-3" id="ha-members">
+      {% for m in members %}
+      <div class="col-md-6"><div class="border rounded p-3 h-100">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="fw-bold"><a href="{{ url_for('appliances.detail', id=m.id) }}" class="text-decoration-none">{{ m.name }}</a>
+              {% if m.ha_role_hint %}<span class="badge bg-light text-dark ms-1">{{ m.ha_role_hint }}</span>{% endif %}
+            </div>
+            <div class="text-muted small mono">{{ m.host }}:{{ m.port }}</div>
+            <div class="small mt-1">{{ _('Live role:') }} <span class="badge bg-secondary" data-live-role="{{ m.id }}">{{ _('checking…') }}</span></div>
+            <button type="button" class="btn btn-fw-secondary btn-sm mt-2" data-js="test-member" data-id="{{ m.id }}" title="{{ _('Test this node with the method picked above') }}"><i class="bi bi-plug me-1"></i>{{ _('Test') }}</button>
+            <div class="small mt-2 d-none" data-member-result="{{ m.id }}"></div>
+          </div>
+          {% if current_user.can('config_write') %}
+          <form method="post" action="{{ url_for('appliances.detach_member', id=appliance.id, mid=m.id) }}" data-fw-confirm-form="Detach member {{ m.name }} (it becomes standalone)?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger" title="{{ _('Detach member') }}"><i class="bi bi-box-arrow-right"></i></button>
+          </form>
+          {% endif %}
+        </div>
+      </div></div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted">{{ _('No member nodes yet. Add the primary and secondary below.') }}</p>
+    {% endif %}
+    {% if current_user.can('config_write') %}
+    <form method="post" action="{{ url_for('appliances.add_member', id=appliance.id) }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3"><label class="form-label small mb-0">{{ _('Member name') }}</label><input class="form-control form-control-sm" name="member_name" placeholder="{{ _('fw001p1') }}" required></div>
+      <div class="col-md-3"><label class="form-label small mb-0">{{ _('Host / mgmt IP') }}</label><input class="form-control form-control-sm" name="member_host" placeholder="192.0.2.41" required></div>
+      <div class="col-md-2"><label class="form-label small mb-0">{{ _('Username') }}</label><input class="form-control form-control-sm" name="member_username" placeholder="{{ _('admin') }}"></div>
+      <div class="col-md-2"><label class="form-label small mb-0">{{ _('Password') }}</label><input type="password" class="form-control form-control-sm" name="member_password"></div>
+      <div class="col-md-1"><label class="form-label small mb-0">{{ _('Role') }}</label>
+        <select class="form-select form-select-sm" name="ha_role_hint"><option value="">—</option><option value="primary">P1</option><option value="secondary">P2</option></select></div>
+      <div class="col-md-1"><button class="btn btn-sm fw-btn-primary w-100" title="{{ _('Add member') }}"><i class="bi bi-plus-lg"></i></button></div>
+    </form>
+    <div class="form-text">{{ _('Per-node: the host is the address writes route through when that node is primary. VIP: the host is the member\'s own management IP (read-only telemetry).') }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+<div id="conn-result" class="alert d-none mb-3"></div>
+<div class="card shadow-sm">
+  <div class="card-header fw-card-header">{{ _('Recent Audit Events') }}</div>
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0 fw-table">
+      <thead><tr><th>{{ _('Time') }}</th><th>{{ _('User') }}</th><th>{{ _('Action') }}</th><th>{{ _('Target') }}</th></tr></thead>
+      <tbody>{% for e in audit_entries %}<tr>
+        <td>{{ e.timestamp.strftime('%Y-%m-%d %H:%M') if e.timestamp else '' }}</td>
+        <td>{{ e.username }}</td><td>{{ e.action }}</td><td>{{ e.target }}</td>
+      </tr>{% else %}<tr><td colspan="4" class="text-muted text-center py-3">{{ _('No audit events') }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('DOMContentLoaded', function () {
+  const badges = document.querySelectorAll('[data-live-role]');
+  if (!badges.length) return;
+  fetch('/appliances/{{ appliance.id }}/members/roles').then(function (r) { return r.json(); }).then(function (roles) {
+    badges.forEach(function (el) {
+      const mid = el.getAttribute('data-live-role');
+      const role = roles[mid] || 'unknown';
+      el.textContent = role;
+      el.className = 'badge ' + (role === 'primary' ? 'bg-success' : (role === 'secondary' ? 'bg-info' : 'bg-secondary'));
+    });
+  }).catch(function () {});
+});
+// Test Connection (services/conn_test): one line per address tested -- a
+// cluster's members, plus its VIP in VIP mode -- the next step when there
+// is one, and the raw ping/traceroute output. textContent only.
+function renderConn(box, r, method) {
+  box.textContent = '';
+  const head = document.createElement('div');
+  head.className = 'fw-bold';
+  const label = {api: 'API', tcp: 'TCP port', ping: 'Ping', traceroute: 'Traceroute'}[method] || method;
+  head.textContent = label + (r.ok ? ' — OK' : ' — failed');
+  box.appendChild(head);
+  (r.results || []).forEach(function (x) {
+    const line = document.createElement('div');
+    const badge = document.createElement('span');
+    badge.className = 'fw-badge me-2 ' + (x.ok ? 'fw-badge-success' : 'fw-badge-danger');
+    badge.textContent = x.ok ? 'OK' : (x.verdict || 'failed');
+    line.appendChild(badge);
+    const who = document.createElement('strong');
+    who.textContent = x.label + ' ';
+    line.appendChild(who);
+    line.appendChild(document.createTextNode('(' + x.host + (method === 'api' || method === 'tcp' ? ':' + x.port : '') + ') ' + (x.detail || '')));
+    box.appendChild(line);
+    if (x.output) {
+      const pre = document.createElement('pre');
+      pre.className = 'small mb-1 mt-1';
+      pre.style.whiteSpace = 'pre-wrap';
+      pre.textContent = x.output;
+      box.appendChild(pre);
+    }
+  });
+  if (!(r.results || []).length && r.status) box.appendChild(document.createTextNode(r.status));
+  if (r.hint) {
+    const h = document.createElement('div');
+    h.className = 'mt-2';
+    h.textContent = r.hint;
+    box.appendChild(h);
+  }
+}
+async function testConn(id, btn, box) {
+  const method = (document.getElementById('test-method') || {}).value || 'api';
+  const label = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Testing…';
+  try {
+    const r = await apiFetch(`/appliances/${id}/test`, { method: 'POST', body: JSON.stringify({method: method}),
+                                                          headers: {'Content-Type': 'application/json'} });
+    box.className = (box.dataset.memberResult ? 'small mt-2 ' : '') + 'alert ' + (r.ok ? 'alert-success' : 'alert-danger');
+    renderConn(box, r, method);
+  } catch(e) {
+    box.className = (box.dataset.memberResult ? 'small mt-2 ' : '') + 'alert alert-danger';
+    box.textContent = 'Connection failed: ' + e.message;
+  }
+  box.classList.remove('d-none');
+  btn.disabled = false; btn.innerHTML = label;
+}
+// CSP: former inline onclick, re-bound here (Turbo-safe immediate IIFE)
+(function () {
+  var btn = document.querySelector('[data-js="test-conn"]');
+  if (btn) btn.addEventListener('click', function () { testConn({{ appliance.id }}, this, document.getElementById('conn-result')); });
+  document.querySelectorAll('[data-js="test-member"]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      testConn(this.dataset.id, this, document.querySelector('[data-member-result="' + this.dataset.id + '"]'));
+    });
+  });
+})();
+</script>
+{% endblock %}

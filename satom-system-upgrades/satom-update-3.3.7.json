@@ -1,0 +1,24 @@
+{
+  "schema": "satom.upgrade-feed/1",
+  "product": "satom",
+  "version": "3.3.7",
+  "released": "2026-10-19",
+  "release_url": "https://github.com/visionebc/SATOM/releases/tag/v3.3.7",
+  "package": {
+    "name": "satom-update-3.3.7.tar.gz",
+    "url": "https://github.com/visionebc/SATOM/releases/download/v3.3.7/satom-update-3.3.7.tar.gz",
+    "sha256": "7abe7f075096151ade160e5246a6fca3a063be550924d857efd86e8aa75daad5",
+    "size": 78381898
+  },
+  "signing_key": {
+    "name": "satom-release-2026.pub",
+    "fingerprint": "SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA",
+    "url": "https://github.com/visionebc/SATOM/releases/download/v3.3.7/satom-release-2026.pub"
+  },
+  "api_pack": {
+    "name": "satom-apipack-3.3.7.tar.gz",
+    "url": "https://github.com/visionebc/SATOM/releases/download/v3.3.7/satom-apipack-3.3.7.tar.gz",
+    "sha256": "1ab43f82449e49abd95d40e99180ba7fab4deafee127e88f4edb2b60cc5a7419"
+  },
+  "knowledge_feed": "https://github.com/visionebc/SATOM/releases/download/knowledge/latest.json"
+}

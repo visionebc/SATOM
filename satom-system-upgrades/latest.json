@@ -1,0 +1,61 @@
+{
+  "schema": "satom.upgrade-feed/1",
+  "product": "satom",
+  "version": "4.14.1",
+  "released": "2026-11-19",
+  "release_url": "https://github.com/visionebc/SATOM/releases/tag/v4.14.1",
+  "package": {
+    "name": "satom-update-4.14.1.tar.gz",
+    "url": "https://github.com/visionebc/SATOM/releases/download/v4.14.1/satom-update-4.14.1.tar.gz",
+    "sha256": "278402c303d9981e3a2beb64b34586844ccad1b18892c15e805be343cc4a7453",
+    "size": 169598808
+  },
+  "signing_key": {
+    "name": "satom-release-2026.pub",
+    "fingerprint": "SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA",
+    "url": "https://github.com/visionebc/SATOM/releases/download/v4.14.1/satom-release-2026.pub"
+  },
+  "api_pack": {
+    "name": "satom-apipack-4.14.1.tar.gz",
+    "url": "https://github.com/visionebc/SATOM/releases/download/v4.14.1/satom-apipack-4.14.1.tar.gz",
+    "sha256": "bd427c7a04b16e6adfcedcefb7c53fb2f3d7477d2f14256f3fc9b3c62f68edae"
+  },
+  "knowledge_feed": "https://github.com/visionebc/SATOM/releases/download/knowledge/latest.json",
+  "deltas": [
+    {
+      "from": "4.11.13",
+      "name": "satom-update-4.14.1-from-4.11.13.tar.gz",
+      "url": "https://github.com/visionebc/SATOM/releases/download/v4.14.1/satom-update-4.14.1-from-4.11.13.tar.gz",
+      "sha256": "5b61fb80b7794474749f597a07408916faf4f5c76400ea5291598c7768826c38",
+      "size": 143392512
+    },
+    {
+      "from": "4.11.14",
+      "name": "satom-update-4.14.1-from-4.11.14.tar.gz",
+      "url": "https://github.com/visionebc/SATOM/releases/download/v4.14.1/satom-update-4.14.1-from-4.11.14.tar.gz",
+      "sha256": "dd9175a49667d40ff4ebed22229db513e5a638a77d1f896d91a5b1a36003e81a",
+      "size": 143384083
+    },
+    {
+      "from": "4.12.0",
+      "name": "satom-update-4.14.1-from-4.12.0.tar.gz",
+      "url": "https://github.com/visionebc/SATOM/releases/download/v4.14.1/satom-update-4.14.1-from-4.12.0.tar.gz",
+      "sha256": "e3b6962a02b5b329191035dc9b2316ed01da44d30b431224f4f120631d8a8708",
+      "size": 143282964
+    },
+    {
+      "from": "4.13.0",
+      "name": "satom-update-4.14.1-from-4.13.0.tar.gz",
+      "url": "https://github.com/visionebc/SATOM/releases/download/v4.14.1/satom-update-4.14.1-from-4.13.0.tar.gz",
+      "sha256": "9e2218c0505626eaaba183046cc73afc428db58118692f6337f3de155adcbe70",
+      "size": 142469876
+    },
+    {
+      "from": "4.14.0",
+      "name": "satom-update-4.14.1-from-4.14.0.tar.gz",
+      "url": "https://github.com/visionebc/SATOM/releases/download/v4.14.1/satom-update-4.14.1-from-4.14.0.tar.gz",
+      "sha256": "e7d868cc5d4befbc4d3de32c0edba79566a2de6a933505c0fc0fe95d5d92598d",
+      "size": 3473866
+    }
+  ]
+}

@@ -1,0 +1,190 @@
+{# ============================================================================
+   AUTOMATION group — ONE definition, EVERY ADOM.  2026-08-10
+
+   Until now this group lived in exactly one branch of base.html: FortiWeb. The
+   Global console, FortiADC, FortiAnalyzer, FortiAuthenticator and every ADOM
+   declared from here on had no Automation entry at all — the pages existed and
+   answered by URL, they were simply unreachable by navigation. Nothing failed;
+   the menu was quietly incomplete, which is exactly how the Monitoring group
+   drifted before it became partials/nav_monitoring.html.
+
+   SCOPING IS NOT DONE HERE. Every page behind these links filters its own rows
+   through the active ADOM (services.product_scope):
+
+     * Scheduled Actions    scope_query(ScheduledAction.product)   — list AND by-id
+     * Device Provisioning  scope_query(ProvisionRun.product)  (see below)
+     * Change Requests      the devices the CR names (visible_appliances)
+
+   ``_adom=product.key`` pins the ADOM on HARD (non-Turbo) navigations, which
+   carry no X-ADOM header — without it a fresh tab falls back to the session
+   cookie and can land in whichever ADOM another tab selected last.
+
+   SYSTEM PROVISIONING IS FORTIWEB-ONLY, ON PURPOSE. It composes FortiWeb
+   ``cmdb`` objects taken from the endpoint registry, and that registry is
+   stamped ``product='fortiweb'`` (api_baseline.apply). Offering it
+   inside the FortiAnalyzer ADOM would let an operator aim FortiWeb
+   configuration at a FortiAnalyzer, with a picker full of objects the target
+   does not have. A missing menu entry is a nuisance; that one is an outage.
+   Since 2026-10-11 the other device ADOMs draw the entry DISABLED (no link,
+   reason on hover) — still never a live link to FortiWeb configuration.
+
+   DEVICE AND SYSTEM PROVISIONING LIVE IN ADMINISTRATOR > DEVICES since
+   2026-10-24 (operator), with the same gates (partials/nav_admin.html).
+   Administrator is drawn only for user_manage holders, so a profile without
+   it (the operator role) still finds both here — the rule Device Console
+   already follows.
+   ========================================================================= #}
+{% from 'partials/_nav_off.html' import nav_off %}
+{% from 'partials/_nav_api.html' import api_menu with context %}
+{# Device ADOMs draw the FortiWeb entries too (FortiWeb is the reference menu,
+   2026-10-11): live where the page works for this ADOM's devices, disabled
+   with the reason elsewhere (services/adom_menu.py). Global is unchanged. #}
+{% set _dev = product.key != 'global' and not product.placeholder %}
+{# Drawn as a subgroup wherever it sits inside the ADOM's first block: Operations
+   in a device ADOM and (since 2026-11-06) in a placeholder ADOM, the Global
+   block in Global (operator, 2026-10-14, "as in the other ADOMs"). #}
+{% if current_user and current_user.can('config_write') %}
+{% if _dev %}
+{% set _m_uf = adom_menu('upgrade_flow', product) %}
+{% set _m_mr = adom_menu('migration_report', product) %}
+{% set _m_au = adom_menu('automations', product) %}
+{% set _m_cm = adom_menu('cert_manager', product) %}
+{% set _m_md = adom_menu('mass_deploy', product) %}
+{% endif %}
+{# The provisioning pages open this subgroup only where their entries are in
+   it: for an administrator they sit in Administrator > Devices. #}
+{% set _auto_bps = ['upgrade_flow','migration_report','automations','event_automations','change_requests','cert_manager','mass_deploy'] + ([] if current_user.can('user_manage') else ['device_provision','provisioning']) %}
+{# Device ADOMs: a subgroup of Operations since 2026-10-14 (operator), included
+   by partials/nav_operations.html — base.html no longer draws it as a group
+   there. Global has no Operations group and draws it in its Global block
+   (partials/nav_fleet.html); placeholder ADOMs draw Operations too since
+   2026-11-06. Same entries, same gates, either way.
+
+   ORDER (operator, 2026-10-23): the entries are ALPHABETICAL in the console's
+   language, sorted from their rendered labels by nav_sorted()
+   (app/nav_sections.py, the Administrator sections' sorter), the API ▸
+   subgroup as one item under its own label. So an entry added below lands in
+   its place by itself; nothing here is written in display order. The
+   subgroup sits right above Plugins (Operations in a device ADOM, the Global
+   block in Global), and Plugins is no longer inside it in Global. #}
+{% set _a_items %}
+    {# Upgrade Flow is the staged ENTRY POINT (pre-upgrade in bulk -> one change
+       -> consolidated impact -> execution); it led the group until the
+       alphabetical order (2026-10-23). LIVE only
+       where the flow can run end to end (upgrade_flow.prep_kinds); in the other
+       device ADOMs it is drawn disabled with the reason, because the page
+       could only render an empty device list, which reads as "this fleet has
+       no appliances" rather than "this stage does not apply here". Gated on
+       BACKUP, the permission the page itself requires - a link that leads to a
+       403 is a bug report waiting to be filed. #}
+    {% if _dev and current_user.can('backup') %}
+    {% if may_open('upgrade_flow.index') %}
+    {% if _m_uf.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'upgrade_flow' else '' }}" href="{{ url_for('upgrade_flow.index', _adom=product.key) }}">
+      <i class="bi bi-arrow-up-circle fw-nav-icon"></i><span>{{ _('Upgrade Flow') }}</span></a>
+    {% else %}{{ nav_off('bi-arrow-up-circle', _('Upgrade Flow'), _m_uf.reason, ep='upgrade_flow.index') }}{% endif %}
+    {% endif %}
+    {# Migration report: the upgrade flow's pre-check, readable on its own.
+       Same gate as the flow (BACKUP), same reason. #}
+    {% if may_open('migration_report.index') %}
+    {% if _m_mr.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'migration_report' else '' }}" href="{{ url_for('migration_report.index', _adom=product.key) }}">
+      <i class="bi bi-signpost-split fw-nav-icon"></i><span>{{ _('Migration Report') }}</span></a>
+    {% else %}{{ nav_off('bi-signpost-split', _('Migration Report'), _m_mr.reason, ep='migration_report.index') }}{% endif %}
+    {% endif %}
+    {% endif %}
+    {# 'Automations' is fleet work an operator plans (a cutover, a drained
+       backend, a certificate swap or renewal, an upgrade, a reboot, a
+       failover). 'System Automations', SATOM maintaining its own data, left
+       this group on 2026-10-14 (operator) for Administrator > System
+       (partials/nav_admin.html). They were one list until 2026-09-09, which is
+       how a scheduled cutover came to sit between the nightly backup and the
+       Sentinel sweep.
+
+       The gate MIRRORS the one the page enforces: config_write, what the
+       operator role holds. A link that leads to a 403 is a bug report waiting
+       to be filed — the rule this partial already applies to Upgrade Flow.
+
+       'Automations' is LIVE only where its catalog is non-empty (the
+       products of USER_ACTIONS: FortiWeb, FortiADC, FortiAnalyzer and
+       FortiAuthenticator since the 2026-10-14 move). In the other device ADOMs
+       the page could only offer an empty picker, which reads as "this fleet
+       has nothing to schedule", so the entry is drawn disabled with the reason
+       (services/adom_menu.py). #}
+    {% if (product.key == 'global' or _dev) and current_user.can('config_write') %}
+    {% if may_open('automations.index') %}
+    {# Labelled "Scheduler" since 2026-11-08 (operator); the page and its
+       tabs (Scheduled / On a trigger / Triggers) are unchanged. #}
+    {% if product.key == 'global' or _m_au.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint in ('automations', 'event_automations', 'triggers') else '' }}" href="{{ url_for('automations.index', _adom=product.key) }}">
+      <i class="bi bi-calendar2-check fw-nav-icon"></i><span>{{ _('Scheduler') }}</span></a>
+    {% else %}{{ nav_off('bi-calendar2-check', _('Scheduler'), _m_au.reason, ep='automations.index') }}{% endif %}
+    {% endif %}
+    {% endif %}
+    {# Device / System Provisioning: Administrator > Devices for user_manage
+       holders (2026-10-24, operator); here for everyone else. #}
+    {% if not current_user.can('user_manage') %}
+    {% include "partials/nav_provisioning.html" %}
+    {% endif %}
+    {% if current_user.can('user_manage') %}
+    {% if may_open('change_requests.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'change_requests' else '' }}" href="{{ url_for('change_requests.index', _adom=product.key) }}">
+      <i class="bi bi-clipboard2-check fw-nav-icon"></i><span>{{ _('Change Requests') }}</span></a>
+    {% endif %}
+    {% endif %}
+    {# Schema builds / Build compatibility left this group on 2026-10-14 for the
+       API subgroup (partials/_nav_api.html), where the API pages are.
+       Certificate Manager: moved here from Fleet (2026-10-13). Global-only until 2026-10-14; since
+       then every device ADOM draws it too (operator): live where SATOM manages
+       that kind's certificates (cert_manager.CERT_KINDS, read through
+       services/adom_menu.py, which also opens the product gate), disabled
+       with the reason elsewhere. The page lists only the ADOM's own devices. #}
+    {% if (product.key == 'global' or _dev) and current_user.can('user_manage') and may_open('cert_manager.index') %}
+    {% if product.key == 'global' or _m_cm.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index', _adom=product.key) }}">
+      <i class="bi bi-shield-lock fw-nav-icon"></i><span>{{ _('Certificate Manager') }}</span></a>
+    {% else %}{{ nav_off('bi-shield-lock', _('Certificate Manager'), _m_cm.reason, ep='cert_manager.index') }}{% endif %}
+    {% endif %}
+    {# Mass Deploy (2026-10-24): the ADOM's approved templates pushed to one
+       or many of its devices in one canary-gated job. Gated like a fleet
+       rollout from the Template Library (operations.apply AND
+       operations.template_apply). LIVE where the bulk runner writes the
+       ADOM's devices (services/mass_deploy.PRODUCTS, FortiWeb), disabled with
+       the reason in the other device ADOMs; not in Global (a template belongs
+       to one ADOM). #}
+    {% if _dev and current_user.can('operations.apply') and current_user.can('operations.template_apply') and may_open('mass_deploy.index') %}
+    {% if _m_md.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'mass_deploy' else '' }}" href="{{ url_for('mass_deploy.index', _adom=product.key) }}">
+      <i class="bi bi-broadcast fw-nav-icon"></i><span>{{ _('Mass Deploy') }}</span></a>
+    {% else %}{{ nav_off('bi-broadcast', _('Mass Deploy'), _m_md.reason, ep='mass_deploy.index') }}{% endif %}
+    {% endif %}
+    {# Device Console needs config_write, but its entry lives in the
+       Administrator group, which only user_manage holders see. Operators
+       find it here instead; administrators keep the one in their group. #}
+    {% if not current_user.can('user_manage') %}
+    {% include "partials/nav_console.html" %}
+    {% endif %}
+{% endset %}
+{# API (registry & console) — its own group until 2026-10-14, a subgroup
+   here since (operator). registry.view still gates it (partials/_nav_api.html).
+   Passed to nav_sorted() as ONE block, sorted under its "API" label. #}
+{# Since 2026-11-09 (operator) a user_manage holder finds API in
+   Administrator (partials/nav_admin.html); it stays here for the rest. #}
+{% set _a_api %}{% if not current_user.can('user_manage') %}{{ api_menu(true) }}{% endif %}{% endset %}
+{# Global (operator, 2026-11-08): no Automation ▸ subgroup -- its entries sit
+   in the Global block itself, at the level of Search, in the same sorted
+   order and the same place (right above Plugins). Device and placeholder
+   ADOMs keep the subgroup inside Operations. #}
+{% if product.key == 'global' %}
+<!-- nav-flat:Automation -->
+{{ nav_sorted(_a_items, _a_api) }}
+<!-- /nav-flat:Automation -->
+{% else %}
+<div class="fw-nav-subgroup{{ ' open' if request.blueprint in _auto_bps }}" data-nav-subgroup="Automation">
+  <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-gear-wide-connected fw-nav-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-subgroup-body">
+    {{ nav_sorted(_a_items, _a_api) }}
+  </div>
+</div>
+{% endif %}
+{% endif %}

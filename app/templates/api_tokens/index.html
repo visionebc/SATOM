@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+
+{% block title %}API Tokens — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('API Tokens') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{% from "api_tokens/_pickers.html" import cap_picker, appid_picker, grant_picker %}
+{# Object-write capabilities are EXPLICIT-only: an empty capability list grants
+   every non-danger catalog action but NO object write. Printing "all" for an
+   empty list — which this page did until the object writers existed — would
+   tell the operator a token can author WAF carve-outs when it cannot. #}
+{% set EXPLICIT_ONLY = cap_explicit %}
+{% set NO_CAPS_LABEL = _('every action that needs no explicit grant') %}
+{% set SCOPE_DESC = {'read': '(GET)', 'write': '(run actions / config_write)', 'admin': '(admin)'} %}
+{# app_arm is not WHICH app -- it only lets a granted app run armed. Said
+   next to the app picker because "capabilities only offers app_arm" read as
+   "a token cannot be held to one app" (2026-10-30). #}
+{% set APP_GRANT_HELP = _('To hold a token to one app, tick only that app. Each box is bound to the version you approve: when a different version is published, the grant pauses until you re-approve it. An unarmed run needs the write scope; an armed run (its write steps really write) also needs the app_arm capability — app_arm never adds an app.') %}
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-key me-2"></i>{{ _('API Tokens') }}</h4>
+</div>
+<p class="text-muted" style="max-width:70ch">
+  Tokens let authenticated external systems call the <code>/api/v1</code>
+  surface with <code>Authorization: Bearer &lt;token&gt;</code>. A token is
+  scoped, bound to one ADOM, owned by a user, and can never exceed that user's
+  permissions. Destructive firmware actions are never reachable via the API.
+</p>
+
+{% if new_token %}
+<div class="alert alert-success">
+  <strong>{{ _('New token created — copy it now.') }}</strong> {{ _('This is the only time the full token is shown. Store it securely.') }}
+  <input class="form-control mt-2" readonly value="{{ new_token }}"
+         style="font-family:monospace">
+  <div class="small text-muted mt-1">
+    {{ _('Owner:') }} <strong>{{ new_token_row.owner.username }}</strong> {{ _('· Scopes:') }} <strong>{{ new_token_row.scope_list|join(', ') }}</strong> {{ _('· Capabilities:') }} <strong>{{ new_token_row.capability_list|join(', ') if new_token_row.capability_list else NO_CAPS_LABEL }}</strong> {{ _('· AppID scope:') }} <strong>{{ new_token_row.app_id_list|join(', ') if new_token_row.app_id_list else 'any' }}</strong> {{ _('· ADOM:') }} <strong>{{ new_token_row.product }}</strong>
+  </div>
+</div>
+{% endif %}
+
+<div class="card fw-card mb-4">
+  <div class="card-header">{{ _('Create a token') }}</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('api_tokens.create') }}" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-4">
+        <label class="form-label">{{ _('Name') }}</label>
+        <input class="form-control" name="name" placeholder="{{ _('e.g. splunk-integration') }}" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ _('Owner (inherits RBAC)') }}</label>
+        <select class="form-select" name="owner_id" required>
+          {% for u in users %}
+          <option value="{{ u.id }}">{{ u.username }} ({{ u.role }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">ADOM</label>
+        <select class="form-select" name="product">
+          {% for p in products %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">{{ _('Expires (days)') }}</label>
+        <input class="form-control" name="expires_days" type="number" min="1" placeholder="{{ _('never') }}">
+      </div>
+      <div class="col-12">
+        <label class="form-label d-block">{{ _('Scopes') }}</label>
+        {% for s in scopes %}
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="checkbox" name="scopes" value="{{ s }}"
+                 id="scope-{{ s }}" {{ 'checked' if s == 'read' else '' }}>
+          <label class="form-check-label" for="scope-{{ s }}">
+            {{ s }}
+            <span class="text-muted small">
+              {%- if s == 'read' %} (GET){% elif s == 'write' %} (run actions / config_write){% else %} (admin){% endif -%}
+            </span>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label d-block">{{ _('Capabilities') }} <span class="text-muted small">{{ _('(what — none ticked = every catalog action that needs no explicit grant)') }}</span></label>
+        {{ cap_picker('cap', [], cap_groups, cap_desc, cap_explicit) }}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label d-block">{{ _('AppID scope') }} <span class="text-muted small">{{ _('(where — leave empty for no restriction)') }}</span></label>
+        {{ appid_picker('appid', [], appid_catalog) }}
+        <div class="form-text">
+          {{ _('A token pinned to AppIDs may run only backend/policy/cert actions whose target server policy is bound to one of these AppIDs — and no fleet-wide action at all. Assign policies under') }} <a href="/web/appids">{{ _('AppIDs') }}</a>{{ _('. Only AppIDs of the token\'s ADOM resolve.') }}
+        </div>
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label d-block">{{ _('Apps it may run') }} <span class="text-muted small">{{ _('(which — none ticked = it runs none)') }}</span></label>
+        {{ grant_picker('gapp', 'app', [], grant_candidates['app']) }}
+      </div>
+      <div class="col-md-6"><div class="form-text mt-md-4">{{ APP_GRANT_HELP }}</div></div>
+
+      <div class="col-12">
+        <button class="btn btn-primary" type="submit">
+          <i class="bi bi-plus-lg me-1"></i>{{ _('Create token') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card fw-card">
+  <div class="card-header">{{ _('Existing tokens') }}</div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>{{ _('Name') }}</th><th>{{ _('Token') }}</th><th>{{ _('Owner') }}</th><th>{{ _('Scopes') }}</th>
+          <th>{{ _('Capabilities') }}</th><th>{{ _('AppID scope') }}</th>
+          <th>ADOM</th><th>{{ _('Status') }}</th><th>{{ _('Last used') }}</th><th class="actions-col"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tokens %}
+        <tr class="{{ 'text-muted' if not t.is_active else '' }}">
+          <td>{{ t.name }}</td>
+          <td><code>{{ t.masked }}</code></td>
+          <td>{{ t.owner.username if t.owner else '—' }}</td>
+          <td>{{ t.scope_list|join(', ') }}</td>
+          <td class="small">{{ t.capability_list|join(', ') if t.capability_list else NO_CAPS_LABEL }}
+            {% set gs = grant_status.get(t.id, []) %}
+            {% if gs %}<div class="mt-1">{{ _('Runs:') }}
+              {% for gr in gs %}<code>{{ gr.key }}</code>{% if gr.state == 'paused' %} <span class="fw-badge fw-badge-warning">{{ _('paused') }}</span>{% elif gr.state == 'gone' %} <span class="fw-badge fw-badge-secondary">{{ _('gone') }}</span>{% endif %}{{ ', ' if not loop.last else '' }}{% endfor %}
+            </div>{% endif %}
+          </td>
+          <td class="small">{{ t.app_id_list|join(', ') if t.app_id_list else 'any' }}</td>
+          <td>{{ t.product }}</td>
+          <td>
+            {% if t.revoked %}<span class="badge bg-secondary">{{ _('revoked') }}</span>
+            {% elif t.is_expired %}<span class="badge bg-warning text-dark">{{ _('expired') }}</span>
+            {% else %}<span class="badge bg-success">{{ _('active') }}</span>{% endif %}
+          </td>
+          <td class="small text-muted">
+            {{ t.last_used_at.strftime('%Y-%m-%d %H:%M') if t.last_used_at else 'never' }}</td>
+          <td class="text-end actions-col">
+            <div class="fw-row-actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    data-bs-toggle="modal" data-bs-target="#editTok{{ t.id }}">{{ _('Edit') }}</button>
+            {% if not t.revoked %}
+            <form method="post" action="{{ url_for('api_tokens.revoke', id=t.id) }}" class="d-inline"
+                  data-fw-confirm-form="Revoke token '{{ t.name }}'? Every client using it stops working immediately.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-warning" type="submit">{{ _('Revoke') }}</button>
+            </form>
+            {# Three verbs: the destructive one goes behind "..." (layout sweep 2026-10-24). #}
+            <div class="dropdown fw-row-more">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown"
+                      data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false"
+                      title="{{ _('More actions') }}" aria-label="{{ _('More actions') }}"><i class="bi bi-three-dots"></i></button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><form method="post" action="{{ url_for('api_tokens.delete', id=t.id) }}"
+                          data-fw-confirm-form="Delete token '{{ t.name }}'? This cannot be undone.">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="dropdown-item text-danger" type="submit"><i class="bi bi-trash"></i>{{ _('Delete') }}</button>
+                </form></li>
+              </ul>
+            </div>
+            {% else %}
+            <form method="post" action="{{ url_for('api_tokens.delete', id=t.id) }}" class="d-inline"
+                  data-fw-confirm-form="Delete token '{{ t.name }}'? This cannot be undone.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger" type="submit">{{ _('Delete') }}</button>
+            </form>
+            {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10" class="text-center text-muted py-4">{{ _('No tokens yet.') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ---- Edit modals (one per token). Secret is a one-way hash → never editable;
+       only name / ADOM / scopes / capabilities / AppID scope / expiry change. #}
+{% for t in tokens %}
+<div class="modal fade" id="editTok{{ t.id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('api_tokens.edit', id=t.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit token — <code>{{ t.masked }}</code></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">{{ _('Name') }}</label>
+              <input class="form-control" name="name" value="{{ t.name }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">ADOM</label>
+              <select class="form-select" name="product">
+                {% for p in products %}
+                <option value="{{ p }}" {{ 'selected' if p == t.product else '' }}>{{ p }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">{{ _('Expiry (days)') }}</label>
+              <input class="form-control" name="expires_days" type="number"
+                     placeholder="{{ _('keep') }}" min="-1">
+              <div class="form-text">
+                blank = keep{% if t.expires_at %} (now {{ t.expires_at.strftime('%Y-%m-%d') }}){% else %} (never expires){% endif %},
+                a number re-anchors from today, <code>-1</code> clears.
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label d-block">{{ _('Scopes') }}</label>
+              {% for s in scopes %}
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" name="scopes" value="{{ s }}"
+                       id="escope-{{ t.id }}-{{ s }}" {{ 'checked' if s in t.scope_list else '' }}>
+                <label class="form-check-label" for="escope-{{ t.id }}-{{ s }}">
+                  {{ s }} <span class="text-muted small">{{ SCOPE_DESC.get(s, '') }}</span>
+                </label>
+              </div>
+              {% endfor %}
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label d-block">{{ _('Capabilities') }}
+                <span class="text-muted small">{{ _('(what — none ticked = every catalog action that needs no explicit grant)') }}</span></label>
+              {{ cap_picker('ecap-' ~ t.id, t.capability_list, cap_groups, cap_desc, cap_explicit) }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label d-block">{{ _('AppID scope') }}
+                <span class="text-muted small">{{ _('(where — empty = no restriction)') }}</span></label>
+              {{ appid_picker('eappid-' ~ t.id, t.app_id_list, appid_catalog) }}
+              {% if t.app_id_list %}
+              <div class="form-text">Currently: {{ t.app_id_list|join(', ') }}</div>
+              {% endif %}
+            </div>
+
+            {% set gs = grant_status.get(t.id, []) %}
+            <div class="col-md-6">
+              <label class="form-label d-block">{{ _('Apps it may run') }} <span class="text-muted small">{{ _('(which — none ticked = it runs none)') }}</span></label>
+              {{ grant_picker('egapp-' ~ t.id, 'app', t.grants('app')|map(attribute='id')|list, grant_candidates['app']) }}
+            </div>
+            <div class="col-md-6"><div class="form-text mt-md-4">{{ APP_GRANT_HELP }}</div></div>
+            <div class="col-12">
+              {% if gs %}
+              <table class="table table-sm mb-0 mt-2 tok-grants">
+                <tbody>
+                {% for gr in gs %}
+                <tr>
+                  <td>{{ _(gr.label) }}</td><td>{{ gr.name }} <code>{{ gr.key }}</code></td>
+                  <td>{% if gr.state == 'ok' %}<span class="fw-badge fw-badge-success">{{ _('runs') }}</span>
+                      {% elif gr.state == 'paused' %}<span class="fw-badge fw-badge-warning">{{ _('paused') }}</span>
+                      {% else %}<span class="fw-badge fw-badge-secondary">{{ _('gone') }}</span>{% endif %}</td>
+                  <td class="small text-muted">{{ gr.by }} {{ gr.at[:16]|replace('T', ' ') }}</td>
+                  <td class="text-end">{% if gr.state == 'paused' %}
+                    <button type="submit" class="btn btn-sm btn-outline-primary"
+                            formaction="{{ url_for('api_tokens.approve_grant', id=t.id, kind=gr.kind, oid=gr.id) }}">{{ _('Re-approve') }}</button>
+                  {% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-primary">{{ _('Save changes') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endfor %}
+<style nonce="{{ csp_nonce }}">
+  .tok-picker-menu { max-height: 360px; max-width: calc(100vw - 16px); overflow-y: auto; }
+  .tok-picker-menu .form-check { padding-top: 2px; padding-bottom: 2px; }
+  .tok-picker-menu .form-check-label { width: 100%; }
+</style>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // Each picker's button says what is ticked; the AppID one filters as you type.
+  function summarize(p) {
+    var on = Array.prototype.filter.call(p.querySelectorAll('input[type=checkbox]'),
+                                         function (c) { return c.checked; });
+    var out = p.querySelector('.tok-picker-summary');
+    if (!out) { return; }
+    if (!on.length) { out.textContent = p.getAttribute('data-empty'); out.classList.add('text-muted'); return; }
+    out.classList.remove('text-muted');
+    var names = on.map(function (c) { return c.getAttribute('data-label') || c.value; });
+    out.textContent = names.length <= 3 ? names.join(', ')
+      : names.length + ' ' + p.getAttribute('data-some') + ': ' + names.slice(0, 3).join(', ') + '…';
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.tok-picker'), function (p) {
+    summarize(p);
+    p.addEventListener('change', function () { summarize(p); });
+    // The fixed popper measures % against the viewport: give the menu its
+    // button's width each time it opens (a modal may have resized it).
+    p.addEventListener('show.bs.dropdown', function () {
+      var btn = p.querySelector('[data-bs-toggle="dropdown"]');
+      var menu = p.querySelector('.tok-picker-menu');
+      if (btn && menu) { menu.style.width = Math.max(btn.getBoundingClientRect().width, 280) + 'px'; }
+    });
+    var q = p.querySelector('.tok-picker-search');
+    if (q) {
+      q.addEventListener('input', function () {
+        var v = q.value.trim().toLowerCase();
+        Array.prototype.forEach.call(p.querySelectorAll('.tok-picker-item'), function (it) {
+          it.classList.toggle('d-none', !!v && (it.getAttribute('data-text') || '').indexOf(v) < 0);
+        });
+      });
+    }
+  });
+})();
+</script>
+{% endblock %}

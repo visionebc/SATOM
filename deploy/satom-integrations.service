@@ -1,0 +1,101 @@
+# Integration-hooks runner. Triggered by satom-integrations.path when
+# data/integrations/queue/ becomes non-empty. Same shape as
+# satom-updater.service (oneshot, WorkingDirectory=/opt/satom, ExecStart through
+# the app venv) with ONE deliberate inversion: satom-updater runs as root
+# because it installs unit files and restarts services; THIS unit executes
+# Python somebody typed into a textarea, so it runs as the unprivileged service
+# account and is hardened further than the web app, not less.
+#
+# NOTE (self_update_runner.py): add "satom-integrations.service" and
+# "satom-integrations.path" to UNIT_FILES so an app update refreshes them, and
+# to NONROOT_UNITS so the User=/Group= drop-in is enforced there too. The
+# User=/Group= below is the belt; that drop-in is the braces.
+[Unit]
+Description=SATOM integration-hooks runner (unprivileged, oneshot)
+After=network.target postgresql.service
+
+# One start per queued request: systemd's default start limit (5 in 10 s)
+# stopped this unit -- and with it the .path watcher, for good, until
+# someone ran reset-failed -- after six quick runs (measured on a1). The
+# runner itself bounds its work (MAX_DRAIN per start, and it moves anything
+# it cannot process out of the queue, so DirectoryNotEmpty cannot spin).
+StartLimitIntervalSec=0
+[Service]
+Type=oneshot
+User=satom
+Group=satom
+WorkingDirectory=/opt/satom
+# The vault (app_settings + FERNET_KEY) lives behind Postgres; without this the
+# runner still works but every declared secret resolves as "not configured".
+EnvironmentFile=/opt/satom/.env
+ExecStart=/opt/satom/venv/bin/python -m app.services.hook_runner
+# Bounded: MAX_DRAIN requests per invocation x MAX_TIMEOUT (120s) each, plus
+# slack. Anything left over re-fires through the .path unit.
+TimeoutStartSec=900
+
+# --- containment -----------------------------------------------------------
+# This unit's whole job is running untrusted code, so the sandbox is the
+# feature. NoNewPrivileges also means no setuid binary a hook shells out to can
+# gain anything. A private /tmp (TemporaryFileSystem, below) keeps every hook's
+# temp working directory (and the result-channel file) out of the shared /tmp.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# Only the queue, the claims, the status dir and the hook sources are writable.
+# The app tree itself is not: a hook must not be able to rewrite the product,
+# and NOT /opt/satom/data either — a hook would inherit this namespace and could
+# scribble into data/sot/ or data/jobs/.
+# Each path is "-" prefixed so a node where they do not exist yet still STARTS
+# the unit instead of failing namespace setup. The installer must create them:
+#   install -d -o satom -g satom -m 0750 /opt/satom/data/integrations \
+#          /opt/satom/data/integrations/{hooks,queue,claimed,status}
+# EXACTLY ONE ReadWritePaths for the whole queue: systemd makes each one its
+# own bind-mount, and the runner's claim is a rename() between two of these
+# directories - across two mounts that is EXDEV (errno 18), which the runner
+# reads as 'already claimed', so the request silently never runs and this
+# unit re-fires until the start limit. Proven on a1 before it was fixed.
+ReadWritePaths=-/opt/satom/data/integrations
+# Mask the on-disk secrets from the untrusted hook. systemd reads
+# EnvironmentFile=/opt/satom/.env as root BEFORE this mount namespace is built,
+# so DATABASE_URL/FERNET_KEY still populate the process environment (and
+# hook_runner scrubs that environment before handing control to the hook) — but
+# the hook can no longer re-read the file, the internal CA private key under
+# pki/, or the HA rsync key under .ssh. "-" prefix so a node missing any of
+# these still starts.
+InaccessiblePaths=-/opt/satom/.env -/opt/satom/pki -/opt/satom/.ssh
+# NO ProtectKernelTunables= and NO ProtectProc= here (2026-11-13, FA-0016):
+# both put read-only mounts over parts of /proc, and on a SLES 15 VM bwrap then
+# could not mount the jail's own /proc ("Can't mount proc on /newroot/proc:
+# Operation not permitted"): the kernel only allows a new proc mount where an
+# uncovered one is visible. An LXC with nesting hides that (/dev/.lxc/proc).
+# The jail's private pid namespace and /proc are what keep operator code away
+# from other processes (tests/test_integration_hooks.py); /proc/sys is not
+# writable by the satom uid anyway.
+
+# Resource caps (2026-10-20). Operator code runs in this unit's cgroup, and
+# the LXC it shares with Postgres and gunicorn has a few GB of RAM: without a
+# cap, one script that allocates, forks or writes in a loop takes the node
+# down (measured: no MemoryMax, TasksMax 106611, /tmp on the root disk).
+# RLIMIT_NPROC cannot do this job -- it counts every process of the satom uid
+# on the node. The jail's work directory and its /tmp live in this unit's
+# /tmp, a tmpfs whose pages are charged to MemoryMax: no run can fill the
+# disk. MemoryMax alone, no MemoryHigh: a throttle below the cap kept a
+# runaway run alive and stalled until its timeout (measured on a1); at the cap
+# the kernel ends it at once and the run record says why. A site that needs
+# more raises these in a drop-in.
+MemoryMax=1G
+TasksMax=256
+# The kernel ends the process that hit MemoryMax -- the script, whose jail
+# runs at oom_score_adj 1000 -- and the runner carries on and records it.
+# The default (stop) stopped the whole unit, runner and every other run with
+# it, and left the run marked "running" (measured on a1).
+OOMPolicy=continue
+CPUQuota=200%
+CPUWeight=20
+IOWeight=20
+TemporaryFileSystem=/tmp:size=512M,mode=1777

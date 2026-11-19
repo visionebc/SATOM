@@ -1,0 +1,245 @@
+"""Notification service — the ONE place features raise a bell notification.
+
+Every function is best-effort and NEVER raises: a notification failing to write
+must not break the operation that triggered it (a firmware job, a bug-report
+resolve…). Callers therefore never need a try/except of their own.
+
+Usage::
+
+    from ..services import notifications as notify
+    notify.push(user_id, "firmware.out ready", kind="success",
+                body="SHA-256 verified — 293 MB", link=url_for("firmware.index"))
+
+This module owns its DB writes via the shared ``db.session``; it is import-safe
+from a background-job worker thread as long as that thread holds an app context
+(the firmware worker does).
+"""
+from __future__ import annotations
+
+import logging
+
+from ..extensions import db
+from ..models_notifications import Notification
+from .product_scope import scope_query as _scope_query, stamp as _stamp_product
+
+logger = logging.getLogger(__name__)
+
+#: Notices whose link contains the marker are shown only while the gate says
+#: so: ``gate(user_id, link) -> bool``, asked each time the bell is drawn. A
+#: notice is written once, but who may read what it names can change after
+#: (a Wiki article narrowed to a group the reader left). "module:function",
+#: imported on first use so this module stays import-safe everywhere.
+GATES = {"/wiki/a/": "app.services.wiki_social:bell_gate",
+         # A notice about a device: shown to a user who reaches it (device
+         # scope and ADOMs of their profile, 2026-11-07).
+         "/appliances/": "app.services.device_scope:bell_gate"}
+
+
+def _gate_for(link: str | None):
+    import importlib
+    for marker, target in GATES.items():
+        if link and marker in link:
+            mod, fn = target.split(":")
+            return getattr(importlib.import_module(mod), fn)
+    return None
+
+
+def _shown(user_id: int, n: Notification) -> bool:
+    gate = _gate_for(n.link)
+    if gate is None:
+        return True
+    try:
+        return bool(gate(user_id, n.link))
+    except Exception:  # noqa: BLE001 — a gate that cannot answer hides the notice
+        logger.debug("notification gate failed (link=%r)", n.link, exc_info=True)
+        return False
+
+
+#: Public name for the pages that query notifications themselves (the
+#: Notifications page filters and paginates in SQL, then applies the gate).
+shown = _shown
+
+
+def _gated(query):
+    """Rows of ``query`` a gate may hide (their link holds a marker)."""
+    from sqlalchemy import or_
+    return query.filter(or_(*[Notification.link.like("%" + m + "%") for m in GATES]))
+
+
+def _muted(user_id: int, title: str) -> bool:
+    """Has this user switched off the category ``title`` belongs to?
+
+    Decided at write time, so a muted notice is never stored: the bell, the
+    page, its count and its CSV agree without each one filtering. Results of
+    the user's own jobs, bug reports and Wiki notices (category ``other``)
+    are never muted. Any failure answers "not muted": a preference that cannot
+    be read must not swallow a finding.
+    """
+    try:
+        from . import notification_guide as guide
+        from .user_settings_store import muted_categories
+        muted = muted_categories(int(user_id))
+        if not muted:
+            return False
+        cat = guide.category_of(title)
+        if cat in muted:
+            logger.debug("notification muted by user %s (%s): %r",
+                         user_id, cat, title)
+            return True
+        return False
+    except Exception:  # noqa: BLE001 - deliver rather than drop
+        logger.debug("mute check failed (user=%s)", user_id, exc_info=True)
+        return False
+
+
+def push(user_id: int, title: str, *, kind: str = Notification.KIND_INFO,
+         body: str | None = None, link: str | None = None,
+         product: str | None = None) -> Notification | None:
+    """Create a notification for one user. Returns the row, or ``None`` on any
+    failure (logged, never raised)."""
+    if not user_id or not title:
+        return None
+    if _muted(user_id, title):
+        return None
+    try:
+        n = Notification(
+            user_id=int(user_id),
+            kind=kind or Notification.KIND_INFO,
+            title=title[:200],
+            body=body,
+            link=link[:500] if link else None,
+            product=(product if product is not None else _stamp_product()),
+        )
+        db.session.add(n)
+        db.session.commit()
+        return n
+    except Exception:  # noqa: BLE001 — a notification must never break the caller
+        logger.exception("notifications.push failed (user=%s title=%r)",
+                         user_id, title)
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+
+def push_many(user_ids, title: str, **kw) -> int:
+    """Push the same notification to several users (e.g. all admins). Returns the
+    count actually written."""
+    n = 0
+    for uid in set(user_ids or []):
+        if push(uid, title, **kw) is not None:
+            n += 1
+    return n
+
+
+def unread_count(user_id: int) -> int:
+    if not user_id:
+        return 0
+    try:
+        q = _scope_query(Notification.query.filter_by(user_id=user_id, read=False),
+                         Notification.product)
+        hidden = sum(1 for n in _gated(q).all() if not _shown(user_id, n))
+        return max(0, q.count() - hidden)
+    except Exception:  # noqa: BLE001
+        logger.debug("unread_count failed", exc_info=True)
+        return 0
+
+
+def recent(user_id: int, limit: int = 50) -> list[Notification]:
+    if not user_id:
+        return []
+    try:
+        rows = (_scope_query(Notification.query.filter_by(user_id=user_id),
+                             Notification.product)
+                .order_by(Notification.created_at.desc(), Notification.id.desc())
+                .limit(limit).all())
+        return [n for n in rows if _shown(user_id, n)]
+    except Exception:  # noqa: BLE001
+        logger.debug("recent failed", exc_info=True)
+        return []
+
+
+def mark_all_read(user_id: int) -> int:
+    """Mark every unread notification for the user read. Returns rows updated."""
+    if not user_id:
+        return 0
+    try:
+        n = (_scope_query(Notification.query.filter_by(user_id=user_id,
+                                                        read=False),
+                          Notification.product)
+             .update({"read": True}, synchronize_session=False))
+        db.session.commit()
+        return n
+    except Exception:  # noqa: BLE001
+        logger.exception("mark_all_read failed (user=%s)", user_id)
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return 0
+
+
+def mark_read(user_id: int, notif_id: int) -> bool:
+    if not user_id or not notif_id:
+        return False
+    try:
+        n = Notification.query.filter_by(id=notif_id, user_id=user_id).first()
+        if n is None:
+            return False
+        if not n.read:
+            n.read = True
+            db.session.commit()
+        return True
+    except Exception:  # noqa: BLE001
+        logger.exception("mark_read failed (user=%s id=%s)", user_id, notif_id)
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+
+def mark_categories_read(user_id: int, categories) -> int:
+    """Mark this user's unread notices of ``categories`` read, in every ADOM
+    (muting is per user, not per ADOM). Used when a category is switched off,
+    so the bell stops counting what the user just said they do not want.
+    Nothing is deleted: the rows stay on the page under their category."""
+    from . import notification_guide as guide
+    cats = [c for c in (categories or []) if c in guide.CATEGORY_LABEL]
+    if not user_id or not cats:
+        return 0
+    try:
+        total = 0
+        for cat in cats:
+            q = guide.filter_category(
+                Notification.query.filter_by(user_id=user_id, read=False),
+                Notification.title, cat)
+            total += q.update({"read": True}, synchronize_session=False)
+        db.session.commit()
+        return total
+    except Exception:  # noqa: BLE001
+        logger.exception("mark_categories_read failed (user=%s)", user_id)
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return 0
+
+
+def clear_all(user_id: int) -> int:
+    """Delete all notifications for the user (the page's 'Clear all')."""
+    if not user_id:
+        return 0
+    try:
+        n = _scope_query(Notification.query.filter_by(user_id=user_id),
+                         Notification.product).delete(synchronize_session=False)
+        db.session.commit()
+        return n
+    except Exception:  # noqa: BLE001
+        logger.exception("clear_all failed (user=%s)", user_id)
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return 0

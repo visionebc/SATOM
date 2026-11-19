@@ -1,0 +1,214 @@
+{% extends 'base.html' %}
+{% block title %}Edit {{ appliance.name }} - SATOM{% endblock %}
+{% block content %}
+<div class="fw-page-header"><h4>Edit Appliance: {{ appliance.name }}</h4></div>
+<div class="row"><div class="col-md-8">
+<div class="card shadow-sm">
+<div class="card-body">
+<form method="post" action="{{ url_for('appliances.edit_save', id=appliance.id) }}" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row g-3">
+    <div class="col-md-6"><label class="form-label">{{ _('Name') }}</label><input type="text" name="name" class="form-control" value="{{ appliance.name }}" required></div>
+    <div class="col-md-6"><label class="form-label">{{ _('Kind') }}</label>
+      <select name="kind" class="form-select">
+        {% set offered = (kind_options or [])|map(attribute=0)|list %}
+        {% for key, label in (kind_options or []) %}
+        <option value="{{ key }}" {{ 'selected' if appliance.kind == key }}>{{ label }}</option>
+        {% endfor %}
+        {# Keep the device's own platform selectable even where this ADOM does
+           not offer it — otherwise saving any other field re-kinds the row. #}
+        {% if appliance.kind and appliance.kind not in offered %}
+        <option value="{{ appliance.kind }}" selected>{{ appliance.kind }}</option>
+        {% endif %}
+      </select>
+    </div>
+    <div class="col-md-8"><label class="form-label">{{ _('Host') }}</label><input type="text" name="host" id="edit_host" class="form-control" value="{{ appliance.host }}" required>
+      {% if not appliance.is_cluster_member %}<div class="form-text ha-vip-edit d-none">{{ _('Shared VIP mode: the host is the Shared VIP address. Changing one changes the other.') }}</div>{% endif %}</div>
+    <div class="col-md-4"><label class="form-label">{{ _('Port') }}</label><input type="number" name="port" class="form-control" value="{{ appliance.port }}"></div>
+    <div class="col-md-6"><label class="form-label">{{ _('Username') }}</label><input type="text" name="username" class="form-control" value="{{ appliance.username }}" required></div>
+    <div class="col-md-6"><label class="form-label">{{ _('New Password (leave blank to keep)') }}</label><input type="password" name="password" class="form-control">
+      <div class="form-text">Changing the host, port or username requires re-entering the password.</div></div>
+    <div class="col-md-6"><label class="form-label">{{ _('SSH user, if different from the API user') }}</label><input type="text" name="ssh_username" class="form-control" autocomplete="off" value="{{ appliance.ssh_username or '' }}" placeholder="{{ _('not set — SSH logs in as the username above') }}">
+      <div class="form-text">{{ _('Changing the SSH user requires re-entering the separate SSH password, when one is set.') }}</div></div>
+    <div class="col-md-6"><label class="form-label">{{ _('SSH password, if different from the API credential') }}</label><input type="password" name="ssh_password" class="form-control" autocomplete="new-password" placeholder="{{ _('set — leave blank to keep') if appliance.has_ssh_password else _('not set — SSH uses the password above') }}"></div>
+    <div class="col-12">{% if appliance.has_ssh_password %}<div class="form-check"><input type="checkbox" name="ssh_password_clear" class="form-check-input" id="ssh_password_clear">
+      <label class="form-check-label" for="ssh_password_clear">{{ _('Remove the separate SSH password') }}</label></div>{% else %}<small class="text-muted">{{ _('FortiAuthenticator: its REST takes an API key that SSH refuses — set the admin password here for CLI reads and writes.') }}</small>{% endif %}</div>
+
+    <!-- ===== SNMP polling (services/snmp_collect) ===== -->
+    <input type="hidden" name="snmp_present" value="1">
+    <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">{{ _('SNMP polling') }}</h6></div>
+    <div class="col-12"><div class="form-check"><input type="checkbox" name="snmp_enabled" class="form-check-input" id="snmp_enabled" {{ 'checked' if appliance.snmp_enabled }}>
+      <label class="form-check-label" for="snmp_enabled">{{ _('Poll this appliance over SNMP v2c — uptime, interfaces, CPU / memory (Monitoring › Collection, collector') }} <code>snmp</code>)</label></div>
+      <div class="form-text">{{ _('Opt-in: nothing is polled until the switch is on and a community string is stored. On the appliance, allow SNMP on the management interface and list this node (and its HA peer) as a query host. SNMPv3 is not supported yet.') }}</div></div>
+    <div class="col-md-3"><label class="form-label">{{ _('SNMP port') }}</label><input type="number" name="snmp_port" class="form-control" min="1" max="65535" value="{{ appliance.snmp_port or 161 }}"></div>
+    <div class="col-md-6"><label class="form-label">{{ _('Community string') }}</label><input type="password" name="snmp_community" class="form-control" autocomplete="new-password" placeholder="{{ _('set — leave blank to keep') if appliance.has_snmp_community else _('not set') }}"></div>
+    <div class="col-md-3">{% if appliance.has_snmp_community %}<div class="form-check mt-md-4 pt-md-2"><input type="checkbox" name="snmp_community_clear" class="form-check-input" id="snmp_community_clear">
+      <label class="form-check-label" for="snmp_community_clear">{{ _('Remove the community string') }}</label></div>{% endif %}</div>
+    <div class="col-md-3"><label class="form-label">{{ _('ADOM (vdom)') }}</label><input type="text" name="vdom" class="form-control" value="{{ appliance.vdom or '' }}"></div>
+    <div class="col-md-3"><label class="form-label">{{ _('Zone') }}</label><select name="zone" class="form-select"><option value="">{{ _('(none)') }}</option>{% if appliance.zone and appliance.zone not in classification.zones %}<option value="{{ appliance.zone }}" selected>{{ appliance.zone }} (unregistered)</option>{% endif %}{% for v in (classification.zones if classification else []) %}<option value="{{ v }}"{% if appliance.zone == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">{{ _('Line') }}</label><select name="line" class="form-select"><option value="">{{ _('(none)') }}</option>{% if appliance.line and appliance.line not in classification.lines %}<option value="{{ appliance.line }}" selected>{{ appliance.line }} (unregistered)</option>{% endif %}{% for v in (classification.lines if classification else []) %}<option value="{{ v }}"{% if appliance.line == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">{{ _('Department') }}</label><select name="department" class="form-select"><option value="">{{ _('(none)') }}</option>{% if appliance.department and appliance.department not in classification.departments %}<option value="{{ appliance.department }}" selected>{{ appliance.department }} (unregistered)</option>{% endif %}{% for v in (classification.departments if classification else []) %}<option value="{{ v }}"{% if appliance.department == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+    <div class="col-12"><div class="form-check"><input type="checkbox" name="verify_ssl" class="form-check-input" id="verify_ssl" {{ 'checked' if appliance.verify_ssl }}{{ ' disabled' if appliance.verify_ssl_inherited }}>
+      <label class="form-check-label" for="verify_ssl">{{ _('Verify SSL Certificate') }}</label></div>
+      {% if appliance.verify_ssl_inherited %}<div class="form-text">{{ _('A cluster member follows its cluster:') }} <a href="{{ url_for('appliances.edit', id=appliance.parent.id) }}">{{ appliance.parent.name }}</a></div>
+      {% elif appliance.is_cluster %}<div class="form-text">{{ _('Applies to every member of this cluster. Turning it off needs the password every member stores.') }}</div>{% endif %}</div>
+    <div class="col-md-6"><label class="form-label" for="tls_server_name">{{ _('TLS certificate name') }}</label>
+      {% if appliance.verify_ssl_inherited %}<input type="text" class="form-control" id="tls_server_name" value="{{ appliance.tls_name or '' }}" disabled>
+      <div class="form-text">{{ _('A cluster member follows its cluster:') }} <a href="{{ url_for('appliances.edit', id=appliance.parent.id) }}">{{ appliance.parent.name }}</a></div>
+      {% else %}<input type="text" name="tls_server_name" class="form-control" id="tls_server_name" maxlength="253" value="{{ appliance.own_tls_server_name or '' }}" placeholder="{{ _('empty = the host') }}">
+      <div class="form-text">{{ _('The name the certificate is checked against when it does not name the address SATOM connects to — e.g. an HA pair presents one synced certificate for the cluster name, not each member IP ("IP address mismatch"). The chain is still verified against the trust store.') }}{% if appliance.is_cluster %} {{ _('Applies to every member of this cluster.') }}{% endif %}</div>{% endif %}</div>
+    {% if current_user.can('appliances.view_maintenance') %}
+    <div class="col-12"><input type="hidden" name="maintenance_present" value="1">
+      <div class="form-check"><input type="checkbox" name="maintenance" class="form-check-input" id="edit_maintenance" {{ 'checked' if appliance.maintenance }}>
+      <label class="form-check-label" for="edit_maintenance"><i class="bi bi-tools me-1"></i>{{ _('Maintenance mode') }} <span class="text-muted">{{ _('(hidden from operators)') }}</span></label></div></div>
+    {% endif %}
+    {% if not appliance.is_cluster_member %}
+    <input type="hidden" name="ha_present" value="1">
+    <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">{{ _('High Availability') }}</h6></div>
+    <div class="col-12"><div class="form-check"><input type="checkbox" name="is_cluster" class="form-check-input" id="edit_is_cluster" {{ 'checked' if appliance.is_cluster }}>
+      <label class="form-check-label" for="edit_is_cluster">{{ _('This is an HA cluster (node 0)') }}</label></div>
+      <div class="form-text">{{ _('Manage member nodes from the cluster detail page.') }}</div></div>
+    <div class="col-md-6 ha-fields-edit d-none"><label class="form-label">{{ _('HA mode') }}</label>
+      <select class="form-select" name="ha_mode" id="edit_ha_mode">
+        <option value="per_node" {{ 'selected' if (appliance.ha_mode or 'per_node')=='per_node' }}>{{ _('Per-node IP (detect live primary)') }}</option>
+        <option value="vip" {{ 'selected' if appliance.ha_mode=='vip' }}>{{ _('Shared VIP') }}</option>
+      </select></div>
+    <div class="col-md-6 ha-fields-edit ha-vip-edit d-none"><label class="form-label">{{ _('Shared VIP address') }}</label>
+      <input type="text" class="form-control" name="ha_vip" id="edit_ha_vip" value="{{ appliance.ha_vip or '' }}" placeholder="192.0.2.50"></div>
+    {% endif %}
+
+    <!-- ===== Physical / Inventory ===== -->
+    <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">{{ _('Physical / Inventory') }}</h6>
+      {% if appliance.kind == 'fortiweb' %}<div class="form-text mt-1"><i class="bi bi-magic me-1"></i>{{ _('Run a') }} <strong>{{ _('Rediscovery') }}</strong> {{ _('to auto-fill interfaces (name/type/IP), model and HW/VM. Only') }} <em>{{ _('Connected to') }}</em>, notes and the datasheet are entered by hand &mdash; discovery never overwrites them.</div>{% endif %}</div>
+    <div class="col-md-4"><label class="form-label">{{ _('Type') }}</label>
+      <select name="hw_type" class="form-select">
+        <option value="unknown" {{ 'selected' if (appliance.hw_type or 'unknown')=='unknown' }}>{{ _('Unknown') }}</option>
+        <option value="hardware" {{ 'selected' if appliance.hw_type=='hardware' }}>{{ _('Hardware') }}</option>
+        <option value="vm" {{ 'selected' if appliance.hw_type=='vm' }}>{{ _('Virtual Machine') }}</option>
+      </select>
+    </div>
+    <div class="col-md-8"><label class="form-label">{{ _('Model') }}</label>
+      <input type="text" name="model" class="form-control" value="{{ appliance.model or '' }}" placeholder="{{ _('e.g. FortiWeb 600F') }}"></div>
+    <div class="col-12"><label class="form-label">{{ _('Datasheet (PDF)') }}</label>
+      {% if appliance.datasheet_filename %}
+      <div class="mb-2 d-flex align-items-center gap-3 flex-wrap">
+        <a href="{{ url_for('appliances.datasheet', id=appliance.id) }}" target="_blank" class="btn btn-sm fw-btn-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>{{ appliance.datasheet_filename }}</a>
+        <div class="form-check mb-0"><input type="checkbox" name="datasheet_remove" id="datasheet_remove" class="form-check-input"><label class="form-check-label" for="datasheet_remove">{{ _('Remove current') }}</label></div>
+      </div>
+      {% endif %}
+      <input type="file" name="datasheet" accept="application/pdf,.pdf" class="form-control">
+      <div class="form-text">Upload a PDF to {{ 'replace the current datasheet' if appliance.datasheet_filename else 'attach a datasheet' }} (max 25 MB).</div>
+    </div>
+
+    <!-- ===== Interfaces / Connections ===== -->
+    <div class="col-12"><hr class="my-1">
+      <div class="d-flex justify-content-between align-items-center">
+        <h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">{{ _('Interfaces / Connections') }}</h6>
+        <button type="button" class="btn btn-sm fw-btn-secondary" id="addIfBtn"><i class="bi bi-plus-lg me-1"></i>{{ _('Add interface') }}</button>
+      </div>
+    </div>
+    <div class="col-12">
+      <input type="hidden" name="interfaces_present" value="1">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-1" id="ifTable">
+          <thead><tr>
+            <th style="min-width:110px;">{{ _('Interface') }}</th>
+            <th style="min-width:190px;">{{ _('Role (what it is for)') }}</th>
+            <th style="min-width:150px;">{{ _('Network / segment') }}</th>
+            <th style="min-width:120px;">{{ _('Type') }}</th>
+            <th style="min-width:200px;">{{ _('Connected to') }}</th>
+            <th style="min-width:120px;">IP</th>
+            <th>{{ _('Notes') }}</th>
+            <th style="width:38px;"></th>
+          </tr></thead>
+          <tbody id="ifBody">
+            {% for i in appliance.interfaces %}
+            <tr>
+              <td><input type="text" name="if_name" class="form-control form-control-sm" value="{{ i.name }}" placeholder="{{ _('port1') }}"></td>
+              <td><select name="if_role" class="form-select form-select-sm">
+                {% for key, label in interface_roles %}<option value="{{ key }}"{% if (i.role or 'unspecified') == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select></td>
+              <td><input type="text" name="if_segment" class="form-control form-control-sm" value="{{ i.segment or '' }}" placeholder="{{ _('DMZ / VLAN 20') }}"></td>
+              <td><input type="text" name="if_type" class="form-control form-control-sm" value="{{ i.if_type or '' }}" placeholder="{{ _('10G SFP+') }}"></td>
+              <td><input type="text" name="if_connected" class="form-control form-control-sm" value="{{ i.connected_to or '' }}" placeholder="{{ _('Core-SW-A / Gi1/0/24') }}"></td>
+              <td><input type="text" name="if_ip" class="form-control form-control-sm" value="{{ i.ip_address or '' }}" placeholder="192.0.2.1"></td>
+              <td><input type="text" name="if_notes" class="form-control form-control-sm" value="{{ i.notes or '' }}"></td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger if-del" title="{{ _('Remove row') }}"><i class="bi bi-trash"></i></button></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="form-text">{{ _('Rows with an empty interface name are ignored. Saving replaces all interfaces for this appliance.') }}</div>
+      <div class="form-text"><i class="bi bi-info-circle me-1"></i>{{ _('The ROLE is what clone/migrate checks at the destination. Discovery can read a port\'s name, media and address off the device — it cannot read what the port is FOR, because the appliance does not model that. Left as') }} <em>{{ _('Not declared') }}</em>{{ _(', a clone onto this device can only verify that a port with the same NAME exists.') }}</div>
+    </div>
+
+    <div class="col-12 d-flex gap-2">
+      <button type="submit" class="btn fw-btn-primary">{{ _('Save Changes') }}</button>
+      <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn btn-outline-secondary">{{ _('Cancel') }}</a>
+    </div>
+  </div>
+</form>
+</div></div></div></div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+// Rendered FROM the server vocabulary, never re-typed here: a hand-copied list
+// is how the added-by-JS row and the server-rendered row start disagreeing
+// about which roles exist, and only one of the two is validated on save.
+var IF_ROLES = {{ interface_roles | tojson }};
+var IF_ROLE_OPTIONS = IF_ROLES.map(function (r) {
+  return '<option value="' + r[0] + '">' + r[1] + '</option>';
+}).join('');
+function toggleHA(scope) {
+  const cb = document.getElementById(scope + '_is_cluster');
+  const on = !!(cb && cb.checked);
+  document.querySelectorAll('.ha-fields-' + scope).forEach(function (el) { el.classList.toggle('d-none', !on); });
+  const mode = document.getElementById(scope + '_ha_mode');
+  const vipOn = on && mode && mode.value === 'vip';
+  document.querySelectorAll('.ha-vip-' + scope).forEach(function (el) { el.classList.toggle('d-none', !vipOn); });
+}
+document.addEventListener('DOMContentLoaded', function () { toggleHA('edit'); });
+(function () {
+  const body = document.getElementById('ifBody');
+  const addBtn = document.getElementById('addIfBtn');
+  function blankRow() {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><input type="text" name="if_name" class="form-control form-control-sm" placeholder="port1"></td>' +
+      '<td><select name="if_role" class="form-select form-select-sm">' + IF_ROLE_OPTIONS + '</select></td>' +
+      '<td><input type="text" name="if_segment" class="form-control form-control-sm" placeholder="DMZ / VLAN 20"></td>' +
+      '<td><input type="text" name="if_type" class="form-control form-control-sm" placeholder="10G SFP+"></td>' +
+      '<td><input type="text" name="if_connected" class="form-control form-control-sm" placeholder="Core-SW-A / Gi1/0/24"></td>' +
+      '<td><input type="text" name="if_ip" class="form-control form-control-sm" placeholder="192.0.2.1"></td>' +
+      '<td><input type="text" name="if_notes" class="form-control form-control-sm"></td>' +
+      '<td><button type="button" class="btn btn-sm btn-outline-danger if-del" title="Remove row"><i class="bi bi-trash"></i></button></td>';
+    return tr;
+  }
+  if (addBtn) addBtn.addEventListener('click', () => {
+    const tr = blankRow();
+    body.appendChild(tr);
+    tr.querySelector('input').focus();
+  });
+  if (body) body.addEventListener('click', (e) => {
+    const del = e.target.closest('.if-del');
+    if (del) del.closest('tr').remove();
+  });
+})();
+// CSP: former inline onchange handlers, re-bound here (Turbo-safe immediate IIFE)
+(function () {
+  var cb = document.getElementById('edit_is_cluster');
+  if (cb) cb.addEventListener('change', function () { toggleHA('edit'); });
+  var mode = document.getElementById('edit_ha_mode');
+  if (mode) mode.addEventListener('change', function () { toggleHA('edit'); });
+  // Shared VIP mode: Host and VIP are one address; typing in one fills the other.
+  var host = document.getElementById('edit_host'), vip = document.getElementById('edit_ha_vip');
+  function vipMode() { return cb && cb.checked && mode && mode.value === 'vip'; }
+  if (host && vip) {
+    host.addEventListener('input', function () { if (vipMode()) vip.value = host.value; });
+    vip.addEventListener('input', function () { if (vipMode()) host.value = vip.value; });
+  }
+})();
+</script>
+{% endblock %}

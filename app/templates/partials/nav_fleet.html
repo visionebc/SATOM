@@ -1,0 +1,118 @@
+{# ============================================================================
+   FLEET — ONE definition, EVERY ADOM (2026-10-11).
+
+   The Fleet group used to be hand-copied into six branches of base.html, and
+   the copies had drifted: Scout sat in the FortiADC Fleet but not in
+   FortiWeb's, FortiAnalyzer's, FortiAuthenticator's or FortiGate's, and the
+   last three also lacked Calendar, Search, DNS Lookup, Fleet Objects and Jobs.
+   Operator rule: an entry that does not depend on the product appears in EVERY
+   ADOM, in the same position. An entry that does depend on it is listed here
+   with the ADOMs it belongs to, so the exception is written down instead of
+   being a line someone forgot to copy.
+
+   Appliances, Schema builds, Build compatibility and Certificate Manager
+   left this group on 2026-10-13 (Administrator / Automation; the two schema
+   pages went on to Automation's API subgroup on 2026-10-14); the first
+   three stay here only as a fallback for profiles that cannot see their
+   new group.
+
+   Order (operator, 2026-10-13, second pass): Dashboard (the ADOM home, where
+   there is one), Calendar, Architecture, Service Diagram, Monitoring,
+   Search, DNS Lookup, Fleet Objects and WAF (FortiWeb and FortiADC ADOMs only) — and Jobs last.
+   (Architecture and Service Diagram left for the Diagrams group on
+   2026-11-17, partials/nav_diagrams.html.)
+   Third pass (operator, 2026-10-14): Fleet Objects right below Search;
+   in a device ADOM Automation ▸ followed WAF until 2026-10-23 (now right
+   above Plugins, partials/nav_operations.html) and Jobs closes the
+   Operations group. Global keeps Jobs last here.
+
+   Troubleshooting ▸ is not drawn here any more (operator, 2026-10-31): its
+   six pages are Plugin Studio apps, filed under the menu group
+   "Troubleshooting" of Plugins (services/studio_troubleshoot.py, plugins
+   backend-reachability ... diagnose-log-collection). The pages keep
+   answering by URL; Scout went to the top level on the same day.
+
+   Draws the ITEMS only. The caller supplies the wrapper: the Operations group
+   in a device ADOM (partials/nav_operations.html — these items lead it; the
+   "Fleet" group title is gone since 2026-10-14, operator), the "Global"
+   context block in the Global ADOM. The section holding the active item is
+   opened by the nav_autoopen filter.
+   ========================================================================= #}
+{% set _pk = product.key %}
+{% if _pk == 'global' and may_open('index') %}
+<a class="fw-nav-item {{ 'active' if request.endpoint == 'index' else '' }}" href="{{ url_for('index') }}">
+  <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Dashboard') }}</span></a>
+{% elif _pk == 'fortigate' and may_open('fgt.index') %}
+<a class="fw-nav-item {{ 'active' if request.endpoint == 'fgt.index' else '' }}" href="{{ url_for('fgt.index') }}">
+  <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Dashboard') }}</span></a>
+{% endif %}
+{% include 'partials/nav_calendar.html' %}
+{# Architecture and Service Diagram sat here, between Calendar and Monitoring,
+   until 2026-11-17: they are the live entries of the first-level Diagrams
+   group now (partials/nav_diagrams.html), every ADOM, same may_open gates. #}
+{% include 'partials/nav_monitoring.html' %}
+{# Incidents (SAT-INC-, operator 2026-11-08: a runbook "raises an incident,
+   a local ticket"): right below Monitoring. Sentinel's incidents are
+   security incidents and stay in its own menu. #}
+{% if may_open('incidents.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'incidents' else '' }}" href="{{ url_for('incidents.index', _adom=product.key) }}">
+  <i class="bi bi-ticket-detailed fw-nav-icon"></i><span>{{ _('Incidents') }}</span></a>
+{% endif %}
+{# Sentinel ▸ sat here, below Incidents, from 2026-11-01 to 2026-11-09; it
+   is top level now, right below Scout (partials/nav_sentinel.html). #}
+{% if may_open('search.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
+  <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>
+{% endif %}
+{# Fleet Objects: the FortiWeb and FortiADC ADOMs only (operator, 2026-10-13)
+   — not Global, FortiGate, FortiAnalyzer or FortiAuthenticator. Right below
+   Search since 2026-10-14 (operator). The page keeps answering by URL. #}
+{% if _pk in ('fortiweb', 'fortiadc') and may_open('fleet_objects.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
+  <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Fleet Objects') }}</span></a>
+{% endif %}
+{# DNS Lookup is a plugin (operator, 2026-11-08: "the entry must be in
+   plugins, period"): the page plugin dns-lookup (services/studio_pages) draws
+   it under Plugins in the ADOMs it is ticked for. No native entry here; the
+   page keeps answering by URL. #}
+{# Appliances moved to Administrator (2026-10-13). That group is drawn only
+   for user_manage, and the page asks appliances.view, so an operator keeps
+   the entry here. #}
+{% if not (current_user and current_user.can('user_manage')) %}
+{% include 'partials/nav_appliances.html' %}
+{% endif %}
+{# WAF: the FortiWeb and FortiADC ADOMs only, like Fleet Objects. WAF counts
+   FortiWeb objects, so in FortiADC nav_waf.html still draws it disabled with
+   the reason. #}
+{% if _pk in ('fortiweb', 'fortiadc') %}
+{% include 'partials/nav_waf.html' %}
+{% endif %}
+{# Automation ▸ (its API ▸ subgroup inside): in a device ADOM it sat right
+   below WAF from 2026-10-14 to 2026-10-23 and is now drawn by
+   partials/nav_operations.html right above Plugins (operator). Global draws
+   it here, as a subgroup above Jobs, with Global › Plugins right below it
+   (partials/nav_global_apps.html; the same order as a device ADOM).
+   Placeholder ADOMs draw it in Operations like a device ADOM (2026-11-06).
+   Since 2026-11-08 (operator) Global draws its entries flat, at the level of
+   Search, with no Automation ▸ subgroup (still right above Plugins).
+   config_write-gated inside the partial. #}
+{% if _pk == 'global' %}
+{% include 'partials/nav_automation.html' %}
+{% include 'partials/nav_global_apps.html' %}
+{% endif %}
+{# Schema builds / Build compatibility live in the API subgroup of Automation
+   (2026-10-14, partials/_nav_api.html). A profile that cannot see Automation
+   gets that API subgroup here in the Global block (and in a placeholder ADOM);
+   a device ADOM draws it as the standalone API group instead
+   (partials/nav_product_api.html), so it is never drawn twice. #}
+{% if not (current_user and (current_user.can('config_write') or current_user.can('user_manage')))
+      and (_pk == 'global' or product.placeholder) %}
+{% from 'partials/_nav_api.html' import api_menu with context %}
+{{ api_menu(true) }}
+{% endif %}
+{# Jobs: last of the Global block here; in a device ADOM it closes the
+   Operations group instead (partials/nav_operations.html, operator 2026-10-14). #}
+{% if _pk == 'global' and may_open('jobs.manager') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
+  <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>
+{% endif %}

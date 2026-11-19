@@ -1,0 +1,67 @@
+{# ============================================================================
+   DIAGRAMS — a first-level group of the sidebar, every ADOM, right after
+   Plugin Studio (2026-11-17).
+
+   "Diagram Studio" (the library, import and editor) first, then the two LIVE
+   diagrams, Architecture (netarch) and Service Diagram (architecture), then
+   the PUBLISHED diagrams of the current scope as their folder tree
+   (services.diagram_studio.menu via diagrams_menu(product.key)): folders by
+   position then name, diagrams by name, a folder with no published diagram
+   below it is not drawn. A folder is a <details> (nav_state.autoopen only
+   opens divs), drawn `open` when it holds the diagram on screen — the same
+   shape as the Plugins menu groups (partials/nav_apps_entries.html). Depth is
+   a class (fw-nav-dgd0..8), never an inline style: the console's CSP.
+
+   Architecture and Service Diagram moved here from the Fleet entries
+   (partials/nav_fleet.html: Operations in a device ADOM, the Global block in
+   Global) on 2026-11-17 (operator: "put the diagrams we already have into
+   Diagrams"). Their visibility did not change: every ADOM, each gated by its
+   own page's stamp (may_open, the `view` key) and nothing else — no ADOM or
+   product.key branch, before or after. They are marked live by a broadcast
+   icon with the title "Live data" and the screen-reader text "Live" (an
+   icon plus accessible text, never colour alone); a text pill took the
+   room of the label at the desktop width (2026-11-17). Being live pages and not Diagram Studio diagrams, they do
+   NOT need diagrams.view: the group is drawn for a user who may open any of
+   its entries, and the Studio link and the published tree keep their own
+   diagrams.view gate.
+   ========================================================================= #}
+{% set _dg_view = current_user.is_authenticated and current_user.can('diagrams.view') %}
+{% set _dg_arch = may_open('netarch.index') %}
+{% set _dg_svc = may_open('architecture.index') %}
+{% if current_user.is_authenticated and (_dg_view or _dg_arch or _dg_svc) %}
+{% set _dg_tree = diagrams_menu(product.key if product else 'global') if _dg_view else [] %}
+{% macro _dg_node(n) -%}
+{%- if n.kind == 'folder' -%}
+<details class="fw-so-parent fw-nav-appgroup fw-nav-dgfolder fw-nav-dgd{{ n.depth if n.depth < 8 else 8 }}" data-diagram-folder="{{ n.id }}" {{ 'open' if n.open }}>
+  <summary class="fw-nav-item fw-so-parent-head" title="{{ n.name }}" data-fw-fulltext="{{ n.name }}">
+    <i class="bi bi-folder2 fw-nav-icon"></i><span>{{ n.name }}</span>
+    <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+  </summary>
+  <div class="fw-so-parent-body"><div class="fw-so-nav">
+    {% for _c in n.children %}{{ _dg_node(_c) }}{% endfor %}
+  </div></div>
+</details>
+{%- else -%}
+<a class="fw-nav-item fw-nav-app fw-so-nav-flat fw-nav-dgitem fw-nav-dgi{{ n.depth if n.depth < 9 else 9 }} {{ 'active' if n.active else '' }}" href="{{ url_for('diagrams.view', diagram_id=n.id) }}" title="{{ n.name }}" data-fw-fulltext="{{ n.name }}" data-diagram-id="{{ n.id }}">
+  <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ n.name }}</span></a>
+{%- endif -%}
+{%- endmacro %}
+<div class="fw-nav-group" data-nav-group="Diagrams">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-diagram-3 fw-nav-section-icon"></i><span>{{ _('Diagrams') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+    {% if _dg_view and may_open('diagram_studio.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'diagram_studio' else '' }}" href="{{ url_for('diagram_studio.index') }}">
+      <i class="bi bi-vector-pen fw-nav-icon"></i><span>{{ _('Diagram Studio') }}</span></a>
+    {% endif %}
+    {% if _dg_arch %}
+    <a class="fw-nav-item fw-nav-livediag {{ 'active' if request.blueprint == 'netarch' else '' }}" href="{{ url_for('netarch.index') }}" title="{{ _('Architecture — live: read from the devices') }}">
+      <i class="bi bi-bounding-box-circles fw-nav-icon"></i><span>{{ _('Architecture') }}</span><small class="fw-nav-live" title="{{ _('Live data') }}"><i class="bi bi-broadcast" aria-hidden="true"></i><span class="visually-hidden">{{ _('Live') }}</span></small></a>
+    {% endif %}
+    {% if _dg_svc %}
+    <a class="fw-nav-item fw-nav-livediag {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}" title="{{ _('Service Diagram — live: drawn from the device cache') }}">
+      <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Service Diagram') }}</span><small class="fw-nav-live" title="{{ _('Live data') }}"><i class="bi bi-broadcast" aria-hidden="true"></i><span class="visually-hidden">{{ _('Live') }}</span></small></a>
+    {% endif %}
+    {% for _n in _dg_tree %}{{ _dg_node(_n) }}{% endfor %}
+  </div>
+</div>
+{% endif %}

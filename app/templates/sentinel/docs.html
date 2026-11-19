@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Sentinel architecture — documentation{% endblock %}
+
+{#
+   The documentation page.
+
+   Everything numeric on this page is rendered FROM the live code — the weight
+   table from scoring.WEIGHTS, the action catalog from actions.CATALOG, the
+   settings from config.SPEC, the layers from correlate.LAYER_SERIES. Nothing
+   is transcribed.
+
+   That is deliberate and it is the lesson of `Version: 1.0` surviving four
+   releases in this repo: nothing FAILS when a document goes stale — the
+   sentence simply stops being true, and the person who acts on it is the one
+   who finds out.
+#}
+{% block content %}
+{% include "sentinel/_docs_section.html" %}
+{% endblock %}

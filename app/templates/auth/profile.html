@@ -1,0 +1,511 @@
+{% extends 'base.html' %}
+{% block title %}Profile - {{ product.title if product else 'SATOM' }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Profile') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-person-circle me-2 text-accent"></i>{{ _('My Profile') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">Personal account, security &amp; user settings</p>
+  </div>
+</div>
+
+<!-- ABOUT (first card of the page, full width) -->
+<div class="fw-card mb-3" id="about">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>{{ _('About %(product)s', product=(product.title if product else 'SATOM')) }}</span>
+  </div>
+  <div class="fw-card-body">
+    <div class="row g-3 align-items-center">
+      <div class="col-lg-7">
+        <div class="d-flex align-items-center gap-3 mb-2">
+          {# Brand emblem, never product.mark: this card is About the CONSOLE,
+             and product.mark is the ACTIVE ADOM's icon -- it drew the Global
+             globe here, and a FortiWeb logo inside a FortiWeb ADOM. #}
+          <img src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}"
+               alt="{{ settings.app_name if settings else (product.title if product else 'SATOM') }}"
+               style="width:48px;height:48px;border-radius:10px;object-fit:contain;">
+          <div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <h5 class="mb-0" style="font-weight:700;">{{ settings.app_name if settings else product.title }}</h5>
+              <span class="fw-badge fw-badge-primary">v{{ app_version }}</span>
+            </div>
+            <div class="text-muted" style="font-size:12px; font-weight:500; letter-spacing:.2px;">System Automation & Task Orchestration Manager</div>
+          </div>
+        </div>
+        <p class="mb-0" style="font-size:13.5px; color:#495057;">
+          {{ _('Multi-user appliance management console built on Flask + SQLAlchemy. OWASP-hardened with full audit logging, RBAC, and encrypted credential storage.') }}
+        </p>
+      </div>
+      <div class="col-lg-5">
+        <dl class="row mb-0" style="font-size:13px;">
+          <dt class="col-sm-4 text-muted">{{ _('Repository') }}</dt>
+          <dd class="col-sm-8"><a href="https://github.com/visionebc/SATOM" target="_blank" rel="noopener">{{ _('visionebc/SATOM') }}</a></dd>
+          <dt class="col-sm-4 text-muted">{{ _('RBAC Roles') }}</dt>
+          <dd class="col-sm-8">{{ _('readonly, operator, admin') }}</dd>
+          <dt class="col-sm-4 text-muted">{{ _('UI Framework') }}</dt>
+          <dd class="col-sm-8 mb-0">{{ _('Bootstrap 5.3 + SATOM theme') }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Account card: who, role, this session and where it came from -->
+<div class="fw-card mb-3" id="account">
+  <div class="fw-card-body">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <div class="fw-avatar" style="width:46px;height:46px;font-size:18px;">
+        {{ current_user.username[0].upper() if current_user and current_user.username else 'U' }}
+      </div>
+      <div>
+        <div style="font-size:15px; font-weight:600;">{{ current_user.username }}</div>
+        <div class="text-muted" style="font-size:13px;">{{ _('Role:') }} <strong>{{ current_user.role }}</strong></div>
+      </div>
+      <div class="ms-lg-4" id="account-session" style="font-size:12.5px;">
+        <div>
+          <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>{{ _('Active session') }}</span>
+          {% if sign_ins.current_ip %}
+          <span class="text-muted ms-1">{{ _('from') }}</span> <code id="account-current-ip">{{ sign_ins.current_ip }}</code>
+          {% endif %}
+          {% if sign_ins.current_at %}
+          <span class="text-muted">&middot; {{ _('signed in') }} {{ sign_ins.current_at|localtime('%Y-%m-%d %H:%M') }}</span>
+          {% endif %}
+        </div>
+        <div class="text-muted mt-1" id="account-previous">
+          {{ _('Previous sign-in:') }}
+          {% if sign_ins.previous_at %}
+            {{ sign_ins.previous_at|localtime('%Y-%m-%d %H:%M') }}
+            {% if sign_ins.previous_ip %}{{ _('from') }} <code id="account-previous-ip">{{ sign_ins.previous_ip }}</code>{% endif %}
+          {% else %}
+            {{ _('none recorded') }}
+          {% endif %}
+        </div>
+      </div>
+      <div class="ms-auto">
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-box-arrow-right me-1"></i>{{ _('Sign Out') }}
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SECURITY + PASSWORD (per-user; moved here from Settings > My Account 2026-10-23) -->
+{# The POST routes are still settings.twofa_* / settings.recovery_email /
+   settings.change_password, and each redirects back to #security or
+   #password on THIS page. #}
+<div class="row g-3 mb-3" id="security">
+  <div class="col-lg-7">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-phone me-2 text-accent"></i>{{ _('Two-Factor Authentication (TOTP)') }}</span>
+      </div>
+      <div class="fw-card-body">
+        {% if not twofa_status.is_local %}
+          <p class="text-muted mb-0" style="font-size:13px;"><i class="bi bi-info-circle me-1"></i>{{ _('Your account authenticates against a directory — manage multi-factor authentication there.') }}</p>
+        {% elif twofa_status.enabled %}
+          <div class="alert alert-success py-2" style="font-size:13px;"><i class="bi bi-shield-check me-1"></i>{{ _('Two-factor authentication is') }} <strong>{{ _('enabled') }}</strong>{{ _('. Backup codes remaining:') }} <strong>{{ twofa_status.remaining_codes }}</strong>.</div>
+          {% if backup_codes_once %}
+          <div class="alert alert-warning" style="font-size:13px;">
+            <div class="mb-2"><i class="bi bi-exclamation-triangle me-1"></i><strong>{{ _('Save these backup codes now — shown only once.') }}</strong> {{ _('Each works one time if you lose your authenticator.') }}</div>
+            <div class="font-monospace" style="columns:2; font-size:15px; letter-spacing:1px;">{% for c in backup_codes_once %}<div>{{ c }}</div>{% endfor %}</div>
+          </div>
+          {% endif %}
+          <form method="POST" action="{{ url_for('settings.twofa_regen_codes') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="input-group input-group-sm" style="max-width:420px;">
+              <input type="password" name="current_password" class="form-control" placeholder="{{ _('Current Password') }}" autocomplete="current-password">
+              <input type="text" name="totp_code" class="form-control" inputmode="numeric" placeholder="{{ _('Authentication code') }}" autocomplete="one-time-code">
+              <button class="btn btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Regenerate backup codes') }}</button>
+            </div>
+          </form>
+          <form method="POST" action="{{ url_for('settings.twofa_disable') }}" class="mt-2" data-js="twofa-disable-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="input-group input-group-sm" style="max-width:360px;">
+              <input type="password" name="current_password" class="form-control" placeholder="{{ _('Confirm password to disable') }}" autocomplete="current-password">
+              <button class="btn btn-outline-danger"><i class="bi bi-shield-x me-1"></i>{{ _('Disable 2FA') }}</button>
+            </div>
+          </form>
+        {% else %}
+          <p class="text-muted" style="font-size:13px;">{{ _('Add a second factor with an authenticator app (Google Authenticator, Authy, FreeOTP…).') }}</p>
+          <div class="input-group input-group-sm mb-2" style="max-width:360px;">
+            <input type="password" id="tf-setup-pw" class="form-control" placeholder="{{ _('Current Password') }}" autocomplete="current-password">
+            <button class="btn fw-btn-primary" id="tf-setup-btn"><i class="bi bi-qr-code me-1"></i>{{ _('Set up 2FA') }}</button>
+          </div>
+          <div id="tf-setup-area" style="display:none;" class="mt-3">
+            <div class="row g-3">
+              <div class="col-auto"><div id="tf-qr" style="width:180px;height:180px;"></div></div>
+              <div class="col">
+                <p style="font-size:13px;" class="mb-1">{{ _('1. Scan the QR (or enter this secret manually):') }}</p>
+                <code id="tf-secret" class="d-block mb-3" style="word-break:break-all;"></code>
+                <form method="POST" action="{{ url_for('settings.twofa_enable') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <p style="font-size:13px;" class="mb-1">{{ _('2. Enter the 6-digit code to confirm:') }}</p>
+                  <input type="password" name="current_password" class="form-control form-control-sm mb-2" style="max-width:260px;" placeholder="{{ _('Current Password') }}" autocomplete="current-password" required>
+                  <div class="input-group input-group-sm" style="max-width:260px;">
+                    <input type="text" name="code" class="form-control" inputmode="numeric" placeholder="000000" autocomplete="one-time-code" required>
+                    <button class="btn fw-btn-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Enable') }}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fw-card mt-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-envelope-at me-2 text-accent"></i>{{ _('Account Recovery') }}</span>
+      </div>
+      <div class="fw-card-body">
+        {% if twofa_status.is_local %}
+        <form method="POST" action="{{ url_for('settings.recovery_email') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="fw-form-label">{{ _('Recovery email') }}</label>
+          <div class="input-group input-group-sm" style="max-width:440px;">
+            <input type="email" name="recovery_email" class="form-control" value="{{ twofa_status.recovery_email }}" placeholder="{{ _('you@example.com') }}">
+            <button class="btn fw-btn-primary"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+          </div>
+          <div class="input-group input-group-sm mt-2" style="max-width:440px;">
+            <input type="password" name="current_password" class="form-control" placeholder="{{ _('Current Password') }}" autocomplete="current-password">
+            {% if twofa_status.enabled %}
+            <input type="text" name="totp_code" class="form-control" inputmode="numeric" placeholder="{{ _('Authentication code') }}" autocomplete="one-time-code">
+            {% endif %}
+          </div>
+          <div class="form-text">{{ _('Used by "Forgot password" on the sign-in page to email a reset link. Requires server email to be configured.') }}</div>
+        </form>
+        {% else %}
+        <p class="text-muted mb-0" style="font-size:13px;">{{ _('Directory accounts recover their password at the directory.') }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="fw-card" id="password">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-key me-2 text-accent"></i>{{ _('Change Password') }}</span>
+      </div>
+      <div class="fw-card-body">
+        <form method="POST" action="{{ url_for('settings.change_password') }}" id="changePasswordForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('Current Password') }} <span class="text-danger">*</span></label>
+            <input type="password" name="current_password" class="form-control fw-form-control"
+                   placeholder="{{ _('Your current password') }}" required autocomplete="current-password">
+          </div>
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('New Password') }} <span class="text-danger">*</span></label>
+            <input type="password" name="new_password" class="form-control fw-form-control"
+                   id="newPwd" placeholder="{{ _('At least 12 characters') }}" required minlength="12" maxlength="1024" autocomplete="new-password">
+            <div class="mt-2" id="pwd-strength-bar" style="height:4px; border-radius:2px; background:#E9ECEF; overflow:hidden;">
+              <div id="pwd-strength-fill" style="height:100%; width:0; transition:width 0.3s, background 0.3s;"></div>
+            </div>
+            <small id="pwd-strength-text" class="text-muted"></small>
+          </div>
+          <div class="mb-4">
+            <label class="fw-form-label">{{ _('Confirm New Password') }} <span class="text-danger">*</span></label>
+            <input type="password" name="confirm_password" class="form-control fw-form-control"
+                   placeholder="{{ _('Repeat new password') }}" required autocomplete="new-password">
+          </div>
+          <button type="submit" class="btn btn-fw-primary w-100"><i class="bi bi-check-lg me-1"></i>{{ _('Update Password') }}</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BOOKMARK VIEW (per-user grouping order for the bookmarks rail) -->
+<div class="fw-card mb-3" id="bookmark-view">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('Bookmarks \u2014 grouping order') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('The bookmarks rail shows ONE view of the fleet, nested in the order you pick here. It is yours alone \u2014 changing it does not touch anybody else\'s panel, and it never moves a device: the grouping is recomputed from the live inventory on every render.') }}
+    </p>
+    <form method="POST" action="{{ url_for('auth.save_bookmark_view') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-2">
+        {% for slot in range(bookmark_dims|length) %}
+        <div class="col-6 col-lg-4">
+          <label class="form-label" style="font-size:12px;" for="bmdim-{{ slot }}">
+            {{ _('Level') }} {{ slot + 1 }}</label>
+          <select class="form-select form-select-sm" name="dim" id="bmdim-{{ slot }}">
+            <option value="">{{ _('\u2014 none \u2014') }}</option>
+            {% for key, label, icon in bookmark_dims %}
+            <option value="{{ key }}"
+              {% if bookmark_lens|length > slot and bookmark_lens[slot] == key %}selected{% endif %}>
+              {{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="text-muted mt-2 mb-2" style="font-size:12px;">
+        {{ _('Blank levels are skipped. A dimension may only appear once \u2014 below its first level every device already shares one value, so a repeat would add depth and no information.') }}
+      </p>
+      <div class="d-flex align-items-center gap-2">
+        <button type="submit" class="btn btn-sm btn-primary">
+          <i class="bi bi-check2 me-1"></i>{{ _('Save order') }}</button>
+        <span class="text-muted" style="font-size:12px;">
+          {{ _('Currently:') }} <strong>{{ bookmark_lens_title }}</strong></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- LANGUAGE (per-user setting, saved in the DB) -->
+<div class="fw-card mb-3" id="language">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-translate me-2 text-accent"></i>{{ _('Language') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:13px;">
+      Your language, saved to your account in the database &mdash; not a cookie, and not shared
+      with other users. SATOM pre-selects it wherever a language has to be chosen.
+    </p>
+    <form method="POST" action="{{ url_for('auth.save_language') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-6">
+          <label class="fw-form-label" for="pref-lang">{{ _('Preferred language') }}</label>
+          <select class="form-select" name="lang" id="pref-lang">
+            <option value="" {{ 'selected' if not pref_lang }}>No preference &mdash; ask me each time</option>
+            {% for code, name in lang_options %}
+            <option value="{{ code }}" {{ 'selected' if pref_lang == code }}>{{ name }} ({{ code|upper }}){% if code not in doc_langs %} &mdash; change documents not translated yet{% endif %}</option>
+            {% endfor %}
+            {# A preference the administrator has since withdrawn. Kept in the
+               list, still selected, so the answer stays visible and pressing
+               Save cannot silently clear it. #}
+            {% if pref_withdrawn %}
+            <option value="{{ pref_lang }}" selected>{{ pref_lang_label }} ({{ pref_lang|upper }}) &mdash; {{ _('no longer offered here') }}</option>
+            {% endif %}
+          </select>
+          {% if pref_withdrawn %}
+          <div class="form-text text-warning-emphasis mt-1">
+            {{ _('An administrator withdrew this language from this installation, so pages are shown in another one. Your choice is kept and applies again if it is switched back on.') }}
+          </div>
+          {% endif %}
+        </div>
+        <div class="col-md-6">
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save Language') }}</button>
+        </div>
+      </div>
+    </form>
+    <div class="form-text mt-2">
+      {{ _('Change documents can be produced in') }}
+      <strong>{% for c in doc_langs %}{{ c|upper }}{{ ', ' if not loop.last }}{% endfor %}</strong> today.
+      A preference outside that list is still kept &mdash; it is your language, and the rest of the
+      product adopts it as text is translated &mdash; but the change-request form will keep asking
+      which of those you are drafting in rather than picking one on your behalf. A document is
+      signed in the language it is written in, so that question is never answered by a default.
+    </div>
+  </div>
+</div>
+
+<!-- CALENDAR (per-user setting, saved in the DB) -->
+{# Only offered to a user who could otherwise reach the page: the Calendar is
+   gated on user_manage, so a switch shown to anybody else would toggle the
+   visibility of a page they get a 403 from either way. #}
+{% if current_user and current_user.can('user_manage') %}
+<div class="fw-card mb-3" id="calendar">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-calendar3 me-2 text-accent"></i>{{ _('Calendar') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('The Calendar draws every planned change, upcoming automation and past run on one grid. Switch it off and it disappears from your Fleet menu and stops opening for you \u2014 for you alone. Nobody else\'s console changes.') }}
+    </p>
+    <form method="POST" action="{{ url_for('auth.save_calendar_pref') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" role="switch" id="calendar_on"
+               name="calendar_on" value="1" {{ 'checked' if calendar_on|default(true) }}>
+        <label class="form-check-label" for="calendar_on" style="font-size:13px;">
+          {{ _('Show the Calendar') }}
+        </label>
+      </div>
+      <div class="fw-alert fw-alert-info mb-2" style="font-size:12px;">
+        <i class="bi bi-info-circle me-1"></i>
+        {{ _('This hides a VIEW. Changes that are already approved and automations that are already scheduled keep running on their windows whether or not you draw them here \u2014 hiding the page does not stop the fleet.') }}
+      </div>
+      <button type="submit" class="btn btn-fw-primary btn-sm">
+        <i class="bi bi-check-lg me-1"></i>{{ _('Save') }}</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<!-- NOTIFICATIONS (per-user muted categories, saved in the DB) -->
+<div class="fw-card mb-3" id="notifications">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-bell me-2 text-accent"></i>{{ _('Notifications') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('Choose which categories reach your bell. A category switched off stops creating notifications for you alone; its unread ones are marked read. Nobody else\'s bell changes.') }}
+    </p>
+    <form method="POST" action="{{ url_for('auth.save_notification_prefs') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="notif-pref-grid mb-2">
+        {% for key, label in notify_categories|default([]) %}
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch" id="notif_on_{{ key }}"
+                 name="on_{{ key }}" value="1" {{ '' if key in notify_muted|default([]) else 'checked' }}>
+          <label class="form-check-label" for="notif_on_{{ key }}" style="font-size:13px;">
+            {{ _(label) }}
+            <a href="{{ url_for('notifications.guide_page', category=key) }}" class="ms-1" title="{{ _('What these notifications mean') }}"><i class="bi bi-journal-text"></i></a>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="fw-alert fw-alert-info mb-2" style="font-size:12px;">
+        <i class="bi bi-info-circle me-1"></i>
+        {{ _('This silences the bell, not the finding. Drift and the other checks keep running, are recorded in the Audit Log and are still sent by the e-mail alert rules in Settings. Results of your own jobs, bug reports and Wiki notices are always delivered.') }}
+      </div>
+      <button type="submit" class="btn btn-fw-primary btn-sm">
+        <i class="bi bi-check-lg me-1"></i>{{ _('Save') }}</button>
+    </form>
+  </div>
+</div>
+<style nonce="{{ csp_nonce }}">
+.notif-pref-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:4px 16px; }
+</style>
+
+<div class="row g-3">
+
+  <!-- BRANDING (per-user setting, saved in the DB; full width since 2026-11-04) -->
+  <div class="col-12" id="branding">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-palette me-2 text-accent"></i>{{ _('Branding — Top-bar Banner') }}</span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted" style="font-size:13px;">
+          {{ _('Your personal top-bar banner per product — saved to your account in the database, not shared with other users. Each ADOM can use a different banner.') }}
+        </p>
+        <form method="POST" action="{{ url_for('settings.save_banners') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-4">
+            {% for pkey, plabel in banner_products %}
+            <div class="col-lg-3 col-md-6">
+              <label class="form-label fw-semibold">{{ plabel }}</label>
+              <div class="banner-options" data-product="{{ pkey }}">
+                {% for tkey, t in banner_templates.items() %}
+                <label class="banner-opt {{ 'selected' if banners[pkey] == tkey else '' }}">
+                  <input type="radio" name="banner_{{ pkey }}" value="{{ tkey }}"
+                         {{ 'checked' if banners[pkey] == tkey else '' }} hidden>
+                  <span class="banner-swatch" style="background: {{ t.bg }};"></span>
+                  <span class="banner-name">{{ t.name }}</span>
+                </label>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="mt-3">
+            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save Banners') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style nonce="{{ csp_nonce }}">
+  .banner-options { display: flex; flex-direction: column; gap: 4px; }
+  .banner-opt {
+    display: flex; align-items: center; gap: 6px; cursor: pointer;
+    border: 2px solid var(--fw-border); border-radius: var(--fw-radius-lg);
+    padding: 4px 6px; transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .banner-opt:hover { border-color: var(--fw-accent); }
+  .banner-opt.selected { border-color: var(--fw-accent); box-shadow: 0 0 0 3px var(--fw-accent-light); }
+  .banner-swatch { width: 40px; height: 14px; border-radius: 3px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+  .banner-name { font-size: 11px; color: var(--fw-text-primary); }
+</style>
+<script nonce="{{ csp_nonce }}">
+  document.querySelectorAll('.banner-options').forEach(function(group){
+    group.querySelectorAll('.banner-opt').forEach(function(opt){
+      opt.addEventListener('click', function(){
+        group.querySelectorAll('.banner-opt').forEach(function(o){ o.classList.remove('selected'); });
+        opt.classList.add('selected');
+      });
+    });
+  });
+
+  // A link written before the move (Settings › My Account) names the old
+  // pane ids; land it on the same card here.
+  (function () {
+    var moved = {'#tab-security': '#security', '#tab-password': '#password'};
+    if (moved[location.hash]) { location.replace(moved[location.hash]); }
+  })();
+
+  // --- 2FA self-service setup ---
+  function tfSetup() {
+    var btn = document.getElementById('tf-setup-btn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>...';
+    var csrfMeta = document.querySelector('meta[name=csrf-token]');
+    var csrf = csrfMeta ? csrfMeta.content : '';
+    var pwEl = document.getElementById('tf-setup-pw');
+    var body = new URLSearchParams();
+    body.set('current_password', pwEl ? pwEl.value : '');
+    fetch({{ url_for('settings.twofa_setup') | tojson }}, {method: 'POST',
+          headers: {'X-CSRFToken': csrf, 'Content-Type': 'application/x-www-form-urlencoded'},
+          body: body.toString()})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (!d.ok) { alert(d.error || 'Failed to start 2FA setup'); btn.disabled = false; btn.innerHTML = '<i class="bi bi-qr-code me-1"></i>Set up 2FA'; return; }
+        document.getElementById('tf-secret').textContent = d.secret;
+        document.getElementById('tf-qr').innerHTML = d.qr || '<span class="text-muted">Scan the secret manually.</span>';
+        document.getElementById('tf-setup-area').style.display = '';
+        btn.style.display = 'none';
+      })
+      .catch(function(e){ alert('Error: ' + e.message); btn.disabled = false; btn.innerHTML = '<i class="bi bi-qr-code me-1"></i>Set up 2FA'; });
+  }
+
+  // --- password strength meter ---
+  function checkStrength(pwd) {
+    var fill = document.getElementById('pwd-strength-fill');
+    var text = document.getElementById('pwd-strength-text');
+    if (!fill || !text) return;
+    var score = 0;
+    if (pwd.length >= 8) score++;
+    if (pwd.length >= 12) score++;
+    if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) score++;
+    if (/\d/.test(pwd)) score++;
+    if (/[^A-Za-z0-9]/.test(pwd)) score++;
+    var pcts = [0, 25, 50, 75, 100];
+    var colors = ['transparent', '#DC3545', '#FFC107', '#17A2B8', '#28A745'];
+    var labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+    fill.style.width = pcts[score] + '%';
+    fill.style.background = colors[score];
+    text.textContent = score > 0 ? 'Password strength: ' + labels[score] : '';
+    text.style.color = colors[score];
+  }
+
+  (function () {
+    var setupBtn = document.getElementById('tf-setup-btn');
+    if (setupBtn) setupBtn.addEventListener('click', function () { tfSetup(); });
+    document.querySelectorAll('[data-js="twofa-disable-form"]').forEach(function (f) {
+      f.addEventListener('submit', function (event) {
+        if (!confirm('Disable two-factor authentication?')) event.preventDefault();
+      });
+    });
+    var newPwd = document.getElementById('newPwd');
+    if (newPwd) newPwd.addEventListener('input', function (event) { checkStrength(event.target.value); });
+  })();
+</script>
+{% endblock %}
